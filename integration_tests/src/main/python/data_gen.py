@@ -209,24 +209,20 @@ class IntegerGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
-
-#Maximum number of decimal digits a Long can represent is 18.
-DECIMAL_MIN = -(1 << 59)
-DECIMAL_MAX = (1 << 59)  #approximate
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
     def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
         if precision is None:
+            #Maximum number of decimal digits a Long can represent is 18
             precision = 18
             scale = 0
-            special_cases = [Decimal('-1'), Decimal('0'), Decimal('1'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
+        DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
+        DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
+        special_cases = [Decimal('-1'), Decimal('0'), Decimal(Decimal('1')), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self._scale = scale
         self._precision = precision
-        if (scale > 0):
-            pattern = "[0-9]{1,"+ str(precision - scale) + "}\.[0-9]{0," + str(scale) + "}"
-        else:
-            pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
         self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
@@ -788,3 +784,5 @@ map_gens_sample = [simple_string_to_string_map_gen,
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
         MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+
+allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
