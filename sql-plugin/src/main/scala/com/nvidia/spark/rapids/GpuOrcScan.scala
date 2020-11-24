@@ -113,7 +113,7 @@ object GpuOrcScanBase {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
     schema.foreach { field =>
-      if (!GpuColumnVector.isSupportedType(field.dataType)) {
+      if (!GpuColumnVector.isNonNestedSupportedType(field.dataType)) {
         meta.willNotWorkOnGpu(s"GpuOrcScan does not support fields of type ${field.dataType}")
       }
     }

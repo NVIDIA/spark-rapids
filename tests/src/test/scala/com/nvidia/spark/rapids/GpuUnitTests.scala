@@ -43,7 +43,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
       val cv = v.asInstanceOf[ColumnVector]
       // close the vector that was passed in and return a new vector
       withResource(cv) { cv =>
-        GpuColumnVector.from(cv.castTo(GpuColumnVector.getRapidsType(to)), to)
+        GpuColumnVector.from(cv.castTo(GpuColumnVector.getNonNestedRapidsType(to)), to)
       }
     }
 

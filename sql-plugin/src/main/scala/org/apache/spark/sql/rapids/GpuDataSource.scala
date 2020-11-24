@@ -189,8 +189,8 @@ case class GpuDataSource(
 
 
   /**
-   * Create a resolved [[BaseRelation]] that can be used to read data from or write data into this
-   * [[DataSource]]
+   * Create a resolved `BaseRelation` that can be used to read data from or write data into this
+   * `DataSource`
    *
    * @param checkFilesExist Whether to confirm that the files exist when generating the
    *                        non-streaming file based datasource. StructuredStreaming jobs already
@@ -355,7 +355,7 @@ case class GpuDataSource(
   }
 
   /**
-   * Writes the given [[LogicalPlan]] out to this [[DataSource]] and returns a [[BaseRelation]] for
+   * Writes the given `LogicalPlan` out to this `DataSource` and returns a `BaseRelation` for
    * the following reading.
    *
    * @param mode The save mode for this writing.
