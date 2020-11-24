@@ -113,8 +113,82 @@ class Spark301dbShims extends Spark301Shims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
+            val location = if (conf.alluxioEnabled
+              && wrapped.relation.location.getClass.getCanonicalName() ==
+              "com.databricks.sql.transaction.tahoe.stats.PreparedDeltaFileIndex") {
+
+              val start = System.currentTimeMillis
+              logInfo("Gary-Alluxio ++++++++++++++++++ begin to replace S3:// to alluxio://")
+              val preparedDeltaFileIndex = wrapped.relation.location.asInstanceOf[PreparedDeltaFileIndex]
+              val deltaScanFileLength = preparedDeltaFileIndex.preparedScan.files.length
+              /*logInfo("Gary-Alluxio deltaScanFileLength : " + deltaScanFileLength)
+              logInfo("Gary-Alluxio deltascan partitionFilters:" + preparedDeltaFileIndex.preparedScan.partitionFilters)
+              logInfo("Gary-Alluxio deltascan dataFilters:" + preparedDeltaFileIndex.preparedScan.dataFilters)
+              logInfo("Gary-Alluxio deltascan unusedFilters:" + preparedDeltaFileIndex.preparedScan.unusedFilters)
+              logInfo("Gary-Alluxio deltascan allFilters:" + preparedDeltaFileIndex.preparedScan.allFilters)
+              logInfo("Gary-Alluxio deltascan location:" + wrapped.relation.location)
+*/
+
+              logInfo("Gary-Alluxio-original rootpath:" + wrapped.relation.location.rootPaths.mkString(","))
+
+              val alluxioStr = "alluxio://" + conf.alluxioIPPort
+
+              // we need rootPaths from PreparedDeltaFileIndex to infer PartitionSpec
+              val finalRootPaths = wrapped.relation.location.rootPaths.map(path => {
+                new Path(path.toString.replaceFirst("s3:/", alluxioStr))
+              })
+              logInfo("Gary-Alluxio replaced rootPaths:" + finalRootPaths.mkString(","))
+
+              // listFiles prefixed by s3://
+              val listFiles: Seq[PartitionDirectory] = wrapped.relation.location.listFiles(
+                wrapped.partitionFilters, wrapped.dataFilters)
+              var sum = 0
+              // listFiles.foreach(x => sum = sum + x.files.length)
+              // logInfo("Gary-Alluxio original listFiles sum :" + sum)
+
+              // all files replaced s3:/ to alluxio://
+              val inputFiles: Seq[Path] = listFiles.flatMap(partitionDir => {
+                partitionDir.files.map(f => new Path(
+                  f.getPath.toString.replaceFirst("s3:/", "alluxio://" + conf.alluxioIPPort)))
+              }).toSet.toSeq
+
+              logInfo("Gary-Alluxio input file size:" + inputFiles.length)
+
+              // get the leaf dir of inputFiles
+              val leafDirs = inputFiles.map(_.getParent).toSet.toSeq
+              logInfo("Gary-Alluxio leafDirs size:" + leafDirs.length)
+
+              val partitionSpec = DbPartitioningUtils.inferPartitioning(
+                sparkSession,
+                leafDirs,
+                finalRootPaths.toSet,
+                wrapped.relation.options,
+                Option(wrapped.relation.dataSchema)
+              )
+
+              val fileIndex = new InMemoryFileIndex(
+                sparkSession,
+                inputFiles,
+                // for temp solution
+//                options + (PartitioningAwareFileIndex.BASE_PATH_PARAM -> realRootPaths(0).toString),
+                options,
+                Option(wrapped.relation.dataSchema),
+                userSpecifiedPartitionSpec = Some(partitionSpec)
+              )
+
+              // logInfo("Gary-Alluxio partitionSpec: " + fileIndex.partitionSpec().partitionColumns)
+              val duration = (System.currentTimeMillis - start).toFloat / 1000
+              logInfo("Gary-Alluxio ----------- end to replace S3:// to alluxio:// elapsed time:" +
+                duration)
+              fileIndex
+            } else {
+              logInfo("Gary-Alluxio-paths: no change")
+              wrapped.relation.location
+            }
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,

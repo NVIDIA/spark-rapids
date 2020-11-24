@@ -769,6 +769,16 @@ object RapidsConf {
     .stringConf
     .createOptional
 
+ val ALLUXIO_ENABLED = conf("spark.rapids.alluxio.enabled")
+    .doc("Enable Alluxio")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ALLUXIO_IPPORT = conf("spark.rapids.alluxio.ipport")
+    .doc("Provides the IP:Port of alluxio service")
+    .stringConf
+    .createWithDefault("0.0.0.0:19998")
+
   val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudfVersionOverride")
     .internal()
     .doc("Overrides the cudf version compatibility check between cudf jar and RAPIDS Accelerator " +
@@ -944,6 +954,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
+
+  lazy val alluxioIPPort: String = get(ALLUXIO_IPPORT)
+
+  lazy val alluxioEnabled: Boolean = get(ALLUXIO_ENABLED)
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
