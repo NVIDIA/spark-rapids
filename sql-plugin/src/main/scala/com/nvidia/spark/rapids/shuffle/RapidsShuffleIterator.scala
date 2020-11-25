@@ -21,7 +21,7 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
+import com.nvidia.spark.rapids.{Arm, GpuSemaphore, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -56,7 +56,7 @@ class RapidsShuffleIterator(
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
-    with Logging {
+    with Logging with Arm {
 
   /**
    * General trait encapsulating either a buffer or an error. Used to hand off batches
@@ -225,8 +225,7 @@ class RapidsShuffleIterator(
                 false
               } else {
                 batchesInFlight = batchesInFlight - 1
-                val nvtxRange = new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)
-                try {
+                withResource(new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)) { _ =>
                   if (markedAsDone) {
                     throw new IllegalStateException(
                       "This iterator was marked done, but a batched showed up after!!")
@@ -244,8 +243,6 @@ class RapidsShuffleIterator(
                         s"NOT done fetching batches. Total batches expected " +
                         s"$clientExpectedBatches, total batches resolved $clientResolvedBatches.")
                   }
-                } finally {
-                  nvtxRange.close()
                 }
                 true
               }

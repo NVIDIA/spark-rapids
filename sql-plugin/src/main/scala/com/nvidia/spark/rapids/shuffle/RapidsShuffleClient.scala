@@ -452,20 +452,23 @@ class RapidsShuffleClient(
 
           val stats = tx.getStats
 
-          val toDelete = new ArrayBuffer[ShuffleReceivedBufferId]()
+          // the number of batches successfully received that the requesting iterator
+          // rejected (limit case)
+          var numBatchesRejected = 0
 
           // hand buffer off to the catalog
           buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
             val bId = track(consumed.contigBuffer, consumed.meta)
             if (!consumed.handler.batchReceived(bId)) {
-              toDelete.append(bId)
+              catalog.removeBuffer(bId)
+              numBatchesRejected += 1
             }
             transport.doneBytesInFlight(consumed.contigBuffer.getLength)
           }
 
-          if (toDelete.nonEmpty) {
-            logDebug(s"Received ${toDelete.size} batches after task completed. Freeing.")
-            toDelete.foreach(id => catalog.removeBuffer(id))
+          if (numBatchesRejected > 0) {
+            logDebug(s"Removed ${numBatchesRejected} batches that were received after " +
+                s"tasks completed.")
           }
 
           logDebug(s"Received buffer size ${stats.receiveSize} in" +
