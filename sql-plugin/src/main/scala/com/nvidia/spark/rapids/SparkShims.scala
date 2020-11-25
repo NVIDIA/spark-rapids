@@ -29,6 +29,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
@@ -101,7 +102,7 @@ trait SparkShims {
   def getGpuShuffleExchangeExec(
       outputPartitioning: Partitioning,
       child: SparkPlan,
-      canChangeNumPartitions: Boolean = true): GpuShuffleExchangeExecBase
+      cpuShuffle: Option[ShuffleExchangeExec] = None): GpuShuffleExchangeExecBase
 
   def getGpuShuffleExchangeExec(
       queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase
