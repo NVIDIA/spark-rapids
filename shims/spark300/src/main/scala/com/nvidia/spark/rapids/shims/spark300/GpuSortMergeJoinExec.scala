@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, SortMergeJoinExec}
+import org.apache.spark.sql.types.DataType
 
 /**
  * HashJoin changed in Spark 3.1 requiring Shim
@@ -40,6 +41,10 @@ class GpuSortMergeJoinMeta(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join

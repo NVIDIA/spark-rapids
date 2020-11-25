@@ -397,3 +397,37 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
                   'spark.sql.files.maxPartitionBytes': "1g"})
 
+
+_nested_pruning_schemas = [
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+            [["a", StructGen([["c_1", StringGen()]])]]),
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+            [["a", StructGen([["c_2", LongGen()]])]]),
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+            [["a", StructGen([["c_3", ShortGen()]])]]),
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+            [["a", StructGen([["c_1", StringGen()], ["c_3", ShortGen()]])]]),
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+            [["a", StructGen([["c_3", ShortGen()], ["c_2", LongGen()], ["c_1", StringGen()]])]]),
+        ([["ar", ArrayGen(StructGen([["str_1", StringGen()],["str_2", StringGen()]]))]],
+            [["ar", ArrayGen(StructGen([["str_2", StringGen()]]))]])
+        ]
+
+@pytest.mark.parametrize('data_gen,read_schema', _nested_pruning_schemas, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('nested_enabled', ["true", "false"])
+def test_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_enabled_list, nested_enabled):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, data_gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.optimizer.nestedSchemaPruning.enabled': nested_enabled,
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+    # This is a hack to get the type in a slightly less verbose way
+    rs = StructGen(read_schema, nullable=False).data_type
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(rs).parquet(data_path),
+            conf=all_confs)
+

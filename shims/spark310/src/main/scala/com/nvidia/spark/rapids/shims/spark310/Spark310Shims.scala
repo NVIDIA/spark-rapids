@@ -133,7 +133,7 @@ class Spark310Shims extends Spark301Shims {
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    Seq(
+    super.getExecs ++ Seq(
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
@@ -196,7 +196,7 @@ class Spark310Shims extends Spark301Shims {
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(

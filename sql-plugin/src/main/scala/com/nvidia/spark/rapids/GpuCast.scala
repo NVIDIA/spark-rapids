@@ -17,14 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
-import java.time.ZoneId
-import java.util.{Calendar, TimeZone}
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
-import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -79,6 +76,11 @@ class CastExprMeta[INPUT <: CastBase](
     }
   }
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true,
+      allowBinary = true)
+
   override def convertToGpu(child: Expression): GpuExpression =
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
 }
@@ -120,11 +122,6 @@ object GpuCast {
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
 
-  val EPOCH = "epoch"
-  val NOW = "now"
-  val TODAY = "today"
-  val YESTERDAY = "yesterday"
-  val TOMORROW = "tomorrow"
 
   /**
    * Returns true iff we can cast `from` to `to` using the GPU.
@@ -134,6 +131,12 @@ object GpuCast {
       return true
     }
     from match {
+      case NullType => to match {
+          // The only thing we really need is that we can use a null scalar to create a vector
+        case BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType |
+             DoubleType | TimestampType | DateType | StringType => true
+        case _ => false
+      }
       case BooleanType => to match {
         case ByteType | ShortType | IntegerType | LongType => true
         case FloatType | DoubleType => true
@@ -185,17 +188,6 @@ object GpuCast {
       }
       case _ => false
     }
-  }
-
-  def calculateSpecialDates: Map[String, Int] = {
-    val now = DateTimeUtils.currentDate(ZoneId.of("UTC"))
-    Map(
-      EPOCH -> 0,
-      NOW -> now,
-      TODAY -> now,
-      YESTERDAY -> (now - 1),
-      TOMORROW -> (now + 1)
-    )
   }
 }
 
@@ -263,6 +255,10 @@ case class GpuCast(
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     (input.dataType(), dataType) match {
+      case (NullType, to) =>
+        withResource(GpuScalar.from(null, to)) { scalar =>
+          ColumnVector.fromScalar(scalar, input.getRowCount.toInt)
+        }
       case (DateType, BooleanType | _: NumericType) =>
         // casts from date type to numerics are always null
         withResource(GpuScalar.from(null, dataType)) { scalar =>
@@ -274,7 +270,7 @@ case class GpuCast(
         withResource(input.getBase.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromDouble(1000000)) { microsPerSec =>
             // Use trueDiv to ensure cast to double before division for full precision
-            asLongs.trueDiv(microsPerSec, GpuColumnVector.getRapidsType(dataType))
+            asLongs.trueDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(dataType))
           }
         }
       case (TimestampType, ByteType | ShortType | IntegerType) =>
@@ -296,14 +292,14 @@ case class GpuCast(
                       Scalar.fromByte(Byte.MaxValue))
                 }
               }
-              cv.castTo(GpuColumnVector.getRapidsType(dataType))
+              cv.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
             }
           }
         }
       case (TimestampType, _: LongType) =>
         withResource(input.getBase.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromInt(1000000)) {  microsPerSec =>
-            asLongs.floorDiv(microsPerSec, GpuColumnVector.getRapidsType(dataType))
+            asLongs.floorDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(dataType))
           }
         }
       case (TimestampType, StringType) =>
@@ -313,43 +309,43 @@ case class GpuCast(
       case (LongType, IntegerType) if ansiMode =>
         assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue),
           Scalar.fromInt(Int.MaxValue))
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from larger-than-short integral types, to short
       case (LongType|IntegerType, ShortType) if ansiMode =>
         assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from larger-than-byte integral types, to byte
       case (LongType|IntegerType|ShortType, ByteType) if ansiMode =>
         assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to byte
       case (FloatType|DoubleType, ByteType) if ansiMode =>
         assertValuesInRange(input.getBase, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to short
       case (FloatType|DoubleType, ShortType) if ansiMode =>
         assertValuesInRange(input.getBase, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to integer
       case (FloatType|DoubleType, IntegerType) if ansiMode =>
         assertValuesInRange(input.getBase, Scalar.fromInt(Int.MinValue),
           Scalar.fromInt(Int.MaxValue))
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to long
       case (FloatType|DoubleType, LongType) if ansiMode =>
         assertValuesInRange(input.getBase, Scalar.fromLong(Long.MinValue),
           Scalar.fromLong(Long.MaxValue))
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
@@ -367,27 +363,27 @@ case class GpuCast(
       case (BooleanType, TimestampType) =>
         // cudf requires casting to a long first.
         withResource(input.getBase.castTo(DType.INT64)) { longs =>
-          longs.castTo(GpuColumnVector.getRapidsType(dataType))
+          longs.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
         }
       case (BooleanType | ByteType | ShortType | IntegerType, TimestampType) =>
         // cudf requires casting to a long first
         withResource(input.getBase.castTo(DType.INT64)) { longs =>
           withResource(longs.castTo(DType.TIMESTAMP_SECONDS)) { timestampSecs =>
-            timestampSecs.castTo(GpuColumnVector.getRapidsType(dataType))
+            timestampSecs.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
           }
         }
       case (_: NumericType, TimestampType) =>
         // Spark casting to timestamp assumes value is in seconds, but timestamps
         // are tracked in microseconds.
         withResource(input.getBase.castTo(DType.TIMESTAMP_SECONDS)) { timestampSecs =>
-          timestampSecs.castTo(GpuColumnVector.getRapidsType(dataType))
+          timestampSecs.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
         }
       case (FloatType, LongType) | (DoubleType, IntegerType | LongType) =>
         // Float.NaN => Int is casted to a zero but float.NaN => Long returns a small negative
         // number Double.NaN => Int | Long, returns a small negative number so Nans have to be
         // converted to zero first
         withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
-          inputWithNansToZero.castTo(GpuColumnVector.getRapidsType(dataType))
+          inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
         }
       case (FloatType|DoubleType, StringType) =>
         castFloatingTypeToString(input)
@@ -402,7 +398,8 @@ case class GpuCast(
             case TimestampType =>
               castStringToTimestamp(trimmed)
             case FloatType | DoubleType =>
-              castStringToFloats(trimmed, ansiMode, GpuColumnVector.getRapidsType(dataType))
+              castStringToFloats(trimmed, ansiMode,
+                GpuColumnVector.getNonNestedRapidsType(dataType))
             case ByteType | ShortType | IntegerType | LongType =>
               // filter out values that are not valid longs or nulls
               val regex = if (ansiMode) {
@@ -412,7 +409,7 @@ case class GpuCast(
               }
               val longStrings = withResource(trimmed.matchesRe(regex)) { regexMatches =>
                 if (ansiMode) {
-                  withResource(regexMatches.all()) { allRegexMatches =>
+                  withResource(regexMatches.all(DType.BOOL8)) { allRegexMatches =>
                     if (!allRegexMatches.getBoolean) {
                       throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                     }
@@ -426,7 +423,7 @@ case class GpuCast(
               // for that type. Note that the scalar values here are named parameters so are not
               // created until they are needed
               withResource(longStrings) { longStrings =>
-                GpuColumnVector.getRapidsType(dataType) match {
+                GpuColumnVector.getNonNestedRapidsType(dataType) match {
                   case DType.INT8 =>
                     castStringToIntegralType(longStrings, DType.INT8,
                       Scalar.fromInt(Byte.MinValue), Scalar.fromInt(Byte.MaxValue))
@@ -449,7 +446,7 @@ case class GpuCast(
         input.getBase.asByteList(true)
 
       case _ =>
-        input.getBase.castTo(GpuColumnVector.getRapidsType(dataType))
+        input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
     }
   }
 
@@ -523,7 +520,7 @@ case class GpuCast(
       withResource(input.contains(boolStrings)) { validBools =>
         // in ansi mode, fail if any values are not valid bool strings
         if (ansiEnabled) {
-          withResource(validBools.all()) { isAllBool =>
+          withResource(validBools.all(DType.BOOL8)) { isAllBool =>
             if (!isAllBool.getBoolean) {
               throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
@@ -682,7 +679,7 @@ case class GpuCast(
       cv.stringReplaceWithBackrefs("-([0-9])([ T](:?[\\r\\n]|.)*)?\\Z", "-0\\1")
     }
 
-    val specialDates = calculateSpecialDates
+    val specialDates = DateUtils.specialDatesDays
 
     withResource(sanitizedInput) { sanitizedInput =>
 
@@ -755,20 +752,10 @@ case class GpuCast(
     }
 
     // special timestamps
-    val cal = Calendar.getInstance(TimeZone.getTimeZone(ZoneId.of("UTC")))
-    cal.set(Calendar.HOUR_OF_DAY, 0)
-    cal.set(Calendar.MINUTE, 0)
-    cal.set(Calendar.SECOND, 0)
-    cal.set(Calendar.MILLISECOND, 0)
-    val today: Long = cal.getTimeInMillis * 1000
-    val todayStr = new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime)
-    val specialDates: Map[String, Long] = Map(
-      GpuCast.EPOCH -> 0,
-      GpuCast.NOW -> today,
-      GpuCast.TODAY -> today,
-      GpuCast.YESTERDAY -> (today - DateUtils.ONE_DAY_MICROSECONDS),
-      GpuCast.TOMORROW -> (today + DateUtils.ONE_DAY_MICROSECONDS)
-    )
+    val today = DateUtils.currentDate()
+    val todayStr = new SimpleDateFormat("yyyy-MM-dd")
+        .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
+    val specialDates = DateUtils.specialDatesMicros
 
     var sanitizedInput = input.incRefCount()
 
@@ -789,7 +776,7 @@ case class GpuCast(
     }
 
     // prepend today's date to timestamp formats without dates
-    sanitizedInput = withResource(sanitizedInput) { cv =>
+    sanitizedInput = withResource(sanitizedInput) { _ =>
       sanitizedInput.stringReplaceWithBackrefs(TIMESTAMP_REGEX_NO_DATE, s"${todayStr}T\\1")
     }
 
@@ -831,7 +818,7 @@ case class GpuCast(
             // replace values less than minValue with null
             val gtEqMinOrNull = withResource(values.greaterOrEqualTo(minValue)) { isGtEqMin =>
               if (ansiMode) {
-                withResource(isGtEqMin.all()) { all =>
+                withResource(isGtEqMin.all(DType.BOOL8)) { all =>
                   if (!all.getBoolean) {
                     throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                   }
@@ -844,7 +831,7 @@ case class GpuCast(
             val ltEqMaxOrNull = withResource(gtEqMinOrNull) { gtEqMinOrNull =>
               withResource(gtEqMinOrNull.lessOrEqualTo(maxValue)) { isLtEqMax =>
                 if (ansiMode) {
-                  withResource(isLtEqMax.all()) { all =>
+                  withResource(isLtEqMax.all(DType.BOOL8)) { all =>
                     if (!all.getBoolean) {
                       throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                     }

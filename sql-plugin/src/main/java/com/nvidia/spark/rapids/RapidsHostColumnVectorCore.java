@@ -17,6 +17,7 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVectorCore;
 
 import org.apache.spark.sql.types.ArrayType;
@@ -30,6 +31,8 @@ import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -159,7 +162,10 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final Decimal getDecimal(int rowId, int precision, int scale) {
-    throw new IllegalStateException("The decimal type is currently not supported by rapids cudf");
+    assert precision <= DType.DECIMAL64_MAX_PRECISION : "Assert " + precision + " <= DECIMAL64_MAX_PRECISION(" + DType.DECIMAL64_MAX_PRECISION + ")";
+    assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL64: "Assert DType to be DECIMAL64";
+    assert scale == -cudfCv.getType().getScale() : "Assert fetch decimal with its original scale";
+    return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
   }
 
   @Override
