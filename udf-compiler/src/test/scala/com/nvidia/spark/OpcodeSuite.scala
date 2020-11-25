@@ -1441,18 +1441,22 @@ class OpcodeSuite extends FunSuite {
       val sb = new java.lang.StringBuilder()
       if (c) {
         sb.append(a)
-        sb.toString + " true"
+        sb.append(" ")
+        sb.append(b)
+        sb.toString + "@@@" + " true"
       } else {
         sb.append(b)
-        sb.toString + " false"
+        sb.append(" ")
+        sb.append(a)
+        sb.toString + "!!!" + " false"
       }
     }
     val u = makeUdf(myudf)
     val dataset = List(("Hello", "World", false),
                        ("Oh", "Hello", true)).toDF("x","y","z").repartition(1)
     val result = dataset.withColumn("new", u(col("x"),col("y"),col("z")))
-    val ref = List(("Hello", "World", false, "World false"),
-                   ("Oh", "Hello", true, "Oh true")).toDF
+    val ref = List(("Hello", "World", false, "World Hello!!! false"),
+                   ("Oh", "Hello", true, "Oh Hello@@@ true")).toDF
     checkEquiv(result, ref)
   }
 
