@@ -94,35 +94,48 @@ class AcceleratedColumnarToRowIterator(
     new Table(rearrangedColumns : _*)
   }
 
-  def loadNextBatch(): Unit = {
+  private[this] def setupBatch(cb: ColumnarBatch): Boolean = {
+    if (numInputBatches != null) {
+      numInputBatches += 1
+    }
+    // In order to match the numOutputRows metric in the generated code we update
+    // numOutputRows for each batch. This is less accurate than doing it at output
+    // because it will over count the number of rows output in the case of a limit,
+    // but it is more efficient.
+    if (numOutputRows != null) {
+      numOutputRows += cb.numRows()
+    }
+    if (cb.numRows() > 0) {
+      val nvtxRange = if (totalTime != null) {
+        new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
+      } else {
+        new NvtxRange("ColumnarToRow: batch", NvtxColor.RED)
+      }
+      withResource(nvtxRange) { _ =>
+        withResource(rearrangeRows(cb)) { table =>
+          withResource(table.convertToRows()) { rowsCvList =>
+            rowsCvList.foreach { rowsCv =>
+              pendingCvs += rowsCv.copyToHost()
+            }
+            setCurrentBatch(pendingCvs.dequeue())
+            return true
+          }
+        }
+      }
+    }
+    false
+  }
+
+  private[this] def loadNextBatch(): Unit = {
     closeCurrentBatch()
     if (!pendingCvs.isEmpty) {
       setCurrentBatch(pendingCvs.dequeue())
-    } else if (batches.hasNext) {
-      withResource(batches.next()) { cb =>
-        if (numInputBatches != null) {
-          numInputBatches += 1
-        }
-        // In order to match the numOutputRows metric in the generated code we update
-        // numOutputRows for each batch. This is less accurate than doing it at output
-        // because it will over count the number of rows output in the case of a limit,
-        // but it is more efficient.
-        if (numOutputRows != null) {
-          numOutputRows += cb.numRows()
-        }
-        val nvtxRange = if (totalTime != null) {
-          new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
-        } else {
-          new NvtxRange("ColumnarToRow: batch", NvtxColor.RED)
-        }
-        withResource(nvtxRange) { _ =>
-          withResource(rearrangeRows(cb)) { table =>
-            withResource(table.convertToRows()) { rowsCvList =>
-              rowsCvList.foreach { rowsCv =>
-                pendingCvs += rowsCv.copyToHost()
-              }
-              setCurrentBatch(pendingCvs.dequeue())
-            }
+    } else {
+      while (batches.hasNext) {
+        withResource(batches.next()) { cb =>
+          if (setupBatch(cb)) {
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            return
           }
         }
       }
