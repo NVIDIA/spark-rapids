@@ -1550,12 +1550,6 @@ object GpuOverrides {
           GpuOverrides.isSupportedType(t, allowBinary = true)
       }
     ),
-    // expr[Murmur3Hash] (
-    //   "MD5 hash operator",
-    //   (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
-    //     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = GpuMurmur3Hash(lhs, rhs)
-    //   }
-    // ),
     expr[Upper](
       "String uppercase operator",
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
@@ -1726,6 +1720,13 @@ object GpuOverrides {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {}
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
+      }),
+    expr[Murmur3Hash] (
+      "MD5 hash operator",
+      (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
+        override val childExprs: Seq[BaseExprMeta[_]] = a.children
+          .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        def convertToGpu(): GpuExpression = GpuMurmur3Hash(childExprs.map(_.convertToGpu()))
       }),
     expr[Contains](
       "Contains",

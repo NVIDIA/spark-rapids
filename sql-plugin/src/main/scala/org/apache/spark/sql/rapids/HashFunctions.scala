@@ -16,13 +16,16 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression, GpuExpression}
-// import com.nvidia.spark.rapids._
-// import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuCanonicalize, GpuExpression, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, HashExpression}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuMd5(child: Expression)
   extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
@@ -37,19 +40,51 @@ case class GpuMd5(child: Expression)
   }
 }
 
-case class GpuMurmur3Hash(child: Seq[Expression], seed:  Int)
-  extends HashExpression[Int] with GpuExpression {
-  override def toString: String = s"hash($child)"
-  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
+case class GpuMurmur3Hash(child: Seq[Expression]) extends GpuExpression {
   override def dataType: DataType = IntegerType
 
-  // override protected def computeHash(value: Any, dataType: DataType, seed: Int): Int = {
-  //   Murmur3HashFunction.hash(value, dataType, seed).toInt
-  // }
+  override def toString: String = s"hash($child)"
+  def nullable: Boolean = children.exists(_.nullable)
+  def children: Seq[Expression] = child
 
-  override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(ColumnVector.serial32BitMurmurHash3(input.getBase)) { fullResult =>
-      fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
+
+  def columnarEval(batch: ColumnarBatch): Any = {
+    var nullStrScalar: Scalar = null
+    val rows = batch.numRows()
+    val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
+    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
+    try {
+      nullStrScalar = GpuScalar.from(null, StringType)
+      children.foreach(childEvals += _.columnarEval(batch))
+      childEvals.foreach {
+        case vector: GpuColumnVector =>
+          columns += vector.getBase
+        case col => if (col == null) {
+          columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
+        } else {
+          withResource(GpuScalar.from(col)) {
+            scalarValue =>
+                col match {
+                case _: Long => columns += GpuColumnVector.from(scalarValue, rows, LongType).getBase
+                case _: Double => columns += GpuColumnVector.from(scalarValue, rows, DoubleType).getBase
+                case _: Int => columns += GpuColumnVector.from(scalarValue, rows, IntegerType).getBase
+                case _: Float => columns += GpuColumnVector.from(scalarValue, rows, FloatType).getBase
+                case _: Short => columns += GpuColumnVector.from(scalarValue, rows, ShortType).getBase
+                case _: Byte => columns += GpuColumnVector.from(scalarValue, rows, ByteType).getBase
+                case _: Boolean => columns += GpuColumnVector.from(scalarValue, rows, BooleanType).getBase
+                case _: String | _: UTF8String => columns += GpuColumnVector.from(scalarValue, rows, StringType).getBase
+                case _ =>
+                  throw new IllegalArgumentException(s"${col.getClass} '$col' is not supported as a scalar yet")
+               }
+          }
+        }
+      }
+      GpuColumnVector.from(ColumnVector.serial32BitMurmurHash3(42, columns.toArray[ColumnView]), dataType)
+    } finally {
+      columns.safeClose()
+      if (nullStrScalar != null) {
+        nullStrScalar.close()
+      }
     }
   }
 }
