@@ -218,7 +218,7 @@ class DecimalGen(DataGen):
             scale = 0
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
-        special_cases = [Decimal('-1'), Decimal('0'), Decimal(Decimal('1')), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
+        special_cases = [Decimal('0'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self._scale = scale
         self._precision = precision
@@ -721,6 +721,7 @@ timestamp_gen = TimestampGen()
 decimal_gen_default = DecimalGen()
 decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
 decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
+decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
 
 null_gen = NullGen()
 
@@ -732,7 +733,8 @@ integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
-decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision]
+decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
+        decimal_gen_same_scale_precision]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
