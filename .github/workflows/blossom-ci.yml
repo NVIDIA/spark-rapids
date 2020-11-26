@@ -48,7 +48,9 @@ jobs:
 
       - name: Set blackduck project version
         id: blackduck-project-version
-        run: echo "${{ fromJson(steps.pull_request_data.outputs.data).head.ref }}-${{ github.run_id }}"
+        env:
+          REF: ${{ fromJson(steps.pull_request_data.outputs.data).head.ref }}
+        run: echo "$REF-${{ github.run_id }}"
 
       - name: Update status
         uses: octokit/request-action@v2.x
