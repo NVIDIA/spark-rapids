@@ -242,7 +242,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
   // Similar with WindowExecBase.windowFrameExpressionFactoryPairs
   // but the functions are not needed here.
-  private lazy val windowFramesWithExpressions = {
+  protected lazy val windowFramesWithExpressions = {
     type FrameKey = (String, GpuSpecifiedWindowFrame)
     type ExpressionBuffer = mutable.Buffer[Expression]
     val framedExpressions = mutable.Map.empty[FrameKey, ExpressionBuffer]

@@ -42,8 +42,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * The serialization read path is notably different. The sequence of serialized bytes IS NOT
  * deserialized into a cudf `Table` but rather tracked in host memory by a `ColumnarBatch`
  * that contains a [[SerializedTableColumn]]. During query planning, each GPU columnar shuffle
- * exchange is followed by a [[ShuffleCoalesceExec]] that expects to receive only these
- * custom batches of [[SerializedTableColumn]]. [[ShuffleCoalesceExec]] coalesces the smaller
+ * exchange is followed by a [[GpuShuffleCoalesceExec]] that expects to receive only these
+ * custom batches of [[SerializedTableColumn]]. [[GpuShuffleCoalesceExec]] coalesces the smaller
  * shuffle partitions into larger tables before placing them on the GPU for further processing.
  *
  * @note The RAPIDS shuffle does not use this code.
@@ -233,7 +233,7 @@ private class GpuColumnarBatchSerializerInstance(
 
 /**
  * A special `ColumnVector` that describes a serialized table read from shuffle.
- * This appears in a `ColumnarBatch` to pass serialized tables to [[ShuffleCoalesceExec]]
+ * This appears in a `ColumnarBatch` to pass serialized tables to [[GpuShuffleCoalesceExec]]
  * which should always appear in the query plan immediately after a shuffle.
  */
 class SerializedTableColumn(
@@ -254,9 +254,10 @@ object SerializedTableColumn {
   /**
    * Build a `ColumnarBatch` consisting of a single [[SerializedTableColumn]] describing
    * the specified serialized table.
+   *
    * @param header header for the serialized table
    * @param hostBuffer host buffer containing the table data
-   * @return columnar batch to be passed to [[ShuffleCoalesceExec]]
+   * @return columnar batch to be passed to [[GpuShuffleCoalesceExec]]
    */
   def from(
       header: SerializedTableHeader,

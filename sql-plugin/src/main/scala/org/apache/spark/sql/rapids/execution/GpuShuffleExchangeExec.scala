@@ -65,7 +65,7 @@ class GpuShuffleMeta(
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
       childParts(0).convertToGpu(),
       childPlans(0).convertIfNeeded(),
-      shuffle.canChangeNumPartitions)
+      Some(shuffle))
 }
 
 /**

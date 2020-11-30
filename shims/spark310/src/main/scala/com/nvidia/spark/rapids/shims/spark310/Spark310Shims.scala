@@ -25,16 +25,18 @@ import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
+import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, ShuffleManagerShimBase}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark310._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -79,21 +81,21 @@ class Spark310Shims extends Spark301Shims {
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuHashJoin => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffledHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
@@ -289,4 +291,11 @@ class Spark310Shims extends Spark301Shims {
     GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
+  override def getGpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan,
+      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
+    val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
+    GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
+  }
 }
