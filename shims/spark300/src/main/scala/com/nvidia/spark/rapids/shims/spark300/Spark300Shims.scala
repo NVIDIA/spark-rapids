@@ -96,7 +96,7 @@ class Spark300Shims extends SparkShims {
   override def getGpuShuffleExchangeExec(
       outputPartitioning: Partitioning,
       child: SparkPlan,
-      canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase = {
+      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
     GpuShuffleExchangeExec(outputPartitioning, child)
   }
 
@@ -108,21 +108,21 @@ class Spark300Shims extends SparkShims {
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuHashJoin => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffledHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
@@ -233,6 +233,10 @@ class Spark300Shims extends SparkShims {
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
 
+          override def isSupportedType(t: DataType): Boolean =
+            GpuOverrides.isSupportedType(t,
+              allowNull = true)
+
           override def convertToGpu(): GpuExpression =
             GpuFirst(child.convertToGpu(), ignoreNulls.convertToGpu())
         }),
@@ -243,6 +247,10 @@ class Spark300Shims extends SparkShims {
           val ignoreNulls: BaseExprMeta[_] =
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
+
+          override def isSupportedType(t: DataType): Boolean =
+            GpuOverrides.isSupportedType(t,
+              allowNull = true)
 
           override def convertToGpu(): GpuExpression =
             GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
@@ -373,7 +381,7 @@ class Spark300Shims extends SparkShims {
 
   override def getFileScanRDD(
       sparkSession: SparkSession,
-      readFunction: (PartitionedFile) => Iterator[InternalRow],
+      readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }

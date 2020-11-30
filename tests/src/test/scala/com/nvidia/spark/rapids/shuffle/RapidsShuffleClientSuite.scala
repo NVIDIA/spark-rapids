@@ -191,65 +191,68 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     // 5 receives (each with 2 buffers) makes for 100000 bytes + 1 receive for the remaining byte
     val expectedReceives = 11
 
-    val refHostBuffer = HostMemoryBuffer.allocate(100032)
-    var count = 0
-    (0 until refHostBuffer.getLength.toInt)
-        .foreach { off =>
-          refHostBuffer.setByte(off, count.toByte)
-          count = count + 1
-          if (count >= sizePerBuffer) {
-            count = 0
+    withResource(HostMemoryBuffer.allocate(100032)) { refHostBuffer =>
+      var count = 0
+      (0 until refHostBuffer.getLength.toInt)
+          .foreach { off =>
+            refHostBuffer.setByte(off, count.toByte)
+            count = count + 1
+            if (count >= sizePerBuffer) {
+              count = 0
+            }
+          }
+
+      closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
+        val db = bounceBuffer.buffer.asInstanceOf[DeviceMemoryBuffer]
+        withResource(refHostBuffer.slice(0, sizePerBuffer)) { slice =>
+          db.copyFromHostBuffer(slice)
+        }
+        val brs = prepareBufferReceiveState(tableMeta, bounceBuffer)
+
+        assert(brs.hasNext)
+
+        // Kick off receives
+        client.doIssueBufferReceives(brs)
+
+        // If transactions are successful, we should have completed the receive
+        assert(!brs.hasNext)
+
+        // we would issue as many requests as required in order to get the full contiguous
+        // buffer
+        verify(mockConnection, times(expectedReceives))
+            .receive(any[Seq[AddressLengthTag]](), any[TransactionCallback]())
+
+        // the mock connection keeps track of every receive length
+        val totalReceived = mockConnection.receiveLengths.sum
+        val numBuffersUsed = mockConnection.receiveLengths.size
+
+        assertResult(tableMeta.bufferMeta().size())(totalReceived)
+        assertResult(11)(numBuffersUsed)
+
+        // we would perform 1 request to issue a `TransferRequest`, so the server can start.
+        verify(mockConnection, times(1)).request(any(), any(), any[TransactionCallback]())
+
+        // we will hand off a `DeviceMemoryBuffer` to the catalog
+        val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
+        val tmCaptor = ArgumentCaptor.forClass(classOf[TableMeta])
+        verify(client, times(1)).track(any[DeviceMemoryBuffer](), tmCaptor.capture())
+        verifyTableMeta(tableMeta, tmCaptor.getValue.asInstanceOf[TableMeta])
+        verify(mockStorage, times(1))
+            .addBuffer(any(), dmbCaptor.capture(), any(), any())
+
+        val receivedBuff = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
+        assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
+
+        withResource(HostMemoryBuffer.allocate(receivedBuff.getLength)) { hostBuff =>
+          hostBuff.copyFromDeviceBuffer(receivedBuff)
+          (0 until numRows).foreach { r =>
+            assertResult(refHostBuffer.getByte(r))(hostBuff.getByte(r))
           }
         }
 
-    closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
-      val db = bounceBuffer.buffer.asInstanceOf[DeviceMemoryBuffer]
-      db.copyFromHostBuffer(refHostBuffer.slice(0, sizePerBuffer))
-      val brs = prepareBufferReceiveState(tableMeta, bounceBuffer)
-
-      assert(brs.hasNext)
-
-      // Kick off receives
-      client.doIssueBufferReceives(brs)
-
-      // If transactions are successful, we should have completed the receive
-      assert(!brs.hasNext)
-
-      // we would issue as many requests as required in order to get the full contiguous
-      // buffer
-      verify(mockConnection, times(expectedReceives))
-          .receive(any[Seq[AddressLengthTag]](), any[TransactionCallback]())
-
-      // the mock connection keeps track of every receive length
-      val totalReceived = mockConnection.receiveLengths.sum
-      val numBuffersUsed = mockConnection.receiveLengths.size
-
-      assertResult(tableMeta.bufferMeta().size())(totalReceived)
-      assertResult(11)(numBuffersUsed)
-
-      // we would perform 1 request to issue a `TransferRequest`, so the server can start.
-      verify(mockConnection, times(1)).request(any(), any(), any[TransactionCallback]())
-
-      // we will hand off a `DeviceMemoryBuffer` to the catalog
-      val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
-      val tmCaptor = ArgumentCaptor.forClass(classOf[TableMeta])
-      verify(client, times(1)).track(any[DeviceMemoryBuffer](), tmCaptor.capture())
-      verifyTableMeta(tableMeta, tmCaptor.getValue.asInstanceOf[TableMeta])
-      verify(mockStorage, times(1))
-          .addBuffer(any(), dmbCaptor.capture(), any(), any())
-
-      val receivedBuff = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
-      assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
-
-      withResource(HostMemoryBuffer.allocate(receivedBuff.getLength)) { hostBuff =>
-        hostBuff.copyFromDeviceBuffer(receivedBuff)
-        (0 until numRows).foreach { r =>
-          assertResult(refHostBuffer.getByte(r))(hostBuff.getByte(r))
-        }
+        // after closing, we should have freed our bounce buffers.
+        assertResult(true)(bounceBuffer.isClosed)
       }
-
-      // after closing, we should have freed our bounce buffers.
-      assertResult(true)(bounceBuffer.isClosed)
     }
   }
 

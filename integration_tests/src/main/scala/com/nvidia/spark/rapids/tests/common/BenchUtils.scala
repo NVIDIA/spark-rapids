@@ -155,6 +155,16 @@ object BenchUtils {
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
+      spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
+      
+      // cause Spark to call unregisterShuffle
+      if (i > 0 && gcBetweenRuns) {
+        // we must null out the dataframe reference to allow
+        // GC to clean up the shuffle
+        df = null
+        System.gc()
+        System.gc()
+      }
 
       // capture spark plan metrics on the first run
       if (i == 0) {
@@ -189,12 +199,6 @@ object BenchUtils {
           queryTimes.append(-1)
           exceptions.append(BenchUtils.toString(e))
           e.printStackTrace()
-      }
-
-      // cause Spark to call unregisterShuffle
-      if (gcBetweenRuns) {
-        System.gc()
-        System.gc()
       }
     }
 

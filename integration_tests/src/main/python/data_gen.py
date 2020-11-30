@@ -527,6 +527,16 @@ class MapGen(DataGen):
         return self._key_gen.contains_ts() or self._value_gen.contains_ts()
 
 
+class NullGen(DataGen):
+    """Generate NullType values"""
+    def __init__(self):
+        super().__init__(NullType(), nullable=True)
+
+    def start(self, rand):
+        def make_null():
+            return None
+        self._start(rand, make_null)
+
 def skip_if_not_utc():
     if (not is_tz_utc()):
         pytest.skip('The java system time zone is not set to UTC')
@@ -571,6 +581,8 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
 def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values."""
+    if force_no_nulls:
+        assert(not isinstance(data_gen, NullGen))
     src = _gen_scalars_common(data_gen, count, seed=seed)
     return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
@@ -640,6 +652,13 @@ def to_cast_string(spark_type):
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
+def get_null_lit_string(spark_type):
+    if isinstance(spark_type, NullType):
+        return 'null'
+    else:
+        string_type = to_cast_string(spark_type)
+        return 'CAST(null as {})'.format(string_type)
+
 def _convert_to_sql(t, data):
     if isinstance(data, str):
         d = "'" + data.replace("'", "\\'") + "'"
@@ -655,6 +674,9 @@ def _convert_to_sql(t, data):
 def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
     src = _gen_scalars_common(data_gen, count, seed=seed)
+    if isinstance(data_gen, NullGen):
+        assert not force_no_nulls
+        return ('null' for i in range(0, count))
     string_type = to_cast_string(data_gen.data_type)
     return (_convert_to_sql(string_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
@@ -669,6 +691,8 @@ boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
 
+null_gen = NullGen()
+
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
 integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 # A lot of mathematical expressions only support a double as input
@@ -679,17 +703,17 @@ int_n_long_gens = [int_gen, long_gen]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 # TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality
 eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
