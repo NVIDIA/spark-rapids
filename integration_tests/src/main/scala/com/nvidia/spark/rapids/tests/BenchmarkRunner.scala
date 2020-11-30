@@ -112,7 +112,7 @@ object BenchmarkRunner {
               val fs = FileSystem.newInstance(new URI(conf.uploadUri()), hadoopConf)
               fs.copyFromLocalFile(
                 new Path(report.filename),
-                new Path(s"${conf.uploadUri()}/${report.filename}"))
+                new Path(conf.uploadUri(), report.filename))
             }
 
           case Failure(e) =>
