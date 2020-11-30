@@ -104,15 +104,15 @@ object BenchmarkRunner {
 
         report match {
           case Success(report) =>
-            if (conf.uploadUri.isSupplied && conf.uploadPath.isSupplied) {
+            if (conf.uploadUri.isSupplied) {
               println(s"Uploading ${report.filename} to " +
-                  s"${conf.uploadUri()}/${conf.uploadPath()}/${report.filename}")
+                  s"${conf.uploadUri()}/${report.filename}")
 
               val hadoopConf = spark.sparkContext.hadoopConfiguration
               val fs = FileSystem.newInstance(new URI(conf.uploadUri()), hadoopConf)
               fs.copyFromLocalFile(
                 new Path(report.filename),
-                new Path(s"${conf.uploadPath()}/${report.filename}"))
+                new Path(s"${conf.uploadUri()}/${report.filename}"))
             }
 
           case Failure(e) =>
@@ -291,6 +291,5 @@ class BenchmarkConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val summaryFilePrefix = opt[String](required = false)
   val gcBetweenRuns = opt[Boolean](required = false, default = Some(false))
   val uploadUri = opt[String](required = false)
-  val uploadPath = opt[String](required = false)
   verify()
 }
