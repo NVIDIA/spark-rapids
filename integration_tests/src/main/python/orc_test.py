@@ -30,10 +30,12 @@ def read_orc_sql(data_path):
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
-def test_basic_read(std_input_path, name, read_func, v1_enabled_list):
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl):
     assert_gpu_and_cpu_are_equal_collect(
             read_func(std_input_path + '/' + name),
-            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
+            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.sql.orc.impl': orc_impl})
 
 orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
