@@ -46,7 +46,7 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean
-  ): Unit = {
+  ): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -67,7 +67,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -88,7 +88,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -109,7 +109,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -143,7 +143,7 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean
-  ): Unit = {
+  ): BenchmarkReport = {
 
     assert(iterations > 0)
 
@@ -301,6 +301,8 @@ object BenchUtils {
     }
 
     writeReport(report, filename)
+
+    report
   }
 
   def readReport(file: File): BenchmarkReport = {
