@@ -55,6 +55,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     case (BooleanType, TimestampType | DateType) => true
     case (TimestampType | DateType, _: NumericType) => true
     case (TimestampType | DateType, BooleanType) => true
+    case (StringType, TimestampType) => true
     case _ => false
   }
 
@@ -77,7 +78,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
           // In 3.1.0 Cast.canCast was split with a separate ANSI version
           // Until we are on 3.1.0 or more we cannot call this easily so for now
           // We will check and skip a very specific one.
-          val shouldSkip = is310OrAfter && ansiEnabled && should310SkipAnsiCast(to, from)
+          val shouldSkip = is310OrAfter && ansiEnabled && should310SkipAnsiCast(from, to)
           // check if Spark supports this cast
           if (!shouldSkip && Cast.canCast(from, to)) {
             // check if plugin supports this cast

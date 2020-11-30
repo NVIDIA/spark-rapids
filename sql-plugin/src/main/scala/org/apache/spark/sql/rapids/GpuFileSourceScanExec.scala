@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuDataSourceRDD, GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -34,7 +34,6 @@ import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStr
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.execution.datasources.v2.DataSourceRDD
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
@@ -469,8 +468,7 @@ case class GpuFileSourceScanExec(
         queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions,
-        factory, supportsColumnar)
+      new GpuDataSourceRDD(relation.sparkSession.sparkContext, filePartitions, factory)
     }
   }
 
@@ -522,7 +520,7 @@ case class GpuFileSourceScanExec(
         queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
+      new GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, factory)
     }
   }
 
