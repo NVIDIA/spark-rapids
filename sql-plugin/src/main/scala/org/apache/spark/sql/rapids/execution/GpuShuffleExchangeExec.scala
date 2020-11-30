@@ -43,7 +43,7 @@ class GpuShuffleMeta(
     shuffle: ShuffleExchangeExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[ShuffleExchangeExec](shuffle, conf, parent, rule) {
   // Some kinds of Partitioning are a type of expression, but Partitioning itself is not
   // so don't let them leak through as expressions
@@ -56,10 +56,6 @@ class GpuShuffleMeta(
     // previously stored on the spark plan to determine whether this exchange can run on GPU
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
   }
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   override def convertToGpu(): GpuExec =
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(

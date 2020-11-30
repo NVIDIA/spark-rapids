@@ -43,7 +43,7 @@ abstract class GpuWindowInPandasExecMetaBase(
     winPandas: WindowInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[WindowInPandasExec](winPandas, conf, parent, rule) {
 
   override def couldReplaceMessage: String = "could partially run on GPU"
@@ -76,9 +76,6 @@ abstract class GpuWindowInPandasExecMetaBase(
       .foreach(rf => willNotWorkOnGpu(because = s"Only support RowFrame for now," +
         s" but found ${rf.frameType}"))
   }
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowArray = true)
 }
 
 /**

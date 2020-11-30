@@ -30,7 +30,7 @@ class GpuSortMergeJoinMeta(
     join: SortMergeJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[SortMergeJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
@@ -41,10 +41,6 @@ class GpuSortMergeJoinMeta(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join

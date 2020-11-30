@@ -39,7 +39,7 @@ class GpuFlatMapCoGroupsInPandasExecMeta(
     flatPandas: FlatMapCoGroupsInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[FlatMapCoGroupsInPandasExec](flatPandas, conf, parent, rule) {
 
   override def couldReplaceMessage: String = "could partially run on GPU"

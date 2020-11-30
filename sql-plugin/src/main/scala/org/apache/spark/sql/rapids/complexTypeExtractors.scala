@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -67,17 +67,14 @@ class GpuGetArrayItemMeta(
     expr: GetArrayItem,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
     extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
   import GpuOverrides._
 
   override def tagExprForGpu(): Unit = {
-    val litOrd = extractLit(expr.ordinal)
-    if (litOrd.isEmpty) {
-      willNotWorkOnGpu("only literal ordinals are supported")
-    } else {
+    extractLit(expr.ordinal).foreach { litOrd =>
       // Once literal array/struct types are supported this can go away
-      val ord = litOrd.get.value
+      val ord = litOrd.value
       if (ord == null || ord.asInstanceOf[Int] < 0) {
         expr.dataType match {
           case ArrayType(_, _) | MapType(_, _, _) | StructType(_) =>
@@ -91,13 +88,6 @@ class GpuGetArrayItemMeta(
       arr: Expression,
       ordinal: Expression): GpuExpression =
     GpuGetArrayItem(arr, ordinal)
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true,
-      allowArray = true,
-      allowStruct = true,
-      allowNesting = true)
 }
 
 /**
@@ -150,23 +140,11 @@ class GpuGetMapValueMeta(
   expr: GetMapValue,
   conf: RapidsConf,
   parent: Option[RapidsMeta[_, _, _]],
-  rule: ConfKeysAndIncompat)
+  rule: DataFromReplacementRule)
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
-  import GpuOverrides._
 
-  override def tagExprForGpu(): Unit = {
-    if (!isStringLit(expr.key)) {
-      willNotWorkOnGpu("Only String literal keys are supported")
-    }
-  }
-
-  override def convertToGpu(
-    child: Expression,
-    key: Expression): GpuExpression =
+  override def convertToGpu(child: Expression, key: Expression): GpuExpression =
     GpuGetMapValue(child, key)
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowStringMaps = true)
 }
 
 case class GpuGetMapValue(child: Expression, key: Expression)

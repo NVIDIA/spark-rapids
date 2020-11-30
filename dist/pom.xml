@@ -136,19 +136,37 @@
             <goals>
               <goal>run</goal>
             </goals>
+            <configuration>
+              <launchers>
+                <launcher>
+                  <id>update_rapids_config</id>
+                  <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
+                  <args>
+                    <arg>${project.basedir}/../docs/configs.md</arg>
+                  </args>
+                </launcher>
+              </launchers>
+            </configuration>
+          </execution>
+          <execution>
+            <id>update_supported</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <launchers>
+                <launcher>
+                  <id>update_rapids_support</id>
+                  <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
+                  <args>
+                    <arg>${project.basedir}/../docs/supported_ops.md</arg>
+                  </args>
+                </launcher>
+              </launchers>
+            </configuration>
           </execution>
         </executions>
-        <configuration>
-          <launchers>
-            <launcher>
-              <id>update_rapids_config</id>
-              <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
-              <args>
-                <arg>${project.basedir}/../docs/configs.md</arg>
-              </args>
-            </launcher>
-          </launchers>
-        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.rat</groupId>
