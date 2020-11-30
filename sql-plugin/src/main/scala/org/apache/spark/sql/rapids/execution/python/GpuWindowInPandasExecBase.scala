@@ -35,7 +35,7 @@ import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -76,6 +76,9 @@ abstract class GpuWindowInPandasExecMetaBase(
       .foreach(rf => willNotWorkOnGpu(because = s"Only support RowFrame for now," +
         s" but found ${rf.frameType}"))
   }
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowArray = true)
 }
 
 /**
@@ -206,9 +209,6 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
 
-  // Ask for a single batch, the same with input.
-  override def outputBatching: CoalesceGoal = RequireSingleBatch
-
   /*
    * Helper functions and data structures for window bounds
    *
@@ -242,7 +242,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
   // Similar with WindowExecBase.windowFrameExpressionFactoryPairs
   // but the functions are not needed here.
-  private lazy val windowFramesWithExpressions = {
+  protected lazy val windowFramesWithExpressions = {
     type FrameKey = (String, GpuSpecifiedWindowFrame)
     type ExpressionBuffer = mutable.Buffer[Expression]
     val framedExpressions = mutable.Map.empty[FrameKey, ExpressionBuffer]
@@ -261,8 +261,8 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
           val frame = spec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
           function match {
             case GpuAggregateExpression(_, _, _, _, _) => collect("AGGREGATE", frame, e)
+            // GpuPythonUDF is a GpuAggregateWindowFunction, so it is covered here.
             case _: GpuAggregateWindowFunction => collect("AGGREGATE", frame, e)
-            case _: GpuPythonUDF => collect("AGGREGATE", frame, e)
             // OffsetWindowFunction is not supported yet, no harm to keep it here
             case _: OffsetWindowFunction => collect("OFFSET", frame, e)
             case f => sys.error(s"Unsupported window function: $f")

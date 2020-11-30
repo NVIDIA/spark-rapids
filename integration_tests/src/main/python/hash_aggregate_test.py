@@ -63,6 +63,16 @@ _grpkey_strings_with_nulls = [
     ('a', RepeatSeqGen(StringGen(pattern='[0-9]{0,30}'), length= 20)),
     ('b', IntegerGen()),
     ('c', LongGen())]
+# grouping strings with nulls present, and null value
+_grpkey_strings_with_extra_nulls = [
+    ('a', RepeatSeqGen(StringGen(pattern='[0-9]{0,30}'), length= 20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]
+# grouping NullType
+_grpkey_nulls = [
+    ('a', NullGen()),
+    ('b', IntegerGen()),
+    ('c', LongGen())]
 
 # grouping floats with other columns containing nans and nulls
 _grpkey_floats_with_nulls_and_nans = [
@@ -112,7 +122,9 @@ _init_list_no_nans = [
     _grpkey_longs_with_nulls,
     _grpkey_dbls_with_nulls,
     _grpkey_floats_with_nulls,
-    _grpkey_strings_with_nulls]
+    _grpkey_strings_with_nulls,
+    _grpkey_nulls,
+    _grpkey_strings_with_extra_nulls]
 
 # List of schemas with NaNs included
 _init_list_with_nans_and_no_nans = [

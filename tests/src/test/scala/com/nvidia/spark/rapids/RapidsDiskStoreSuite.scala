@@ -105,7 +105,9 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
             hostStore.synchronousSpill(0)
             withResource(catalog.acquireBuffer(bufferId)) { buffer =>
               assertResult(StorageTier.DISK)(buffer.storageTier)
-              TestUtils.compareBatches(expectedBatch, buffer.getColumnarBatch(sparkTypes))
+              withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
+                TestUtils.compareBatches(expectedBatch, actualBatch)
+              }
             }
           }
         }

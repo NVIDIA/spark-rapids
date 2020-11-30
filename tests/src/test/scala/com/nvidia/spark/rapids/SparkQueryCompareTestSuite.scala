@@ -20,6 +20,7 @@ import java.nio.file.Files
 import java.sql.{Date, Timestamp}
 import java.util.{Locale, TimeZone}
 
+import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
 import org.scalatest.FunSuite
@@ -69,7 +70,8 @@ object SparkSessionHolder extends Logging {
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     // Add Locale setting
     Locale.setDefault(Locale.US)
-    SparkSession.builder()
+
+    val builder = SparkSession.builder()
         .master("local[1]")
         .config("spark.sql.adaptive.enabled", "false")
         .config("spark.rapids.sql.enabled", "false")
@@ -79,7 +81,17 @@ object SparkSessionHolder extends Logging {
           "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
         .appName("rapids spark plugin integration tests (scala)")
-        .getOrCreate()
+
+    // comma separated config from command line
+    val commandLineVariables = System.getenv("SPARK_CONF")
+    if (commandLineVariables != null) {
+      commandLineVariables.split(",").foreach { s =>
+        val a = s.split("=")
+        builder.config(a(0), a(1))
+      }
+    }
+
+    builder.getOrCreate()
   }
 
   private def reinitSession(): Unit = {
@@ -810,8 +822,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       incompat: Boolean = false,
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false)
-           (fun: DataFrame => DataFrame): Unit = {
-
+      (fun: DataFrame => DataFrame)(implicit classTag: ClassTag[T]): Unit = {
+    val clazz = classTag.runtimeClass
     val (testConf, qualifiedTestName) =
       setupTestConfAndQualifierName(testName, incompat, sort, conf, execsAllowedNonGpu,
         maxFloatDiff, sortBeforeRepart)
@@ -824,9 +836,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
         })
         t match {
-          case Failure(e) if e.isInstanceOf[T] => {
+          case Failure(e) if clazz.isAssignableFrom(e.getClass) =>
             assert(expectedException(e.asInstanceOf[T]))
-          }
           case Failure(e) => throw e
           case _ => fail("Expected an exception")
         }

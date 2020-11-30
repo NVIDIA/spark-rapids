@@ -121,9 +121,22 @@ private object GpuRowToColumnConverter {
       case (MapType(k, v, vcn), false) =>
         NotNullMapConverter(getConverterForType(k, nullable = false),
           getConverterForType(v, vcn))
+      case (NullType, true) =>
+        NullConverter
       case (unknown, _) => throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
+  }
+
+  private object NullConverter extends TypeConverter {
+    override def append(row: SpecializedGetters,
+        column: Int,
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
+      builder.appendNull()
+      1 + VALIDITY
+    }
+
+    override def getNullSize: Double = 1 + VALIDITY
   }
 
   private object BooleanConverter extends TypeConverter {

@@ -57,11 +57,15 @@ class GpuShuffleMeta(
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
   }
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
+
   override def convertToGpu(): GpuExec =
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
       childParts(0).convertToGpu(),
       childPlans(0).convertIfNeeded(),
-      shuffle.canChangeNumPartitions)
+      Some(shuffle))
 }
 
 /**

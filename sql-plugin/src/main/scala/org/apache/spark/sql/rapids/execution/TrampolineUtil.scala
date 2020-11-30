@@ -20,6 +20,7 @@ import org.json4s.JsonAST
 
 import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
@@ -92,5 +93,19 @@ object TrampolineUtil {
    */
   def incTaskMetricsDiskBytesSpilled(amountSpilled: Long): Unit = {
     Option(TaskContext.get).foreach(_.taskMetrics().incDiskBytesSpilled(amountSpilled))
+  }
+
+  /**
+   * Returns a function that can be called to find Hadoop FileSystem bytes read. If
+   * getFSBytesReadOnThreadCallback is called from thread r at time t, the returned callback will
+   * return the bytes read on r since t.
+   */
+  def getFSBytesReadOnThreadCallback(): () => Long = {
+    SparkHadoopUtil.get.getFSBytesReadOnThreadCallback()
+  }
+
+  /** Set the bytes read task input metric */
+  def incBytesRead(inputMetrics: InputMetrics, bytesRead: Long): Unit = {
+    inputMetrics.incBytesRead(bytesRead)
   }
 }

@@ -431,7 +431,7 @@ def test_columnar_pow(data_gen):
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_least(data_gen):
     num_cols = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=True)
+    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of nulls
     gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0)) 
         for x in range(0, num_cols)], nullable=False)
@@ -446,7 +446,7 @@ def test_least(data_gen):
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_greatest(data_gen):
     num_cols = 20
-    s1 = gen_scalar(data_gen, force_no_nulls=True)
+    s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of nulls
     gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0)) 
         for x in range(0, num_cols)], nullable=False)

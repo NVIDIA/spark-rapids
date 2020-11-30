@@ -72,7 +72,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
     outputTypes = new DataType[schema.length];
 
     for (int i = 0; i < schema.length; i++) {
-      rapidsTypes[i] = GpuColumnVector.getRapidsType(schema[i].dataType());
+      rapidsTypes[i] = GpuColumnVector.getNonNestedRapidsType(schema[i].dataType());
       outputTypes[i] = schema[i].dataType();
     }
     this.totalTime = totalTime;

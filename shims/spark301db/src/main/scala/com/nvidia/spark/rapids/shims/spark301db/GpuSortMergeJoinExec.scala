@@ -22,6 +22,7 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
+import org.apache.spark.sql.types.DataType
 
 /**
  * HashJoin changed in Spark 3.1 requiring Shim
@@ -42,6 +43,10 @@ class GpuSortMergeJoinMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
+
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
@@ -51,7 +56,7 @@ class GpuSortMergeJoinMeta(
         s"see ${RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key}")
     }
 
-    // make sure this is last check - if this is SortMergeJoin, the children can be Sorts and we
+    // make sure this is the last check - if this is SortMergeJoin, the children can be Sorts and we
     // want to validate they can run on GPU and remove them before replacing this with a
     // ShuffleHashJoin
     if (canThisBeReplaced) {
