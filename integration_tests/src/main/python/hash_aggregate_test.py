@@ -371,7 +371,6 @@ non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
 
-@pytest.mark.xfail(is_databricks_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/898')
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 def test_generic_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
