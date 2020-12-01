@@ -2356,7 +2356,7 @@ class OpcodeSuite extends FunSuite {
                    ("world", "######hello", Array("world", "######hello", "@@@@hello")),
                    ("", "@@@@target", Array("", "@@@@target", "######target", null))).toDF
     checkEquiv(result, ref)
-    
+
   test("compile child expresion in explode") {
     val myudf: (String) => Array[String] = a => {
       a.split(",")
