@@ -32,7 +32,6 @@ import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partition
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
-import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
@@ -551,7 +550,7 @@ object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
-      case _: OrcFileFormat => GpuReadOrcFileFormat.tagSupport(meta)
+      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
       case f =>
         meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
@@ -561,7 +560,7 @@ object GpuFileSourceScanExec {
   def convertFileFormat(format: FileFormat): FileFormat = {
     format match {
       case _: CSVFileFormat => new GpuReadCSVFileFormat
-      case _: OrcFileFormat => new GpuReadOrcFileFormat
+      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
       case _: ParquetFileFormat => new GpuReadParquetFileFormat
       case f =>
         throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")
