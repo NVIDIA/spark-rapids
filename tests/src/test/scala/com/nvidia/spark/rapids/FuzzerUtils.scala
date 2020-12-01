@@ -26,7 +26,7 @@ import scala.util.Random
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DecimalType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -122,6 +122,17 @@ object FuzzerUtils {
             rows.foreach(_ => {
               maybeNull(rand, r.nextString()) match {
                 case Some(value) => builder.append(value)
+                case None => builder.appendNull()
+              }
+            })
+          case dt: DecimalType =>
+            rows.foreach(_ => {
+              maybeNull(rand, r.nextLong()) match {
+                case Some(value) =>
+                  // bounding unscaledValue with precision
+                  val invScale = (dt.precision to ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION)
+                    .foldLeft(10L)((x, _) => x * 10)
+                  builder.append(BigDecimal(value / invScale, dt.scale).bigDecimal)
                 case None => builder.appendNull()
               }
             })
