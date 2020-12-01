@@ -256,6 +256,58 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("successful buffer fetch - but handler rejected it") {
+    when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
+    when(mockHandler.batchReceived(any())).thenReturn(false) // reject incoming batches
+
+    val numRows = 100
+    val tableMeta =
+      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+    val sizePerBuffer = 10000
+    val expectedReceives = 1
+    closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
+      val brs = prepareBufferReceiveState(tableMeta, bounceBuffer)
+
+      assert(brs.hasNext)
+
+      // Kick off receives
+      client.doIssueBufferReceives(brs)
+
+      // If transactions are successful, we should have completed the receive
+      assert(!brs.hasNext)
+
+      // we would issue as many requests as required in order to get the full contiguous
+      // buffer
+      verify(mockConnection, times(expectedReceives))
+          .receive(any[Seq[AddressLengthTag]](), any[TransactionCallback]())
+
+      // the mock connection keeps track of every receive length
+      val totalReceived = mockConnection.receiveLengths.sum
+      val numBuffersUsed = mockConnection.receiveLengths.size
+
+      assertResult(tableMeta.bufferMeta().size())(totalReceived)
+      assertResult(1)(numBuffersUsed)
+
+      // we would perform 1 request to issue a `TransferRequest`, so the server can start.
+      verify(mockConnection, times(1)).request(any(), any(), any[TransactionCallback]())
+
+      // we will hand off a `DeviceMemoryBuffer` to the catalog
+      val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
+      val tmCaptor = ArgumentCaptor.forClass(classOf[TableMeta])
+      verify(client, times(1)).track(any[DeviceMemoryBuffer](), tmCaptor.capture())
+      verifyTableMeta(tableMeta, tmCaptor.getValue.asInstanceOf[TableMeta])
+      verify(mockStorage, times(1))
+          .addBuffer(any(), dmbCaptor.capture(), any(), any())
+      verify(mockCatalog, times(1)).removeBuffer(any())
+
+      val receivedBuff = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
+      assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
+
+      // after closing, we should have freed our bounce buffers.
+      assertResult(true)(bounceBuffer.isClosed)
+    }
+  }
+
   test("successful buffer fetch multi-buffer") {
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
 

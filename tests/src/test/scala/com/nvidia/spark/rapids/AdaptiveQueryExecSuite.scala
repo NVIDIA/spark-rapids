@@ -174,8 +174,8 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[GpuShuffledHashJoinBase]).get
       assert(shj.children.length == 2)
       assert(shj.children.forall {
-        case ShuffleCoalesceExec(_, _) => true
-        case GpuCoalesceBatches(ShuffleCoalesceExec(_, _), _) => true
+        case GpuShuffleCoalesceExec(_, _) => true
+        case GpuCoalesceBatches(GpuShuffleCoalesceExec(_, _), _) => true
         case _ => false
       })
 

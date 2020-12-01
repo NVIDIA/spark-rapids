@@ -147,9 +147,9 @@ case class GpuOrcPartitionReaderFactory(
     OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
 
     val fullSchema = StructType(dataSchema ++ partitionSchema)
-    val reader = new GpuOrcPartitionReader(conf, partFile, dataSchema, readDataSchema,
-      fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
-      metrics)
+    val reader = new PartitionReaderWithBytesRead(new GpuOrcPartitionReader(conf, partFile,
+      dataSchema, readDataSchema, fullSchema, pushedFilters, debugDumpPrefix, maxReadBatchSizeRows,
+      maxReadBatchSizeBytes, metrics))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }

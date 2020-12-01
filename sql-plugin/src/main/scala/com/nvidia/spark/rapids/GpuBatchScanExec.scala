@@ -71,7 +71,7 @@ case class GpuBatchScanExec(
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 
   override lazy val inputRDD: RDD[InternalRow] = {
-    new DataSourceRDD(sparkContext, partitions, readerFactory, supportsColumnar)
+    new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
   }
 
   override def doCanonicalize(): GpuBatchScanExec = {
@@ -309,8 +309,8 @@ case class GpuCSVPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val reader = new CSVPartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions,
-      maxReaderBatchSizeRows, maxReaderBatchSizeBytes, metrics)
+    val reader = new PartitionReaderWithBytesRead(new CSVPartitionReader(conf, partFile, dataSchema,
+      readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes, metrics))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
