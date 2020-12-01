@@ -33,10 +33,12 @@ parquet_write_gens_list = [
         [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
             string_gen, boolean_gen, date_gen, timestamp_gen]]
 
+parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
+
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type, reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -50,7 +52,7 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type
             data_path,
             conf=all_confs)
 
-@pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS'])
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
 @ignore_order
 def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
@@ -74,7 +76,7 @@ parquet_part_write_gens = [
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@pytest.mark.parametrize('ts_type', ['TIMESTAMP_MILLIS', 'TIMESTAMP_MICROS'])
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_type, reader_confs):
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
@@ -105,7 +107,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, re
             conf=all_confs)
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
-@pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -124,7 +126,7 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
     spark.sql(write_cmd)
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
-@pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -144,10 +146,10 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
     assert e_info.match(r".*SparkUpgradeException.*")
 
 # TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to handle TIMESTAMP_MILLIS
-@pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS'])
+@pytest.mark.parametrize('ts_write', ['INT96', 'TIMESTAMP_MICROS'])
 @pytest.mark.parametrize('ts_rebase', ['EXCEPTION'])
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
-    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+    gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc), end=datetime(1900, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_gpu_session(
             lambda spark : writeParquetUpgradeCatchException(spark, unary_op_df(spark, gen), data_path, spark_tmp_table_factory, ts_rebase, ts_write))
@@ -166,16 +168,15 @@ def test_ts_write_twice_fails_exception(spark_tmp_path, spark_tmp_table_factory)
     with_gpu_session(
             lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen), data_path, table_name))
 
-parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
-
 @allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
 @pytest.mark.parametrize('ts_rebase', ['LEGACY'])
-def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
+@pytest.mark.parametrize('ts_int96_rebase', ['CORRECTED', 'EXCEPTION'])
+def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_int96_rebase, ts_rebase, spark_tmp_table_factory):
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-            'spark.sql.legacy.parquet.int96RebaseModeInWrite': "CORRECTED",
+            'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_int96_rebase,
             'spark.sql.parquet.outputTimestampType': ts_write}
     assert_gpu_fallback_write(
             lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
