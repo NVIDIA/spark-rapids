@@ -423,7 +423,7 @@ and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirec
 
     With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
 
-2. Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
+2. Install [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
 
 
 3. You will need to configure your spark job with extra settings for UCX (we are looking to 
@@ -443,11 +443,12 @@ that matches your Spark version. Currently we support
 --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
---conf spark.executor.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
+--conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
+--conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
-Please note `extraClassPath`, presently requires the UCX libraries to be added to the classpath. Newer
-versions of UCX handle loading shared libraries differently and should not require this.
+Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a 
+non-standard location.
 
 ### UCX Environment Variables
 - `UCX_TLS`: 
