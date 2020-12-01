@@ -21,7 +21,7 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
+import com.nvidia.spark.rapids.{Arm, GpuSemaphore, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -56,7 +56,7 @@ class RapidsShuffleIterator(
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
-    with Logging {
+    with Logging with Arm {
 
   /**
    * General trait encapsulating either a buffer or an error. Used to hand off batches
@@ -106,6 +106,10 @@ class RapidsShuffleIterator(
   // [[totalBathcesExpected]] must equal [[totalBatchesResolved]], as long as
   // [[pendingFetchesByAddress]] is empty, and there are no [[batchesInFlight]].
   private[this] var totalBatchesResolved: Long = 0L
+
+  // If the task finishes, and this iterator is releasing resources, we set this to true
+  // which allows us to reject incoming batches that would otherwise get leaked
+  private[this] var taskComplete: Boolean = false
 
   blocksByAddress.foreach(bba => {
     // expected blocks per address
@@ -198,46 +202,49 @@ class RapidsShuffleIterator(
         val handler = new RapidsShuffleFetchHandler {
           private[this] var clientExpectedBatches = 0L
           private[this] var clientResolvedBatches = 0L
+
           def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
             if (expectedBatches == 0) {
               throw new IllegalStateException(
                 s"Received an invalid response from shuffle server: " +
-                  s"0 expected batches for $shuffleRequestsMapIndex")
+                    s"0 expected batches for $shuffleRequestsMapIndex")
             }
             pendingFetchesByAddress.remove(blockManagerId)
             batchesInFlight = batchesInFlight + expectedBatches
             totalBatchesExpected = totalBatchesExpected + expectedBatches
             clientExpectedBatches = expectedBatches
             logDebug(s"Task: $taskAttemptId Client $blockManagerId " +
-              s"Expecting $expectedBatches batches, $batchesInFlight batches currently in " +
-              s"flight, total expected by this client: $clientExpectedBatches, total resolved by " +
-              s"this client: $clientResolvedBatches")
+                s"Expecting $expectedBatches batches, $batchesInFlight batches currently in " +
+                s"flight, total expected by this client: $clientExpectedBatches, total " +
+                s"resolved by this client: $clientResolvedBatches")
           }
 
-          def batchReceived(bufferId: ShuffleReceivedBufferId): Unit =
+          def batchReceived(bufferId: ShuffleReceivedBufferId): Boolean =
             resolvedBatches.synchronized {
-              batchesInFlight = batchesInFlight - 1
-              val nvtxRange = new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)
-              try {
-                if (markedAsDone) {
-                  throw new IllegalStateException(
-                    "This iterator was marked done, but a batched showed up after!!")
-                }
-                totalBatchesResolved = totalBatchesResolved + 1
-                clientResolvedBatches = clientResolvedBatches + 1
-                resolvedBatches.offer(BufferReceived(bufferId))
+              if (taskComplete) {
+                false
+              } else {
+                batchesInFlight = batchesInFlight - 1
+                withResource(new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)) { _ =>
+                  if (markedAsDone) {
+                    throw new IllegalStateException(
+                      "This iterator was marked done, but a batched showed up after!!")
+                  }
+                  totalBatchesResolved = totalBatchesResolved + 1
+                  clientResolvedBatches = clientResolvedBatches + 1
+                  resolvedBatches.offer(BufferReceived(bufferId))
 
-                if (clientExpectedBatches == clientResolvedBatches) {
-                  logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
-                    s"done fetching batches. Total batches expected $clientExpectedBatches, " +
-                    s"total batches resolved $clientResolvedBatches.")
-                } else {
-                  logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
-                    s"NOT done fetching batches. Total batches expected $clientExpectedBatches, " +
-                    s"total batches resolved $clientResolvedBatches.")
+                  if (clientExpectedBatches == clientResolvedBatches) {
+                    logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
+                        s"done fetching batches. Total batches expected $clientExpectedBatches, " +
+                        s"total batches resolved $clientResolvedBatches.")
+                  } else {
+                    logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
+                        s"NOT done fetching batches. Total batches expected " +
+                        s"$clientExpectedBatches, total batches resolved $clientResolvedBatches.")
+                  }
                 }
-              } finally {
-                nvtxRange.close()
+                true
               }
             }
 
@@ -263,7 +270,8 @@ class RapidsShuffleIterator(
       s"${clients.size} clients.")
   }
 
-  private[this] def receiveBufferCleaner(): Unit = {
+  private[this] def receiveBufferCleaner(): Unit = resolvedBatches.synchronized {
+    taskComplete = true
     if (hasNext) {
       logWarning(s"Iterator for task ${taskAttemptId} closing, " +
           s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
