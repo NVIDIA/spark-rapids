@@ -14,6 +14,7 @@
 
 import copy
 from datetime import date, datetime, timedelta, timezone
+from decimal import *
 import math
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -207,6 +208,33 @@ class IntegerGen(DataGen):
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+
+class DecimalGen(DataGen):
+    """Generate Decimals, with some built in corner cases."""
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
+        if precision is None:
+            #Maximum number of decimal digits a Long can represent is 18
+            precision = 18
+            scale = 0
+        DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
+        DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
+        special_cases = [Decimal('0'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
+        super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
+        self._scale = scale
+        self._precision = precision
+        pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._precision) + ',' + str(self._scale) + ')'
+
+    def start(self, rand):
+        strs = self.base_strs
+        try:
+            length = int(len(strs))
+        except OverflowError:
+            length = _MAX_CHOICES
+        self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
 
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
@@ -690,16 +718,23 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
+decimal_gen_default = DecimalGen()
+decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
+decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
+decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
 
 null_gen = NullGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
+
 integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 # A lot of mathematical expressions only support a double as input
 # by parametrizing even for a single param for the test it makes the tests consistent
 double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
+decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
+        decimal_gen_same_scale_precision]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -708,12 +743,15 @@ all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
 # TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality
 eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+
+# Include decimal type while testing equalTo and notEqualTo
+eq_gens_with_decimal_gen =  eq_gens + decimal_gens
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
@@ -748,3 +786,5 @@ map_gens_sample = [simple_string_to_string_map_gen,
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
         MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+
+allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
