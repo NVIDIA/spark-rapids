@@ -106,7 +106,8 @@ object GpuParquetFileFormat {
      outputTimestampType: ParquetOutputTimestampType.Value): Boolean = {
     outputTimestampType match {
       case ParquetOutputTimestampType.TIMESTAMP_MICROS |
-           ParquetOutputTimestampType.TIMESTAMP_MILLIS => true
+           ParquetOutputTimestampType.TIMESTAMP_MILLIS |
+           ParquetOutputTimestampType.INT96 => true
       case _ => false
     }
   }
@@ -270,6 +271,7 @@ class GpuParquetWriter(
     val builder = ParquetWriterOptions.builder()
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
+      .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96)
     dataSchema.foreach(entry => {
       if (entry.nullable) {
         builder.withColumnNames(entry.name)
