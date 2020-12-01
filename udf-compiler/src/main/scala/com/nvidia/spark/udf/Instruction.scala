@@ -58,19 +58,19 @@ private[udf] object Repr {
   }
 
   // Internal representation of java.lang.StringBuilder.
-  case class StringBuilder() extends CompilerInternal("java.lang.StringBuilder") {
-    def invoke(methodName: String, args: List[Expression]): Expression = {
+  case class StringBuilder(var string: Expression = Literal.default(StringType))
+      extends CompilerInternal("java.lang.StringBuilder") {
+    override def dataType: DataType = string.dataType
+
+    def invoke(methodName: String, args: List[Expression]): (Expression, Boolean) = {
       methodName match {
-        case "StringBuilder" => this
-        case "append" => string = Concat(string :: args)
-          this
-        case "toString" => string
+        case "StringBuilder" => (this, false)
+        case "append" => (StringBuilder(Concat(string :: args)), true)
+        case "toString" => (string, false)
         case _ =>
           throw new SparkException(s"Unsupported StringBuilder op ${methodName}")
       }
     }
-
-    var string: Expression = Literal.default(StringType)
   }
 
   // Internal representation of the bytecode instruction getstatic.
@@ -481,9 +481,14 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       if (!args.head.isInstanceOf[Repr.StringBuilder]) {
         throw new SparkException("Internal error with StringBuilder")
       }
-      val retval = args.head.asInstanceOf[Repr.StringBuilder]
+      val (retval, updateState) = args.head.asInstanceOf[Repr.StringBuilder]
           .invoke(method.getName, args.tail)
-      State(locals, retval :: rest, cond, expr)
+      val newState = State(locals, retval :: rest, cond, expr)
+      if (updateState) {
+        newState.remap(args.head, retval)
+      } else {
+        newState
+      }
     } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer") ||
                ((!args.isEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
                 ((declaringClassName.equals("scala.collection.AbstractSeq") &&

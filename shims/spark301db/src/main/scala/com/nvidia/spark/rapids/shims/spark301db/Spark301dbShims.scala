@@ -30,6 +30,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.WindowInPandasExec
@@ -216,7 +217,8 @@ class Spark301dbShims extends Spark301Shims {
   override def getGpuShuffleExchangeExec(
       outputPartitioning: Partitioning,
       child: SparkPlan,
-      canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase = {
+      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
+    val canChangeNumPartitions = cpuShuffle.forall(_.canChangeNumPartitions)
     GpuShuffleExchangeExec(outputPartitioning, child, canChangeNumPartitions)
   }
 
