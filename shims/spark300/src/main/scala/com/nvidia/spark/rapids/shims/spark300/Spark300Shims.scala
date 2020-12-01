@@ -96,7 +96,7 @@ class Spark300Shims extends SparkShims {
   override def getGpuShuffleExchangeExec(
       outputPartitioning: Partitioning,
       child: SparkPlan,
-      canChangeNumPartitions: Boolean): GpuShuffleExchangeExecBase = {
+      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
     GpuShuffleExchangeExec(outputPartitioning, child)
   }
 
@@ -108,21 +108,21 @@ class Spark300Shims extends SparkShims {
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuHashJoin => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffledHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
@@ -381,7 +381,7 @@ class Spark300Shims extends SparkShims {
 
   override def getFileScanRDD(
       sparkSession: SparkSession,
-      readFunction: (PartitionedFile) => Iterator[InternalRow],
+      readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }

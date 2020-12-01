@@ -28,13 +28,15 @@ orc_write_gens_list = [
         pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/140'))]
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
-def test_write_round_trip(spark_tmp_path, orc_gens):
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.orc(path),
             lambda spark, path: spark.read.orc(path),
-            data_path)
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl})
 
 orc_part_write_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
@@ -70,10 +72,12 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
             conf={'spark.sql.orc.compression.codec': compress})
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
-def test_write_save_table(spark_tmp_path, orc_gens, spark_tmp_table_factory):
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_write_save_table(spark_tmp_path, orc_gens, orc_impl, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
-    all_confs={'spark.sql.sources.useV1SourceList': "orc"}
+    all_confs={'spark.sql.sources.useV1SourceList': "orc",
+               "spark.sql.orc.impl": orc_impl}
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("orc").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.orc(path),
@@ -88,13 +92,15 @@ def write_orc_sql_from(spark, df, data_path, write_to_table):
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
-def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, spark_tmp_table_factory):
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: write_orc_sql_from(spark, gen_df(spark, gen_list).coalesce(1), path, spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.orc(path),
-            data_path)
+            data_path,
+            conf={'spark.sql.orc.impl': orc_impl})
 
 @allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('codec', ['zlib', 'lzo'])

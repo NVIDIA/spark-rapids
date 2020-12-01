@@ -42,11 +42,11 @@ Dependencies:
 Usage:
     cd spark-rapids/
 
-    # generate changelog for release 0.1,0.2
-    scripts/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2
+    # generate changelog for release 0.1,0.2,0.3
+    scripts/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2,0.3
 
-    # generate changelog for release 0.1,0.2 to /tmp/CHANGELOG.md
-    GITHUB_TOKEN=XXX scripts/changelog --releases=0.1,0.2 --path=/tmp/CHANGELOG.md
+    # generate changelog for release 0.1,0.2,0.3 to /tmp/CHANGELOG.md
+    GITHUB_TOKEN=XXX scripts/changelog --releases=0.1,0.2,0.3 --path=/tmp/CHANGELOG.md
 """
 import os
 import sys
