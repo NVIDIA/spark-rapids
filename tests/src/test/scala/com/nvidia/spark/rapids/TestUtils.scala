@@ -121,6 +121,8 @@ object TestUtils extends Assertions with Arm {
               case DType.FLOAT32 => assertResult(e.getFloat(i))(a.getFloat(i))
               case DType.FLOAT64 => assertResult(e.getDouble(i))(a.getDouble(i))
               case DType.STRING => assertResult(e.getJavaString(i))(a.getJavaString(i))
+              case dt if dt.isDecimalType && dt.isBackedByLong =>
+                assertResult(e.getBigDecimal(i))(a.getBigDecimal(i))
               case _ => throw new UnsupportedOperationException("not implemented yet")
             }
           }
