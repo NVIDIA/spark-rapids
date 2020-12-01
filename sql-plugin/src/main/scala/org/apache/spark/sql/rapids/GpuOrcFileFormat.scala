@@ -27,10 +27,21 @@ import org.apache.orc.mapred.OrcStruct
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
 import org.apache.spark.sql.types.StructType
 
 object GpuOrcFileFormat extends Logging {
+  // The classname used when Spark is configured to use the Hive implementation for ORC.
+  // Spark is not always compiled with Hive support so we cannot import from Spark jars directly.
+  private val HIVE_IMPL_CLASS = "org.apache.spark.sql.hive.orc.OrcFileFormat"
+
+  def isSparkOrcFormat(format: FileFormat): Boolean = format match {
+    case _: OrcFileFormat => true
+    case f if f.getClass.getCanonicalName.equals(HIVE_IMPL_CLASS) => true
+    case _ => false
+  }
+
   def tagGpuSupport(meta: RapidsMeta[_, _, _],
                     spark: SparkSession,
                     options: Map[String, String]): Option[GpuOrcFileFormat] = {

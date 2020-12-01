@@ -43,8 +43,10 @@ trait RapidsShuffleFetchHandler {
   /**
    * Called when a buffer is received and has been handed off to the catalog.
    * @param bufferId - a tracked shuffle buffer id
+   * @return a boolean that lets the caller know the batch was accepted (true), or
+   *         rejected (false), in which case the caller should dispose of the batch.
    */
-  def batchReceived(bufferId: ShuffleReceivedBufferId): Unit
+  def batchReceived(bufferId: ShuffleReceivedBufferId): Boolean
 
   /**
    * Called when the transport layer is not able to handle a fetch error for metadata
@@ -450,11 +452,23 @@ class RapidsShuffleClient(
 
           val stats = tx.getStats
 
+          // the number of batches successfully received that the requesting iterator
+          // rejected (limit case)
+          var numBatchesRejected = 0
+
           // hand buffer off to the catalog
           buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
             val bId = track(consumed.contigBuffer, consumed.meta)
-            consumed.handler.batchReceived(bId.asInstanceOf[ShuffleReceivedBufferId])
+            if (!consumed.handler.batchReceived(bId)) {
+              catalog.removeBuffer(bId)
+              numBatchesRejected += 1
+            }
             transport.doneBytesInFlight(consumed.contigBuffer.getLength)
+          }
+
+          if (numBatchesRejected > 0) {
+            logDebug(s"Removed ${numBatchesRejected} batches that were received after " +
+                s"tasks completed.")
           }
 
           logDebug(s"Received buffer size ${stats.receiveSize} in" +
@@ -483,7 +497,8 @@ class RapidsShuffleClient(
    * @param meta [[TableMeta]] describing [[buffer]]
    * @return the [[RapidsBufferId]] to be used to look up the buffer from catalog
    */
-  private[shuffle] def track(buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferId = {
+  private[shuffle] def track(
+      buffer: DeviceMemoryBuffer, meta: TableMeta): ShuffleReceivedBufferId = {
     val id: ShuffleReceivedBufferId = catalog.nextShuffleReceivedBufferId()
     logDebug(s"Adding buffer id ${id} to catalog")
     if (buffer != null) {
