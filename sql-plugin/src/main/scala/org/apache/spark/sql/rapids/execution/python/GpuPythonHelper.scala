@@ -111,7 +111,7 @@ object GpuPythonHelper extends Logging {
   // - python worker module if useDaemon is false, otherwise
   // - python daemon module.
   private[sql] def checkPythonConfigs(conf: SparkConf, name: String): Unit = synchronized {
-    val defaultDaemonWorker = mapDefaultPythonModules(name)
+    val (daemonModule, workerModule) = mapDefaultPythonModules(name)
     val allPythonModules = mapDefaultPythonModules.values
     val useDaemon = {
       val useDaemonEnabled = conf.get(PYTHON_USE_DAEMON)
@@ -130,7 +130,7 @@ object GpuPythonHelper extends Logging {
         }
       } else {
         // Set daemon only when not specified
-        conf.set(PYTHON_DAEMON_MODULE, defaultDaemonWorker._1)
+        conf.set(PYTHON_DAEMON_MODULE, daemonModule)
       }
     } else {
       val oWorker = conf.get(PYTHON_WORKER_MODULE)
@@ -144,7 +144,7 @@ object GpuPythonHelper extends Logging {
         }
       } else {
         // Set worker only when not specified
-        conf.set(PYTHON_WORKER_MODULE, defaultDaemonWorker._2)
+        conf.set(PYTHON_WORKER_MODULE, workerModule)
       }
     }
   }

@@ -41,6 +41,10 @@ class GpuSortMeta(
       sort.global,
       childPlans(0).convertIfNeeded())
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
+
   override def tagPlanForGpu(): Unit = {
     if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
       willNotWorkOnGpu("string literal values are not supported in a sort")

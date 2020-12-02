@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.format.TableMeta
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, when}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
@@ -111,8 +112,16 @@ class RapidsShuffleTestHelper extends FunSuite
     }, None)
   }
 
+  var buffersToClose = new ArrayBuffer[DeviceMemoryBuffer]()
+
   override def beforeEach(): Unit = {
+    assert(buffersToClose.isEmpty)
     newMocks()
+  }
+
+  override def afterEach(): Unit = {
+    buffersToClose.foreach(_.close())
+    buffersToClose.clear()
   }
 
   def newMocks(): Unit = {
@@ -127,6 +136,11 @@ class RapidsShuffleTestHelper extends FunSuite
     mockCatalog = mock[ShuffleReceivedBufferCatalog]
     mockConf = mock[RapidsConf]
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
+
+    val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
+    when(mockStorage.addBuffer(any(), dmbCaptor.capture(), any(), any())).thenAnswer(_ => {
+      buffersToClose.append(dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer])
+    })
 
     client = spy(new RapidsShuffleClient(
       1,

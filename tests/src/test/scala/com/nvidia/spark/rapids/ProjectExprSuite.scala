@@ -16,7 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.nio.file.Files
+
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
@@ -41,12 +45,39 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test literal values in select", mixedFloatDf) {
-    frame => frame.select(col("floats"), lit(100), lit("hello, world!"))
+    frame => frame.select(col("floats"), lit(100), lit("hello, world!"),
+      lit(BigDecimal(123456789L, 6)), lit(BigDecimal(0L)), lit(BigDecimal(1L, -3)),
+      lit(BigDecimal(-2.12314e-8)))
   }
 
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
     conf = forceHostColumnarToGpu()) {
     frame => frame.select("time")
+  }
+
+  // test GpuRowToColumnarExec + GpuProjectExec + GpuColumnarToRowExec
+  testSparkResultsAreEqual("project decimal with row source", mixedDf(_),
+    conf = new SparkConf(), repart = 0) {
+    frame => frame.select("decimals")
+  }
+
+  // test HostColumnarToGpu + GpuProjectExec + GpuColumnarToRowExec
+  test("project decimal with columnar source") {
+    val dir = Files.createTempDirectory("spark-rapids-test").toFile
+    val path = new File(dir,
+      s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
+
+    try {
+      withCpuSparkSession(spark => mixedDf(spark).write.parquet(path), new SparkConf())
+
+      val createDF = (ss: SparkSession) => ss.read.parquet(path)
+      val fun = (df: DataFrame) => df.withColumn("dec", df("decimals")).select("dec")
+      val conf = new SparkConf().set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, fun, conf, repart = 0)
+      compareResults(false, 0.0, fromCpu, fromGpu)
+    } finally {
+      dir.delete()
+    }
   }
 
   testSparkResultsAreEqual("getMapValue", frameFromParquet("map_of_strings.snappy.parquet")) {

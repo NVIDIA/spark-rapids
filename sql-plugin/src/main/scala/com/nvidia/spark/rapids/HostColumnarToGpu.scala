@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.DType
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -112,6 +114,26 @@ object HostColumnarToGpu {
       case (StringType, false) =>
         for (i <- 0 until rows) {
           b.appendUTF8String(cv.getUTF8String(i).getBytes)
+        }
+      case (NullType, true) =>
+        for (_ <- 0 until rows) {
+          b.appendNull()
+        }
+      case (dt: DecimalType, nullable) =>
+        // Because DECIMAL64 is the only supported decimal DType, we can
+        // append unscaledLongValue instead of BigDecimal itself to speedup this conversion.
+        if (nullable) {
+          for (i <- 0 until rows) {
+            if (cv.isNullAt(i)) {
+              b.appendNull()
+            } else {
+              b.append(cv.getDecimal(i, DType.DECIMAL64_MAX_PRECISION, dt.scale).toUnscaledLong)
+            }
+          }
+        } else {
+          for (i <- 0 until rows) {
+            b.append(cv.getDecimal(i, DType.DECIMAL64_MAX_PRECISION, dt.scale).toUnscaledLong)
+          }
         }
       case (t, _) =>
         throw new UnsupportedOperationException(s"Converting to GPU for $t is not currently " +

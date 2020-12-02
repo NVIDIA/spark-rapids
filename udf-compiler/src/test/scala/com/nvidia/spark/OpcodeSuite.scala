@@ -20,6 +20,8 @@ import java.nio.charset.Charset
 import java.time.{LocalDate, LocalDateTime}
 import java.time.format.DateTimeFormatter
 
+import scala.collection.mutable
+
 import com.nvidia.spark.rapids.RapidsConf
 import org.scalatest.Assertions._
 import org.scalatest.FunSuite
@@ -1430,6 +1432,33 @@ class OpcodeSuite extends FunSuite {
   }
 
   // Tests for string ops
+  test("java lang string builder test - append") {
+    // We do not support java.lang.StringBuilder officially in the udf compiler,
+    // but string + string in Scala generates some code with
+    // java.lang.StringBuilder. For that reason, we have some tests with
+    // java.lang.StringBuilder.
+    val myudf: (String, String, Boolean) => String = (a,b,c) => {
+      val sb = new java.lang.StringBuilder()
+      if (c) {
+        sb.append(a)
+        sb.append(" ")
+        sb.append(b)
+        sb.toString + "@@@" + " true"
+      } else {
+        sb.append(b)
+        sb.append(" ")
+        sb.append(a)
+        sb.toString + "!!!" + " false"
+      }
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("Hello", "World", false),
+                       ("Oh", "Hello", true)).toDF("x","y","z").repartition(1)
+    val result = dataset.withColumn("new", u(col("x"),col("y"),col("z")))
+    val ref = List(("Hello", "World", false, "World Hello!!! false"),
+                   ("Oh", "Hello", true, "Oh Hello@@@ true")).toDF
+    checkEquiv(result, ref)
+  }
 
   test("string test - + concat") {
     val myudf: (String, String) => String = (a,b) => {
@@ -2284,4 +2313,48 @@ class OpcodeSuite extends FunSuite {
     checkEquivNotCompiled(result, ref)
   }
 
+  test("Conditional array buffer processing") {
+    def cond(s: String): Boolean = {
+      s == null || s.trim.length == 0
+    }
+
+    def transform(str: String): String = {
+      if (cond(str)) {
+        null
+      } else {
+        if (str.toLowerCase.startsWith("@@@@")) {
+          "######" + str.substring("@@@@".length)
+        } else if (str.toLowerCase.startsWith("######")) {
+          "@@@@" + str.substring("######".length)
+        } else {
+          str
+        }
+      }
+    }
+
+    val u = makeUdf((x: String, y: String, z: Boolean) => {
+        var r = new mutable.ArrayBuffer[String]()
+        r = r :+ x
+        if (!cond(y)) {
+          r = r :+ y
+
+          if (z) {
+            r = r :+ transform(y)
+          }
+        }
+        if (z) {
+          r = r :+ transform(x)
+        }
+        r.distinct.toArray
+      })
+
+    val dataset = List(("######hello", null),
+                       ("world", "######hello"),
+                       ("", "@@@@target")).toDF("x", "y")
+    val result = dataset.withColumn("new", u('x, 'y, lit(true)))
+    val ref = List(("######hello", null, Array("######hello", "@@@@hello")),
+                   ("world", "######hello", Array("world", "######hello", "@@@@hello")),
+                   ("", "@@@@target", Array("", "@@@@target", "######target", null))).toDF
+    checkEquiv(result, ref)
+  }
 }
