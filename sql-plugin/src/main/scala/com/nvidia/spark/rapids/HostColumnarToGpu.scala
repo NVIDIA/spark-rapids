@@ -160,7 +160,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     peakDevMemory: SQLMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
-    schema,
     goal,
     numInputRows,
     numInputBatches,
@@ -205,8 +204,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows += rows
   }
 
-  override def getColumnSizes(batch: ColumnarBatch): Array[Long] = {
-    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batch.numRows())).toArray
+  override def getBatchDataSize(batch: ColumnarBatch): Long = {
+    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batch.numRows())).sum
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
