@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.format.CodecType
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
-import org.apache.spark.sql.types.{DataType, DataTypes, LongType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, LongType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
@@ -56,75 +56,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       assert(gpuCoalesceBatches.metrics(GpuMetricNames.NUM_OUTPUT_ROWS).value == 14)
       assert(gpuCoalesceBatches.metrics(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 1)
     })
-  }
-
-  test("limit batches by string size") {
-    // TODO figure out a better way to deal with the Rmm Event handler
-    // because we cannot do this multiple times without issues.
-
-    // If this test is run on it's own this is needed.
-    // RapidsBufferCatalog.init(new RapidsConf(new HashMap[String, String]()))
-
-    val schema = new StructType(Array(
-      StructField("a", DataTypes.DoubleType),
-      StructField("b", DataTypes.StringType)
-    ))
-
-    // create input with 2 rows where the combined string length is > Integer.MAX_VALUE
-    val input = new BatchIterator(schema, rowCount = 2)
-
-    val numInputRows = createMetric()
-    val numInputBatches = createMetric()
-    val numOutputRows = createMetric()
-    val numOutputBatches = createMetric()
-    val collectTime = createMetric()
-    val concatTime = createMetric()
-    val totalTime = createMetric()
-    val peakDevMemory = createMetric()
-
-    val it = new GpuCoalesceIterator(input,
-      schema,
-      TargetSize(Long.MaxValue),
-      0,
-      numInputRows,
-      numInputBatches,
-      numOutputRows,
-      numOutputBatches,
-      collectTime,
-      concatTime,
-      totalTime,
-      peakDevMemory,
-      opName = "opname"
-    ) {
-      // override for this test so we can mock the response to make it look the strings are large
-      override def getColumnSizes(cb: ColumnarBatch): Array[Long] = Array(64, Int.MaxValue)
-
-      override def getColumnDataSize(cb: ColumnarBatch, index: Int, default: Long): Long =
-        index match {
-          case 0 => 64L
-          case 1 => ((Int.MaxValue / 4) * 3).toLong
-          case _ => default
-        }
-    }
-
-    while (it.hasNext) {
-      val batch = it.next()
-      batch.close()
-    }
-
-    assert(numInputBatches.value == 2)
-    assert(numOutputBatches.value == 2)
-  }
-
-  private def createMetric() = new SQLMetric("sum")
-
-  class BatchIterator(schema: StructType, var rowCount: Int) extends Iterator[ColumnarBatch] {
-    override def hasNext: Boolean = {
-      val hasNext = rowCount > 0
-      rowCount -= 1
-      hasNext
-    }
-    override def next(): ColumnarBatch = FuzzerUtils.createColumnarBatch(schema, 3, 64)
   }
 
   test("require single batch") {
