@@ -21,7 +21,7 @@ import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -146,5 +146,17 @@ trait SparkShims {
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit
-}
 
+  def sortOrderChildren(s: SortOrder): Seq[Expression]
+
+  def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
+    sortOrder(child, direction, direction.defaultNullOrdering)
+  }
+
+  def sortOrder(
+      child: Expression,
+      direction: SortDirection,
+      nullOrdering: NullOrdering): SortOrder
+
+  def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder
+}

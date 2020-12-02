@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BindReferences, BoundReference, SortOrder, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -95,9 +95,9 @@ class GpuRangePartitioner extends Serializable {
   def createRangeBounds(partitions: Int, gpuOrdering: Seq[SortOrder], rdd: RDD[ColumnarBatch],
                         outputAttributes: Seq[Attribute],
                         samplePointsPerPartitionHint: Int): Unit = {
-
+    val sparkShims = ShimLoader.getSparkShims
     val orderingAttributes = gpuOrdering.zipWithIndex.map { case (ord, i) =>
-      ord.copy(child = BoundReference(i, ord.dataType, ord.nullable))
+      sparkShims.copySortOrderWithNewChild(ord, BoundReference(i, ord.dataType, ord.nullable))
     }
     implicit val ordering: LazilyGeneratedOrdering = new LazilyGeneratedOrdering(orderingAttributes)
     val rowsRDD = rddForSampling(partitions, gpuOrdering, rdd, outputAttributes)
