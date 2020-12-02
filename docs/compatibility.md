@@ -193,12 +193,6 @@ timestamps are read incorrectly before the Gregorian calendar transition as desc
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
 
-Apache Spark 3.0 defaults to writing Parquet timestamps in the deprecated INT96 format. The plugin
-does not support writing timestamps in the INT96 format, so by default writing timestamp columns to
-Parquet will not be GPU-accelerated. If the INT96 timestamp format is not required for
-compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
-`TIMESTAMP_MICROS`.
-
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing 
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to 
 fall back to the CPU when reading an unsupported compression format, and will error out 
