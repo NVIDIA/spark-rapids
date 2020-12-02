@@ -306,15 +306,22 @@ object BenchUtils {
   }
 
   /**
-   * Replace final column names with c0, c1, and so on so that there are no columns with names
-   * based on expressions such as "round((sun_sales1 / sun_sales2), 2)". This is necessary when
-   * writing query output to Parquet.
-   *
-   * Note that this assumes that all column names are unique
+   * Replace any invalid column names with c0, c1, and so on so that there are no columns with
+   * names based on expressions such as "round((sun_sales1 / sun_sales2), 2)". This is necessary
+   * when writing query output to Parquet.
    */
   private def ensureValidColumnNames(df: DataFrame): DataFrame = {
+    def isColumnStart(ch: Char) = ch.isLetter || ch == '_'
+    def isColumnPart(ch: Char) = ch.isLetterOrDigit || ch == '_'
+    def isValid(name: String) = name.length > 0 &&
+        isColumnStart(name.charAt(0)) &&
+        name.substring(1).toCharArray.forall(isColumnPart)
     val renameColumnExprs = df.columns.zipWithIndex.map {
-      case (name, i) => col(name).as("c" + i)
+      case (name, i) => if (isValid(name)) {
+        col(name)
+      } else {
+        col(name).as("c" + i)
+      }
     }
     df.select(renameColumnExprs: _*)
   }
