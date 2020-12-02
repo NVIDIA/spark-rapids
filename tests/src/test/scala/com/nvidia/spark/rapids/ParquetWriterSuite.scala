@@ -19,10 +19,18 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.charset.StandardCharsets
 
+import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Table, TableWriter}
+import com.nvidia.spark.rapids.shims.spark310.{ParquetBufferConsumer, ParquetCachedBatchSerializer}
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
+import org.mockito.ArgumentMatchers._
+import org.mockito.Mockito._
+import org.mockito.invocation.InvocationOnMock
 
 import org.apache.spark.{SparkConf, SparkException}
+import org.apache.spark.sql.types.{ByteType, DataType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
 
 /**
  * Tests for writing Parquet files with the GPU.
@@ -117,5 +125,92 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       frame.write.mode("overwrite").parquet(tempFile.getAbsolutePath)
       frame
     }
+  }
+
+  val ROWS = 3 * 1024 * 1024
+
+  private def getCudfAndGpuVectors(): (ColumnVector, GpuColumnVector)= {
+    val spyCol = spy(ColumnVector.fromBytes(1))
+    when(spyCol.getRowCount).thenReturn(ROWS)
+    val mockDtype = mock(classOf[DType])
+    when(mockDtype.getSizeInBytes).thenReturn(1024)
+    val mockDataType = mock(classOf[DataType])
+    val spyGpuCol = spy(GpuColumnVector.from(spyCol, ByteType))
+    when(spyCol.getType()).thenReturn(mockDtype)
+    when(spyGpuCol.dataType()).thenReturn(mockDataType)
+    when(mockDataType.defaultSize).thenReturn(1024)
+
+    (spyCol, spyGpuCol)
+  }
+
+  private def whenSplitCalled(cb: ColumnarBatch): Unit = {
+    val rows = cb.numRows()
+    val eachRowSize = cb.numCols() * 1024
+    val _2GB = 2L * 1024 * 1024 * 1024
+    val rowsAllowedInABatch = _2GB / eachRowSize
+    val spillOver = cb.numRows() % rowsAllowedInABatch
+    val splitRange = scala.Range(rowsAllowedInABatch.toInt, rows, rowsAllowedInABatch.toInt)
+    scala.Range(0, cb.numCols()).indices.foreach { i =>
+      val spyCol = cb.column(i).asInstanceOf[GpuColumnVector].getBase
+      val splitCols0 = scala.Range(0, splitRange.length).map { _ =>
+        val spySplitCol = spy(ColumnVector.fromBytes(4, 5, 6))
+        when(spySplitCol.getRowCount()).thenReturn(rowsAllowedInABatch)
+        spySplitCol
+      }
+      val splitCols = if (spillOver > 0) {
+        val splitCol = spy(ColumnVector.fromBytes(3))
+        when(splitCol.getRowCount()).thenReturn(spillOver)
+        splitCols0 :+ splitCol
+      } else {
+        splitCols0
+      }
+      when(spyCol.split(any())).thenReturn(splitCols.toArray)
+    }
+  }
+
+  private def testCompressColBatch(cudfCols: Array[ColumnVector],
+                     gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector]): Unit = {
+    if (!withCpuSparkSession(s => s.version < "3.1.0")) {
+      val ser = new ParquetCachedBatchSerializer
+
+      // mock static method for Table
+      val theTableMock = mockStatic(classOf[Table], (_: InvocationOnMock) =>
+        new TableWriter {
+          override def write(table: Table): Unit = {
+            val tableSize = table.getColumn(0).getType.getSizeInBytes * table.getRowCount
+            if (tableSize > Int.MaxValue) {
+              fail("parquet table exceeds the 2gb limit")
+            }
+          }
+
+          override def close(): Unit = {
+            // noop
+          }
+        })
+
+      withResource(cudfCols) { _=>
+        val cb = new ColumnarBatch(gpuCols, ROWS)
+        whenSplitCalled(cb)
+        ser.compressColumnarBatchWithParquet(cb)
+        theTableMock.close()
+      }
+    }
+  }
+
+  test("convert large columnar batch to cachedbatch on CPU single col table") {
+    val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors()
+    testCompressColBatch(Array(spyCol0), Array(spyGpuCol0))
+    verify(spyCol0).split(2 * 1024 * 1024)
+  }
+
+  test("convert large columnar batch to cachedbatch on CPU multi-col table") {
+    val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors()
+    val (spyCol1, spyGpuCol1) = getCudfAndGpuVectors()
+    val (spyCol2, spyGpuCol2) = getCudfAndGpuVectors()
+    testCompressColBatch(Array(spyCol0, spyCol1, spyCol2), Array(spyGpuCol0, spyGpuCol1, spyGpuCol2))
+    val splitAt = Seq(699050, 1398100, 2097150, 2796200)
+    verify(spyCol0).split(splitAt: _*)
+    verify(spyCol1).split(splitAt: _*)
+    verify(spyCol2).split(splitAt: _*)
   }
 }

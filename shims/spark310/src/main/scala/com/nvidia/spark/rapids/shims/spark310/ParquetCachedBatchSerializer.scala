@@ -44,7 +44,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, GenericInternalRow, SpecializedGetters}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, GenericInternalRow, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
@@ -166,7 +166,7 @@ private class ByteArrayOutputFile(stream: ByteArrayOutputStream) extends OutputF
   override def defaultBlockSize(): Long = ByteArrayOutputFile.BLOCK_SIZE
 }
 
-private class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with
+private[rapids] class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with
   AutoCloseable {
   @transient private[this] val offHeapBuffers = mutable.Queue[(HostMemoryBuffer, Long)]()
   private var buffer: Array[Byte] = _
@@ -190,8 +190,8 @@ private class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer
 
   private def writeBuffers(): Unit = {
     val toProcess = offHeapBuffers.dequeueAll(_ => true)
-    // this could be problematic if the buffers are big as their cumulative length could be more
-    // than Int.MAX_SIZE. We could just have a list of buffers in that case and iterate over them
+    // We are making sure the input is smaller than 2gb so the parquet written should never be more
+    // than Int.MAX_SIZE.
     val bytes = toProcess.map(_._2).sum
 
     // for now assert bytes are less than Int.MaxValue
@@ -313,9 +313,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         }
       }
 
-      input.map(batch => {
+      input.flatMap(batch => {
         if (batch.numCols() == 0) {
-          ParquetCachedBatch(batch.numRows(), new Array[Byte](0))
+          List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
             compressColumnarBatchWithParquet(gpuCB)
@@ -335,14 +335,51 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
   }
 
-  private def compressColumnarBatchWithParquet(gpuCB: ColumnarBatch): ParquetCachedBatch = {
-    val buffer = new ParquetBufferConsumer(gpuCB.numRows())
-    withResource(GpuColumnVector.from(gpuCB)) { table =>
-      withResource(Table.writeParquetChunked(ParquetWriterOptions.DEFAULT, buffer)) { writer =>
-        writer.write(table)
+  val _2GB: Long = 2L * 1024 * 1024 * 1024
+
+  private[rapids] def compressColumnarBatchWithParquet(
+     gpuCB: ColumnarBatch): List[ParquetCachedBatch] = {
+    // NOTE: this doesn't take nulls into account so we could be over-estimating the acutal size
+    // but that's still better than under-estimating
+    val estimatedRowSize = scala.Range(0, gpuCB.numCols()).map { index =>
+      gpuCB.column(index).dataType().defaultSize
+    }.sum
+    val rowsInBatch = (_2GB / estimatedRowSize).toInt
+    val splitIndices = scala.Range(rowsInBatch, gpuCB.numRows(), rowsInBatch)
+    val cudfTables = if (splitIndices.nonEmpty) {
+      val splutVectors = scala.Range(0, gpuCB.numCols()).map { index =>
+        gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
+      }
+      try {
+        // Splitting the table
+        // e.g. T0 = {col1, col2,...,coln} => split columns into 'm' cols =>
+        // T00= {splitCol1(0), splitCol2(0),...,splitColn(0)}
+        // T01= {splitCol1(1), splitCol2(1),...,splitColn(1)}
+        // ...
+        // T0m= {splitCol1(m), splitCol2(m),...,splitColn(m)}
+        for (i <- splutVectors(0).indices) yield
+          new Table({
+            for (j <- splutVectors.indices) yield splutVectors(j)(i)
+          }: _*)
+      } finally {
+        for (i <- splutVectors(0).indices)
+            for (j <- splutVectors.indices) splutVectors(j)(i).close()
+      }
+    } else {
+      Seq(GpuColumnVector.from(gpuCB))
+    }
+
+    val buffers = new ListBuffer[ParquetCachedBatch]
+    cudfTables.foreach { table =>
+      withResource(table) { table =>
+        val buffer = new ParquetBufferConsumer(table.getRowCount.toInt)
+        withResource(Table.writeParquetChunked(ParquetWriterOptions.DEFAULT, buffer)) { writer =>
+          writer.write(table)
+        }
+        buffers += ParquetCachedBatch(buffer)
       }
     }
-    ParquetCachedBatch(buffer)
+    buffers.toList
   }
 
   /**
@@ -994,32 +1031,52 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
       private val parquetOutputFormat = new ParquetOutputFileFormat()
 
-      override def hasNext: Boolean = iter.hasNext
+      override def hasNext: Boolean = queue.nonEmpty || iter.hasNext
+
+      private val queue = new mutable.Queue[CachedBatch]()
 
       override def next(): CachedBatch = {
-        // Each partition will be a single parquet file
-        var rows = 0
-        // at least a single block
-        val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
-        val outputFile: OutputFile = new ByteArrayOutputFile(stream)
-        sharedConf.setConfString(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key,
-          LegacyBehaviorPolicy.CORRECTED.toString)
-        val recordWriter = SQLConf.withExistingConf(sharedConf) {
-          parquetOutputFormat.getRecordWriter(outputFile, sharedHadoopConf)
-        }
-        val rowIterator = getIterator
-        while (rowIterator.hasNext) {
-          rows += 1
-          if (rows < 0) {
-            throw new IllegalStateException("CachedBatch doesn't support rows larger " +
-              "than Int.MaxValue")
+        if (queue.isEmpty) {
+          val rowIterator = getIterator
+          while (rowIterator.hasNext) {
+            // Each partition will be a single parquet file
+            var rows = 0
+            // at least a single block
+            val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
+            val outputFile: OutputFile = new ByteArrayOutputFile(stream)
+            sharedConf.setConfString(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key,
+              LegacyBehaviorPolicy.CORRECTED.toString)
+            val recordWriter = SQLConf.withExistingConf(sharedConf) {
+              parquetOutputFormat.getRecordWriter(outputFile, sharedHadoopConf)
+            }
+            var totalSize = 0
+            // TODO: the following could still potentially produce a buffer more than 2g
+            while (rowIterator.hasNext && totalSize < _2GB) {
+              rows += 1
+              if (rows < 0) {
+                throw new IllegalStateException("CachedBatch doesn't support rows larger " +
+                  "than Int.MaxValue")
+              }
+              val row = rowIterator.next()
+              totalSize += {
+                row match {
+                  case r: UnsafeRow =>
+                    r.getSizeInBytes
+                  case _ =>
+                    //estimate the size
+                    newCachedAttributes.map { attr =>
+                      attr.dataType.defaultSize
+                    }.sum
+                }
+              }
+              recordWriter.write(null, row)
+            }
+            // passing null as context isn't used in this method
+            recordWriter.close(null)
+            queue += ParquetCachedBatch(rows, stream.toByteArray)
           }
-          val row = rowIterator.next()
-          recordWriter.write(null, row)
         }
-        // passing null as context isn't used in this method
-        recordWriter.close(null)
-        ParquetCachedBatch(rows, stream.toByteArray)
+        queue.dequeue()
       }
     }
 
@@ -1162,10 +1219,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val columnarBatchRdd = input.mapPartitions(iter => {
         new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, converters)
       })
-      columnarBatchRdd.map(cb => {
-        withResource(cb) { columnarBatch =>
-          val cachedBatch = compressColumnarBatchWithParquet(columnarBatch)
-          cachedBatch
+      columnarBatchRdd.flatMap(cb => {
+        withResource(cb) { cb => compressColumnarBatchWithParquet(cb)
         }
       })
     } else {
