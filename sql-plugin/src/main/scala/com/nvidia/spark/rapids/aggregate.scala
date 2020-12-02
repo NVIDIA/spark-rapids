@@ -881,7 +881,7 @@ case class GpuHashAggregateExec(
         val cvs = ArrayBuffer[GpuColumnVector]()
         aggModeCudfAggregates.foreach { case (mode, aggs) =>
           aggs.foreach {agg =>
-            val aggFn = if (mode == Partial && !merge) {
+            val aggFn = if ((mode == Partial || mode == Complete) && !merge) {
               agg.updateReductionAggregate
             } else {
               agg.mergeReductionAggregate

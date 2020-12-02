@@ -16,11 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.math.RoundingMode
+
 import ai.rapids.cudf.{BufferType, ContiguousTable, DeviceMemoryBuffer, Table}
 import com.nvidia.spark.rapids.format.{CodecType, ColumnMeta}
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.types.{DataType, DoubleType, IntegerType, StringType, StructType}
+import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class MetaUtilsSuite extends FunSuite with Arm {
@@ -29,6 +31,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
         .column("five", "two", null, null)
         .column(5.0, 2.0, 3.0, 1.0)
+        .decimal64Column(-5, RoundingMode.UNNECESSARY, 0, null, -1.4, 10.123)
         .build()) { table =>
       table.contiguousSplit()(0)
     }
@@ -109,12 +112,12 @@ class MetaUtilsSuite extends FunSuite with Arm {
   }
 
   test("buildDegenerateTableMeta no rows") {
-    val schema = StructType.fromDDL("a INT, b STRING, c DOUBLE")
+    val schema = StructType.fromDDL("a INT, b STRING, c DOUBLE, d DECIMAL(15, 5)")
     withResource(GpuColumnVector.emptyBatch(schema)) { batch =>
       val meta = MetaUtils.buildDegenerateTableMeta(batch)
       assertResult(null)(meta.bufferMeta)
       assertResult(0)(meta.rowCount)
-      assertResult(3)(meta.columnMetasLength)
+      assertResult(4)(meta.columnMetasLength)
       (0 until meta.columnMetasLength).foreach { i =>
         val columnMeta = meta.columnMetas(i)
         assertResult(0)(columnMeta.nullCount)
@@ -130,7 +133,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
   }
 
   test("buildDegenerateTableMeta no rows compressed table") {
-    val schema = StructType.fromDDL("a INT, b STRING, c DOUBLE")
+    val schema = StructType.fromDDL("a INT, b STRING, c DOUBLE, d DECIMAL(15, 5)")
     withResource(GpuColumnVector.emptyBatch(schema)) { uncompressedBatch =>
       val uncompressedMeta = MetaUtils.buildDegenerateTableMeta(uncompressedBatch)
       withResource(DeviceMemoryBuffer.allocate(0)) { buffer =>
@@ -140,7 +143,7 @@ class MetaUtilsSuite extends FunSuite with Arm {
           val meta = MetaUtils.buildDegenerateTableMeta(batch)
           assertResult(null)(meta.bufferMeta)
           assertResult(0)(meta.rowCount)
-          assertResult(3)(meta.columnMetasLength)
+          assertResult(4)(meta.columnMetasLength)
           (0 until meta.columnMetasLength).foreach { i =>
             val columnMeta = meta.columnMetas(i)
             assertResult(0)(columnMeta.nullCount)
@@ -163,9 +166,10 @@ class MetaUtilsSuite extends FunSuite with Arm {
       val table = contigTable.getTable
       val origBuffer = contigTable.getBuffer
       val meta = MetaUtils.buildTableMeta(10, table, origBuffer)
+      val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+        DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
       withResource(origBuffer.sliceWithCopy(0, origBuffer.getLength)) { buffer =>
-        withResource(MetaUtils.getBatchFromMeta(buffer, meta,
-          Array[DataType](IntegerType, StringType, DoubleType))) { batch =>
+        withResource(MetaUtils.getBatchFromMeta(buffer, meta, sparkTypes)) { batch =>
           assertResult(table.getRowCount)(batch.numRows)
           assertResult(table.getNumberOfColumns)(batch.numCols)
           (0 until table.getNumberOfColumns).foreach { i =>
