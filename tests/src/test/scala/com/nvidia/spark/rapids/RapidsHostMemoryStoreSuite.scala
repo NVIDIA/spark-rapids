@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.math.RoundingMode
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -26,7 +27,7 @@ import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.types.{DataType, DoubleType, IntegerType, LongType, StringType}
+import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, LongType, StringType}
 
 class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   private def buildContiguousTable(): ContiguousTable = {
@@ -34,6 +35,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
         .column("five", "two", null, null)
         .column(5.0, 2.0, 3.0, 1.0)
+        .decimal64Column(-5, RoundingMode.UNNECESSARY, 0, null, -1.4, 10.123)
         .build()) { table =>
       table.contiguousSplit()(0)
     }
@@ -119,7 +121,8 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   }
 
   test("get memory buffer") {
-    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType)
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     val bufferId = MockRapidsBufferId(7)
     val spillPriority = -10
     val hostStoreMaxSize = 1L * 1024 * 1024

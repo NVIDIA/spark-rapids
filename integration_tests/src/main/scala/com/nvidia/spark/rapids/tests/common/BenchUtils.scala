@@ -46,7 +46,7 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean
-  ): Unit = {
+  ): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -67,7 +67,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -88,7 +88,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -109,7 +109,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -143,7 +143,7 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean
-  ): Unit = {
+  ): BenchmarkReport = {
 
     assert(iterations > 0)
 
@@ -155,6 +155,16 @@ object BenchUtils {
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
+      spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
+      
+      // cause Spark to call unregisterShuffle
+      if (i > 0 && gcBetweenRuns) {
+        // we must null out the dataframe reference to allow
+        // GC to clean up the shuffle
+        df = null
+        System.gc()
+        System.gc()
+      }
 
       // capture spark plan metrics on the first run
       if (i == 0) {
@@ -189,12 +199,6 @@ object BenchUtils {
           queryTimes.append(-1)
           exceptions.append(BenchUtils.toString(e))
           e.printStackTrace()
-      }
-
-      // cause Spark to call unregisterShuffle
-      if (gcBetweenRuns) {
-        System.gc()
-        System.gc()
       }
     }
 
@@ -297,6 +301,8 @@ object BenchUtils {
     }
 
     writeReport(report, filename)
+
+    report
   }
 
   def readReport(file: File): BenchmarkReport = {

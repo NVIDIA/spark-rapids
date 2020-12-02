@@ -65,6 +65,7 @@ object GpuScalar {
     case DType.TIMESTAMP_DAYS => v.getInt
     case DType.TIMESTAMP_MICROSECONDS => v.getLong
     case DType.STRING => v.getJavaString
+    case dt: DType if dt.isDecimalType && dt.isBackedByLong => Decimal(v.getBigDecimal)
     case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
   }
 
@@ -88,12 +89,35 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
+    // make sure all scalars created are backed by DECIMAL64
+    case dec: Decimal =>
+      Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+    case dec: BigDecimal =>
+      Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
     case _ =>
-      throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
+      throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
-    case _ if v == null => Scalar.fromNull(GpuColumnVector.getRapidsType(t))
+    case _ if v == null => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(t))
+    case _ if t.isInstanceOf[DecimalType] =>
+      var bigDec = v match {
+        case vv: Decimal => vv.toBigDecimal.bigDecimal
+        case vv: BigDecimal => vv.bigDecimal
+        case vv: Double => BigDecimal(vv).bigDecimal
+        case vv: Float => BigDecimal(vv.toDouble).bigDecimal
+        case vv: String => BigDecimal(vv).bigDecimal
+        case vv: Long => BigDecimal(vv).bigDecimal
+        case vv: Int => BigDecimal(vv).bigDecimal
+        case vv => throw new IllegalStateException(
+          s"${vv.getClass} '$vv' is not supported as a scalar yet")
+      }
+      bigDec = bigDec.setScale(t.asInstanceOf[DecimalType].scale)
+      if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
+        throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision constraint of $t")
+      }
+      // make sure all scalars created are backed by DECIMAL64
+      Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValueExact())
     case l: Long => t match {
       case LongType => Scalar.fromLong(l)
       case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
@@ -112,7 +136,7 @@ object GpuScalar {
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
     case _ =>
-      throw new IllegalStateException(s"${v.getClass} '${v}' is not supported as a scalar yet")
+      throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
   }
 
   def isNan(s: Scalar): Boolean = {
@@ -195,7 +219,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
         case Double.NegativeInfinity => s"CAST('-Infinity' AS ${DoubleType.sql})"
         case _ => v + "D"
       }
-    case (v: Decimal, t: DecimalType) => v + "BD"
+    case (v: Decimal, _: DecimalType) => v + "BD"
     case (v: Int, DateType) =>
       val formatter = DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
       s"DATE '${formatter.format(v)}'"

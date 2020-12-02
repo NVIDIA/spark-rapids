@@ -17,12 +17,51 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
-import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StringType, StructType}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
+import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
+    extends UnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
+
+  lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
+
+  override def dataType: DataType = childSchema(ordinal).dataType
+  override def nullable: Boolean = child.nullable || childSchema(ordinal).nullable
+
+  override def toString: String = {
+    val fieldName = if (resolved) childSchema(ordinal).name else s"_$ordinal"
+    s"$child.${name.getOrElse(fieldName)}"
+  }
+
+  override def sql: String =
+    child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResourceIfAllowed(child.columnarEval(batch)) { input =>
+      val dt = dataType
+      input match {
+        case cv: GpuColumnVector =>
+          withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
+            GpuColumnVector.from(view.copyToColumnVector(), dt)
+          }
+        case null => null
+        case ir: InternalRow =>
+          // Literal struct values are not currently supported, but just in case...
+          val tmp = ir.get(ordinal, dt)
+          withResource(GpuScalar.from(tmp, dt)) { scalar =>
+            GpuColumnVector.from(scalar, batch.numRows(), dt)
+          }
+      }
+    }
+  }
+}
 
 class GpuGetArrayItemMeta(
     expr: GetArrayItem,
@@ -55,6 +94,7 @@ class GpuGetArrayItemMeta(
 
   override def isSupportedType(t: DataType): Boolean =
     GpuOverrides.isSupportedType(t,
+      allowNull = true,
       allowArray = true,
       allowStruct = true,
       allowNesting = true)
@@ -92,7 +132,8 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
     if (ordinal.isValid && ordinal.getInt >= 0) {
       lhs.getBase.extractListElement(ordinal.getInt)
     } else {
-      withResource(Scalar.fromNull(GpuColumnVector.getRapidsType(dataType))) { nullScalar =>
+      withResource(Scalar.fromNull(
+        GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
         ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
       }
     }

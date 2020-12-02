@@ -236,7 +236,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
 
   private[this] def isFp = dataType == FloatType || dataType == DoubleType
   // TODO need a better way to do this for nested types
-  protected lazy val dtype: DType = GpuColumnVector.getRapidsType(dataType)
+  protected lazy val dtype: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (children.length <= 1) {

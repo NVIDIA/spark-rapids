@@ -46,6 +46,10 @@ class GpuExpandExecMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = gpuProjections.flatten ++ outputAttributes
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
+
   /**
    * Convert what this wraps to a GPU enabled version.
    */
@@ -147,7 +151,7 @@ class GpuExpandIterator(
        * a boolean indicating whether an existing vector was re-used.
        */
       def getOrCreateNullCV(dataType: DataType): (GpuColumnVector, Boolean) = {
-        val rapidsType = GpuColumnVector.getRapidsType(dataType)
+        val rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType)
         nullCVs.get(dataType) match {
           case Some(cv) =>
             (cv.incRefCount(), true)
