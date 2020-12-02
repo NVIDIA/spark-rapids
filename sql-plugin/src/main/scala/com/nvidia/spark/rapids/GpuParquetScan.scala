@@ -1030,7 +1030,7 @@ class MultiFileParquetPartitionReader(
             // logWarning("concatenating different partition values")
             var succeeded = false
             val numCols = allPartitionColumns.head.size
-            logWarning("num cols is: " + numCols)
+            // logWarning("num cols is: " + numCols)
             val result = new Array[GpuColumnVector](numCols)
             try {
               for (i <- result.indices) {
@@ -1057,7 +1057,7 @@ class MultiFileParquetPartitionReader(
               val resultCols = fileBatchCols ++ result
               val finalCb = new ColumnarBatch(resultCols.toArray, cb.numRows)
               fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-              logWarning("after inc ref count")
+              // logWarning("after inc ref count")
               succeeded = true
               finalCb
             } finally {
