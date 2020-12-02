@@ -1294,7 +1294,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
@@ -1304,7 +1305,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
@@ -1314,7 +1316,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
@@ -1366,8 +1369,10 @@ object GpuOverrides {
       "< operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
+
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
@@ -1377,7 +1382,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)

@@ -16,12 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import java.math.RoundingMode
+
 import ai.rapids.cudf.Table
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
-import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType}
+import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSinglePartitioningSuite extends FunSuite with Arm {
@@ -30,8 +32,11 @@ class GpuSinglePartitioningSuite extends FunSuite with Arm {
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)
         .column("five", "two", null, null, "one", "one", "one", "one", "one", "one")
         .column(5.0, 2.0, 3.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+        .decimal64Column(-3, RoundingMode.UNNECESSARY ,
+          5.1, null, 3.3, 4.4e2, 0, -2.1e-1, 1.111, 2.345, null, 1.23e3)
         .build()) { table =>
-      GpuColumnVector.from(table, Array(IntegerType, StringType, DoubleType))
+      GpuColumnVector.from(table, Array(IntegerType, StringType, DoubleType,
+        DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 3)))
     }
   }
 
