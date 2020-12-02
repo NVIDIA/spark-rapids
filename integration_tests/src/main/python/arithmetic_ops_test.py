@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import incompat, approximate_float, allow_non_gpu
+from marks import incompat, approximate_float
 from pyspark.sql.types import *
 from spark_session import with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
