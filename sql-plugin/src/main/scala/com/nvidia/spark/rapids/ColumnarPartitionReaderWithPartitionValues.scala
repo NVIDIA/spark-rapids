@@ -93,7 +93,7 @@ object ColumnarPartitionReaderWithPartitionValues extends Arm {
     }
   }
 
-  private def buildPartitionColumns(
+  def buildPartitionColumns(
       numRows: Int,
       partitionValues: Array[Scalar],
       sparkTypes: Array[DataType]): Array[GpuColumnVector] = {
