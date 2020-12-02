@@ -179,11 +179,11 @@ object BenchUtils {
         resultsAction match {
           case Collect() => df.collect()
           case WriteCsv(path, mode, options) =>
-            df.write.mode(mode).options(options).csv(path)
+            ensureValidColumnNames(df).write.mode(mode).options(options).csv(path)
           case WriteOrc(path, mode, options) =>
-            df.write.mode(mode).options(options).orc(path)
+            ensureValidColumnNames(df).write.mode(mode).options(options).orc(path)
           case WriteParquet(path, mode, options) =>
-            df.write.mode(mode).options(options).parquet(path)
+            ensureValidColumnNames(df).write.mode(mode).options(options).parquet(path)
         }
 
         val end = System.nanoTime()
@@ -303,6 +303,20 @@ object BenchUtils {
     writeReport(report, filename)
 
     report
+  }
+
+  /**
+   * Replace final column names with c0, c1, and so on so that there are no columns with names
+   * based on expressions such as "round((sun_sales1 / sun_sales2), 2)". This is necessary when
+   * writing query output to Parquet.
+   *
+   * Note that this assumes that all column names are unique
+   */
+  private def ensureValidColumnNames(df: DataFrame): DataFrame = {
+    val renameColumnExprs = df.columns.zipWithIndex.map {
+      case (name, i) => col(name).as("c" + i)
+    }
+    df.select(renameColumnExprs: _*)
   }
 
   def readReport(file: File): BenchmarkReport = {
