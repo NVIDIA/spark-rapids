@@ -172,3 +172,15 @@ def test_input_meta(spark_tmp_path):
                         'input_file_block_start()',
                         'input_file_block_length()'))
 
+def setup_orc_file_no_column_names(spark):
+    drop_query = "DROP TABLE IF EXISTS test_orc_data"
+    create_query = "CREATE TABLE `test_orc_data` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc"
+    insert_query = "INSERT INTO test_orc_data VALUES(13, '155', 2020)"
+    spark.sql(drop_query).collect
+    spark.sql(create_query).collect
+    spark.sql(insert_query).collect
+
+def test_missing_column_names():
+    with_cpu_session(setup_orc_file_no_column_names)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM test_orc_data"))
