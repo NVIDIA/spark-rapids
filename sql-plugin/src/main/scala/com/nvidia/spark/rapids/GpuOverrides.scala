@@ -424,8 +424,8 @@ object GpuOverrides {
   }
 
   private def orderingSatisfies(found: SortOrder, required: SortOrder): Boolean = {
-    (found.sameOrderExpressions + found.child).exists(
-      gpuOrderingSemanticEquals(_, required.child)) &&
+    val foundChildren = ShimLoader.getSparkShims.sortOrderChildren(found)
+    foundChildren.exists(gpuOrderingSemanticEquals(_, required.child)) &&
         found.direction == required.direction &&
         found.nullOrdering == required.nullOrdering
   }
