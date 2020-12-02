@@ -114,8 +114,10 @@ case class GpuWindowExec(
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
 
-  override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(partitionSpec.map(SortOrder(_, Ascending)) ++ orderSpec)
+  override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
+    val shims = ShimLoader.getSparkShims
+    Seq(partitionSpec.map(shims.sortOrder(_, Ascending)) ++ orderSpec)
+  }
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
