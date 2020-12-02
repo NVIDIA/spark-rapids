@@ -1006,8 +1006,10 @@ class MultiFileParquetPartitionReader(
           try {
             allPartitionColumns =
               rowsPerPartition.zipWithIndex.map { case (rowsInPart, rowIndex) =>
+                // logWarning(s"rows per partition is $rowsInPart index is $rowIndex")
                 val partValue = inPartitionValues(rowIndex)
                 val partitionValues = partValue.toSeq(partitionSchema)
+                // logWarning(s"partition values size is ${partitionValues.size}")
                 val partitionScalars = ColumnarPartitionReaderWithPartitionValues
                   .createPartitionValues(partitionValues, partitionSchema)
                 withResource(partitionScalars) { scalars =>
@@ -1025,34 +1027,44 @@ class MultiFileParquetPartitionReader(
           }
 
           if (allPartitionColumns.size > 1) {
-            logWarning("concatenating different partition values")
+            // logWarning("concatenating different partition values")
             var succeeded = false
             val numCols = allPartitionColumns.head.size
+            logWarning("num cols is: " + numCols)
             val result = new Array[GpuColumnVector](numCols)
             try {
               for (i <- result.indices) {
                 result(i) = allPartitionColumns(0)(i)
               }
-              for (i <- 1 until result.length) {
-                allPartitionColumns.foreach { part =>
-                  val concatCol = part(i - 1)
+              for (i <- result.indices) {
+                for (j <- 1 until allPartitionColumns.size) {
+                  val part = allPartitionColumns(j)
+                  val concatCol = result(i)
                   result(i) = GpuColumnVector.from(
                     ColumnVector.concatenate(
                       concatCol.getBase,
                       part(i).getBase), concatCol.dataType())
+                  concatCol.safeClose()
+                  part(i).safeClose()
                 }
               }
-              logWarning("result num rows is: " + result(0).getRowCount() +
-                " cb rows is: " + cb.numRows())
+              // allPartitionColumns.foreach(_.safeClose())
+              // allPartitionColumns = null
+              // logWarning("result num rows is: " + result(0).getRowCount() +
+                // " cb rows is: " + cb.numRows())
               // concat all those
               val fileBatchCols = (0 until cb.numCols).map(cb.column)
               val resultCols = fileBatchCols ++ result
               val finalCb = new ColumnarBatch(resultCols.toArray, cb.numRows)
               fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
+              logWarning("after inc ref count")
               succeeded = true
               finalCb
             } finally {
               if (!succeeded) {
+                // if (allPartitionColumns != null) {
+                //   allPartitionColumns.foreach(_.safeClose())
+                // }
                 result.safeClose()
               }
             }
@@ -1087,8 +1099,8 @@ class MultiFileParquetPartitionReader(
 
   private def readBatch(): Option[ColumnarBatch] = {
     withResource(new NvtxRange("Parquet readBatch", NvtxColor.GREEN)) { _ =>
-      val (isCorrectRebaseMode, clippedSchema, partValues, seqPathsAndBlocks) =
-        populateCurrentBlockChunk()
+      val (isCorrectRebaseMode, clippedSchema, seqPathsAndBlocks,
+        rowsPerPartition, numRows, allPartValues) = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         // TODO - perhaps test this
@@ -1118,7 +1130,7 @@ class MultiFileParquetPartitionReader(
           table.foreach(_.close())
         }
       }
-    }xr
+    }
   }
 
   private def readToTable(
@@ -1223,8 +1235,8 @@ class MultiFileParquetPartitionReader(
                 // get number of rows in previous partition (where partition is block chunks before
                 // partition value changed)
                 partitionedDataRows += (numRows - lastPartRows)
-                logWarning("num rows is: " + numRows + " last: " + lastPartRows +
-                  " all: "  + partitionedDataRows.mkString(","))
+                // logWarning("num rows is: " + numRows + " last: " + lastPartRows +
+                  // " all: "  + partitionedDataRows.mkString(","))
                 lastPartRows = numRows
                 currentPartitionValues = blockIterator.head.partValues
                 allPartValues += currentPartitionValues
