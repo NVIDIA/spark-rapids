@@ -955,11 +955,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       Row(99, 400L, 4.0, "D", Decimal("1.5")),
       Row(98, 500L, 5.0, "E", Decimal("1.6")),
       Row(97, -100L, 6.0, "F", Decimal("1.7")),
-      Row(96, -500L, 0.0, "G", Decimal("1.8")),
+      Row(96, -500L, 0.0, "G", null),
       Row(95, -700L, 8.0, "E\u0480\u0481", Decimal("1.9")),
       Row(Int.MaxValue, Long.MinValue, Double.PositiveInfinity, "\u0000", Decimal("2.0")),
       Row(Int.MinValue, Long.MaxValue, Double.NaN, "\u0000", Decimal("100.123")),
-      Row(null, null, null, "actions are judged by intentions", Decimal("200.246")),
+      Row(null, null, null, "actions are judged by intentions", null),
       Row(94, -900L, 9.0, "g\nH", Decimal("300.369")),
       Row(92, -1200L, 12.0, "IJ\"\u0100\u0101\u0500\u0501", Decimal("-1.47e3")),
       Row(90, 1500L, 15.0, "\ud720\ud721", Decimal("-22.2345")))
