@@ -166,7 +166,7 @@ private class ByteArrayOutputFile(stream: ByteArrayOutputStream) extends OutputF
   override def defaultBlockSize(): Long = ByteArrayOutputFile.BLOCK_SIZE
 }
 
-private[rapids] class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with
+private class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer with
   AutoCloseable {
   @transient private[this] val offHeapBuffers = mutable.Queue[(HostMemoryBuffer, Long)]()
   private var buffer: Array[Byte] = _
@@ -336,6 +336,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   }
 
   val _2GB: Long = 2L * 1024 * 1024 * 1024
+  val APPROX_PAR_META_DATA = 10 * 1024 * 1024 // we are estimating 10MB
+  val BYTES_ALLOWED_PER_BATCH = _2GB - APPROX_PAR_META_DATA
 
   private[rapids] def compressColumnarBatchWithParquet(
      gpuCB: ColumnarBatch): List[ParquetCachedBatch] = {
@@ -344,7 +346,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     val estimatedRowSize = scala.Range(0, gpuCB.numCols()).map { index =>
       gpuCB.column(index).dataType().defaultSize
     }.sum
-    val rowsInBatch = (_2GB / estimatedRowSize).toInt
+    val rowsInBatch = (BYTES_ALLOWED_PER_BATCH / estimatedRowSize).toInt
     val splitIndices = scala.Range(rowsInBatch, gpuCB.numRows(), rowsInBatch)
     val cudfTables = if (splitIndices.nonEmpty) {
       val splutVectors = scala.Range(0, gpuCB.numCols()).map { index =>
@@ -1050,14 +1052,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               parquetOutputFormat.getRecordWriter(outputFile, sharedHadoopConf)
             }
             var totalSize = 0
-            // TODO: the following could still potentially produce a buffer more than 2g
-            while (rowIterator.hasNext && totalSize < _2GB) {
+            var leftOverRow: Option[InternalRow] = None
+            while (rowIterator.hasNext && totalSize < BYTES_ALLOWED_PER_BATCH) {
               rows += 1
               if (rows < 0) {
                 throw new IllegalStateException("CachedBatch doesn't support rows larger " +
                   "than Int.MaxValue")
               }
-              val row = rowIterator.next()
+              val row = leftOverRow.getOrElse(rowIterator.next())
               totalSize += {
                 row match {
                   case r: UnsafeRow =>
@@ -1069,7 +1071,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                     }.sum
                 }
               }
-              recordWriter.write(null, row)
+              if (totalSize <= BYTES_ALLOWED_PER_BATCH) {
+                recordWriter.write(null, row)
+              } else {
+                leftOverRow = Some(row)
+              }
             }
             // passing null as context isn't used in this method
             recordWriter.close(null)

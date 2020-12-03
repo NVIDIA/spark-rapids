@@ -17,10 +17,10 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.lang.reflect.{Constructor, Method}
 import java.nio.charset.StandardCharsets
 
-import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Table, TableWriter}
-import com.nvidia.spark.rapids.shims.spark310.{ParquetBufferConsumer, ParquetCachedBatchSerializer}
+import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.mockito.ArgumentMatchers._
@@ -144,10 +144,13 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   private def whenSplitCalled(cb: ColumnarBatch): Unit = {
+    val _2GB = 2L * 1024 * 1024 * 1024
+    val APPROX_PAR_META_DATA = 10 * 1024 * 1024 // we are estimating 10MB
+    val BYTES_ALLOWED_PER_BATCH = _2GB - APPROX_PAR_META_DATA
+
     val rows = cb.numRows()
     val eachRowSize = cb.numCols() * 1024
-    val _2GB = 2L * 1024 * 1024 * 1024
-    val rowsAllowedInABatch = _2GB / eachRowSize
+    val rowsAllowedInABatch = BYTES_ALLOWED_PER_BATCH / eachRowSize
     val spillOver = cb.numRows() % rowsAllowedInABatch
     val splitRange = scala.Range(rowsAllowedInABatch.toInt, rows, rowsAllowedInABatch.toInt)
     scala.Range(0, cb.numCols()).indices.foreach { i =>
@@ -168,10 +171,13 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+
+  private var compressWithParquetMethod: Option[Method] = None
+  private var ref: Option[Any] = None
+
   private def testCompressColBatch(cudfCols: Array[ColumnVector],
                      gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector]): Unit = {
     if (!withCpuSparkSession(s => s.version < "3.1.0")) {
-      val ser = new ParquetCachedBatchSerializer
 
       // mock static method for Table
       val theTableMock = mockStatic(classOf[Table], (_: InvocationOnMock) =>
@@ -191,8 +197,21 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       withResource(cudfCols) { _=>
         val cb = new ColumnarBatch(gpuCols, ROWS)
         whenSplitCalled(cb)
-        ser.compressColumnarBatchWithParquet(cb)
-        theTableMock.close()
+        try {
+          val method = compressWithParquetMethod.getOrElse {
+            val classOfSerializer = Class.forName(
+              "com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer")
+            ref = Some(classOfSerializer.newInstance())
+            val compressWithParquet =
+              classOfSerializer.getMethod("compressColumnarBatchWithParquet",
+                classOf[ColumnarBatch])
+            compressWithParquetMethod = Some(compressWithParquet)
+            compressWithParquet
+          }
+          method.invoke(ref.get, cb)
+        } finally {
+          theTableMock.close()
+        }
       }
     }
   }
@@ -200,15 +219,16 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   test("convert large columnar batch to cachedbatch on CPU single col table") {
     val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors()
     testCompressColBatch(Array(spyCol0), Array(spyGpuCol0))
-    verify(spyCol0).split(2 * 1024 * 1024)
+    verify(spyCol0).split(2086912)
   }
 
   test("convert large columnar batch to cachedbatch on CPU multi-col table") {
     val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors()
     val (spyCol1, spyGpuCol1) = getCudfAndGpuVectors()
     val (spyCol2, spyGpuCol2) = getCudfAndGpuVectors()
-    testCompressColBatch(Array(spyCol0, spyCol1, spyCol2), Array(spyGpuCol0, spyGpuCol1, spyGpuCol2))
-    val splitAt = Seq(699050, 1398100, 2097150, 2796200)
+    testCompressColBatch(Array(spyCol0, spyCol1, spyCol2),
+      Array(spyGpuCol0, spyGpuCol1, spyGpuCol2))
+    val splitAt = Seq(695637, 1391274, 2086911, 2782548)
     verify(spyCol0).split(splitAt: _*)
     verify(spyCol1).split(splitAt: _*)
     verify(spyCol2).split(splitAt: _*)
