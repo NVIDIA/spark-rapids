@@ -52,7 +52,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
   @transient private val buffers = data.map(_.buffer)
   @transient private var batchInternal: ColumnarBatch = null
 
-  def batch: ColumnarBatch = {
+  def batch: ColumnarBatch = this.synchronized {
     if (batchInternal == null) {
       // TODO we should come up with a better way for this to happen directly...
       val out = new ByteArrayOutputStream()
@@ -60,7 +60,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
       writeObject(oout)
       val barr = out.toByteArray
       val oin = new ObjectInputStream(new ByteArrayInputStream(barr))
-      readObject(oin)
+      batchInternal = readObject(oin)
     }
     batchInternal
   }
@@ -81,7 +81,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
     }
   }
 
-  private def readObject(in: ObjectInputStream): Unit = {
+  private def readObject(in: ObjectInputStream): ColumnarBatch = {
     val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
     try {
       val tableInfo: JCudfSerialization.TableAndRowCountPair =
@@ -90,12 +90,12 @@ class SerializeConcatHostBuffersDeserializeBatch(
         val table = tableInfo.getTable
         if (table == null) {
           val numRows = tableInfo.getNumRows
-          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows.toInt)
+          new ColumnarBatch(new Array[ColumnVector](0), numRows.toInt)
         } else {
           val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
           // This is read as part of the broadcast join so we expect it to leak.
           (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
-          this.batchInternal = GpuColumnVector.from(table, colDataTypes)
+          GpuColumnVector.from(table, colDataTypes)
         }
       } finally {
         tableInfo.close()
