@@ -298,4 +298,15 @@ class Spark310Shims extends Spark301Shims {
     val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
     GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
   }
+
+  override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
+
+  override def sortOrder(
+      child: Expression,
+      direction: SortDirection,
+      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
+
+  override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
+    s.copy(child = child)
+  }
 }

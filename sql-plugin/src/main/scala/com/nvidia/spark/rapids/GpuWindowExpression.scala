@@ -135,17 +135,6 @@ class GpuWindowExpressionMeta(
                   willNotWorkOnGpu("only a single date/time based column in window" +
                       " range functions is supported")
                 }
-
-                // https://github.com/NVIDIA/spark-rapids/issues/1039
-                // The order by column does not work for nullable time range queries that include
-                // UNBOUNDED
-                // Once this is fixed please uncomment the tests in WindowFunctionSuite that
-                // are impacted by this change
-                if (orderSpec.exists(_.nullable) &&
-                    (lower == Int.MinValue || upper == Int.MaxValue)) {
-                  willNotWorkOnGpu("nullable date/timestamp ranges" +
-                      " are not supported with UNBOUNDED bounds")
-                }
               } else {
                 willNotWorkOnGpu("a mixture of date/time and non date/time based" +
                     " columns is not supported in a window range function")
@@ -357,9 +346,23 @@ object GpuWindowExpression {
     val lower = getRangeBasedLower(windowFrameSpec)
     val upper = getRangeBasedUpper(windowFrameSpec)
 
-    val windowOptionBuilder = WindowOptions.builder().minPeriods(1)
-        .window(lower, upper)
-        .timestampColumnIndex(timeColumnIndex)
+    val windowOptionBuilder = WindowOptions.builder()
+                                .minPeriods(1)
+                                .timestampColumnIndex(timeColumnIndex)
+
+    if (lower.equals(Int.MaxValue)) {
+      windowOptionBuilder.unboundedPreceding()
+    }
+    else {
+      windowOptionBuilder.preceding(lower)
+    }
+
+    if (upper.equals(Int.MaxValue)) {
+      windowOptionBuilder.unboundedFollowing()
+    }
+    else {
+      windowOptionBuilder.following(upper)
+    }
 
     // We only support a single time based column to order by right now, so just verify
     // that it is correct.
