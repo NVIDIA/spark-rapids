@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.nio.{ByteBuffer, ByteOrder}
-import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -183,34 +182,39 @@ object MetaUtils extends Arm {
   private def addColumnMeta(
       fbb: FlatBufferBuilder,
       baseAddress: Long,
-      column: ColumnVector): Int = {
+      column: ColumnView): Int = {
+    val columnType = column.getType
+    val childVectorOffset = if (columnType.isNestedType) {
+      val childMetaOffsets = (0 until column.getNumChildren).map { i =>
+        withResource(column.getChildColumnView(i)) { childView =>
+          addColumnMeta(fbb, baseAddress, childView)
+        }
+      }
+      Some(ColumnMeta.createChildrenVector(fbb, childMetaOffsets.toArray))
+    } else {
+      None
+    }
+
     ColumnMeta.startColumnMeta(fbb)
     ColumnMeta.addNullCount(fbb, column.getNullCount)
     ColumnMeta.addRowCount(fbb, column.getRowCount)
-    val data = column.getDeviceBufferFor(BufferType.DATA)
+    val data = column.getData
     if (data != null) {
-      ColumnMeta.addData(fbb, addSubBuffer(fbb, baseAddress, data))
+      ColumnMeta.addDataOffset(fbb, data.getAddress - baseAddress)
+      ColumnMeta.addDataLength(fbb, data.getLength)
     }
-    val validity = column.getDeviceBufferFor(BufferType.VALIDITY)
+    val validity = column.getValid
     if (validity != null) {
-      ColumnMeta.addValidity(fbb, addSubBuffer(fbb, baseAddress, validity))
+      ColumnMeta.addValidityOffset(fbb, validity.getAddress - baseAddress)
     }
-    val offsets = column.getDeviceBufferFor(BufferType.OFFSET)
+    val offsets = column.getOffsets
     if (offsets != null) {
-      ColumnMeta.addOffsets(fbb, addSubBuffer(fbb, baseAddress, offsets))
+      ColumnMeta.addOffsetsOffset(fbb, offsets.getAddress - baseAddress)
     }
-    val columnType = column.getType
     ColumnMeta.addDtypeId(fbb, columnType.getTypeId.getNativeId)
     ColumnMeta.addDtypeScale(fbb, columnType.getScale)
+    childVectorOffset.foreach(x => ColumnMeta.addChildren(fbb, x))
     ColumnMeta.endColumnMeta(fbb)
-  }
-
-  /** Add a SubBuffer, returning the buffer offset where it was added */
-  private def addSubBuffer(
-      fbb: FlatBufferBuilder,
-      baseAddress: Long,
-      buffer: BaseDeviceMemoryBuffer): Int = {
-    SubBufferMeta.createSubBufferMeta(fbb, buffer.getAddress - baseAddress, buffer.getLength)
   }
 
   /**
@@ -250,28 +254,77 @@ object MetaUtils extends Arm {
     }
   }
 
-  private def makeCudfColumn(buffer: DeviceMemoryBuffer,
-      meta: ColumnMeta): ColumnVector = {
-    def getSubBuffer(s: SubBufferMeta): DeviceMemoryBuffer =
-      if (s != null) buffer.slice(s.offset, s.length) else null
-
-    assert(meta.childrenLength() == 0, "child columns are not yet supported")
-    val dtype = DType.fromNative(meta.dtypeId(), meta.dtypeScale())
-    val nullCount = if (meta.nullCount >= 0) {
-      Optional.of(java.lang.Long.valueOf(meta.nullCount))
-    } else {
-      Optional.empty[java.lang.Long]
-    }
-    val dataBuffer = getSubBuffer(meta.data)
-    val validBuffer = getSubBuffer(meta.validity)
-    val offsetsBuffer = getSubBuffer(meta.offsets)
-    new ColumnVector(dtype, meta.rowCount, nullCount, dataBuffer, validBuffer, offsetsBuffer)
+  private def makeColumn(
+      buffer: DeviceMemoryBuffer,
+      meta: ColumnMeta,
+      sparkType: DataType): GpuColumnVector = {
+    val columnView = makeCudfColumnView(buffer, meta)
+    val column = ColumnViewUtil.fromViewWithContiguousAllocation(columnView, buffer)
+    GpuColumnVector.from(column, sparkType)
   }
 
-  private def makeColumn(buffer: DeviceMemoryBuffer,
-      meta: ColumnMeta,
-      sparkType: DataType): GpuColumnVector =
-    GpuColumnVector.from(makeCudfColumn(buffer, meta), sparkType)
+  private def makeCudfColumn(buffer: DeviceMemoryBuffer, meta: ColumnMeta): ColumnVector = {
+    val columnView = makeCudfColumnView(buffer, meta)
+    ColumnViewUtil.fromViewWithContiguousAllocation(columnView, buffer)
+  }
+
+  private def makeCudfColumnView(
+      buffer: DeviceMemoryBuffer,
+      meta: ColumnMeta): Long = {
+    val numChildren = meta.childrenLength()
+    val childViews = if (numChildren > 0) new Array[Long](numChildren) else null
+    try {
+      if (childViews != null) {
+        val columnMetaObj = new ColumnMeta
+        childViews.indices.foreach { i =>
+          val childMeta = meta.children(columnMetaObj, i)
+          childViews(i) = makeCudfColumnView(buffer, childMeta)
+        }
+      }
+
+      val dtype = DType.fromNative(meta.dtypeId(), meta.dtypeScale())
+      val rowCount = meta.rowCount().toInt
+      val nullCount = meta.nullCount().toInt
+      val baseAddress = buffer.getAddress
+      val dataLength = meta.dataLength()
+      val dataAddress = if (dtype.isNestedType) {
+        0L
+      } else {
+        baseAddress + meta.dataOffset()
+      }
+      val validityAddress = if (nullCount > 0) {
+        baseAddress + meta.validityOffset()
+      } else {
+        0L
+      }
+      val offsetsAddress = if (dtype.hasOffsets) {
+        baseAddress + meta.offsetsOffset()
+      } else {
+        0L
+      }
+      ColumnViewUtil.makeCudfColumnView(
+        dtype.getTypeId.getNativeId,
+        dtype.getScale,
+        dataAddress,
+        dataLength,
+        offsetsAddress,
+        validityAddress,
+        nullCount,
+        rowCount,
+        childViews)
+    } catch {
+      case t: Throwable =>
+        if (childViews != null) {
+          try {
+            childViews.foreach(ColumnViewUtil.deleteColumnView)
+          } catch {
+            case e: Throwable =>
+              t.addSuppressed(e)
+          }
+        }
+        throw t
+    }
+  }
 }
 
 class DirectByteBufferFactory extends FlatBufferBuilder.ByteBufferFactory {
@@ -308,6 +361,32 @@ object ShuffleMetadata extends Logging{
     BufferMeta.endBufferMeta(fbb)
   }
 
+  private def copyColumnMeta(fbb: FlatBufferBuilder, col: ColumnMeta): Int = {
+    val numChildren = col.childrenLength()
+    val childMetaVectorOffset = if (numChildren > 0) {
+      val columnMetaObj = new ColumnMeta
+      val childMetaOffsets = (0 until numChildren).map { i =>
+        val childMeta = col.children(columnMetaObj, i)
+        copyColumnMeta(fbb, childMeta)
+      }
+      Some(ColumnMeta.createChildrenVector(fbb, childMetaOffsets.toArray))
+    } else {
+      None
+    }
+
+    ColumnMeta.startColumnMeta(fbb)
+    ColumnMeta.addNullCount(fbb, col.nullCount())
+    ColumnMeta.addRowCount(fbb, col.rowCount())
+    ColumnMeta.addDataOffset(fbb, col.dataOffset())
+    ColumnMeta.addDataLength(fbb, col.dataLength())
+    ColumnMeta.addValidityOffset(fbb, col.validityOffset())
+    ColumnMeta.addOffsetsOffset(fbb, col.offsetsOffset())
+    childMetaVectorOffset.foreach(x => ColumnMeta.addChildren(fbb, x))
+    ColumnMeta.addDtypeId(fbb, col.dtypeId())
+    ColumnMeta.addDtypeScale(fbb, col.dtypeScale())
+    ColumnMeta.endColumnMeta(fbb)
+  }
+
   /**
    * Given a sequence of `TableMeta`, re-lay the metas using the flat buffer builder in `fbb`.
    * @param fbb builder to use
@@ -323,34 +402,10 @@ object ShuffleMetadata extends Logging{
         None
       }
 
-      val columnMetaOffsets = (0 until tableMeta.columnMetasLength()).map { c =>
-        val col = tableMeta.columnMetas(c)
-        val data = col.data()
-        val validity = col.validity()
-        val offsets = col.offsets()
-        var dataOffset, validityOffset, offsetsOffset = -1
-
-        ColumnMeta.startColumnMeta(fbb)
-        ColumnMeta.addNullCount(fbb, col.nullCount())
-        ColumnMeta.addRowCount(fbb, col.rowCount())
-        if (data != null) {
-          dataOffset = SubBufferMeta.createSubBufferMeta(fbb, data.offset(), data.length())
-          ColumnMeta.addData(fbb, dataOffset)
-        }
-        if (validity != null) {
-          validityOffset = SubBufferMeta.createSubBufferMeta(fbb, validity.offset(),
-              validity.length())
-          ColumnMeta.addValidity(fbb, validityOffset)
-        }
-
-        if (offsets != null) {
-          offsetsOffset = SubBufferMeta.createSubBufferMeta(fbb, offsets.offset(),
-              offsets.length())
-          ColumnMeta.addOffsets(fbb, offsetsOffset)
-        }
-        ColumnMeta.addDtypeId(fbb, col.dtypeId())
-        ColumnMeta.addDtypeScale(fbb, col.dtypeScale())
-        ColumnMeta.endColumnMeta(fbb)
+      val columnMetaObj = new ColumnMeta
+      val columnMetaOffsets = (0 until tableMeta.columnMetasLength()).map { i =>
+        val columnMeta = tableMeta.columnMetas(columnMetaObj, i)
+        copyColumnMeta(fbb, columnMeta)
       }
 
       val columnMetaOffset = if (columnMetaOffsets.nonEmpty) {
@@ -459,42 +514,40 @@ object ShuffleMetadata extends Logging{
     fbb.dataBuffer()
   }
 
+  private def printColumnMeta(colName: String, columnMeta: ColumnMeta): String = {
+    val columnType = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale())
+    val numChildren = columnMeta.childrenLength()
+    val childrenStr = if (numChildren > 0) {
+      val columnMetaObj = new ColumnMeta
+      (0 until numChildren).map { i =>
+        val childName = s"$colName child $i"
+        val childMeta = columnMeta.children(columnMetaObj, i)
+        printColumnMeta(childName, childMeta)
+      }.mkString
+    } else {
+      ""
+    }
+    s"$colName [type=$columnType rows=${columnMeta.rowCount} " +
+        s"nullcount=${columnMeta.nullCount()} data_len=${columnMeta.dataLength()}]\n" +
+        s"$childrenStr"
+  }
+
   def printResponse(state: String, res: MetadataResponse): String = {
     val out = new StringBuilder
-    out.append(s"----------------------- METADATA RESPONSE ${state} --------------------------\n")
+    out.append(s"----------------------- METADATA RESPONSE $state --------------------------\n")
     out.append(s"${res.tableMetasLength()} tables\n")
     out.append("------------------------------------------------------------------------------\n")
     for (tableIndex <- 0 until res.tableMetasLength()) {
       val tableMeta = res.tableMetas(tableIndex)
       out.append(s"table: $tableIndex [cols=${tableMeta.columnMetasLength()}, " +
           s"rows=${tableMeta.rowCount}, full_content_size=${res.fullResponseSize()}]\n")
-      for (i <- 0 until tableMeta.columnMetasLength()) {
-        val columnMeta = tableMeta.columnMetas(i)
-
-        val validityLen = if (columnMeta.validity() == null) {
-          -1
-        } else {
-          columnMeta.validity().length()
-        }
-
-        // TODO: Need to expose native ID in cudf
-        val columnType = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale())
-        if (DType.STRING == columnType) {
-          val offsetLenStr = columnMeta.offsets().length().toString
-          out.append(s"column: $i [rows=${columnMeta.rowCount}, " +
-              s"data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
-              s"validity_len=$validityLen, type=$columnType, " +
-              s"null_count=${columnMeta.nullCount()}]\n")
-        } else {
-          val offsetLenStr = "NC"
-          out.append(s"column: $i [rows=${columnMeta.rowCount}, " +
-              s"data_len=${columnMeta.data().length()}, offset_len=${offsetLenStr}, " +
-              s"validity_len=$validityLen, type=$columnType, " +
-              s"null_count=${columnMeta.nullCount()}]\n")
-        }
+      val columnMetaObj = new ColumnMeta
+      (0 until tableMeta.columnMetasLength()).foreach { i =>
+        val columnMeta = tableMeta.columnMetas(columnMetaObj, i)
+        out.append(printColumnMeta(s"column: $i", columnMeta))
       }
     }
-    out.append(s"----------------------- END METADATA RESPONSE ${state} ----------------------\n")
+    out.append(s"----------------------- END METADATA RESPONSE $state ----------------------\n")
     out.toString()
   }
 
