@@ -33,7 +33,7 @@ import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{WriteJobStatsTracker, WriteTaskResult, WriteTaskStats}
@@ -196,9 +196,10 @@ object GpuFileFormatWriter extends Logging {
         // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
         // the physical plan may have different attribute ids due to optimizer removing some
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
+        val sparkShims = ShimLoader.getSparkShims
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
-            .map(attr => SortOrder(attr, Ascending)), outputSpec.outputColumns)
+            .map(attr => sparkShims.sortOrder(attr, Ascending)), outputSpec.outputColumns)
         GpuSortExec(
           orderingExpr,
           global = false,
