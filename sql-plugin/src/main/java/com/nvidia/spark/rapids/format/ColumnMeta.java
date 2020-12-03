@@ -28,48 +28,77 @@ public final class ColumnMeta extends Table {
   public long rowCount() { int o = __offset(6); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
   public boolean mutateRowCount(long row_count) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, row_count); return true; } else { return false; } }
   /**
-   * information about the column data buffer
+   * offset of the column's data buffer
    */
-  public SubBufferMeta data() { return data(new SubBufferMeta()); }
-  public SubBufferMeta data(SubBufferMeta obj) { int o = __offset(8); return o != 0 ? obj.__assign(o + bb_pos, bb) : null; }
+  public long dataOffset() { int o = __offset(8); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
+  public boolean mutateDataOffset(long data_offset) { int o = __offset(8); if (o != 0) { bb.putLong(o + bb_pos, data_offset); return true; } else { return false; } }
   /**
-   * information about the column validity buffer
+   * length of the column's data buffer
    */
-  public SubBufferMeta validity() { return validity(new SubBufferMeta()); }
-  public SubBufferMeta validity(SubBufferMeta obj) { int o = __offset(10); return o != 0 ? obj.__assign(o + bb_pos, bb) : null; }
+  public long dataLength() { int o = __offset(10); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
+  public boolean mutateDataLength(long data_length) { int o = __offset(10); if (o != 0) { bb.putLong(o + bb_pos, data_length); return true; } else { return false; } }
   /**
-   * information about the column offset buffer
+   * offset of the column's validity buffer
    */
-  public SubBufferMeta offsets() { return offsets(new SubBufferMeta()); }
-  public SubBufferMeta offsets(SubBufferMeta obj) { int o = __offset(12); return o != 0 ? obj.__assign(o + bb_pos, bb) : null; }
+  public long validityOffset() { int o = __offset(12); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
+  public boolean mutateValidityOffset(long validity_offset) { int o = __offset(12); if (o != 0) { bb.putLong(o + bb_pos, validity_offset); return true; } else { return false; } }
+  /**
+   * offset of the column's offsets buffer
+   */
+  public long offsetsOffset() { int o = __offset(14); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
+  public boolean mutateOffsetsOffset(long offsets_offset) { int o = __offset(14); if (o != 0) { bb.putLong(o + bb_pos, offsets_offset); return true; } else { return false; } }
   /**
    * child column metadata
    */
   public ColumnMeta children(int j) { return children(new ColumnMeta(), j); }
-  public ColumnMeta children(ColumnMeta obj, int j) { int o = __offset(14); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
-  public int childrenLength() { int o = __offset(14); return o != 0 ? __vector_len(o) : 0; }
+  public ColumnMeta children(ColumnMeta obj, int j) { int o = __offset(16); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
+  public int childrenLength() { int o = __offset(16); return o != 0 ? __vector_len(o) : 0; }
   /**
    * ordinal of DType enum
    */
-  public int dtypeId() { int o = __offset(16); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
-  public boolean mutateDtypeId(int dtype_id) { int o = __offset(16); if (o != 0) { bb.putInt(o + bb_pos, dtype_id); return true; } else { return false; } }
+  public int dtypeId() { int o = __offset(18); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
+  public boolean mutateDtypeId(int dtype_id) { int o = __offset(18); if (o != 0) { bb.putInt(o + bb_pos, dtype_id); return true; } else { return false; } }
   /**
    * DType scale for decimal types
    */
-  public int dtypeScale() { int o = __offset(18); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
-  public boolean mutateDtypeScale(int dtype_scale) { int o = __offset(18); if (o != 0) { bb.putInt(o + bb_pos, dtype_scale); return true; } else { return false; } }
+  public int dtypeScale() { int o = __offset(20); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
+  public boolean mutateDtypeScale(int dtype_scale) { int o = __offset(20); if (o != 0) { bb.putInt(o + bb_pos, dtype_scale); return true; } else { return false; } }
 
-  public static void startColumnMeta(FlatBufferBuilder builder) { builder.startObject(8); }
+  public static int createColumnMeta(FlatBufferBuilder builder,
+      long null_count,
+      long row_count,
+      long data_offset,
+      long data_length,
+      long validity_offset,
+      long offsets_offset,
+      int childrenOffset,
+      int dtype_id,
+      int dtype_scale) {
+    builder.startObject(9);
+    ColumnMeta.addOffsetsOffset(builder, offsets_offset);
+    ColumnMeta.addValidityOffset(builder, validity_offset);
+    ColumnMeta.addDataLength(builder, data_length);
+    ColumnMeta.addDataOffset(builder, data_offset);
+    ColumnMeta.addRowCount(builder, row_count);
+    ColumnMeta.addNullCount(builder, null_count);
+    ColumnMeta.addDtypeScale(builder, dtype_scale);
+    ColumnMeta.addDtypeId(builder, dtype_id);
+    ColumnMeta.addChildren(builder, childrenOffset);
+    return ColumnMeta.endColumnMeta(builder);
+  }
+
+  public static void startColumnMeta(FlatBufferBuilder builder) { builder.startObject(9); }
   public static void addNullCount(FlatBufferBuilder builder, long nullCount) { builder.addLong(0, nullCount, 0L); }
   public static void addRowCount(FlatBufferBuilder builder, long rowCount) { builder.addLong(1, rowCount, 0L); }
-  public static void addData(FlatBufferBuilder builder, int dataOffset) { builder.addStruct(2, dataOffset, 0); }
-  public static void addValidity(FlatBufferBuilder builder, int validityOffset) { builder.addStruct(3, validityOffset, 0); }
-  public static void addOffsets(FlatBufferBuilder builder, int offsetsOffset) { builder.addStruct(4, offsetsOffset, 0); }
-  public static void addChildren(FlatBufferBuilder builder, int childrenOffset) { builder.addOffset(5, childrenOffset, 0); }
+  public static void addDataOffset(FlatBufferBuilder builder, long dataOffset) { builder.addLong(2, dataOffset, 0L); }
+  public static void addDataLength(FlatBufferBuilder builder, long dataLength) { builder.addLong(3, dataLength, 0L); }
+  public static void addValidityOffset(FlatBufferBuilder builder, long validityOffset) { builder.addLong(4, validityOffset, 0L); }
+  public static void addOffsetsOffset(FlatBufferBuilder builder, long offsetsOffset) { builder.addLong(5, offsetsOffset, 0L); }
+  public static void addChildren(FlatBufferBuilder builder, int childrenOffset) { builder.addOffset(6, childrenOffset, 0); }
   public static int createChildrenVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startChildrenVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
-  public static void addDtypeId(FlatBufferBuilder builder, int dtypeId) { builder.addInt(6, dtypeId, 0); }
-  public static void addDtypeScale(FlatBufferBuilder builder, int dtypeScale) { builder.addInt(7, dtypeScale, 0); }
+  public static void addDtypeId(FlatBufferBuilder builder, int dtypeId) { builder.addInt(7, dtypeId, 0); }
+  public static void addDtypeScale(FlatBufferBuilder builder, int dtypeScale) { builder.addInt(8, dtypeScale, 0); }
   public static int endColumnMeta(FlatBufferBuilder builder) {
     int o = builder.endObject();
     return o;
