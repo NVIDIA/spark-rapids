@@ -275,7 +275,7 @@ class GpuOrcPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("ORC readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))) { _ =>
+    withResource(new NvtxRange("ORC readBatch", NvtxColor.GREEN)) { _ =>
       val currentStripes = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
