@@ -50,6 +50,17 @@
           <name>sw-spark-maven</name>
           <url>${env.URM_URL}</url>
         </repository>
+        <!-- Add Sonatype staging repo for buiding rapids against pre-release jars  -->
+        <repository>
+           <id>sonatype-staging</id>
+           <url>https://oss.sonatype.org/content/repositories/staging</url>
+           <releases>
+             <enabled>true</enabled>
+           </releases>
+           <snapshots>
+             <enabled>false</enabled>
+           </snapshots>
+        </repository>
       </repositories>
       <pluginRepositories>
         <pluginRepository>
