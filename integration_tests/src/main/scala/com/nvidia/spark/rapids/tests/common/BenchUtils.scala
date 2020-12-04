@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.convert.ImplicitConversions.`iterator asScala`
 import scala.collection.mutable.ListBuffer
+import scala.util.{Failure, Success, Try}
 
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
@@ -676,12 +677,20 @@ class BenchmarkListener(
     exceptions: ListBuffer[String]) extends QueryExecutionListener {
 
   override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
-    queryPlans += toJson(qe.executedPlan)
+    addQueryPlan(qe)
   }
 
   override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit = {
-    queryPlans += toJson(qe.executedPlan)
+    addQueryPlan(qe)
     exceptions += BenchUtils.toString(exception)
+  }
+
+  private def addQueryPlan(qe: QueryExecution) = {
+    Try(toJson(qe.executedPlan)) match {
+      case Success(json) => queryPlans += json
+      case Failure(e) =>
+        println(s"Failed to convert plan to JSON: $e")
+    }
   }
 
   private def toJson(plan: SparkPlan): SparkPlanNode = {
