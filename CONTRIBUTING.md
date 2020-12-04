@@ -28,7 +28,7 @@ Contributions to RAPIDS Accelerator for Apache Spark fall into the following thr
     or [help wanted](https://github.com/NVIDIA/spark-rapids/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
     labels.
 3. Comment on the issue stating that you are going to work on it.
-4. Code! Make sure to update unit tests!
+4. Code! Make sure to update unit tests and integration tests if needed! [refer to test section]
 5. When done, [create your pull request](https://github.com/NVIDIA/spark-rapids/compare).
 6. Verify that CI passes all [status checks](https://help.github.com/articles/about-status-checks/).
     Fix if needed.
@@ -55,6 +55,35 @@ This project follows the official
 This project follows the
 [Oracle Java code conventions](http://www.oracle.com/technetwork/java/codeconvtoc-136057.html)
 and the Scala conventions detailed above, preferring the latter.
+
+### Test
+There are two types of tests in this project. Unit tests that are written in Scala, and integration tests that are written in python. 
+We encourage writing integration tests if you have to choose between the two as that helps us ensure the plugin is working across different platforms. 
+
+#### Unit tests
+Unit-tests are located in com.nvidia:rapids-4-spark-tests_2.12. In order to run the unit-tests follow these steps
+1. Build the parent project. That will build the entire project including tests
+2. Running tests
+    2a. Issue the mvn command to run the tests like 'mvn -pl com.nvidia:rapids-4-spark-tests_2.12 test'. This will run all the tests in the tests module. 
+    2b. To run individual tests append '-DwildcardSuites=<Fully-qualified-test-name>' to the above command e.g. To run test ParquetWriterSuite in package com.nvidia.spark.rapids, issue 'mvn test -DwildcardSuites="com.nvidia.spark.rapids.ParquetWriterSuite"'
+3. Running tests against different Spark versions. There are maven profiles that should be used to run Spark version-specific tests e.g. To run tests against Spark 3.1.0, 'mvn -P spark310tests test -DwildcardSuites="com.nvidia.spark.rapids.ParquetWriterSuite"'. Please refer to the pom.xml to see the list of profiles supported
+4. Spark specific configuration can be passed in by setting environment-variable SPARK_CONF 
+
+Example: 
+'SPARK_CONF="spark.rapids.memory.gpu.allocFraction=0.7,spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer" mvn ...' this command sets the memory-allocation fraction which comes handy when dealing with OOM issues on the GPU.
+
+#### Integration tests
+Integration tests are located in com.nvidia:rapids-4-spark-integration-tests_2.12. The suggested way to run these tests is to use the shell-script file located in the module folder called 'run_pyspark_from_build.sh'. This script takes care of some of the flags that are required to run the tests e.g. `--conf spark.driver.extraJavaOptions=-Duser.timezone=GMT --conf spark.sql.session.timeZone=UTC --conf spark.executor.extraJavaOptions=-Duser.timezone=GMT` which will have to be set for the plugin to work. It will be very useful to read the contents of the [run_pyspak_from_build.sh](https://github.com/NVIDIA/spark-rapids/blob/branch-0.3/integration_tests/run_pyspark_from_build.sh) to get better insight into what is needed as we constantly keep working on to improve and expand the plugin-support.
+
+The tests are written python and run with pytest and the script honors pytest parameters. Some handy flags are:
+    - `-k` <pytest-file-name>. This will run all the tests in that test file.
+    - `-k` <test-name>. This will also run an individual test.
+    - `-s`. Doesn't capture the output and instead prints to the screen.
+    - For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
+
+Example: 
+This command runs all the tests located in `cache_test.py` against Spark-3.1.0 using the ParquetCachedBatchSerializer and other conigs discussed above and with the debugger listening on port 5005
+`SPARK_SUBMIT_FLAGS="--driver-memory 4g --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer --conf spark.rapids.memory.gpu.allocFraction=0.7" SPARK_HOME=~/spark-3.1.0-SNAPSHOT-bin-hadoop3.2/ COVERAGE_SUBMIT_FLAGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005' ./run_pyspark_from_build.sh -k cache_test`
 
 ### Sign your work
 
