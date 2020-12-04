@@ -531,7 +531,6 @@ object CastOpSuite {
 
   def intsAsFloats(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-
     intValues.map(_.toFloat).toDF("c0")
   }
 
