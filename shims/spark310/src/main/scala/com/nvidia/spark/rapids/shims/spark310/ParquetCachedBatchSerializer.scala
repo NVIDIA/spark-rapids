@@ -253,6 +253,16 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
  * This class assumes, the data is Columnar and the plugin is on
  */
 class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
+
+  private[rapids] def getProducer(
+     cbIter: Iterator[ColumnarBatch],
+     schema: Seq[Attribute],
+     conf: Configuration,
+     sqlConf: SQLConf) : CachedBatchIteratorProducer[ColumnarBatch] = {
+    new CachedBatchIteratorProducer[ColumnarBatch](cbIter, schema, conf, sqlConf)
+
+  }
+
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 
   override def supportsColumnarOutput(schema: StructType): Boolean = schema.fields.forall { f =>
@@ -330,14 +340,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         cbIter =>
           new CachedBatchIteratorProducer[ColumnarBatch](cbIter, cachedSchema,
             broadcastedHadoopConf.value.value, broadcastedConf.value)
-            .getColumnarBatchToCachedBatchIterator
+            .getColumnarBatchToCachedBatchIterator()
       }
     }
   }
 
   val _2GB: Long = 2L * 1024 * 1024 * 1024
-  val APPROX_PAR_META_DATA = 10 * 1024 * 1024 // we are estimating 10MB
-  val BYTES_ALLOWED_PER_BATCH = _2GB - APPROX_PAR_META_DATA
+  val APPROX_PAR_META_DATA: Int = 10 * 1024 * 1024 // we are estimating 10MB
+  val BYTES_ALLOWED_PER_BATCH: Long = _2GB - APPROX_PAR_META_DATA
 
   private[rapids] def compressColumnarBatchWithParquet(
      gpuCB: ColumnarBatch): List[ParquetCachedBatch] = {
@@ -909,18 +919,20 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
    * @param sharedConf - SQL conf
    * @tparam T - Strictly either InternalRow or ColumnarBatch
    */
-  private class CachedBatchIteratorProducer[T](
+  private[rapids] class CachedBatchIteratorProducer[T](
      iter: Iterator[T],
      cachedAttributes: Seq[Attribute],
      sharedHadoopConf: Configuration,
      sharedConf: SQLConf) {
 
-    def getInternalRowToCachedBatchIterator: Iterator[CachedBatch] = {
-      new InternalRowToCachedBatchIterator
+    def getInternalRowToCachedBatchIterator(
+       p: ParquetOutputFileFormat = new ParquetOutputFileFormat()): Iterator[CachedBatch] = {
+      new InternalRowToCachedBatchIterator(p)
     }
 
-    def getColumnarBatchToCachedBatchIterator: Iterator[CachedBatch] = {
-      new ColumnarBatchToCachedBatchIterator
+    def getColumnarBatchToCachedBatchIterator(
+      p: ParquetOutputFileFormat = new ParquetOutputFileFormat()): Iterator[CachedBatch] = {
+        new ColumnarBatchToCachedBatchIterator(p)
     }
 
     /**
@@ -928,7 +940,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      * relationship. Each partition represents a single parquet file, so we encode it
      * and return the CachedBatch when next is called.
      */
-    private class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() {
+    private class InternalRowToCachedBatchIterator(
+       parquetOutputFileFormat: ParquetOutputFileFormat) extends Iterator[CachedBatch]() {
       // is there a type that spark doesn't support by default in the schema?
       val hasUnsupportedType: Boolean = cachedAttributes.exists { attribute =>
         !isTypeSupportedByParquet(attribute.dataType)
@@ -1031,14 +1044,20 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         }
       }
 
-      private val parquetOutputFormat = new ParquetOutputFileFormat()
-
       override def hasNext: Boolean = queue.nonEmpty || iter.hasNext
 
       private val queue = new mutable.Queue[CachedBatch]()
 
+      //estimate the size of a row
+      val estimatedSize: Int = newCachedAttributes.map { attr =>
+        attr.dataType.defaultSize
+      }.sum
+
       override def next(): CachedBatch = {
         if (queue.isEmpty) {
+          // to store a row if we have read it but there is no room in the parquet file to put it
+          // we will put it in the next CachedBatch
+          var leftOverRow: Option[InternalRow] = None
           val rowIterator = getIterator
           while (rowIterator.hasNext) {
             // Each partition will be a single parquet file
@@ -1049,29 +1068,32 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             sharedConf.setConfString(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key,
               LegacyBehaviorPolicy.CORRECTED.toString)
             val recordWriter = SQLConf.withExistingConf(sharedConf) {
-              parquetOutputFormat.getRecordWriter(outputFile, sharedHadoopConf)
+              parquetOutputFileFormat.getRecordWriter(outputFile, sharedHadoopConf)
             }
             var totalSize = 0
-            var leftOverRow: Option[InternalRow] = None
             while (rowIterator.hasNext && totalSize < BYTES_ALLOWED_PER_BATCH) {
-              rows += 1
-              if (rows < 0) {
-                throw new IllegalStateException("CachedBatch doesn't support rows larger " +
-                  "than Int.MaxValue")
+
+              val row = if (leftOverRow.nonEmpty) {
+                val a = leftOverRow.get
+                leftOverRow = None // reset value
+                a
+              } else {
+                rowIterator.next()
               }
-              val row = leftOverRow.getOrElse(rowIterator.next())
               totalSize += {
                 row match {
                   case r: UnsafeRow =>
                     r.getSizeInBytes
                   case _ =>
-                    //estimate the size
-                    newCachedAttributes.map { attr =>
-                      attr.dataType.defaultSize
-                    }.sum
+                    estimatedSize
                 }
               }
               if (totalSize <= BYTES_ALLOWED_PER_BATCH) {
+                rows += 1
+                if (rows < 0) {
+                  throw new IllegalStateException("CachedBatch doesn't support rows larger " +
+                    "than Int.MaxValue")
+                }
                 recordWriter.write(null, row)
               } else {
                 leftOverRow = Some(row)
@@ -1091,7 +1113,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      * relationship. Each ColumnarBatch is converted to a single ParquetCachedBatch when next()
      * is called on this iterator
      */
-    private class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator {
+    private class ColumnarBatchToCachedBatchIterator(
+       p: ParquetOutputFileFormat) extends InternalRowToCachedBatchIterator(p) {
       override def getIterator: Iterator[InternalRow] = {
         iter.asInstanceOf[Iterator[ColumnarBatch]].next.rowIterator().asScala
       }
@@ -1237,7 +1260,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         cbIter =>
           new CachedBatchIteratorProducer[InternalRow](cbIter, schema,
             broadcastedHadoopConf.value.value, broadcastedConf.value)
-            .getInternalRowToCachedBatchIterator
+            .getInternalRowToCachedBatchIterator()
       }
     }
   }
@@ -1260,7 +1283,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 /**
  * Similar to ParquetFileFormat
  */
-private class ParquetOutputFileFormat {
+private[rapids] class ParquetOutputFileFormat {
 
   def getRecordWriter(output: OutputFile, conf: Configuration): RecordWriter[Void, InternalRow] = {
     import ParquetOutputFormat._
