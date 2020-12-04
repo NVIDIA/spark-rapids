@@ -408,7 +408,7 @@ object GpuOverrides {
     case g: GpuNormalizeNaNAndZero =>
       NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
     case g: GpuAlias =>
-      Alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
+      ShimLoader.getSparkShims.alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
         g.exprId,
         g.qualifier,
         g.explicitMetadata)
