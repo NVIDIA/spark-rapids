@@ -152,73 +152,6 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     verify(spyCol2).split(splitAt: _*)
   }
 
-  test("convert large InternalRow iterator to cached batch single col") {
-    val (_, spyGpuCol0) = getCudfAndGpuVectors()
-    val cb = new ColumnarBatch(Array(spyGpuCol0), ROWS)
-    val mockByteType = mock(classOf[ByteType])
-    when(mockByteType.defaultSize).thenReturn(1024)
-    val schema = Seq(AttributeReference("field0", mockByteType, true)())
-    testColumnarBatchToCachedBatchIterator(cb, schema)
-  }
-
-  test("convert large InternalRow iterator to cached batch multi-col") {
-    val (_, spyGpuCol0) = getCudfAndGpuVectors()
-    val (_, spyGpuCol1) = getCudfAndGpuVectors()
-    val (_, spyGpuCol2) = getCudfAndGpuVectors()
-    val cb = new ColumnarBatch(Array(spyGpuCol0, spyGpuCol1, spyGpuCol2), ROWS)
-    val mockByteType = mock(classOf[ByteType])
-    when(mockByteType.defaultSize).thenReturn(1024)
-    val schema = Seq(AttributeReference("field0", mockByteType, true)(),
-      AttributeReference("field1", mockByteType, true)(),
-      AttributeReference("field2", mockByteType, true)())
-
-    testColumnarBatchToCachedBatchIterator(cb, schema)
-  }
-
-  private def testColumnarBatchToCachedBatchIterator(
-     cb: ColumnarBatch,
-     schema: Seq[AttributeReference]): Unit = {
-
-    val iter = new Iterator[ColumnarBatch] {
-      val queue = new mutable.Queue[ColumnarBatch]
-      queue += cb
-      override def hasNext: Boolean = queue.nonEmpty
-      override def next(): ColumnarBatch = {
-        queue.dequeue()
-      }
-    }
-
-    val producer = new ParquetCachedBatchSerializer
-    val p = producer.getProducer(iter, schema, new Configuration(true), new SQLConf)
-    val mockParquetOutputFileFormat = mock(classOf[ParquetOutputFileFormat])
-    var totalSize = 0L
-    val mockRecordWriter = new RecordWriter[Void, InternalRow] {
-      val estimatedSize = schema.indices.length * 1024
-      var thisBatchSize = 0L
-
-      override def write(k: Void, v: InternalRow): Unit = {
-        thisBatchSize += estimatedSize
-        if (thisBatchSize > BYTES_ALLOWED_PER_BATCH) {
-          fail(s"Parquet file went over the allowed limit of $BYTES_ALLOWED_PER_BATCH")
-        }
-      }
-
-      override def close(taskAttemptContext: TaskAttemptContext): Unit = {
-        totalSize += thisBatchSize
-        thisBatchSize = 0
-      }
-    }
-    when(mockParquetOutputFileFormat.getRecordWriter(any(), any())).thenReturn(mockRecordWriter)
-    val s = p.getColumnarBatchToCachedBatchIterator(mockParquetOutputFileFormat)
-    var totalRows = 0
-    while(s.hasNext) {
-      val cb = s.next()
-      totalRows += cb.numRows
-    }
-    assert(totalRows == ROWS)
-    assert(totalSize == ROWS * schema.indices.length * 1024L)
-  }
-
   val ROWS = 3 * 1024 * 1024
 
   private def getCudfAndGpuVectors(onHost: Boolean = false): (ColumnVector, GpuColumnVector)= {
@@ -262,7 +195,6 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       when(spyCol.split(any())).thenReturn(splitCols.toArray)
     }
   }
-
 
   private var compressWithParquetMethod: Option[Method] = None
   private var parquetSerializerInstance: Option[Any] = None
