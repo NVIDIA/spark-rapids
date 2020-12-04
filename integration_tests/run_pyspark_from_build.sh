@@ -28,7 +28,8 @@ else
     CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
     PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark*.jar)
     TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*.jar)
-    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS"
+    UDF_EXAMPLE_JARS=$(echo "$SCRIPTPATH"/../udf-examples/target/rapids-4-spark-udf-examples*.jar)
+    ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS $UDF_EXAMPLE_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
     then
