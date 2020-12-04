@@ -120,6 +120,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def convertToCpu(): BASE = wrapped
 
   private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
+  private var cannotReplaceAnyOfPlan: Option[mutable.Set[String]] = None
 
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
 
@@ -141,6 +142,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     }
   }
 
+  final def entirePlanWillNotWork(because: String): Unit = {
+    cannotReplaceAnyOfPlan.get.add(because)
+  }
+
   final def shouldBeRemoved(because: String): Unit =
     shouldBeRemovedReasons.get.add(because)
 
@@ -153,6 +158,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * Returns true iff this could be replaced.
    */
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
+
+  final def canAnyOfPlanBeReplaced: Boolean = cannotReplaceAnyOfPlan.exists(_.isEmpty)
 
   /**
    * Returns true iff all of the expressions and their children could be replaced.
