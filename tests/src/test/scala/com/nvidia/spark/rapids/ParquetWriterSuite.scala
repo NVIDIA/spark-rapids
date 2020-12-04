@@ -134,13 +134,13 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("convert large columnar batch to cachedbatch on CPU single col table") {
+  test("convert large columnar batch to cachedbatch on single col table") {
     val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors()
     testCompressColBatch(Array(spyCol0), Array(spyGpuCol0))
     verify(spyCol0).split(2086912)
   }
 
-  test("convert large columnar batch to cachedbatch on CPU multi-col table") {
+  test("convert large columnar batch to cachedbatch on multi-col table") {
     val (spyCol0, spyGpuCol0) = getCudfAndGpuVectors()
     val (spyCol1, spyGpuCol1) = getCudfAndGpuVectors()
     val (spyCol2, spyGpuCol2) = getCudfAndGpuVectors()
@@ -265,7 +265,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
 
   private var compressWithParquetMethod: Option[Method] = None
-  private var ref: Option[Any] = None
+  private var parquetSerializerInstance: Option[Any] = None
 
   private def testCompressColBatch(
      cudfCols: Array[ColumnVector],
@@ -294,14 +294,14 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           val method = compressWithParquetMethod.getOrElse {
             val classOfSerializer = Class.forName(
               "com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer")
-            ref = Some(classOfSerializer.newInstance())
+            parquetSerializerInstance = Some(classOfSerializer.newInstance())
             val compressWithParquet =
               classOfSerializer.getMethod("compressColumnarBatchWithParquet",
                 classOf[ColumnarBatch])
             compressWithParquetMethod = Some(compressWithParquet)
             compressWithParquet
           }
-          method.invoke(ref.get, cb)
+          method.invoke(parquetSerializerInstance.get, cb)
         } finally {
           theTableMock.close()
         }
