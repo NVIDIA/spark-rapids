@@ -52,7 +52,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
   @transient private val buffers = data.map(_.buffer)
   @transient private var batchInternal: ColumnarBatch = null
 
-  def batch: ColumnarBatch = {
+  def batch: ColumnarBatch = this.synchronized {
     if (batchInternal == null) {
       // TODO we should come up with a better way for this to happen directly...
       val out = new ByteArrayOutputStream()
