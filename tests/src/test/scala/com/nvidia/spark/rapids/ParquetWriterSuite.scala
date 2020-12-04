@@ -21,16 +21,18 @@ import java.lang.reflect.Method
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
+
 import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
 import com.nvidia.spark.rapids.shims.spark310.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
-import org.apache.spark.{SparkConf, SparkException}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
+
+import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
@@ -265,8 +267,9 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   private var compressWithParquetMethod: Option[Method] = None
   private var ref: Option[Any] = None
 
-  private def testCompressColBatch(cudfCols: Array[ColumnVector],
-                                   gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector]): Unit = {
+  private def testCompressColBatch(
+     cudfCols: Array[ColumnVector],
+     gpuCols: Array[org.apache.spark.sql.vectorized.ColumnVector]): Unit = {
     if (!withCpuSparkSession(s => s.version < "3.1.0")) {
 
       // mock static method for Table
