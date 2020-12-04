@@ -131,7 +131,14 @@ class DecimalUnitTest extends GpuUnitTests {
     }
   }
 
-  private val rapidsConf = new RapidsConf(Map[String, String]())
+  private val rapidsConf = new RapidsConf(Map[String, String](
+    RapidsConf.DECIMAL_TYPE_ENABLED.key -> "true"
+  ))
+
+  test("decimals are off by default") {
+    assertResult(false)(!new RapidsConf(Map[String, String]()).decimalTypeEnabled)
+  }
+
   private val lit = Literal(dec32Data(0), DecimalType(dec32Data(0).precision, dec32Data(0).scale))
 
   test("test Literal with decimal") {
