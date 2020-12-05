@@ -20,22 +20,14 @@ import java.io.File
 import java.lang.reflect.Method
 import java.nio.charset.StandardCharsets
 
-import scala.collection.mutable
-
 import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
-import com.nvidia.spark.rapids.shims.spark310.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
 
 import org.apache.spark.{SparkConf, SparkException}
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ByteType, DataType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
