@@ -30,6 +30,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -38,8 +39,9 @@ import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
 import org.apache.spark.sql.types._
+import org.apache.spark.internal.Logging
 
-class Spark301dbShims extends Spark301Shims {
+class Spark301dbShims extends Spark301Shims with Logging {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
@@ -109,11 +111,22 @@ class Spark301dbShims extends Spark301Shims {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+          override def tagPlanForGpu(): Unit = {
+            if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
+              wrapped.relation.location.getClass.getCanonicalName() ==
+              "com.databricks.sql.transaction.stats.DeltaLogFileIndex") {
+             logWarning("marking plan as will not work" + wrapped)
+             this.entirePlanWillNotWork("json file format with delta index not supported, none of plan on GPU")
+            } else {
+              logWarning("not deltalogfile index with json")
+              GpuFileSourceScanExec.tagSupport(this)
+            }
+          }
 
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
             val newRelation = HadoopFsRelation(
               wrapped.relation.location,
               wrapped.relation.partitionSchema,

@@ -2262,9 +2262,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       logWarning("in overrides before wrap plan, original plan is: " + plan)
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
       if (!wrap.canAnyOfPlanBeReplaced) {
-        logWarning("can't replace any of this plan!!")
+        logWarning("can't replace any of this plan!!" + plan)
         plan
       } else {
+        logWarning("can replace parts of plan " + plan)
         wrap.tagForGpu()
         wrap.runAfterTagRules()
         val exp = conf.explain

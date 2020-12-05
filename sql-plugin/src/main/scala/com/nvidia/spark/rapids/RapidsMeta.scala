@@ -159,7 +159,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
 
-  final def canAnyOfPlanBeReplaced: Boolean = cannotReplaceAnyOfPlan.exists(_.isEmpty)
+  final def canAnyOfPlanBeReplaced: Boolean = {
+    cannotReplaceAnyOfPlan.exists(_.isEmpty)
+  }
 
   /**
    * Returns true iff all of the expressions and their children could be replaced.
@@ -191,6 +193,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def initReasons(): Unit = {
     cannotBeReplacedReasons = Some(mutable.Set[String]())
     shouldBeRemovedReasons = Some(mutable.Set[String]())
+    cannotReplaceAnyOfPlan = Some(mutable.Set[String]())
   }
 
   /**
