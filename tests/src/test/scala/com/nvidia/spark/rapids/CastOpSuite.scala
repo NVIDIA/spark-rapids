@@ -56,6 +56,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     case (TimestampType | DateType, _: NumericType) => true
     case (TimestampType | DateType, BooleanType) => true
     case (StringType, TimestampType) => true
+    case (FloatType, IntegerType) => true
     case _ => false
   }
 
