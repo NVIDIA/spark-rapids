@@ -145,8 +145,8 @@ Examples:
 
 #### Integration tests
 Integration tests are located [here](integration_tests). The suggested way to run these tests is to use the shell-script file located in the module folder called
-[run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes care of some of the flags that are required to run the tests which
-will have to be set for the plugin to work. It will be very useful to read the contents of the [run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get
+[run_pyspark_from_build.sh](integration_tests/run_pyspark_from_build.sh). This script takes care of some of the flags that are required to run the tests which
+will have to be set for the plugin to work. It will be very useful to read the contents of the [run_pyspark_from_build.sh](integration_tests/run_pyspark_from_build.sh) to get
 better insight into what is needed as we constantly keep working on to improve and expand the plugin-support.
 
 The tests are written python and run with pytest and the script honors pytest parameters. Some handy flags are:
@@ -158,9 +158,10 @@ The tests are written python and run with pytest and the script honors pytest pa
 - For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
 
 Example: 
-- This command runs all the tests located in `cache_test.py` against Apache Spark 3.1.0 using the ParquetCachedBatchSerializer and other configs discussed above and with the debugger listening on port 5005
-`SPARK_SUBMIT_FLAGS="--driver-memory 4g --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer" 
-SPARK_HOME=~/spark-3.1.0-SNAPSHOT-bin-hadoop3.2/ 
+- This command runs all the tests located in `cache_test.py` against Apache Spark 3.1.0 using the ParquetCachedBatchSerializer and other configs discussed above
+and with the debugger listening on port 5005
+`SPARK_SUBMIT_FLAGS="--driver-memory 4g --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer"
+SPARK_HOME=~/spark-3.1.0-SNAPSHOT-bin-hadoop3.2/
 COVERAGE_SUBMIT_FLAGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005' ./run_pyspark_from_build.sh -k cache_test`
 
 ## Attribution
