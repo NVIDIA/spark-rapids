@@ -57,7 +57,7 @@ This project follows the
 and the Scala conventions detailed above, preferring the latter.
 
 ### Test
-There are two types of tests in this project. Unit tests that are written in Scala, and integration tests that are written in python. 
+There are two types of tests in this project. Unit tests that are written in Scala, and integration tests that are written in Python. 
 We encourage writing integration tests if you have to choose between the two as that helps us ensure the plugin is working across different platforms. 
 
 #### Unit tests
