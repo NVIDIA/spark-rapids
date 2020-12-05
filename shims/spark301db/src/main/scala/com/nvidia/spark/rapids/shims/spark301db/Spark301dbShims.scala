@@ -112,6 +112,14 @@ class Spark301dbShims extends Spark301Shims with Logging {
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
           override def tagPlanForGpu(): Unit = {
+            logWarning("file source scan exec tag plan for gpu: " + wrapped.relation.location + " format: " + wrapped.relation.fileFormat)
+              if (wrapped.relation.location.getClass.getCanonicalName() ==
+              "com.databricks.sql.transaction.stats.DeltaLogFileIndex") {
+                logWarning("DeltaLogFileIndex found")
+              }
+            if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat]) {
+              logWarning("file format is Json")
+            }
             if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
               wrapped.relation.location.getClass.getCanonicalName() ==
               "com.databricks.sql.transaction.stats.DeltaLogFileIndex") {
