@@ -351,7 +351,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   private[rapids] def compressColumnarBatchWithParquet(
      gpuCB: ColumnarBatch): List[ParquetCachedBatch] = {
-    // NOTE: this doesn't take nulls into account so we could be over-estimating the acutal size
+    // NOTE: this doesn't take nulls into account so we could be over-estimating the actual size
     // but that's still better than under-estimating
     val estimatedRowSize = scala.Range(0, gpuCB.numCols()).map { index =>
       gpuCB.column(index).dataType().defaultSize
@@ -1331,4 +1331,3 @@ private object ParquetOutputFileFormat {
     memoryManager
   }
 }
-
