@@ -2261,12 +2261,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled) {
       logWarning("in overrides before wrap plan, original plan is: " + plan)
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
-      if (!wrap.canAnyOfPlanBeReplaced) {
-        logWarning("can't replace any of this plan!!" + plan)
-        plan
-      } else {
+      wrap.tagForGpu()
+      if (wrap.canAnyOfPlanBeReplaced) {
         logWarning("can replace parts of plan " + plan)
-        wrap.tagForGpu()
         wrap.runAfterTagRules()
         val exp = conf.explain
         if (!exp.equalsIgnoreCase("NONE")) {
@@ -2277,7 +2274,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
         val convertedPlan = wrap.convertIfNeeded()
         addSortsIfNeeded(convertedPlan, conf)
-      }
+      } else {
+        logWarning("can't replace any of this plan!!" + plan)
+        plan
+      } 
     } else {
       plan
     }
