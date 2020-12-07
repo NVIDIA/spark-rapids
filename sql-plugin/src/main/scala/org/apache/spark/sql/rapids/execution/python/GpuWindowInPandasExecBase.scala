@@ -201,7 +201,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(partitionSpec.map(SortOrder(_, Ascending)) ++ orderSpec)
+    Seq(partitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ orderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
