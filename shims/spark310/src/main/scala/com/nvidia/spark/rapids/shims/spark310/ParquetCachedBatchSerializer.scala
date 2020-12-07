@@ -1249,8 +1249,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, converters)
       })
       columnarBatchRdd.flatMap(cb => {
-        withResource(cb) { cb => compressColumnarBatchWithParquet(cb)
-        }
+        withResource(cb)(cb => compressColumnarBatchWithParquet(cb))
       })
     } else {
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, parquetSchema)
