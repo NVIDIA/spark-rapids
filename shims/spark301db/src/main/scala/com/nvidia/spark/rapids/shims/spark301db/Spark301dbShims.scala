@@ -121,10 +121,10 @@ class Spark301dbShims extends Spark301Shims with Logging {
 
              this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
                "any part of the plan on the GPU!")
-            } else {
-              logWarning("not deltalogfile index with json")
-              GpuFileSourceScanExec.tagSupport(this)
             }
+            // still tag rest of plan in case we want to ignore the above entire plan will
+            // not work later
+            GpuFileSourceScanExec.tagSupport(this)
           }
 
           override def convertToGpu(): GpuExec = {
