@@ -120,8 +120,6 @@ class Spark301dbShims extends Spark301Shims {
               this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
                 "any part of the plan on the GPU!")
             }
-            // still tag rest of plan in case we want to ignore the above entire plan will
-            // not work later
             GpuFileSourceScanExec.tagSupport(this)
           }
 
