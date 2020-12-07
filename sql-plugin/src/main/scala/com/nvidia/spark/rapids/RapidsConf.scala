@@ -779,8 +779,8 @@ object RapidsConf {
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
-    .doc("The config allows execs to disable all GPU operations for the entire plan when " +
-      "certain conditions happen. Change this to false will revert the behavior to only checking " +
+    .doc("Allow the disabling of all GPU operations for the entire plan when " +
+      "certain conditions happen. Change this to false will revert the behavior to check " +
       "each individual exec.")
     .booleanConf
     .createWithDefault(true)
