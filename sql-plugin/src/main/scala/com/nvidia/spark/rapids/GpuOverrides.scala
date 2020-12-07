@@ -2276,7 +2276,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val convertedPlan = wrap.convertIfNeeded()
         addSortsIfNeeded(convertedPlan, conf)
       } else {
-        logWarning("can't replace any of this plan!!" + plan)
+        val reason = wrap.replaceAnyOfPlanInfo
+        logWarning("can't replace any of this plan!!" + plan + " reasons: " + reason)
         plan
       }
     } else {
