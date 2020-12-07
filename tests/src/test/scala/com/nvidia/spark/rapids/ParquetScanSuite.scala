@@ -16,7 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.nio.file.Files
+
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
 
 class ParquetScanSuite extends SparkQueryCompareTestSuite {
@@ -36,6 +40,16 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
   // but the file it depends on is used in other tests too.
   testSparkResultsAreEqual("Test Parquet timestamps and dates",
     frameFromParquet("timestamp-date-test.parquet")) {
+    frame => frame.select(col("*"))
+  }
+
+  // Column schema of decimal-test.parquet is: [_c0: decimal(18, 0), _c1: decimal(10, 10),
+  //  _c2: decimal(15, 12), _c3: int64, _c4: float]
+  // LIMIT: Because we only support DECIMAL64, we only support reading decimal columns whose
+  // physical storage type are INT64 in current.
+  testSparkResultsAreEqual("Test Parquet decimal",
+    frameFromParquet("decimal-test.parquet"),
+    new SparkConf().set("spark.sql.sources.useV1SourceList", "")) {
     frame => frame.select(col("*"))
   }
 }

@@ -156,7 +156,8 @@ class Spark300Shims extends SparkShims {
               allowArray = true,
               allowMaps = true,
               allowStruct = true,
-              allowNesting = true)
+              allowNesting = true,
+              allowDecimal = true)
 
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty

@@ -17,11 +17,8 @@
 package com.nvidia.spark.rapids
 
 import java.time.ZoneId
-
 import scala.reflect.ClassTag
-
 import ai.rapids.cudf.DType
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -41,6 +38,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
@@ -2035,7 +2033,8 @@ object GpuOverrides {
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
-            allowNesting = true)
+            allowNesting = true,
+            allowDecimal = p.scan.isInstanceOf[ParquetScan])
 
         override def convertToGpu(): GpuExec =
           GpuBatchScanExec(p.output, childScans(0).convertToGpu())

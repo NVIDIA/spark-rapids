@@ -139,7 +139,8 @@ object GpuParquetScanBase {
         allowMaps = true,
         allowArray = true,
         allowStruct = true,
-        allowNesting = true)) {
+        allowNesting = true,
+        allowDecimal = true)) {
         meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
     }
