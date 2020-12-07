@@ -105,7 +105,7 @@ else
           --conf 'spark.sql.session.timeZone=UTC' \
           --conf 'spark.sql.shuffle.partitions=12' \
           $SPARK_SUBMIT_FLAGS \
-          "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python/gen_decimal_parquet.py \
+          "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           --color=yes \
