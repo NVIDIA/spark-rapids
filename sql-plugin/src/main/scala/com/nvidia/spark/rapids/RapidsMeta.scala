@@ -32,6 +32,8 @@ import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExcha
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.types.DataType
 
+import org.apache.spark.internal.Logging
+
 trait ConfKeysAndIncompat {
   val operationName: String
   def incompatDoc: Option[String] = None
@@ -67,7 +69,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     val wrapped: INPUT,
     val conf: RapidsConf,
     val parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat) {
+    rule: ConfKeysAndIncompat) extends Logging {
 
   /**
    * The wrapped plans that should be examined
@@ -160,6 +162,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
 
   final def canAnyOfPlanBeReplaced: Boolean = {
+    if (cannotReplaceAnyOfPlan.isEmpty) {
+    logWarning("canAnyOfPlanBeReplaced empty")
+    } else {
+    logWarning("canAnyOfPlanBeReplaced : " + cannotReplaceAnyOfPlan.get)
+    }
     cannotReplaceAnyOfPlan.exists(_.isEmpty)
   }
 
@@ -519,6 +526,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
             "query stage ran on GPU")
       }
     }
+  }
+
+  def checkReplaceAnyofPlan(): Boolean = {
+    logWarning("can any of plan be replaced: " + this.canAnyOfPlanBeReplaced)
+    val res = childPlans.forall(_.checkReplaceAnyofPlan())
+    logWarning("checking children result: " + res)
+    this.canAnyOfPlanBeReplaced && res
   }
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {

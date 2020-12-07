@@ -113,8 +113,9 @@ class Spark301dbShims extends Spark301Shims with Logging {
 
           override def tagPlanForGpu(): Unit = {
             logWarning("file source scan exec tag plan for gpu: " + wrapped.relation.location + " format: " + wrapped.relation.fileFormat)
+            logWarning(" class location is: " + wrapped.relation.location.getClass.getCanonicalName())
               if (wrapped.relation.location.getClass.getCanonicalName() ==
-              "com.databricks.sql.transaction.stats.DeltaLogFileIndex") {
+              "com.databricks.sql.transaction.tahoe.DeltaLogFileIndex") {
                 logWarning("DeltaLogFileIndex found")
               }
             if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat]) {
@@ -122,7 +123,7 @@ class Spark301dbShims extends Spark301Shims with Logging {
             }
             if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
               wrapped.relation.location.getClass.getCanonicalName() ==
-              "com.databricks.sql.transaction.stats.DeltaLogFileIndex") {
+              "com.databricks.sql.transaction.tahoe.DeltaLogFileIndex") {
              logWarning("marking plan as will not work" + wrapped)
              this.entirePlanWillNotWork("json file format with delta index not supported, none of plan on GPU")
             } else {
