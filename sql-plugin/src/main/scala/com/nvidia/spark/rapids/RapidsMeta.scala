@@ -534,8 +534,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   def replaceAnyOfPlanInfo(): Seq[String] = {
-    logWarning("can any of plan be replaced: " + this.canAnyOfPlanBeReplaced)
-    val res = childPlans.map(_.planWillWorkOnGpuInfo)
+    val res = childPlans.flatMap(_.replaceAnyOfPlanInfo)
     logWarning("checking children result: " + res)
     res ++ Seq(planWillWorkOnGpuInfo)
   }

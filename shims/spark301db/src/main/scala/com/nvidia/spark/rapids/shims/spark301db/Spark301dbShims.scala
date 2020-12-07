@@ -112,15 +112,14 @@ class Spark301dbShims extends Spark301Shims with Logging {
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
           override def tagPlanForGpu(): Unit = {
-            logWarning("file source scan exec tag plan for gpu: " + wrapped.relation.location + " format: " + wrapped.relation.fileFormat)
-            logWarning(" class location is: " + wrapped.relation.location.getClass.getCanonicalName())
+            // this is very specific check to have any of the Delta log metadata queries
+            // fallback and run on the CPU since there is some in compatibilities in
+            // Databricks Spark and Apache Spark.
             if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
               wrapped.relation.location.getClass.getCanonicalName() ==
-              "com.databricks.sql.transaction.tahoe.DeltaLogFileIndex") {
-             logWarning("marking plan as will not work" + wrapped)
-
-             this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
-               "any part of the plan on the GPU!")
+                "com.databricks.sql.transaction.tahoe.DeltaLogFileIndex") {
+              this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
+                "any part of the plan on the GPU!")
             }
             // still tag rest of plan in case we want to ignore the above entire plan will
             // not work later

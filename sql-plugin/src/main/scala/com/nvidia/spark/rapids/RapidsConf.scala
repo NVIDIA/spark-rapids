@@ -777,6 +777,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
+    .internal()
+    .doc("The config allows execs to disable all GPU operations for the entire plan when " +
+      "certain conditions happen. Change this to false will revert the behavior to only checking " +
+      "each individual exec.")
+    .booleanConf
+    .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1061,6 +1069,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
+
+  lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
