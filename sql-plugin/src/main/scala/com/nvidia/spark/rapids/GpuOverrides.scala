@@ -2113,7 +2113,8 @@ object GpuOverrides {
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
-            allowNesting = true)
+            allowNesting = true,
+            allowDecimal = true)
 
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())
