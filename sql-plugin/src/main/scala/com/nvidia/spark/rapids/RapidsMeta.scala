@@ -167,8 +167,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * set means the entire plan is ok to be replaced, do the normal checking
    * per exec and children.
    */
-  final def canAnyOfPlanBeReplacedReasons: Set[String] = {
-    cannotReplaceAnyOfPlanReasons.getOrElse(Set.empty)
+  final def canAnyOfPlanBeReplacedReasons: Seq[String] = {
+    cannotReplaceAnyOfPlanReasons.getOrElse(mutable.Set.empty).toSeq
   }
 
   /**
@@ -529,7 +529,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
-  def getReasonsNotToReplaceEntirePlan: Set[String] = {
+  def getReasonsNotToReplaceEntirePlan: Seq[String] = {
     val childReasons = childPlans.flatMap(_.getReasonsNotToReplaceEntirePlan)
     canAnyOfPlanBeReplacedReasons ++ childReasons
   }
