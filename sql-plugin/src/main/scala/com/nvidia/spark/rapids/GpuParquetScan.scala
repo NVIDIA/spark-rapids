@@ -1231,7 +1231,7 @@ class MultiFileParquetPartitionReader(
               // concat later
               if (blockIterator.head.partValues != currentPartitionValues) {
                 logInfo(s"Partition values for the next file ${blockIterator.head.filePath}" +
-                  s" doesn't match current $currentFile, splitting it into another batch!")
+                  s" doesn't match current $currentFile, recording it and coalescing!")
                 // get number of rows in previous partition (where partition is block chunks before
                 // partition value changed)
                 partitionedDataRows += (numRows - lastPartRows)
