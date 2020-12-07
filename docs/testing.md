@@ -39,14 +39,14 @@ They generally follow TPCH but are not guaranteed to be the same.
 
 ## Unit tests
 
-Unit tests exist in the [here](tests) directory. This is unconventional and is done so we can run
- the tests on the final shaded version of the plugin. It also helps with how we collect code coverage.
+Unit tests exist in the [tests](../tests) directory. This is unconventional and is done so we can
+ run the tests on the final shaded version of the plugin. It also helps with how we collect code coverage.
 
-in order to run the unit-tests follow these steps
-1. issue the maven command to run the tests with `mvn test`. this will run all the tests
-2. to run individual tests append `-dwildcardsuites=<comma separated list of wildcard suite names to execute>` to the above command 
+In order to run the unit-tests issue the maven command to run the tests i.e. `mvn test`. 
 
-for more information about using scalatest with maven please refere [here](https://www.scalatest.org/user_guide/using_the_scalatest_maven_plugin)
+To run individual tests append `-DwildcardSuites=<comma separated list of wildcard suite names to execute>` to the above command 
+
+For more information about using scalatest with maven please refer [here](https://www.scalatest.org/user_guide/using_the_scalatest_maven_plugin)
     
 #### Running unit-tests against specific apache spark versions. 
 You can run the unit tests against different versions of Spark using the different profiles. The
@@ -68,7 +68,7 @@ Examples:
 
 ## Integration tests
 
-Integration tests are stored in the [integration_tests](integration_tests) directory. 
+Integration tests are stored in the [integration_tests](../integration_tests) directory. 
 There are two frameworks used for testing. one is based off of pytest and pyspark in the 
 `src/main/python` directory. These tests will run as a part of the maven build if you have the 
 environment variable `SPARK_HOME` set.
@@ -152,7 +152,7 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 ...
 ```
 
-For more details on Integration tests options please refer to integration-test [doc](integration-tests/README.md)
+For more details on Integration tests options please refer to integration-test [doc](../integration_tests/README.md)
 
 Another example: 
 - This command runs all the tests located in `cache_test.py` against Apache Spark 3.1.0 using the ParquetCachedBatchSerializer and other configs discussed above
