@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
 import scala.math.max
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, Table}
+import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetricNames._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -71,7 +71,7 @@ case class GpuBatchScanExec(
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 
   override lazy val inputRDD: RDD[InternalRow] = {
-    new DataSourceRDD(sparkContext, partitions, readerFactory, supportsColumnar)
+    new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
   }
 
   override def doCanonicalize(): GpuBatchScanExec = {
@@ -309,8 +309,8 @@ case class GpuCSVPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val reader = new CSVPartitionReader(conf, partFile, dataSchema, readDataSchema, parsedOptions,
-      maxReaderBatchSizeRows, maxReaderBatchSizeBytes, metrics)
+    val reader = new PartitionReaderWithBytesRead(new CSVPartitionReader(conf, partFile, dataSchema,
+      readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes, metrics))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
   }
 }
@@ -425,7 +425,7 @@ class CSVPartitionReader(
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("CSV readBatch", NvtxColor.GREEN, metrics(TOTAL_TIME))) { _ =>
+    withResource(new NvtxRange("CSV readBatch", NvtxColor.GREEN)) { _ =>
       val hasHeader = partFile.start == 0 && isFirstChunkForIterator && parsedOptions.headerFlag
       val table = readToTable(hasHeader)
       try {

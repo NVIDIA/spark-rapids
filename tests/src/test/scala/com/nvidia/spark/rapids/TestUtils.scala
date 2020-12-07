@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{ColumnVector, DType, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVectorCore, Table}
 import org.scalatest.Assertions
 import scala.collection.mutable.ListBuffer
 
@@ -103,27 +103,42 @@ object TestUtils extends Assertions with Arm {
     }
   }
 
-  /** Compre the equality of two `ColumnVector` instances */
+  /** Compare the equality of two `ColumnVector` instances */
   def compareColumns(expected: ColumnVector, actual: ColumnVector): Unit = {
     assertResult(expected.getType)(actual.getType)
     assertResult(expected.getRowCount)(actual.getRowCount)
     withResource(expected.copyToHost()) { e =>
       withResource(actual.copyToHost()) { a =>
-        (0L until expected.getRowCount).foreach { i =>
-          assertResult(e.isNull(i))(a.isNull(i))
-          if (!e.isNull(i)) {
-            e.getType match {
-              case DType.BOOL8 => assertResult(e.getBoolean(i))(a.getBoolean(i))
-              case DType.INT8 => assertResult(e.getByte(i))(a.getByte(i))
-              case DType.INT16 => assertResult(e.getShort(i))(a.getShort(i))
-              case DType.INT32 => assertResult(e.getInt(i))(a.getInt(i))
-              case DType.INT64 => assertResult(e.getLong(i))(a.getLong(i))
-              case DType.FLOAT32 => assertResult(e.getFloat(i))(a.getFloat(i))
-              case DType.FLOAT64 => assertResult(e.getDouble(i))(a.getDouble(i))
-              case DType.STRING => assertResult(e.getJavaString(i))(a.getJavaString(i))
-              case _ => throw new UnsupportedOperationException("not implemented yet")
+        compareColumns(e, a)
+      }
+    }
+  }
+
+  def compareColumns(e: HostColumnVectorCore, a: HostColumnVectorCore): Unit = {
+    assertResult(e.getType)(a.getType)
+    assertResult(e.getRowCount)(a.getRowCount)
+    assertResult(e.getNumChildren)(a.getNumChildren)
+    (0L until e.getRowCount).foreach { i =>
+      assertResult(e.isNull(i))(a.isNull(i))
+      if (!e.isNull(i)) {
+        e.getType match {
+          case DType.BOOL8 => assertResult(e.getBoolean(i))(a.getBoolean(i))
+          case DType.INT8 => assertResult(e.getByte(i))(a.getByte(i))
+          case DType.INT16 => assertResult(e.getShort(i))(a.getShort(i))
+          case DType.INT32 => assertResult(e.getInt(i))(a.getInt(i))
+          case DType.INT64 => assertResult(e.getLong(i))(a.getLong(i))
+          case DType.FLOAT32 => assertResult(e.getFloat(i))(a.getFloat(i))
+          case DType.FLOAT64 => assertResult(e.getDouble(i))(a.getDouble(i))
+          case DType.STRING => assertResult(e.getJavaString(i))(a.getJavaString(i))
+          case dt if dt.isDecimalType && dt.isBackedByLong =>
+            assertResult(e.getBigDecimal(i))(a.getBigDecimal(i))
+          case DType.LIST | DType.STRUCT =>
+            (0 until e.getNumChildren).foreach { childIdx =>
+              val eChild = e.getChildColumnView(childIdx)
+              val aChild = a.getChildColumnView(childIdx)
+              compareColumns(eChild, aChild)
             }
-          }
+          case _ => throw new UnsupportedOperationException("not implemented yet")
         }
       }
     }

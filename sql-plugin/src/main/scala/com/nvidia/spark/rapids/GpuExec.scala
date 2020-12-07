@@ -51,7 +51,6 @@ object GpuMetricNames {
   def buildGpuScanMetrics(sparkContext: SparkContext): Map[String, SQLMetric] = {
     Map(
       NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
-      TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
       GPU_DECODE_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU decode time"),
       BUFFER_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
       PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,

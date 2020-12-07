@@ -193,6 +193,12 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Str
 
     val compressedTables = results.toArray
     results.clear()
+
+    // Ensure we synchronize on the CUDA stream, because `CompressedTable` instances
+    // could be copied to host during a spill before we are done.
+    // TODO: A better way to do this would be via CUDA events, synchronizing on the event
+    //  instead of the whole stream
+    stream.sync()
     compressedTables
   }
 

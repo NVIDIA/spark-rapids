@@ -144,12 +144,13 @@ def test_multi_types_window_aggs_for_rows(a_gen, b_gen, c_gen):
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
+
 # Test for RANGE queries, with timestamp order-by expressions.
 # Non-timestamp order-by columns are currently unsupported for RANGE queries.
 # See https://github.com/NVIDIA/spark-rapids/issues/216
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_timestamps,
-                                      pytest.param(_grpkey_longs_with_nullable_timestamps, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1039'))],
+                                      pytest.param(_grpkey_longs_with_nullable_timestamps)],
                                       ids=idfn)
 def test_window_aggs_for_ranges(data_gen):
     assert_gpu_and_cpu_are_equal_sql(

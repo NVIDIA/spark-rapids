@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session, is_before_spark_310
+from spark_session import with_cpu_session, with_spark_session, is_before_spark_310, is_spark_300
 
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
@@ -30,10 +30,12 @@ def read_orc_sql(data_path):
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
-def test_basic_read(std_input_path, name, read_func, v1_enabled_list):
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl):
     assert_gpu_and_cpu_are_equal_collect(
             read_func(std_input_path + '/' + name),
-            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
+            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.sql.orc.impl': orc_impl})
 
 orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -170,3 +172,26 @@ def test_input_meta(spark_tmp_path):
                         'input_file_block_start()',
                         'input_file_block_length()'))
 
+def setup_orc_file_no_column_names(spark):
+    drop_query = "DROP TABLE IF EXISTS test_orc_data"
+    create_query = "CREATE TABLE `test_orc_data` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc"
+    insert_query = "INSERT INTO test_orc_data VALUES(13, '155', 2020)"
+    spark.sql(drop_query).collect
+    spark.sql(create_query).collect
+    spark.sql(insert_query).collect
+
+def test_missing_column_names():
+    if is_spark_300():
+        pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
+
+    with_cpu_session(setup_orc_file_no_column_names)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM test_orc_data"))
+
+def test_missing_column_names_filter():
+    if is_spark_300():
+        pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
+
+    with_cpu_session(setup_orc_file_no_column_names)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM test_orc_data WHERE _col2 = '155'"))

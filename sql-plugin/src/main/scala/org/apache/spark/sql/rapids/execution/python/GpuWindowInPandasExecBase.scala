@@ -201,7 +201,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(partitionSpec.map(SortOrder(_, Ascending)) ++ orderSpec)
+    Seq(partitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ orderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -242,7 +242,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
   // Similar with WindowExecBase.windowFrameExpressionFactoryPairs
   // but the functions are not needed here.
-  private lazy val windowFramesWithExpressions = {
+  protected lazy val windowFramesWithExpressions = {
     type FrameKey = (String, GpuSpecifiedWindowFrame)
     type ExpressionBuffer = mutable.Buffer[Expression]
     val framedExpressions = mutable.Map.empty[FrameKey, ExpressionBuffer]
@@ -547,7 +547,9 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
         // store the number of rows separate from the batch. That way we can get the target batch
         // size out without needing to grab the GpuSemaphore which we cannot do if we might block
         // on a read operation.
-        override def hasNext: Boolean = queue.hasNext
+        // Besides, when the queue is empty, need to call the `hasNext` of the out iterator to
+        // trigger reading and handling the control data followed with the stream data.
+        override def hasNext: Boolean = queue.hasNext || outputBatchIterator.hasNext
 
         private [this] def combine(
             origBatch: ColumnarBatch,

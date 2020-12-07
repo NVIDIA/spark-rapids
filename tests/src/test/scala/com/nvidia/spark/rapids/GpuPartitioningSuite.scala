@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.math.RoundingMode
 
 import ai.rapids.cudf.{DType, Table}
 import org.scalatest.FunSuite
@@ -24,7 +25,7 @@ import org.scalatest.FunSuite
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
-import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType}
+import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuPartitioningSuite extends FunSuite with Arm {
@@ -33,8 +34,11 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)
         .column("five", "two", null, null, "one", "one", "one", "one", "one", "one")
         .column(5.0, 2.0, 3.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+        .decimal64Column(-3, RoundingMode.UNNECESSARY ,
+          5.1, null, 3.3, 4.4e2, 0, -2.1e-1, 1.111, 2.345, null, 1.23e3)
         .build()) { table =>
-      GpuColumnVector.from(table, Array(IntegerType, StringType, DoubleType))
+      GpuColumnVector.from(table, Array(IntegerType, StringType, DoubleType,
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, 3)))
     }
   }
 
@@ -53,8 +57,14 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     val expectedColumns = GpuColumnVector.extractBases(expected)
     val actualColumns = GpuColumnVector.extractBases(expected)
     expectedColumns.zip(actualColumns).foreach { case (expected, actual) =>
-      withResource(expected.equalToNullAware(actual)) { compareVector =>
-        withResource(compareVector.all(DType.BOOL8)) { compareResult =>
+      // FIXME: For decimal types, NULL_EQUALS has not been supported in cuDF yet
+      val cpVec = if (expected.getType.isDecimalType) {
+        expected.equalTo(actual)
+      } else {
+        expected.equalToNullAware(actual)
+      }
+      withResource(cpVec) { compareVector =>
+        withResource(compareVector.all()) { compareResult =>
           assert(compareResult.getBoolean)
         }
       }
