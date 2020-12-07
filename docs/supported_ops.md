@@ -13,8 +13,8 @@ to document what operations are supported and what data types they support.
 ## `Decimal`
 The `Decimal` type in Spark supports a precision
 up to 38 digits (128-bits). The RAPIDS Accelerator stores values up to 64-bits and as such only
-supports a precision up to 18 digits. Note that decimals are disabled by default in the plugin, 
-because it is supported by a small number of operations presently, which can result in a lot 
+supports a precision up to 18 digits. Note that decimals are disabled by default in the plugin 
+because they are supported by a small number of operations presently, which can result in a lot 
 of data movement to and from the GPU, slowing down processing in some cases.
 
 ## `Timestamp`
