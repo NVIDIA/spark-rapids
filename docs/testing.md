@@ -52,9 +52,9 @@ for more information about using scalatest with maven please refere [here](https
 You can run the unit tests against different versions of Spark using the different profiles. The
 default version runs against Spark 3.0.0, to run against other versions use one of the following
  profiles:
-   - `-pspark301tests` (spark 3.0.1)
-   - `-pspark302tests` (spark 3.0.2)
-   - `-pspark310tests` (spark 3.1.0)
+   - `-Pspark301tests` (spark 3.0.1)
+   - `-Pspark302tests` (spark 3.0.2)
+   - `-Pspark310tests` (spark 3.1.0)
 
 Please refer to the [pom.xml](tests/pom.xml) to see the list of profiles supported
 apache spark specific configurations can be passed in by setting environment-variable spark_conf 
@@ -68,7 +68,7 @@ Examples:
 
 ## Integration tests
 
-Integration tests are stored in the [integration_tests](integration_tests/README.md) directory.
+Integration tests are stored in the [integration_tests](integration_tests) directory. 
 There are two frameworks used for testing. one is based off of pytest and pyspark in the 
 `src/main/python` directory. These tests will run as a part of the maven build if you have the 
 environment variable `SPARK_HOME` set.
@@ -86,7 +86,6 @@ The tests are written python and run with pytest and the script honors pytest pa
 - `-s` Doesn't capture the output and instead prints to the screen.
 - `-v` Increase the verbosity of the tests
 - `-rfexxs` Show extra test summary info as specified by chars: (f)ailed, (e)rror, (x)failed, (x)passed, (s)kipped
-- ``
 - For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
 
 By default the tests try to use the python packages `pytest-xdist` and `findspark` to oversubscribe
@@ -153,6 +152,7 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 ...
 ```
 
+For more details on Integration tests options please refer to integration-test [doc](integration-tests/README.md)
 
 Another example: 
 - This command runs all the tests located in `cache_test.py` against Apache Spark 3.1.0 using the ParquetCachedBatchSerializer and other configs discussed above
