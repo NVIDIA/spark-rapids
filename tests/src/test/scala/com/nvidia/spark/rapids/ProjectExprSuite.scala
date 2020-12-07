@@ -72,7 +72,9 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
 
       val createDF = (ss: SparkSession) => ss.read.parquet(path)
       val fun = (df: DataFrame) => df.withColumn("dec", df("decimals")).select("dec")
-      val conf = new SparkConf().set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+      val conf = new SparkConf()
+          .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+          .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, fun, conf, repart = 0)
       compareResults(false, 0.0, fromCpu, fromGpu)
     } finally {

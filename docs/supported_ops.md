@@ -13,7 +13,9 @@ to document what operations are supported and what data types they support.
 ## `Decimal`
 The `Decimal` type in Spark supports a precision
 up to 38 digits (128-bits). The RAPIDS Accelerator stores values up to 64-bits and as such only
-supports a precision up to 18 digits.
+supports a precision up to 18 digits. Note that decimals are disabled by default in the plugin 
+because they are supported by a small number of operations presently, which can result in a lot 
+of data movement to and from the GPU, slowing down processing in some cases.
 
 ## `Timestamp`
 Timestamps in Spark will all be converted to the local time zone before processing
@@ -722,7 +724,8 @@ Accelerator supports are described below.
 </table>
 * as was state previously Decimal is only supported up to a precision of 
 18 and Timestamp is only supported in the 
-UTC time zone.
+UTC time zone. Decimals are off by default due to performance impact in 
+some cases.
 
 # `Expression` and SQL Functions
 Inside each node in the DAG there can be one or more trees of expressions
@@ -15375,7 +15378,8 @@ Accelerator support is described below.
 </table>
 * as was state previously Decimal is only supported up to a precision of 
 18 and Timestamp is only supported in the 
-UTC time zone.
+UTC time zone. Decimals are off by default due to performance impact in 
+some cases.
 
 ## `Cast`
 The above table does not show what is and is not supported for cast very well.
