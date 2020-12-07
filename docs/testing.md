@@ -39,20 +39,55 @@ They generally follow TPCH but are not guaranteed to be the same.
 
 ## Unit tests
 
-Unit tests exist in the tests directory. This is unconventional and is done so we can run the tests
-on the final shaded version of the plugin. It also helps with how we collect code coverage.
+Unit tests exist in the [here](tests) directory. This is unconventional and is done so we can run
+ the tests on the final shaded version of the plugin. It also helps with how we collect code coverage.
+
+in order to run the unit-tests follow these steps
+1. issue the maven command to run the tests with `mvn test`. this will run all the tests
+2. to run individual tests append `-dwildcardsuites=<comma separated list of wildcard suite names to execute>` to the above command 
+
+for more information about using scalatest with maven please refere [here](https://www.scalatest.org/user_guide/using_the_scalatest_maven_plugin)
+    
+#### Running unit-tests against specific apache spark versions. 
 You can run the unit tests against different versions of Spark using the different profiles. The
-default version runs again Spark 3.0.0, to run against other version use one of the following profiles:
-   - `-Pspark301tests` (Spark 3.0.1)
-   - `-Pspark302tests` (Spark 3.0.2)
-   - `-Pspark310tests` (Spark 3.1.0)
+default version runs against Spark 3.0.0, to run against other versions use one of the following
+ profiles:
+   - `-pspark301tests` (spark 3.0.1)
+   - `-pspark302tests` (spark 3.0.2)
+   - `-pspark310tests` (spark 3.1.0)
+
+Please refer to the [pom.xml](tests/pom.xml) to see the list of profiles supported
+apache spark specific configurations can be passed in by setting environment-variable spark_conf 
+
+Examples: 
+-To run tests against Apache Spark 3.1.0, 
+ `mvn -P spark310tests test -DwildcardSuites="com.nvidia.spark.rapids.ParquetWriterSuite"`.
+- To pass Apache Spark configs `--conf spark.dynamicAllocation.enabled=false --conf spark.task.cpus=1` do something like.
+ `SPARK_CONF="spark.dynamicAllocation.enabled=false,spark.task.cpus=1" mvn ...`
+- To run test ParquetWriterSuite in package com.nvidia.spark.rapids, issue `mvn test -DwildcardSuites="com.nvidia.spark.rapids.ParquetWriterSuite"`
 
 ## Integration tests
 
-Integration tests are stored in the [integration_tests](../integration_tests/README.md) directory.
-There are two frameworks used for testing. One is based off of pytest and pyspark in the 
-`src/main/python` directory. These tests will run as a part of the maven build if you have the environment
-variable `SPARK_HOME` set.
+Integration tests are stored in the [integration_tests](integration_tests/README.md) directory.
+There are two frameworks used for testing. one is based off of pytest and pyspark in the 
+`src/main/python` directory. These tests will run as a part of the maven build if you have the 
+environment variable `SPARK_HOME` set.
+
+The suggested way to run these tests is to use the shell-script file located in the module folder 
+called [run_pyspark_from_build.sh](integration_tests/run_pyspark_from_build.sh). This script takes 
+care of some of the flags that are required to run the tests which will have to be set for the 
+plugin to work. it will be very useful to read the contents of the 
+[run_pyspark_from_build.sh](integration_tests/run_pyspark_from_build.sh) to get a better insight 
+into what is needed as we constantly keep working on to improve and expand the plugin-support.
+
+The tests are written python and run with pytest and the script honors pytest parameters. Some handy flags are:
+- `-k` <pytest-file-name>. This will run all the tests in that test file.
+- `-k` <test-name>. This will also run an individual test.
+- `-s` Doesn't capture the output and instead prints to the screen.
+- `-v` Increase the verbosity of the tests
+- `-rfexxs` Show extra test summary info as specified by chars: (f)ailed, (e)rror, (x)failed, (x)passed, (s)kipped
+- ``
+- For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
 
 By default the tests try to use the python packages `pytest-xdist` and `findspark` to oversubscribe
 your GPU and run the tests in Spark local mode. This can speed up these tests significantly as all
@@ -117,3 +152,11 @@ Next you can start to run the tests.
 durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 ...
 ```
+
+
+Another example: 
+- This command runs all the tests located in `cache_test.py` against Apache Spark 3.1.0 using the ParquetCachedBatchSerializer and other configs discussed above
+and with the debugger listening on port 5005
+`SPARK_SUBMIT_FLAGS="--driver-memory 4g --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer"
+SPARK_HOME=~/spark-3.1.0-SNAPSHOT-bin-hadoop3.2/
+COVERAGE_SUBMIT_FLAGS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005' ./run_pyspark_from_build.sh -k cache_test`
