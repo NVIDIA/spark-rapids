@@ -253,6 +253,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
   def suppressWillWorkOnGpuInfo: Boolean = false
 
+  private def planWillWorkOnGpuInfo: String = cannotReplaceAnyOfPlan match {
+    case None => "NOT EVALUATED FOR GPU YET"
+    case Some(v) => v
+  }
+
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
     case Some(v) if v.isEmpty => couldReplaceMessage
@@ -526,6 +531,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
             "query stage ran on GPU")
       }
     }
+  }
+
+  def checkReplaceAnyofPlan(): Boolean = {
+    logWarning("can any of plan be replaced: " + this.canAnyOfPlanBeReplaced)
+    val res = childPlans.map(_.planWillWorkOnGpuInfo)
+    logWarning("checking children result: " + res)
+    this.canAnyOfPlanBeReplaced ++ res
   }
 
   def checkReplaceAnyofPlan(): Boolean = {

@@ -2278,7 +2278,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       } else {
         logWarning("can't replace any of this plan!!" + plan)
         plan
-      } 
+      }
     } else {
       plan
     }
