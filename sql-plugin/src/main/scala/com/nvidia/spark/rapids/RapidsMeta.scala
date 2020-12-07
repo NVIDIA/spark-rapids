@@ -32,8 +32,6 @@ import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExcha
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.types.DataType
 
-import org.apache.spark.internal.Logging
-
 trait ConfKeysAndIncompat {
   val operationName: String
   def incompatDoc: Option[String] = None
@@ -69,7 +67,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     val wrapped: INPUT,
     val conf: RapidsConf,
     val parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat) extends Logging {
+    rule: ConfKeysAndIncompat) {
 
   /**
    * The wrapped plans that should be examined
@@ -167,7 +165,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   /**
    * Returns the set of reasons the entire plan can't be replaced. An empty
    * set means the entire plan is ok to be replaced, do the normal checking
-   * per exec and chilren.
+   * per exec and children.
    */
   final def canAnyOfPlanBeReplacedReasons: Set[String] = {
     cannotReplaceAnyOfPlanReasons.getOrElse(Set.empty)
@@ -255,11 +253,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def couldReplaceMessage: String = "could run on GPU"
   def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
   def suppressWillWorkOnGpuInfo: Boolean = false
-
-  def planWillWorkOnGpuInfo: String = cannotReplaceAnyOfPlanReasons match {
-    case None => "NOT EVALUATED FOR GPU YET"
-    case Some(v) => v.mkString(",")
-  }
 
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
@@ -537,10 +530,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   def getReasonsNotToReplaceEntirePlan: Set[String] = {
-    logWarning("can any of plan be replaced: " + this.canAnyOfPlanBeReplacedReasons)
-    val res = childPlans.flatMap(_.getReasonsNotToReplaceEntirePlan)
-    logWarning("checking children result: " + res)
-    canAnyOfPlanBeReplacedReasons ++ res
+    val childReasons = childPlans.flatMap(_.getReasonsNotToReplaceEntirePlan)
+    canAnyOfPlanBeReplacedReasons ++ childReasons
   }
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {

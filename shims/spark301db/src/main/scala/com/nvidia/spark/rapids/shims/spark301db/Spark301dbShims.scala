@@ -128,7 +128,6 @@ class Spark301dbShims extends Spark301Shims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
-
             val newRelation = HadoopFsRelation(
               wrapped.relation.location,
               wrapped.relation.partitionSchema,
