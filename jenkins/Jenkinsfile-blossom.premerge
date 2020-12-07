@@ -21,72 +21,11 @@
  *
  */
 
-@Library('shared-libs') _
+@Library(['shared-libs', 'blossom-lib']) _
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
-def pluginDockerBuild = """
-apiVersion: v1
-kind: Pod
-spec:
-  securityContext: # ref: https://github.com/kubernetes/examples/issues/260
-    runAsUser: 0
-    runAsGroup: 0
-  containers:
-  - name: plugin-docker
-    image: docker:19.03.12
-    command:
-    - sleep
-    args:
-    - 99d
-    resources:
-      requests:
-        cpu: 4
-        memory: 8Gi
-      limits:
-        cpu: 8
-        memory: 16Gi
-        nvidia.com/gpu: 1
-    env:
-      - name: DOCKER_HOST
-        value: tcp://localhost:2375
-  - name: plugin-docker-daemon
-    image: docker:19.03.12-dind
-    securityContext:
-      privileged: true
-    env:
-      - name: DOCKER_TLS_CERTDIR
-        value: ""
-  nodeSelector:
-    kubernetes.io/os: linux
-"""
-
-def pluginPremerge = """
-apiVersion: v1
-kind: Pod
-spec:
-  securityContext:
-    runAsUser: 0
-    runAsGroup: 0
-  containers:
-  - name: plugin-premerge
-    image: IMAGE_PREMERGE
-    imagePullPolicy: Always
-    resources:
-      requests:
-        cpu: 8
-        memory: 16Gi
-      limits:
-        cpu: 16
-        memory: 32Gi
-        nvidia.com/gpu: 1
-    restartPolicy: Never
-    backoffLimit: 2
-    tty: true
-  nodeSelector:
-    kubernetes.io/os: linux
-    nvidia.com/gpu_type: GPU_TYPE
-"""
+def pluginPremerge
 
 def githubHelper // blossom github helper
 def IMAGE_PREMERGE // temp image for premerge test
@@ -152,7 +91,7 @@ pipeline {
                 kubernetes {
                     label "premerge-docker-${BUILD_TAG}"
                     cloud 'sc-ipp-blossom-prod'
-                    yaml "$pluginDockerBuild"
+                    yaml pod.getDockerBuildYAML()
                     workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                     customWorkspace "${CUSTOM_WORKSPACE}"
                 }
@@ -175,7 +114,7 @@ pipeline {
                             ]
                     )
 
-                    container('plugin-docker') {
+                    container('docker-build') {
                         def CUDA_NAME = sh(returnStdout: true,
                                 script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
 
@@ -190,8 +129,7 @@ pipeline {
                         docker.build(IMAGE_PREMERGE, "-f jenkins/Dockerfile-blossom.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $CACHE_IMAGE_NAME -t $IMAGE_PREMERGE .")
                         uploadDocker(IMAGE_PREMERGE)
 
-                        pluginPremerge = pluginPremerge.replace("IMAGE_PREMERGE", "$IMAGE_PREMERGE")
-                        pluginPremerge = pluginPremerge.replace("GPU_TYPE", "$GPU_TYPE")
+                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '12', '24Gi') // cpu: 12, memory: 24Gi
                     }
                 }
             }
@@ -218,7 +156,7 @@ pipeline {
 
             steps {
                 script {
-                    container('plugin-premerge') {
+                    container('gpu') {
                         sh "$PREMERGE_SCRIPT"
                         step([$class                : 'JacocoPublisher',
                               execPattern           : '**/target/jacoco.exec',
