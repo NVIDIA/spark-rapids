@@ -19,8 +19,8 @@ set -e
 
 SPARKSRCTGZ=$1
 # version of Apache Spark we are building against
-BASE_SPARK_VERSION=3.0.1
-BUILD_PROFILES="databricks301"
+BASE_SPARK_VERSION=$2
+BUILD_PROFILES=$3
 
 echo "tgz is $SPARKSRCTGZ"
 echo "Base Spark version is $BASE_SPARK_VERSION"
@@ -31,11 +31,11 @@ sudo apt install -y maven
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
 
-#rm -rf spark-rapids
-#mkdir spark-rapids
-#echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
-#tar -zxvf $SPARKSRCTGZ -C spark-rapids
-#cd spark-rapids
+rm -rf spark-rapids
+mkdir spark-rapids
+echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
+tar -zxvf $SPARKSRCTGZ -C spark-rapids
+cd spark-rapids
 export WORKSPACE=`pwd`
 
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
