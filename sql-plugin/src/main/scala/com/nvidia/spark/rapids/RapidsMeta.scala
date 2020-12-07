@@ -122,8 +122,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def convertToCpu(): BASE = wrapped
 
   private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
-  private var cannotReplaceAnyOfPlan: Option[mutable.Set[String]] = None
-
+  private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
 
   val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
@@ -144,8 +143,12 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     }
   }
 
+  /**
+   * Call this if there is a condition found that the entire plan is not allowed
+   * to run on the GPU.
+   */
   final def entirePlanWillNotWork(because: String): Unit = {
-    cannotReplaceAnyOfPlan.get.add(because)
+    cannotReplaceAnyOfPlanReasons.get.add(because)
   }
 
   final def shouldBeRemoved(because: String): Unit =
@@ -161,13 +164,13 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
 
-  final def canAnyOfPlanBeReplaced: Boolean = {
-    if (cannotReplaceAnyOfPlan.isEmpty) {
-    logWarning("canAnyOfPlanBeReplaced empty")
-    } else {
-    logWarning("canAnyOfPlanBeReplaced : " + cannotReplaceAnyOfPlan.get)
-    }
-    cannotReplaceAnyOfPlan.exists(_.isEmpty)
+  /**
+   * Returns the set of reasons the entire plan can't be replaced. An empty
+   * set means the entire plan is ok to be replaced, do the normal checking
+   * per exec and chilren.
+   */
+  final def canAnyOfPlanBeReplacedReasons: Set[String] = {
+    cannotReplaceAnyOfPlanReasons.getOrElse(Set.empty)
   }
 
   /**
@@ -200,7 +203,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def initReasons(): Unit = {
     cannotBeReplacedReasons = Some(mutable.Set[String]())
     shouldBeRemovedReasons = Some(mutable.Set[String]())
-    cannotReplaceAnyOfPlan = Some(mutable.Set[String]())
+    cannotReplaceAnyOfPlanReasons = Some(mutable.Set[String]())
   }
 
   /**
@@ -253,7 +256,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
   def suppressWillWorkOnGpuInfo: Boolean = false
 
-  def planWillWorkOnGpuInfo: String = cannotReplaceAnyOfPlan match {
+  def planWillWorkOnGpuInfo: String = cannotReplaceAnyOfPlanReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
     case Some(v) => v.mkString(",")
   }
@@ -533,17 +536,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
-  def replaceAnyOfPlanInfo(): Seq[String] = {
-    val res = childPlans.flatMap(_.replaceAnyOfPlanInfo)
+  def getReasonsNotToReplaceEntirePlan: Set[String] = {
+    logWarning("can any of plan be replaced: " + this.canAnyOfPlanBeReplacedReasons)
+    val res = childPlans.flatMap(_.getReasonsNotToReplaceEntirePlan)
     logWarning("checking children result: " + res)
-    res ++ Seq(planWillWorkOnGpuInfo)
-  }
-
-  def checkReplaceAnyofPlan(): Boolean = {
-    logWarning("can any of plan be replaced: " + this.canAnyOfPlanBeReplaced)
-    val res = childPlans.forall(_.checkReplaceAnyofPlan())
-    logWarning("checking children result: " + res)
-    this.canAnyOfPlanBeReplaced && res
+    canAnyOfPlanBeReplacedReasons ++ res
   }
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {
