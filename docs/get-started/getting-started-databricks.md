@@ -10,19 +10,19 @@ This guide will run through how to set up the RAPIDS Accelerator for Apache Spar
 
 ## Prerequisites
     * Apache Spark 3.0 running in DataBricks Runtime 7.3 ML with GPU
-    * AWS:7.3 LTS ML (includes Apache Spark 3.0.1, GPU, Scala 2.12)
+    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
     * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
 
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
 ## Start a Databricks Cluster
-Create a Databricks cluster by going to Clusters, then clicking “+ Create Cluster”. Ensure the cluster meets the prerequisites above by configuring it as follows:
-1. Select the DataBricks Runtime Version from one of the supported runtimes specified in the Prerequisites section.
-2. Under Autopilot Options, disable auto scaling.
+Create a Databricks cluster by going to Clusters, then clicking “+ Create Cluster”.  Ensure the cluster meets the prerequisites above by configuring it as follows:
+1. Select the Databricks Runtime Version from one of the supported runtimes specified in the Prerequisites section.
+2. Under Autopilot Options, disable autoscaling.
 3. Choose the number of workers that matches the number of GPUs you want to use.
-4. Select a worker type.  On AWS, use nodes with 1 GPU each such as `p3.xlarge` or `g4dn.xlarge`.  p2 nodes do not meet the architecture requirements for the Spark worker (although they can be used for the driver node).  For Azure, choose GPU nodes such as Standard_NC6s_v3. 
+4. Select a worker type.  On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.  p2 nodes do not meet the architecture requirements (Pascal or higher) for the Spark worker (although they can be used for the driver node).  For Azure, choose GPU nodes such as Standard_NC6s_v3.
 5. Select the driver type. Generally this can be set to be the same as the worker.
-6. Start the cluster
+6. Start the cluster.
 
 ## Advanced Cluster Configuration
 
@@ -40,12 +40,19 @@ We will need to create an initialization script for the cluster that installs th
 
     The [`spark.task.resource.gpu.amount`](https://spark.apache.org/docs/latest/configuration.html#scheduling) configuration is defaulted to 1 by Databricks. That means that only 1 task can run on an executor with 1 GPU, which is limiting, especially on the reads and writes from Parquet.  Set this to 1/(number of cores per executor) which will allow multiple tasks to run in parallel just like the CPU side.  Having the value smaller is fine as well. 
 
+	There is an incompatibility between the Databricks specific implementation of adaptive query
+    execution (AQE) and the spark-rapids plugin.  In order to mitigate this,
+    `spark.sql.adaptive.enabled` should be set to false.  In addition, the plugin does not work with
+    the Databricks `spark.databricks.delta.optimizeWrite` option.
+
     ```bash
     spark.plugins com.nvidia.spark.SQLPlugin
-    spark.rapids.memory.pinnedPool.size 2G
     spark.task.resource.gpu.amount 0.1
-    spark.rapids.sql.concurrentGpuTasks 2
+    spark.rapids.memory.pinnedPool.size 2G
     spark.locality.wait 0s
+    spark.databricks.delta.optimizeWrite.enabled false
+    spark.sql.adaptive.enabled false
+    spark.rapids.sql.concurrentGpuTasks 2
     ```
 
     ![Spark Config](../img/sparkconfig.png)
@@ -70,7 +77,7 @@ mkdir /dbfs/FileStore/tables/mortgage_parquet_gpu/output
 tar xfvz /Users/<your user id>/mortgage_2000.tgz --directory /dbfs/FileStore/tables/mortgage
 ```
 
-In Cell 3, update the data paths if necessary. The example notebook merges the columns and prepares the data for XGoost training. The temp and final output results are written back to the dbfs. 
+In Cell 3, update the data paths if necessary. The example notebook merges the columns and prepares the data for XGBoost training. The temp and final output results are written back to the dbfs. 
 ```bash
 orig_perf_path='dbfs:///FileStore/tables/mortgage/perf/*'
 orig_acq_path='dbfs:///FileStore/tables/mortgage/acq/*'
@@ -82,3 +89,4 @@ Run the notebook by clicking “Run All”.
 
 ## Hints
 Spark logs in Databricks are removed upon cluster shutdown.  It is possible to save logs in a cloud storage location using Databricks [cluster log delivery](https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1).  Enable this option before starting the cluster to capture the logs. 
+
