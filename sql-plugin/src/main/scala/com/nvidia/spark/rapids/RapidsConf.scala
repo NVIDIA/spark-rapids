@@ -458,8 +458,10 @@ object RapidsConf {
     .createWithDefault(false)
 
   val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
-      .doc("Enable decimal types up to 64-bit precision. Note that not all GPU " +
-          "operations support decimal, so enabling them could have performance implications.")
+      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
+          "less than 18 digits and is only supported by a small number of operations currently.  " +
+          "This can result in a lot of data movement to and from the GPU, which can slow down " +
+          "processing in some cases.")
       .booleanConf
       .createWithDefault(false)
 
