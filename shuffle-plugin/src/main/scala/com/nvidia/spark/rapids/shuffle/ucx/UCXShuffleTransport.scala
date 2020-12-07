@@ -373,8 +373,10 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   // and should be ready to be handled by a `BufferReceiveState`
   class PerClientReadyRequests(val bounceBuffer: BounceBuffer) {
     val transferRequests = new ArrayBuffer[PendingTransferRequest]()
+    var runningSize = 0L
     def addRequest(req: PendingTransferRequest): Unit = {
       transferRequests.append(req)
+      runningSize += req.getLength
     }
   }
 
@@ -404,7 +406,11 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
           var fitsInFlight = true
           var perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
           var reqToHandle: PendingTransferRequest = null
-          while (requestIx < requestsToHandle.size && hasBounceBuffers && fitsInFlight) {
+          val putBack = new ArrayBuffer[PendingTransferRequest]()
+          //NOTE: If the in-flight limit is high, we will run through every request
+          // in the queue! This is an interim solution that will be fixed in future versions
+          // to reduce the time spent here.
+          while (requestIx < requestsToHandle.size && fitsInFlight) {
             reqToHandle = requestsToHandle(requestIx)
             if (wouldFitInFlightLimit(reqToHandle.getLength)) {
               val existingReq =
@@ -422,17 +428,33 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                   // TODO: make this a metric => "blocked while waiting on bounce buffers"
                   logTrace("Can't acquire bounce buffers for receive.")
                   hasBounceBuffers = false
+                  putBack.append(reqToHandle)
+                  requestIx += 1
                 }
-              } else {
-                // bounce buffers already acquired
+              } else if (existingReq.get.runningSize < bounceBufferSize) {
+                // bounce buffers already acquired, and the requested amount so far
+                // is less than 1 bounce buffer lengths, therefore the pending request
+                // is added to the `PerClientReadyRequests`.
                 markBytesInFlight(reqToHandle.getLength)
                 existingReq.foreach(_.addRequest(reqToHandle))
-                requestIx+= 1
+                requestIx += 1
+              } else {
+                requestIx += 1
+                putBack.append(reqToHandle)
               }
             } else {
               fitsInFlight = false
             }
           }
+
+          // NOTE: because we skipped some indices above, we need to put these
+          // back into the `altList`.
+          // A _much_ better way of doing this would be to have separate
+          // lists, one per client. This should be cleaned up later.
+          altList.synchronized {
+            putBack.foreach(altList.add)
+          }
+
           if (perClientReq.nonEmpty) {
             perClientReq.foreach { case (client, perClientRequests) =>
               val brs = new BufferReceiveState(perClientRequests.bounceBuffer,
@@ -445,7 +467,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                 deviceReceiveBuffMgr.wait(100)
               }
             }
-          } else {
+          } else if (putBack.isEmpty) {
             // then we must be waiting for the inflight limit
             inflightMonitor.synchronized {
               while (!wouldFitInFlightLimit(reqToHandle.getLength)) {

@@ -26,7 +26,6 @@ except Exception as e:
     pytestmark = pytest.mark.skip(reason=str(e))
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from conftest import is_databricks_runtime
 from data_gen import *
 from marks import incompat, approximate_float, allow_non_gpu, ignore_order
 from pyspark.sql import Window
@@ -165,7 +164,6 @@ def test_window_aggregate_udf(data_gen, window):
         conf=arrow_udf_conf)
 
 
-@pytest.mark.skipif(is_databricks_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/1184')
 @ignore_order
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)

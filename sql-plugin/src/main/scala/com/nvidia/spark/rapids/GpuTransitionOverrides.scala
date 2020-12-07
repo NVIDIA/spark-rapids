@@ -372,12 +372,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val wrapped = GpuOverrides.wrapExpr(expr, conf, None)
       wrapped.tagForGpu()
       assert(wrapped.canThisBeReplaced)
-      SortOrder(
+      ShimLoader.getSparkShims.sortOrder(
         wrapped.convertToGpu(),
         Ascending,
-        Ascending.defaultNullOrdering,
-        Set.empty
-      )
+        Ascending.defaultNullOrdering)
     }
   }
 

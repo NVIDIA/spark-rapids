@@ -415,4 +415,17 @@ class Spark300Shims extends SparkShims {
       resolver: Resolver): Unit = {
     GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
+
+  override def sortOrderChildren(s: SortOrder): Seq[Expression] = {
+    (s.sameOrderExpressions + s.child).toSeq
+  }
+
+  override def sortOrder(
+      child: Expression,
+      direction: SortDirection,
+      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Set.empty)
+
+  override def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder = {
+    s.copy(child = child)
+  }
 }

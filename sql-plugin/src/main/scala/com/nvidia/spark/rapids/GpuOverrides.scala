@@ -34,10 +34,9 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
-import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
+import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
@@ -300,7 +299,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       case _: JsonFileFormat =>
         willNotWorkOnGpu("JSON output is not supported")
         None
-      case _: OrcFileFormat =>
+      case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
         GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options)
       case _: ParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
@@ -357,9 +356,9 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     // Note that the data source V2 always fallsback to the V1 currently.
     // If that changes then this will start failing because we don't have a mapping.
     gpuProvider = origProvider.getConstructor().newInstance() match {
-      case format: OrcFileFormat =>
+      case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
         GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
-      case format: ParquetFileFormat =>
+      case _: ParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(this, spark,
           cmd.table.storage.properties, cmd.query.schema)
       case ds =>
@@ -425,8 +424,8 @@ object GpuOverrides {
   }
 
   private def orderingSatisfies(found: SortOrder, required: SortOrder): Boolean = {
-    (found.sameOrderExpressions + found.child).exists(
-      gpuOrderingSemanticEquals(_, required.child)) &&
+    val foundChildren = ShimLoader.getSparkShims.sortOrderChildren(found)
+    foundChildren.exists(gpuOrderingSemanticEquals(_, required.child)) &&
         found.direction == required.direction &&
         found.nullOrdering == required.nullOrdering
   }
@@ -1295,7 +1294,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
@@ -1305,7 +1305,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
@@ -1315,7 +1316,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
@@ -1367,8 +1369,10 @@ object GpuOverrides {
       "< operator",
       (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
+
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
@@ -1378,7 +1382,8 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
-            allowNull = true)
+            allowNull = true,
+            allowDecimal = true)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
@@ -2106,7 +2111,8 @@ object GpuOverrides {
             allowMaps = true,
             allowArray = true,
             allowStruct = true,
-            allowNesting = true)
+            allowNesting = true,
+            allowDecimal = true)
 
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())

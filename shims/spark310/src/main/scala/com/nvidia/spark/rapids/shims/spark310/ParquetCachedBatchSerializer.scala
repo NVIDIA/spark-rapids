@@ -265,7 +265,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     dataType match {
       case TimestampType | StringType | BooleanType | DateType | BinaryType |
            DoubleType | FloatType | ByteType | IntegerType | LongType | ShortType => true
-      case _: HiveStringType => true
       case _: DecimalType => true
       case _ => false
     }
