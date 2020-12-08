@@ -353,13 +353,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           splitVectors +=
             gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
         } catch {
-          case _ => splitVectors.foreach { array =>
+          // the caller will want to know there was an exception but won't be able to close the
+          // splitVectors
+          case e => splitVectors.foreach { array =>
             array.foreach { vector =>
               if (vector != null) {
                 vector.close()
               }
             }
           }
+            throw e
         }
       }
       try {
