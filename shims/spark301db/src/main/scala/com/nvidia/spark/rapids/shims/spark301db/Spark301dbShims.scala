@@ -112,7 +112,7 @@ class Spark301dbShims extends Spark301Shims {
 
           override def tagPlanForGpu(): Unit = {
             // this is very specific check to have any of the Delta log metadata queries
-            // fallback and run on the CPU since there is some in compatibilities in
+            // fallback and run on the CPU since there is some incompatibilities in
             // Databricks Spark and Apache Spark.
             if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
               wrapped.relation.location.getClass.getCanonicalName() ==

@@ -787,9 +787,10 @@ object RapidsConf {
 
   val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
     .internal()
-    .doc("Allow the disabling of all GPU operations for the entire plan when " +
-      "certain conditions happen. Change this to false will revert the behavior to check " +
-      "each individual exec.")
+    .doc("The plugin has the ability to detect possibe incompatibility with some specific " +
+      "queries and cluster configurations. In those cases the plugin will disable GPU support " +
+      "for the entire query. Set this to false if you want to override that behavior, but use " +
+      "with caution.")
     .booleanConf
     .createWithDefault(true)
 
