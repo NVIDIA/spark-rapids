@@ -182,8 +182,7 @@ class Spark300Shims extends SparkShims {
               wrapped.optionalBucketSet,
               None,
               wrapped.dataFilters,
-              wrapped.tableIdentifier,
-              conf)
+              wrapped.tableIdentifier)(conf)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -401,7 +400,7 @@ class Spark300Shims extends SparkShims {
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
       queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
@@ -427,5 +426,12 @@ class Spark300Shims extends SparkShims {
 
   override def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder = {
     s.copy(child = child)
+  }
+
+  override def alias(child: Expression, name: String)(
+      exprId: ExprId,
+      qualifier: Seq[String],
+      explicitMetadata: Option[Metadata]): Alias = {
+    Alias(child, name)(exprId, qualifier, explicitMetadata)
   }
 }

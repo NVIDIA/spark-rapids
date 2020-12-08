@@ -457,6 +457,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
+      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
+          "less than 18 digits and is only supported by a small number of operations currently.  " +
+          "This can result in a lot of data movement to and from the GPU, which can slow down " +
+          "processing in some cases.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
     .booleanConf
@@ -777,6 +785,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
+    .internal()
+    .doc("The plugin has the ability to detect possibe incompatibility with some specific " +
+      "queries and cluster configurations. In those cases the plugin will disable GPU support " +
+      "for the entire query. Set this to false if you want to override that behavior, but use " +
+      "with caution.")
+    .booleanConf
+    .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -965,6 +982,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
+  lazy val decimalTypeEnabled: Boolean = get(DECIMAL_TYPE_ENABLED)
+
   lazy val explain: String = get(EXPLAIN)
 
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
@@ -1061,6 +1080,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
+
+  lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 

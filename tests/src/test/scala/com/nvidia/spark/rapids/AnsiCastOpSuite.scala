@@ -478,7 +478,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats,
-    sparkConf) {
+    sparkConf, assumeCondition = before3_1_0) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
