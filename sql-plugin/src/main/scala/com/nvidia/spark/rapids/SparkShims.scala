@@ -62,7 +62,6 @@ case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersio
 
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
-  def isGpuHashJoin(plan: SparkPlan): Boolean
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
