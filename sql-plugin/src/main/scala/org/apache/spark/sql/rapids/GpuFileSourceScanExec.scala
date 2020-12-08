@@ -65,8 +65,7 @@ case class GpuFileSourceScanExec(
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
-    @transient rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = false)
+    queryUsesInputFile: Boolean = false)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
 
   private val isParquetFileFormat: Boolean = relation.fileFormat.isInstanceOf[ParquetFileFormat]
@@ -541,8 +540,7 @@ case class GpuFileSourceScanExec(
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, output),
       None,
-      rapidsConf,
-      queryUsesInputFile)
+      queryUsesInputFile)(rapidsConf)
   }
 }
 

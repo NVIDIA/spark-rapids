@@ -53,7 +53,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (GpuShuffleEnv.isRapidsShuffleEnabled) {
       GpuCoalesceBatches(plan, TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
-      GpuShuffleCoalesceExec(plan, conf)
+      GpuShuffleCoalesceExec(plan, conf.gpuTargetBatchSizeBytes)
     }
   }
 
@@ -301,7 +301,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def insertShuffleCoalesce(plan: SparkPlan): SparkPlan = plan match {
     case exec: GpuShuffleExchangeExecBase =>
       // always follow a GPU shuffle with a shuffle coalesce
-      GpuShuffleCoalesceExec(exec.withNewChildren(exec.children.map(insertShuffleCoalesce)), conf)
+      GpuShuffleCoalesceExec(exec.withNewChildren(exec.children.map(insertShuffleCoalesce)),
+        conf.gpuTargetBatchSizeBytes)
     case exec => exec.withNewChildren(plan.children.map(insertShuffleCoalesce))
   }
 
