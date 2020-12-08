@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, SortOrder}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
@@ -107,6 +107,10 @@ case class GpuShuffledHashJoinExec(
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
+
+  // Spark 3.1.0 started introducing ordering guarantees for hash joins but GPU
+  // hash joins do not provide ordering guarantees
+  override def outputOrdering: Seq[SortOrder] = Nil
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
