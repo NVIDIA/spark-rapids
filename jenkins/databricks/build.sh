@@ -21,6 +21,7 @@ SPARKSRCTGZ=$1
 # version of Apache Spark we are building against
 BASE_SPARK_VERSION=$2
 BUILD_PROFILES=$3
+STAGING_REPO=$4
 
 echo "tgz is $SPARKSRCTGZ"
 echo "Base Spark version is $BASE_SPARK_VERSION"
@@ -47,8 +48,13 @@ CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStd
 SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
+BUILD_ARG=""
+if [ -n "$STAGING_REPO" ]; then
+    BUILD_ARG="-s $WORKSPACE/jenkins/settings.xml -P"'sonatype-staging,!artifactory,!mirror-apache-to-urm,!deploy-to-urm'
+fi
+
 echo "Scala version is: $SCALA_VERSION"
-mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
+mvn -B -P${BUILD_PROFILES} clean package -DskipTests $BUILD_ARG || true
 # export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
 export M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
@@ -95,10 +101,10 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-mvn -B -P${BUILD_PROFILES} clean package -DskipTests
+mvn -B -P${BUILD_PROFILES} clean package -DskipTests $BUILD_ARG
 
 # Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
-# exactly what is in the staticly setup Databricks cluster we use. 
+# exactly what is in the staticly setup Databricks cluster we use.
 echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC"
 sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
 echo "Copying cudf jars: $CUDF_JAR $DB_JAR_LOC"

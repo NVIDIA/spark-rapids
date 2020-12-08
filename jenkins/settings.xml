@@ -50,17 +50,6 @@
           <name>sw-spark-maven</name>
           <url>${env.URM_URL}</url>
         </repository>
-        <!-- Add Sonatype staging repo for buiding rapids against pre-release jars  -->
-        <repository>
-           <id>sonatype-staging</id>
-           <url>https://oss.sonatype.org/content/repositories/staging</url>
-           <releases>
-             <enabled>true</enabled>
-           </releases>
-           <snapshots>
-             <enabled>false</enabled>
-           </snapshots>
-        </repository>
       </repositories>
       <pluginRepositories>
         <pluginRepository>
@@ -79,8 +68,14 @@
         </pluginRepository>
       </pluginRepositories>
       <id>artifactory</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
     </profile>
     <profile>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
       <id>mirror-apache-to-urm</id>
       <repositories>
         <repository>
@@ -92,14 +87,31 @@
     </profile>
     <profile>
       <id>deploy-to-urm</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
       <properties>
           <altDeploymentRepository>snapshots::default::${env.URM_URL}-local</altDeploymentRepository>
       </properties>
      </profile>
+     <!-- Add Sonatype staging repo for buiding rapids against pre-release jars  -->
+     <profile>
+      <id>sonatype-staging</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+      <repositories>
+        <repository>
+           <id>sonatype.staging</id>
+           <url>https://oss.sonatype.org/content/repositories/staging</url>
+           <releases>
+             <enabled>true</enabled>
+           </releases>
+           <snapshots>
+             <enabled>false</enabled>
+           </snapshots>
+        </repository>
+      </repositories>
+     </profile>
   </profiles>
-  <activeProfiles>
-    <activeProfile>artifactory</activeProfile>
-    <activeProfile>mirror-apache-to-urm</activeProfile>
-    <activeProfile>deploy-to-urm</activeProfile>
-  </activeProfiles>
 </settings>

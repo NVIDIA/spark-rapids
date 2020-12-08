@@ -32,19 +32,20 @@ def main():
   base_spark_pom_version = '3.0.0'
   clusterid = ''
   build_profiles = 'databricks,!snapshot-shims'
+  staging_repo = ''
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:',
-                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles='])
+      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:u:',
+                                 ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles=', 'stagingrepo='])
   except getopt.GetoptError:
       print(
-          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles>')
+          'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -u <stagingrepo>')
       sys.exit(2)
 
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles>')
+              'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -u <stagingrepo>')
           sys.exit()
       elif opt in ('-w', '--workspace'):
           workspace = arg
@@ -64,6 +65,8 @@ def main():
           base_spark_pom_version = arg
       elif opt in ('-b', '--bulidprofiles'):
           build_profiles = arg
+      elif opt in ('-u', '--stagingrepo'):
+          staging_repo = arg
 
   print('-w is ' + workspace)
   print('-c is ' + clusterid)
@@ -73,6 +76,7 @@ def main():
   print('-z is ' + source_tgz)
   print('-v is ' + base_spark_pom_version)
   print('-b is ' + build_profiles)
+  print('-u is ' + staging_repo)
 
   master_addr = ClusterUtils.cluster_get_master_addr(workspace, clusterid, token)
   if master_addr is None:
@@ -89,7 +93,7 @@ def main():
   print("rsync command: %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
-  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi" % (master_addr, private_key_file, script_dest, tgz_dest, base_spark_pom_version, build_profiles)
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi" % (master_addr, private_key_file, script_dest, tgz_dest, base_spark_pom_version, build_profiles, staging_repo)
   print("ssh command: %s" % ssh_command)
   subprocess.check_call(ssh_command, shell = True)
 
