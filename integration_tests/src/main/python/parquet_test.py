@@ -28,6 +28,7 @@ def read_parquet_sql(data_path):
     return lambda spark : spark.sql('select * from parquet.`{}`'.format(data_path))
 
 
+# Override decimal_gens because decimal with negative scale is unsupported in parquet reading
 decimal_gens = [DecimalGen(), DecimalGen(precision=7, scale=3), DecimalGen(precision=10, scale=10),
                 DecimalGen(precision=9, scale=0), DecimalGen(precision=18, scale=15)]
 
@@ -45,11 +46,12 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
-original_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
-multithreaded_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
-coalesce_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
+original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
+multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
+coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
+decimal_type_enable_conf = {'spark.rapids.sql.decimalType.enabled': 'true'}
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
-        coalesce_parquet_file_reader_conf]
+                    coalesce_parquet_file_reader_conf, decimal_type_enable_conf]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -74,7 +76,7 @@ def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, 
 def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens = [string_gen,
         byte_gen, short_gen, int_gen, long_gen, boolean_gen] + decimal_gens
- 
+
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -109,7 +111,7 @@ parquet_pred_push_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
         string_gen, date_gen,
         # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
-        # timestamp_gen 
+        # timestamp_gen
         TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
 
 @pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
@@ -405,15 +407,15 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
 
 
 _nested_pruning_schemas = [
-        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]],
             [["a", StructGen([["c_1", StringGen()]])]]),
-        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]],
             [["a", StructGen([["c_2", LongGen()]])]]),
-        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]],
             [["a", StructGen([["c_3", ShortGen()]])]]),
-        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]],
             [["a", StructGen([["c_1", StringGen()], ["c_3", ShortGen()]])]]),
-        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]], 
+        ([["a", StructGen([["c_1", StringGen()], ["c_2", LongGen()], ["c_3", ShortGen()]])]],
             [["a", StructGen([["c_3", ShortGen()], ["c_2", LongGen()], ["c_1", StringGen()]])]]),
         ([["ar", ArrayGen(StructGen([["str_1", StringGen()],["str_2", StringGen()]]))]],
             [["ar", ArrayGen(StructGen([["str_2", StringGen()]]))]])

@@ -17,11 +17,8 @@
 package com.nvidia.spark.rapids
 
 import java.time.ZoneId
-
 import scala.reflect.ClassTag
-
 import ai.rapids.cudf.DType
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -53,6 +50,8 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNest
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+
+import scala.language.postfixOps
 
 /**
  * Base class for all ReplacementRules
@@ -2043,7 +2042,7 @@ object GpuOverrides {
             allowArray = true,
             allowStruct = true,
             allowNesting = true,
-            allowDecimal = p.scan.isInstanceOf[ParquetScan])
+            allowDecimal = conf.decimalTypeEnabled && p.scan.isInstanceOf[ParquetScan])
 
         override def convertToGpu(): GpuExec =
           GpuBatchScanExec(p.output, childScans(0).convertToGpu())
