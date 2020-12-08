@@ -120,7 +120,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def convertToCpu(): BASE = wrapped
 
   private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
-
+  private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
 
   val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
@@ -141,6 +141,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     }
   }
 
+  /**
+   * Call this if there is a condition found that the entire plan is not allowed
+   * to run on the GPU.
+   */
+  final def entirePlanWillNotWork(because: String): Unit = {
+    cannotReplaceAnyOfPlanReasons.get.add(because)
+  }
+
   final def shouldBeRemoved(because: String): Unit =
     shouldBeRemovedReasons.get.add(because)
 
@@ -153,6 +161,15 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * Returns true iff this could be replaced.
    */
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
+
+  /**
+   * Returns the list of reasons the entire plan can't be replaced. An empty
+   * set means the entire plan is ok to be replaced, do the normal checking
+   * per exec and children.
+   */
+  final def entirePlanExcludedReasons: Seq[String] = {
+    cannotReplaceAnyOfPlanReasons.getOrElse(mutable.Set.empty).toSeq
+  }
 
   /**
    * Returns true iff all of the expressions and their children could be replaced.
@@ -184,6 +201,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def initReasons(): Unit = {
     cannotBeReplacedReasons = Some(mutable.Set[String]())
     shouldBeRemovedReasons = Some(mutable.Set[String]())
+    cannotReplaceAnyOfPlanReasons = Some(mutable.Set[String]())
   }
 
   /**
@@ -509,6 +527,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
             "query stage ran on GPU")
       }
     }
+  }
+
+  def getReasonsNotToReplaceEntirePlan: Seq[String] = {
+    val childReasons = childPlans.flatMap(_.getReasonsNotToReplaceEntirePlan)
+    entirePlanExcludedReasons ++ childReasons
   }
 
   private def fixUpJoinConsistencyIfNeeded(): Unit = {
