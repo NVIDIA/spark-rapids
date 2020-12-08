@@ -170,8 +170,7 @@ class Spark310Shims extends Spark301Shims {
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
-              wrapped.tableIdentifier,
-              conf)
+              wrapped.tableIdentifier)(conf)
           }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
@@ -270,7 +269,7 @@ class Spark310Shims extends Spark301Shims {
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
       queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
