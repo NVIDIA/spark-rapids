@@ -194,10 +194,10 @@ def test_decimal_bround(data_gen):
 @pytest.mark.parametrize('data_gen', [decimal_gen_scale_precision], ids=idfn)
 def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen, length=5).selectExpr(
-            'round(a, 2)',
-            'round(a)'),
-        conf=allow_negative_scale_of_decimal_conf)
+            lambda spark: unary_op_df(spark, data_gen, length=5).selectExpr(
+               'round(a, 1)',
+               'round(a)'),
+               conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

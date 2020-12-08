@@ -1588,8 +1588,7 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t,
-            allowDecimal = true)
+          GpuOverrides.isSupportedType(t, allowDecimal = conf.decimalTypeEnabled)
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBRound(lhs, rhs)
       }),
@@ -1597,8 +1596,7 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_UP rounding mode",
       (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t,
-            allowDecimal = true)
+          GpuOverrides.isSupportedType(t, allowDecimal = conf.decimalTypeEnabled)
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRound(lhs, rhs)
       }),
