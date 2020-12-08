@@ -5,7 +5,7 @@ are intended to be able to be run against any Spark-compatible cluster/release t
 verify that the plugin is doing the right thing in as many cases as possible.
 
 There are two sets of tests here. The pyspark tests are described here. The scala tests
-are described [here](../docs/testing.md)
+are described [here](../tests/README.md)
 
 ## Dependencies
 
