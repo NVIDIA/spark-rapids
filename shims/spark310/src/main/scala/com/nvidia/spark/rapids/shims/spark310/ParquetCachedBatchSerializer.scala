@@ -340,8 +340,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   private[rapids] def compressColumnarBatchWithParquet(
      gpuCB: ColumnarBatch): List[ParquetCachedBatch] = {
-    // NOTE: this doesn't take nulls into account so we could be over-estimating the actual size
-    // but that's still better than under-estimating
     val estimatedRowSize = scala.Range(0, gpuCB.numCols()).map { idx =>
       gpuCB.column(idx).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize / gpuCB.numRows()
     }.sum
@@ -349,8 +347,20 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     val splitIndices = scala.Range(rowsInBatch, gpuCB.numRows(), rowsInBatch)
     val buffers = new ListBuffer[ParquetCachedBatch]
     if (splitIndices.nonEmpty) {
-      val splitVectors = scala.Range(0, gpuCB.numCols()).map { index =>
-        gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
+      val splitVectors = new ListBuffer[Array[ColumnVector]]
+      for (index <- 0 until gpuCB.numCols()) {
+        try {
+          splitVectors +=
+            gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
+        } catch {
+          case _ => splitVectors.foreach { array =>
+            array.foreach { vector =>
+              if (vector != null) {
+                vector.close()
+              }
+            }
+          }
+        }
       }
       try {
         // Splitting the table
@@ -359,12 +369,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         // T01= {splitCol1(1), splitCol2(1),...,splitColn(1)}
         // ...
         // T0m= {splitCol1(m), splitCol2(m),...,splitColn(m)}
-        for (i <- splitVectors(0).indices)
-          withResource(new Table({
-            for (j <- splitVectors.indices) yield splitVectors(j)(i)
-          }: _*)) { table =>
+        def makeTableForIndex(i: Int): Table = {
+          val columns = splitVectors.indices.map(j => splitVectors(j)(i))
+          new Table(columns :_*)
+        }
+
+        for (i <- splitVectors(0).indices) {
+          withResource(makeTableForIndex(i)) { table =>
             buffers += ParquetCachedBatch(writeTableToCachedBatch(table))
           }
+        }
       } finally {
         for (i <- splitVectors(0).indices)
           for (j <- splitVectors.indices) splitVectors(j)(i).close()
