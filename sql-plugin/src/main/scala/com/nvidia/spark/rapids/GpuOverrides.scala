@@ -409,10 +409,16 @@ object GpuOverrides {
     case g: GpuNormalizeNaNAndZero =>
       NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
     case g: GpuAlias =>
-      Alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
+      ShimLoader.getSparkShims.alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
         g.exprId,
         g.qualifier,
         g.explicitMetadata)
+          .canonicalized
+    case g: GpuSubstring =>
+      Substring(
+        canonicalizeToCpuForSortOrder(g.str),
+        canonicalizeToCpuForSortOrder(g.pos),
+        canonicalizeToCpuForSortOrder(g.len))
           .canonicalized
     case o: GpuExpression =>
       throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
@@ -650,7 +656,7 @@ object GpuOverrides {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
             allowNull = true,
-            allowDecimal = true,
+            allowDecimal = conf.decimalTypeEnabled,
             allowCalendarInterval = true)
       }),
     expr[Signum](
@@ -668,7 +674,7 @@ object GpuOverrides {
             allowArray = true,
             allowStruct = true,
             allowNesting = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
@@ -683,7 +689,7 @@ object GpuOverrides {
             allowArray = true,
             allowStruct = true,
             allowNesting = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
@@ -879,7 +885,7 @@ object GpuOverrides {
             allowArray = true,
             allowStruct = true,
             allowNesting = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
       }),
@@ -893,7 +899,7 @@ object GpuOverrides {
             allowArray = true,
             allowStruct = true,
             allowNesting = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
       }),
@@ -1296,7 +1302,7 @@ object GpuOverrides {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
             allowNull = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
@@ -1307,7 +1313,7 @@ object GpuOverrides {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
             allowNull = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
@@ -1318,7 +1324,7 @@ object GpuOverrides {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
             allowNull = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
@@ -1373,7 +1379,7 @@ object GpuOverrides {
 
           GpuOverrides.isSupportedType(t,
             allowNull = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
@@ -1384,7 +1390,7 @@ object GpuOverrides {
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
             allowNull = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
@@ -2011,7 +2017,7 @@ object GpuOverrides {
               allowArray = true,
               allowStruct = true,
               allowNesting = true,
-              allowDecimal = true)
+              allowDecimal = conf.decimalTypeEnabled)
 
           override def convertToGpu(): GpuExec =
             GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
@@ -2114,7 +2120,7 @@ object GpuOverrides {
             allowArray = true,
             allowStruct = true,
             allowNesting = true,
-            allowDecimal = true)
+            allowDecimal = conf.decimalTypeEnabled)
 
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())
