@@ -163,7 +163,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
 
   /**
-   * Returns the set of reasons the entire plan can't be replaced. An empty
+   * Returns the list of reasons the entire plan can't be replaced. An empty
    * set means the entire plan is ok to be replaced, do the normal checking
    * per exec and children.
    */
