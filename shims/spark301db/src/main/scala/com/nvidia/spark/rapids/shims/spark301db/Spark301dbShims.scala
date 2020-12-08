@@ -131,8 +131,7 @@ class Spark301dbShims extends Spark301Shims {
               // TODO: Does Databricks have coalesced bucketing implemented?
               None,
               wrapped.dataFilters,
-              wrapped.tableIdentifier,
-              conf)
+              wrapped.tableIdentifier)(conf)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
@@ -211,7 +210,7 @@ class Spark301dbShims extends Spark301Shims {
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
       queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
   }
 
   override def getGpuShuffleExchangeExec(
