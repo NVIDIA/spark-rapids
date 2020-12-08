@@ -120,7 +120,7 @@ By making a contribution to this project, I certify that:
 ```
 
 ### Testing your code
-Please visit the [testing doc](docs/testing.md) for details about how to run tests
+Please visit the [testing doc](tests/README.md) for details about how to run tests
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md  
