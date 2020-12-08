@@ -428,4 +428,11 @@ class Spark300Shims extends SparkShims {
   override def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder = {
     s.copy(child = child)
   }
+
+  override def alias(child: Expression, name: String)(
+      exprId: ExprId,
+      qualifier: Seq[String],
+      explicitMetadata: Option[Metadata]): Alias = {
+    Alias(child, name)(exprId, qualifier, explicitMetadata)
+  }
 }
