@@ -54,8 +54,6 @@ import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
-import scala.language.postfixOps
-
 /**
  * Base class for all ReplacementRules
  * @param doWrap wraps a part of the plan in a [[RapidsMeta]] for further processing.
