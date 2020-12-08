@@ -43,10 +43,8 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("*"))
   }
 
-  // Column schema of decimal-test.parquet is: [_c0: decimal(18, 0), _c1: decimal(10, 10),
-  //  _c2: decimal(15, 12), _c3: int64, _c4: float]
-  // LIMIT: Because we only support DECIMAL64, we only support reading decimal columns whose
-  // physical storage type are INT64 in current.
+  // Column schema of decimal-test.parquet is: [_c0: decimal(18, 0), _c1: decimal(7, 3),
+  // _c2: decimal(10, 10), _c3: decimal(15, 12), _c4: int64, _c5: float]
   testSparkResultsAreEqual("Test Parquet decimal",
     frameFromParquet("decimal-test.parquet"),
     new SparkConf().set("spark.sql.sources.useV1SourceList", "")) {

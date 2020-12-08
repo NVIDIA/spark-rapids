@@ -198,6 +198,33 @@ object GpuParquetScanBase {
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
   }
+
+  private[rapids] def convertDecimal32Columns(t: Table): Table = {
+    val containDecimal32Column = (0 until t.getNumberOfColumns).exists { i =>
+      t.getColumn(i).getType.getTypeId == DType.DTypeEnum.DECIMAL32
+    }
+    // return input table if there exists no DECIMAL32 columns
+    if (!containDecimal32Column) return t
+
+    val columns = (0 until t.getNumberOfColumns).map { i =>
+      t.getColumn(i).getType match {
+        case tpe if tpe.getTypeId == DType.DTypeEnum.DECIMAL32 =>
+          t.getColumn(i).castTo(DType.create(DType.DTypeEnum.DECIMAL64, tpe.getScale))
+        case _ =>
+          t.getColumn(i)
+      }
+    }
+    val ret = new Table(columns: _*)
+    // clean temporary column vectors produced by castTo
+    (0 until t.getNumberOfColumns).foreach {
+      case i if t.getColumn(i).getType.getTypeId == DType.DTypeEnum.DECIMAL32 =>
+        columns(i).close()
+      case _ =>
+    }
+    // clean original table
+    t.close()
+    ret
+  }
 }
 
 /**
@@ -658,13 +685,16 @@ abstract class FileParquetPartitionReaderBase(
       inputTable: Table,
       filePath: String,
       clippedSchema: MessageType): Table = {
-    if (readDataSchema.length > inputTable.getNumberOfColumns) {
+    // Convert Decimal32 columns to Decimal64, because spark-rapids only supports Decimal64.
+    val inTable = GpuParquetScanBase.convertDecimal32Columns(inputTable)
+
+    if (readDataSchema.length > inTable.getNumberOfColumns) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
       try {
-        withResource(inputTable) { table =>
+        withResource(inTable) { table =>
           var readAt = 0
           (0 until readDataSchema.length).foreach(writeAt => {
             val readField = readDataSchema(writeAt)
@@ -687,7 +717,7 @@ abstract class FileParquetPartitionReaderBase(
         newColumns.safeClose()
       }
     } else {
-      inputTable
+      inTable
     }
   }
 
