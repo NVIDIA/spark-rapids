@@ -39,7 +39,7 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl):
 
 orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))],
+    TimestampGen(start=datetime(1970, 1, 1, 0, 0, 1, 0, tzinfo=timezone.utc))],
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
 
@@ -119,7 +119,7 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list):
     # we should go with a more standard set of generators
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+    TimestampGen(start=datetime(1970, 1, 1, 0, 0, 1, 0,tzinfo=timezone.utc))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
     with_cpu_session(
