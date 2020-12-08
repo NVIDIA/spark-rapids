@@ -30,6 +30,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -109,7 +110,18 @@ class Spark301dbShims extends Spark301Shims {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+          override def tagPlanForGpu(): Unit = {
+            // this is very specific check to have any of the Delta log metadata queries
+            // fallback and run on the CPU since there is some incompatibilities in
+            // Databricks Spark and Apache Spark.
+            if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
+              wrapped.relation.location.getClass.getCanonicalName() ==
+                "com.databricks.sql.transaction.tahoe.DeltaLogFileIndex") {
+              this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
+                "any part of the plan on the GPU!")
+            }
+            GpuFileSourceScanExec.tagSupport(this)
+          }
 
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
