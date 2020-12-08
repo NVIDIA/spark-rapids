@@ -20,7 +20,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuOverrides.isStringLit
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, RoundBase, String2TrimExpression, TernaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -756,19 +756,6 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
     convertToGpu(childExprs(0).convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
-}
-
-abstract class RoundBaseMeta[INPUT <: RoundBase](
-  expr: INPUT,
-  conf: RapidsConf,
-  parent: Option[RapidsMeta[_, _, _]],
-  rule: ConfKeysAndIncompat)
-  extends ExprMeta[INPUT](expr, conf, parent, rule) {
-
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu())
-
-  def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression
 }
 
 /**

@@ -20,7 +20,6 @@ import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, RoundMode,
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.CudfRoundBase
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -149,33 +148,8 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
   override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.unaryOp(unaryOp)
 }
 
-trait GpuRoundBase extends CudfRoundBase with GpuExpression {
-  def roundMode : RoundMode
-  def doColumnar(val0: GpuColumnVector, val1: Scalar): ColumnVector
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
-
-      (lhs, rhs) match {
-        case (l: GpuColumnVector, r) =>
-          withResource(GpuScalar.from(r, right.dataType)) { scalar =>
-            GpuColumnVector.from(doColumnar(l, scalar), dataType)
-          }
-        case _ => null
-      }
-    } finally {
-      if (lhs.isInstanceOf[AutoCloseable]) {
-        lhs.asInstanceOf[AutoCloseable].close()
-      }
-      if (rhs.isInstanceOf[AutoCloseable]) {
-        rhs.asInstanceOf[AutoCloseable].close()
-      }
-    }
-  }
+trait GpuRoundBase extends GpuBinaryExpression {
+  def roundMode: RoundMode
 }
 
 trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
