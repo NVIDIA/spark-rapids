@@ -128,7 +128,7 @@ Most clusters probably will not have the RAPIDS plugin installed in the cluster 
 If you just want to verify the SQL replacement is working you will need to add the `rapids-4-spark` and `cudf` jars to your `spark-submit` command.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -180,7 +180,7 @@ The TPCxBB, TPCH, TPCDS, and Mortgage tests in this framework can be enabled by 
 As an example, here is the `spark-submit` command with the TPCxBB parameters:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT.jar,rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT.jar,rapids-4-spark-tests_2.12-0.4.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
 ```
 
 Be aware that running these tests with read data requires at least an entire GPU, and preferable several GPUs/executors
@@ -209,7 +209,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT.jar,rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT.jar,rapids-4-spark-tests_2.12-0.4.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests
