@@ -348,24 +348,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     val buffers = new ListBuffer[ParquetCachedBatch]
     if (splitIndices.nonEmpty) {
       val splitVectors = new ListBuffer[Array[ColumnVector]]
-      for (index <- 0 until gpuCB.numCols()) {
-        try {
+      try {
+        for (index <- 0 until gpuCB.numCols()) {
           splitVectors +=
             gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
-        } catch {
-          // the caller will want to know there was an exception but won't be able to close the
-          // splitVectors
-          case e => splitVectors.foreach { array =>
-            array.foreach { vector =>
-              if (vector != null) {
-                vector.close()
-              }
-            }
-          }
-            throw e
         }
-      }
-      try {
+
         // Splitting the table
         // e.g. T0 = {col1, col2,...,coln} => split columns into 'm' cols =>
         // T00= {splitCol1(0), splitCol2(0),...,splitColn(0)}
@@ -374,17 +362,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         // T0m= {splitCol1(m), splitCol2(m),...,splitColn(m)}
         def makeTableForIndex(i: Int): Table = {
           val columns = splitVectors.indices.map(j => splitVectors(j)(i))
-          new Table(columns :_*)
+          new Table(columns: _*)
         }
 
-        for (i <- splitVectors(0).indices) {
+        for (i <- splitVectors.head.indices) {
           withResource(makeTableForIndex(i)) { table =>
             buffers += ParquetCachedBatch(writeTableToCachedBatch(table))
           }
         }
       } finally {
-        for (i <- splitVectors(0).indices)
-          for (j <- splitVectors.indices) splitVectors(j)(i).close()
+        splitVectors.foreach(array => array.safeClose())
       }
     } else {
       withResource(GpuColumnVector.from(gpuCB)) { table =>
