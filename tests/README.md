@@ -50,7 +50,7 @@ To run targeted Scala tests append `-DwildcardSuites=<comma separated list of wi
 For more information about using scalatest with Maven please refer to the
 [scalatest documentation](https://www.scalatest.org/user_guide/using_the_scalatest_maven_plugin).
     
-#### Running unit-tests against specific apache spark versions. 
+#### Running Unit Tests Against Specific Apache Spark Versions
 You can run the unit tests against different versions of Spark using the different profiles. The
 default version runs against Spark 3.0.0, to run against other versions use one of the following
  profiles:
