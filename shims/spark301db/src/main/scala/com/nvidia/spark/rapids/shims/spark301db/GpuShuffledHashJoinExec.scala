@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
-import org.apache.spark.sql.execution.joins.{ShuffledHashJoinExec}
+import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
 import org.apache.spark.sql.types.DataType
