@@ -206,24 +206,24 @@ object GpuParquetScanBase {
     // return input table if there exists no DECIMAL32 columns
     if (!containDecimal32Column) return t
 
-    val columns = (0 until t.getNumberOfColumns).map { i =>
-      t.getColumn(i).getType match {
-        case tpe if tpe.getTypeId == DType.DTypeEnum.DECIMAL32 =>
-          t.getColumn(i).castTo(DType.create(DType.DTypeEnum.DECIMAL64, tpe.getScale))
-        case _ =>
-          t.getColumn(i)
+    val columns = new Array[ColumnVector](t.getNumberOfColumns)
+    try {
+      RebaseHelper.withResource(t) { _ =>
+        (0 until t.getNumberOfColumns).foreach { i =>
+          t.getColumn(i).getType match {
+            case tpe if tpe.getTypeId == DType.DTypeEnum.DECIMAL32 =>
+              columns(i) = t.getColumn(i).castTo(
+                DType.create(DType.DTypeEnum.DECIMAL64, tpe.getScale))
+            case _ =>
+              columns(i) = t.getColumn(i).incRefCount()
+          }
+        }
       }
+      new Table(columns: _*)
+    } finally {
+      // clean temporary column vectors
+      columns.safeClose()
     }
-    val ret = new Table(columns: _*)
-    // clean temporary column vectors produced by castTo
-    (0 until t.getNumberOfColumns).foreach {
-      case i if t.getColumn(i).getType.getTypeId == DType.DTypeEnum.DECIMAL32 =>
-        columns(i).close()
-      case _ =>
-    }
-    // clean original table
-    t.close()
-    ret
   }
 }
 
