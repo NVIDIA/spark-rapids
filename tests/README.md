@@ -6,7 +6,7 @@ parent: Developer Overview
 ---
 # RAPIDS Accelerator for Apache Spark Testing
 
-We have several stand alone examples that you can run in the integration_tests subdirectory/jar.
+We have several stand alone examples that you can run in the [integration tests](../integration_tests).
 
 One set is based off of the mortgage dataset you can download 
 [here](http://www.fanniemae.com/portal/funding-the-market/data/loan-performance-data.html)
