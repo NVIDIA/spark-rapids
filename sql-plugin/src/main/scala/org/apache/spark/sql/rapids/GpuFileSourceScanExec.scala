@@ -71,6 +71,8 @@ case class GpuFileSourceScanExec(
   private val isParquetFileFormat: Boolean = relation.fileFormat.isInstanceOf[ParquetFileFormat]
   private val isPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled || !isParquetFileFormat
 
+  override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
+
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
