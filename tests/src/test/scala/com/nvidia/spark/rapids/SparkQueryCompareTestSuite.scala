@@ -341,7 +341,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
         // not folded into the table scan exec
         data = data.repartition(repart)
       }
-      fun(data).collect()
+      val plan1 = fun(data)
+      val plan2 = fun(data)
+      assert(plan1.queryExecution.executedPlan.canonicalized ==
+          plan2.queryExecution.executedPlan.canonicalized)
+      plan1.collect()
     }, conf)
 
     (fromCpu, fromGpu)
