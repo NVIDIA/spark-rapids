@@ -105,13 +105,6 @@ class Spark300Shims extends SparkShims {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def isGpuHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuHashJoin => true
-      case _ => false
-    }
-  }
-
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
