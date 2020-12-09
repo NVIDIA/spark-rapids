@@ -1475,7 +1475,9 @@ object GpuOverrides {
         }
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowDecimal = conf.decimalTypeEnabled,
             allowNull = true)
+
         override def convertToGpu(): GpuExpression = {
           // handle the case AggregateExpression has the resultIds parameter where its
           // Seq[ExprIds] instead of single ExprId.
@@ -1869,6 +1871,25 @@ object GpuOverrides {
       "String character length",
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
+      }),
+    expr[UnscaledValue](
+      "Convert a Decimal to an unscaled long value for some aggregation optimizations",
+      (a, conf, p, r) => new UnaryExprMeta[UnscaledValue](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuUnscaledValue(child)
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowDecimal = conf.decimalTypeEnabled)
+      }),
+    expr[MakeDecimal](
+      "Create a Decimal from an unscaled long value form some aggregation optimizations",
+      (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowDecimal = conf.decimalTypeEnabled)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
