@@ -1945,7 +1945,7 @@ object GpuOverrides {
             }
             val schema = new StructType(tmp.toArray)
 
-            GpuRangePartitioning(gpuOrdering, rp.numPartitions, new GpuRangePartitioner, schema)
+            GpuRangePartitioning(gpuOrdering, rp.numPartitions, schema)(new GpuRangePartitioner)
           } else {
             GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
           }
