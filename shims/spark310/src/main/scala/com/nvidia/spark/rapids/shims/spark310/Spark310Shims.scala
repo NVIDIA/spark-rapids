@@ -106,24 +106,21 @@ class Spark310Shims extends Spark301Shims {
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
               .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
-          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
+            .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
+            TypeSig.lit(TypeEnum.INT)))),
       (a, conf, p, r) => new ExprMeta[RegExpReplace](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (!GpuOverrides.isLit(a.rep)) {
-            willNotWorkOnGpu("Only literal values are supported for replacement string")
-          }
           if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
             willNotWorkOnGpu(
               "Only non-null, non-empty String literals that are not regex patterns " +
                   "are supported by RegExpReplace on the GPU")
           }
-          if (!a.pos.foldable) {
-            willNotWorkOnGpu("Only foldable expressions are supported for the " +
-            "starting search position")
-          }
-          val posEval = a.pos.eval()
-          if (posEval.asInstanceOf[Int] != 1) {
-            willNotWorkOnGpu("Only a search starting position of 1 is supported")
+          GpuOverrides.extractLit(a.pos).foreach { lit =>
+            if (lit.value.asInstanceOf[Int] != 1) {
+              willNotWorkOnGpu("Only a search starting position of 1 is supported")
+            }
           }
         }
         override def convertToGpu(): GpuExpression = {

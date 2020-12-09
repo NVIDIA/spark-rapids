@@ -334,13 +334,16 @@ case class ContextChecks(
     val children = expr.children.toArray
     val fixedChecks = paramCheck.toArray
     assert (fixedChecks.length <= children.length,
-      s"${expr.getClass.getSimpleName} expected ${fixedChecks.length} but found ${children.length}")
+      s"${expr.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
+          s"found ${children.length}")
     fixedChecks.indices.foreach { i =>
       val check = fixedChecks(i)
       check.cudf.tagExprParam(meta, children(i), check.name)
     }
     if (repeatingParamCheck.isEmpty) {
-      assert(fixedChecks.length == children.length)
+      assert(fixedChecks.length == children.length,
+        s"${expr.getClass.getSimpleName} expected ${fixedChecks.length} but " +
+            s"found ${children.length}")
     } else {
       val check = repeatingParamCheck.get
       (fixedChecks.length until children.length).foreach { i =>
