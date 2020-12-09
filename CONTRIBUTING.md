@@ -119,7 +119,7 @@ By making a contribution to this project, I certify that:
     this project or the open source license(s) involved.
 ```
 
-### Testing your code
+### Testing Your Code
 Please visit the [testing doc](tests/README.md) for details about how to run tests
 
 ## Attribution
