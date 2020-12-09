@@ -83,8 +83,8 @@ To make sure that the tests work properly you need to configure your cluster or 
 The python framework cannot always do this for you because it risks overwriting other java options in the config.
 Please be sure that the following configs are set when running the tests.
 
-  * `spark.driver.extraJavaOptions` should include `-Duser.timezone=GMT`
-  * `spark.executor.extraJavaOptions` should include `-Duser.timezone=GMT`
+  * `spark.driver.extraJavaOptions` should include `-Duser.timezone=UTC`
+  * `spark.executor.extraJavaOptions` should include `-Duser.timezone=UTC`
   * `spark.sql.session.timeZone`=`UTC`
 
 ### Running in parallel
