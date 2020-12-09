@@ -31,14 +31,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("gds", catalog) {
+    extends RapidsBufferStore("gds", catalog) with Arm {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    val otherBuffer = other.getMemoryBuffer
-    try {
+    withResource(other.getMemoryBuffer) { otherBuffer =>
       val deviceBuffer = otherBuffer match {
         case d: DeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
@@ -49,6 +48,7 @@ class RapidsGdsStore(
       } else {
         id.getDiskPath(diskBlockManager)
       }
+      // When sharing files, append to the file; otherwise, write from the beginning.
       val fileOffset = if (id.canShareDiskPaths) {
         // only one writer at a time for now when using shared files
         path.synchronized {
@@ -59,8 +59,6 @@ class RapidsGdsStore(
       }
       logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
       new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority)
-    } finally {
-      otherBuffer.close()
     }
   }
 
@@ -81,10 +79,11 @@ class RapidsGdsStore(
         } else {
           id.getDiskPath(diskBlockManager)
         }
-        val buffer = DeviceMemoryBuffer.allocate(size);
-        CuFile.copyFileToDeviceBuffer(buffer, path, fileOffset)
-        logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
-        deviceBuffer = Some(buffer)
+        closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
+          CuFile.copyFileToDeviceBuffer(buffer, path, fileOffset)
+          logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
+          deviceBuffer = Some(buffer)
+        }
       }
       deviceBuffer.foreach(_.incRefCount())
       deviceBuffer.get

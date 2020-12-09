@@ -335,7 +335,9 @@ object RapidsConf {
 
   val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
     .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
-      "GDS must be enabled and the directory `spark.local.dir` must support GDS.")
+      "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
+      "experimental feature. For more information on GDS, see " +
+      "https://docs.nvidia.com/gpudirect-storage/.")
     .booleanConf
     .createWithDefault(false)
 
