@@ -5,7 +5,7 @@ are intended to be able to be run against any Spark-compatible cluster/release t
 verify that the plugin is doing the right thing in as many cases as possible.
 
 There are two sets of tests here. The pyspark tests are described here. The scala tests
-are described [here](../docs/testing.md)
+are described [here](../tests/README.md)
 
 ## Dependencies
 
@@ -43,24 +43,89 @@ to test improved transfer performance to pandas based user defined functions.
 
 ## Running
 
-Running the tests follows the pytest conventions. If you want to submit the tests as a python process you need to
-have `findspark` installed.  If you want to submit it with `spark-submit` you may do that too, but it will prevent
-you from running the tests in parallel with `pytest-xdist`.
+Tests will run as a part of the maven build if you have the environment variable `SPARK_HOME` set.
 
-```
-$SPARK_HOME/bin/spark-submit ./runtests.py
+The suggested way to run these tests is to use the shell-script file located in the
+ integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes 
+care of some of the flags that are required to run the tests which will have to be set for the 
+plugin to work. It will be very useful to read the contents of the 
+[run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight 
+into what is needed as we constantly keep working on to improve and expand the plugin-support.
+
+The python tests run with pytest and the script honors pytest parameters. Some handy flags are:
+- `-k` <pytest-file-name>. This will run all the tests in that test file.
+- `-k` <test-name>. This will also run an individual test.
+- `-s` Doesn't capture the output and instead prints to the screen.
+- `-v` Increase the verbosity of the tests
+- `-r fExXs` Show extra test summary info as specified by chars: (f)ailed, (E)rror, (x)failed, (X)passed, (s)kipped
+- For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
+
+By default the tests try to use the python packages `pytest-xdist` and `findspark` to oversubscribe
+your GPU and run the tests in Spark local mode. This can speed up these tests significantly as all
+of the tests that run by default process relatively small amounts of data. Be careful because if
+you have `SPARK_CONF_DIR` also set the tests will try to use whatever cluster you have configured.
+If you do want to run the tests in parallel on an existing cluster it is recommended that you set
+`-Dpytest.TEST_PARALLEL` to one less than the number of worker applications that will be
+running on the cluster.  This is because `pytest-xdist` will launch one control application that
+is not included in that number. All it does is farm out work to the other applications, but because
+it needs to know about the Spark cluster to determine which tests to run and how it still shows up
+as a Spark application.
+
+To run the tests separate from the build go to the `integration_tests` directory. You can submit
+`runtests.py` through `spark-submit`, but if you want to run the tests in parallel with
+`pytest-xdist` you will need to submit it as a regular python application and have `findspark`
+installed.  Be sure to include the necessary jars for the RAPIDS plugin either with
+`spark-submit` or with the cluster when it is 
+[setup](../docs/get-started/getting-started-on-prem.md).
+The command line arguments to `runtests.py` are the same as for 
+[pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
+is that `spark-submit` uses python if the file name ends with `.py`.
+
+If you want to configure the Spark cluster you may also set environment variables for the tests.
+The name of the env var should be in the form `"PYSP_TEST_" + conf_key.replace('.', '_')`. Linux
+does not allow '.' in the name of an environment variable so we replace it with an underscore. As
+Spark configs avoid this character we have no other special processing.
+
+We also have a large number of integration tests that currently run as a part of the unit tests
+using scala test. Those are in the `src/test/scala` sub-directory and depend on the testing
+framework from the `rapids-4-spark-tests_2.12` test jar.
+
+You can run these tests against a cluster similar to how you can run `pytests` against an
+existing cluster. To do this you need to launch a cluster with the plugin jars on the
+classpath. The tests will enable and disable the plugin as they run.
+
+Next you need to copy over some test files to whatever distributed file system you are using.
+The test files are everything under `./integration_tests/src/test/resources/`  Be sure to note
+where you placed them because you will need to tell the tests where they are.
+
+When running these tests you will need to include the test jar, the integration test jar,
+scala-test and scalactic. You can find scala-test and scalactic under `~/.m2/repository`.
+
+It is recommended that you use `spark-shell` and the scalatest shell to run each test
+individually, so you don't risk running unit tests along with the integration tests.
+http://www.scalatest.org/user_guide/using_the_scalatest_shell
+
+```shell 
+spark-shell --jars rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-0.3.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
-or
+First you import the `scalatest_shell` and tell the tests where they can find the test files you
+just copied over.
 
-```
-python ./runtests.py
+```scala
+import org.scalatest._
+com.nvidia.spark.rapids.TestResourceFinder.setPrefix(PATH_TO_TEST_FILES)
 ```
 
-See `pytest -h` or `$SPARK_HOME/bin/spark-submit ./runtests.py -h` for more options.
+Next you can start to run the tests.
+
+```scala
+durations.run(new com.nvidia.spark.rapids.JoinsSuite)
+...
+```
 
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
-If just want to verify the SQL replacement is working you will need to add the `rapids-4-spark` and `cudf` jars to your `spark-submit` command.
+If you just want to verify the SQL replacement is working you will need to add the `rapids-4-spark` and `cudf` jars to your `spark-submit` command.
 
 ```
 $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT.jar" ./runtests.py
