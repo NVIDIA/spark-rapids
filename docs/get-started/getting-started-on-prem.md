@@ -134,7 +134,7 @@ Now for each worker node:
   - `cp $SPARK_HOME/conf/spark-env.sh.template $SPARK_HOME/conf/spark-env.sh`
   - Edit `$SPARK_HOME/conf/spark-env.sh` and add any worker options. The example below sets the
     number of GPUs per worker to 4 and points to the discovery script.  Change this for your setup.
-    - `SPARK_WORKER_OPTS="-Dspark.worker.resource.gpu.amount=1 -Dspark.worker.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh"`
+    - `SPARK_WORKER_OPTS="-Dspark.worker.resource.gpu.amount=4 -Dspark.worker.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh"`
 - Start the worker(s)
   - For multiple workers:
     - You can add each hostname to the file `$SPARK_HOME/conf/slaves` and use the scripts provided
