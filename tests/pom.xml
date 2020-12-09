@@ -138,6 +138,7 @@
                 <configuration>
                     <excludes>
                         <exclude>src/test/resources/**</exclude>
+                        <exclude>**/*.md</exclude>
                         <exclude>rmm_log.txt</exclude>
                     </excludes>
                 </configuration>
