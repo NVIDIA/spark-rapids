@@ -117,7 +117,7 @@ The first step is to [Install Spark](#install-spark), the
 After that choose one of the nodes to be your master node and start the master.  Note that the
 master process does **not** need a GPU to function properly.
 
-One the master node:
+On the master node:
   - Make sure `SPARK_HOME` is exported
   - run `$SPARK_HOME/sbin/start-master.sh`
     - This script will print a message saying starting Master and have a path to a log file.
@@ -167,6 +167,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.executor.memory=4G \
        --conf spark.executor.cores=4 \
        --conf spark.task.cpus=1 \
+       --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.task.resource.gpu.amount=0.25 \
        --conf spark.rapids.memory.pinnedPool.size=2G \
        --conf spark.locality.wait=0s \
