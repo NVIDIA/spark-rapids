@@ -69,6 +69,6 @@ Examples:
  `SPARK_CONF="spark.dynamicAllocation.enabled=false,spark.task.cpus=1" mvn ...`
 - To run test ParquetWriterSuite in package com.nvidia.spark.rapids, issue `mvn test -DwildcardSuites="com.nvidia.spark.rapids.ParquetWriterSuite"`
 
-## Integration tests
+## Integration Tests
 
 Please refer to the integration-tests [README](../integration_tests/README.md)
