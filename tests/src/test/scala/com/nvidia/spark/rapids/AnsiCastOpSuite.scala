@@ -422,93 +422,98 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Writing to Hive tables, which has special rules
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("Write bytes to string", testBytes, sparkConf) {
+  testSparkResultsAreEqual("Write bytes to string", testBytes, sparkConf,
+    checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write shorts to string", testShorts, sparkConf) {
+  testSparkResultsAreEqual("Write shorts to string", testShorts, sparkConf,
+    checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to string", testInts, sparkConf) {
+  testSparkResultsAreEqual("Write ints to string", testInts, sparkConf,
+    checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to string", testLongs, sparkConf) {
+  testSparkResultsAreEqual("Write longs to string", testLongs, sparkConf,
+    checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to long", testInts, sparkConf) {
+  testSparkResultsAreEqual("Write ints to long", testInts, sparkConf,
+    checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write longs to int (values within range)", intsAsLongs,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write longs to short (values within range)", shortsAsLongs,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write longs to byte (values within range)", bytesAsLongs,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write ints to short (values within range)", shortsAsInts,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write ints to byte (values within range)", bytesAsInts,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write shorts to byte (values within range)", bytesAsShorts,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write floats to long (values within range)", longsAsFloats,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats,
-    sparkConf, assumeCondition = before3_1_0) {
+    sparkConf, assumeCondition = before3_1_0, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write floats to short (values within range)", shortsAsFloats,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write floats to byte (values within range)", bytesAsFloats,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write doubles to long (values within range)", longsAsDoubles,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write doubles to int (values within range)", intsAsDoubles,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write doubles to short (values within range)",
-    shortsAsDoubles, sparkConf) {
+    shortsAsDoubles, sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
   testSparkResultsAreEqual("Write doubles to byte (values within range)", bytesAsDoubles,
-    sparkConf) {
+    sparkConf, checkCanonicalizedPlan = false) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
@@ -582,11 +587,13 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Copying between Hive tables, which has special rules
   ///////////////////////////////////////////////////////////////////////////
 
-  testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf) {
+  testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf,
+    checkCanonicalizedPlan = false) {
     frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Copy long to float", testLongs, sparkConf) {
+  testSparkResultsAreEqual("Copy long to float", testLongs, sparkConf,
+    checkCanonicalizedPlan = false) {
     frame => doTableCopy(frame, HIVE_LONG_SQL_TYPE, HIVE_FLOAT_SQL_TYPE)
   }
 
