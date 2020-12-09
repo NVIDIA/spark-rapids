@@ -37,7 +37,7 @@ Q1Like(spark).count()
 They generally follow TPCH but are not guaranteed to be the same.
 `Q1Like(spark)` will return a DataFrame that can be executed to run the corresponding query.
 
-## Unit tests
+## Unit Tests
 
 Unit tests exist in the [tests]() directory. This is unconventional and is done so we can run the 
 tests on the final shaded version of the plugin. It also helps with how we collect code coverage. 
