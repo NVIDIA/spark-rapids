@@ -119,7 +119,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       getColumnarToRowExec(e)
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      getColumnarToRowExec(e)
+      getColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
