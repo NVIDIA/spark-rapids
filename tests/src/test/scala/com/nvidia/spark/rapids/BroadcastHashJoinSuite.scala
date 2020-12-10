@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.TestUtils.{findOperator, findOperators}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.execution.joins.HashJoin
 import org.apache.spark.sql.functions.broadcast
+import org.apache.spark.sql.rapids.execution.GpuHashJoin
 
 class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
@@ -61,15 +61,13 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
         plan1.collect()
         val finalPlan1 = findOperator(plan1.queryExecution.executedPlan,
           ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
-        assert(ShimLoader.getSparkShims.getBuildSide
-        (finalPlan1.get.asInstanceOf[HashJoin]).toString == "GpuBuildLeft")
+        assert(finalPlan1.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildLeft)
 
         // execute the plan so that the final adaptive plan is available when AQE is on
         plan2.collect()
         val finalPlan2 = findOperator(plan2.queryExecution.executedPlan,
           ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
-        assert(ShimLoader.getSparkShims.
-          getBuildSide(finalPlan2.get.asInstanceOf[HashJoin]).toString == "GpuBuildRight")
+        assert(finalPlan2.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildRight)
       }
     })
   }

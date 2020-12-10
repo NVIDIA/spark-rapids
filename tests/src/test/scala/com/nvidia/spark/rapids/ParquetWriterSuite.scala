@@ -155,11 +155,8 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     when(spyCol.getRowCount).thenReturn(ROWS)
     val mockDtype = mock(classOf[DType])
     when(mockDtype.getSizeInBytes).thenReturn(1024)
-    val mockDataType = mock(classOf[DataType])
     val spyGpuCol = spy(GpuColumnVector.from(spyCol, ByteType))
-    when(spyCol.getType()).thenReturn(mockDtype)
-    when(spyGpuCol.dataType()).thenReturn(mockDataType)
-    when(mockDataType.defaultSize).thenReturn(1024)
+    when(spyCol.getDeviceMemorySize).thenReturn(1024L * ROWS)
 
     (spyCol, spyGpuCol)
   }

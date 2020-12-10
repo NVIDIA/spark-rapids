@@ -107,7 +107,7 @@ case class GpuAggregateInPandasExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(groupingExpressions.map(SortOrder(_, Ascending)))
+    Seq(groupingExpressions.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
 
   override protected def doExecute(): RDD[InternalRow] = {
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)

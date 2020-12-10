@@ -45,7 +45,7 @@ _conf = {
 
 small_data = [(1, 1.0), (1, 2.0), (2, 3.0), (2, 5.0), (2, 10.0)]
 
-large_data = list(map(lambda i: (i, i/1.0), range(1, 5000))) * 2
+large_data = list(map(lambda i: (i, i/1.0), range(1, 512))) * 2
 
 
 def _create_df(spark, data=large_data):
