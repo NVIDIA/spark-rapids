@@ -115,7 +115,6 @@ def main():
     if term:
         sys.exit(0)
 
-    time.sleep(10)  # sleep 10s, then try auto-merge
     auto_merge(number, sha)
 
 
