@@ -84,8 +84,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       firstDf,
       repart = 2,
       skipCanonicalizationCheck = true) {
-    // skip canonicalization check because Spark uses SortAggregate (which does not have
-    // deterministic canonicalization in this case) with HashAggregate
+    // skip canonicalization check because Spark uses SortAggregate, which does not have
+    // deterministic canonicalization in this case, and we replace it with HashAggregate, which
+    // does have deterministic canonicalization
     frame => frame
       .coalesce(1)
       .sort(col("c2").asc, col("c0").asc) // force deterministic use case
@@ -782,24 +783,27 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual(
       "first random strings ignoreNulls=false",
       randomDF(DataTypes.StringType), skipCanonicalizationCheck=true) {
-    // skip canonicalization check because Spark uses SortAggregate (which does not have
-    // deterministic canonicalization in this case) with HashAggregate
+    // skip canonicalization check because Spark uses SortAggregate, which does not have
+    // deterministic canonicalization in this case, and we replace it with HashAggregate, which
+    // does have deterministic canonicalization
     frame => frame.groupBy(col("c0")).agg(first("c1", ignoreNulls = false))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual(
       "last random strings ignoreNulls=false",
       randomDF(DataTypes.StringType), skipCanonicalizationCheck=true) {
-    // skip canonicalization check because Spark uses SortAggregate (which does not have
-    // deterministic canonicalization in this case) with HashAggregate
+    // skip canonicalization check because Spark uses SortAggregate, which does not have
+    // deterministic canonicalization in this case, and we replace it with HashAggregate, which
+    // does have deterministic canonicalization
     frame => frame.groupBy(col("c0")).agg(last("c1", ignoreNulls = false))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual(
       "first/last random strings ignoreNulls=false",
       randomDF(DataTypes.StringType), skipCanonicalizationCheck=true) {
-    // skip canonicalization check because Spark uses SortAggregate (which does not have
-    // deterministic canonicalization in this case) with HashAggregate
+    // skip canonicalization check because Spark uses SortAggregate, which does not have
+    // deterministic canonicalization in this case, and we replace it with HashAggregate, which
+    // does have deterministic canonicalization
     frame => frame.groupBy(col("c0")).agg(
       first("c1", ignoreNulls = false),
       last("c1", ignoreNulls = false))
