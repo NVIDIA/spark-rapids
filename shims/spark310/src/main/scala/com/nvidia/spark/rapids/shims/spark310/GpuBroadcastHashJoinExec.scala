@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.shims.spark301.GpuBroadcastExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, SortOrder}
-import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
+import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -88,7 +88,8 @@ class GpuBroadcastHashJoinMeta(
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
-      join.joinType, join.buildSide,
+      join.joinType,
+      GpuJoinUtils.getGpuBuildSide(join.buildSide),
       condition.map(_.convertToGpu()),
       left, right)
   }
@@ -98,7 +99,7 @@ case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,
-    buildSide: BuildSide,
+    buildSide: GpuBuildSide,
     condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
@@ -109,16 +110,12 @@ case class GpuBroadcastHashJoinExec(
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
 
-  // Spark 3.1.0 started introducing ordering guarantees for hash joins but GPU
-  // hash joins do not provide ordering guarantees
-  override def outputOrdering: Seq[SortOrder] = Nil
-
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
     buildSide match {
-      case BuildLeft =>
+      case GpuBuildLeft =>
         BroadcastDistribution(mode) :: UnspecifiedDistribution :: Nil
-      case BuildRight =>
+      case GpuBuildRight =>
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
   }
@@ -149,10 +146,15 @@ case class GpuBroadcastHashJoinExec(
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
     lazy val builtTable = {
-      // TODO clean up intermediate results...
-      val keys = GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)
-      val combined = combine(keys, broadcastRelation.value.batch)
-      val ret = GpuColumnVector.from(combined)
+      val ret = withResource(
+        GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
+        val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
+        val filtered = filterBuiltTableIfNeeded(combined)
+        withResource(filtered) { filtered =>
+          GpuColumnVector.from(filtered)
+        }
+      }
+
       // Don't warn for a leak, because we cannot control when we are done with this
       (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
       ret
