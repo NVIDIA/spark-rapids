@@ -52,10 +52,11 @@ class RapidsGdsStore(
       val fileOffset = if (id.canShareDiskPaths) {
         // only one writer at a time for now when using shared files
         path.synchronized {
-          CuFile.copyDeviceBufferToFile(path, deviceBuffer, true)
+          CuFile.appendDeviceBufferToFile(path, deviceBuffer)
         }
       } else {
-        CuFile.copyDeviceBufferToFile(path, deviceBuffer, false)
+        CuFile.writeDeviceBufferToFile(path, 0, deviceBuffer)
+        0
       }
       logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
       new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority)
@@ -68,44 +69,23 @@ class RapidsGdsStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long) extends RapidsBufferBase(id, size, meta, spillPriority) {
-    private[this] var deviceBuffer: Option[DeviceMemoryBuffer] = None
-
     override val storageTier: StorageTier = StorageTier.GDS
 
-    private def getDeviceBuffer: DeviceMemoryBuffer = synchronized {
-      if (deviceBuffer.isEmpty) {
-        val path = if (id.canShareDiskPaths) {
-          sharedBufferFiles.get(id)
-        } else {
-          id.getDiskPath(diskBlockManager)
-        }
-        closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-          CuFile.copyFileToDeviceBuffer(buffer, path, fileOffset)
-          logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
-          deviceBuffer = Some(buffer)
-        }
+    // TODO(rongou): cache this buffer to avoid repeated reads from disk.
+    override def getMemoryBuffer: DeviceMemoryBuffer = synchronized {
+      val path = if (id.canShareDiskPaths) {
+        sharedBufferFiles.get(id)
+      } else {
+        id.getDiskPath(diskBlockManager)
       }
-      deviceBuffer.foreach(_.incRefCount())
-      deviceBuffer.get
-    }
-
-    override def getMemoryBuffer: MemoryBuffer = getDeviceBuffer
-
-    override def close(): Unit = synchronized {
-      if (refcount == 1) {
-        // free the memory mapping since this is the last active reader
-        deviceBuffer.foreach { b =>
-          logDebug(s"closing device buffer $b created via GDS")
-          b.close()
-        }
-        deviceBuffer = None
+      closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
+        CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
+        logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
+        buffer
       }
-      super.close()
     }
 
     override protected def releaseResources(): Unit = {
-      require(deviceBuffer.isEmpty,
-        "Releasing a GDS disk buffer with non-empty device buffer")
       // Buffers that share paths must be cleaned up elsewhere
       if (id.canShareDiskPaths) {
         sharedBufferFiles.remove(id)
@@ -118,10 +98,9 @@ class RapidsGdsStore(
     }
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
-      withResource(getDeviceBuffer) { deviceBuffer =>
+      withResource(getMemoryBuffer) { deviceBuffer =>
         columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
   }
-
 }
