@@ -322,7 +322,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       df: SparkSession => DataFrame,
       fun: DataFrame => DataFrame,
       conf: SparkConf = new SparkConf(),
-      repart: Integer = 1): (Array[Row], Array[Row]) = {
+      repart: Integer = 1,
+      skipCanonicalizationCheck: Boolean = false): (Array[Row], Array[Row]) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
     val (planCpu, canonicalizationMatchesCpu, fromCpu) = withCpuSparkSession( session => {
       var data = df(session)
@@ -344,7 +345,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       collect(fun, data)
     }, conf)
 
-    if (canonicalizationMatchesCpu != canonicalizationMatchesGpu) {
+    if (!skipCanonicalizationCheck && (canonicalizationMatchesCpu != canonicalizationMatchesGpu)) {
       fail(s"canonicalizationMatchesCpu=$canonicalizationMatchesCpu != " +
           s"canonicalizationMatchesGpu=$canonicalizationMatchesGpu\n" +
           s"CPU plan: $planCpu\n" +
@@ -486,12 +487,14 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       df: SparkSession => DataFrame,
       repart: Integer = 1,
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+      sortBeforeRepart: Boolean = false,
+      skipCanonicalizationCheck: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       repart=repart,
       sort=true,
-      sortBeforeRepart = sortBeforeRepart)(fun)
+      sortBeforeRepart = sortBeforeRepart,
+      skipCanonicalizationCheck = skipCanonicalizationCheck)(fun)
   }
 
   def IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
@@ -736,7 +739,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false,
       assumeCondition: SparkSession => (Boolean, String) = null,
-      decimalTypeEnabled: Boolean = true)
+      decimalTypeEnabled: Boolean = true,
+      skipCanonicalizationCheck: Boolean = false)
       (fun: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
@@ -750,7 +754,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       }
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
-        repart = repart)
+        repart = repart,
+        skipCanonicalizationCheck = skipCanonicalizationCheck)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
   }
