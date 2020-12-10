@@ -613,54 +613,60 @@ case class GpuArrowEvalPythonExec(
         PythonWorkerSemaphore.acquireIfNecessary(context)
       }
 
-      val pyRunner = new GpuArrowPythonRunner(
-        pyFuncs,
-        evalType,
-        argOffsets,
-        pythonInputSchema,
-        timeZone,
-        runnerConf,
-        targetBatchSize,
-        () => queue.finish(),
-        pythonOutputSchema)
+      if (pyInputIterator.hasNext) {
+        val pyRunner = new GpuArrowPythonRunner(
+          pyFuncs,
+          evalType,
+          argOffsets,
+          pythonInputSchema,
+          timeZone,
+          runnerConf,
+          targetBatchSize,
+          () => queue.finish(),
+          pythonOutputSchema)
 
-      val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
+        val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
 
-      new Iterator[ColumnarBatch] {
-        // for hasNext we are waiting on the queue to have something inserted into it
-        // instead of waiting for a result to be ready from python. The reason for this
-        // is to let us know the target number of rows in the batch that we want when reading.
-        // It is a bit hacked up but it works. In the future when we support spilling we should
-        // store the number of rows separate from the batch. That way we can get the target batch
-        // size out without needing to grab the GpuSemaphore which we cannot do if we might block
-        // on a read operation.
-        // Besides, when the queue is empty, need to call the `hasNext` of the out iterator to
-        // trigger reading and handling the control data followed with the stream data.
-        override def hasNext: Boolean = queue.hasNext || outputBatchIterator.hasNext
+        new Iterator[ColumnarBatch] {
+          // for hasNext we are waiting on the queue to have something inserted into it
+          // instead of waiting for a result to be ready from python. The reason for this
+          // is to let us know the target number of rows in the batch that we want when reading.
+          // It is a bit hacked up but it works. In the future when we support spilling we should
+          // store the number of rows separate from the batch. That way we can get the target batch
+          // size out without needing to grab the GpuSemaphore which we cannot do if we might block
+          // on a read operation.
+          // Besides, when the queue is empty, need to call the `hasNext` of the out iterator to
+          // trigger reading and handling the control data followed with the stream data.
+          override def hasNext: Boolean = queue.hasNext || outputBatchIterator.hasNext
 
-        private [this] def combine(
-            origBatch: ColumnarBatch,
-            retBatch: ColumnarBatch): ColumnarBatch = {
-          val lColumns = GpuColumnVector.extractColumns(origBatch)
-          val rColumns = GpuColumnVector.extractColumns(retBatch)
-          new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
-            origBatch.numRows())
-        }
+          private [this] def combine(
+                                      origBatch: ColumnarBatch,
+                                      retBatch: ColumnarBatch): ColumnarBatch = {
+            val lColumns = GpuColumnVector.extractColumns(origBatch)
+            val rColumns = GpuColumnVector.extractColumns(retBatch)
+            new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
+              origBatch.numRows())
+          }
 
-        override def next(): ColumnarBatch = {
-          val numRows = queue.peekBatchSize
-          // Update the expected batch size for next read
-          pyRunner.minReadTargetBatchSize = numRows
-          withResource(outputBatchIterator.next()) { cbFromPython =>
-            assert(cbFromPython.numRows() == numRows)
-            withResource(queue.remove()) { origBatch =>
-              numOutputBatches += 1
-              numOutputRows += numRows
-              combine(origBatch, cbFromPython)
+          override def next(): ColumnarBatch = {
+            val numRows = queue.peekBatchSize
+            // Update the expected batch size for next read
+            pyRunner.minReadTargetBatchSize = numRows
+            withResource(outputBatchIterator.next()) { cbFromPython =>
+              assert(cbFromPython.numRows() == numRows)
+              withResource(queue.remove()) { origBatch =>
+                numOutputBatches += 1
+                numOutputRows += numRows
+                combine(origBatch, cbFromPython)
+              }
             }
           }
         }
+      } else {
+        // Empty partition, return it directly
+        iter
       }
-    }
+
+    } // End of mapPartitions
   }
 }
