@@ -40,9 +40,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuRangePartitioning(
     gpuOrdering: Seq[SortOrder],
     numPartitions: Int,
-    part: GpuRangePartitioner,
-    schema: StructType)
+    schema: StructType)(val part: GpuRangePartitioner)
   extends GpuExpression with GpuPartitioning {
+
+  override def otherCopyArgs: Seq[AnyRef] = Seq(part)
 
   var rangeBounds: Array[InternalRow] = _
 
