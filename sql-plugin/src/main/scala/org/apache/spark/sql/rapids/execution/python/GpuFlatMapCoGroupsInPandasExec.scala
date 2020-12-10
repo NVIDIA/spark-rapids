@@ -97,10 +97,8 @@ case class GpuFlatMapCoGroupsInPandasExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
-    leftGroup
-      .map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ::
-    rightGroup
-      .map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) :: Nil
+    leftGroup.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ::
+      rightGroup.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) :: Nil
   }
 
   override protected def doExecute(): RDD[InternalRow] = {
