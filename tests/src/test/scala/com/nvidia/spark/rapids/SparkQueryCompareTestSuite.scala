@@ -322,28 +322,34 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       df: SparkSession => DataFrame,
       fun: DataFrame => DataFrame,
       conf: SparkConf = new SparkConf(),
-      repart: Integer = 1,
-      checkCanonicalizedPlan: Boolean = true): (Array[Row], Array[Row]) = {
+      repart: Integer = 1): (Array[Row], Array[Row]) = {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
-    val fromCpu = withCpuSparkSession( session => {
+    val (planCpu, canonicalizationMatchesCpu, fromCpu) = withCpuSparkSession( session => {
       var data = df(session)
       if (repart > 0) {
         // repartition the data so it is turned into a projection,
         // not folded into the table scan exec
         data = data.repartition(repart)
       }
-      collect(fun, data, checkCanonicalizedPlan)
+      collect(fun, data)
     }, conf)
 
-    val fromGpu = withGpuSparkSession( session => {
+    val (planGpu, canonicalizationMatchesGpu, fromGpu) = withGpuSparkSession( session => {
       var data = df(session)
       if (repart > 0) {
         // repartition the data so it is turned into a projection,
         // not folded into the table scan exec
         data = data.repartition(repart)
       }
-      collect(fun, data, checkCanonicalizedPlan)
+      collect(fun, data)
     }, conf)
+
+    if (canonicalizationMatchesCpu != canonicalizationMatchesGpu) {
+      fail(s"canonicalizationMatchesCpu=$canonicalizationMatchesCpu != " +
+          s"canonicalizationMatchesGpu=$canonicalizationMatchesGpu\n" +
+          s"CPU plan: $planCpu\n" +
+          s"GPU plan: $planGpu")
+    }
 
     (fromCpu, fromGpu)
   }
@@ -391,15 +397,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def collect(
       fun: DataFrame => DataFrame,
-      data: DataFrame,
-      checkCanonicalizedPlan: Boolean): Array[Row] = {
+      data: DataFrame): (SparkPlan, Boolean, Array[Row]) = {
     val plan1 = fun(data)
-    if (checkCanonicalizedPlan) {
-      val plan2 = fun(data)
-      assert(plan1.queryExecution.executedPlan.canonicalized ==
-          plan2.queryExecution.executedPlan.canonicalized)
-    }
-    plan1.collect()
+    val plan2 = fun(data)
+    val canonicalizationMatches = plan1.queryExecution.executedPlan.canonicalized ==
+        plan2.queryExecution.executedPlan.canonicalized
+    (plan1.queryExecution.executedPlan.canonicalized, canonicalizationMatches, plan1.collect())
   }
 
   def INCOMPAT_testSparkResultsAreEqual(
@@ -733,8 +736,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       execsAllowedNonGpu: Seq[String] = Seq.empty,
       sortBeforeRepart: Boolean = false,
       assumeCondition: SparkSession => (Boolean, String) = null,
-      decimalTypeEnabled: Boolean = true,
-      checkCanonicalizedPlan: Boolean = true)
+      decimalTypeEnabled: Boolean = true)
       (fun: DataFrame => DataFrame): Unit = {
 
     val (testConf, qualifiedTestName) =
@@ -748,8 +750,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       }
       val (fromCpu, fromGpu) = runOnCpuAndGpu(df, fun,
         conf = testConf,
-        repart = repart,
-        checkCanonicalizedPlan = checkCanonicalizedPlan)
+        repart = repart)
       compareResults(sort, maxFloatDiff, fromCpu, fromGpu)
     }
   }
