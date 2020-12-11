@@ -413,6 +413,12 @@ object GpuOverrides {
         g.qualifier,
         g.explicitMetadata)
           .canonicalized
+    case g: GpuSubstring =>
+      Substring(
+        canonicalizeToCpuForSortOrder(g.str),
+        canonicalizeToCpuForSortOrder(g.pos),
+        canonicalizeToCpuForSortOrder(g.len))
+          .canonicalized
     case o: GpuExpression =>
       throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
     case other => other.canonicalized
@@ -1946,7 +1952,7 @@ object GpuOverrides {
             }
             val schema = new StructType(tmp.toArray)
 
-            GpuRangePartitioning(gpuOrdering, rp.numPartitions, new GpuRangePartitioner, schema)
+            GpuRangePartitioning(gpuOrdering, rp.numPartitions, schema)(new GpuRangePartitioner)
           } else {
             GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
           }
@@ -2268,16 +2274,25 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled) {
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
       wrap.tagForGpu()
-      wrap.runAfterTagRules()
+      val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
       val exp = conf.explain
-      if (!exp.equalsIgnoreCase("NONE")) {
-        val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
-        if (!explain.isEmpty) {
-          logWarning(s"\n$explain")
+      if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
+        if (!exp.equalsIgnoreCase("NONE")) {
+          logWarning("Can't replace any part of this plan due to: " +
+            s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
         }
+        plan
+      } else {
+        wrap.runAfterTagRules()
+        if (!exp.equalsIgnoreCase("NONE")) {
+          val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
+          if (!explain.isEmpty) {
+            logWarning(s"\n$explain")
+          }
+        }
+        val convertedPlan = wrap.convertIfNeeded()
+        addSortsIfNeeded(convertedPlan, conf)
       }
-      val convertedPlan = wrap.convertIfNeeded()
-      addSortsIfNeeded(convertedPlan, conf)
     } else {
       plan
     }
