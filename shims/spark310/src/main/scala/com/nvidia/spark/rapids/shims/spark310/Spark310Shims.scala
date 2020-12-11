@@ -78,13 +78,6 @@ class Spark310Shims extends Spark301Shims {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
   }
 
-  override def isGpuHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuHashJoin => true
-      case _ => false
-    }
-  }
-
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true

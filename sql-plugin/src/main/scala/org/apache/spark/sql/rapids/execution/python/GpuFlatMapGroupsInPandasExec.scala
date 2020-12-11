@@ -96,7 +96,7 @@ case class GpuFlatMapGroupsInPandasExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(groupingAttributes.map(SortOrder(_, Ascending)))
+    Seq(groupingAttributes.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
 
   override protected def doExecute(): RDD[InternalRow] = {
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
