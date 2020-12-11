@@ -1007,14 +1007,13 @@ class MultiFileParquetPartitionReader(
             allPartitionColumns =
               rowsPerPartition.zipWithIndex.map { case (rowsInPart, rowIndex) =>
                 // logWarning(s"rows per partition is $rowsInPart index is $rowIndex")
-                val partValue = inPartitionValues(rowIndex)
-                val partitionValues = partValue.toSeq(partitionSchema)
+                val partitionValues = inPartitionValues(rowIndex).toSeq(partitionSchema)
                 // logWarning(s"partition values size is ${partitionValues.size}")
                 val partitionScalars = ColumnarPartitionReaderWithPartitionValues
                   .createPartitionValues(partitionValues, partitionSchema)
                 withResource(partitionScalars) { scalars =>
-                  ColumnarPartitionReaderWithPartitionValues.buildPartitionColumns(
-                    rowsInPart.toInt, scalars, GpuColumnVector.extractTypes(partitionSchema))
+                    ColumnarPartitionReaderWithPartitionValues.buildPartitionColumns(
+                      rowsInPart.toInt, scalars, GpuColumnVector.extractTypes(partitionSchema))
                   // ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars,
                   //   GpuColumnVector.extractTypes(partitionSchema))
                 }
@@ -1022,6 +1021,7 @@ class MultiFileParquetPartitionReader(
             succeeded = true
           } finally {
             if (!succeeded) {
+              logWarning("failed all partition columns close")
               allPartitionColumns.foreach(_.safeClose())
             }
           }
@@ -1040,12 +1040,17 @@ class MultiFileParquetPartitionReader(
                 for (j <- 1 until allPartitionColumns.size) {
                   val part = allPartitionColumns(j)
                   val concatCol = result(i)
-                  result(i) = GpuColumnVector.from(
-                    ColumnVector.concatenate(
-                      concatCol.getBase,
-                      part(i).getBase), concatCol.dataType())
-                  concatCol.safeClose()
-                  part(i).safeClose()
+                  try {
+                    result(i) = GpuColumnVector.from(
+                      ColumnVector.concatenate(
+                        concatCol.getBase,
+                        part(i).getBase), concatCol.dataType())
+                  } finally {
+                    if (i > 0) {
+                      // first concat col will be closed with allPartitionColumns
+                      concatCol.safeClose()
+                    }
+                  }
                 }
               }
               // allPartitionColumns.foreach(_.safeClose())
@@ -1062,31 +1067,26 @@ class MultiFileParquetPartitionReader(
               finalCb
             } finally {
               if (!succeeded) {
-                // if (allPartitionColumns != null) {
-                //   allPartitionColumns.foreach(_.safeClose())
-                // }
                 result.safeClose()
               }
             }
           } else if (allPartitionColumns.size == 1) {
+            logWarning("partition columns is 1")
             val partitionColumns = allPartitionColumns.head
-            try {
-              // just create column batch
-              val fileBatchCols = (0 until cb.numCols).map(cb.column)
-              val resultCols = fileBatchCols ++ partitionColumns
-              val result = new ColumnarBatch(resultCols.toArray, cb.numRows)
-              fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-              result
-            } finally {
-              if (partitionColumns != null) {
-                partitionColumns.safeClose()
-              }
-            }
+            // just create column batch
+            val fileBatchCols = (0 until cb.numCols).map(cb.column)
+            val resultCols = fileBatchCols ++ partitionColumns
+            val finalCb = new ColumnarBatch(resultCols.toArray, cb.numRows)
+            fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
+            succeeded = true
+            finalCb
           } else {
             // TODO - dont really need
             cb
           }
         } finally {
+          allPartitionColumns.foreach( arrVec => arrVec.filter(_ != null).safeClose())
+
           if (cb != null) {
             cb.close()
           }
