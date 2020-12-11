@@ -2,44 +2,33 @@
 
 This is a getting started guide for Rapids on AWS EMR. At the end of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS EMR.
 
+The current EMR 6.2.0 release suppport Spark version 3.0.1 and Nvidia spark-rapids 0.2.0. For more details of supported applications, please see the [EMR release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).  
+
 For more information on AWS EMR, please see the [AWS documentation](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-is-emr.html).
 
 ## Configure and Launch AWS EMR with GPU Nodes
 
-
 ###  Launch EMR Cluster using AWS CLI
 
-For Master node with m5.xlarge and two core nodes 2x g4dn.2xlarge  (will change to template)
+Following steps is based on AWS EMR document - ["Using the Nvidia Spark-RAPIDS Accelerator for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html) 
+
+
+You can use AWS CLI to launch a cluster with one Master node (m5.xlarge) and two nodes 2x g4dn.2xlarge  
 
 ```
-aws emr create-cluster \
---release-label emr-6.1.0 \
+ aws emr create-cluster \
+--release-label emr-6.2.0 \
+--applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
 --service-role EMR_DefaultRole \
---applications Name=Hadoop Name=Spark Name=Livy \
---ec2-attributes '{"KeyName":"miangangz-aws-east-1-eng","InstanceProfile":"EMR_EC2_DefaultRole","SubnetId":"subnet-7e41d850","EmrManagedSlaveSecurityGroup":"sg-0d6f9a040b3668dd2","EmrManagedMasterSecurityGroup":"sg-042b0e48a5cfe0772"}' \
---instance-groups '[{"InstanceCount":1,"EbsConfiguration":{"EbsBlockDeviceConfigs":[{"VolumeSpecification":{"SizeInGB":32,"VolumeType":"gp2"},"VolumesPerInstance":2}]},"InstanceGroupType":"MASTER","InstanceType":"m5.xlarge","Name":"Master - 1"},{"InstanceCount":2,"InstanceGroupType":"CORE","InstanceType":"g4dn.xlarge","Name":"Core - 2"}]' \
---custom-ami-id ami-0947d2ba12ee1ff75 \
---additional-info "{
-        'developmentOption' : {
-            'platformGpgCheck': false,
-            'platformRepoUrl' : 'http://awssupportdatasvcs.com/bootstrap-actions/rapids_preview_for_nvidia/620_platform',
-            'appsGpgCheck': false,
-            'applicationRepoUrl' : 'http://awssupportdatasvcs.com/bootstrap-actions/rapids_preview_for_nvidia/620_apps'
-        }
-    }" \
---bootstrap-actions Name='Prepare for Rapids ITests',Path=s3://awssupportdatasvcs.com/bootstrap-actions/rapids_preview_for_nvidia/install/prepare_itests_ba.sh \
---configurations file:///home/ec2-user/preview_config.json \
---steps Type=CUSTOM_JAR,Name=CustomJAR,ActionOnFailure=CONTINUE,Jar=s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar,Args=["s3://awssupportdatasvcs.com/bootstrap-actions/rapids_preview_for_nvidia/step/run_rapids_itests.sh"] \
---log-uri 's3n://aws-logs-354625738399-us-east-1/elasticmapreduce/' \
---name 'Miangangz-spark3-620' \
---region us-east-1
+--ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
+--instance-groups InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m4.4xlarge \                 
+                  InstanceGroupType=CORE,InstanceCount=1,InstanceType=g4dn.2xlarge \    
+                  InstanceGroupType=TASK,InstanceCount=1,InstanceType=g4dn.2xlarge \
+--configurations file:///my-configurations.json \
+--bootstrap-actions Name='My Spark Rapids Bootstrap action',Path=s3://my-bucket/my-bootstrap-action.sh
 ```
 
-Fill with actual value for KeyName, SubnetId, EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, S3 bucket for logs, name and region. 
-
-And download the JSON configuration file [preview_config.json](preview_config.json) in raw format to the local file storage where you will issue the above AWS CLI command.  
-
-For us-west-2 region, please use ami-0528a5175983e7f28 as custom-ami-id.
+Please fill with actual value for KeyName and file paths. You can further customize  SubnetId, EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc. 
 
 
 ###  Launch EMR Cluster using AWS Console (GUI)
@@ -50,10 +39,7 @@ Go to the AWS Management Console and select the `EMR` service from the "Analytic
 
 Select **emr-6.2.0** or latest EMR version for the release, uncheck all the software options, and then check **Hadoop 3.2.1**, **Spark 3.0.1** and **Livy 0.7.0**.
 
-In the "Edit software settings" field, add the followings JSON file from S3 (). You can also customize and upload to you own S3 bucket.
-
-In the "Steps" field, add Custom JAR with following JAR file (s3://us-east-1.elasticmapreduce/libs/script-runner/script-runner.jar) and  Arguments ("s3://awssupportdatasvcs.com/bootstrap-actions/rapids_preview_for_nvidia/step/run_rapids_itests.sh")
-
+In the "Edit software settings" field, copy and paste the configurions from the [EMR document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can create a JSON file on you own S3 bucket.
 
 ![Step 1: Step 1:  Software, Configuration and Steps](pics/Rapids_EMR_GUI_1.PNG)
 
@@ -61,7 +47,7 @@ In the "Steps" field, add Custom JAR with following JAR file (s3://us-east-1.ela
 
 Select the desired VPC and availability zone in the "Network" and "EC2 Subnet" fields respectively. (Default network and subnet are ok)
 
-In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2xlarge**, or **p3.2xlarge** and ensure "Instance count" is set to **2**. Keep the default "Master" node instance type of **m5.xlarge** and ignore the unnecessary "Task" node configuration.
+In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2xlarge**, or **p3.2xlarge** and ensure "Instance count" is set to **1** for each. Keep the default "Master" node instance type of **m5.xlarge**.
 
 ![Step 2: Hardware](pics/Rapids_EMR_GUI_2.PNG)
 
@@ -110,29 +96,7 @@ val df1 = sc.parallelize(data).toDF()
 val df2 = sc.parallelize(data).toDF()
 val out = df1.as("df1").join(df2.as("df2"), $"df1.value" === $"df2.value")
 out.count()
-out.explain()
 ```
-
-The output should have GPU operstions 
-
-```
-scala> out.explain()
-== Physical Plan ==
-*(3) GpuColumnarToRow false
-+- GpuShuffledHashJoin [value#2], [value#8], Inner, BuildRight
-   :- GpuCoalesceBatches TargetSize(2147483647)
-   :  +- GpuColumnarExchange gpuhashpartitioning(value#2, 48), true, [id=#207]
-   :     +- GpuRowToColumnar TargetSize(2147483647)
-   :        +- *(1) SerializeFromObject [input[0, int, false] AS value#2]
-   :           +- Scan[obj#1]
-   +- GpuCoalesceBatches RequireSingleBatch
-      +- GpuColumnarExchange gpuhashpartitioning(value#8, 48), true, [id=#213]
-         +- GpuRowToColumnar TargetSize(2147483647)
-            +- *(2) SerializeFromObject [input[0, int, false] AS value#8]
-               +- Scan[obj#7]
-
-```
-
 
 ### Submit Spark jobs to a EMR Cluster Accelerated by GPUs
 
