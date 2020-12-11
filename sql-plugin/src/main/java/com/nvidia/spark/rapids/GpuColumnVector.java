@@ -39,6 +39,31 @@ import java.util.List;
  */
 public class GpuColumnVector extends GpuColumnVectorBase {
 
+  public static void debug(String name, Table table) {
+    System.err.println("DEBUG " + name + " " + table);
+    for (int col = 0; col < table.getNumberOfColumns(); col++) {
+      debug(String.valueOf(col), table.getColumn(col));
+    }
+  }
+
+  public static void debug(String name, ai.rapids.cudf.ColumnVector col) {
+    try (HostColumnVector hostCol = col.copyToHost()) {
+      debug(name, hostCol);
+    }
+  }
+
+  public static void debug(String name, HostColumnVector hostCol) {
+    DType type = hostCol.getType();
+    System.err.println("COLUMN " + name + " " + type);
+    if (type.getTypeId() == DType.DTypeEnum.DECIMAL64) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        System.err.println(i + " " + hostCol.getBigDecimal(i));
+      }
+    } else {
+      System.err.println("TYPE NOT SUPPORTED");
+    }
+  }
+
   private static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
     if (spark instanceof ArrayType) {
       ArrayType arrayType = (ArrayType) spark;
