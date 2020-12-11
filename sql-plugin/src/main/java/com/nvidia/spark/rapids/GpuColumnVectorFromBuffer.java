@@ -100,7 +100,7 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
    * @param cudfColumn a ColumnVector instance
    * @param buffer the buffer to hold
    */
-  private GpuColumnVectorFromBuffer(DataType type, ColumnVector cudfColumn,
+  public GpuColumnVectorFromBuffer(DataType type, ColumnVector cudfColumn,
       DeviceMemoryBuffer buffer) {
     super(type, cudfColumn);
     this.buffer = buffer;
