@@ -401,36 +401,29 @@ object GpuOverrides {
     !regexList.exists(pattern => s.contains(pattern))
   }
 
-  private def convertExprToGpuIfPossible(expr: Expression, conf: RapidsConf): Option[Expression] = {
-    val wrapped = wrapExpr(expr, conf, None)
-    wrapped.tagForGpu()
-    if (wrapped.canExprTreeBeReplaced) {
-      Some(wrapped.convertToGpu())
+  private def convertExprToGpuIfPossible(expr: Expression, conf: RapidsConf): Expression = {
+    if (expr.find(_.isInstanceOf[GpuExpression]).isDefined) {
+      // already been converted
+      expr
     } else {
-      None
+      val wrapped = wrapExpr(expr, conf, None)
+      wrapped.tagForGpu()
+      if (wrapped.canExprTreeBeReplaced) {
+        wrapped.convertToGpu()
+      } else {
+        expr
+      }
     }
   }
 
   private def gpuOrderingSemanticEquals(
       found: Expression,
       required: Expression,
-      conf: RapidsConf): Boolean = {
-    if (found.deterministic && required.deterministic) {
-      val foundOnGpu = found.find(_.isInstanceOf[GpuExpression]).isDefined
-      val requiredOnGpu = required.find(_.isInstanceOf[GpuExpression]).isDefined
-      if (foundOnGpu == requiredOnGpu) {
-        found.canonicalized == required.canonicalized
-      } else if (foundOnGpu) {
-        convertExprToGpuIfPossible(required, conf)
-            .map(r => found.canonicalized == r.canonicalized).getOrElse(false)
-      } else {
-        convertExprToGpuIfPossible(found, conf)
-            .map(f => f.canonicalized == required.canonicalized).getOrElse(false)
-      }
-    } else {
-      false
-    }
-  }
+      conf: RapidsConf): Boolean =
+    found.deterministic &&
+        required.deterministic &&
+        convertExprToGpuIfPossible(found, conf).canonicalized ==
+            convertExprToGpuIfPossible(required, conf).canonicalized
 
   private def orderingSatisfies(
       found: SortOrder,
