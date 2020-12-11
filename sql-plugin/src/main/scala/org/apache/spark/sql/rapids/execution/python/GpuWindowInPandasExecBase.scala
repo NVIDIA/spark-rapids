@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.execution.python.GpuPythonMetrics._
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -88,6 +89,8 @@ abstract class GpuWindowInPandasExecMetaBase(
  * @param isBuildGroupInfo whether to build group info column
  * @param inputRows metric for rows read
  * @param inputBatches metric for batches read
+ * @param countGroupTime metric for the time of counting size for each group
+ * @param buildBoundsTime metric for the time of building window bounds
  */
 class WindowingPythonIterator(
     wrapped: Iterator[ColumnarBatch],
@@ -98,6 +101,8 @@ class WindowingPythonIterator(
     isBuildGroupInfo: Boolean,
     inputRows: GpuMetric,
     inputBatches: GpuMetric,
+    countGroupTime: GpuMetric,
+    buildBoundsTime: GpuMetric,
     spillCallback: RapidsBuffer.SpillCallback)
   extends Iterator[(ColumnarBatch, ColumnarBatch)] with Arm {
 
@@ -121,7 +126,9 @@ class WindowingPythonIterator(
       val batch = wrapped.next()
       inputBatches += 1
       inputRows += batch.numRows()
-      val groupLens = genGroupInfoFromBatch(batch)
+      val groupLens = withResource(new MetricRange(countGroupTime)) { _ =>
+        genGroupInfoFromBatch(batch)
+      }
       if (hasUnboundedFrames && !isBuildGroupInfo && groupLens.size > 1) {
         // Splitting the batch per groups only when
         //   1) There are unbounded frames, and
@@ -187,7 +194,9 @@ class WindowingPythonIterator(
       val frame = fr.asInstanceOf[GpuSpecifiedWindowFrame]
       frame.frameType match {
         case RowFrame =>
-          val (lowerCV, upperCV, _) = genColumnsForWindowBounds(frame, gpInfo, 0)
+          val (lowerCV, upperCV, _) = withResource(new MetricRange(buildBoundsTime)) { _ =>
+            genColumnsForWindowBounds(frame, gpInfo, 0)
+          }
           Seq(lowerCV, upperCV)
         case f => throw new UnsupportedOperationException(s"Unsupported window frame $f")
       }
@@ -546,7 +555,13 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    NUM_TO_PYTHON_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_TO_PYTHON_ROWS),
+    NUM_TO_PYTHON_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_TO_PYTHON_BATCHES),
+    WRITE_BATCHES_TIME -> createTimingMetric(DEBUG_LEVEL, DESCRIPTION_WRITE_BATCHES_TIME),
+    PYTHON_EXECUTION_TIME -> createTimingMetric(DEBUG_LEVEL, DESCRIPTION_PYTHON_EXECUTION_TIME),
+    BUILD_BOUNDS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_BUILD_BOUNDS_TIME),
+    COUNT_GROUP_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_COUNT_GROUP_TIME)
   ) ++ spillMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
@@ -557,7 +572,14 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val numToPythonRows = gpuLongMetric(NUM_TO_PYTHON_ROWS)
+    val numToPythonBatches = gpuLongMetric(NUM_TO_PYTHON_BATCHES)
+    val writeBatchesTime = gpuLongMetric(WRITE_BATCHES_TIME)
+    val pythonExecutionTime = gpuLongMetric(PYTHON_EXECUTION_TIME)
+    val countGroupTime = gpuLongMetric(COUNT_GROUP_TIME)
+    val buildBoundsTime = gpuLongMetric(BUILD_BOUNDS_TIME)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
 
     // 1) Unwrap the expressions and build some info data:
@@ -688,6 +710,8 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
           isBuildGroupInfo,
           numInputRows,
           numInputBatches,
+          countGroupTime,
+          buildBoundsTime,
           spillCallback).map {
         case (originBatch, pythonInputBatch) =>
           queue.add(originBatch, spillCallback)
@@ -700,6 +724,8 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       }
 
       if (pyInputIterator.hasNext) {
+        val pythonRunnerListener = GpuPythonMetrics.createMetricsAndWakeUpListener(
+          queue, numToPythonRows, numToPythonBatches, writeBatchesTime, pythonExecutionTime)
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           PythonEvalType.SQL_WINDOW_AGG_PANDAS_UDF,
@@ -709,45 +735,12 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
-          () => queue.finish(),
-          pythonOutputSchema)
+          pythonOutputSchema,
+          Some(pythonRunnerListener))
+        val pythonOutputIter = pyRunner.compute(pyInputIterator, context.partitionId(), context)
 
-        val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
-        new Iterator[ColumnarBatch] {
-          // for hasNext we are waiting on the queue to have something inserted into it
-          // instead of waiting for a result to be ready from python. The reason for this
-          // is to let us know the target number of rows in the batch that we want when reading.
-          // It is a bit hacked up but it works. In the future when we support spilling we should
-          // store the number of rows separate from the batch. That way we can get the target batch
-          // size out without needing to grab the GpuSemaphore which we cannot do if we might block
-          // on a read operation.
-          // Besides, when the queue is empty, need to call the `hasNext` of the out iterator to
-          // trigger reading and handling the control data followed with the stream data.
-          override def hasNext: Boolean = queue.hasNext || outputBatchIterator.hasNext
-
-          private [this] def combine(
-                                      origBatch: ColumnarBatch,
-                                      retBatch: ColumnarBatch): ColumnarBatch = {
-            val lColumns = GpuColumnVector.extractColumns(origBatch)
-            val rColumns = GpuColumnVector.extractColumns(retBatch)
-            new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
-              origBatch.numRows())
-          }
-
-          override def next(): ColumnarBatch = {
-            val numRows = queue.peekBatchSize
-            // Update the expected batch size for next read
-            pyRunner.minReadTargetBatchSize = numRows
-            withResource(outputBatchIterator.next()) { cbFromPython =>
-              assert(cbFromPython.numRows() == numRows)
-              withResource(queue.remove()) { origBatch =>
-                numOutputBatches += 1
-                numOutputRows += numRows
-                projectResult(combine(origBatch, cbFromPython))
-              }
-            }
-          }
-        } // End of new Iterator
+        new CombiningIterator(queue, pythonOutputIter, pyRunner, numOutputRows, numOutputBatches)
+          .map(cb => projectResult(cb))
       } else {
         // Empty partition, return the input iterator directly
         inputIter
