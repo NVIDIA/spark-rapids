@@ -260,7 +260,7 @@ object MetaUtils extends Arm {
       sparkType: DataType): GpuColumnVector = {
     val columnView = makeCudfColumnView(buffer, meta)
     val column = ColumnViewUtil.fromViewWithContiguousAllocation(columnView, buffer)
-    GpuColumnVector.from(column, sparkType)
+    new GpuColumnVectorFromBuffer(sparkType, column, buffer)
   }
 
   private def makeCudfColumn(buffer: DeviceMemoryBuffer, meta: ColumnMeta): ColumnVector = {
