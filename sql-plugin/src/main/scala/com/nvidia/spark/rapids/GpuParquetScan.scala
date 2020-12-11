@@ -1027,7 +1027,6 @@ class MultiFileParquetPartitionReader(
           }
 
           if (allPartitionColumns.size > 1) {
-            // logWarning("concatenating different partition values")
             var succeeded = false
             val numCols = allPartitionColumns.head.size
             // logWarning("num cols is: " + numCols)
@@ -1067,25 +1066,30 @@ class MultiFileParquetPartitionReader(
               finalCb
             } finally {
               if (!succeeded) {
+                allPartitionColumns.foreach(arrVec => arrVec.filter(_ != null).safeClose())
                 result.safeClose()
               }
             }
           } else if (allPartitionColumns.size == 1) {
-            logWarning("partition columns is 1")
-            val partitionColumns = allPartitionColumns.head
-            // just create column batch
-            val fileBatchCols = (0 until cb.numCols).map(cb.column)
-            val resultCols = fileBatchCols ++ partitionColumns
-            val finalCb = new ColumnarBatch(resultCols.toArray, cb.numRows)
-            fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-            succeeded = true
-            finalCb
+            try {
+              val partitionColumns = allPartitionColumns.head
+              // just create column batch
+              val fileBatchCols = (0 until cb.numCols).map(cb.column)
+              val resultCols = fileBatchCols ++ partitionColumns
+              val finalCb = new ColumnarBatch(resultCols.toArray, cb.numRows)
+              fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
+              succeeded = true
+              finalCb
+            } finally {
+              if (!succeeded) {
+                allPartitionColumns.foreach(arrVec => arrVec.filter(_ != null).safeClose())
+              }
+            }
           } else {
             // TODO - dont really need
             cb
           }
         } finally {
-          allPartitionColumns.foreach( arrVec => arrVec.filter(_ != null).safeClose())
 
           if (cb != null) {
             cb.close()
