@@ -10,7 +10,7 @@ For more information on AWS EMR, please see the [AWS documentation](https://docs
 
 ###  Launch EMR Cluster using AWS CLI
 
-Following steps is based on AWS EMR document - ["Using the Nvidia Spark-RAPIDS Accelerator for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html) 
+Following steps are based on AWS EMR document - ["Using the Nvidia Spark-RAPIDS Accelerator for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html) 
 
 
 You can use AWS CLI to launch a cluster with one Master node (m5.xlarge) and two nodes 2x g4dn.2xlarge  
@@ -37,9 +37,9 @@ Go to the AWS Management Console and select the `EMR` service from the "Analytic
 
 #### Step 1:  Software, Configuration and Steps
 
-Select **emr-6.2.0** or latest EMR version for the release, uncheck all the software options, and then check **Hadoop 3.2.1**, **Spark 3.0.1** and **Livy 0.7.0**.
+Select **emr-6.2.0** or latest EMR version for the release, uncheck all the software options, and then check **Hadoop 3.2.1**, **Spark 3.0.1**, **Livy 0.7.0** and **JupyterEnterpriseGateway 2.1.0**.
 
-In the "Edit software settings" field, copy and paste the configurions from the [EMR document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can create a JSON file on you own S3 bucket.
+In the "Edit software settings" field, copy and paste the configurions from the [EMR document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also create a JSON file on you own S3 bucket.
 
 ![Step 1: Step 1:  Software, Configuration and Steps](pics/Rapids_EMR_GUI_1.PNG)
 
@@ -47,7 +47,7 @@ In the "Edit software settings" field, copy and paste the configurions from the 
 
 Select the desired VPC and availability zone in the "Network" and "EC2 Subnet" fields respectively. (Default network and subnet are ok)
 
-In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2xlarge**, or **p3.2xlarge** and ensure "Instance count" is set to **1** for each. Keep the default "Master" node instance type of **m5.xlarge**.
+In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2xlarge**, or **p3.2xlarge** and ensure "Instance count" is set to **1** or any higher number. Keep the default "Master" node instance type of **m5.xlarge**.
 
 ![Step 2: Hardware](pics/Rapids_EMR_GUI_2.PNG)
 
@@ -100,7 +100,7 @@ out.count()
 
 ### Submit Spark jobs to a EMR Cluster Accelerated by GPUs
 
-Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark applicaton job to be submitted. The mortgage examples we use are also available as a spark application.  You can also use spark shell to run the scala code and pyspark to run the python code on master node through CLI.
+Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark applicaton job to be submitted. The mortgage examples we use are also available as a spark application.  You can also use **spark shell** to run the scala code or **pyspark** to run the python code on master node through CLI.
  
 
 
@@ -122,7 +122,11 @@ Go to the AWS Management Console and select Notebooks on the left column. Click 
 
 Download [the Mortgate ETL PySpark Notebook](Mortgage-ETL-GPU-EMR.ipynb). Make sure to use PySpark as kernel. This example use 1 year (year 2000) data for a two node g4dn GPU cluster. You can adjust settings in the notebook for full mortgage dataset ETL. 
 
+When executing the ETL code, you can also saw the Spark Job Progress within the notebook and the code will also display how long it takes to run the query
+
+![Create EMR Notebook](pics/EMR_notebook_3.png)
 
 #### Runn Mortgage Xgboost Scala Notebook on EMR GPU Cluster 
 
 Please refer to this [quick start guide](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-2/getting-started-guides/csp/aws/Using_EMR_Notebook.md) to running GPU accelerated XGBoost on EMR Spark Cluster.
+
