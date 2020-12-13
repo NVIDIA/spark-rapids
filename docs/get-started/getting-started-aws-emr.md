@@ -2,7 +2,7 @@
 
 This is a getting started guide for Rapids on AWS EMR. At the end of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS EMR.
 
-The current EMR 6.2.0 release suppport Spark version 3.0.1 and Nvidia spark-rapids 0.2.0. For more details of supported applications, please see the [EMR release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).  
+The current EMR 6.2.0 release support Spark version 3.0.1 and Nvidia spark-rapids 0.2.0. For more details of supported applications, please see the [EMR release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).  
 
 For more information on AWS EMR, please see the [AWS documentation](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-is-emr.html).
 
@@ -39,7 +39,7 @@ Go to the AWS Management Console and select the `EMR` service from the "Analytic
 
 Select **emr-6.2.0** or latest EMR version for the release, uncheck all the software options, and then check **Hadoop 3.2.1**, **Spark 3.0.1**, **Livy 0.7.0** and **JupyterEnterpriseGateway 2.1.0**.
 
-In the "Edit software settings" field, copy and paste the configurions from the [EMR document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also create a JSON file on you own S3 bucket.
+In the "Edit software settings" field, copy and paste the configuration from the [EMR document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also create a JSON file on you own S3 bucket.
 
 ![Step 1: Step 1:  Software, Configuration and Steps](pics/Rapids_EMR_GUI_1.PNG)
 
@@ -100,7 +100,7 @@ out.count()
 
 ### Submit Spark jobs to a EMR Cluster Accelerated by GPUs
 
-Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark applicaton job to be submitted. The mortgage examples we use are also available as a spark application.  You can also use **spark shell** to run the scala code or **pyspark** to run the python code on master node through CLI.
+Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark application job to be submitted. The mortgage examples we use are also available as a spark application.  You can also use **spark shell** to run the scala code or **pyspark** to run the python code on master node through CLI.
  
 
 
@@ -126,7 +126,7 @@ When executing the ETL code, you can also saw the Spark Job Progress within the 
 
 ![Create EMR Notebook](pics/EMR_notebook_3.png)
 
-#### Runn Mortgage Xgboost Scala Notebook on EMR GPU Cluster 
+#### Runn Mortgage XGBoost Scala Notebook on EMR GPU Cluster 
 
 Please refer to this [quick start guide](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-2/getting-started-guides/csp/aws/Using_EMR_Notebook.md) to running GPU accelerated XGBoost on EMR Spark Cluster.
 
