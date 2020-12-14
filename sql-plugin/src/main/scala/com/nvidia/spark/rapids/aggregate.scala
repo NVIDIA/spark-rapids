@@ -101,6 +101,7 @@ class GpuHashAggregateMeta(
   override def isSupportedType(t: DataType): Boolean =
     GpuOverrides.isSupportedType(t,
       allowNull = true,
+      allowDecimal = conf.decimalTypeEnabled,
       allowStringMaps = true)
 
   override def tagPlanForGpu(): Unit = {
@@ -270,6 +271,7 @@ class GpuSortAggregateMeta(
 
   override def isSupportedType(t: DataType): Boolean =
     GpuOverrides.isSupportedType(t,
+      allowDecimal = conf.decimalTypeEnabled,
       allowNull = true)
 
   override def convertToGpu(): GpuExec = {
