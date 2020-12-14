@@ -22,7 +22,7 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shims_2.12</artifactId>
-        <version>0.3.0-SNAPSHOT</version>
+        <version>0.3.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <groupId>com.nvidia</groupId>
@@ -30,7 +30,7 @@
     <packaging>jar</packaging>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Shim Aggregator</name>
     <description>The RAPIDS SQL plugin for Apache Spark Shim Aggregator</description>
-    <version>0.3.0-SNAPSHOT</version>
+    <version>0.3.0</version>
 
    <profiles>
         <profile>
