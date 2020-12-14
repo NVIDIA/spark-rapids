@@ -12,8 +12,12 @@ public final class CodecType {
    * no compression codec was used on the data
    */
   public static final byte UNCOMPRESSED = 0;
+  /**
+   * data compressed with the nvcomp LZ4 codec
+   */
+  public static final byte NVCOMP_LZ4 = 1;
 
-  public static final String[] names = { "COPY", "UNCOMPRESSED", };
+  public static final String[] names = { "COPY", "UNCOMPRESSED", "NVCOMP_LZ4", };
 
   public static String name(int e) { return names[e - COPY]; }
 }

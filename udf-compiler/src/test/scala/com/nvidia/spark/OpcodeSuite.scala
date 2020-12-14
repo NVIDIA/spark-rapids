@@ -20,12 +20,14 @@ import java.nio.charset.Charset
 import java.time.{LocalDate, LocalDateTime}
 import java.time.format.DateTimeFormatter
 
+import scala.collection.mutable
+
 import com.nvidia.spark.rapids.RapidsConf
 import org.scalatest.Assertions._
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{Dataset, SparkSession}
+import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.functions.{udf => makeUdf}
@@ -1430,6 +1432,33 @@ class OpcodeSuite extends FunSuite {
   }
 
   // Tests for string ops
+  test("java lang string builder test - append") {
+    // We do not support java.lang.StringBuilder officially in the udf compiler,
+    // but string + string in Scala generates some code with
+    // java.lang.StringBuilder. For that reason, we have some tests with
+    // java.lang.StringBuilder.
+    val myudf: (String, String, Boolean) => String = (a,b,c) => {
+      val sb = new java.lang.StringBuilder()
+      if (c) {
+        sb.append(a)
+        sb.append(" ")
+        sb.append(b)
+        sb.toString + "@@@" + " true"
+      } else {
+        sb.append(b)
+        sb.append(" ")
+        sb.append(a)
+        sb.toString + "!!!" + " false"
+      }
+    }
+    val u = makeUdf(myudf)
+    val dataset = List(("Hello", "World", false),
+                       ("Oh", "Hello", true)).toDF("x","y","z").repartition(1)
+    val result = dataset.withColumn("new", u(col("x"),col("y"),col("z")))
+    val ref = List(("Hello", "World", false, "World Hello!!! false"),
+                   ("Oh", "Hello", true, "Oh Hello@@@ true")).toDF
+    checkEquiv(result, ref)
+  }
 
   test("string test - + concat") {
     val myudf: (String, String) => String = (a,b) => {
@@ -2003,6 +2032,329 @@ class OpcodeSuite extends FunSuite {
     val dataset = Seq("2011-12-03'VX10:15:30''Z'").toDF("DateTime").repartition(1)
     val result = dataset.withColumn("hour", u(col("DateTime")))
     val ref = dataset.withColumn("hour", lit(myudf("2011-12-03'VX10:15:30''Z'")))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty string construction") {
+    val myudf: () => String = () => ""
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyStr"))
+    val ref = dataset.select(lit("").as("emptyStr"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Boolean") {
+    val myudf: () => Array[Boolean] = () => Array.empty[Boolean]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfBoolean"))
+    val ref = dataset.select(lit(Array.empty[Boolean]).as("emptyArrOfBoolean"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Byte") {
+    val myudf: () => Array[Byte] = () => Array.empty[Byte]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfByte"))
+    val ref = dataset.select(lit(Array.empty[Byte]).as("emptyArrOfByte"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Short") {
+    val myudf: () => Array[Short] = () => Array.empty[Short]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfShort"))
+    val ref = dataset.select(lit(Array.empty[Short]).as("emptyArrOfShort"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Int") {
+    val myudf: () => Array[Int] = () => Array.empty[Int]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfInt"))
+    val ref = dataset.select(lit(Array.empty[Int]).as("emptyArrOfInt"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Long") {
+    val myudf: () => Array[Long] = () => Array.empty[Long]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfLong"))
+    val ref = dataset.select(lit(Array.empty[Long]).as("emptyArrOfLong"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Float") {
+    val myudf: () => Array[Float] = () => Array.empty[Float]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfFloat"))
+    val ref = dataset.select(lit(Array.empty[Float]).as("emptyArrOfFloat"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - Double") {
+    val myudf: () => Array[Double] = () => Array.empty[Double]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfDbl"))
+    val ref = dataset.select(lit(Array.empty[Double]).as("emptyArrOfDbl"))
+    checkEquiv(result, ref)
+  }
+
+  test("Empty array construction - String") {
+    val myudf: () => Array[String] = () => Array.empty[String]
+    val u = makeUdf(myudf)
+    val dataset = spark.sql("select null").repartition(1)
+    val result = dataset.select(u().as("emptyArrOfStr"))
+    val ref = dataset.select(lit(Array.empty[String]).as("emptyArrOfStr"))
+    checkEquiv(result, ref)
+  }
+
+  test("final static method call inside UDF") {
+    def simple_func2(str: String): Int = {
+      str.length
+    }
+    def simple_func1(str: String): Int = {
+      simple_func2(str) + simple_func2(str)
+    }
+    val myudf: (String) => Int = str => {
+      simple_func1(str)
+    }
+    val u = makeUdf(myudf)
+    val dataset = List("hello", "world").toDS()
+    val result = dataset.withColumn("new", u(col("value")))
+    val ref = dataset.withColumn("new", length(col("value")) + length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("FALLBACK TO CPU: class method call inside UDF") {
+    class C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("final class method call inside UDF") {
+    final class C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("FALL BACK TO CPU: object method call inside UDF") {
+    object C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val dataset = List("hello", "world").toDS()
+    val result = C(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("final object method call inside UDF") {
+    final object C {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val dataset = List("hello", "world").toDS()
+    val result = C(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("super class final method call inside UDF") {
+    class B {
+      final def simple_func(str: String): Int = {
+        str.length
+      }
+    }
+    class D extends B {
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new D
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquiv(result, ref)
+  }
+
+  test("FALLBACK TO CPU: final class calls super class method inside UDF") {
+    class B {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+    }
+    final class D extends B {
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new D
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: super class method call inside UDF") {
+    class B {
+      def simple_func(str: String): Int = {
+        str.length
+      }
+    }
+    class D extends B {
+      val myudf: (String) => Int = str => {
+        simple_func(str)
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new D
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")))
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: capture a var in class") {
+    class C {
+      var capturedArg: Int = 4
+      val myudf: (String) => Int = str => {
+        str.length + capturedArg
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")) + runner.capturedArg)
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("FALLBACK TO CPU: capture a var outside class") {
+    var capturedArg: Int = 4
+    class C {
+      val myudf: (String) => Int = str => {
+        str.length + capturedArg
+      }
+      def apply(dataset: Dataset[String]): Dataset[Row] = {
+        val u = makeUdf(myudf)
+        dataset.withColumn("new", u(col("value")))
+      }
+    }
+    val runner = new C
+    val dataset = List("hello", "world").toDS()
+    val result = runner(dataset)
+    val ref = dataset.withColumn("new", length(col("value")) + capturedArg)
+    checkEquivNotCompiled(result, ref)
+  }
+
+  test("Conditional array buffer processing") {
+    def cond(s: String): Boolean = {
+      s == null || s.trim.length == 0
+    }
+
+    def transform(str: String): String = {
+      if (cond(str)) {
+        null
+      } else {
+        if (str.toLowerCase.startsWith("@@@@")) {
+          "######" + str.substring("@@@@".length)
+        } else if (str.toLowerCase.startsWith("######")) {
+          "@@@@" + str.substring("######".length)
+        } else {
+          str
+        }
+      }
+    }
+
+    val u = makeUdf((x: String, y: String, z: Boolean) => {
+        var r = new mutable.ArrayBuffer[String]()
+        r = r :+ x
+        if (!cond(y)) {
+          r = r :+ y
+
+          if (z) {
+            r = r :+ transform(y)
+          }
+        }
+        if (z) {
+          r = r :+ transform(x)
+        }
+        r.distinct.toArray
+      })
+
+    val dataset = List(("######hello", null),
+                       ("world", "######hello"),
+                       ("", "@@@@target")).toDF("x", "y")
+    val result = dataset.withColumn("new", u('x, 'y, lit(true)))
+    val ref = List(("######hello", null, Array("######hello", "@@@@hello")),
+                   ("world", "######hello", Array("world", "######hello", "@@@@hello")),
+                   ("", "@@@@target", Array("", "@@@@target", "######target", null))).toDF
     checkEquiv(result, ref)
   }
 }

@@ -39,3 +39,5 @@ RUN python -m pip install pytest sre_yield requests pandas pyarrow
 
 RUN adduser --uid 26576 --gid 30 --shell /bin/bash svcngcc
 USER svcngcc
+
+# TODO: remove this file after nightly pipeline get removed on NGCC

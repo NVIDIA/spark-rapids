@@ -16,12 +16,15 @@
 
 package com.nvidia.spark.udf
 
+import Repr.UnknownCapturedArg
 import java.lang.invoke.SerializedLambda
-
-import javassist.{ClassClassPath, ClassPool, CtBehavior, CtClass, CtField}
-import javassist.bytecode.{CodeIterator, ConstPool, Descriptor}
+import javassist.{ClassClassPath, ClassPool, CtBehavior, CtClass, CtField, CtMethod}
+import javassist.bytecode.{AccessFlag, CodeIterator, ConstPool,
+                           Descriptor, MethodParametersAttribute}
 
 import org.apache.spark.SparkException
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.types._
 
 //
 // Reflection using SerializedLambda and javassist.
@@ -29,8 +32,10 @@ import org.apache.spark.SparkException
 // Provides the interface the class and the method that implements the body of the lambda
 // used by the rest of the compiler.
 //
-case class LambdaReflection(private val classPool: ClassPool,
-    private val serializedLambda: SerializedLambda) {
+class LambdaReflection private(private val classPool: ClassPool,
+                               private val ctClass: CtClass,
+                               private val ctMethod: CtMethod,
+                               val capturedArgs: Seq[Expression] = Seq()) {
   def lookupConstant(constPoolIndex: Int): Any = {
     constPool.getTag(constPoolIndex) match {
       case ConstPool.CONST_Integer => constPool.getIntegerInfo(constPoolIndex)
@@ -38,6 +43,7 @@ case class LambdaReflection(private val classPool: ClassPool,
       case ConstPool.CONST_Float => constPool.getFloatInfo(constPoolIndex)
       case ConstPool.CONST_Double => constPool.getDoubleInfo(constPoolIndex)
       case ConstPool.CONST_String => constPool.getStringInfo(constPoolIndex)
+      case ConstPool.CONST_Class => constPool.getClassInfo(constPoolIndex)
       case _ => throw new SparkException("Unsupported constant")
     }
   }
@@ -53,17 +59,25 @@ case class LambdaReflection(private val classPool: ClassPool,
   }
 
   def lookupBehavior(constPoolIndex: Int): CtBehavior = {
-    if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
-      throw new SparkException("Unexpected index for method reference")
-    }
-    val methodName = constPool.getMethodrefName(constPoolIndex)
-    val descriptor = constPool.getMethodrefType(constPoolIndex)
-    val className = constPool.getMethodrefClassName(constPoolIndex)
-    val params = Descriptor.getParameterTypes(descriptor, classPool)
-    if (constPool.isConstructor(className, constPoolIndex) == 0) {
-      classPool.getCtClass(className).getDeclaredMethod(methodName, params)
+    if (constPool.getTag(constPoolIndex) == ConstPool.CONST_InterfaceMethodref) {
+      val methodName = constPool.getInterfaceMethodrefName(constPoolIndex)
+      val descriptor = constPool.getInterfaceMethodrefType(constPoolIndex)
+      val className = constPool.getInterfaceMethodrefClassName(constPoolIndex)
+      val params = Descriptor.getParameterTypes(descriptor, classPool)
+      classPool.getCtClass(className).getMethod(methodName, descriptor)
     } else {
-      classPool.getCtClass(className).getDeclaredConstructor(params)
+      if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
+        throw new SparkException(s"Unexpected index ${constPoolIndex} for method reference")
+      }
+      val methodName = constPool.getMethodrefName(constPoolIndex)
+      val descriptor = constPool.getMethodrefType(constPoolIndex)
+      val className = constPool.getMethodrefClassName(constPoolIndex)
+      if (constPool.isConstructor(className, constPoolIndex) == 0) {
+        classPool.getCtClass(className).getMethod(methodName, descriptor)
+      } else {
+        val params = Descriptor.getParameterTypes(descriptor, classPool)
+        classPool.getCtClass(className).getDeclaredConstructor(params)
+      }
     }
   }
 
@@ -72,23 +86,6 @@ case class LambdaReflection(private val classPool: ClassPool,
       throw new SparkException("Unexpected index for class")
     }
     constPool.getClassInfo(constPoolIndex)
-  }
-
-  // Get the CtClass object for the class that capture the lambda.
-  private val ctClass = {
-    val name = serializedLambda.getCapturingClass.replace('/', '.')
-    val loader = Thread.currentThread().getContextClassLoader
-    // scalastyle:off classforname
-    val classForName = Class.forName(name, true, loader)
-    // scalastyle:on classforname
-    classPool.insertClassPath(new ClassClassPath(classForName))
-    classPool.getCtClass(name)
-  }
-
-  // Get the CtMethod object for the method that implements the lambda body.
-  private val ctMethod = {
-    val lambdaImplName = serializedLambda.getImplMethodName
-    ctClass.getDeclaredMethod(lambdaImplName.stripSuffix("$adapted"))
   }
 
   private val methodInfo = ctMethod.getMethodInfo
@@ -108,6 +105,9 @@ case class LambdaReflection(private val classPool: ClassPool,
 
 object LambdaReflection {
   def apply(function: AnyRef): LambdaReflection = {
+    if (function.isInstanceOf[CtMethod]) {
+      return LambdaReflection(function.asInstanceOf[CtMethod])
+    }
     // writeReplace is supposed to return an object of SerializedLambda from
     // the function class (See
     // https://docs.oracle.com/javase/8/docs/api/java/lang/invoke/SerializedLambda.html).
@@ -118,9 +118,65 @@ object LambdaReflection {
     writeReplace.setAccessible(true)
     val serializedLambda = writeReplace.invoke(function)
         .asInstanceOf[SerializedLambda]
+    val capturedArgs = Seq.tabulate(serializedLambda.getCapturedArgCount){
+      // Add UnknownCapturedArg expressions to the list of captured arguments
+      // until we figure out how to handle captured variables in various
+      // situations.
+      // This, however, lets us pass captured arguments as long as they are not
+      // evaluated.
+      _ => Repr.UnknownCapturedArg()
+    }
 
     val classPool = new ClassPool(true)
-    LambdaReflection(classPool, serializedLambda)
+    // Get the CtClass object for the class that capture the lambda.
+    val ctClass = {
+      val name = serializedLambda.getCapturingClass.replace('/', '.')
+      val classForName = LambdaReflection.getClass(name)
+      classPool.insertClassPath(new ClassClassPath(classForName))
+      classPool.getCtClass(name)
+    }
+    // Get the CtMethod object for the method that implements the lambda body.
+    val ctMethod = {
+      val lambdaImplName = serializedLambda.getImplMethodName
+      ctClass.getDeclaredMethod(lambdaImplName.stripSuffix("$adapted"))
+    }
+    new LambdaReflection(classPool, ctClass, ctMethod, capturedArgs)
+  }
+
+  private def apply(ctMethod: CtMethod): LambdaReflection = {
+    val ctClass = ctMethod.getDeclaringClass
+    val classPool = ctClass.getClassPool
+    new LambdaReflection(classPool, ctClass, ctMethod)
+  }
+
+  def getClass(name: String): Class[_] = {
+    // scalastyle:off classforname
+    Class.forName(name, true, Thread.currentThread().getContextClassLoader)
+    // scalastyle:on classforname
+  }
+
+  def parseTypeSig(sig: String): Option[DataType] = {
+    if (sig.head == '[') {
+      parseTypeSig(sig.tail).map{elementType =>
+        if (elementType == ByteType) {
+          DataTypes.BinaryType
+        } else {
+          DataTypes.createArrayType(elementType)
+        }
+      }
+    } else {
+      sig match {
+        case "Z" => Some(BooleanType)
+        case "B" => Some(ByteType)
+        case "S" => Some(ShortType)
+        case "I" => Some(IntegerType)
+        case "J" => Some(LongType)
+        case "F" => Some(FloatType)
+        case "D" => Some(DoubleType)
+        case "Ljava.lang.String;" => Some(StringType)
+        case _ => None
+      }
+    }
   }
 }
 

@@ -35,4 +35,17 @@ object CudaUtil {
       length,
       CudaMemcpyKind.DEFAULT)
   }
+
+  /**
+   * Allocate a `size` buffer on the device using stream `stream`.
+   *
+   * This needs to be replaced by `DeviceMemoryBuffer.allocate(size, stream)`
+   *
+   * @param size - size of buffer to allocate
+   * @param stream - stream to use for the allocation
+   * @return - a `DeviceMemoryBuffer` instance
+   */
+  def deviceAllocateOnStream(size: Long, stream: Cuda.Stream): DeviceMemoryBuffer = {
+    Rmm.alloc(size, stream)
+  }
 }

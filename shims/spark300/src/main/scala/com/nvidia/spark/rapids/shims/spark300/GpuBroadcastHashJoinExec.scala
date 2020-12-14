@@ -29,7 +29,8 @@ import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.execution.SerializeConcatHostBuffersDeserializeBatch
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -40,7 +41,7 @@ class GpuBroadcastHashJoinMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat)
-  extends SparkPlanMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
+  extends GpuBroadcastJoinMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -50,6 +51,10 @@ class GpuBroadcastHashJoinMeta(
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
@@ -76,9 +81,7 @@ class GpuBroadcastHashJoinMeta(
       case BuildLeft => left
       case BuildRight => right
     }
-    if (!buildSide.isInstanceOf[GpuBroadcastExchangeExec]) {
-      throw new IllegalStateException("the broadcast must be on the GPU too")
-    }
+    verifyBuildSideWasReplaced(buildSide)
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
@@ -99,6 +102,7 @@ case class GpuBroadcastHashJoinExec(
 
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
+    "streamTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "stream time"),
     "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
     "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
 
@@ -127,6 +131,7 @@ case class GpuBroadcastHashJoinExec(
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
     val totalTime = longMetric(TOTAL_TIME)
+    val streamTime = longMetric("streamTime")
     val joinTime = longMetric("joinTime")
     val filterTime = longMetric("filterTime")
     val joinOutputRows = longMetric("joinOutputRows")
@@ -154,6 +159,6 @@ case class GpuBroadcastHashJoinExec(
     val rdd = streamedPlan.executeColumnar()
     rdd.mapPartitions(it =>
       doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
-        numOutputBatches, joinTime, filterTime, totalTime))
+        numOutputBatches, streamTime, joinTime, filterTime, totalTime))
   }
 }

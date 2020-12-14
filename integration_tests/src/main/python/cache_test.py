@@ -18,12 +18,17 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 from datetime import date
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_spark_300
+from spark_session import with_cpu_session, with_gpu_session, is_spark_300, is_before_spark_310
 from join_test import create_df
 from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
 
-def test_passing_gpuExpr_as_Expr():
+enableVectorizedConf = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "true"},
+                        {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "false"}]
+
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
+@allow_non_gpu('CollectLimitExec')
+def test_passing_gpuExpr_as_Expr(enableVectorizedConf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, string_gen)
             .select(f.col("a")).na.drop()
@@ -31,8 +36,8 @@ def test_passing_gpuExpr_as_Expr():
             .agg(f.count(f.col("a")).alias("count_a"))
             .orderBy(f.col("count_a").desc(), f.col("a"))
             .cache()
-            .limit(50)
-    )
+            .limit(50), enableVectorizedConf)
+
 # creating special cases to just remove -0.0 because of https://github.com/NVIDIA/spark-rapids/issues/84
 double_special_cases = [
     DoubleGen.make_from(1, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
@@ -59,8 +64,9 @@ all_gen_filters = [(StringGen(), "rlike(a, '^(?=.{1,5}$).*')"),
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @ignore_order
-def test_cache_join(data_gen, join_type):
+def test_cache_join(data_gen, join_type, enableVectorizedConf):
     if is_spark_300() and data_gen.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
@@ -70,16 +76,17 @@ def test_cache_join(data_gen, join_type):
         cached.count() # populates cache
         return cached
 
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen_filters, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 # We are OK running everything on CPU until we complete 'https://github.com/NVIDIA/spark-rapids/issues/360'
 # because we have an explicit check in our code that disallows InMemoryTableScan to have anything other than
 # AttributeReference
 @allow_non_gpu(any=True)
 @ignore_order
-def test_cached_join_filter(data_gen, join_type):
+def test_cached_join_filter(data_gen, join_type, enableVectorizedConf):
     data, filter = data_gen
     if is_spark_300() and data.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
@@ -90,12 +97,13 @@ def test_cached_join_filter(data_gen, join_type):
         cached.count() #populates the cache
         return cached.filter(filter)
 
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
-def test_cache_broadcast_hash_join(data_gen, join_type):
+def test_cache_broadcast_hash_join(data_gen, join_type, enableVectorizedConf):
     if is_spark_300() and data_gen.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
@@ -105,7 +113,7 @@ def test_cache_broadcast_hash_join(data_gen, join_type):
         cached.count()
         return cached
 
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
                  "spark.sql.join.preferSortMergeJoin": "false",
@@ -113,9 +121,10 @@ shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
                  "spark.rapids.sql.exec.BroadcastNestedLoopJoinExec": "true"}
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
-def test_cache_shuffled_hash_join(data_gen, join_type):
+def test_cache_shuffled_hash_join(data_gen, join_type, enableVectorizedConf):
     if is_spark_300() and data_gen.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
@@ -124,19 +133,21 @@ def test_cache_shuffled_hash_join(data_gen, join_type):
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count()
         return cached
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
-def test_cache_broadcast_nested_loop_join(data_gen, join_type):
+def test_cache_broadcast_nested_loop_join(data_gen, join_type, enableVectorizedConf):
+    enableVectorizedConf.update({'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec':
+                                            'true'})
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         cached = left.crossJoin(right.hint("broadcast")).cache()
         cached.count()
         return cached
-
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
@@ -148,9 +159,13 @@ all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), L
            DateGen(start=date(1582, 10, 15)),
            TimestampGen()]
 
+@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
 @pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
+@pytest.mark.parametrize('ts_write', ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
+@pytest.mark.parametrize('enableVectorized', ['true', 'false'], ids=idfn)
+@pytest.mark.xfail(condition=not(is_before_spark_310()), reason='https://github.com/NVIDIA/spark-rapids/issues/953')
 @allow_non_gpu('DataWritingCommandExec')
-def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
+def test_cache_posexplode_makearray(spark_tmp_path, data_gen, ts_rebase, ts_write, enableVectorized):
     if is_spark_300() and data_gen.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
     data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
@@ -162,19 +177,108 @@ def test_cache_posexplode_makearray(spark_tmp_path, data_gen):
             cached.write.parquet(data_path)
             spark.read.parquet(data_path)
         return posExplode
-    from_cpu = with_cpu_session(write_posExplode(data_path_cpu))
-    from_gpu = with_gpu_session(write_posExplode(data_path_gpu))
+    from_cpu = with_cpu_session(write_posExplode(data_path_cpu),
+                  conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                        'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : ts_rebase,
+                        'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized,
+                        'spark.sql.parquet.outputTimestampType': ts_write})
+    from_gpu = with_gpu_session(write_posExplode(data_path_gpu),
+                  conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
+                        'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : ts_rebase,
+                        'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized,
+                        'spark.sql.parquet.outputTimestampType': ts_write})
     assert_equal(from_cpu, from_gpu)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @ignore_order
-def test_cache_expand_exec(data_gen):
+def test_cache_expand_exec(data_gen, enableVectorizedConf):
     def op_df(spark, length=2048, seed=0):
         cached = gen_df(spark, StructGen([
             ('a', data_gen),
             ('b', IntegerGen())], nullable=False), length=length, seed=seed).cache()
         cached.count() # populate the cache
-        return cached.rollup(f.col("a"), f.col("b")).agg(f.count(f.col("b")))
+        return cached.rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
-    assert_gpu_and_cpu_are_equal_collect(op_df)
+    assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
+@allow_non_gpu('CollectLimitExec')
+def test_cache_partial_load(data_gen, enableVectorizedConf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, data_gen, string_gen)
+            .select(f.col("a"), f.col("b"))
+            .cache()
+            .limit(50).select(f.col("b")), enableVectorizedConf
+    )
+
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
+@pytest.mark.parametrize('enableVectorized', ['true', 'false'], ids=idfn)
+@ignore_order
+def test_cache_columnar(spark_tmp_path, data_gen, enableVectorized, ts_write):
+    data_path_gpu = spark_tmp_path + '/PARQUET_DATA'
+    def read_parquet_cached(data_path):
+        def write_read_parquet_cached(spark):
+            df = unary_op_df(spark, data_gen)
+            df.write.mode('overwrite').parquet(data_path)
+            cached = spark.read.parquet(data_path).cache()
+            cached.count()
+            return cached.select(f.col("a"))
+        return write_read_parquet_cached
+    # rapids-spark doesn't support LEGACY read for parquet
+    conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+          'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
+          'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized,
+          'spark.sql.parquet.outputTimestampType': ts_write}
+
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_cached(data_path_gpu), conf)
+
+@pytest.mark.parametrize('enableVectorized', ['false', 'true'], ids=idfn)
+@pytest.mark.parametrize('func', [with_cpu_session, with_gpu_session])
+@allow_non_gpu("ProjectExec", "Alias", "Literal", "DateAddInterval", "MakeInterval", "Cast",
+               "ExtractIntervalYears", "Year", "Month", "Second", "ExtractIntervalMonths",
+               "ExtractIntervalSeconds", "SecondWithFraction", "ColumnarToRowExec")
+@pytest.mark.parametrize('selectExpr', [("NULL as d", "d"),
+                                        # In order to compare the results, since pyspark doesn't
+                                        # know how to parse interval types, we need to "extract"
+                                        # values from the interval. NOTE, "extract" is a misnomer
+                                        # because we are actually coverting the value to the
+                                        # requested time precision, which is not actually extraction
+                                        # i.e. 'extract(years from d) will actually convert the
+                                        # entire interval to year
+                                        ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
+def test_cache_additional_types(enableVectorized, func, selectExpr):
+    def holder(cache):
+        selectExprDF, selectExprProject = selectExpr
+        def helper(spark):
+            # the goal is to just get a DF of CalendarIntervalType, therefore limiting the values
+            # so when we do get the individual parts of the interval, it doesn't overflow
+            df = gen_df(spark, StructGen([('m', IntegerGen(min_val=-1000, max_val=1000, nullable=False)),
+                                          ('y', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('w', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('h', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('min', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('d', IntegerGen(min_val=-10000, max_val=10000, nullable=False)),
+                                          ('s', IntegerGen(min_val=-10000, max_val=10000, nullable=False))],
+                                         nullable=False), seed=1)
+            duration_df = df.selectExpr(selectExprDF)
+            if (cache):
+                duration_df.cache()
+            duration_df.count
+            df_1 = duration_df.selectExpr(selectExprProject)
+            return df_1.collect()
+        return helper
+
+    cached_result = func(holder(True),
+       conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+       'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
+       'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized})
+    reg_result = func(holder(False),
+       conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+       'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
+       'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized})
+
+    #NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
+    assert_equal(reg_result, cached_result)

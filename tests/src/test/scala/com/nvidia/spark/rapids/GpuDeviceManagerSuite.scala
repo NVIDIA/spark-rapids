@@ -32,6 +32,7 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
     val maxPoolFraction = 0.2
     val conf = new SparkConf()
         .set(RapidsConf.POOLED_MEM.key, "true")
+        .set(RapidsConf.RMM_POOL.key, "ARENA")
         .set(RapidsConf.RMM_ALLOC_FRACTION.key, initPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_MAX_FRACTION.key, maxPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_RESERVE.key, "0")

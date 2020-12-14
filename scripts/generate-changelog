@@ -18,7 +18,7 @@
 
 This tool takes list of release versions to generate `CHANGELOG.md`.
 The changelog will include all merged PRs w/o `[bot]` postfix,
-and issues that include the labels `bug`, `feature request`, `SQL`, `performance` and `shuffle`,
+and issues that include the labels `bug`, `feature request`, `SQL`, `performance`, `shuffle`,
 minus any issues with the labels `wontfix`, `invalid` or `duplicate`.
 
 For each project there should be an issue subsection for,
@@ -39,14 +39,16 @@ e.g.
 Dependencies:
     - requests
 
+Github personal access token: https://github.com/settings/tokens, and make you have `repo` scope selected
+
 Usage:
     cd spark-rapids/
 
-    # generate changelog for release 0.1,0.2
-    scripts/changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2
+    # generate changelog for release 0.1,0.2,0.3
+    scripts/generate-changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2,0.3
 
-    # generate changelog for release 0.1,0.2 to /tmp/CHANGELOG.md
-    GITHUB_TOKEN=XXX scripts/changelog --releases=0.1,0.2 --path=/tmp/CHANGELOG.md
+    # generate changelog for release 0.1,0.2,0.3 to /tmp/CHANGELOG.md
+    GITHUB_TOKEN=<GITHUB_PERSONAL_ACCESS_TOKEN> scripts/generate-changelog --releases=0.1,0.2,0.3 --path=/tmp/CHANGELOG.md
 """
 import os
 import sys
@@ -161,6 +163,8 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
     for item in items:
         if len(item['projectCards']['nodes']) == 0:
             if resource_type == PULL_REQUESTS:
+                if '[bot]' in item['title']:  # skip auto-gen PR, created by our github actions workflows
+                    continue
                 no_project_prs.append(item)
             continue
 
@@ -317,7 +321,7 @@ def main(rels: str, path: str, token: str):
 if __name__ == '__main__':
     parser = ArgumentParser(description="Changelog Generator")
     parser.add_argument("--releases", help="list of release versions, separated by comma",
-                        default="0.1,0.2")
+                        default="0.1,0.2,0.3")
     parser.add_argument("--token", help="github token, will use GITHUB_TOKEN if empty", default='')
     parser.add_argument("--path", help="path for generated changelog file", default='./CHANGELOG.md')
     args = parser.parse_args()

@@ -21,72 +21,11 @@
  *
  */
 
-@Library('shared-libs') _
+@Library(['shared-libs', 'blossom-lib']) _
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
-def pluginDockerBuild = """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: plugin-docker
-    image: docker:19.03.12
-    command:
-    - sleep
-    args:
-    - 99d
-    resources:
-      requests:
-        cpu: 4
-        memory: 8Gi
-      limits:
-        cpu: 8
-        memory: 16Gi
-    env:
-      - name: DOCKER_HOST
-        value: tcp://localhost:2375
-  - name: plugin-docker-daemon
-    image: docker:19.03.12-dind
-    securityContext:
-      privileged: true
-    env:
-      - name: DOCKER_TLS_CERTDIR
-        value: ""
-  nodeSelector:
-    kubernetes.io/os: linux
-"""
-
-def pluginPremerge = """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: plugin-premerge
-    image: IMAGE_PREMERGE
-    imagePullPolicy: Always
-    resources:
-      requests:
-        cpu: 8
-        memory: 16Gi
-      limits:
-        cpu: 16
-        memory: 32Gi
-        nvidia.com/gpu: 1
-    restartPolicy: Never
-    backoffLimit: 2
-    tty: true
-  nodeSelector:
-    kubernetes.io/os: linux
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-        - matchExpressions:
-          - key: nvidia.com/gpu_type
-            operator: In
-            values: GPU_TYPES
-"""
+def pluginPremerge
 
 def githubHelper // blossom github helper
 def IMAGE_PREMERGE // temp image for premerge test
@@ -115,10 +54,11 @@ pipeline {
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
         ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
         GITHUB_TOKEN = credentials("github-token")
-        // TODO: rename this credential after we shutdown premerge pipeline on ngcc
-        URM_CREDS = credentials("svcngcc_artifactory")
+        URM_CREDS = credentials("urm_creds")
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
-        GPU_TYPES = credentials("pre-merge_gpu_types")
+        GPU_TYPE = credentials("pre-merge_gpu_type")
+        PVC = credentials("pvc")
+        CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
     }
 
     stages {
@@ -126,8 +66,9 @@ pipeline {
             steps {
                 script {
                     githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
-                    def title = githubHelper.getIssue().title
+                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
 
+                    def title = githubHelper.getIssue().title
                     if (title ==~ /.*\[skip ci\].*/) {
                         githubHelper.updateCommitStatus("$BUILD_URL", "Skipped", GitHubCommitState.SUCCESS)
                         currentBuild.result == "SUCCESS"
@@ -150,14 +91,14 @@ pipeline {
                 kubernetes {
                     label "premerge-docker-${BUILD_TAG}"
                     cloud 'sc-ipp-blossom-prod'
-                    yaml "$pluginDockerBuild"
+                    yaml pod.getDockerBuildYAML()
+                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                    customWorkspace "${CUSTOM_WORKSPACE}"
                 }
             }
 
             steps {
                 script {
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
-
                     currentBuild.description = githubHelper.getBuildDescription()
                     checkout(
                             changelog: false,
@@ -173,7 +114,7 @@ pipeline {
                             ]
                     )
 
-                    container('plugin-docker') {
+                    container('docker-build') {
                         def CUDA_NAME = sh(returnStdout: true,
                                 script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
 
@@ -188,8 +129,7 @@ pipeline {
                         docker.build(IMAGE_PREMERGE, "-f jenkins/Dockerfile-blossom.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $CACHE_IMAGE_NAME -t $IMAGE_PREMERGE .")
                         uploadDocker(IMAGE_PREMERGE)
 
-                        pluginPremerge = pluginPremerge.replace("IMAGE_PREMERGE", "$IMAGE_PREMERGE")
-                        pluginPremerge = pluginPremerge.replace("GPU_TYPES", "$GPU_TYPES")
+                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '12', '24Gi') // cpu: 12, memory: 24Gi
                     }
                 }
             }
@@ -209,31 +149,19 @@ pipeline {
                     label "premerge-test-${BUILD_TAG}"
                     cloud 'sc-ipp-blossom-prod'
                     yaml "$pluginPremerge"
+                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                    customWorkspace "${CUSTOM_WORKSPACE}"
                 }
             }
 
             steps {
                 script {
-                    checkout(
-                            changelog: false,
-                            poll: true,
-                            scm: [
-                                    $class: 'GitSCM', branches: [[name: "pr/" + githubHelper.getPRNumber()]],
-                                    doGenerateSubmoduleConfigurations: false,
-                                    submoduleCfg: [],
-                                    userRemoteConfigs: [[
-                                        credentialsId: 'github-token',
-                                        url: githubHelper.getCloneUrl(),
-                                        refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*']]
-                            ]
-                    )
-
-                    container('plugin-premerge') {
+                    container('gpu') {
                         sh "$PREMERGE_SCRIPT"
                         step([$class                : 'JacocoPublisher',
                               execPattern           : '**/target/jacoco.exec',
                               classPattern          : 'target/jacoco_classes/',
-                              sourcePattern         : 'sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shuffle-plugin/src/main/scala/',
+                              sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark310/src/main/scala/,shims/spark300/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/',
                               sourceInclusionPattern: '**/*.java,**/*.scala'
                         ])
                     }
@@ -263,13 +191,19 @@ pipeline {
 
 void uploadDocker(String IMAGE_NAME) {
     def DOCKER_CMD = "docker --config $WORKSPACE/.docker"
-    sh """
-        echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
-        $DOCKER_CMD push $IMAGE_NAME
-        $DOCKER_CMD logout $ARTIFACTORY_NAME
-    """
+    retry(3) {
+        sleep(time: 30, unit: "SECONDS")
+        sh """
+            echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
+            $DOCKER_CMD push $IMAGE_NAME
+            $DOCKER_CMD logout $ARTIFACTORY_NAME
+        """
+    }
 }
 
 void deleteDockerTempTag(String tag) {
+    if (!tag?.trim()) { // return if the tag is null or empty
+        return
+    }
     sh "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
 }

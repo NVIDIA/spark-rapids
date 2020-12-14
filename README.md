@@ -15,6 +15,8 @@ GPU memory.
 
 To get started and try the plugin out use the [getting started guide](./docs/get-started/getting-started.md).
 
+For more information about these benchmarks, see the [benchmark guide](./docs/benchmarks.md).
+
 ## Compatibility
 
 The SQL plugin tries to produce results that are bit for bit identical with Apache Spark.
@@ -53,7 +55,9 @@ the "verify" phase of maven.  We recommend when building at least running to the
 mvn verify
 ```
 
-Tests are described [here](./docs/testing.md).
+## Testing 
+
+Tests are described [here](tests/README.md).
 
 ## Integration
 The RAPIDS Accelerator For Apache Spark does provide some APIs for doing zero copy data

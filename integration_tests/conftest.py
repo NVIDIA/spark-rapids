@@ -50,3 +50,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--runtime_env", action='store', default="Apache", help="the runtime environment for the tests - apache or databricks"
     )
+    parser.addoption(
+        "--cudf_udf", action='store_true', default=False, help="if true enable cudf_udf test"
+    )

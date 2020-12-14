@@ -28,10 +28,10 @@ import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, Literal, NullsFirst, ScalaUDF, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Cast, Concat, Expression, Literal, NullsFirst, UnsafeProjection}
 import org.apache.spark.sql.connector.write.DataWriter
 import org.apache.spark.sql.execution.datasources.{ExecutedWriteSummary, PartitioningUtils, WriteTaskResult}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -295,8 +295,8 @@ class GpuDynamicPartitionDataWriter(
   }
 
   // Convert a table to a ColumnarBatch on the host, so we can iterate through it.
-  private def copyToHostAsBatch(input: Table): ColumnarBatch = {
-    val tmp = GpuColumnVector.from(input)
+  private def copyToHostAsBatch(input: Table, colTypes: Array[DataType]): ColumnarBatch = {
+    val tmp = GpuColumnVector.from(input, colTypes)
     try {
       new ColumnarBatch(GpuColumnVector.extractColumns(tmp).map(_.copyToHost()), tmp.numRows())
     } finally {
@@ -317,6 +317,7 @@ class GpuDynamicPartitionDataWriter(
       assert(!isBucketed)
 
       partitionColumns = getPartitionColumns(cb)
+      val partDataTypes = description.partitionColumns.map(_.dataType).toArray
       distinctKeys = distinctAndSort(partitionColumns)
       val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
       partitionColumns.close()
@@ -324,13 +325,14 @@ class GpuDynamicPartitionDataWriter(
 
       // split the original data on the indexes
       outputColumns = getOutputColumns(cb)
+      val outDataTypes = description.dataColumns.map(_.dataType).toArray
       cb.close()
       needToCloseBatch = false
       splits = outputColumns.contiguousSplit(partitionIndexes: _*)
       outputColumns.close()
       outputColumns = null
 
-      cbKeys = copyToHostAsBatch(distinctKeys)
+      cbKeys = copyToHostAsBatch(distinctKeys, partDataTypes)
       distinctKeys.close()
       distinctKeys = null
 
@@ -342,7 +344,7 @@ class GpuDynamicPartitionDataWriter(
 
       paths.toArray.zip(splits).foreach(combined => {
         val table = combined._2.getTable
-        val batch = GpuColumnVector.from(table)
+        val batch = GpuColumnVector.from(table, outDataTypes)
         val partPath = combined._1
         if (currentPartPath != partPath) {
           currentPartPath = partPath

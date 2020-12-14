@@ -31,6 +31,15 @@ class ArmSuite extends FunSuite with Arm {
 
   class TestException extends RuntimeException
 
+  class TestCloseException extends RuntimeException
+
+  class TestThrowingResource extends AutoCloseable {
+    override def close(): Unit = {
+      throw new TestCloseException
+    }
+  }
+
+
   test("closeOnExcept single instance") {
     val resource = new TestResource
     closeOnExcept(resource) { r => assertResult(resource)(r) }
@@ -76,5 +85,49 @@ class ArmSuite extends FunSuite with Arm {
     }
     assertResult(4)(resources.length)
     assert(resources.forall(r => Option(r).forall(_.closed)))
+  }
+
+  test("closeOnExcept suppression single instance") {
+    val resource = new TestThrowingResource
+    try {
+      closeOnExcept(resource) { _ => throw new TestException }
+    } catch {
+      case e: TestException =>
+        assertResult(1)(e.getSuppressed.length)
+        assert(e.getSuppressed.head.isInstanceOf[TestCloseException])
+    }
+  }
+
+  test("closeOnExcept suppression sequence") {
+    val resources = new Array[TestThrowingResource](3)
+    resources(0) = new TestThrowingResource
+    resources(2) = new TestThrowingResource
+    try {
+      closeOnExcept(resources) { _ => throw new TestException }
+    } catch {
+      case e: TestException =>
+        assertResult(2)(e.getSuppressed.length)
+        assert(e.getSuppressed.forall(_.isInstanceOf[TestCloseException]))
+    }
+  }
+
+  test("closeOnExcept suppression arraybuffer") {
+    val resources = new ArrayBuffer[TestThrowingResource]
+    closeOnExcept(resources) { r =>
+      r += new TestThrowingResource
+      r += null
+      r += new TestThrowingResource
+    }
+    assertResult(3)(resources.length)
+    try {
+      closeOnExcept(resources) { r =>
+        r += new TestThrowingResource
+        throw new TestException
+      }
+    } catch {
+      case e: TestException =>
+        assertResult(3)(e.getSuppressed.length)
+        assert(e.getSuppressed.forall(_.isInstanceOf[TestCloseException]))
+    }
   }
 }

@@ -23,13 +23,10 @@ import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
-import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, ShuffledRowRDD, SparkPlan, UnaryExecNode, UnsafeRowSerializer}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExec, ShuffledBatchRDD}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning}
+import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -38,6 +35,11 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 trait GpuBaseLimitExec extends LimitExec with GpuExec {
   override def output: Seq[Attribute] = child.output
+
+  // The same as what feeds us, even though we might make it smaller
+  // the reality is that nothing is coming out after this, so it does fit
+  // the requirements
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
@@ -81,14 +83,14 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
           try {
             if (numColumns > 0) {
               table = GpuColumnVector.from(batch)
-              (0 until numColumns).foreach(i => {
+              (0 until numColumns).zip(output).foreach{ case (i, attr) =>
                 val subVector = table.getColumn(i).subVector(0, remainingLimit)
                 assert(subVector != null)
-                resultCVs.append(GpuColumnVector.from(subVector))
+                resultCVs.append(GpuColumnVector.from(subVector, attr.dataType))
                 assert(subVector.getRowCount == remainingLimit,
                   s"result rowcount ${subVector.getRowCount} is not equal to the " +
                     s"remainingLimit $remainingLimit")
-              })
+              }
             }
             new ColumnarBatch(resultCVs.toArray, remainingLimit)
           } catch {

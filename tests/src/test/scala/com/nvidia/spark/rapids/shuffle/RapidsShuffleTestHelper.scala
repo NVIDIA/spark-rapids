@@ -18,17 +18,19 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.util.concurrent.Executor
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.format.TableMeta
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, when}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
-import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.sql.rapids.ShuffleMetricsUpdater
+import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId}
 
@@ -63,12 +65,68 @@ class RapidsShuffleTestHelper extends FunSuite
   var testMetricsUpdater: TestShuffleMetricsUpdater = _
   var client: RapidsShuffleClient = _
 
+  def getBounceBuffer(size: Long): BounceBuffer = {
+    withResource(HostMemoryBuffer.allocate(size)) { hmb =>
+      fillBuffer(hmb)
+      val db = DeviceMemoryBuffer.allocate(size)
+      db.copyFromHostBuffer(hmb)
+      new BounceBuffer(db) {
+        override def free(bb: BounceBuffer): Unit = {
+          db.close()
+        }
+      }
+    }
+  }
+
+  def fillBuffer(hmb: HostMemoryBuffer): Unit = {
+    (0 until hmb.getLength.toInt by 4).foreach { b =>
+      hmb.setInt(b, b)
+    }
+  }
+
+  def areBuffersEqual(orig: HostMemoryBuffer, buff: DeviceMemoryBuffer): Boolean = {
+    var areEqual = orig.getLength == buff.getLength
+    if (areEqual) {
+      val len = orig.getLength.toInt
+      withResource(HostMemoryBuffer.allocate(len)) { hmb =>
+        hmb.copyFromDeviceBuffer(buff)
+        (0 until len by 4).foreach { b =>
+          areEqual = areEqual && hmb.getInt(b) == orig.getInt(b)
+          if (!areEqual) {
+            println(s"not equal at offset ${b} ${hmb.getInt(b)} -- ${orig.getInt(b)}")
+          }
+        }
+      }
+    } else {
+      println(s"NOT EQUAL LENGTH ${orig} vs ${buff}")
+    }
+    areEqual
+  }
+
+  def getSendBounceBuffer(size: Long): SendBounceBuffers = {
+    val db = DeviceMemoryBuffer.allocate(size)
+    SendBounceBuffers(new BounceBuffer(db) {
+      override def free(bb: BounceBuffer): Unit = {
+        db.close()
+      }
+    }, None)
+  }
+
+  var buffersToClose = new ArrayBuffer[DeviceMemoryBuffer]()
+
   override def beforeEach(): Unit = {
+    assert(buffersToClose.isEmpty)
     newMocks()
+  }
+
+  override def afterEach(): Unit = {
+    buffersToClose.foreach(_.close())
+    buffersToClose.clear()
   }
 
   def newMocks(): Unit = {
     mockTransaction = mock[Transaction]
+    when(mockTransaction.getStats).thenReturn(mock[TransactionStats])
     mockConnection = spy(new MockConnection(mockTransaction))
     mockTransport = mock[RapidsShuffleTransport]
     mockExecutor = new ImmediateExecutor
@@ -78,6 +136,11 @@ class RapidsShuffleTestHelper extends FunSuite
     mockCatalog = mock[ShuffleReceivedBufferCatalog]
     mockConf = mock[RapidsConf]
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
+
+    val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
+    when(mockStorage.addBuffer(any(), dmbCaptor.capture(), any(), any())).thenAnswer(_ => {
+      buffersToClose.append(dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer])
+    })
 
     client = spy(new RapidsShuffleClient(
       1,
@@ -106,8 +169,8 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
     val rows: Seq[Integer] = (0 until numRows.toInt).map(new Integer(_))
     withResource(ColumnVector.fromBoxedInts(rows:_*)) { cvBase =>
       cvBase.incRefCount()
-      val gpuCv = GpuColumnVector.from(cvBase)
-      withResource(new ColumnarBatch(Seq(gpuCv).toArray)) { cb =>
+      val gpuCv = GpuColumnVector.from(cvBase, IntegerType)
+      withResource(new ColumnarBatch(Array(gpuCv))) { cb =>
         withResource(GpuColumnVector.from(cb)) { table =>
           withResource(table.contiguousSplit(0, numRows.toInt)) { ct =>
             body(ct(1)) // we get a degenerate table at 0 and another at 2
@@ -141,6 +204,21 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
     when(mockTransport.getMetaBuffer(any())).thenReturn(refCountedRes)
     tableMetas
   }
+
+  def prepareMetaTransferRequest(numTables: Int, numRows: Long): RefCountedDirectByteBuffer =
+    withMockContiguousTable(numRows) { ct =>
+      val tableMetaTags = (0 until numTables).map { t =>
+        (buildMockTableMeta(t, ct), t.toLong)
+      }
+      val trBuffer = ShuffleMetadata.buildTransferRequest(1, 123, tableMetaTags)
+      val refCountedRes = new RefCountedDirectByteBuffer(trBuffer)
+      refCountedRes
+    }
+
+  def mockTableMeta(numRows: Long): TableMeta =
+    withMockContiguousTable(numRows) { ct =>
+      buildMockTableMeta(1, ct)
+    }
 
   def prepareMetaTransferResponse(
       mockTransport: RapidsShuffleTransport,
@@ -208,8 +286,7 @@ class MockConnection(mockTransaction: Transaction) extends ClientConnection {
     mockTransaction
   }
 
-  override def getPeerExecutorId: Long =
-    throw new UnsupportedOperationException
+  override def getPeerExecutorId: Long = 0
 
   override def assignResponseTag: Long = 1L
   override def assignBufferTag(msgId: Int): Long = 2L

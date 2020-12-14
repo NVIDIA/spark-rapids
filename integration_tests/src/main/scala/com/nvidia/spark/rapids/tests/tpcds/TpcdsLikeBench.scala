@@ -16,70 +16,29 @@
 
 package com.nvidia.spark.rapids.tests.tpcds
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
+import com.nvidia.spark.rapids.tests.common.BenchmarkSuite
 
-import scala.collection.mutable.ListBuffer
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+class TpcdsLikeBench(val appendDat: Boolean) extends BenchmarkSuite {
+  override def name(): String = "TPC-DS"
 
-object TpcdsLikeBench extends Logging {
+  override def shortName(): String = "tpcds"
 
-  /**
-   * This method can be called from Spark shell using the following syntax:
-   *
-   * TpcdsLikeBench.runBench(spark, "q5")
-   */
-  def runBench(
-      spark: SparkSession,
-      query: String,
-      numColdRuns: Int = 1,
-      numHotRuns: Int = 3): Unit = {
-
-    val coldRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numColdRuns) {
-      println(s"*** Start cold run $i:")
-      val start = System.nanoTime()
-      TpcdsLikeSpark.run(spark, query).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      coldRunElapsed.append(elapsed)
-      println(s"*** Cold run $i took $elapsed msec.")
-    }
-
-    val hotRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numHotRuns) {
-      println(s"*** Start hot run $i:")
-      val start = System.nanoTime()
-      TpcdsLikeSpark.run(spark, query).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      hotRunElapsed.append(elapsed)
-      println(s"*** Hot run $i took $elapsed msec.")
-    }
-
-    for (i <- 0 until numColdRuns) {
-      println(s"Cold run $i for query $query took ${coldRunElapsed(i)} msec.")
-    }
-    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
-
-    for (i <- 0 until numHotRuns) {
-      println(s"Hot run $i for query $query took ${hotRunElapsed(i)} msec.")
-    }
-    println(s"Query $query: " +
-        s"best: ${hotRunElapsed.min} msec; " +
-        s"worst: ${hotRunElapsed.max} msec; " +
-        s"average: ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
+  override def setupAllParquet(spark: SparkSession, path: String): Unit = {
+    TpcdsLikeSpark.setupAllParquet(spark, path, appendDat)
   }
 
-  def main(args: Array[String]): Unit = {
-    val input = args(0)
-    val query = args(1)
+  override def setupAllCSV(spark: SparkSession, path: String): Unit = {
+    TpcdsLikeSpark.setupAllCSV(spark, path, appendDat)
+  }
 
-    val spark = SparkSession.builder.appName("TPC-DS Like Bench").getOrCreate()
-    TpcdsLikeSpark.setupAllParquet(spark, input)
+  override def setupAllOrc(spark: SparkSession, path: String): Unit = {
+    TpcdsLikeSpark.setupAllOrc(spark, path, appendDat)
+  }
 
-    println(s"*** RUNNING TPC-DS QUERY $query")
-    runBench(spark, query)
+  override def createDataFrame(spark: SparkSession, query: String): DataFrame = {
+    TpcdsLikeSpark.run(spark, query)
   }
 }
+

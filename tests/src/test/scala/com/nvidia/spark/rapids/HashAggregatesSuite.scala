@@ -90,23 +90,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
   }
 
-  testExpectedExceptionStartsWith("test unsorted agg with first and last no grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar", firstDf, repart = 2) {
-    frame => frame
-      .coalesce(1)
-      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
-  }
-
-  testExpectedExceptionStartsWith("test sorted agg with first and last no grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar", firstDf, repart = 2) {
-    frame => frame
-      .coalesce(1)
-      .sort(col("c2").asc, col("c0").asc) // force deterministic use case
-      .agg(first(col("c0"), ignoreNulls = true), last(col("c0"), ignoreNulls = true))
-  }
-
   IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
       "nullable aggregate with not null filter",
       firstDf,
@@ -152,6 +135,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
+        case GpuColumnarToRowExec(plan, _) => // Codegen disabled
+          assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
         case a: AdaptiveSparkPlanExec =>
           assert(a.toString.startsWith("AdaptiveSparkPlan isFinalPlan=true"))
           assert(a.executedPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
@@ -189,6 +177,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
+        case GpuColumnarToRowExec(plan, _) => // codegen disabled
+          assert(plan.isInstanceOf[GpuSortExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
         case a: AdaptiveSparkPlanExec =>
           assert(a.toString.startsWith("AdaptiveSparkPlan isFinalPlan=true"))
           assert(a.executedPlan.find(_.isInstanceOf[GpuSortExec]).isDefined)
@@ -196,7 +190,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(a.executedPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
         case _ =>
-          fail("Incorrect plan")
+          fail(s"Incorrect plan $gpuPlan")
       }
 
     }, conf)
@@ -289,10 +283,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.agg(avg(lit("abc")),avg(lit("pqr")))
   }
 
-  testExpectedExceptionStartsWith(
+  testExpectedException[AnalysisException](
       "avg literals bools fail",
-      classOf[AnalysisException],
-      "cannot resolve",
+      _.getMessage.startsWith("cannot resolve"),
       longsFromCSVDf,
       conf = floatAggConf) {
     frame => frame.agg(avg(lit(true)),avg(lit(false)))
@@ -731,20 +724,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("grouping expressions 2", longsCsvDf) {
     frame => frame.groupBy(col("more_longs") + col("longs")).agg(min("longs"))
-  }
-
-  testExpectedExceptionStartsWith("first without grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar",
-    intCsvDf) {
-    frame => frame.agg(first("ints", false))
-  }
-
-  testExpectedExceptionStartsWith("last without grouping",
-    classOf[IllegalArgumentException],
-    "Part of the plan is not columnar",
-    intCsvDf) {
-    frame => frame.agg(first("ints", false))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("first ignoreNulls=false", intCsvDf) {
@@ -1570,10 +1549,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   if (spark.SPARK_VERSION_SHORT < "3.1.0") {
     // A test that verifies that Distinct with Filter is not supported on the CPU or the GPU.
-    testExpectedExceptionStartsWith(
+    testExpectedException[AnalysisException](
         "Avg Distinct with filter - unsupported on CPU and GPU",
-        classOf[AnalysisException],
-        "DISTINCT and FILTER cannot be used in aggregate functions at the same time",
+        _.getMessage.startsWith(
+          "DISTINCT and FILTER cannot be used in aggregate functions at the same time"),
         longsFromCSVDf, conf = floatAggConf) {
       frame => frame.selectExpr("avg(distinct longs) filter (where longs < 5)")
     }

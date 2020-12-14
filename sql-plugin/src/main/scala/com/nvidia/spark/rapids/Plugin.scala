@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.util
+import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
@@ -34,6 +35,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.util.QueryExecutionListener
+
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   val overrides: Rule[SparkPlan] = GpuOverrides()
@@ -58,6 +60,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
 
 object RapidsPluginUtils extends Logging {
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
+  private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
   private val SQL_PLUGIN_CONF_KEY = StaticSQLConf.SPARK_SESSION_EXTENSIONS.key
   private val SERIALIZER_CONF_KEY = "spark.serializer"
   private val JAVA_SERIALIZER_NAME = classOf[JavaSerializer].getName
@@ -68,14 +71,16 @@ object RapidsPluginUtils extends Logging {
   def fixupConfigs(conf: SparkConf): Unit = {
     // First add in the SQL executor plugin because that is what we need at a minimum
     if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
-      val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
-      if (!previousValue.contains(SQL_PLUGIN_NAME)) {
-        conf.set(SQL_PLUGIN_CONF_KEY, (previousValue :+ SQL_PLUGIN_NAME).mkString(","))
-      } else {
-        conf.set(SQL_PLUGIN_CONF_KEY, previousValue.mkString(","))
+      for (pluginName <- Array(SQL_PLUGIN_NAME, UDF_PLUGIN_NAME)){
+        val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
+        if (!previousValue.contains(pluginName)) {
+          conf.set(SQL_PLUGIN_CONF_KEY, (previousValue :+ pluginName).mkString(","))
+        } else {
+          conf.set(SQL_PLUGIN_CONF_KEY, previousValue.mkString(","))
+        }
       }
     } else {
-      conf.set(SQL_PLUGIN_CONF_KEY, SQL_PLUGIN_NAME)
+      conf.set(SQL_PLUGIN_CONF_KEY, Array(SQL_PLUGIN_NAME,UDF_PLUGIN_NAME).mkString(","))
     }
 
     val serializer = conf.get(SERIALIZER_CONF_KEY, JAVA_SERIALIZER_NAME)
@@ -128,6 +133,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
       }
 
+      // Compare if the cudf version mentioned in the classpath is equal to the version which
+      // plugin expects. If there is a version mismatch, throw error. This check can be disabled
+      // by setting this config spark.rapids.cudfVersionOverride=true
+      checkCudfVersion(conf)
+
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
       // on executor startup.
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
@@ -145,6 +155,55 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         System.exit(1)
     }
   }
+
+  private def checkCudfVersion(conf: RapidsConf): Unit = {
+    try {
+      val cudfPropertiesFileName = "cudf-java-version-info.properties"
+      val pluginPropertiesFileName = "rapids4spark-version-info.properties"
+
+      val props = new Properties
+      val classLoader = classOf[RapidsExecutorPlugin].getClassLoader
+      val cudfProperties = classLoader.getResourceAsStream(cudfPropertiesFileName)
+      if (cudfProperties == null) {
+        throw CudfVersionMismatchException(s"Could not find properties file " +
+          s"$cudfPropertiesFileName in the cudf jar. Cannot verify cudf version compatibility " +
+          s"with RAPIDS Accelerator version.")
+      }
+      props.load(cudfProperties)
+
+      val classpathCudfVersion = props.get("version")
+      if (classpathCudfVersion == null) {
+        throw CudfVersionMismatchException(s"Property name `version` not found in " +
+          s"$cudfPropertiesFileName file.")
+      }
+      val cudfVersion = classpathCudfVersion.toString
+
+      val pluginResource = classLoader.getResourceAsStream(pluginPropertiesFileName)
+      if (pluginResource == null) {
+        throw CudfVersionMismatchException(s"Could not find properties file " +
+          s"$pluginPropertiesFileName in the RAPIDS Accelerator jar. Cannot verify cudf " +
+          s"version compatibility with RAPIDS Accelerator version.")
+      }
+      props.load(pluginResource)
+
+      val pluginCudfVersion = props.get("cudf_version")
+      if (pluginCudfVersion == null) {
+        throw CudfVersionMismatchException(s"Property name `cudf_version` not found in" +
+          s" $pluginPropertiesFileName file.")
+      }
+      val expectedCudfVersion = pluginCudfVersion.toString
+      // compare cudf version in the classpath with the cudf version expected by plugin
+      if (!cudfVersion.equals(expectedCudfVersion)) {
+        throw CudfVersionMismatchException(s"Cudf version in the classpath is different. " +
+          s"Found $cudfVersion, RAPIDS Accelerator expects $expectedCudfVersion")
+      }
+    } catch {
+      case x: CudfVersionMismatchException if conf.cudfVersionOverride =>
+        logWarning(s"${x.errorMsg}")
+    }
+  }
+
+  case class CudfVersionMismatchException(errorMsg: String) extends RuntimeException(errorMsg)
 
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()

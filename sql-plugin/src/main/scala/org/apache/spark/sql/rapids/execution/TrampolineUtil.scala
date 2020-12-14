@@ -18,8 +18,9 @@ package org.apache.spark.sql.rapids.execution
 
 import org.json4s.JsonAST
 
-import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException}
+import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
@@ -75,4 +76,36 @@ object TrampolineUtil {
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 
   def asNullable(dt: DataType): DataType = dt.asNullable
+
+  /**
+   * Increment the task's memory bytes spilled metric. If the current thread does not
+   * correspond to a Spark task then this call does nothing.
+   * @param amountSpilled amount of memory spilled in bytes
+   */
+  def incTaskMetricsMemoryBytesSpilled(amountSpilled: Long): Unit = {
+    Option(TaskContext.get).foreach(_.taskMetrics().incMemoryBytesSpilled(amountSpilled))
+  }
+
+  /**
+   * Increment the task's disk bytes spilled metric. If the current thread does not
+   * correspond to a Spark task then this call does nothing.
+   * @param amountSpilled amount of memory spilled in bytes
+   */
+  def incTaskMetricsDiskBytesSpilled(amountSpilled: Long): Unit = {
+    Option(TaskContext.get).foreach(_.taskMetrics().incDiskBytesSpilled(amountSpilled))
+  }
+
+  /**
+   * Returns a function that can be called to find Hadoop FileSystem bytes read. If
+   * getFSBytesReadOnThreadCallback is called from thread r at time t, the returned callback will
+   * return the bytes read on r since t.
+   */
+  def getFSBytesReadOnThreadCallback(): () => Long = {
+    SparkHadoopUtil.get.getFSBytesReadOnThreadCallback()
+  }
+
+  /** Set the bytes read task input metric */
+  def incBytesRead(inputMetrics: InputMetrics, bytesRead: Long): Unit = {
+    inputMetrics.incBytesRead(bytesRead)
+  }
 }

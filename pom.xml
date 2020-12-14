@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
     <packaging>pom</packaging>
 
     <url>https://github.com/NVIDIA</url>
@@ -89,12 +89,6 @@
             </modules>
         </profile>
         <profile>
-            <id>alpha-features</id>
-            <properties>
-                <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
-            </properties>
-        </profile>
-        <profile>
             <id>source-javadoc</id>
             <build>
                 <plugins>
@@ -131,7 +125,7 @@
             </build>
         </profile>
         <profile>
-            <id>databricks</id>
+            <id>databricks301</id>
             <properties>
 	        <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
@@ -149,7 +143,7 @@
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>3.0.0</spark.version>
         <cuda.version>cuda10-1</cuda.version>
-        <cudf.version>0.15</cudf.version>
+        <cudf.version>0.17</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
@@ -161,19 +155,23 @@
         <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
         <test.exclude.tags></test.exclude.tags>
         <test.include.tags></test.include.tags>
-        <rapids.shuffle.manager.override>false</rapids.shuffle.manager.override>
+        <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
-        <pytest.TEST_TAGS>not qarun and not cudf_udf</pytest.TEST_TAGS>
+        <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
+        <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
         <rat.consoleOutput>false</rat.consoleOutput>
         <slf4j.version>1.7.30</slf4j.version>
         <spark300.version>3.0.0</spark300.version>
+        <spark300emr.version>3.0.0-amzn</spark300emr.version>
+        <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <!--
          If you update a dependendy version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
         <spark301.version>3.0.1</spark301.version>
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
         <spark310.version>3.1.0-SNAPSHOT</spark310.version>
+        <mockito.version>3.6.0</mockito.version>
     </properties>
 
     <dependencyManagement>
@@ -303,6 +301,11 @@
                 <version>1.11.0</version>
             </dependency>
             <dependency>
+                <groupId>org.rogach</groupId>
+                <artifactId>scallop_${scala.binary.version}</artifactId>
+                <version>3.5.1</version>
+            </dependency>
+            <dependency>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest_${scala.binary.version}</artifactId>
                 <version>3.0.5</version>
@@ -317,7 +320,7 @@
             <dependency>
               <groupId>org.mockito</groupId>
               <artifactId>mockito-core</artifactId>
-              <version>2.28.2</version>
+              <version>${mockito.version}</version>
               <scope>test</scope>
             </dependency>
         </dependencies>
@@ -438,7 +441,7 @@
                     <configuration>
                         <verbose>false</verbose>
                         <failOnViolation>true</failOnViolation>
-                        <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                        <includeTestSourceDirectory>false</includeTestSourceDirectory>
                         <failOnWarning>false</failOnWarning>
                         <sourceDirectory>${basedir}/src/main/scala</sourceDirectory>
                         <testSourceDirectory>${basedir}/src/test/scala</testSourceDirectory>
@@ -534,9 +537,10 @@
                             <target>
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${project.basedir}/../build/build-info"/>
+                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${user.dir}/build/build-info"/>
                                     <arg value="${project.version}"/>
+                                    <arg value="${cudf.version}"/>
                                 </exec>
                             </target>
                         </configuration>

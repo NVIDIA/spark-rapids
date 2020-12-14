@@ -192,6 +192,17 @@ class TypedConfBuilder[T](
     }
   }
 
+  /** Check that user-provided values for the config match a pre-defined set. */
+  def checkValues(validValues: Set[T]): TypedConfBuilder[T] = {
+    transform { v =>
+      if (!validValues.contains(v)) {
+        throw new IllegalArgumentException(
+          s"The value of ${parent.key} should be one of ${validValues.mkString(", ")}, but was $v")
+      }
+      v
+    }
+  }
+
   def createWithDefault(value: T): ConfEntry[T] = {
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
       parent.doc, parent.isInternal, value)
@@ -282,6 +293,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
+    .doc("The path to a local directory where a heap dump will be created if the GPU " +
+      "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
+      "form: \"gpu-oom-<pid>.hprof\" where <pid> is the process ID.")
+    .stringConf
+    .createOptional
+
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
@@ -317,9 +335,18 @@ object RapidsConf {
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
-      "through to CUDA memory allocation directly.")
+      "through to CUDA memory allocation directly. DEPRECATED: please use " +
+      "spark.rapids.memory.gpu.pool instead.")
     .booleanConf
     .createWithDefault(true)
+
+  val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
+    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
+      "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
+      "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
+      "just passes through to CUDA memory allocation directly.")
+    .stringConf
+    .createWithDefault("ARENA")
 
   val CONCURRENT_GPU_TASKS = conf("spark.rapids.sql.concurrentGpuTasks")
       .doc("Set the number of tasks that can execute concurrently per GPU. " +
@@ -336,8 +363,11 @@ object RapidsConf {
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs.")
+      "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
+      "cudf row count limit of a column.")
     .bytesConf(ByteUnit.BYTE)
+    .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
+      s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
     .createWithDefault(Integer.MAX_VALUE)
 
   val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
@@ -397,6 +427,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
+      .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, " +
+          "setting this to true will force all parsing onto GPU even for formats that can " +
+          "result in incorrect results when parsing invalid inputs.")
+      .booleanConf
+      .createWithDefault(false)
+
   val IMPROVED_FLOAT_OPS = conf("spark.rapids.sql.improvedFloatOps.enabled")
     .doc("For some floating point operations spark uses one way to compute the value " +
       "and the underlying cudf implementation can use an improved algorithm. " +
@@ -419,6 +456,14 @@ object RapidsConf {
       "those operations if you know the query is only computing it once.")
     .booleanConf
     .createWithDefault(false)
+
+  val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
+      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
+          "less than 18 digits and is only supported by a small number of operations currently.  " +
+          "This can result in a lot of data movement to and from the GPU, which can slow down " +
+          "processing in some cases.")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
@@ -476,21 +521,53 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_MULTITHREAD_PARQUET_READS = conf(
-    "spark.rapids.sql.format.parquet.multiThreadedRead.enabled")
-    .doc("When set to true, reads multiple small files within a partition more efficiently " +
-      "by reading each file in a separate thread in parallel on the CPU side before " +
-      "sending to the GPU. Limited by " +
-      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads " +
-      "and spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFileProcessed")
-    .booleanConf
-    .createWithDefault(true)
+  object ParquetReaderType extends Enumeration {
+    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
+  }
+
+  val PARQUET_READER_TYPE = conf("spark.rapids.sql.format.parquet.reader.type")
+    .doc("Sets the parquet reader type. We support different types that are optimized for " +
+      "different environments. The original Spark style reader can be selected by setting this " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.numThreads. " +
+      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
+      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
+      "environments also get better throughput when you have multiple readers in parallel. " +
+      "This reader uses multiple threads to read each file in parallel and each file is sent " +
+      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
+      "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
+      "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
+      "the number of threads and amount of memory used. " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
+      "in the cloud. See spark.rapids.cloudSchemes.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(ParquetReaderType.values.map(_.toString))
+    .createWithDefault(ParquetReaderType.AUTO.toString)
+
+  val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
+    .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
+      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. Cloud based stores " +
+      "generally would be total separate from the executors and likely have a higher I/O read " +
+      "cost. Many times the cloud filesystems also get better throughput when you have multiple " +
+      "readers in parallel. This is used with spark.rapids.sql.format.parquet.reader.type")
+    .stringConf
+    .toSequence
+    .createOptional
 
   val PARQUET_MULTITHREAD_READ_NUM_THREADS =
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.numThreads")
       .doc("The maximum number of threads, on the executor, to use for reading small " +
         "parquet files in parallel. This can not be changed at runtime after the executor has " +
-        "started.")
+        "started. Used with COALESCING and MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.parquet.reader.type.")
       .integerConf
       .createWithDefault(20)
 
@@ -498,7 +575,8 @@ object RapidsConf {
     conf("spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel")
       .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
         "side before the file is sent to the GPU. This affects the amount of host memory used " +
-        "when reading the files in parallel.")
+        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.parquet.reader.type")
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
@@ -668,7 +746,7 @@ object RapidsConf {
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
-          "Supported codecs: copy, none")
+          "Supported codecs: lz4, copy, none")
       .internal()
       .stringConf
       .createWithDefault("none")
@@ -698,6 +776,23 @@ object RapidsConf {
       "then there is no guarantee the RAPIDS Accelerator will function properly.")
     .stringConf
     .createOptional
+
+  val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudfVersionOverride")
+    .internal()
+    .doc("Overrides the cudf version compatibility check between cudf jar and RAPIDS Accelerator " +
+      "jar. If you are sure that the cudf jar which is mentioned in the classpath is compatible " +
+      "with the RAPIDS Accelerator version, then set this to true.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
+    .internal()
+    .doc("The plugin has the ability to detect possibe incompatibility with some specific " +
+      "queries and cluster configurations. In those cases the plugin will disable GPU support " +
+      "for the entire query. Set this to false if you want to override that behavior, but use " +
+      "with caution.")
+    .booleanConf
+    .createWithDefault(true)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -729,7 +824,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.2.0.jar,cudf-0.15-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.17-SNAPSHOT-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -851,6 +946,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
+  lazy val incompatDateFormats: Boolean = get(INCOMPATIBLE_DATE_FORMATS)
+
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
@@ -863,9 +960,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
+  lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
+
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
+
+  lazy val rmmPool: String = get(RMM_POOL)
 
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
@@ -880,6 +981,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
+
+  lazy val decimalTypeEnabled: Boolean = get(DECIMAL_TYPE_ENABLED)
 
   lazy val explain: String = get(EXPLAIN)
 
@@ -913,7 +1016,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
-  lazy val isParquetMultiThreadReadEnabled: Boolean = get(ENABLE_MULTITHREAD_PARQUET_READS)
+  lazy val isParquetPerFileReadEnabled: Boolean =
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE
+
+  lazy val isParquetAutoReaderEnabled: Boolean =
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.AUTO
+
+  lazy val isParquetCoalesceFileReadEnabled: Boolean = isParquetAutoReaderEnabled ||
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.COALESCING
+
+  lazy val isParquetMultiThreadReadEnabled: Boolean = isParquetAutoReaderEnabled ||
+    ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.MULTITHREADED
 
   lazy val parquetMultiThreadReadNumThreads: Int = get(PARQUET_MULTITHREAD_READ_NUM_THREADS)
 
@@ -965,6 +1078,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
+
+  lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
+
+  lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
+
+  lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

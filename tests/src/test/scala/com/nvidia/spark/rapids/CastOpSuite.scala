@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.sql.Timestamp
-import java.text.SimpleDateFormat
+import java.time.LocalDateTime
 import java.util.TimeZone
 
 import org.apache.spark.SparkConf
@@ -41,7 +41,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
     DataTypes.FloatType, DataTypes.DoubleType,
     DataTypes.DateType,
     DataTypes.TimestampType,
-    DataTypes.StringType
+    DataTypes.StringType,
+    DataTypes.NullType
   )
 
   /** Produces a matrix of all possible casts. */
@@ -49,7 +50,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
     for (from <- supportedTypes; to <- supportedTypes) yield (from, to)
   }
 
+  def should310SkipAnsiCast(from: DataType, to: DataType): Boolean = (from, to) match {
+    case (_: NumericType, TimestampType | DateType) => true
+    case (BooleanType, TimestampType | DateType) => true
+    case (TimestampType | DateType, _: NumericType) => true
+    case (TimestampType | DateType, BooleanType) => true
+    case (StringType, TimestampType) => true
+    case (FloatType, IntegerType) => true
+    case _ => false
+  }
+
+
   test("Test all supported casts with in-range values") {
+    val is310OrAfter = !withCpuSparkSession(s => s.version < "3.1.0")
 
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
@@ -63,8 +76,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       typeMatrix.foreach {
         case (from, to) =>
+          // In 3.1.0 Cast.canCast was split with a separate ANSI version
+          // Until we are on 3.1.0 or more we cannot call this easily so for now
+          // We will check and skip a very specific one.
+          val shouldSkip = is310OrAfter && ansiEnabled && should310SkipAnsiCast(from, to)
           // check if Spark supports this cast
-          if (Cast.canCast(from, to)) {
+          if (!shouldSkip && Cast.canCast(from, to)) {
             // check if plugin supports this cast
             if (GpuCast.canCast(from, to)) {
               // test the cast
@@ -84,10 +101,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
               } catch {
                 case e: Exception =>
-                  fail(s"Cast from $from to $to failed; ansi=$ansiEnabled", e)
+                  fail(s"Cast from $from to $to failed; ansi=$ansiEnabled $e", e)
               }
             }
-          } else {
+          } else if (!shouldSkip) {
             // if Spark doesn't support this cast then the plugin shouldn't either
             assert(!GpuCast.canCast(from, to))
           }
@@ -247,6 +264,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(StringType),
       col("more_longs").cast(BooleanType),
       col("more_longs").cast(ByteType),
+      // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
+      // col("longs").cast(BinaryType),
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
       col("longs").cast(DoubleType),
@@ -263,7 +282,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("floats").cast(ShortType),
       col("floats").cast(FloatType),
       col("floats").cast(DoubleType),
-    col("floats").cast(TimestampType))
+      col("floats").cast(TimestampType))
   }
 
   testSparkResultsAreEqual("Test cast from double", doubleWithNansDf) {
@@ -417,6 +436,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
     frame => frame.select(
       col("c0").cast(FloatType))
   }
+
+  // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
+  // testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
+  //   frame => frame.select(
+  //     col("c0").cast(BinaryType))
+  // }
 }
 
 /** Data shared between CastOpSuite and AnsiCastOpSuite. */
@@ -690,9 +715,13 @@ object CastOpSuite {
 
   def validTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    val df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS")
     val timestampStrings = Seq(
-      "2020-12-31T11:59:59.999",
+      "1920-12-31T11:59:59.999",
+      "1969-12-31T23:59:59.999",
+      "1969-12-31T23:59:59.999999",
+      "1970-01-01T00:00:00.000",
+      "1970-01-01T00:00:00.999",
+      "1970-01-01T00:00:00.999111",
       "2020-12-31T11:59:59.990",
       "2020-12-31T11:59:59.900",
       "2020-12-31T11:59:59.000",
@@ -702,8 +731,7 @@ object CastOpSuite {
       "2020-12-31T11:00:00.000"
     )
     val timestamps = timestampStrings
-      .map(s => df.parse(s))
-      .map(d => new Timestamp(d.getTime))
+      .map(s => Timestamp.valueOf(LocalDateTime.parse(s)))
 
     timestamps.toDF("c0")
   }

@@ -24,6 +24,7 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, Nv
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object RapidsBufferStore {
@@ -38,7 +39,8 @@ object RapidsBufferStore {
  */
 abstract class RapidsBufferStore(
     val name: String,
-    catalog: RapidsBufferCatalog) extends AutoCloseable with Logging {
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    extends AutoCloseable with Logging {
 
   private class BufferTracker {
     private[this] val comparator: Comparator[RapidsBufferBase] =
@@ -132,26 +134,31 @@ abstract class RapidsBufferStore(
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
    * @param targetTotalSize maximum total size of this store after spilling completes
+   * @return number of bytes that were spilled
    */
-  def synchronousSpill(targetTotalSize: Long): Unit = synchronousSpill(targetTotalSize, null)
+  def synchronousSpill(targetTotalSize: Long): Long = synchronousSpill(targetTotalSize, null)
 
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
    * @param targetTotalSize maximum total size of this store after spilling completes
    * @param stream CUDA stream to use or null for default stream
+   * @return number of bytes that were spilled
    */
-  def synchronousSpill(targetTotalSize: Long, stream: Cuda.Stream): Unit = {
-    assert(targetTotalSize >= 0)
+  def synchronousSpill(targetTotalSize: Long, stream: Cuda.Stream): Long = {
+    require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
 
+    var totalSpilled: Long = 0
     if (buffers.getTotalBytes > targetTotalSize) {
       val nvtx = new NvtxRange(nvtxSyncSpillName, NvtxColor.ORANGE)
       try {
-        logInfo(s"$name store spilling to reduce usage from " +
+        logDebug(s"$name store spilling to reduce usage from " +
             s"${buffers.getTotalBytes} to $targetTotalSize bytes")
         var waited = false
         var exhausted = false
         while (!exhausted && buffers.getTotalBytes > targetTotalSize) {
-          if (trySpillAndFreeBuffer(stream)) {
+          val amountSpilled = trySpillAndFreeBuffer(stream)
+          if (amountSpilled != 0) {
+            totalSpilled += amountSpilled
             waited = false
           } else {
             if (!waited && pendingFreeBytes.get > 0) {
@@ -178,6 +185,8 @@ abstract class RapidsBufferStore(
         nvtx.close()
       }
     }
+
+    totalSpilled
   }
 
   /**
@@ -201,12 +210,14 @@ abstract class RapidsBufferStore(
     buffers.freeAll()
   }
 
-  private def trySpillAndFreeBuffer(stream: Cuda.Stream): Boolean = synchronized {
+  private def trySpillAndFreeBuffer(stream: Cuda.Stream): Long = synchronized {
     val bufferToSpill = buffers.nextSpillableBuffer()
     if (bufferToSpill != null) {
       spillAndFreeBuffer(bufferToSpill, stream)
+      bufferToSpill.size
+    } else {
+      0
     }
-    bufferToSpill != null
   }
 
   private def spillAndFreeBuffer(buffer: RapidsBufferBase, stream: Cuda.Stream): Unit = {
@@ -261,7 +272,7 @@ abstract class RapidsBufferStore(
       isValid
     }
 
-    override def getColumnarBatch: ColumnarBatch = {
+    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       // NOTE: Cannot hold a lock on this buffer here because memory is being
       // allocated. Allocations can trigger synchronous spills which can
       // deadlock if another thread holds the device store lock and is trying
@@ -274,16 +285,17 @@ abstract class RapidsBufferStore(
           case _ => throw new IllegalStateException(
             "must override getColumnarBatch if not providing a host buffer")
         }
-        columnarBatchFromDeviceBuffer(deviceBuffer)
+        columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
 
-    protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer): ColumnarBatch = {
+    protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer,
+        sparkTypes: Array[DataType]): ColumnarBatch = {
       val bufferMeta = meta.bufferMeta()
       if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
-        MetaUtils.getBatchFromMeta(devBuffer, meta)
+        MetaUtils.getBatchFromMeta(devBuffer, meta, sparkTypes)
       } else {
-        GpuCompressedColumnVector.from(devBuffer, meta)
+        GpuCompressedColumnVector.from(devBuffer, meta, sparkTypes)
       }
     }
 

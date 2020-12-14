@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -113,7 +113,7 @@ def read_csv_sql(data_path, schema, header, sep):
 @pytest.mark.parametrize('name,schema,sep,header', [
     ('Acquisition_2007Q3.txt', _acq_schema, '|', False),
     ('Performance_2007Q3.txt_0', _perf_schema, '|', False),
-    pytest.param('ts.csv', _date_schema, ',', False, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/122')),
+    pytest.param('ts.csv', _date_schema, ',', False, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/869')),
     ('ts.csv', _ts_schema, ',', False),
     ('str.csv', _bad_str_schema, ',', True),
     ('str.csv', _good_str_schema, ',', True)
@@ -138,9 +138,7 @@ csv_supported_gens = [
         pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
         pytest.param(FloatGen(no_nans=True), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124')),
         pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
-        # Once https://github.com/NVIDIA/spark-rapids/issues/122 is fixed the reduced range ts gen should be removed
-        TimestampGen(start=datetime(1902, 1, 1, tzinfo=timezone.utc), end=datetime(2038, 1, 1, tzinfo=timezone.utc)),
-        pytest.param(TimestampGen(), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/122'))]
+        TimestampGen()]
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
@@ -175,7 +173,8 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
             'FileSourceScanExec',
-            conf={disable_conf: 'false'})
+            conf={disable_conf: 'false',
+                "spark.sql.sources.useV1SourceList": "csv"})
 
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
@@ -210,9 +209,7 @@ csv_supported_ts_parts = ['', # Just the date
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_list):
     full_format = date_format + ts_part
-    # Once https://github.com/NVIDIA/spark-rapids/issues/122 is fixed the full range should be used
-    data_gen = TimestampGen(start=datetime(1902, 1, 1, tzinfo=timezone.utc),
-            end=datetime(2038, 1, 1, tzinfo=timezone.utc))
+    data_gen = TimestampGen()
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
@@ -248,3 +245,13 @@ def test_input_meta(spark_tmp_path, v1_enabled_list):
                         'input_file_block_start()',
                         'input_file_block_length()'),
             conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+@allow_non_gpu('DataWritingCommandExec')
+def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
+    gen = TimestampGen()
+    data_path = spark_tmp_path + '/CSV_DATA'
+    assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("csv").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
+            lambda spark, path: spark.read.csv(path),
+            data_path,
+            'DataWritingCommandExec')

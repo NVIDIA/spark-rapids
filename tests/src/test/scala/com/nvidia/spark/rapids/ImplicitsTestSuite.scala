@@ -87,7 +87,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     val batch = new ColumnarBatch((0 until 10).map { ix =>
       val scalar = GpuScalar.from(ix, IntegerType)
       val col = try {
-        GpuColumnVector.from(scalar, 5)
+        GpuColumnVector.from(scalar, 5, IntegerType)
       } finally {
         scalar.close()
       }
@@ -115,7 +115,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     val batch = new ColumnarBatch((0 until 10).map { ix => {
       val scalar = GpuScalar.from(ix, IntegerType)
       val col = try {
-        GpuColumnVector.from(scalar, 5)
+        GpuColumnVector.from(scalar, 5, IntegerType)
       } finally {
         scalar.close()
       }
@@ -157,7 +157,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     val batch = new ColumnarBatch((0 until 10).map { ix => {
       val scalar = GpuScalar.from(ix, IntegerType)
       val col = try {
-        GpuColumnVector.from(scalar, 5)
+        GpuColumnVector.from(scalar, 5, IntegerType)
       } finally {
         scalar.close()
       }

@@ -24,15 +24,16 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, IsNotNull, NamedExpression, NullIntolerant, PredicateHelper, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-object GpuProjectExec {
+object GpuProjectExec extends Arm {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
       totalTime: SQLMetric): ColumnarBatch = {
     val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
@@ -51,11 +52,8 @@ object GpuProjectExec {
         result match {
           case cv: ColumnVector => cv
           case other =>
-            val scalar = GpuScalar.from(other, expr.dataType)
-            try {
-              GpuColumnVector.from(scalar, cb.numRows())
-            } finally {
-              scalar.close()
+            withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
+              GpuColumnVector.from(scalar, cb.numRows(), expr.dataType)
             }
         }
       }}.toArray
@@ -89,6 +87,9 @@ case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan)
       GpuProjectExec.projectAndClose(cb, boundProjectList, totalTime)
     }
   }
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
 /**
@@ -118,8 +119,10 @@ object GpuFilter extends Arm {
     try {
       filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
       tbl = GpuColumnVector.from(batch)
+      val colTypes =
+        (0 until batch.numCols()).map(i => batch.column(i).dataType())
       filtered = tbl.filter(filterConditionCv.getBase)
-      GpuColumnVector.from(filtered)
+      GpuColumnVector.from(filtered, colTypes.toArray)
     } finally {
       Seq(filtered, tbl, filterConditionCv, batch).safeClose()
     }
@@ -207,6 +210,8 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     }
   }
 
+  override def outputBatching: CoalesceGoal = TargetSize(targetSizeBytes)
+
   override def doCanonicalize(): SparkPlan = {
     GpuRangeExec(
       range.canonicalized.asInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Range],
@@ -274,7 +279,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                         ai.rapids.cudf.ColumnVector.sequence(
                           startScalar, stepScalar, rowsThisBatch.toInt)) { vec =>
                         withResource(new Table(vec)) { tab =>
-                          GpuColumnVector.from(tab)
+                          GpuColumnVector.from(tab, Array[DataType](LongType))
                         }
                       }
                     }
@@ -316,6 +321,10 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
     }
   }
 
+  // The smallest of our children
+  override def outputBatching: CoalesceGoal =
+    children.map(GpuExec.outputBatching).reduce(CoalesceGoal.min)
+
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
@@ -342,6 +351,9 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     if (numPartitions == 1) SinglePartition
     else UnknownPartitioning(numPartitions)
   }
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 
   protected override def doExecute(): RDD[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")

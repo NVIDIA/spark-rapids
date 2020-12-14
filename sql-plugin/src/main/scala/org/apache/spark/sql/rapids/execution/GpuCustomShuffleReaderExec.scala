@@ -15,14 +15,14 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{GpuCoalesceBatches, GpuExec, ShimLoader}
-import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_TOTAL_TIME, TOTAL_TIME}
+import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, ShimLoader}
+import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_PARTITIONS, DESCRIPTION_PARTITION_SIZE, DESCRIPTION_TOTAL_TIME, NUM_PARTITIONS, PARTITION_SIZE, TOTAL_TIME}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
-import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec, SparkPlan, SQLExecution, UnaryExecNode}
+import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -47,6 +47,10 @@ case class GpuCustomShuffleReaderExec(
    * The Spark version of this operator does not output any metrics.
    */
   override lazy val metrics: Map[String, SQLMetric] = Map(
+    PARTITION_SIZE ->
+        SQLMetrics.createSizeMetric(sparkContext, DESCRIPTION_PARTITION_SIZE),
+    NUM_PARTITIONS ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_PARTITIONS),
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME)
   )
 
@@ -75,6 +79,9 @@ case class GpuCustomShuffleReaderExec(
       UnknownPartitioning(partitionSpecs.length)
     }
   }
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 
   override def stringArgs: Iterator[Any] = {
     val desc = if (isLocalReader) {

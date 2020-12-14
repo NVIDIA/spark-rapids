@@ -22,7 +22,7 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <groupId>com.nvidia</groupId>
@@ -30,13 +30,13 @@
     <packaging>pom</packaging>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Shims</name>
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
 
     <profiles>
         <profile>
-            <id>databricks</id>
+            <id>databricks301</id>
             <modules>
-                <module>spark300db</module>
+                <module>spark301db</module>
             </modules>
         </profile>
         <profile>
@@ -53,6 +53,8 @@
 
     <modules>
         <module>spark300</module>
+        <module>spark300emr</module>
+        <module>spark301emr</module>
         <module>spark301</module>
         <module>aggregator</module>
     </modules>
@@ -75,10 +77,6 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.scalastyle</groupId>
-                <artifactId>scalastyle-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

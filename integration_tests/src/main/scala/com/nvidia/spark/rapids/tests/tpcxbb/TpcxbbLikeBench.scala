@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,67 +16,40 @@
 
 package com.nvidia.spark.rapids.tests.tpcxbb
 
-import java.util.concurrent.TimeUnit.NANOSECONDS
+import com.nvidia.spark.rapids.tests.common.BenchmarkSuite
 
-import scala.collection.mutable.ListBuffer
-
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
-object TpcxbbLikeBench extends Logging {
+object TpcxbbLikeBench  extends BenchmarkSuite {
+  override def name(): String = "TPCx-BB"
 
-  /**
-   * This method can be called from Spark shell using the following syntax:
-   *
-   * TpcxbbLikeBench.runBench(spark, Q5Like.apply)
-   */
-  def runBench(
-      spark: SparkSession,
-      queryRunner: SparkSession => DataFrame,
-      numColdRuns: Int = 1,
-      numHotRuns: Int = 3): Unit = {
+  override def shortName(): String = "Tpcxbb"
 
-    val coldRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numColdRuns) {
-      println(s"*** Start cold run $i:")
-      val start = System.nanoTime()
-      queryRunner(spark).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      coldRunElapsed.append(elapsed)
-      println(s"*** Cold run $i took $elapsed msec.")
-    }
-
-    val hotRunElapsed = new ListBuffer[Long]()
-    for (i <- 0 until numHotRuns) {
-      println(s"*** Start hot run $i:")
-      val start = System.nanoTime()
-      queryRunner(spark).collect
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      hotRunElapsed.append(elapsed)
-      println(s"*** Hot run $i took $elapsed msec.")
-    }
-
-    for (i <- 0 until numColdRuns) {
-      println(s"Cold run $i took ${coldRunElapsed(i)} msec.")
-    }
-    println(s"Average cold run took ${coldRunElapsed.sum.toDouble/numColdRuns} msec.")
-
-    for (i <- 0 until numHotRuns) {
-      println(s"Hot run $i took ${hotRunElapsed(i)} msec.")
-    }
-    println(s"Average hot run took ${hotRunElapsed.sum.toDouble/numHotRuns} msec.")
+  override def setupAllParquet(spark: SparkSession, path: String): Unit = {
+    TpcxbbLikeSpark.setupAllParquet(spark, path)
   }
 
-  def main(args: Array[String]): Unit = {
-    val input = args(0)
-    val queryIndex = args(1).toInt
+  override def setupAllCSV(spark: SparkSession, path: String): Unit = {
+    TpcxbbLikeSpark.setupAllCSV(spark, path)
+  }
 
-    val spark = SparkSession.builder.appName("TPCxBB Bench").getOrCreate()
-    TpcxbbLikeSpark.setupAllParquet(spark, input)
+  override def setupAllOrc(spark: SparkSession, path: String): Unit = {
+    TpcxbbLikeSpark.setupAllOrc(spark, path)
+  }
 
-    val queryRunner: SparkSession => DataFrame = queryIndex match {
+  override def createDataFrame(spark: SparkSession, query: String): DataFrame = {
+    getQuery(query)(spark)
+  }
+
+  def getQuery(query: String): SparkSession => DataFrame = {
+
+    val queryIndex = if (query.startsWith("q")) {
+      query.substring(1).toInt
+    } else {
+      query.toInt
+    }
+
+    queryIndex match {
       case 1 => Q1Like.apply
       case 2 => Q2Like.apply
       case 3 => Q3Like.apply
@@ -109,8 +82,5 @@ object TpcxbbLikeBench extends Logging {
       case 30 => Q30Like.apply
       case _ => throw new IllegalArgumentException(s"Unknown TPCx-BB query number: $queryIndex")
     }
-
-    println(s"*** RUNNING TPCx-BB QUERY $queryIndex")
-    runBench(spark, queryRunner)
   }
 }

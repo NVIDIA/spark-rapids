@@ -22,20 +22,20 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.0</version>
     </parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
 
     <properties>
         <spark.test.version>3.0.0</spark.test.version>
     </properties>
     <profiles>
         <profile>
-            <id>spark300dbtests</id>
+            <id>spark301dbtests</id>
             <properties>
-                <spark.test.version>3.0.0-databricks</spark.test.version>
+                <spark.test.version>3.0.1-databricks</spark.test.version>
             </properties>
         </profile>
         <profile>
@@ -78,6 +78,10 @@
             <version>${spark.test.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.rogach</groupId>
+            <artifactId>scallop_${scala.binary.version}</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
@@ -86,7 +90,7 @@
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>
             <classifier>${cuda.version}</classifier>
-	    <scope>provided</scope>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -108,6 +112,9 @@
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
                     <descriptors>
                         <descriptor>src/assembly/bin.xml</descriptor>
                     </descriptors>
@@ -141,6 +148,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
+                <configuration>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -172,6 +182,7 @@
                         <exclude>src/test/resources/**</exclude>
                         <exclude>**/*.md</exclude>
                         <exclude>.pytest_cache/**</exclude>
+                        <exclude>rmm_log.txt</exclude>
                     </excludes>
                 </configuration>
             </plugin>
@@ -191,8 +202,9 @@
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>
-				<COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
-				<TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
+                                <COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
+                                <TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
+                                <TEST_PARALLEL>${pytest.TEST_PARALLEL}</TEST_PARALLEL>
                             </environmentVariables>
                         </configuration>
                     </execution>

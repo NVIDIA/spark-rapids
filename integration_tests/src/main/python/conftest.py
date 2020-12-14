@@ -59,6 +59,9 @@ def is_apache_runtime():
 def is_databricks_runtime():
     return runtime_env() == "databricks"
 
+def is_emr_runtime():
+    return runtime_env() == "emr"
+
 _limit = -1
 
 def get_limit():
@@ -183,6 +186,27 @@ def spark_tmp_path(request):
     yield ret
     if not debug:
         fs.delete(path)
+
+class TmpTableFactory:
+  def __init__(self, base_id):
+      self.base_id = base_id
+      self.running_id = 0
+
+  def get(self):
+      ret = '{}_{}'.format(self.base_id, self.running_id)
+      self.running_id = self.running_id + 1
+      return ret
+
+@pytest.fixture
+def spark_tmp_table_factory(request):
+    base_id = 'tmp_table_{}'.format(random.randint(0, 1000000))
+    yield TmpTableFactory(base_id)
+    sp = get_spark_i_know_what_i_am_doing()
+    tables = sp.sql("SHOW TABLES".format(base_id)).collect()
+    for row in tables:
+        t_name = row['tableName']
+        if (t_name.startswith(base_id)):
+            sp.sql("DROP TABLE IF EXISTS {}".format(t_name))
 
 def _get_jvm_session(spark):
     return spark._jsparkSession
@@ -364,4 +388,10 @@ def tpcds(request):
     pytest.skip("TPC-DS not configured to run")
   else:
     yield TpcdsRunner(tpcds_format, tpcds_path)
+
+@pytest.fixture(scope="session")
+def enable_cudf_udf(request):
+    enable_udf_cudf = request.config.getoption("cudf_udf")
+    if not enable_udf_cudf:
+        pytest.skip("cudf_udf not configured to run")
 

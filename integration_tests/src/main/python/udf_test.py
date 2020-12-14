@@ -14,23 +14,30 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
-from data_gen import *
-from marks import incompat, approximate_float, allow_non_gpu, ignore_order
-from pyspark.sql import Window
-from pyspark.sql.types import *
-import pyspark.sql.functions as f
-from pyspark.sql.pandas.utils import require_minimum_pyarrow_version
-import pandas as pd
-from typing import Iterator, Tuple
+from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
+try:
+    require_minimum_pandas_version()
+except Exception as e:
+    pytestmark = pytest.mark.skip(reason=str(e))
 
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
     pytestmark = pytest.mark.skip(reason=str(e))
 
-arrow_udf_conf = {'spark.sql.execution.arrow.pyspark.enabled': 'true',
-        'spark.rapids.sql.exec.ArrowEvalPythonExec': 'true'}
+from asserts import assert_gpu_and_cpu_are_equal_collect
+from data_gen import *
+from marks import incompat, approximate_float, allow_non_gpu, ignore_order
+from pyspark.sql import Window
+from pyspark.sql.types import *
+import pyspark.sql.functions as f
+import pandas as pd
+from typing import Iterator, Tuple
+
+arrow_udf_conf = {
+    'spark.sql.execution.arrow.pyspark.enabled': 'true',
+    'spark.rapids.sql.exec.WindowInPandasExec': 'true'
+}
 
 ####################################################################
 # NOTE: pytest does not play well with pyspark udfs, because pyspark
@@ -39,6 +46,7 @@ arrow_udf_conf = {'spark.sql.execution.arrow.pyspark.enabled': 'true',
 # must either be lambdas or totally defined within the test method
 # itself.
 ####################################################################
+
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_pandas_math_udf(data_gen):
@@ -49,6 +57,7 @@ def test_pandas_math_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen).select(
                 my_udf(f.col('a') - 3, f.col('b'))),
             conf=arrow_udf_conf)
+
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_iterator_math_udf(data_gen):
@@ -62,6 +71,8 @@ def test_iterator_math_udf(data_gen):
                 my_udf(f.col('a'), f.col('b'))),
             conf=arrow_udf_conf)
 
+
+@approximate_float
 @allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_single_aggregate_udf(data_gen):
@@ -73,6 +84,7 @@ def test_single_aggregate_udf(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(
                 pandas_sum(f.col('a'))),
             conf=arrow_udf_conf)
+
 
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/757")
 @ignore_order
@@ -89,23 +101,88 @@ def test_group_aggregate_udf(data_gen):
                     .agg(pandas_sum(f.col('b'))),
             conf=arrow_udf_conf)
 
+
+# ======= Test window in Pandas =======
+# range frame is not supported yet.
+no_part_win = Window\
+    .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
+
+unbounded_win = Window\
+    .partitionBy('a')\
+    .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
+
+cur_follow_win = Window\
+    .partitionBy('a')\
+    .orderBy('b')\
+    .rowsBetween(Window.currentRow, Window.unboundedFollowing)
+
+pre_cur_win = Window\
+    .partitionBy('a')\
+    .orderBy('b')\
+    .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+
+low_upper_win = Window.partitionBy('a').orderBy('b').rowsBetween(-3, 3)
+
+udf_windows = [no_part_win, unbounded_win, cur_follow_win, pre_cur_win, low_upper_win]
+window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Preceding',
+              'Lower_Upper']
+
+
+# It fails periodically only when using LongGen, so split it into
+#   "test_window_aggregate_udf_long"
+# and
+#   "test_window_aggregate_udf"
+# to unblock the basic window functionality test.
 @pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/740")
 @ignore_order
-@allow_non_gpu('WindowInPandasExec', 'PythonUDF', 'WindowExpression', 'Alias', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'UnboundedPreceding$', 'UnboundedFollowing$')
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_window_aggregate_udf(data_gen):
+@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
+@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+def test_window_aggregate_udf_long(data_gen, window):
+
     @f.pandas_udf('long')
     def pandas_sum(to_process: pd.Series) -> int:
         return to_process.sum()
 
-    w = Window\
-            .partitionBy('a') \
-            .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).select(
-                pandas_sum(f.col('b')).over(w)),
-            conf=arrow_udf_conf)
+        lambda spark: binary_op_df(spark, data_gen).select(
+            pandas_sum(f.col('b')).over(window)),
+        conf=arrow_udf_conf)
 
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
+@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+def test_window_aggregate_udf(data_gen, window):
+
+    @f.pandas_udf('long')
+    def pandas_sum(to_process: pd.Series) -> int:
+        return to_process.sum()
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, data_gen).select(
+            pandas_sum(f.col('b')).over(window)),
+        conf=arrow_udf_conf)
+
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
+@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+def test_window_aggregate_udf_array_from_python(data_gen, window):
+
+    @f.pandas_udf(returnType=ArrayType(LongType()))
+    def pandas_sum(to_process: pd.Series) -> list:
+        return [to_process.sum()]
+
+    # When receiving the data of array type from Python side, split it right away
+    # in case the following expressions or plans may not support array type yet.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, data_gen)\
+            .select(pandas_sum(f.col('b')).over(window).alias('py_array'))\
+            .select([f.col('py_array').getItem(i) for i in range(0, 1)]),
+        conf=arrow_udf_conf)
+
+
+# ======= Test flat map group in Pandas =======
 @ignore_order
 @allow_non_gpu('FlatMapGroupsInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
@@ -133,10 +210,12 @@ def test_map_apply_udf(data_gen):
                     .mapInPandas(pandas_filter, schema="a long, b long"),
             conf=arrow_udf_conf)
 
+
 def create_df(spark, data_gen, left_length, right_length):
     left = binary_op_df(spark, data_gen, length=left_length)
     right = binary_op_df(spark, data_gen, length=right_length)
     return left, right
+
 
 @ignore_order
 @allow_non_gpu('FlatMapCoGroupsInPandasExec', 'PythonUDF', 'Alias')

@@ -48,7 +48,9 @@ jobs:
 
       - name: Set blackduck project version
         id: blackduck-project-version
-        run: echo "${{ fromJson(steps.pull_request_data.outputs.data).head.ref }}-${{ github.run_id }}"
+        env:
+          REF: ${{ fromJson(steps.pull_request_data.outputs.data).head.ref }}
+        run: echo "$REF-${{ github.run_id }}"
 
       - name: Update status
         uses: octokit/request-action@v2.x
@@ -76,8 +78,7 @@ jobs:
           java-version: 1.8
 
       - name: Get project data (maven)
-        run: |
-          echo ::set-env name=projects::$(mvn -am dependency:tree | grep maven-dependency-plugin | awk '{ out="com.nvidia:"$(NF-1);print out }' | grep rapids | xargs | sed -e 's/ /,/g')
+        run: echo "PROJECTS=$(mvn -am dependency:tree | grep maven-dependency-plugin | awk '{ out="com.nvidia:"$(NF-1);print out }' | grep rapids | xargs | sed -e 's/ /,/g')" >> $GITHUB_ENV
 
       - name: Add mask
         run: echo "::add-mask::${{ secrets.BLACKDUCK_URL }}"
@@ -85,13 +86,12 @@ jobs:
       - name: Run synopsys detect
         id: scan_result
         uses: blackducksoftware/github-action@2.0.1
-        env:
-          PROJECTS: ${{ env.projects }}
         with:
           args: >
             --blackduck.url="https://${{ secrets.BLACKDUCK_URL }}"
             --blackduck.api.token="${{ secrets.BLACKDUCK_API_TOKEN }}"
             --detect.maven.build.command="-pl='$PROJECTS -am'"
+            --detect.maven.included.scopes=compile
             --detect.force.success=false
             --detect.parallel.processors=0
             --detect.project.name="${{ github.repository }}"

@@ -16,17 +16,19 @@
 
 package com.nvidia.spark.rapids.tests.tpcds
 
+import com.nvidia.spark.rapids.tests.common.BenchUtils
+import com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.{csvToOrc, csvToParquet}
+import org.rogach.scallop.ScallopConf
+
 import org.apache.spark.sql.{DataFrame, DataFrameWriter, Row, SparkSession}
 import org.apache.spark.sql.types.{DateType, DoubleType, IntegerType, LongType, StringType, StructField, StructType}
-
-// scalastyle:off line.size.limit
 
 case class Table(
     name: String, // also the base name for the data
     partitionColumns: Seq[String],
     schema: StructType) {
 
-  private[this] def path(basePath: String, appendDat: Boolean = true) = {
+  private[this] def path(basePath: String, appendDat: Boolean) = {
     val rest = if (appendDat) {
       ".dat"
     } else {
@@ -35,35 +37,38 @@ case class Table(
     basePath + "/" + name + rest
   }
 
-  def readCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): DataFrame =
+  def readCSV(spark: SparkSession, basePath: String, appendDat: Boolean): DataFrame =
     spark.read.option("delimiter", "|")
         .schema(schema)
         .csv(path(basePath, appendDat))
 
-  def setupCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+  def setupCSV(spark: SparkSession, basePath: String, appendDat: Boolean): Unit =
     readCSV(spark, basePath, appendDat).createOrReplaceTempView(name)
 
-  def setupParquet(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+  def setupParquet(spark: SparkSession, basePath: String, appendDat: Boolean): Unit =
     spark.read.parquet(path(basePath, appendDat)).createOrReplaceTempView(name)
 
-  def setupOrc(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit =
+  def setupOrc(spark: SparkSession, basePath: String, appendDat: Boolean): Unit =
     spark.read.orc(path(basePath, appendDat)).createOrReplaceTempView(name)
 
   def setup(
       spark: SparkSession,
       basePath: String,
       format: String,
-      appendDat: Boolean = true): Unit = {
+      appendDat: Boolean): Unit = {
     spark.read.format(format).load(path(basePath, appendDat)).createOrReplaceTempView(name)
   }
 
   private def setupWrite(
       spark: SparkSession,
+      name: String,
       inputBase: String,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int],
       writePartitioning: Boolean): DataFrameWriter[Row] = {
-    val tmp = readCSV(spark, inputBase)
-        .write
-        .mode("overwrite")
+    val df = readCSV(spark, inputBase, appendDat = true)
+    val repart = BenchUtils.applyCoalesceRepartition(name, df, coalesce, repartition)
+    val tmp = repart.write.mode("overwrite")
     if (writePartitioning && partitionColumns.nonEmpty) {
       tmp.partitionBy(partitionColumns: _*)
     } else {
@@ -75,15 +80,23 @@ case class Table(
       spark: SparkSession,
       inputBase: String,
       outputBase: String,
-      writePartitioning: Boolean): Unit =
-    setupWrite(spark, inputBase, writePartitioning).parquet(path(outputBase))
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int],
+      writePartitioning: Boolean,
+      appendDat: Boolean): Unit =
+    setupWrite(spark, name, inputBase, coalesce, repartition, writePartitioning)
+        .parquet(path(outputBase, appendDat))
 
   def csvToOrc(
       spark: SparkSession,
       inputBase: String,
       outputBase: String,
-      writePartitioning: Boolean): Unit =
-    setupWrite(spark, inputBase, writePartitioning).orc(path(outputBase))
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int],
+      writePartitioning: Boolean,
+      appendDat: Boolean): Unit =
+    setupWrite(spark, name, inputBase, coalesce, repartition, writePartitioning)
+        .orc(path(outputBase, appendDat))
 }
 
 case class Query(name: String, query: String) {
@@ -97,44 +110,40 @@ case class Query(name: String, query: String) {
  * correctness tests auto sort the data to account for ambiguous ordering.
  */
 object TpcdsLikeSpark {
-
-  /**
-   * Main method allows us to submit using spark-submit to perform conversions from CSV to
-   * Parquet or Orc.
-   */
-  def main(arg: Array[String]): Unit = {
-    val baseInput = arg(0)
-    val baseOutput = arg(1)
-    val targetFileType = arg(2)
-    val withPartitioning = if (arg.length > 3) {
-      arg(3).toBoolean
-    } else {
-      false
-    }
-
-    val spark = SparkSession.builder.appName("TPC-DS Like File Conversion").getOrCreate()
-
-    targetFileType match {
-      case "parquet" => csvToParquet(spark, baseInput, baseOutput, withPartitioning)
-      case "orc" => csvToOrc(spark, baseInput, baseOutput, withPartitioning)
-    }
-
-  }
-
   def csvToParquet(
       spark: SparkSession,
       baseInput: String,
       baseOutput: String,
-      writePartitioning: Boolean = false): Unit = {
-    tables.foreach(_.csvToParquet(spark, baseInput, baseOutput, writePartitioning))
+      coalesce: Map[String, Int] = Map.empty,
+      repartition: Map[String, Int] = Map.empty,
+      writePartitioning: Boolean = false,
+      appendDat: Boolean = true): Unit = {
+    tables.foreach(_.csvToParquet(
+      spark,
+      baseInput,
+      baseOutput,
+      coalesce,
+      repartition,
+      writePartitioning,
+      appendDat))
   }
 
   def csvToOrc(
       spark: SparkSession,
       baseInput: String,
       baseOutput: String,
-      writePartitioning: Boolean = false): Unit = {
-    tables.foreach(_.csvToOrc(spark, baseInput, baseOutput, writePartitioning))
+      coalesce: Map[String, Int] = Map.empty,
+      repartition: Map[String, Int] = Map.empty,
+      writePartitioning: Boolean = false,
+      appendDat: Boolean = true): Unit = {
+    tables.foreach(_.csvToOrc(
+      spark,
+      baseInput,
+      baseOutput,
+      coalesce,
+      repartition,
+      writePartitioning,
+      appendDat))
   }
 
   def setupAllCSV(spark: SparkSession, basePath: String, appendDat: Boolean = true): Unit = {
@@ -704,6 +713,8 @@ object TpcdsLikeSpark {
         StructField("web_tax_percentage", DoubleType) // should be DecimalType(5, 2)
       )))
   )
+
+  // scalastyle:off line.size.limit
 
   val queries : Map[String, Query] = Array(
     Query("q1",
@@ -4688,8 +4699,51 @@ object TpcdsLikeSpark {
         |""".stripMargin)
   ).map(q => (q.name, q)).toMap
 
+  def query(name: String) = queries(name)
+
   def run(spark: SparkSession, name: String): DataFrame =
     queries(name)(spark)
 }
 
 // scalastyle:on line.size.limit
+
+object ConvertFiles {
+  /**
+   * Main method allows us to submit using spark-submit to perform conversions from CSV to
+   * Parquet or Orc.
+   */
+  def main(arg: Array[String]): Unit = {
+    val conf = new FileConversionConf(arg)
+    val spark = SparkSession.builder.appName("TPC-DS Like File Conversion").getOrCreate()
+    conf.outputFormat() match {
+      case "parquet" =>
+        csvToParquet(
+          spark,
+          conf.input(),
+          conf.output(),
+          conf.coalesce,
+          conf.repartition,
+          conf.withPartitioning())
+      case "orc" =>
+        csvToOrc(
+          spark,
+          conf.input(),
+          conf.output(),
+          conf.coalesce,
+          conf.repartition,
+          conf.withPartitioning())
+    }
+  }
+}
+
+class FileConversionConf(arguments: Seq[String]) extends ScallopConf(arguments) {
+  val input = opt[String](required = true)
+  val output = opt[String](required = true)
+  val outputFormat = opt[String](required = true)
+  val coalesce = propsLong[Int]("coalesce")
+  val repartition = propsLong[Int]("repartition")
+  val withPartitioning = opt[Boolean](default = Some(false))
+  verify()
+  BenchUtils.validateCoalesceRepartition(coalesce, repartition)
+}
+

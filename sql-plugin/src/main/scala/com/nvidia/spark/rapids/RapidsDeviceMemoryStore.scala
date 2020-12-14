@@ -20,14 +20,15 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Buffer storage using device memory.
  * @param catalog catalog to register this store
  */
-class RapidsDeviceMemoryStore(
-    catalog: RapidsBufferCatalog) extends RapidsBufferStore("GPU", catalog) {
+class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    extends RapidsBufferStore("GPU", catalog) {
   override protected def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
@@ -82,13 +83,8 @@ class RapidsDeviceMemoryStore(
       // buffer is compressed so there is no Table.
       None
     } else {
-      val batch = MetaUtils.getBatchFromMeta(buffer, tableMeta) // REFCOUNT 1 + # COLS
       // hold the 1 ref count extra in buffer, it will be removed later in releaseResources
-      try {
-        Some(GpuColumnVector.from(batch)) // batch cols have 2 ref count
-      } finally {
-        batch.close() // cols should have single references
-      }
+      Some(MetaUtils.getTableFromMeta(buffer, tableMeta)) // REFCOUNT 1 + # COLS
     }
 
     val buff = new RapidsDeviceMemoryBuffer(
@@ -134,13 +130,17 @@ class RapidsDeviceMemoryStore(
       table.foreach(_.close())
     }
 
-    override def getMemoryBuffer: MemoryBuffer = contigBuffer.slice(0, contigBuffer.getLength)
+    override def getMemoryBuffer: MemoryBuffer = {
+      contigBuffer.incRefCount()
+      contigBuffer
+    }
 
-    override def getColumnarBatch: ColumnarBatch = {
+    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {
-        GpuColumnVector.from(table.get) //REFCOUNT ++ of all columns
+        //REFCOUNT ++ of all columns
+        GpuColumnVectorFromBuffer.from(table.get, contigBuffer, sparkTypes)
       } else {
-        columnarBatchFromDeviceBuffer(contigBuffer)
+        columnarBatchFromDeviceBuffer(contigBuffer, sparkTypes)
       }
     }
   }
