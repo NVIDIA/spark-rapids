@@ -235,18 +235,19 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public Decimal getDecimal(int ordinal, int precision, int scale) {
-//    if (isNullAt(ordinal)) {
-//      return null;
-//    }
-//    if (precision <= Decimal.MAX_LONG_DIGITS()) {
-//      return Decimal.createUnsafe(getLong(ordinal), precision, scale);
-//    } else {
+    if (isNullAt(ordinal)) {
+      return null;
+    }
+    // TODO when DECIMAL32 is supported a special case will need to be added here
+    if (precision <= Decimal.MAX_LONG_DIGITS()) {
+      return Decimal.createUnsafe(getLong(ordinal), precision, scale);
+    } else {
+      throw new IllegalArgumentException("NOT IMPLEMENTED YET");
 //      byte[] bytes = getBinary(ordinal);
 //      BigInteger bigInteger = new BigInteger(bytes);
 //      BigDecimal javaDecimal = new BigDecimal(bigInteger, scale);
 //      return Decimal.apply(javaDecimal, precision, scale);
-//    }
-    throw new IllegalArgumentException("NOT IMPLEMENTED YET");
+    }
   }
 
   @Override
