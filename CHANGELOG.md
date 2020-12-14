@@ -9,31 +9,27 @@ Generated on 2020-12-14
 |[#444](https://github.com/NVIDIA/spark-rapids/issues/444)|[FEA] Plugable Cache|
 |[#1158](https://github.com/NVIDIA/spark-rapids/issues/1158)|[FEA] Better documentation on type support|
 |[#57](https://github.com/NVIDIA/spark-rapids/issues/57)|[FEA] Support INT96 for parquet reads and writes|
-|[#830](https://github.com/NVIDIA/spark-rapids/issues/830)|[FEA] commonize the version checking in the integration tests|
-|[#817](https://github.com/NVIDIA/spark-rapids/issues/817)|[FEA] Create integration test build against Dataproc|
-|[#819](https://github.com/NVIDIA/spark-rapids/issues/819)|[FEA]  Create Build and test setup for Amazon EMR|
+|[#1048](https://github.com/NVIDIA/spark-rapids/issues/1048)|[FEA] Benchmark runner should upload summary file and Spark event log to s3|
 |[#1003](https://github.com/NVIDIA/spark-rapids/issues/1003)|[FEA] Reduce overlap between RapidsHostColumnVector and RapidsHostColumnVectorCore|
 |[#913](https://github.com/NVIDIA/spark-rapids/issues/913)|[FEA] In Pluggable Cache Support CalendarInterval while creating CachedBatches|
 |[#1092](https://github.com/NVIDIA/spark-rapids/issues/1092)|In Pluggable Cache handle nested types having CalendarIntervalType and NullType|
-|[#1071](https://github.com/NVIDIA/spark-rapids/issues/1071)|[FEA] Databricks 7.3 nightly build and integration testing|
 |[#670](https://github.com/NVIDIA/spark-rapids/issues/670)|[FEA] Support NullType|
+|[#1118](https://github.com/NVIDIA/spark-rapids/issues/1118)|[FEA] Benchmark runner should set job descriptions for setup jobs versus query jobs|
 |[#50](https://github.com/NVIDIA/spark-rapids/issues/50)|[FEA] support `spark.sql.legacy.timeParserPolicy`|
 |[#1144](https://github.com/NVIDIA/spark-rapids/issues/1144)|[FEA] Remove Databricks 3.0.0 shim layer|
 |[#1096](https://github.com/NVIDIA/spark-rapids/issues/1096)|[FEA] Implement parquet CreateDataSourceTableAsSelectCommand|
 |[#688](https://github.com/NVIDIA/spark-rapids/issues/688)|[FEA] udf compiler should be auto-appended to `spark.sql.extensions`|
 |[#1038](https://github.com/NVIDIA/spark-rapids/issues/1038)|[FEA] Accelerate the data transfer for plan `WindowInPandasExec`|
 |[#502](https://github.com/NVIDIA/spark-rapids/issues/502)|[FEA] Support Databricks 7.3 LTS Runtime|
-|[#533](https://github.com/NVIDIA/spark-rapids/issues/533)|[FEA] Improve PTDS performance|
+|[#1027](https://github.com/NVIDIA/spark-rapids/issues/1027)|[FEA] BenchmarkRunner should produce JSON summary file even when queries fail|
 |[#764](https://github.com/NVIDIA/spark-rapids/issues/764)|[FEA] Sanity checks for cudf jar mismatch|
-|[#963](https://github.com/NVIDIA/spark-rapids/issues/963)|[FEA] Audit_3.0.1: AQE changes to support Columnar exchanges|
 |[#1018](https://github.com/NVIDIA/spark-rapids/issues/1018)|[FEA] Log details related to GPU memory fragmentation on GPU OOM|
 |[#619](https://github.com/NVIDIA/spark-rapids/issues/619)|[FEA] log whether libcudf and libcudfjni were built for PTDS|
-|[#955](https://github.com/NVIDIA/spark-rapids/issues/955)|[FEA] Audit_3.0.1: Check time stamp overflow bug fix impact on plugin side|
-|[#954](https://github.com/NVIDIA/spark-rapids/issues/954)|[FEA] Audit_3.0.1: Check first/last functionality changes from d669dea|
+|[#901](https://github.com/NVIDIA/spark-rapids/issues/901)|[FEA] Create Docker image(s) for benchmark data generation|
 |[#905](https://github.com/NVIDIA/spark-rapids/issues/905)|[FEA] create EMR 3.0.1 shim|
-|[#989](https://github.com/NVIDIA/spark-rapids/issues/989)|[FEA] Smoke test for RAPIDS shuffle|
-|[#945](https://github.com/NVIDIA/spark-rapids/issues/945)|[FEA] Refactor benchmark code to avoid code duplication|
+|[#902](https://github.com/NVIDIA/spark-rapids/issues/902)|[FEA] Benchmark CSV to Parquet conversion should have explicit partitioning|
 |[#838](https://github.com/NVIDIA/spark-rapids/issues/838)|[FEA] Support window count for a column|
+|[#896](https://github.com/NVIDIA/spark-rapids/issues/896)|[FEA] Benchmark utility should have option to capture Spark event log|
 |[#96](https://github.com/NVIDIA/spark-rapids/issues/96)|[FEA] window integration tests|
 |[#864](https://github.com/NVIDIA/spark-rapids/issues/864)|[FEA] config option to enable RMM arena memory resource|
 |[#430](https://github.com/NVIDIA/spark-rapids/issues/430)|[FEA] Audit: Parquet Writer support for TIMESTAMP_MILLIS|
@@ -43,14 +39,8 @@ Generated on 2020-12-14
 ### Performance
 |||
 |:---|:---|
-|[#1048](https://github.com/NVIDIA/spark-rapids/issues/1048)|[FEA] Benchmark runner should upload summary file and Spark event log to s3|
 |[#446](https://github.com/NVIDIA/spark-rapids/issues/446)|[FEA] Test jucx in 1.9.x branch|
-|[#1118](https://github.com/NVIDIA/spark-rapids/issues/1118)|[FEA] Benchmark runner should set job descriptions for setup jobs versus query jobs|
-|[#1027](https://github.com/NVIDIA/spark-rapids/issues/1027)|[FEA] BenchmarkRunner should produce JSON summary file even when queries fail|
-|[#901](https://github.com/NVIDIA/spark-rapids/issues/901)|[FEA] Create Docker image(s) for benchmark data generation|
-|[#902](https://github.com/NVIDIA/spark-rapids/issues/902)|[FEA] Benchmark CSV to Parquet conversion should have explicit partitioning|
-|[#794](https://github.com/NVIDIA/spark-rapids/issues/794)|[DOC] Write benchmarking guide|
-|[#896](https://github.com/NVIDIA/spark-rapids/issues/896)|[FEA] Benchmark utility should have option to capture Spark event log|
+|[#533](https://github.com/NVIDIA/spark-rapids/issues/533)|[FEA] Improve PTDS performance|
 |[#795](https://github.com/NVIDIA/spark-rapids/issues/795)|[FEA] Make it easier to run TPC-* benchmarks with spark-submit|
 |[#849](https://github.com/NVIDIA/spark-rapids/issues/849)|[FEA] Have GpuColumnarBatchSerializer return GpuColumnVectorFromBuffer instances|
 |[#784](https://github.com/NVIDIA/spark-rapids/issues/784)|[FEA] Allow Host Spilling to be more dynamic|
