@@ -330,7 +330,11 @@ object GpuToTimestamp extends Arm {
     "yyyy/MM/dd",
     "yyyy/MM",
     "dd/MM/yyyy",
-    "yyyy-MM-dd HH:mm:ss"
+    "yyyy-MM-dd HH:mm:ss",
+    "MM-dd",
+    "MM/dd",
+    "dd-MM",
+    "dd/MM"
   )
 
   def daysScalarSeconds(name: String): Scalar = {
