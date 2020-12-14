@@ -162,7 +162,7 @@ _confs = [_no_nans_float_conf, _no_nans_float_conf_final, _no_nans_float_conf_pa
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
 _excluded_operators_marker = pytest.mark.allow_non_gpu(
-    'HashAggregateExec', 'AggregateExpression',
+    'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
@@ -173,10 +173,18 @@ params_markers_for_confs = [
 ]
 
 
+_grpkey_small_decimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=7, scale=3, nullable=(True, 10.0)), length=50)),
+    ('b', DecimalGen(precision=5, scale=2)),
+    ('c', DecimalGen(precision=8, scale=3))]
+
+_init_list_no_nans_with_decimal = _init_list_no_nans + [
+    _grpkey_small_decimals]
+
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(

@@ -43,6 +43,7 @@ class GpuSortMeta(
 
   override def isSupportedType(t: DataType): Boolean =
     GpuOverrides.isSupportedType(t,
+      allowDecimal = conf.decimalTypeEnabled,
       allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
