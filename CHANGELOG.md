@@ -1,5 +1,5 @@
 # Change log
-Generated on 2020-12-11
+Generated on 2020-12-14
 
 ## Release 0.3
 
@@ -13,8 +13,8 @@ Generated on 2020-12-11
 |[#817](https://github.com/NVIDIA/spark-rapids/issues/817)|[FEA] Create integration test build against Dataproc|
 |[#819](https://github.com/NVIDIA/spark-rapids/issues/819)|[FEA]  Create Build and test setup for Amazon EMR|
 |[#1003](https://github.com/NVIDIA/spark-rapids/issues/1003)|[FEA] Reduce overlap between RapidsHostColumnVector and RapidsHostColumnVectorCore|
-|[#913](https://github.com/NVIDIA/spark-rapids/issues/913)|[FEA] Support CalendarInterval while creating CachedBatches|
-|[#1092](https://github.com/NVIDIA/spark-rapids/issues/1092)|Handle nested types having CalendarIntervalType and NullType|
+|[#913](https://github.com/NVIDIA/spark-rapids/issues/913)|[FEA] In Pluggable Cache Support CalendarInterval while creating CachedBatches|
+|[#1092](https://github.com/NVIDIA/spark-rapids/issues/1092)|In Pluggable Cache handle nested types having CalendarIntervalType and NullType|
 |[#1071](https://github.com/NVIDIA/spark-rapids/issues/1071)|[FEA] Databricks 7.3 nightly build and integration testing|
 |[#670](https://github.com/NVIDIA/spark-rapids/issues/670)|[FEA] Support NullType|
 |[#50](https://github.com/NVIDIA/spark-rapids/issues/50)|[FEA] support `spark.sql.legacy.timeParserPolicy`|
@@ -120,6 +120,7 @@ Generated on 2020-12-11
 ### PRs
 |||
 |:---|:---|
+|[#1376](https://github.com/NVIDIA/spark-rapids/pull/1376)|MetaUtils.getBatchFromMeta should return batches with GpuColumnVectorFromBuffer|
 |[#1358](https://github.com/NVIDIA/spark-rapids/pull/1358)|auto-merge: instant merge after creation [skip ci]|
 |[#1359](https://github.com/NVIDIA/spark-rapids/pull/1359)|Use SortOrder from shims.|
 |[#1343](https://github.com/NVIDIA/spark-rapids/pull/1343)|Do not run UDFs when the partition is empty.|
