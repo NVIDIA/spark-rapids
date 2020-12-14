@@ -30,7 +30,6 @@ Generated on 2020-12-14
 |[#902](https://github.com/NVIDIA/spark-rapids/issues/902)|[FEA] Benchmark CSV to Parquet conversion should have explicit partitioning|
 |[#838](https://github.com/NVIDIA/spark-rapids/issues/838)|[FEA] Support window count for a column|
 |[#896](https://github.com/NVIDIA/spark-rapids/issues/896)|[FEA] Benchmark utility should have option to capture Spark event log|
-|[#96](https://github.com/NVIDIA/spark-rapids/issues/96)|[FEA] window integration tests|
 |[#864](https://github.com/NVIDIA/spark-rapids/issues/864)|[FEA] config option to enable RMM arena memory resource|
 |[#430](https://github.com/NVIDIA/spark-rapids/issues/430)|[FEA] Audit: Parquet Writer support for TIMESTAMP_MILLIS|
 |[#818](https://github.com/NVIDIA/spark-rapids/issues/818)|[FEA] Create shim layer for EMR|
