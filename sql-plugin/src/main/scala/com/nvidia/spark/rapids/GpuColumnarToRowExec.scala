@@ -51,6 +51,8 @@ class AcceleratedColumnarToRowIterator(
 
   // for packMap the nth entry is the index of the original input column that we want at
   // the nth entry.
+  // TODO When we support DECIMAL32 we will need to add in a special case here
+  //  because defaultSize of DecimalType does not take that into account.
   private val packMap: Array[Int] = schema
       .zipWithIndex
       .sortWith(_._1.dataType.defaultSize > _._1.dataType.defaultSize)
@@ -242,7 +244,7 @@ object CudfRowTransitions {
   def isSupportedType(dataType: DataType): Boolean = dataType match {
     // Only fixed width for now...
     case ByteType | ShortType | IntegerType | LongType |
-         FloatType | DoubleType | BooleanType | DateType | TimestampType => true
+         FloatType | DoubleType | BooleanType | DateType | TimestampType | _: DecimalType => true
     case _ => false
   }
 
