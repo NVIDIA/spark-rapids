@@ -23,6 +23,8 @@ import ai.rapids.cudf.Table;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
+import java.util.Arrays;
+
 /** GPU column vector carved from a single buffer, like those from cudf's contiguousSplit. */
 public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
   private final DeviceMemoryBuffer buffer;
@@ -35,11 +37,31 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
    * both the table that is passed in and the batch returned to be sure that there are no leaks.
    *
    * @param contigTable contiguous table
+   * @param colTypes the types of the columns to get back out.
    * @return batch of GpuColumnVectorFromBuffer instances derived from the table
    */
-  public static ColumnarBatch from(ContiguousTable contigTable) {
+  public static ColumnarBatch from(ContiguousTable contigTable, DataType[] colTypes) {
     DeviceMemoryBuffer buffer = contigTable.getBuffer();
     Table table = contigTable.getTable();
+    return from(table, buffer, colTypes);
+  }
+
+  /**
+   * Get a ColumnarBatch from a set of columns in a table, and the corresponding device buffer,
+   * which backs such columns. The resulting batch is composed of columns which are instances of
+   * GpuColumnVectorFromBuffer. This will increment the reference count for all columns
+   * converted so you will need to close both the table that is passed in and the batch
+   * returned to be sure that there are no leaks.
+   *
+   * @param table a table with columns at offsets of `buffer`
+   * @param buffer a device buffer that packs data for columns in `table`
+   * @param colTypes the types the columns should have.
+   * @return batch of GpuColumnVectorFromBuffer instances derived from the table and buffer
+   */
+  public static ColumnarBatch from(Table table, DeviceMemoryBuffer buffer, DataType[] colTypes) {
+    assert table != null : "Table cannot be null";
+    assert GpuColumnVector.typeConversionAllowed(table, colTypes) :
+        "Type conversion is not allowed from " + table + " to " + Arrays.toString(colTypes);
     long rows = table.getRowCount();
     if (rows != (int) rows) {
       throw new IllegalStateException("Cannot support a batch larger that MAX INT rows");
@@ -49,7 +71,7 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
     try {
       for (int i = 0; i < numColumns; ++i) {
         ColumnVector v = table.getColumn(i);
-        DataType type = getSparkTypeFrom(v);
+        DataType type = colTypes[i];
         columns[i] = new GpuColumnVectorFromBuffer(type, v.incRefCount(), buffer);
       }
       return new ColumnarBatch(columns, (int) rows);
@@ -78,7 +100,7 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
    * @param cudfColumn a ColumnVector instance
    * @param buffer the buffer to hold
    */
-  private GpuColumnVectorFromBuffer(DataType type, ColumnVector cudfColumn,
+  public GpuColumnVectorFromBuffer(DataType type, ColumnVector cudfColumn,
       DeviceMemoryBuffer buffer) {
     super(type, cudfColumn);
     this.buffer = buffer;

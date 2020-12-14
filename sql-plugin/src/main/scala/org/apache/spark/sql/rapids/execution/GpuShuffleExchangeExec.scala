@@ -20,6 +20,7 @@ import scala.collection.AbstractIterator
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_OUTPUT_BATCHES, DESCRIPTION_NUM_OUTPUT_ROWS, DESCRIPTION_NUM_PARTITIONS, DESCRIPTION_PARTITION_SIZE, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, NUM_PARTITIONS, PARTITION_SIZE}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -33,7 +34,8 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuShuffleDependency
+import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -55,11 +57,15 @@ class GpuShuffleMeta(
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
   }
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
+
   override def convertToGpu(): GpuExec =
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
       childParts(0).convertToGpu(),
       childPlans(0).convertIfNeeded(),
-      shuffle.canChangeNumPartitions)
+      Some(shuffle))
 }
 
 /**
@@ -69,10 +75,10 @@ abstract class GpuShuffleExchangeExecBase(
     override val outputPartitioning: Partitioning,
     child: SparkPlan) extends Exchange with GpuExec {
 
-  /**
-   * Lots of small output batches we want to group together.
-   */
-  override def coalesceAfter: Boolean = true
+  // Shuffle produces a lot of small output batches that should be coalesced together.
+  // This coalesce occurs on the GPU and should always be done when using RAPIDS shuffle.
+  // Normal shuffle performs the coalesce on the CPU to optimize the transfers to the GPU.
+  override def coalesceAfter: Boolean = GpuShuffleEnv.isRapidsShuffleEnabled
 
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
@@ -81,6 +87,16 @@ abstract class GpuShuffleExchangeExecBase(
   override lazy val additionalMetrics : Map[String, SQLMetric] = Map(
     "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
   ) ++ readMetrics ++ writeMetrics
+
+  // Spark doesn't report totalTime for this operator so we override metrics
+  override lazy val metrics: Map[String, SQLMetric] = Map(
+    PARTITION_SIZE ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_PARTITION_SIZE),
+    NUM_PARTITIONS ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_PARTITIONS),
+    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES)
+  ) ++ additionalMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
 
@@ -97,8 +113,12 @@ abstract class GpuShuffleExchangeExecBase(
     throw new IllegalStateException()
   }
 
-  private val serializer: Serializer =
-    new GpuColumnarBatchSerializer(child.output.size, longMetric("dataSize"))
+  private lazy val sparkTypes: Array[DataType] = child.output.map(_.dataType).toArray
+
+  // This value must be lazy because the child's output may not have been resolved
+  // yet in all cases.
+  private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
+    longMetric("dataSize"))
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -113,6 +133,7 @@ abstract class GpuShuffleExchangeExecBase(
       inputBatchRDD,
       child.output,
       outputPartitioning,
+      sparkTypes,
       serializer,
       metrics,
       writeMetrics,
@@ -141,6 +162,7 @@ object GpuShuffleExchangeExec {
       rdd: RDD[ColumnarBatch],
       outputAttributes: Seq[Attribute],
       newPartitioning: Partitioning,
+      sparkTypes: Array[DataType],
       serializer: Serializer,
       metrics: Map[String, SQLMetric],
       writeMetrics: Map[String, SQLMetric],
@@ -234,6 +256,7 @@ object GpuShuffleExchangeExec {
     new GpuShuffleDependency[Int, ColumnarBatch, ColumnarBatch](
       rddWithPartitionIds,
       new BatchPartitionIdPassthrough(newPartitioning.numPartitions),
+      sparkTypes,
       serializer,
       shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics),
       metrics = additionalMetrics)

@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.math.RoundingMode
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -29,6 +30,7 @@ import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
 class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   private def buildContiguousTable(): ContiguousTable = {
@@ -36,6 +38,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
         .column("five", "two", null, null)
         .column(5.0, 2.0, 3.0, 1.0)
+        .decimal64Column(-5, RoundingMode.UNNECESSARY, 0, null, -1.4, 10.123)
         .build()) { table =>
       table.contiguousSplit()(0)
     }
@@ -63,9 +66,10 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val spillPriority = 3
       val bufferId = MockRapidsBufferId(7)
-      val meta = closeOnExcept(buildContiguousTable()) { ct =>
+      val meta = withResource(buildContiguousTable()) { ct =>
         val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
         // store takes ownership of the buffer
+        ct.getBuffer.incRefCount()
         store.addBuffer(bufferId, ct.getBuffer, meta, spillPriority)
         meta
       }
@@ -82,11 +86,12 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val bufferId = MockRapidsBufferId(7)
-      closeOnExcept(buildContiguousTable()) { ct =>
+      withResource(buildContiguousTable()) { ct =>
         withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedHostBuffer =>
           expectedHostBuffer.copyFromDeviceBuffer(ct.getBuffer)
           val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
           // store takes ownership of the buffer
+          ct.getBuffer.incRefCount()
           store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
           withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             withResource(buffer.getMemoryBuffer.asInstanceOf[DeviceMemoryBuffer]) { devbuf =>
@@ -103,18 +108,22 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
 
   test("get column batch") {
     val catalog = new RapidsBufferCatalog
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val bufferId = MockRapidsBufferId(7)
-      closeOnExcept(buildContiguousTable()) { ct =>
-        withResource(GpuColumnVector.from(ct.getTable)) { expectedBatch =>
-          val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
-          // store takes ownership of the buffer
-          store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
-          withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-            withResource(buffer.getColumnarBatch) { actualBatch =>
-              TestUtils.compareBatches(expectedBatch, actualBatch)
+      withResource(buildContiguousTable()) { ct =>
+        withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
+          expectedBatch =>
+            val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
+            // store takes ownership of the buffer
+            ct.getBuffer.incRefCount()
+            store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
+            withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+              withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
+                TestUtils.compareBatches(expectedBatch, actualBatch)
+              }
             }
-          }
         }
       }
     }

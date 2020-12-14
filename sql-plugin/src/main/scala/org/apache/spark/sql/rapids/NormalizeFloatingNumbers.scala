@@ -16,11 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{AbstractDataType, DataType, DoubleType, FloatType, TypeCollection}
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // This will ensure that:
 //  - input NaNs become Float.NaN, or Double.NaN
@@ -33,6 +33,6 @@ case class GpuNormalizeNaNAndZero(child: Expression) extends GpuUnaryExpression
 
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(FloatType, DoubleType))
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
-    GpuColumnVector.from(input.getBase.normalizeNANsAndZeros())
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.normalizeNANsAndZeros()
 }

@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from conftest import is_databricks_runtime
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
@@ -60,6 +61,16 @@ _grpkey_floats_with_nulls = [
 # grouping strings with nulls present
 _grpkey_strings_with_nulls = [
     ('a', RepeatSeqGen(StringGen(pattern='[0-9]{0,30}'), length= 20)),
+    ('b', IntegerGen()),
+    ('c', LongGen())]
+# grouping strings with nulls present, and null value
+_grpkey_strings_with_extra_nulls = [
+    ('a', RepeatSeqGen(StringGen(pattern='[0-9]{0,30}'), length= 20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]
+# grouping NullType
+_grpkey_nulls = [
+    ('a', NullGen()),
     ('b', IntegerGen()),
     ('c', LongGen())]
 
@@ -111,7 +122,9 @@ _init_list_no_nans = [
     _grpkey_longs_with_nulls,
     _grpkey_dbls_with_nulls,
     _grpkey_floats_with_nulls,
-    _grpkey_strings_with_nulls]
+    _grpkey_strings_with_nulls,
+    _grpkey_nulls,
+    _grpkey_strings_with_extra_nulls]
 
 # List of schemas with NaNs included
 _init_list_with_nans_and_no_nans = [
@@ -348,3 +361,51 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # TODO: Literal tests
 # TODO: First and Last tests
+
+# REDUCTIONS
+
+non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
+        # https://github.com/NVIDIA/spark-rapids/issues/84 in the ordering
+        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
+
+@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+def test_generic_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            # Coalesce and sort are to make sure that first and last, which are non-deterministic
+            # become deterministic
+            lambda spark : binary_op_df(spark, data_gen)\
+                    .coalesce(1)\
+                    .sortWithinPartitions('b').selectExpr(
+                'min(a)',
+                'max(a)',
+                'first(a)',
+                'last(a)',
+                'count(a)',
+                'count(1)'),
+            conf = _no_nans_float_conf)
+
+@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+def test_distinct_count_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'count(DISTINCT a)'))
+
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/837')
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_distinct_float_count_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'count(DISTINCT a)'))
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+def test_arithmetic_reductions(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'sum(a)',
+                'avg(a)'),
+            conf = _no_nans_float_conf)
+

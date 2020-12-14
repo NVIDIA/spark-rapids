@@ -14,6 +14,7 @@
 
 import copy
 from datetime import date, datetime, timedelta, timezone
+from decimal import *
 import math
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -208,6 +209,33 @@ class IntegerGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
+class DecimalGen(DataGen):
+    """Generate Decimals, with some built in corner cases."""
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
+        if precision is None:
+            #Maximum number of decimal digits a Long can represent is 18
+            precision = 18
+            scale = 0
+        DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
+        DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
+        special_cases = [Decimal('0'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
+        super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
+        self._scale = scale
+        self._precision = precision
+        pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._precision) + ',' + str(self._scale) + ')'
+
+    def start(self, rand):
+        strs = self.base_strs
+        try:
+            length = int(len(strs))
+        except OverflowError:
+            length = _MAX_CHOICES
+        self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
+
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):
@@ -230,6 +258,9 @@ class RepeatSeqGen(DataGen):
         self._vals = []
         self._length = length
         self._index = 0
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child) + ')'
 
     def _loop_values(self):
         ret = self._vals[self._index]
@@ -362,6 +393,9 @@ class StructGen(DataGen):
         super().__init__(StructType(tmp), nullable=nullable, special_cases=special_cases)
         self.children = children
 
+    def __repr__(self):
+        return super().__repr__() + '(' + ','.join([str(i) for i in self.children]) + ')'
+
     def start(self, rand):
         for name, child in self.children:
             child.start(rand)
@@ -476,11 +510,14 @@ class TimestampGen(DataGen):
 
 class ArrayGen(DataGen):
     """Generate Arrays of data."""
-    def __init__(self, child_gen, min_length=0, max_length=100, nullable=True):
+    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True):
         super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
         self._min_length = min_length
         self._max_length = max_length
         self._child_gen = child_gen
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child_gen) + ')'
 
     def start(self, rand):
         self._child_gen.start(rand)
@@ -488,6 +525,45 @@ class ArrayGen(DataGen):
             length = rand.randint(self._min_length, self._max_length)
             return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)
+
+    def contains_ts(self):
+        return self._child_gen.contains_ts()
+
+class MapGen(DataGen):
+    """Generate a Map"""
+    def __init__(self, key_gen, value_gen, min_length=0, max_length=20, nullable=True, special_cases=[]):
+        # keys cannot be nullable
+        assert not key_gen.nullable
+        self._min_length = min_length
+        self._max_length = max_length
+        self._key_gen = key_gen
+        self._value_gen = value_gen
+        super().__init__(MapType(key_gen.data_type, value_gen.data_type, valueContainsNull=value_gen.nullable), nullable=nullable, special_cases=special_cases)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._key_gen) + ',' + str(self._value_gen) + ')'
+
+    def start(self, rand):
+        self._key_gen.start(rand)
+        self._value_gen.start(rand)
+        def make_dict():
+            length = rand.randint(self._min_length, self._max_length)
+            return {self._key_gen.gen(): self._value_gen.gen() for idx in range(0, length)}
+        self._start(rand, make_dict)
+
+    def contains_ts(self):
+        return self._key_gen.contains_ts() or self._value_gen.contains_ts()
+
+
+class NullGen(DataGen):
+    """Generate NullType values"""
+    def __init__(self):
+        super().__init__(NullType(), nullable=True)
+
+    def start(self, rand):
+        def make_null():
+            return None
+        self._start(rand, make_null)
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
@@ -533,12 +609,24 @@ def _gen_scalars_common(data_gen, count, seed=0):
 
 def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values."""
+    if force_no_nulls:
+        assert(not isinstance(data_gen, NullGen))
     src = _gen_scalars_common(data_gen, count, seed=seed)
     return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""
     v = list(gen_scalars(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
+    return v[0]
+
+def gen_scalar_values(data_gen, count, seed=0, force_no_nulls=False):
+    """Generate scalar values."""
+    src = _gen_scalars_common(data_gen, count, seed=seed)
+    return (src.gen(force_no_nulls=force_no_nulls) for i in range(0, count))
+
+def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
+    """Generate a single scalar value."""
+    v = list(gen_scalar_values(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
 
 def debug_df(df):
@@ -592,6 +680,13 @@ def to_cast_string(spark_type):
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
+def get_null_lit_string(spark_type):
+    if isinstance(spark_type, NullType):
+        return 'null'
+    else:
+        string_type = to_cast_string(spark_type)
+        return 'CAST(null as {})'.format(string_type)
+
 def _convert_to_sql(t, data):
     if isinstance(data, str):
         d = "'" + data.replace("'", "\\'") + "'"
@@ -607,6 +702,9 @@ def _convert_to_sql(t, data):
 def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
     src = _gen_scalars_common(data_gen, count, seed=seed)
+    if isinstance(data_gen, NullGen):
+        assert not force_no_nulls
+        return ('null' for i in range(0, count))
     string_type = to_cast_string(data_gen.data_type)
     return (_convert_to_sql(string_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
@@ -620,28 +718,73 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
+decimal_gen_default = DecimalGen()
+decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
+decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
+decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
+
+null_gen = NullGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
+
 integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 # A lot of mathematical expressions only support a double as input
 # by parametrizing even for a single param for the test it makes the tests consistent
 double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
+decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
+        decimal_gen_same_scale_precision]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+# TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
+# TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality
 eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen]
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+
+# Include decimal type while testing equalTo and notEqualTo
+eq_gens_with_decimal_gen =  eq_gens + decimal_gens
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
 
 boolean_gens = [boolean_gen]
+
+single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
+
+# Be careful to not make these too large of data generation takes for ever
+# This is only a few nested array gens, because nesting can be very deep
+nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+        ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+        ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+# Some array gens, but not all because of nesting
+array_gens_sample = single_level_array_gens + nested_array_gens_sample
+
+# all of the basic types in a single struct
+all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
+
+# Some struct gens, but not all because of nesting
+struct_gens_sample = [all_basic_struct_gen,
+        StructGen([['child0', byte_gen]]),
+        StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+        StringGen(), max_length=10)
+
+# Some map gens, but not all because of nesting
+map_gens_sample = [simple_string_to_string_map_gen,
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+        MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+        MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+
+allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}

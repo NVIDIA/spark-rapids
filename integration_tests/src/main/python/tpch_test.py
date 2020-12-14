@@ -111,6 +111,7 @@ def test_tpch_q14(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q14"), conf=conf)
 
+@approximate_float
 #fp sum does not work on Q15
 @allow_non_gpu(any=True)
 @pytest.mark.parametrize('conf', [_base_conf, _adaptive_conf])

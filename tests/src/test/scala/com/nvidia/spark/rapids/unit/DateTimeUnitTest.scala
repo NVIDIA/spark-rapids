@@ -20,7 +20,7 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuLiteral, GpuUnitTests}
 
 import org.apache.spark.sql.rapids.{GpuDateAdd, GpuDateSub}
-import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.types.{DataTypes, DateType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class DateTimeUnitTest extends GpuUnitTests {
@@ -31,15 +31,16 @@ class DateTimeUnitTest extends GpuUnitTests {
 
   test("test date_add") {
     withResource(GpuColumnVector.from(ColumnVector.daysFromInts(-1498, 17746, 19412,
-      -13498, 1746))) { expected0 =>
+      -13498, 1746), DateType)) { expected0 =>
       withResource(GpuColumnVector.from(ColumnVector.daysFromInts(-1526, 17748, 19388,
-        -13519, 1722))) { expected1 =>
+        -13519, 1722), DateType)) { expected1 =>
         withResource(GpuColumnVector.from(ColumnVector.daysFromInts(17676, 17706, 17680,
-          17683, 17680))) { expected2 =>
+          17683, 17680), DateType)) { expected2 =>
 
-          withResource(GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*))) {
+          withResource(GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*), DateType)) {
             datesVector =>
-              withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6))) {
+              withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6),
+                IntegerType)) {
                 daysVector =>
                   val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
                   val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)
@@ -66,15 +67,16 @@ class DateTimeUnitTest extends GpuUnitTests {
 
   test("test date_sub") {
     withResource(GpuColumnVector.from(ColumnVector.daysFromInts(-1558, 17686, 19352, -13558,
-      1686))) { expected0 =>
+      1686), DateType)) { expected0 =>
       withResource(GpuColumnVector.from(ColumnVector.daysFromInts(-1530, 17684, 19376,
-        -13537, 1710))) { expected1 =>
+        -13537, 1710), DateType)) { expected1 =>
         withResource(GpuColumnVector.from(ColumnVector.daysFromInts(17672, 17642, 17668,
-          17665, 17668))) { expected2 =>
+          17665, 17668), DateType)) { expected2 =>
 
-          withResource(GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*))) {
+          withResource(GpuColumnVector.from(ColumnVector.daysFromInts(TIMES_DAY: _*), DateType)) {
             datesVector =>
-              withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6))) {
+              withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6),
+                IntegerType)) {
                 daysVector =>
                   val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
                   val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)

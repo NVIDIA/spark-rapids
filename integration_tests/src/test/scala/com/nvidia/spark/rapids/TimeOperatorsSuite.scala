@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions._
 
 class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
@@ -28,7 +29,8 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual(
-      "Test from_unixtime with alternative month and two digit year", datesPostEpochDf) {
+      "Test from_unixtime with alternative month and two digit year", datesPostEpochDf,
+      conf = new SparkConf().set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")) {
     frame => frame.select(from_unixtime(col("dates"),"dd/LL/yy HH:mm:ss.SSSSSS"))
   }
 

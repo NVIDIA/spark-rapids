@@ -127,6 +127,7 @@ case class GpuGenerateExec(
     val numOtherColumns = boundOthersProjectList.length
     val numExplodeColumns = if (includePos) 2 else 1
 
+    val outputSchema = output.map(_.dataType).toArray
     child.executeColumnar().mapPartitions { it =>
       new Iterator[ColumnarBatch] {
         var currentBatch: ColumnarBatch = _
@@ -181,7 +182,7 @@ case class GpuGenerateExec(
                 indexIntoData += 1
                 numOutputBatches += 1
                 numOutputRows += table.getRowCount
-                GpuColumnVector.from(table)
+                GpuColumnVector.from(table, outputSchema)
               }
             } finally {
               result.safeClose()

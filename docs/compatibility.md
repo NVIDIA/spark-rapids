@@ -48,22 +48,34 @@ floating point aggregations are off by default but can be enabled with the confi
 
 Additionally, some aggregations on floating point columns that contain `NaN` can produce
 incorrect results. More details on this behavior can be found
-[here](https://github.com/NVIDIA/spark-rapids/issues/87)
+[here](https://github.com/NVIDIA/spark-rapids/issues/87),
+[here](https://github.com/NVIDIA/spark-rapids/issues/837),
 and in this cudf [feature request](https://github.com/rapidsai/cudf/issues/4753).
 If it is known with certainty that the floating point columns do not contain `NaN`,
 set [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to `false` to run GPU enabled
 aggregations on them.
 
+In the case of a distinct count on `NaN` values the 
+[issue](https://github.com/NVIDIA/spark-rapids/issues/837) only shows up if you have different
+`NaN` values. There are several different binary values that are all considered to be `NaN` by
+floating point. The plugin treats all of these as the same value, where as Spark treats them
+all as different values. Because this is considered to be rare we do not disable distinct count
+for floating point values even if [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) is `true`.
+
 ### `0.0` vs `-0.0`
 
-Floating point allows zero to be encoded as `0.0` and `-0.0`, but the standard says that
+Floating point allows zero to be encoded as `0.0` and `-0.0`, but the IEEE standard says that
 they should be interpreted as the same. Most databases normalize these values to always
 be `0.0`. Spark does this in some cases but not all as is documented
 [here](https://issues.apache.org/jira/browse/SPARK-32110). The underlying implementation of
 this plugin treats them as the same for essentially all processing. This can result in some
 differences with Spark for operations like
 [sorting](https://github.com/NVIDIA/spark-rapids/issues/84),
+[distinct count](https://github.com/NVIDIA/spark-rapids/issues/837),
 [joins, and comparisons](https://github.com/NVIDIA/spark-rapids/issues/294).
+
+We do not disable operations that produce different results due to `-0.0` in the data because
+it is considered to be a rare occurrence.
 
 ## Unicode
 
@@ -99,7 +111,7 @@ supported for other types.
 
 ### CSV Dates
 Parsing a `timestamp` as a `date` does not work. The details are documented in this
-[issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+[issue](https://github.com/NVIDIA/spark-rapids/issues/869).
 
 Only a limited set of formats are supported when parsing dates.
 
@@ -115,10 +127,9 @@ Only a limited set of formats are supported when parsing dates.
 The reality is that all of these formats are supported at the same time. The plugin
 will only disable itself if you set a format that it does not support.
 
-### CSV Timestamps
-The CSV parser only works for timestamps that are after 1902 and before the end of 2038.
-This is documented in this [issue](https://github.com/NVIDIA/spark-rapids/issues/122).
+As a work around you can parse the column as a timestamp and then cast it to a date.
 
+### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone
 information, despite the format asking for a `XXX` or `[XXX]`. As such it is off by
 default and you can enable it by setting 
@@ -182,12 +193,6 @@ timestamps are read incorrectly before the Gregorian calendar transition as desc
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
 
-Apache Spark 3.0 defaults to writing Parquet timestamps in the deprecated INT96 format. The plugin
-does not support writing timestamps in the INT96 format, so by default writing timestamp columns to
-Parquet will not be GPU-accelerated. If the INT96 timestamp format is not required for
-compatibility with other tools then set `spark.sql.parquet.outputTimestampType` to
-`TIMESTAMP_MICROS`.
-
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing 
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to 
 fall back to the CPU when reading an unsupported compression format, and will error out 
@@ -205,6 +210,36 @@ the end of the string.  This will be fixed in a future release. The issue is [he
 Spark stores timestamps internally relative to the JVM time zone.  Converting an
 arbitrary timestamp between time zones is not currently supported on the GPU. Therefore operations
 involving timestamps will only be GPU-accelerated if the time zone used by the JVM is UTC.
+
+## Window Functions
+
+Because of ordering differences between the CPU and the GPU window functions especially row based
+window functions like `row_number`, `lead`, and `lag` can produce different results if the ordering
+includes both `-0.0` and `0.0`, or if the ordering is ambiguous. Spark can produce
+different results from one run to another if the ordering is ambiguous on a window function too.
+
+## Parsing strings as dates or timestamps
+
+When converting strings to dates or timestamps using functions like `to_date` and `unix_timestamp`,
+only a subset of possible formats are supported on GPU with full compatibility with Spark. The
+supported formats are:
+
+- `dd/MM/yyyy`
+- `yyyy/MM`
+- `yyyy/MM/dd`
+- `yyyy-MM`
+- `yyyy-MM-dd`
+- `yyyy-MM-dd HH:mm:ss`
+
+Other formats may result in incorrect results and will not run on the GPU by default. Some
+specific issues with other formats are:
+
+- Spark supports partial microseconds but the plugin does not
+- The plugin will produce incorrect results for input data that is not in the correct format in
+some cases
+
+To enable all formats on GPU, set
+[`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled) to `true`.
 
 ## Casting between types
 
@@ -284,10 +319,10 @@ Casting from string to timestamp currently has the following limitations.
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
  
 ## UDF to Catalyst Expressions
-To speedup the process of UDF, spark-rapids introduces a udf-compiler extension to translate UDFs to Catalyst expressions.
+To speedup the process of UDF, spark-rapids introduces a udf-compiler extension to translate UDFs to Catalyst expressions. 
 
 To enable this operation on the GPU, set
-[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) to `true`, and `spark.sql.extensions=com.nvidia.spark.udf.Plugin`.
+[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) to `true`.
 
 However, Spark may produce different results for a compiled udf and the non-compiled. For example: a udf of `x/y` where `y` happens to be `0`, the compiled catalyst expressions will return `NULL` while the original udf would fail  the entire job with a `java.lang.ArithmeticException: / by zero`
 
@@ -333,6 +368,7 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | log(x)                                                   |
 |                          | log10(x)                                                 |
 |                          | sqrt(x)                                                  |
+|                          | x.isNaN                                                  |
 | Type Cast                | *                                                        |
 | String                   | lhs + rhs                                                |
 |                          | lhs.equalsIgnoreCase(String rhs)                         |
@@ -369,3 +405,18 @@ When translating UDFs to Catalyst expressions, the supported UDF functions are l
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getHour       |
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getMinute     |
 |                          | LocalDateTime.parse(x, DateTimeFormatter.ofPattern(pattern)).getSecond     |
+| Empty array creation     | Array.empty[Boolean]                                     |
+|                          | Array.empty[Byte]                                        |
+|                          | Array.empty[Short]                                       |
+|                          | Array.empty[Int]                                         |
+|                          | Array.empty[Long]                                        |
+|                          | Array.empty[Float]                                       |
+|                          | Array.empty[Double]                                      |
+|                          | Array.empty[String]                                      |
+| Arraybuffer              | new ArrayBuffer()                                        |
+|                          | x.distinct                                               |
+|                          | x.toArray                                                |
+|                          | lhs += rhs                                               |
+|                          | lhs :+ rhs                                               |
+| Method call              | Only if the method being called <ol><li>consists of operations supported by the UDF compiler, and</li><li>is one of the folllowing:<ul><li>a final method, or</li><li>a method in a final class, or</li><li>a method in a final object</li></ul></li></ol> |
+

@@ -69,6 +69,21 @@ trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
     }
   }
 
+  // If we have a single batch streamed in then we will produce a single batch of output
+  // otherwise it can get smaller or bigger, we just don't know.  When we support out of
+  // core joins this will change
+  override def outputBatching: CoalesceGoal = {
+    val batching = buildSide match {
+      case BuildLeft => GpuExec.outputBatching(right)
+      case BuildRight => GpuExec.outputBatching(left)
+    }
+    if (batching == RequireSingleBatch) {
+      RequireSingleBatch
+    } else {
+      null
+    }
+  }
+
   protected lazy val (gpuBuildKeys, gpuStreamedKeys) = {
     require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
       "Join keys from two sides should have same types")
@@ -161,8 +176,6 @@ trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
 
   /**
    * Filter the builtBatch if needed.  builtBatch will be closed.
-   * @param builtBatch
-   * @return
    */
   def filterBuiltTableIfNeeded(builtBatch: ColumnarBatch): ColumnarBatch =
     if (shouldFilterBuiltTableForNulls) {
@@ -184,6 +197,7 @@ trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
       numOutputRows: SQLMetric,
       joinOutputRows: SQLMetric,
       numOutputBatches: SQLMetric,
+      streamTime: SQLMetric,
       joinTime: SQLMetric,
       filterTime: SQLMetric,
       totalTime: SQLMetric): Iterator[ColumnarBatch] = {
@@ -200,20 +214,24 @@ trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
       }
 
       override def hasNext: Boolean = {
-        while (nextCb.isEmpty && (first || stream.hasNext)) {
+        var mayContinue = true
+        while (nextCb.isEmpty && mayContinue) {
+          val startTime = System.nanoTime()
           if (stream.hasNext) {
             val cb = stream.next()
-            val startTime = System.nanoTime()
+            streamTime += (System.nanoTime() - startTime)
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
           } else if (first) {
             // We have to at least try one in some cases
-            val startTime = System.nanoTime()
             val cb = GpuColumnVector.emptyBatch(streamedPlan.output.asJava)
+            streamTime += (System.nanoTime() - startTime)
             nextCb = doJoin(builtTable, cb, boundCondition, joinOutputRows, numOutputRows,
               numOutputBatches, joinTime, filterTime)
             totalTime += (System.nanoTime() - startTime)
+          } else {
+            mayContinue = false
           }
           first = false
         }
@@ -298,9 +316,9 @@ trait GpuHashJoin extends GpuExec with HashJoinWithoutCodegen {
           s" supported")
     }
     try {
-      val result = joinIndices.map(joinIndex =>
-        GpuColumnVector.from(joinedTable.getColumn(joinIndex).incRefCount()))
-        .toArray[ColumnVector]
+      val result = joinIndices.zip(output).map { case (joinIndex, outAttr) =>
+        GpuColumnVector.from(joinedTable.getColumn(joinIndex).incRefCount(), outAttr.dataType)
+      }.toArray[ColumnVector]
 
       new ColumnarBatch(result, joinedTable.getRowCount.toInt)
     } finally {

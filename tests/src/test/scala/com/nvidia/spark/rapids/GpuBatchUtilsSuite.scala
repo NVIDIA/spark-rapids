@@ -24,7 +24,7 @@ import org.scalatest.FunSuite
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
-import org.apache.spark.sql.types.{DataType, DataTypes, StructField, StructType}
+import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType, StructField, StructType}
 import org.apache.spark.unsafe.types.UTF8String
 
 class GpuBatchUtilsSuite extends FunSuite {
@@ -40,6 +40,11 @@ class GpuBatchUtilsSuite extends FunSuite {
   ))
 
   val binarySchema = new StructType(Array(
+    StructField("c0", DataTypes.StringType, nullable = true),
+    StructField("c0", DataTypes.StringType, nullable = false)
+  ))
+
+  val decimalSchema = new StructType(Array(
     StructField("c0", DataTypes.StringType, nullable = true),
     StructField("c0", DataTypes.StringType, nullable = false)
   ))
@@ -61,7 +66,9 @@ class GpuBatchUtilsSuite extends FunSuite {
     StructField("c6", DataTypes.StringType, nullable = false),
     StructField("c6_nullable", DataTypes.StringType, nullable = true),
     StructField("c7", DataTypes.BooleanType, nullable = false),
-    StructField("c7_nullable", DataTypes.BooleanType, nullable = true)
+    StructField("c7_nullable", DataTypes.BooleanType, nullable = true),
+    StructField("c8", DataTypes.createDecimalType(15, 6), nullable = false),
+    StructField("c8_nullable", DataTypes.createDecimalType(15, 6), nullable = true)
   ))
 
   test("Calculate GPU memory for batch of 64 rows with integers") {
@@ -70,6 +77,10 @@ class GpuBatchUtilsSuite extends FunSuite {
 
   test("Calculate GPU memory for batch of 64 rows with strings") {
     compareEstimateWithActual(stringSchema, 64)
+  }
+
+  test("Calculate GPU memory for batch of 64 rows with decimals") {
+    compareEstimateWithActual(decimalSchema, 64)
   }
 
   test("Calculate GPU memory for batch of 64 rows with mixed types") {
@@ -84,6 +95,10 @@ class GpuBatchUtilsSuite extends FunSuite {
     compareEstimateWithActual(stringSchema, 124)
   }
 
+  test("Calculate GPU memory for batch of 124 rows with decimals") {
+    compareEstimateWithActual(decimalSchema, 124)
+  }
+
   test("Calculate GPU memory for batch of 124 rows with mixed types") {
     compareEstimateWithActual(mixedSchema, 124)
   }
@@ -94,6 +109,10 @@ class GpuBatchUtilsSuite extends FunSuite {
 
   test("Calculate GPU memory for batch of 1024 rows with strings") {
     compareEstimateWithActual(stringSchema, 1024)
+  }
+
+  test("Calculate GPU memory for batch of 1024 rows with decimals") {
+    compareEstimateWithActual(decimalSchema, 1024)
   }
 
   test("Calculate GPU memory for batch of 1024 rows with mixed types") {
@@ -185,6 +204,10 @@ class GpuBatchUtilsSuite extends FunSuite {
         case DataTypes.LongType => maybeNull(field, i, r.nextLong())
         case DataTypes.FloatType => maybeNull(field, i, r.nextFloat())
         case DataTypes.DoubleType => maybeNull(field, i, r.nextDouble())
+        case dataType: DecimalType =>
+          val upperBound = (0 until dataType.precision).foldLeft(1L)((x, _) => x * 10)
+          val unScaledValue = r.nextLong() % upperBound
+          maybeNull(field, i, Decimal(unScaledValue, dataType.precision, dataType.scale))
         case dataType@DataTypes.StringType =>
           if (field.nullable) {
             // since we want a deterministic test that compares the estimate with actual

@@ -18,13 +18,14 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPartitioning extends Partitioning with Arm {
@@ -45,22 +46,17 @@ trait GpuPartitioning extends Partitioning with Arm {
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // The first index will always be 0, so we need to skip it.
     val batches = if (numRows > 0) {
+      val dataTypes = partitionColumns.map(_.dataType())
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
       closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
         val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
         val contiguousTables = withResource(table)(t => t.contiguousSplit(parts: _*))
         GpuShuffleEnv.rapidsShuffleCodec match {
           case Some(codec) =>
-            withResource(codec.createBatchCompressor(maxCompressionBatchSize)) { compressor =>
-              // batchCompress takes ownership of the contiguous tables and will close
-              compressor.addTables(contiguousTables)
-              withResource(compressor.finish()) { compressedTables =>
-                compressedTables.foreach(ct => splits.append(GpuCompressedColumnVector.from(ct)))
-              }
-            }
+            compressSplits(splits, codec, contiguousTables, dataTypes)
           case None =>
             withResource(contiguousTables) { cts =>
-              cts.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct)) }
+              cts.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct, dataTypes)) }
             }
         }
         splits.toArray
@@ -117,6 +113,59 @@ trait GpuPartitioning extends Partitioning with Arm {
       }
     } finally {
       sliceRange.close()
+    }
+  }
+
+  /**
+   * Compress contiguous tables representing the splits into compressed columnar batches.
+   * Contiguous tables corresponding to splits with no data will not be compressed.
+   * @param outputBatches where to collect the corresponding columnar batches for the splits
+   * @param codec compression codec to use
+   * @param contiguousTables contiguous tables to compress
+   */
+  def compressSplits(
+      outputBatches: ArrayBuffer[ColumnarBatch],
+      codec: TableCompressionCodec,
+      contiguousTables: Array[ContiguousTable],
+      dataTypes: Array[DataType]): Unit = {
+    withResource(codec.createBatchCompressor(maxCompressionBatchSize,
+        Cuda.DEFAULT_STREAM)) { compressor =>
+      // tracks batches with no data and the corresponding output index for the batch
+      val emptyBatches = new ArrayBuffer[(ColumnarBatch, Int)]
+
+      // add each table either to the batch to be compressed or to the empty batch tracker
+      contiguousTables.zipWithIndex.foreach { case (ct, i) =>
+        if (ct.getTable.getRowCount == 0) {
+          withResource(ct) { _ =>
+            emptyBatches.append((GpuColumnVector.from(ct.getTable, dataTypes), i))
+          }
+        } else {
+          compressor.addTableToCompress(ct)
+        }
+      }
+
+      withResource(compressor.finish()) { compressedTables =>
+        var compressedTableIndex = 0
+        var outputIndex = 0
+        emptyBatches.foreach { case (emptyBatch, emptyOutputIndex) =>
+          require(emptyOutputIndex >= outputIndex)
+          // add any compressed batches that need to appear before the next empty batch
+          val numCompressedToAdd = emptyOutputIndex - outputIndex
+          (0 until numCompressedToAdd).foreach { _ =>
+            val compressedTable = compressedTables(compressedTableIndex)
+            outputBatches.append(GpuCompressedColumnVector.from(compressedTable, dataTypes))
+            compressedTableIndex += 1
+          }
+          outputBatches.append(emptyBatch)
+          outputIndex = emptyOutputIndex + 1
+        }
+
+        // add any compressed batches that remain after the last empty batch
+        (compressedTableIndex until compressedTables.length).foreach { i =>
+          val ct = compressedTables(i)
+          outputBatches.append(GpuCompressedColumnVector.from(ct, dataTypes))
+        }
+      }
     }
   }
 }

@@ -44,15 +44,9 @@ case class GpuSparkPartitionID() extends GpuLeafExpression {
       partitionId = TaskContext.getPartitionId()
       wasInitialized = true
     }
-    var part: Scalar = null
-    try {
-      val numRows = batch.numRows()
-      part = Scalar.fromInt(partitionId)
-      GpuColumnVector.from(ColumnVector.fromScalar(part, numRows))
-    } finally {
-      if (part != null) {
-        part.close()
-      }
+    val numRows = batch.numRows()
+    withResource(Scalar.fromInt(partitionId)) { part =>
+      GpuColumnVector.from(ColumnVector.fromScalar(part, numRows), dataType)
     }
   }
 }

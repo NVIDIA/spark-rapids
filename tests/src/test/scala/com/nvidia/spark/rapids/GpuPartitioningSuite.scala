@@ -17,14 +17,15 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.math.RoundingMode
 
-import ai.rapids.cudf.{Cuda, Table}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import ai.rapids.cudf.{DType, Table}
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
+import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuPartitioningSuite extends FunSuite with Arm {
@@ -33,14 +34,20 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)
         .column("five", "two", null, null, "one", "one", "one", "one", "one", "one")
         .column(5.0, 2.0, 3.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+        .decimal64Column(-3, RoundingMode.UNNECESSARY ,
+          5.1, null, 3.3, 4.4e2, 0, -2.1e-1, 1.111, 2.345, null, 1.23e3)
         .build()) { table =>
-      GpuColumnVector.from(table)
+      GpuColumnVector.from(table, Array(IntegerType, StringType, DoubleType,
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, 3)))
     }
   }
 
   private def buildSubBatch(batch: ColumnarBatch, startRow: Int, endRow: Int): ColumnarBatch = {
     val columns = GpuColumnVector.extractBases(batch)
-    val sliced = columns.safeMap(c => GpuColumnVector.from(c.subVector(startRow, endRow)))
+    val types = GpuColumnVector.extractTypes(batch)
+    val sliced = columns.zip(types).map { case (c, t) =>
+      GpuColumnVector.from(c.subVector(startRow, endRow), t)
+    }
     new ColumnarBatch(sliced.toArray, endRow - startRow)
   }
 
@@ -50,7 +57,13 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     val expectedColumns = GpuColumnVector.extractBases(expected)
     val actualColumns = GpuColumnVector.extractBases(expected)
     expectedColumns.zip(actualColumns).foreach { case (expected, actual) =>
-      withResource(expected.equalToNullAware(actual)) { compareVector =>
+      // FIXME: For decimal types, NULL_EQUALS has not been supported in cuDF yet
+      val cpVec = if (expected.getType.isDecimalType) {
+        expected.equalTo(actual)
+      } else {
+        expected.equalToNullAware(actual)
+      }
+      withResource(cpVec) { compareVector =>
         withResource(compareVector.all()) { compareResult =>
           assert(compareResult.getBoolean)
         }
@@ -62,7 +75,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     SparkSession.getActiveSession.foreach(_.close())
     val conf = new SparkConf().set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
+      GpuShuffleEnv.init(new RapidsConf(conf))
       val partitionIndices = Array(0, 2, 2)
       val gp = new GpuPartitioning {
         override val numPartitions: Int = partitionIndices.length
@@ -96,11 +109,11 @@ class GpuPartitioningSuite extends FunSuite with Arm {
 
   test("GPU partition with compression") {
     val conf = new SparkConf()
-        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "copy")
+        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "lz4")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf), Cuda.memGetInfo())
+      GpuShuffleEnv.init(new RapidsConf(conf))
       val spillPriority = 7L
-      val catalog = new RapidsBufferCatalog
+      val catalog = RapidsBufferCatalog.singleton
       withResource(new RapidsDeviceMemoryStore(catalog)) { deviceStore =>
         val partitionIndices = Array(0, 2, 2)
         val gp = new GpuPartitioning {
@@ -108,6 +121,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         }
         withResource(buildBatch()) { batch =>
           val columns = GpuColumnVector.extractColumns(batch)
+          val sparkTypes = GpuColumnVector.extractTypes(batch)
           val numRows = batch.numRows
           withResource(gp.sliceInternalOnGpu(numRows, partitionIndices, columns)) { partitions =>
             partitions.zipWithIndex.foreach { case (partBatch, partIndex) =>
@@ -121,18 +135,33 @@ class GpuPartitioningSuite extends FunSuite with Arm {
               assertResult(expectedRows)(partBatch.numRows)
               val columns = (0 until partBatch.numCols).map(i => partBatch.column(i))
               columns.foreach { column =>
-                assert(column.isInstanceOf[GpuCompressedColumnVector])
-                assertResult(expectedRows) {
-                  column.asInstanceOf[GpuCompressedColumnVector].getTableMeta.rowCount
+                // batches with any rows should be compressed, and
+                // batches with no rows should not be compressed.
+                val actualRows = column match {
+                  case c: GpuCompressedColumnVector =>
+                    val rows = c.getTableMeta.rowCount
+                    assert(rows != 0)
+                    rows
+                  case c: GpuColumnVector =>
+                    val rows = c.getRowCount
+                    assert(rows == 0)
+                    rows
                 }
+                assertResult(expectedRows)(actualRows)
               }
-              val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
-              val bufferId = MockRapidsBufferId(partIndex)
-              val devBuffer = gccv.getBuffer.slice(0, gccv.getBuffer.getLength)
-              deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)
-              withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
-                withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-                  compareBatches(expectedBatch, buffer.getColumnarBatch)
+              if (GpuCompressedColumnVector.isBatchCompressed(partBatch)) {
+                val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
+                val bufferId = MockRapidsBufferId(partIndex)
+                val devBuffer = gccv.getBuffer
+                // device store takes ownership of the buffer
+                devBuffer.incRefCount()
+                deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)
+                withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
+                  withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+                    withResource(buffer.getColumnarBatch(sparkTypes)) { batch =>
+                      compareBatches(expectedBatch, batch)
+                    }
+                  }
                 }
               }
             }

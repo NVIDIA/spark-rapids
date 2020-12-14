@@ -27,6 +27,8 @@ object RebaseHelper extends Arm {
   private[this] def isDateTimeRebaseNeeded(column: ColumnVector,
                                                 startDay: Int,
                                                 startTs: Long): Boolean = {
+    // TODO update this for nested column checks
+    //  https://github.com/NVIDIA/spark-rapids/issues/1126
     val dtype = column.getType
     if (dtype == DType.TIMESTAMP_DAYS) {
       withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
@@ -36,8 +38,10 @@ object RebaseHelper extends Arm {
           }
         }
       }
-    } else if (dtype.isTimestamp) {
-      assert(dtype == DType.TIMESTAMP_MICROSECONDS)
+    } else if (dtype.isTimestampType) {
+      // TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to properly handle
+      // TIMESTAMP_MILLIS, for use require so we fail if that happens
+      require(dtype == DType.TIMESTAMP_MICROSECONDS)
       withResource(
         Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>

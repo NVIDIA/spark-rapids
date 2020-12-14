@@ -88,10 +88,12 @@ def with_gpu_session(func, conf={}):
     else:
         copy['spark.rapids.sql.test.enabled'] = 'true'
         copy['spark.rapids.sql.test.allowedNonGpu'] = ','.join(get_non_gpu_allowed())
+    # TODO: remove when decimal types can be enabled by default
+    copy['spark.rapids.sql.decimalType.enabled'] = 'true'
     return with_spark_session(func, conf=copy)
 
 def is_spark_300():
-    return spark_version() == "3.0.0"
+    return (spark_version() == "3.0.0" or spark_version().startswith('3.0.0-amzn'))
 
 def is_before_spark_310():
     return spark_version() < "3.1.0"

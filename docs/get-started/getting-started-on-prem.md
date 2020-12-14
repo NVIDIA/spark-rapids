@@ -38,13 +38,13 @@ to read the deployment method sections before doing any installations.
 ## Install Spark
 To install Apache Spark please follow the official 
 [instructions](https://spark.apache.org/docs/latest/#launching-on-a-cluster). Supported versions of
-Spark are listed on the [stable release](stable-release.md) page.  Please note that only
+Spark are listed on the [stable release](../version/stable-release.md) page.  Please note that only
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
 The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
 [cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
-[download](../version/stable-release.md#download) section.
+[download](../version/stable-release.md) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
@@ -55,16 +55,16 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 11.0 => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.15-cuda10-1.jar
-- rapids-4-spark_2.12-0.2.0.jar
+- cudf-0.17-SNAPSHOT-cuda10-1.jar
+- rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar
 
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.15-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.2.0.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.17-SNAPSHOT-cuda10-1.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -117,7 +117,7 @@ The first step is to [Install Spark](#install-spark), the
 After that choose one of the nodes to be your master node and start the master.  Note that the
 master process does **not** need a GPU to function properly.
 
-One the master node:
+On the master node:
   - Make sure `SPARK_HOME` is exported
   - run `$SPARK_HOME/sbin/start-master.sh`
     - This script will print a message saying starting Master and have a path to a log file.
@@ -167,6 +167,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.executor.memory=4G \
        --conf spark.executor.cores=4 \
        --conf spark.task.cpus=1 \
+       --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.task.resource.gpu.amount=0.25 \
        --conf spark.rapids.memory.pinnedPool.size=2G \
        --conf spark.locality.wait=0s \
@@ -423,7 +424,7 @@ and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirec
 
     With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
 
-2. Install [UCX 1.8.1](https://github.com/openucx/ucx/releases/tag/v1.8.1). 
+2. Install [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
 
 
 3. You will need to configure your spark job with extra settings for UCX (we are looking to 
@@ -443,11 +444,12 @@ that matches your Spark version. Currently we support
 --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
---conf spark.executor.extraClassPath=/usr/lib:/usr/lib/ucx:${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
+--conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
+--conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
-Please note `extraClassPath`, presently requires the UCX libraries to be added to the classpath. Newer
-versions of UCX handle loading shared libraries differently and should not require this.
+Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a 
+non-standard location.
 
 ### UCX Environment Variables
 - `UCX_TLS`: 
@@ -512,7 +514,7 @@ To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job 
     On Standalone, you need to add
     ```shell
     ...
-    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.2.0.jar \
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar \
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
     ```
 
@@ -565,7 +567,7 @@ replaced with GPU calls.
 
 The following is an example of a physical plan with operators running on the GPU: 
 
-![ease-of-use](/docs/img/ease-of-use.png)
+![ease-of-use](../img/ease-of-use.png)
 
 
 ## Debugging

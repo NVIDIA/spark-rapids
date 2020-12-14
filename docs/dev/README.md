@@ -15,7 +15,7 @@ following topics:
   * [Plugin Replacement Rules](#plugin-replacement-rules)
 * [Guidelines for Replacing Catalyst Executors and Expressions](#guidelines-for-replacing-catalyst-executors-and-expressions)
   * [Setting Up the Class](#setting-up-the-class)
-  * [Input Expressions and Output Attributes](#input-expressions-and-output-attributes)
+  * [Expressions](#expressions)
   * [The GPU Semaphore](#the-gpu-semaphore)
 * [Debugging Tips](#debugging-tips)
 * [Profiling Tips](#profiling-tips)
@@ -78,7 +78,7 @@ the reading of rows from the raw input data.
 
 ## How the RAPIDS Plugin Works
 The plugin leverages two main features in Spark.  The first is a
-[plugin interface in Catalyst](https://developer.ibm.com/code/2017/11/30/learn-extension-points-apache-spark-extend-spark-catalyst-optimizer)
+plugin interface in [Catalyst](https://databricks.com/glossary/catalyst-optimizer)
 that allows the optimizer to be extended.  The plugin is a Catalyst extension
 that analyzes the physical plan and replaces executor and expression nodes with
 GPU versions when those operations can be performed on the GPU.  The other
@@ -223,7 +223,7 @@ options, e.g.:
 
 ## Debugging Tips
 An easy way to debug the plugin is to run in
-[Spark local mode](https://jaceklaskowski.gitbooks.io/mastering-apache-spark/local/spark-local.html).
+[Spark local mode](https://spark.apache.org/docs/latest/submitting-applications.html#master-urls).
 This runs the Spark driver and executor all in the same JVM process, making it
 easy for breakpoints to catch everything.  You do not have to worry about
 whether the code is executing on the driver or the executor, since they are

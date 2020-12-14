@@ -49,13 +49,25 @@ trait Arm {
     }
   }
 
+  /** Executes the provided code block and then closes the value if it is AutoCloseable */
+  def withResourceIfAllowed[T, V](r: T)(block: T => V): V = {
+    try {
+      block(r)
+    } finally {
+      r match {
+        case c: AutoCloseable => c.close()
+        case _ => //NOOP
+      }
+    }
+  }
+
   /** Executes the provided code block, closing the resource only if an exception occurs */
   def closeOnExcept[T <: AutoCloseable, V](r: T)(block: T => V): V = {
     try {
       block(r)
     } catch {
       case t: Throwable =>
-        r.safeClose()
+        r.safeClose(t)
         throw t
     }
   }
@@ -66,7 +78,7 @@ trait Arm {
       block(r)
     } catch {
       case t: Throwable =>
-        r.safeClose()
+        r.safeClose(t)
         throw t
     }
   }
@@ -77,7 +89,7 @@ trait Arm {
       block(r)
     } catch {
       case t: Throwable =>
-        r.safeClose()
+        r.safeClose(t)
         throw t
     }
   }

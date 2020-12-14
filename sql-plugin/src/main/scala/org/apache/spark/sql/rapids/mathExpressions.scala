@@ -44,18 +44,18 @@ case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
 
 case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGREES") {
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     withResource(Scalar.fromDouble(180d / Math.PI)) { multiplier =>
-      GpuColumnVector.from(input.getBase.mul(multiplier))
+      input.getBase.mul(multiplier)
     }
   }
 }
 
 case class GpuToRadians(child: Expression) extends GpuUnaryMathExpression("RADIANS") {
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     withResource(Scalar.fromDouble(Math.PI / 180d)) { multiplier =>
-      GpuColumnVector.from(input.getBase.mul(multiplier))
+      input.getBase.mul(multiplier)
     }
   }
 }
@@ -67,13 +67,13 @@ case class GpuAcoshImproved(child: Expression) extends CudfUnaryMathExpression("
 case class GpuAcoshCompat(child: Expression) extends GpuUnaryMathExpression("ACOSH") {
   override def outputTypeOverride: DType = DType.FLOAT64
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     // Typically we would just use UnaryOp.ARCCOSH, but there are corner cases where cudf
     // produces a better result (it does not overflow) than spark does, but our goal is
     // to match Spark's
     // StrictMath.log(x + math.sqrt(x * x - 1.0))
     val base = input.getBase
-    val ret = withResource(base.mul(base)) { squared =>
+    withResource(base.mul(base)) { squared =>
       withResource(Scalar.fromDouble(1.0)) { one =>
         withResource(squared.sub(one)) { squaredMinOne =>
           withResource(squaredMinOne.sqrt()) { sqrt =>
@@ -84,7 +84,6 @@ case class GpuAcoshCompat(child: Expression) extends GpuUnaryMathExpression("ACO
         }
       }
     }
-    GpuColumnVector.from(ret)
   }
 }
 
@@ -113,7 +112,7 @@ case class GpuAsinhCompat(child: Expression) extends GpuUnaryMathExpression("ASI
       }
     }
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     // Typically we would just use UnaryOp.ARCSINH, but there are corner cases where cudf
     // produces a better result (it does not overflow) than spark does, but our goal is
     // to match Spark's
@@ -121,14 +120,13 @@ case class GpuAsinhCompat(child: Expression) extends GpuUnaryMathExpression("ASI
     //    case Double.NegativeInfinity => Double.NegativeInfinity
     //    case _ => StrictMath.log(x + math.sqrt(x * x + 1.0)) }
     val base = input.getBase
-    val ret = withResource(computeBasic(base)) { basic =>
+    withResource(computeBasic(base)) { basic =>
       withResource(Scalar.fromDouble(Double.NegativeInfinity)) { negInf =>
         withResource(base.equalTo(negInf)) { eqNegInf =>
           eqNegInf.ifElse(negInf, basic)
         }
       }
     }
-    GpuColumnVector.from(ret)
   }
 }
 
@@ -156,14 +154,14 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
   override def unaryOp: UnaryOp = UnaryOp.CEIL
   override def outputTypeOverride: DType = DType.INT64
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     if (input.dataType() == DoubleType) {
-      withResource(FloatUtils.nanToZero(input.getBase())) { inputWithNansToZero =>
-        super.doColumnar(GpuColumnVector.from(inputWithNansToZero))
+      withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
+        super.doColumnar(GpuColumnVector.from(inputWithNansToZero, DoubleType))
       }
     } else {
       // Long is a noop in spark, but for cudf it is not.
-      input.incRefCount()
+      input.getBase.incRefCount()
     }
   }
 }
@@ -182,17 +180,11 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
   override def unaryOp: UnaryOp = UnaryOp.EXP
   override def outputTypeOverride: DType = DType.FLOAT64
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    val cv = input.getBase.unaryOp(unaryOp)
-    try {
-      val sc = Scalar.fromInt(1)
-      try {
-        GpuColumnVector.from(cv.binaryOp(BinaryOp.SUB, sc, outputTypeOverride))
-      } finally {
-        sc.close()
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    withResource(input.getBase.unaryOp(unaryOp)) { cv =>
+      withResource(Scalar.fromInt(1)) { sc =>
+        cv.binaryOp(BinaryOp.SUB, sc, outputTypeOverride)
       }
-    } finally {
-      cv.close()
     }
   }
 }
@@ -212,14 +204,14 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
 
   override def outputTypeOverride: DType = DType.INT64
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     if (input.dataType() == DoubleType) {
-      withResource(FloatUtils.nanToZero(input.getBase())) { inputWithNansToZero =>
-        super.doColumnar(GpuColumnVector.from(inputWithNansToZero))
+      withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
+        super.doColumnar(GpuColumnVector.from(inputWithNansToZero, DoubleType))
       }
     } else {
       // Long is a noop in spark, but for cudf it is not.
-      input.incRefCount()
+      input.getBase.incRefCount()
     }
   }
 }
@@ -227,9 +219,9 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
 case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
   override def unaryOp: UnaryOp = UnaryOp.LOG
   override def outputTypeOverride: DType = DType.FLOAT64
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     withResource(GpuLogarithm.fixUpLhs(input)) { normalized =>
-      super.doColumnar(normalized)
+      super.doColumnar(GpuColumnVector.from(normalized, child.dataType))
     }
   }
 }
@@ -240,11 +232,11 @@ object GpuLogarithm extends Arm {
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned GpuColumnVector.
    */
-  def fixUpLhs(input: GpuColumnVector): GpuColumnVector = {
+  def fixUpLhs(input: GpuColumnVector): ColumnVector = {
     withResource(Scalar.fromDouble(0)) { zero =>
       withResource(input.getBase.binaryOp(BinaryOp.LESS_EQUAL, zero, DType.BOOL8)) { zeroOrLess =>
         withResource(Scalar.fromNull(DType.FLOAT64)) { nullScalar =>
-          GpuColumnVector.from(zeroOrLess.ifElse(nullScalar, input.getBase))
+          zeroOrLess.ifElse(nullScalar, input.getBase)
         }
       }
     }
@@ -269,21 +261,21 @@ case class GpuLogarithm(left: Expression, right: Expression)
   override def binaryOp: BinaryOp = BinaryOp.LOG_BASE
   override def outputTypeOverride: DType = DType.FLOAT64
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
+      super.doColumnar(GpuColumnVector.from(fixedLhs, left.dataType), rhs)
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
       super.doColumnar(fixedLhs, rhs)
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(fixedLhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(fixedLhs, rhs)
+      super.doColumnar(GpuColumnVector.from(fixedLhs, left.dataType), rhs)
     }
   }
 }
@@ -295,23 +287,14 @@ case class GpuSin(child: Expression) extends CudfUnaryMathExpression("SIN") {
 
 case class GpuSignum(child: Expression) extends GpuUnaryMathExpression("SIGNUM") {
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-      val num = Scalar.fromDouble(0)
-      try {
-        val hiReplace = Scalar.fromDouble(1)
-        try {
-          val loReplace = Scalar.fromDouble(-1)
-          try {
-            GpuColumnVector.from(input.getBase.clamp(num, loReplace, num, hiReplace))
-          } finally {
-            loReplace.close
-          }
-        } finally {
-          hiReplace.close
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    withResource(Scalar.fromDouble(0)) { num =>
+      withResource(Scalar.fromDouble(1)) { hiReplace =>
+        withResource(Scalar.fromDouble(-1)) { loReplace =>
+          input.getBase.clamp(num, loReplace, num, hiReplace)
         }
-      } finally {
-        num.close
       }
+    }
   }
 
   override def outputTypeOverride: DType = DType.FLOAT64
@@ -349,10 +332,10 @@ case class GpuTan(child: Expression) extends CudfUnaryMathExpression("TAN") {
 
 case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     withResource(Scalar.fromInt(1)) { one =>
       withResource(input.getBase.unaryOp(UnaryOp.TAN)) { tan =>
-        GpuColumnVector.from(one.div(tan))
+        one.div(tan)
       }
     }
   }

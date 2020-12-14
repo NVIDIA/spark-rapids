@@ -17,6 +17,8 @@
 
 set -ex
 
+nvidia-smi
+
 . jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/jars"
@@ -45,8 +47,8 @@ $MVN_GET_CMD \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=pytest -Dpackaging=tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
-RAPDIS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_VER-pytest.tar.gz"
-tar xzf "$RAPDIS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPDIS_INT_TESTS_TGZ"
+RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_VER-pytest.tar.gz"
+tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
 $MVN_GET_CMD \
     -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
@@ -59,22 +61,29 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
 PARQUET_PERF="$WORKSPACE/integration_tests/src/test/resources/parquet_perf"
 PARQUET_ACQ="$WORKSPACE/integration_tests/src/test/resources/parquet_acq"
 OUTPUT="$WORKSPACE/output"
-BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 --executor-memory 32G \
+
+# spark.sql.cache.serializer conf is ignored for versions prior to 3.1.0
+SERIALIZER="--conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer"
+
+BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 \
+    --executor-memory 12G \
+    --total-executor-cores 6 \
     --conf spark.sql.shuffle.partitions=12 \
     --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
     --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
-    --conf spark.driver.extraJavaOptions=-Duser.timezone=GMT \
-    --conf spark.executor.extraJavaOptions=-Duser.timezone=GMT \
+    --conf spark.driver.extraJavaOptions=-Duser.timezone=UTC \
+    --conf spark.executor.extraJavaOptions=-Duser.timezone=UTC \
     --conf spark.sql.session.timeZone=UTC"
 MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=com.nvidia.spark.SQLPlugin \
     --class com.nvidia.spark.rapids.tests.mortgage.Main \
     $RAPIDS_TEST_JAR"
 
-# need to disable pooling for udf test to prevent cudaErrorMemoryAllocation
-CUDF_UDF_TEST_ARGS="--conf spark.rapids.python.memory.gpu.pooling.enabled=false \
-    --conf spark.rapids.memory.gpu.pooling.enabled=false \
-    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.2.0.jar \
-    --py-files ${RAPIDS_PLUGIN_JAR}"
+CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
+    --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
+    --conf spark.rapids.python.concurrentPythonWorkers=2 \
+    --conf spark.executorEnv.PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
+    --conf spark.pyspark.python=/opt/conda/bin/python \
+    --py-files ${RAPIDS_PLUGIN_JAR}" # explicitly specify python binary path in env w/ multiple python versions
 
 TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
 
@@ -89,6 +98,11 @@ jps
 
 echo "----------------------------START TEST------------------------------------"
 rm -rf $OUTPUT
-spark-submit $BASE_SPARK_SUBMIT_ARGS $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
-cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "not cudf_udf" -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
-spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs
+spark-submit $BASE_SPARK_SUBMIT_ARGS $SERIALIZER $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
+pushd $RAPIDS_INT_TESTS_HOME
+spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
+spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf
+popd
+stop-slave.sh
+stop-master.sh
+

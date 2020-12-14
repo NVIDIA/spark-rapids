@@ -59,7 +59,7 @@ case class GpuMonotonicallyIncreasingID() extends GpuLeafExpression {
       mask = Scalar.fromLong(partitionMask)
       sequence = ColumnVector.sequence(start, numRows)
       count += numRows
-      GpuColumnVector.from(sequence.add(mask))
+      GpuColumnVector.from(sequence.add(mask), dataType)
     } finally {
       if (start != null) {
         start.close()

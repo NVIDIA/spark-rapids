@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,55 +16,78 @@
 
 package com.nvidia.spark.rapids.tests.tpcxbb
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import com.nvidia.spark.rapids.tests.common.BenchUtils
+import com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.{csvToOrc, csvToParquet}
+import org.rogach.scallop.ScallopConf
+
+import org.apache.spark.sql.{DataFrame, DataFrameWriter, Row, SparkSession}
 import org.apache.spark.sql.types._
 
 // scalastyle:off line.size.limit
 
 // DecimalType to DoubleType, bigint to LongType
 object TpcxbbLikeSpark {
-  def csvToParquet(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
-    readCustomerCSV(spark, basePath + "/customer/").write.parquet(baseOutput + "/customer/")
-    readCustomerAddressCSV(spark, basePath + "/customer_address/").write.parquet(baseOutput + "/customer_address/")
-    readItemCSV(spark, basePath + "/item/").write.parquet(baseOutput + "/item/")
-    readStoreSalesCSV(spark, basePath + "/store_sales/").write.parquet(baseOutput + "/store_sales/")
-    readDateDimCSV(spark, basePath + "/date_dim/").write.parquet(baseOutput + "/date_dim/")
-    readStoreCSV(spark, basePath + "/store/").write.parquet(baseOutput + "/store/")
-    readCustomerDemographicsCSV(spark, basePath + "/customer_demographics/").write.parquet(baseOutput + "/customer_demographics/")
-    readReviewsCSV(spark, basePath + "/product_reviews/").write.parquet(baseOutput + "/product_reviews/")
-    readWebSalesCSV(spark, basePath + "/web_sales/").write.parquet(baseOutput + "/web_sales/")
-    readWebClickStreamsCSV(spark, basePath + "/web_clickstreams/").write.parquet(baseOutput + "/web_clickstreams/")
-    readHouseholdDemographicsCSV(spark, basePath + "/household_demographics/").write.parquet(baseOutput + "/household_demographics/")
-    readWebPageCSV(spark, basePath + "/web_page/").write.parquet(baseOutput + "/web_page/")
-    readTimeDimCSV(spark, basePath + "/time_dim/").write.parquet(baseOutput + "/time_dim/")
-    readWebReturnsCSV(spark, basePath + "/web_returns/").write.parquet(baseOutput + "/web_returns/")
-    readWarehouseCSV(spark, basePath + "/warehouse/").write.parquet(baseOutput + "/warehouse/")
-    readPromotionCSV(spark, basePath + "/promotion/").write.parquet(baseOutput + "/promotion/")
-    readStoreReturnsCSV(spark, basePath + "/store_returns/").write.parquet(baseOutput + "/store_returns/")
-    readInventoryCSV(spark, basePath + "/inventory/").write.parquet(baseOutput + "/inventory/")
-    readMarketPricesCSV(spark, basePath + "/item_marketprices/").write.parquet(baseOutput + "/item_marketprices/")
+  private def setupWrite(
+      df: DataFrame, 
+      name: String,
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): DataFrameWriter[Row] = {
+    val repart = BenchUtils.applyCoalesceRepartition(name, df, coalesce, repartition)
+    repart.write.mode("overwrite")
   }
 
-  def csvToOrc(spark: SparkSession, basePath: String, baseOutput: String): Unit = {
-    readCustomerCSV(spark, basePath + "/customer/").write.orc(baseOutput + "/customer/")
-    readCustomerAddressCSV(spark, basePath + "/customer_address/").write.orc(baseOutput + "/customer_address/")
-    readItemCSV(spark, basePath + "/item/").write.orc(baseOutput + "/item/")
-    readStoreSalesCSV(spark, basePath + "/store_sales/").write.orc(baseOutput + "/store_sales/")
-    readDateDimCSV(spark, basePath + "/date_dim/").write.orc(baseOutput + "/date_dim/")
-    readStoreCSV(spark, basePath + "/store/").write.orc(baseOutput + "/store/")
-    readCustomerDemographicsCSV(spark, basePath + "/customer_demographics/").write.orc(baseOutput + "/customer_demographics/")
-    readReviewsCSV(spark, basePath + "/product_reviews/").write.orc(baseOutput + "/product_reviews/")
-    readWebSalesCSV(spark, basePath + "/web_sales/").write.orc(baseOutput + "/web_sales/")
-    readWebClickStreamsCSV(spark, basePath + "/web_clickstreams/").write.orc(baseOutput + "/web_clickstreams/")
-    readHouseholdDemographicsCSV(spark, basePath + "/household_demographics/").write.orc(baseOutput + "/household_demographics/")
-    readWebPageCSV(spark, basePath + "/web_page/").write.orc(baseOutput + "/web_page/")
-    readTimeDimCSV(spark, basePath + "/time_dim/").write.orc(baseOutput + "/time_dim/")
-    readWebReturnsCSV(spark, basePath + "/web_returns/").write.orc(baseOutput + "/web_returns/")
-    readWarehouseCSV(spark, basePath + "/warehouse/").write.orc(baseOutput + "/warehouse/")
-    readPromotionCSV(spark, basePath + "/promotion/").write.orc(baseOutput + "/promotion/")
-    readStoreReturnsCSV(spark, basePath + "/store_returns/").write.orc(baseOutput + "/store_returns/")
-    readInventoryCSV(spark, basePath + "/inventory/").write.orc(baseOutput + "/inventory/")
-    readMarketPricesCSV(spark, basePath + "/item_marketprices/").write.orc(baseOutput + "/item_marketprices/")
+  def csvToParquet(
+      spark: SparkSession, 
+      basePath: String, 
+      baseOutput: String, 
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    setupWrite(readCustomerCSV(spark, basePath + "/customer/"), "customer", coalesce, repartition).parquet(baseOutput + "/customer/")
+    setupWrite(readCustomerAddressCSV(spark, basePath + "/customer_address/"), "customer_address", coalesce, repartition).parquet(baseOutput + "/customer_address/")
+    setupWrite(readItemCSV(spark, basePath + "/item/"), "item", coalesce, repartition).parquet(baseOutput + "/item/")
+    setupWrite(readStoreSalesCSV(spark, basePath + "/store_sales/"), "store_sales", coalesce, repartition).parquet(baseOutput + "/store_sales/")
+    setupWrite(readDateDimCSV(spark, basePath + "/date_dim/"), "date_dim", coalesce, repartition).parquet(baseOutput + "/date_dim/")
+    setupWrite(readStoreCSV(spark, basePath + "/store/"), "store", coalesce, repartition).parquet(baseOutput + "/store/")
+    setupWrite(readCustomerDemographicsCSV(spark, basePath + "/customer_demographics/"), "customer_demographics", coalesce, repartition).parquet(baseOutput + "/customer_demographics/")
+    setupWrite(readReviewsCSV(spark, basePath + "/product_reviews/"), "product_reviews", coalesce, repartition).parquet(baseOutput + "/product_reviews/")
+    setupWrite(readWebSalesCSV(spark, basePath + "/web_sales/"), "web_sales", coalesce, repartition).parquet(baseOutput + "/web_sales/")
+    setupWrite(readWebClickStreamsCSV(spark, basePath + "/web_clickstreams/"), "web_clickstreams", coalesce, repartition).parquet(baseOutput + "/web_clickstreams/")
+    setupWrite(readHouseholdDemographicsCSV(spark, basePath + "/household_demographics/"), "household_demographics", coalesce, repartition).parquet(baseOutput + "/household_demographics/")
+    setupWrite(readWebPageCSV(spark, basePath + "/web_page/"), "web_page", coalesce, repartition).parquet(baseOutput + "/web_page/")
+    setupWrite(readTimeDimCSV(spark, basePath + "/time_dim/"), "time_dim", coalesce, repartition).parquet(baseOutput + "/time_dim/")
+    setupWrite(readWebReturnsCSV(spark, basePath + "/web_returns/"), "web_returns", coalesce, repartition).parquet(baseOutput + "/web_returns/")
+    setupWrite(readWarehouseCSV(spark, basePath + "/warehouse/"), "warehouse", coalesce, repartition).parquet(baseOutput + "/warehouse/")
+    setupWrite(readPromotionCSV(spark, basePath + "/promotion/"), "promotion", coalesce, repartition).parquet(baseOutput + "/promotion/")
+    setupWrite(readStoreReturnsCSV(spark, basePath + "/store_returns/"), "store_returns", coalesce, repartition).parquet(baseOutput + "/store_returns/")
+    setupWrite(readInventoryCSV(spark, basePath + "/inventory/"), "inventory", coalesce, repartition).parquet(baseOutput + "/inventory/")
+    setupWrite(readMarketPricesCSV(spark, basePath + "/item_marketprices/"), "item_marketprices", coalesce, repartition).parquet(baseOutput + "/item_marketprices/")
+  }
+
+  def csvToOrc(
+      spark: SparkSession, 
+      basePath: String, 
+      baseOutput: String, 
+      coalesce: Map[String, Int],
+      repartition: Map[String, Int]): Unit = {
+    setupWrite(readCustomerCSV(spark, basePath + "/customer/"), "customer", coalesce, repartition).orc(baseOutput + "/customer/")
+    setupWrite(readCustomerAddressCSV(spark, basePath + "/customer_address/"), "customer_address", coalesce, repartition).orc(baseOutput + "/customer_address/")
+    setupWrite(readItemCSV(spark, basePath + "/item/"), "item", coalesce, repartition).orc(baseOutput + "/item/")
+    setupWrite(readStoreSalesCSV(spark, basePath + "/store_sales/"), "store_sales", coalesce, repartition).orc(baseOutput + "/store_sales/")
+    setupWrite(readDateDimCSV(spark, basePath + "/date_dim/"), "date_dim", coalesce, repartition).orc(baseOutput + "/date_dim/")
+    setupWrite(readStoreCSV(spark, basePath + "/store/"), "store", coalesce, repartition).orc(baseOutput + "/store/")
+    setupWrite(readCustomerDemographicsCSV(spark, basePath + "/customer_demographics/"), "customer_demographics", coalesce, repartition).orc(baseOutput + "/customer_demographics/")
+    setupWrite(readReviewsCSV(spark, basePath + "/product_reviews/"), "product_reviews", coalesce, repartition).orc(baseOutput + "/product_reviews/")
+    setupWrite(readWebSalesCSV(spark, basePath + "/web_sales/"), "web_sales", coalesce, repartition).orc(baseOutput + "/web_sales/")
+    setupWrite(readWebClickStreamsCSV(spark, basePath + "/web_clickstreams/"), "web_clickstreams", coalesce, repartition).orc(baseOutput + "/web_clickstreams/")
+    setupWrite(readHouseholdDemographicsCSV(spark, basePath + "/household_demographics/"), "household_demographics", coalesce, repartition).orc(baseOutput + "/household_demographics/")
+    setupWrite(readWebPageCSV(spark, basePath + "/web_page/"), "web_page", coalesce, repartition).orc(baseOutput + "/web_page/")
+    setupWrite(readTimeDimCSV(spark, basePath + "/time_dim/"), "time_dim", coalesce, repartition).orc(baseOutput + "/time_dim/")
+    setupWrite(readWebReturnsCSV(spark, basePath + "/web_returns/"), "web_returns", coalesce, repartition).orc(baseOutput + "/web_returns/")
+    setupWrite(readWarehouseCSV(spark, basePath + "/warehouse/"), "warehouse", coalesce, repartition).orc(baseOutput + "/warehouse/")
+    setupWrite(readPromotionCSV(spark, basePath + "/promotion/"), "promotion", coalesce, repartition).orc(baseOutput + "/promotion/")
+    setupWrite(readStoreReturnsCSV(spark, basePath + "/store_returns/"), "store_returns", coalesce, repartition).orc(baseOutput + "/store_returns/")
+    setupWrite(readInventoryCSV(spark, basePath + "/inventory/"), "inventory", coalesce, repartition).orc(baseOutput + "/inventory/")
+    setupWrite(readMarketPricesCSV(spark, basePath + "/item_marketprices/"), "item_marketprices", coalesce, repartition).orc(baseOutput + "/item_marketprices/")
   }
 
   def setupAllCSV(spark: SparkSession, basePath: String): Unit = {
@@ -2066,6 +2089,44 @@ object Q30Like {
   def apply(spark: SparkSession): DataFrame = {
     throw new UnsupportedOperationException("Q30 uses UDTF")
   }
+}
+
+object ConvertFiles {
+  /**
+   * Main method allows us to submit using spark-submit to perform conversions from CSV to
+   * Parquet or Orc.
+   */
+  def main(arg: Array[String]): Unit = {
+    val conf = new FileConversionConf(arg)
+    val spark = SparkSession.builder.appName("TPC-xBB Like File Conversion").getOrCreate()
+    conf.outputFormat() match {
+      case "parquet" =>
+        csvToParquet(
+          spark,
+          conf.input(),
+          conf.output(),
+          conf.coalesce,
+          conf.repartition)
+      case "orc" =>
+        csvToOrc(
+          spark,
+          conf.input(),
+          conf.output(),
+          conf.coalesce,
+          conf.repartition)
+    }
+  }
+
+}
+
+class FileConversionConf(arguments: Seq[String]) extends ScallopConf(arguments) {
+  val input = opt[String](required = true)
+  val output = opt[String](required = true)
+  val outputFormat = opt[String](required = true)
+  val coalesce = propsLong[Int]("coalesce")
+  val repartition = propsLong[Int]("repartition")
+  verify()
+  BenchUtils.validateCoalesceRepartition(coalesce, repartition)
 }
 
 // scalastyle:on line.size.limit

@@ -19,7 +19,9 @@ package com.nvidia.spark.udf
 import CatalystExpressionBuilder.simplify
 import javassist.CtClass
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, If, Literal, Or}
+import org.apache.spark.SparkException
+import org.apache.spark.sql.catalyst.analysis.TypeCoercion
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, If, Literal, Or}
 
 /**
  * State is used as the main representation of block state, as we walk the bytecode.
@@ -74,7 +76,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, If, Literal, Or}
  * @param cond
  * @param expr
  */
-case class State(locals: Array[Expression],
+case class State(locals: IndexedSeq[Expression],
     stack: List[Expression] = List(),
     cond: Expression = Literal.TrueLiteral,
     expr: Option[Expression] = None) {
@@ -83,7 +85,13 @@ case class State(locals: Array[Expression],
     that.fold(this) { s =>
       val combine: ((Expression, Expression)) =>
           Expression = {
-        case (l1, l2) => simplify(If(cond, l1, l2))
+        case (l1, l2) =>
+          val commonType = TypeCoercion.findTightestCommonType(l1.dataType, l2.dataType)
+          commonType.fold(throw new SparkException(s"Conditional type check failure")){
+            t => simplify(If(cond,
+                             if (t == l1.dataType) l1 else Cast(l1, t),
+                             if (t == l2.dataType) l2 else Cast(l2, t)))
+          }
       }
       // At the end of the compliation, the expression at the top of stack is
       // returned, which must have all the conditionals embedded, if the
@@ -102,6 +110,23 @@ case class State(locals: Array[Expression],
         s"cond=[${printExpressions(Seq(cond))}], expr=[${expr.map(e => e.toString())}])"
   }
 
+  // Remap all the references of oldExp in locals and stack with the references
+  // of newExp.  This is needed to deal with mutable expressions.  When a
+  // mutable expression is updated, we need to replace the expression before
+  // update (oldExp) with the expression that represents the update (newExp)
+  def remap(oldExp: Expression, newExp: Expression): State = {
+    val remapExp = (exp: Expression) => {
+      if (exp eq oldExp) {
+        newExp
+      } else {
+        exp
+      }
+    }
+    val newLocals = locals.map(remapExp)
+    val newStack = stack.map(remapExp)
+    copy(locals = newLocals, stack = newStack)
+  }
+
   private def printExpressions(expressions: Iterable[Expression]): String = {
     if (expressions == null) {
       "NULL"
@@ -117,23 +142,23 @@ case class State(locals: Array[Expression],
 
 object State {
   def makeStartingState(lambdaReflection: LambdaReflection,
-      children: Seq[Expression]): State = {
+                        children: Seq[Expression],
+                        objref: Option[Expression]): State = {
     val max = lambdaReflection.maxLocals
-    val params: Seq[(CtClass, Expression)] = lambdaReflection.parameters.view.zip(children)
-    val (locals, _) = params.foldLeft((new Array[Expression](max), 0)) { (l, p) =>
-      val (locals: Array[Expression], index: Int) = l
-      val (param: CtClass, argExp: Expression) = p
-
-      val newIndex = if (param == CtClass.doubleType || param == CtClass.longType) {
+    val args = lambdaReflection.capturedArgs ++ children
+    val paramTypesAndArgs: Seq[(CtClass, Expression)] = lambdaReflection.parameters.view.zip(args)
+    val locals = paramTypesAndArgs.foldLeft(objref.toVector) { (l, p) =>
+      val (paramType : CtClass, argExp) = p
+      if (paramType == CtClass.doubleType || paramType == CtClass.longType) {
         // Long and Double occupies two slots in the local variable array.
+        // Append null to occupy an extra slot.
         // See https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-2.html#jvms-2.6.1
-        index + 2
+        l :+ argExp :+ Literal(null)
       } else {
-        index + 1
+        l :+ argExp
       }
-
-      (locals.updated(index, argExp), newIndex)
     }
-    State(locals)
+    // Ensure locals have enough slots with padTo.
+    State(locals.padTo(max, Literal(null)))
   }
 }

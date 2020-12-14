@@ -19,9 +19,9 @@ package org.apache.spark.sql.rapids
 import java.time.ZoneId
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, ConfKeysAndIncompat, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
-import com.nvidia.spark.rapids.GpuOverrides.extractStringLit
+import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
@@ -51,10 +51,10 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
 case class GpuWeekDay(child: Expression)
     extends GpuDateUnaryExpression {
 
-  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     withResource(Scalar.fromShort(1.toShort)) { one =>
       withResource(input.getBase.weekDay()) { weekday => // We want Monday = 0, CUDF Monday = 1
-        GpuColumnVector.from(weekday.sub(one))
+        weekday.sub(one)
       }
     }
   }
@@ -63,7 +63,7 @@ case class GpuWeekDay(child: Expression)
 case class GpuDayOfWeek(child: Expression)
     extends GpuDateUnaryExpression {
 
-  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     // Cudf returns Monday = 1, ...
     // We want Sunday = 1, ..., so add a day before we extract the day of the week
     val nextInts = withResource(Scalar.fromInt(1)) { one =>
@@ -73,7 +73,7 @@ case class GpuDayOfWeek(child: Expression)
     }
     withResource(nextInts) { nextInts =>
       withResource(nextInts.asTimestampDays()) { daysAgain =>
-        GpuColumnVector.from(daysAgain.weekDay())
+        daysAgain.weekDay()
       }
     }
   }
@@ -85,9 +85,8 @@ case class GpuMinute(child: Expression, timeZoneId: Option[String] = None)
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
 
-  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    GpuColumnVector.from(input.getBase.minute())
-  }
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.minute()
 }
 
 case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
@@ -96,9 +95,8 @@ case class GpuSecond(child: Expression, timeZoneId: Option[String] = None)
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
 
-  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    GpuColumnVector.from(input.getBase.second())
-  }
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.second()
 }
 
 case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
@@ -107,14 +105,13 @@ case class GpuHour(child: Expression, timeZoneId: Option[String] = None)
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
 
-  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    GpuColumnVector.from(input.getBase.hour())
-  }
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.hour()
 }
 
 case class GpuYear(child: Expression) extends GpuDateUnaryExpression {
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
-    GpuColumnVector.from(input.getBase.year())
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.year()
 }
 
 abstract class GpuTimeMath(
@@ -154,7 +151,7 @@ abstract class GpuTimeMath(
             withResource(Scalar.fromLong(usToSub)) { us_s =>
               withResource(l.getBase.castTo(DType.INT64)) { us =>
                 withResource(intervalMath(us_s, us)) { longResult =>
-                  GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS))
+                  GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS), dataType)
                 }
               }
             }
@@ -217,39 +214,45 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
 
   override def dataType: DataType = IntegerType
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     withResource(lhs.getBase.asInts()) { lhsDays =>
       withResource(rhs.getBase.asInts()) { rhsDays =>
-        GpuColumnVector.from(lhsDays.sub(rhsDays))
+        lhsDays.sub(rhsDays)
       }
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     // if one of the operands is a scalar, they have to be explicitly casted by the caller
     // before the operation can be run. This is an issue being tracked by
     // https://github.com/rapidsai/cudf/issues/4180
     withResource(GpuScalar.castDateScalarToInt(lhs)) { intScalar =>
       withResource(rhs.getBase.asInts()) { intVector =>
-        GpuColumnVector.from(intScalar.sub(intVector))
+        intScalar.sub(intVector)
       }
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     // if one of the operands is a scalar, they have to be explicitly casted by the caller
     // before the operation can be run. This is an issue being tracked by
     // https://github.com/rapidsai/cudf/issues/4180
     withResource(GpuScalar.castDateScalarToInt(rhs)) { intScalar =>
       withResource(lhs.getBase.asInts()) { intVector =>
-        GpuColumnVector.from(intVector.sub(intScalar))
+        intVector.sub(intScalar)
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 }
 
 case class GpuQuarter(child: Expression) extends GpuDateUnaryExpression {
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
     val tmp = withResource(Scalar.fromInt(2)) { two =>
       withResource(input.getBase.month()) { month =>
         month.add(two)
@@ -257,31 +260,32 @@ case class GpuQuarter(child: Expression) extends GpuDateUnaryExpression {
     }
     withResource(tmp) { tmp =>
       withResource(Scalar.fromInt(3)) { three =>
-        GpuColumnVector.from(tmp.div(three))
+        tmp.div(three)
       }
     }
   }
 }
 
 case class GpuMonth(child: Expression) extends GpuDateUnaryExpression {
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
-    GpuColumnVector.from(input.getBase.month())
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.month()
 }
 
 case class GpuDayOfMonth(child: Expression) extends GpuDateUnaryExpression {
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
-    GpuColumnVector.from(input.getBase.day())
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.day()
 }
 
 case class GpuDayOfYear(child: Expression) extends GpuDateUnaryExpression {
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector =
-    GpuColumnVector.from(input.getBase.dayOfYear())
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.dayOfYear()
 }
 
 abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpression]
    (expr: A, conf: RapidsConf,
    parent: Option[RapidsMeta[_, _, _]],
    rule: ConfKeysAndIncompat) extends BinaryExprMeta[A](expr, conf, parent, rule) {
+  var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
     if (ZoneId.of(expr.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
@@ -290,15 +294,133 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
       try {
-        val rightLit = extractStringLit(expr.right)
-        if (rightLit.isDefined) {
-          strfFormat = DateUtils.toStrf(rightLit.get)
-        } else {
-          willNotWorkOnGpu("format has to be a string literal")
+        extractStringLit(expr.right) match {
+          case Some(rightLit) =>
+            sparkFormat = rightLit
+            if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+              willNotWorkOnGpu("legacyTimeParserPolicy LEGACY is not supported")
+            } else if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat) ||
+                conf.incompatDateFormats) {
+              strfFormat = DateUtils.toStrf(sparkFormat)
+            } else {
+              willNotWorkOnGpu(s"incompatible format '$sparkFormat'. Set " +
+                  s"spark.rapids.sql.incompatibleDateFormats.enabled=true to force onto GPU.")
+            }
+          case None =>
+            willNotWorkOnGpu("format has to be a string literal")
         }
       } catch {
         case x: TimestampFormatConversionException =>
           willNotWorkOnGpu(s"Failed to convert ${x.reason} ${x.getMessage()}")
+      }
+    }
+  }
+}
+
+sealed trait TimeParserPolicy extends Serializable
+object LegacyTimeParserPolicy extends TimeParserPolicy
+object ExceptionTimeParserPolicy extends TimeParserPolicy
+object CorrectedTimeParserPolicy extends TimeParserPolicy
+
+object GpuToTimestamp extends Arm {
+  /** We are compatible with Spark for these formats */
+  val COMPATIBLE_FORMATS = Seq(
+    "yyyy-MM-dd",
+    "yyyy-MM",
+    "yyyy/MM/dd",
+    "yyyy/MM",
+    "dd/MM/yyyy",
+    "yyyy-MM-dd HH:mm:ss"
+  )
+
+  def daysScalarSeconds(name: String): Scalar = {
+    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
+  }
+
+  def daysScalarMicros(name: String): Scalar = {
+    Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
+  }
+
+  def daysEqual(col: ColumnVector, name: String): ColumnVector = {
+    withResource(Scalar.fromString(name)) { scalarName =>
+      col.equalTo(scalarName)
+    }
+  }
+
+  def isTimestamp(col: ColumnVector, sparkFormat: String, strfFormat: String) : ColumnVector = {
+    if (COMPATIBLE_FORMATS.contains(sparkFormat)) {
+      // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
+      // and ToUnixTime and will support parsing a subset of a string so we check the length of
+      // the string as well which works well for fixed-length formats but if/when we want to
+      // support variable-length formats (such as timestamps with milliseconds) then we will need
+      // to use regex instead.
+      withResource(col.getCharLengths) { actualLen =>
+        withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
+          withResource(actualLen.equalTo(expectedLen)) { lengthOk =>
+            withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
+              isTimestamp.and(lengthOk)
+            }
+          }
+        }
+      }
+    } else {
+      // this is the incompatibleDateFormats case where we do not guarantee compatibility with
+      // Spark and assume that all non-null inputs are valid
+      ColumnVector.fromScalar(Scalar.fromBool(true), col.getRowCount.toInt)
+    }
+  }
+
+  def parseStringAsTimestamp(
+      lhs: GpuColumnVector,
+      sparkFormat: String,
+      strfFormat: String,
+      timeParserPolicy: TimeParserPolicy,
+      dtype: DType,
+      daysScalar: String => Scalar,
+      asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
+
+    val isTimestamp = GpuToTimestamp.isTimestamp(lhs.getBase, sparkFormat, strfFormat)
+
+    // in addition to date/timestamp strings, we also need to check for special dates and null
+    // values, since anything else is invalid and should throw an error or be converted to null
+    // depending on the policy
+    withResource(isTimestamp) { isTimestamp =>
+      withResource(daysEqual(lhs.getBase, DateUtils.EPOCH)) { isEpoch =>
+        withResource(daysEqual(lhs.getBase, DateUtils.NOW)) { isNow =>
+          withResource(daysEqual(lhs.getBase, DateUtils.TODAY)) { isToday =>
+            withResource(daysEqual(lhs.getBase, DateUtils.YESTERDAY)) { isYesterday =>
+              withResource(daysEqual(lhs.getBase, DateUtils.TOMORROW)) { isTomorrow =>
+                withResource(lhs.getBase.isNull) { isNull =>
+                  withResource(Scalar.fromNull(dtype)) { nullValue =>
+                    withResource(asTimestamp(lhs.getBase, strfFormat)) { converted =>
+                      withResource(daysScalar(DateUtils.EPOCH)) { epoch =>
+                        withResource(daysScalar(DateUtils.NOW)) { now =>
+                          withResource(daysScalar(DateUtils.TODAY)) { today =>
+                            withResource(daysScalar(DateUtils.YESTERDAY)) { yesterday =>
+                              withResource(daysScalar(DateUtils.TOMORROW)) { tomorrow =>
+                                withResource(isTomorrow.ifElse(tomorrow, nullValue)) { a =>
+                                  withResource(isYesterday.ifElse(yesterday, a)) { b =>
+                                    withResource(isToday.ifElse(today, b)) { c =>
+                                      withResource(isNow.ifElse(now, c)) { d =>
+                                        withResource(isEpoch.ifElse(epoch, d)) { e =>
+                                          isTimestamp.ifElse(converted, e)
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -311,8 +433,11 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
 abstract class GpuToTimestamp
   extends GpuBinaryExpression with TimeZoneAwareExpression with ExpectsInputTypes {
 
-  def downScaleFactor = 1000000 // MICROS IN SECOND
+  import GpuToTimestamp._
 
+  def downScaleFactor = DateUtils.ONE_SECOND_MICROSECONDS
+
+  def sparkFormat: String
   def strfFormat: String
 
   override def inputTypes: Seq[AbstractDataType] =
@@ -323,18 +448,28 @@ abstract class GpuToTimestamp
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  val timeParserPolicy = getTimeParserPolicy
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("rhs has to be a scalar for the unixtimestamp to work")
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
       "the unixtimestamp to work")
   }
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val tmp = if (lhs.dataType == StringType) {
       // rhs is ignored we already parsed the format
-      lhs.getBase.asTimestampMicroseconds(strfFormat)
+      parseStringAsTimestamp(
+        lhs,
+        sparkFormat,
+        strfFormat,
+        timeParserPolicy,
+        DType.TIMESTAMP_MICROSECONDS,
+        daysScalarMicros,
+        (col, strfFormat) => col.asTimestampMicroseconds(strfFormat))
     } else { // Timestamp or DateType
       lhs.getBase.asTimestampMicroseconds()
     }
@@ -342,9 +477,15 @@ abstract class GpuToTimestamp
       // The type we are returning is a long not an actual timestamp
       withResource(Scalar.fromInt(downScaleFactor)) { downScaleFactor =>
         withResource(tmp.asLongs()) { longMicroSecs =>
-          GpuColumnVector.from(longMicroSecs.div(downScaleFactor))
+          longMicroSecs.div(downScaleFactor)
         }
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 }
@@ -354,10 +495,19 @@ abstract class GpuToTimestamp
  * first converting to microseconds
  */
 abstract class GpuToTimestampImproved extends GpuToTimestamp {
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  import GpuToTimestamp._
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val tmp = if (lhs.dataType == StringType) {
       // rhs is ignored we already parsed the format
-      lhs.getBase.asTimestampSeconds(strfFormat)
+      parseStringAsTimestamp(
+        lhs,
+        sparkFormat,
+        strfFormat,
+        timeParserPolicy,
+        DType.TIMESTAMP_SECONDS,
+        daysScalarSeconds,
+        (col, strfFormat) => col.asTimestampSeconds(strfFormat))
     } else if (lhs.dataType() == DateType){
       lhs.getBase.asTimestampSeconds()
     } else { // Timestamp
@@ -381,15 +531,16 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
     }
     withResource(tmp) { r =>
       // The type we are returning is a long not an actual timestamp
-      GpuColumnVector.from(r.asLongs())
+      r.asLongs()
     }
   }
 }
 
 case class GpuUnixTimestamp(strTs: Expression,
-   format: Expression,
-   strf: String,
-   timeZoneId: Option[String] = None) extends GpuToTimestamp {
+    format: Expression,
+    sparkFormat: String,
+    strf: String,
+    timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
@@ -401,9 +552,10 @@ case class GpuUnixTimestamp(strTs: Expression,
 }
 
 case class GpuToUnixTimestamp(strTs: Expression,
-   format: Expression,
-   strf: String,
-   timeZoneId: Option[String] = None) extends GpuToTimestamp {
+    format: Expression,
+    sparkFormat: String,
+    strf: String,
+    timeZoneId: Option[String] = None) extends GpuToTimestamp {
   override def strfFormat = strf
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
@@ -415,9 +567,10 @@ case class GpuToUnixTimestamp(strTs: Expression,
 }
 
 case class GpuUnixTimestampImproved(strTs: Expression,
-   format: Expression,
-   strf: String,
-   timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
+    format: Expression,
+    sparkFormat: String,
+    strf: String,
+    timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
   override def strfFormat = strf
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
@@ -429,9 +582,10 @@ case class GpuUnixTimestampImproved(strTs: Expression,
 }
 
 case class GpuToUnixTimestampImproved(strTs: Expression,
-   format: Expression,
-   strf: String,
-   timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
+    format: Expression,
+    sparkFormat: String,
+    strf: String,
+    timeZoneId: Option[String] = None) extends GpuToTimestampImproved {
   override def strfFormat = strf
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
     copy(timeZoneId = Option(timeZoneId))
@@ -448,27 +602,26 @@ case class GpuFromUnixTime(
     strfFormat: String,
     timeZoneId: Option[String] = None)
   extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("rhs has to be a scalar for the from_unixtime to work")
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
       "the from_unixtime to work")
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
     // expressions map and passed down here as strfFormat
-    var tsVector: ColumnVector = null
-    try {
-      tsVector = lhs.getBase.asTimestampSeconds
-      val strVector = tsVector.asStrings(strfFormat)
-      GpuColumnVector.from(strVector)
-    } finally {
-      if (tsVector != null) {
-        tsVector.close()
-      }
+    withResource(lhs.getBase.asTimestampSeconds) { tsVector =>
+      tsVector.asStrings(strfFormat)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 
@@ -499,27 +652,33 @@ trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     withResource(lhs.getBase.castTo(DType.INT32)) { daysSinceEpoch =>
       withResource(daysSinceEpoch.binaryOp(binaryOp, rhs.getBase, daysSinceEpoch.getType)) {
-        daysAsInts => GpuColumnVector.from(daysAsInts.castTo(DType.TIMESTAMP_DAYS))
+        daysAsInts => daysAsInts.castTo(DType.TIMESTAMP_DAYS)
       }
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     withResource(GpuScalar.castDateScalarToInt(lhs)) { daysAsInts =>
-     withResource(daysAsInts.binaryOp(binaryOp, rhs.getBase, daysAsInts.getType)) { ints =>
-       GpuColumnVector.from(ints.castTo(DType.TIMESTAMP_DAYS))
-     }
+      withResource(daysAsInts.binaryOp(binaryOp, rhs.getBase, daysAsInts.getType)) { ints =>
+        ints.castTo(DType.TIMESTAMP_DAYS)
+      }
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     withResource(lhs.getBase.castTo(DType.INT32)) { daysSinceEpoch =>
       withResource(daysSinceEpoch.binaryOp(binaryOp, rhs, daysSinceEpoch.getType)) { daysAsInts =>
-        GpuColumnVector.from(daysAsInts.castTo(DType.TIMESTAMP_DAYS))
+        daysAsInts.castTo(DType.TIMESTAMP_DAYS)
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 }
@@ -555,6 +714,6 @@ case class GpuLastDay(startDate: Expression)
 
   override def prettyName: String = "last_day"
 
-  override protected def doColumnar(input: GpuColumnVector): GpuColumnVector =
-    GpuColumnVector.from(input.getBase.lastDayOfMonth())
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.lastDayOfMonth()
 }
