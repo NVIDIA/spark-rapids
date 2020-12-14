@@ -1029,7 +1029,7 @@ class MultiFileParquetPartitionReader(
           if (allPartitionColumns.size > 1) {
             var succeeded = false
             val numCols = allPartitionColumns.head.size
-            // logWarning("num cols is: " + numCols)
+            logWarning("num cols is: " + numCols + " partitions is: " + allPartitionColumns.size)
             val result = new Array[GpuColumnVector](numCols)
             try {
               for (i <- result.indices) {
@@ -1045,10 +1045,8 @@ class MultiFileParquetPartitionReader(
                         concatCol.getBase,
                         part(i).getBase), concatCol.dataType())
                   } finally {
-                    if (i > 0) {
-                      // first concat col will be closed with allPartitionColumns
-                      concatCol.safeClose()
-                    }
+                    concatCol.safeClose()
+                    part(i).safeClose()
                   }
                 }
               }
@@ -1072,6 +1070,7 @@ class MultiFileParquetPartitionReader(
             }
           } else if (allPartitionColumns.size == 1) {
             try {
+              logWarning("num cols is: " + allPartitionColumns.head.size + " partitions is 1")
               val partitionColumns = allPartitionColumns.head
               // just create column batch
               val fileBatchCols = (0 until cb.numCols).map(cb.column)
