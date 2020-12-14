@@ -26,18 +26,31 @@ import org.apache.spark.sql.catalyst.expressions.{CaseWhen, Expression, WindowSp
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 
+/**
+ * The level of support that the plugin has for a given type.  Used for documentation generation.
+ */
 sealed abstract class SupportLevel {
   def htmlTag: String
 }
 
+/**
+ * N/A neither spark not the plugin supports this.
+ */
 object NotApplicable extends SupportLevel {
   override def htmlTag: String = "<td> </td>"
 }
 
+/**
+ * Spark supports this but the plugin does not.
+ */
 object NotSupported extends SupportLevel {
   override def htmlTag: String = "<td><b>NS</b></td>"
 }
 
+/**
+ * Both Spark and the plugin support this.
+ * @param asterisks true if we need to include an asterisks because it is not really 100% supported.
+ */
 class Supported(val asterisks: Boolean = false) extends SupportLevel {
   override def htmlTag: String =
     if (asterisks) {
@@ -47,6 +60,14 @@ class Supported(val asterisks: Boolean = false) extends SupportLevel {
     }
 }
 
+/**
+ * The plugin partially supports this type.
+ * @param asterisks true if we need to include an asterisks for Decimal or Timestamp.
+ * @param missingNestedTypes nested types that are not supported
+ * @param needsLitWarning true if we need to warn that we only support a literal value when Spark
+ *                        does not.
+ * @param note any other notes we want to include about not complete support.
+ */
 class PartiallySupported(
     val asterisks: Boolean = false,
     val missingNestedTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
@@ -73,8 +94,8 @@ class PartiallySupported(
 }
 
 /**
- * The Supported Types. This is typically an implementation detail and the TypeSig API should
- * be used instead.
+ * The Supported Types. The TypeSig API should be preferred for this, except in a few cases when
+ * TypeSig asks for a TypeEnum.
  */
 object TypeEnum extends Enumeration {
   type TypeEnum = Value
@@ -100,7 +121,9 @@ object TypeEnum extends Enumeration {
 }
 
 /**
- * A type signature.
+ * A type signature.  This is a bit limited in what it supports right now, but can express
+ * a set of base types and a separate set of types that can be nested under the base types.
+ * It can also express if a particular base type has to be a literal or not.
  */
 final class TypeSig private(
     private val initialTypes: TypeEnum.ValueSet,
@@ -109,17 +132,32 @@ final class TypeSig private(
     private val notes: Map[TypeEnum.Value, String] = Map.empty) {
   import TypeSig._
 
+  /**
+   * Add a literal restriction to the signature
+   * @param dataType the type that has to be literal.  Will be added if it does not already exist.
+   * @return the new signature.
+   */
   def withLit(dataType: TypeEnum.Value): TypeSig = {
     val it = initialTypes + dataType
     val lt = litOnlyTypes + dataType
     new TypeSig(it, nestedTypes, lt, notes)
   }
 
+  /**
+   * All currently supported types can only be literal values.
+   * @return the new signature.
+   */
   def withAllLit(): TypeSig = {
     // don't need to combine initialTypes with litOnlyTypes because litOnly should be a subset
     new TypeSig(initialTypes, nestedTypes, initialTypes, notes)
   }
 
+  /**
+   * Combine two type signatures together.  Base types and nested types will be the union of
+   * both as will limitations on literal values.
+   * @param other what to combine with.
+   * @return the new signature
+   */
   def + (other: TypeSig): TypeSig = {
     val it = initialTypes ++ other.initialTypes
     val nt = nestedTypes ++ other.nestedTypes
@@ -129,21 +167,42 @@ final class TypeSig private(
     new TypeSig(it, nt, lt, nts)
   }
 
+  /**
+   * Add nested types to this type signature. Note that these do not stack so if nesting has
+   * nested types too they are ignored.
+   * @param nesting the basic types to add.
+   * @return the new type signature
+   */
   def nested(nesting: TypeSig): TypeSig = {
-    // TODO should warn if we throw away notes or something...
     new TypeSig(initialTypes, nestedTypes ++ nesting.initialTypes, litOnlyTypes, notes)
   }
 
+  /**
+   * Update this type signature to be nested with the initial types too.
+   * @return the update type signature
+   */
   def nested(): TypeSig = {
     new TypeSig(initialTypes, initialTypes ++ nestedTypes, litOnlyTypes, notes)
   }
 
+  /**
+   * Add a note about a given type that marks it as partially supported.
+   * @param dataType the type this note is for.
+   * @param note the note itself
+   * @return the updated TypeSignature.
+   */
   def withPsNote(dataType: TypeEnum.Value, note: String): TypeSig = {
     new TypeSig(initialTypes + dataType, nestedTypes, litOnlyTypes, notes.+((dataType, note)))
   }
 
   private def isSupportedType(dataType: TypeEnum.Value): Boolean = initialTypes.contains(dataType)
 
+  /**
+   * Given an expression tag the associated meta for it to be supported or not.
+   * @param meta the meta that gets marked for support or not.
+   * @param expr the expression to check against.
+   * @param name the name of the expression (typically a parameter name)
+   */
   def tagExprParam(meta: RapidsMeta[_, _, _], expr: Expression, name: String): Unit = {
     // This is for a parameter so skip it if there is no data type for the expression
     getDataType(expr).foreach { dt =>
@@ -157,6 +216,12 @@ final class TypeSig private(
     }
   }
 
+  /**
+   * Check if this type is supported by the plugin or not.
+   * @param dataType the data type to be checked
+   * @param allowDecimal if decimal support is enabled
+   * @return true if it is allowed else false.
+   */
   def isSupportedByPlugin(dataType: DataType, allowDecimal: Boolean): Boolean =
     isSupportedByPlugin(initialTypes, dataType, allowDecimal)
 
@@ -217,6 +282,10 @@ final class TypeSig private(
   def areAllSupportedByPlugin(types: Seq[DataType], allowDecimal: Boolean): Boolean =
     types.forall(isSupportedByPlugin(_, allowDecimal))
 
+  /**
+   * Get the level of support for a given type compared to what Spark supports.
+   * Used for documentation.
+   */
   def getSupportLevel(dataType: TypeEnum.Value, allowed: TypeSig): SupportLevel = {
     if (!allowed.isSupportedType(dataType)) {
       NotApplicable
@@ -250,13 +319,25 @@ final class TypeSig private(
 }
 
 object TypeSig {
+  /**
+   * Create a TypeSig that only supports a literal of the given type.
+   */
   def lit(dataType: TypeEnum.Value): TypeSig =
     TypeSig.none.withLit(dataType)
 
+  /**
+   * Create a TypeSig that has partial support for the given type.
+   */
   def psNote(dataType: TypeEnum.Value, note: String): TypeSig =
     TypeSig.none.withPsNote(dataType, note)
 
+  /**
+   * All types nested and not nested
+   */
   val all: TypeSig = new TypeSig(TypeEnum.values, TypeEnum.values)
+  /**
+   * No types supported at all
+   */
   val none: TypeSig = new TypeSig(TypeEnum.ValueSet())
 
   val BOOLEAN: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.BOOLEAN))
@@ -273,18 +354,51 @@ object TypeSig {
   val NULL: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.NULL))
   val BINARY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.BINARY))
   val CALENDAR: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.CALENDAR))
+  /**
+   * ARRAY type support, but not very useless on its own because no nested types under
+   * it are supported
+   */
   val ARRAY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.ARRAY))
+  /**
+   * MAP type support, but not very useless on its own because no nested types under
+   * it are supported
+   */
   val MAP: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.MAP))
+  /**
+   * STRUCT type support, but only matches empty structs unless you add nested types to it.
+   */
   val STRUCT: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.STRUCT))
+  /**
+   * User Defined Type (We don't support these in the plugin yet)
+   */
   val UDT: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.UDT))
 
+  /**
+   * A signature for types that are generally supported by the plugin. Please make sure to check
+   * what Spark actually supports instead of blindly using this in a signature.
+   */
   val legacySupportedTypes: TypeSig = BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING
 
+  /**
+   * All floating point types
+   */
   val fp: TypeSig = FLOAT + DOUBLE
+  /**
+   * All integer types
+   */
   val integral: TypeSig = BYTE + SHORT + INT + LONG
+  /**
+   * All numeric types fp + integral + DECIMAL
+   */
   val numeric: TypeSig = integral + fp + DECIMAL
+  /**
+   * numeric + CALENDAR
+   */
   val numericAndInterval: TypeSig = numeric + CALENDAR
+  /**
+   * All types that spark supports sorting/ordering on (really everything but MAP)
+   */
   val orderable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING + DECIMAL + NULL + BINARY + CALENDAR + ARRAY + STRUCT + UDT).nested()
 
@@ -305,9 +419,22 @@ abstract class TypeChecks[RET] {
   val shown: Boolean = true
 }
 
+/**
+ * Checks a single parameter TypeSig
+ */
 case class ParamCheck(name: String, cudf: TypeSig, spark: TypeSig)
+
+/**
+ * Checks the type signature for a parameter that repeats (Can only be used at the end of a list
+ * of parameters)
+ */
 case class RepeatingParamCheck(name: String, cudf: TypeSig, spark: TypeSig)
 
+/**
+ * Checks an expression that have input parameters and a single output.  This is intended to be
+ * given for a specific ExpressionContext. If your expression does not meet this pattern you may
+ * need to create a custom ExprChecks instance.
+ */
 case class ContextChecks(
     outputCheck: TypeSig,
     sparkOutputSig: TypeSig,
@@ -363,6 +490,10 @@ case class ContextChecks(
   }
 }
 
+/**
+ * Checks the input and output types supported by a SparkPlan node. We don't currently separate
+ * input checks from output checks.  We can add this in if something needs it.
+ */
 class ExecChecks private(
     check: TypeSig,
     sparkSig: TypeSig,
@@ -391,12 +522,18 @@ class ExecChecks private(
     check.getSupportLevel(dataType, sparkSig)
 }
 
+/**
+ * gives users an API to create ExecChecks.
+ */
 object ExecChecks {
   def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = new ExecChecks(check, sparkSig)
 
   def hiddenHack() = new ExecChecks(TypeSig.all, TypeSig.all, shown = false)
 }
 
+/**
+ * Base class all Expression checks must follow.
+ */
 abstract class ExprChecks extends TypeChecks[Map[ExpressionContext, Map[String, SupportLevel]]]
 
 case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
@@ -421,8 +558,9 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
   }
 }
 
-// This is specific to CaseWhen, because it does not follow the typical convention. We might want
-// to re-work some things in the future if this pattern becomes more common.
+/**
+ * This is specific to CaseWhen, because it does not follow the typical parameter convention.
+ */
 object CaseWhenCheck extends ExprChecks {
   val check: TypeSig = TypeSig.legacySupportedTypes + TypeSig.NULL
   val sparkSig: TypeSig = TypeSig.all
@@ -462,7 +600,9 @@ object CaseWhenCheck extends ExprChecks {
   }
 }
 
-// This is specific to WindowSpec, because it does not follow the typical convention.
+/**
+ * This is specific to WidowSpec, because it does not follow the typical parameter convention.
+ */
 object WindowSpecCheck extends ExprChecks {
   val check: TypeSig = TypeSig.legacySupportedTypes
   val sparkSig: TypeSig = TypeSig.all
@@ -491,6 +631,9 @@ object WindowSpecCheck extends ExprChecks {
 }
 
 object ExprChecks {
+  /**
+   * A check for an expression that only supports project, both in Spark and in the plugin.
+   */
   def projectOnly(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -500,6 +643,10 @@ object ExprChecks {
       (ProjectExprContext,
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
+  /**
+   * A check for an expression that only supports project in the plugin, but Spark also supports
+   * this expression in lambda.
+   */
   def projectNotLambda(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -513,6 +660,10 @@ object ExprChecks {
     ExprChecksImpl(Map((ProjectExprContext, project), (LambdaExprContext, lambda)))
   }
 
+  /**
+   * A check for a unary expression that only support project, but Spark also supports this
+   * expression in lambda.
+   */
   def unaryProjectNotLambda(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -521,12 +672,24 @@ object ExprChecks {
     projectNotLambda(outputCheck, sparkOutputSig,
       Seq(ParamCheck("input", inputCheck, sparkInputSig)))
 
+  /**
+   * Unary expression checks for project where the input matches the output, but Spark also
+   * supports this expression in lambda mode.
+   */
   def unaryProjectNotLambdaInputMatchesOutput(check: TypeSig, sparkSig: TypeSig): ExprChecks =
     unaryProjectNotLambda(check, sparkSig, check, sparkSig)
 
+  /**
+   * Math unary checks where input and output are both DoubleType. Spark supports these for
+   * both project and lambda, but the plugin only support project.
+   */
   val mathUnary: ExprChecks = unaryProjectNotLambdaInputMatchesOutput(
     TypeSig.DOUBLE, TypeSig.DOUBLE)
 
+  /**
+   * Helper function for a binary expression where the plugin only supports project but Spark
+   * support lambda too.
+   */
   def binaryProjectNotLambda(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -536,6 +699,9 @@ object ExprChecks {
       Seq(ParamCheck(param1._1, param1._2, param1._3),
         ParamCheck(param2._1, param2._2, param2._3)))
 
+  /**
+   * Aggregate operation where window, reduction, and group by agg are all supported the same.
+   */
   def fullAgg(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -549,6 +715,10 @@ object ExprChecks {
       (WindowAggExprContext,
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
+  /**
+   * For a generic expression that can work as both an aggregation and in the project context.
+   * This is really just for PythonUDF.
+   */
   def fullAggAndProject(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -564,6 +734,10 @@ object ExprChecks {
       (ProjectExprContext,
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
+  /**
+   * An aggregation check where group by and reduction are supported by the plugin, but Spark
+   * also supports window operations on these.
+   */
   def aggNotWindow(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -584,6 +758,10 @@ object ExprChecks {
           ContextChecks(TypeSig.none, sparkOutputSig, windowParamCheck, windowRepeat))))
   }
 
+  /**
+   * Window only operations. Spark does not support these operations as anythign but a window
+   * operation.
+   */
   def windowOnly(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
@@ -594,6 +772,9 @@ object ExprChecks {
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 }
 
+/**
+ * Used for generating the support docs.
+ */
 object SupportedOpsDocs {
   def help(): Unit = {
     // scalastyle:off line.size.limit
@@ -603,11 +784,13 @@ object SupportedOpsDocs {
     println("nav_order: 4")
     println("---")
     println("<!-- Generated by SupportedOpsDocs.help. DO NOT EDIT! -->")
-    // TODO should include the version of spark this is against
     println("Apache Spark supports processing various types of data. Not all expressions")
     println("support all data types. The RAPIDS Accelerator for Apache Spark has further")
     println("restrictions on what types are supported for processing. This tries")
     println("to document what operations are supported and what data types they support.")
+    println("Because Apache Spark is under active development too and this document was generated")
+    println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
+    println("apply to other versions of Spark, but there may be slight changes.")
     println()
     println("# General limitations")
     println("## `Decimal`")
@@ -625,8 +808,8 @@ object SupportedOpsDocs {
     println()
     println("## `CalendarInterval`")
     println("In Spark `CalendarInterval`s store three values, months, days, and microseconds.")
-    println("Support for this types is still very limited in the accelerator, and generally")
-    println("only days are supported.")
+    println("Support for this types is still very limited in the accelerator. In some cases")
+    println("only a a subset of the type is supported, like window ranges only support days currently.")
     println()
     println("## Configuration")
     println("There are lots of different configuration values that can impact if an operation")

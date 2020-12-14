@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.GpuOverrides.isStringLit
-
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -680,7 +678,6 @@ object ReductionAggExprContext extends ExpressionContext  {
 object WindowAggExprContext extends ExpressionContext  {
   override def toString: String = "window"
 }
-// TODO do we need to separate out distinct from non-distinct aggregate operations?
 
 object ExpressionContext {
   private[this] def findParentPlanMeta(meta: BaseExprMeta[_]): Option[SparkPlanMeta[_]] =

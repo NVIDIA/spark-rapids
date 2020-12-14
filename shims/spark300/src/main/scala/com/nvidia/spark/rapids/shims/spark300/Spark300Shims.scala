@@ -146,7 +146,6 @@ class Spark300Shims extends SparkShims {
         }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
-        // TODO do we need context here for CSV, Parquet and ORC???
         ExecChecks((TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {

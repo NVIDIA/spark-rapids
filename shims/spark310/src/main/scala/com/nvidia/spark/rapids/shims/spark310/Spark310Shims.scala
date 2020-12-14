@@ -133,7 +133,6 @@ class Spark310Shims extends Spark301Shims {
     super.getExecs ++ Seq(
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
-        // TODO do we need context here for CSV, Parquet and ORC???
         ExecChecks((TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
