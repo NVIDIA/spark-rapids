@@ -355,12 +355,12 @@ object TypeSig {
   val BINARY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.BINARY))
   val CALENDAR: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.CALENDAR))
   /**
-   * ARRAY type support, but not very useless on its own because no nested types under
+   * ARRAY type support, but not very useful on its own because no nested types under
    * it are supported
    */
   val ARRAY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.ARRAY))
   /**
-   * MAP type support, but not very useless on its own because no nested types under
+   * MAP type support, but not very useful on its own because no nested types under
    * it are supported
    */
   val MAP: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.MAP))
