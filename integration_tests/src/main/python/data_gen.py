@@ -28,6 +28,8 @@ class DataGen:
     """Base class for data generation"""
 
     def __repr__(self):
+        if not self.nullable:
+            return self.__class__.__name__[:-3] + '(not_null)'
         return self.__class__.__name__[:-3]
 
     def __hash__(self):
@@ -722,6 +724,7 @@ decimal_gen_default = DecimalGen()
 decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
 decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
 decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
+decimal_gen_64bit = DecimalGen(precision=12, scale=2)
 
 null_gen = NullGen()
 
@@ -734,7 +737,7 @@ double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
 decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision]
+        decimal_gen_same_scale_precision, decimal_gen_64bit]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,

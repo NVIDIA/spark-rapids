@@ -1606,11 +1606,11 @@ object GpuOverrides {
     expr[AggregateExpression](
       "Aggregate expression",
       ExprChecks.fullAgg(
-        TypeSig.legacySupportedTypes + TypeSig.NULL,
+        TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL,
         TypeSig.all,
         Seq(ParamCheck(
           "aggFunc",
-          TypeSig.legacySupportedTypes + TypeSig.NULL,
+          TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL,
           TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
@@ -1639,11 +1639,11 @@ object GpuOverrides {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        TypeSig.legacySupportedTypes + TypeSig.NULL,
+        TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL,
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          TypeSig.legacySupportedTypes + TypeSig.NULL,
+          TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL,
           TypeSig.orderable))),
       (a, conf, p, r) => new BaseExprMeta[SortOrder](a, conf, p, r) {
         // One of the few expressions that are not replaced with a GPU version
@@ -2032,6 +2032,21 @@ object GpuOverrides {
         TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
+      }),
+    expr[UnscaledValue](
+      "Convert a Decimal to an unscaled long value for some aggregation optimizations",
+      ExprChecks.unaryProject(TypeSig.LONG, TypeSig.LONG,
+        TypeSig.DECIMAL, TypeSig.DECIMAL),
+      (a, conf, p, r) => new UnaryExprMeta[UnscaledValue](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuUnscaledValue(child)
+      }),
+    expr[MakeDecimal](
+      "Create a Decimal from an unscaled long value form some aggregation optimizations",
+      ExprChecks.unaryProject(TypeSig.DECIMAL, TypeSig.DECIMAL,
+        TypeSig.LONG, TypeSig.LONG),
+      (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
@@ -2269,7 +2284,7 @@ object GpuOverrides {
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
-      ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
@@ -2307,18 +2322,20 @@ object GpuOverrides {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
-        (TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.MAP).nested(TypeSig.STRING),
+        (TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP)
+            .nested(TypeSig.STRING),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
-        (TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.MAP).nested(TypeSig.STRING),
+        (TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP)
+            .nested(TypeSig.STRING),
         TypeSig.all),
       (agg, conf, p, r) => new GpuSortAggregateMeta(agg, conf, p, r)),
     exec[SortExec](
       "The backend for the sort operator",
-      ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",

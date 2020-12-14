@@ -644,6 +644,17 @@ object ExprChecks {
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
   /**
+   * A check for a unary expression that only support project both in Spark and the plugin.
+   */
+  def unaryProject(
+      outputCheck: TypeSig,
+      sparkOutputSig: TypeSig,
+      inputCheck: TypeSig,
+      sparkInputSig: TypeSig): ExprChecks =
+    projectOnly(outputCheck, sparkOutputSig,
+      Seq(ParamCheck("input", inputCheck, sparkInputSig)))
+
+  /**
    * A check for an expression that only supports project in the plugin, but Spark also supports
    * this expression in lambda.
    */
