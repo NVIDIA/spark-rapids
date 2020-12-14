@@ -73,7 +73,6 @@ class GpuBroadcastHashJoinMeta(
     if (!canThisBeReplaced) {
       buildSide.willNotWorkOnGpu("the BroadcastHashJoin this feeds is not on the GPU")
     }
-
   }
 
   override def convertToGpu(): GpuExec = {
@@ -149,9 +148,8 @@ case class GpuBroadcastHashJoinExec(
       val ret = withResource(
         GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
         val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        val filtered = filterBuiltTableIfNeeded(combined)
-        withResource(filtered) { filtered =>
-          GpuColumnVector.from(filtered)
+        withResource(combined) { combined =>
+          GpuColumnVector.from(combined)
         }
       }
 

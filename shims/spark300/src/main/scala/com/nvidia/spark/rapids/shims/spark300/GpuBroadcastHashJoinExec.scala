@@ -85,7 +85,8 @@ class GpuBroadcastHashJoinMeta(
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
-      join.joinType, GpuJoinUtils.getGpuBuildSide(join.buildSide),
+      join.joinType,
+      GpuJoinUtils.getGpuBuildSide(join.buildSide),
       condition.map(_.convertToGpu()),
       left, right)
   }
@@ -145,9 +146,8 @@ case class GpuBroadcastHashJoinExec(
       val ret = withResource(
         GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
         val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        val filtered = filterBuiltTableIfNeeded(combined)
-        withResource(filtered) { filtered =>
-          GpuColumnVector.from(filtered)
+        withResource(combined) { combined =>
+          GpuColumnVector.from(combined)
         }
       }
 
