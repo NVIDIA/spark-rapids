@@ -1405,96 +1405,6 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="4">AnsiCast</td>
-<td rowSpan="4"> </td>
-<td rowSpan="4">Convert a column of one type of data into another type</td>
-<td rowSpan="4">None</td>
-<td rowSpan="2">project</td>
-<td>input</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td>S</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>result</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td>S</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td rowSpan="2">lambda</td>
-<td>input</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>result</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
 <td rowSpan="4">Asin</td>
 <td rowSpan="4">`asin`</td>
 <td rowSpan="4">Inverse sine</td>
@@ -2570,96 +2480,6 @@ Accelerator support is described below.
 </tr>
 <tr>
 <td>value</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>result</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td rowSpan="4">Cast</td>
-<td rowSpan="4">`timestamp`, `tinyint`, `binary`, `float`, `smallint`, `string`, `decimal`, `double`, `boolean`, `cast`, `date`, `int`, `bigint`</td>
-<td rowSpan="4">Convert a column of one type of data into another type</td>
-<td rowSpan="4">None</td>
-<td rowSpan="2">project</td>
-<td>input</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td>S</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>result</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td>S</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td rowSpan="2">lambda</td>
-<td>input</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -16180,18 +16000,24 @@ Accelerator support is described below.
 UTC time zone. Decimals are off by default due to performance impact in
 some cases.
 
-## `Cast`
-The above table does not show what is and is not supported for cast very well.
-This table shows the matrix of supported casts. UDT types are not show as they are
-not supported by the accelerator, and have very limited support in Spark.
+## Casting
+The above table does not show what is and is not supported for cast.
+This table shows the matrix of supported casts.
 Nested types like MAP, Struct, and Array can only be cast if the child types
 can be cast.
 
 Some of the casts to/from string on the GPU are not 100% the same and are disabled
 by default. Please see the configs for more details on these specific cases.
 
+Please note that even though casting from one type to another is supported
+by Spark it does not mean they all produce usable results.  For example casting
+from a date to a boolean always produces a null. This is for Hive compatibility
+and the accelerator produces the same result.
+
+### `AnsiCast`
+
 <table>
-<tr><th rowSpan="2" colSpan="2"></th><th colSpan="17">TO</th></tr>
+<tr><th rowSpan="2" colSpan="2"></th><th colSpan="18">TO</th></tr>
 <tr>
 <th>BOOLEAN</th>
 <th>BYTE</th>
@@ -16210,8 +16036,9 @@ by default. Please see the configs for more details on these specific cases.
 <th>ARRAY</th>
 <th>MAP</th>
 <th>STRUCT</th>
+<th>UDT</th>
 </tr>
-<tr><th rowSpan="17">FROM</th>
+<tr><th rowSpan="18">FROM</th>
 <th>BOOLEAN</th>
 <td>S</td>
 <td>S</td>
@@ -16220,16 +16047,17 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td></td>
-<td>S</td>
+<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>BYTE</th>
@@ -16240,16 +16068,17 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td></td>
-<td>S</td>
+<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
+<td> </td>
 <td>S</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>SHORT</th>
@@ -16260,16 +16089,17 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td></td>
-<td>S</td>
+<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
+<td> </td>
 <td>S</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>INT</th>
@@ -16280,16 +16110,17 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td></td>
-<td>S</td>
+<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
+<td> </td>
 <td>S</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>LONG</th>
@@ -16300,16 +16131,17 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td></td>
-<td>S</td>
+<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
+<td> </td>
 <td>S</td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>FLOAT</th>
@@ -16320,16 +16152,17 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td></td>
-<td>S</td>
+<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>DOUBLE</th>
@@ -16340,16 +16173,17 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td></td>
-<td>S</td>
+<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>DATE</th>
@@ -16361,15 +16195,16 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>TIMESTAMP</th>
@@ -16381,15 +16216,16 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>STRING</th>
@@ -16401,15 +16237,16 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>DECIMAL</th>
@@ -16420,16 +16257,17 @@ by default. Please see the configs for more details on these specific cases.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td></td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td></td>
-<td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th>NULL</th>
@@ -16441,9 +16279,10 @@ by default. Please see the configs for more details on these specific cases.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -16453,104 +16292,536 @@ by default. Please see the configs for more details on these specific cases.
 </tr>
 <tr>
 <th>BINARY</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
+<tr>
 <th>CALENDAR</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
-</tr>
+<tr>
 <th>ARRAY</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
-</tr>
+<tr>
 <th>MAP</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
+<td> </td>
+<td> </td>
 </tr>
-</tr>
+<tr>
 <th>STRUCT</th>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
-<td></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+</tr>
+<tr>
+<th>UDT</th>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
 </tr>
 </table>
+
+### `Cast`
+
+<table>
+<tr><th rowSpan="2" colSpan="2"></th><th colSpan="18">TO</th></tr>
+<tr>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr><th rowSpan="18">FROM</th>
+<th>BOOLEAN</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>BYTE</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>SHORT</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>INT</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>LONG</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>FLOAT</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>DOUBLE</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>DATE</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>TIMESTAMP</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>STRING</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>DECIMAL</th>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>NULL</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<th>BINARY</th>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>CALENDAR</th>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>ARRAY</th>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>MAP</th>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<th>STRUCT</th>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+</tr>
+<tr>
+<th>UDT</th>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+</tr>
+</table>
+
 
 ## Input/Output
 For Input and Output it is not cleanly exposed what types are supported and which are not.

@@ -38,10 +38,6 @@ class CastExprMeta[INPUT <: CastBase](
   private val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
-    if (!GpuCast.canCast(fromType, toType)) {
-      willNotWorkOnGpu(s"$castExpr from $fromType " +
-        s"to $toType is not currently supported on the GPU")
-    }
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
@@ -116,74 +112,6 @@ object GpuCast {
     "required range"
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
-
-
-  /**
-   * Returns true iff we can cast `from` to `to` using the GPU.
-   */
-  def canCast(from: DataType, to: DataType): Boolean = {
-    if (from == to) {
-      return true
-    }
-    from match {
-      case NullType => to match {
-          // The only thing we really need is that we can use a null scalar to create a vector
-        case BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType |
-             DoubleType | TimestampType | DateType | StringType => true
-        case _ => false
-      }
-      case BooleanType => to match {
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case TimestampType => true
-        case StringType => true
-        case _ => false
-      }
-      case ByteType | ShortType | IntegerType | LongType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case StringType => true
-        case TimestampType => true
-        case BinaryType => true
-        case _ => false
-      }
-      case FloatType | DoubleType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case TimestampType => true
-        case StringType => true
-        case _ => false
-      }
-      case DateType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case TimestampType => true
-        case StringType => true
-        case _ => false
-      }
-      case TimestampType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType => true
-        case LongType => true
-        case FloatType | DoubleType => true
-        case DateType => true
-        case StringType => true
-        case _ => false
-      }
-      case StringType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
-        case DateType => true
-        case TimestampType => true
-        case BinaryType => true
-        case _ => false
-      }
-      case _ => false
-    }
-  }
 }
 
 /**
