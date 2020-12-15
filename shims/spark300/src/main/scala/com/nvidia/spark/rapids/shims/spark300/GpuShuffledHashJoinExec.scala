@@ -142,11 +142,11 @@ case class GpuShuffledHashJoinExec(
           buildIter, localBuildOutput)) { buildBatch: ColumnarBatch =>
           withResource(GpuProjectExec.project(buildBatch, gpuBuildKeys)) { keys =>
             val combined = GpuHashJoin.incRefCount(combine(keys, buildBatch))
-            withResource(filterBuiltTableIfNeeded(combined)) { filtered =>
+            withResource(combined) { combined =>
               combinedSize =
-                  GpuColumnVector.extractColumns(filtered)
+                  GpuColumnVector.extractColumns(combined)
                       .map(_.getBase.getDeviceMemorySize).sum.toInt
-              GpuColumnVector.from(filtered)
+              GpuColumnVector.from(combined)
             }
           }
         }

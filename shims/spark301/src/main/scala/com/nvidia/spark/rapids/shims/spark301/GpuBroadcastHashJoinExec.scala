@@ -57,8 +57,8 @@ class GpuBroadcastHashJoinMeta(
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
 
     val buildSide = join.buildSide match {
-     case BuildLeft => childPlans(0)
-     case BuildRight => childPlans(1)
+      case BuildLeft => childPlans(0)
+      case BuildRight => childPlans(1)
     }
 
     if (!canBuildSideBeReplaced(buildSide)) {
@@ -123,8 +123,7 @@ case class GpuBroadcastHashJoinExec(
   }
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(
-      "GpuBroadcastHashJoin does not support row-based processing")
+    throw new IllegalStateException("GpuBroadcastHashJoin does not support row-based processing")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
@@ -144,9 +143,8 @@ case class GpuBroadcastHashJoinExec(
       val ret = withResource(
         GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
         val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        val filtered = filterBuiltTableIfNeeded(combined)
-        withResource(filtered) { filtered =>
-          GpuColumnVector.from(filtered)
+        withResource(combined) { combined =>
+          GpuColumnVector.from(combined)
         }
       }
 
@@ -161,4 +159,3 @@ case class GpuBroadcastHashJoinExec(
         numOutputBatches, streamTime, joinTime, filterTime, totalTime))
   }
 }
-
