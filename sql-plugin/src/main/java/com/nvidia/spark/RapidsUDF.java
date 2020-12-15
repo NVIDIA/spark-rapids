@@ -22,8 +22,12 @@ import ai.rapids.cudf.ColumnVector;
 public interface RapidsUDF {
   /**
    * Evaluate a user-defined function with RAPIDS cuDF columnar inputs
-   * producing a cuDF column as output.
-   * <p>
+   * producing a cuDF column as output. The method must return a column of
+   * the appropriate type that corresponds to the type returned by the CPU
+   * implementation of the UDF (e.g.: INT32 for int, FLOAT64 for double,
+   * STRING for String, etc) or a runtime exception will occur when the
+   * results are marshalled into the expected Spark result type for the UDF.
+   * <p/>
    * Note that the inputs should NOT be closed by this method, as they will
    * be closed by the caller. This method must close any intermediate cuDF
    * results produced during the computation (e.g.: `Table`, `ColumnVector`
