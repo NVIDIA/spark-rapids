@@ -133,7 +133,7 @@ class Spark310Shims extends Spark301Shims {
     super.getExecs ++ Seq(
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
-        ExecChecks((TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           // partition filters and data filters are not run on the GPU
@@ -165,7 +165,7 @@ class Spark310Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks(TypeSig.legacySupportedTypes, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
@@ -181,15 +181,15 @@ class Spark310Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
-        ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
-        ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }

@@ -132,7 +132,7 @@ class Spark300Shims extends SparkShims {
           " the Java process and the Python process. It also supports scheduling GPU resources" +
           " for the Python process when enabled. For now it only supports row based window frame.",
         ExecChecks(
-          (TypeSig.legacySupportedTypes + TypeSig.ARRAY).nested(TypeSig.legacySupportedTypes),
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
           TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override def convertToGpu(): GpuExec = {
@@ -146,7 +146,7 @@ class Spark300Shims extends SparkShims {
         }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
-        ExecChecks((TypeSig.legacySupportedTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           // partition filters and data filters are not run on the GPU
@@ -178,15 +178,15 @@ class Spark300Shims extends SparkShims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
-        ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
-        ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        ExecChecks(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
@@ -218,8 +218,8 @@ class Spark300Shims extends SparkShims {
         }),
       GpuOverrides.expr[First](
         "first aggregate operator",
-        ExprChecks.aggNotWindow(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all,
-          Seq(ParamCheck("input", TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
             ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
         (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
           val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
@@ -232,8 +232,8 @@ class Spark300Shims extends SparkShims {
         }),
       GpuOverrides.expr[Last](
         "last aggregate operator",
-        ExprChecks.aggNotWindow(TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all,
-          Seq(ParamCheck("input", TypeSig.legacySupportedTypes + TypeSig.NULL, TypeSig.all),
+        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
             ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
         (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
           val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))

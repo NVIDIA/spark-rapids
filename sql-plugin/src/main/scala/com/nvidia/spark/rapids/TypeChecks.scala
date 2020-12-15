@@ -34,7 +34,7 @@ sealed abstract class SupportLevel {
 }
 
 /**
- * N/A neither spark not the plugin supports this.
+ * N/A neither spark nor the plugin supports this.
  */
 object NotApplicable extends SupportLevel {
   override def htmlTag: String = "<td> </td>"
@@ -49,7 +49,8 @@ object NotSupported extends SupportLevel {
 
 /**
  * Both Spark and the plugin support this.
- * @param asterisks true if we need to include an asterisks because it is not really 100% supported.
+ * @param asterisks true if we need to include an asterisks because for Decimal or Timestamp
+ *                  types because they are not 100% supported.
  */
 class Supported(val asterisks: Boolean = false) extends SupportLevel {
   override def htmlTag: String =
@@ -62,7 +63,8 @@ class Supported(val asterisks: Boolean = false) extends SupportLevel {
 
 /**
  * The plugin partially supports this type.
- * @param asterisks true if we need to include an asterisks for Decimal or Timestamp.
+ * @param asterisks true if we need to include an asterisks for Decimal or Timestamp types because
+ *                  they re not 100% supported.
  * @param missingNestedTypes nested types that are not supported
  * @param needsLitWarning true if we need to warn that we only support a literal value when Spark
  *                        does not.
@@ -335,6 +337,7 @@ object TypeSig {
    * All types nested and not nested
    */
   val all: TypeSig = new TypeSig(TypeEnum.values, TypeEnum.values)
+
   /**
    * No types supported at all
    */
@@ -374,30 +377,34 @@ object TypeSig {
   val UDT: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.UDT))
 
   /**
-   * A signature for types that are generally supported by the plugin. Please make sure to check
-   * what Spark actually supports instead of blindly using this in a signature.
+   * A signature for types that are generally supported by the plugin/CUDF. Please make sure to
+   * check what Spark actually supports instead of blindly using this in a signature.
    */
-  val legacySupportedTypes: TypeSig = BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
+  val commonCudfTypes: TypeSig = BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING
 
   /**
    * All floating point types
    */
   val fp: TypeSig = FLOAT + DOUBLE
+
   /**
    * All integer types
    */
   val integral: TypeSig = BYTE + SHORT + INT + LONG
+
   /**
    * All numeric types fp + integral + DECIMAL
    */
   val numeric: TypeSig = integral + fp + DECIMAL
+
   /**
    * numeric + CALENDAR
    */
   val numericAndInterval: TypeSig = numeric + CALENDAR
+
   /**
-   * All types that spark supports sorting/ordering on (really everything but MAP)
+   * All types that Spark supports sorting/ordering on (really everything but MAP)
    */
   val orderable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING + DECIMAL + NULL + BINARY + CALENDAR + ARRAY + STRUCT + UDT).nested()
@@ -562,7 +569,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  * This is specific to CaseWhen, because it does not follow the typical parameter convention.
  */
 object CaseWhenCheck extends ExprChecks {
-  val check: TypeSig = TypeSig.legacySupportedTypes + TypeSig.NULL
+  val check: TypeSig = TypeSig.commonCudfTypes + TypeSig.NULL
   val sparkSig: TypeSig = TypeSig.all
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
@@ -604,7 +611,7 @@ object CaseWhenCheck extends ExprChecks {
  * This is specific to WidowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {
-  val check: TypeSig = TypeSig.legacySupportedTypes
+  val check: TypeSig = TypeSig.commonCudfTypes
   val sparkSig: TypeSig = TypeSig.all
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
