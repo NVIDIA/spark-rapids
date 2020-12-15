@@ -41,7 +41,7 @@ class GpuAggregateInPandasExecMeta(
     aggPandas: AggregateInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[AggregateInPandasExec](aggPandas, conf, parent, rule) {
 
   override def couldReplaceMessage: String = "could partially run on GPU"

@@ -37,7 +37,7 @@ class GpuMapInPandasExecMeta(
     mapPandas: MapInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[MapInPandasExec](mapPandas, conf, parent, rule) {
 
   override def couldReplaceMessage: String = "could partially run on GPU"

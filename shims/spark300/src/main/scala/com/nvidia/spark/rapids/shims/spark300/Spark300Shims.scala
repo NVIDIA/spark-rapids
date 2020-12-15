@@ -131,6 +131,9 @@ class Spark300Shims extends SparkShims {
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
           " for the Python process when enabled. For now it only supports row based window frame.",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
+          TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
@@ -143,14 +146,9 @@ class Spark300Shims extends SparkShims {
         }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+            TypeSig.ARRAY).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t,
-              allowArray = true,
-              allowMaps = true,
-              allowStruct = true,
-              allowNesting = true)
-
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
@@ -180,12 +178,15 @@ class Spark300Shims extends SparkShims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
@@ -194,6 +195,10 @@ class Spark300Shims extends SparkShims {
     Seq(
       GpuOverrides.expr[TimeSub](
         "Subtracts interval from timestamp",
+        ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
+              .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
         (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
             a.interval match {
@@ -202,58 +207,52 @@ class Spark300Shims extends SparkShims {
                   willNotWorkOnGpu("interval months isn't supported")
                 }
               case _ =>
-                willNotWorkOnGpu("only literals are supported for intervals")
             }
             if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
               willNotWorkOnGpu("Only UTC zone id is supported")
             }
           }
 
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t, allowCalendarInterval = true)
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuTimeSub(lhs, rhs)
-          }
-        }
-      ),
+        }),
       GpuOverrides.expr[First](
         "first aggregate operator",
+        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+            ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
         (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
           val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
           val ignoreNulls: BaseExprMeta[_] =
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
 
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t,
-              allowNull = true)
-
           override def convertToGpu(): GpuExpression =
             GpuFirst(child.convertToGpu(), ignoreNulls.convertToGpu())
         }),
       GpuOverrides.expr[Last](
         "last aggregate operator",
+        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+            ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
         (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
           val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
           val ignoreNulls: BaseExprMeta[_] =
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
 
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t,
-              allowNull = true)
-
           override def convertToGpu(): GpuExpression =
             GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
         }),
       GpuOverrides.expr[RegExpReplace](
         "RegExpReplace support for string literal input patterns",
+        ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+          Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
+            .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
         (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
-            if (!GpuOverrides.isLit(a.rep)) {
-              willNotWorkOnGpu("Only literal values are supported for replacement string")
-            }
             if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
               willNotWorkOnGpu(
                 "Only non-null, non-empty String literals that are not regex patterns " +
