@@ -401,42 +401,44 @@ object GpuOverrides {
     !regexList.exists(pattern => s.contains(pattern))
   }
 
-  private def canonicalizeToCpuForSortOrder(exp: Expression): Expression = exp match {
-    case g: GpuLiteral => Literal(g.value, g.dataType).canonicalized
-    case g: GpuKnownFloatingPointNormalized =>
-      KnownFloatingPointNormalized(canonicalizeToCpuForSortOrder(g.child)).canonicalized
-    case g: GpuNormalizeNaNAndZero =>
-      NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
-    case g: GpuAlias =>
-      ShimLoader.getSparkShims.alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
-        g.exprId,
-        g.qualifier,
-        g.explicitMetadata)
-          .canonicalized
-    case g: GpuSubstring =>
-      Substring(
-        canonicalizeToCpuForSortOrder(g.str),
-        canonicalizeToCpuForSortOrder(g.pos),
-        canonicalizeToCpuForSortOrder(g.len))
-          .canonicalized
-    case o: GpuExpression =>
-      throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
-    case other => other.canonicalized
+  private def convertExprToGpuIfPossible(expr: Expression, conf: RapidsConf): Expression = {
+    if (expr.find(_.isInstanceOf[GpuExpression]).isDefined) {
+      // already been converted
+      expr
+    } else {
+      val wrapped = wrapExpr(expr, conf, None)
+      wrapped.tagForGpu()
+      if (wrapped.canExprTreeBeReplaced) {
+        wrapped.convertToGpu()
+      } else {
+        expr
+      }
+    }
   }
 
-  private def gpuOrderingSemanticEquals(found: Expression, required: Expression): Boolean = {
-    found.deterministic && required.deterministic &&
-        canonicalizeToCpuForSortOrder(found) == canonicalizeToCpuForSortOrder(required)
-  }
+  private def gpuOrderingSemanticEquals(
+      found: Expression,
+      required: Expression,
+      conf: RapidsConf): Boolean =
+    found.deterministic &&
+        required.deterministic &&
+        convertExprToGpuIfPossible(found, conf).canonicalized ==
+            convertExprToGpuIfPossible(required, conf).canonicalized
 
-  private def orderingSatisfies(found: SortOrder, required: SortOrder): Boolean = {
+  private def orderingSatisfies(
+      found: SortOrder,
+      required: SortOrder,
+      conf: RapidsConf): Boolean = {
     val foundChildren = ShimLoader.getSparkShims.sortOrderChildren(found)
-    foundChildren.exists(gpuOrderingSemanticEquals(_, required.child)) &&
-        found.direction == required.direction &&
-        found.nullOrdering == required.nullOrdering
+    found.direction == required.direction &&
+        found.nullOrdering == required.nullOrdering &&
+        foundChildren.exists(gpuOrderingSemanticEquals(_, required.child, conf))
   }
 
-  private def orderingSatisfies(ordering1: Seq[SortOrder], ordering2: Seq[SortOrder]): Boolean = {
+  private def orderingSatisfies(
+      ordering1: Seq[SortOrder],
+      ordering2: Seq[SortOrder],
+      conf: RapidsConf): Boolean = {
     // We cannot use SortOrder.orderingSatisfies because there is a corner case where
     // some operators like a Literal can be a part of SortOrder, which then results in errors
     // because we may have converted it over to a GpuLiteral at that point and a Literal
@@ -447,7 +449,7 @@ object GpuOverrides {
       false
     } else {
       ordering2.zip(ordering1).forall {
-        case (o2, o1) => orderingSatisfies(o1, o2)
+        case (o2, o1) => orderingSatisfies(o1, o2, conf)
       }
     }
   }
@@ -1475,7 +1477,9 @@ object GpuOverrides {
         }
         override def isSupportedType(t: DataType): Boolean =
           GpuOverrides.isSupportedType(t,
+            allowDecimal = conf.decimalTypeEnabled,
             allowNull = true)
+
         override def convertToGpu(): GpuExpression = {
           // handle the case AggregateExpression has the resultIds parameter where its
           // Seq[ExprIds] instead of single ExprId.
@@ -1499,7 +1503,9 @@ object GpuOverrides {
           a.withNewChildren(childExprs.map(_.convertToGpu()))
 
         override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowNull = true)
+          GpuOverrides.isSupportedType(t,
+            allowDecimal = conf.decimalTypeEnabled,
+            allowNull = true)
       }),
     expr[Count](
       "Count aggregate operator",
@@ -1869,6 +1875,25 @@ object GpuOverrides {
       "String character length",
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
+      }),
+    expr[UnscaledValue](
+      "Convert a Decimal to an unscaled long value for some aggregation optimizations",
+      (a, conf, p, r) => new UnaryExprMeta[UnscaledValue](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuUnscaledValue(child)
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowDecimal = conf.decimalTypeEnabled)
+      }),
+    expr[MakeDecimal](
+      "Create a Decimal from an unscaled long value form some aggregation optimizations",
+      (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
+
+        override def isSupportedType(t: DataType): Boolean =
+          GpuOverrides.isSupportedType(t,
+            allowDecimal = conf.decimalTypeEnabled)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
@@ -2306,7 +2331,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
+      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering, conf)) {
         child
       } else {
         val sort = SortExec(requiredOrdering, global = false, child = child)
