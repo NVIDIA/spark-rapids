@@ -1,4 +1,5 @@
-# Get Started with Rapids on AWS EMR
+# Get Started with RAPIDS on AWS EMR
+
 
 This is a getting started guide for Rapids on AWS EMR. At the end of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS EMR.
 
@@ -129,4 +130,3 @@ When executing the ETL code, you can also saw the Spark Job Progress within the 
 #### Runn Mortgage XGBoost Scala Notebook on EMR GPU Cluster 
 
 Please refer to this [quick start guide](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-2/getting-started-guides/csp/aws/Using_EMR_Notebook.md) to running GPU accelerated XGBoost on EMR Spark Cluster.
-
