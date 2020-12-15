@@ -86,7 +86,9 @@
               <pattern>org.apache.hadoop.hive.</pattern>
               <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
               <excludes>
+                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
                 <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
               </excludes>
             </relocation>
             <relocation>
