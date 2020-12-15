@@ -655,6 +655,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
       val attr = pair._1
       val colIndex = pair._2
       // This only works on fixed width types
+      // TODO once we support DECIMAL32 we will need a special case in here for it.
       val length = attr.dataType.defaultSize
       cudfOffset = CudfUnsafeRow.alignOffset(cudfOffset, length)
       val ret = length match {

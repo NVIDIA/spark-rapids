@@ -21,7 +21,6 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetricNames._
-import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -35,7 +34,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryE
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
-import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, MapType, StringType}
+import org.apache.spark.sql.types.{DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
@@ -78,7 +77,7 @@ class GpuHashAggregateMeta(
     agg: HashAggregateExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
   private val requiredChildDistributionExpressions: Option[Seq[BaseExprMeta[_]]] =
     agg.requiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
@@ -97,12 +96,6 @@ class GpuHashAggregateMeta(
       aggregateExpressions ++
       aggregateAttributes ++
       resultExpressions
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true,
-      allowDecimal = conf.decimalTypeEnabled,
-      allowStringMaps = true)
 
   override def tagPlanForGpu(): Unit = {
     if (agg.resultExpressions.isEmpty) {
@@ -171,7 +164,7 @@ class GpuSortAggregateMeta(
   agg: SortAggregateExec,
   conf: RapidsConf,
   parent: Option[RapidsMeta[_, _, _]],
-  rule: ConfKeysAndIncompat) extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
+  rule: DataFromReplacementRule) extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
 
   private val requiredChildDistributionExpressions: Option[Seq[BaseExprMeta[_]]] =
     agg.requiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
@@ -268,11 +261,6 @@ class GpuSortAggregateMeta(
       }
     }
   }
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowDecimal = conf.decimalTypeEnabled,
-      allowNull = true)
 
   override def convertToGpu(): GpuExec = {
     // we simply convert to a HashAggregateExec and let GpuOverrides take care of inserting a

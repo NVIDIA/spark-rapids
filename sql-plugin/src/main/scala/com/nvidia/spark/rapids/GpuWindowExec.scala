@@ -27,7 +27,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuWindowExecMeta(windowExec: WindowExec,
                         conf: RapidsConf,
                         parent: Option[RapidsMeta[_, _, _]],
-                        rule: ConfKeysAndIncompat)
+                        rule: DataFromReplacementRule)
   extends SparkPlanMeta[WindowExec](windowExec, conf, parent, rule) {
 
   /**

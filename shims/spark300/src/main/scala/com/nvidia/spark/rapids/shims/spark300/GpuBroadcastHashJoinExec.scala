@@ -40,7 +40,7 @@ class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends GpuBroadcastJoinMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
@@ -51,10 +51,6 @@ class GpuBroadcastHashJoinMeta(
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
@@ -85,7 +81,8 @@ class GpuBroadcastHashJoinMeta(
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
-      join.joinType, GpuJoinUtils.getGpuBuildSide(join.buildSide),
+      join.joinType,
+      GpuJoinUtils.getGpuBuildSide(join.buildSide),
       condition.map(_.convertToGpu()),
       left, right)
   }
@@ -125,7 +122,8 @@ case class GpuBroadcastHashJoinExec(
   }
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("GpuBroadcastHashJoin does not support row-based processing")
+    throw new IllegalStateException(
+      "GpuBroadcastHashJoin does not support row-based processing")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
@@ -145,9 +143,8 @@ case class GpuBroadcastHashJoinExec(
       val ret = withResource(
         GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
         val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        val filtered = filterBuiltTableIfNeeded(combined)
-        withResource(filtered) { filtered =>
-          GpuColumnVector.from(filtered)
+        withResource(combined) { combined =>
+          GpuColumnVector.from(combined)
         }
       }
 

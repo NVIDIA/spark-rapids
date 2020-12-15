@@ -155,65 +155,6 @@ trait GpuHashJoin extends GpuExec {
       output.indices.map (v => v + joinLength)
   }
 
-  // Spark adds in rules to filter out nulls for some types of joins, but it does not
-  // guarantee 100% that all nulls will be filtered out by the time they get to
-  // this point, but because of https://github.com/rapidsai/cudf/issues/6052
-  // we need to filter out the nulls ourselves until it is fixed.
-  // InnerLike | LeftSemi =>
-  //   filter left and right keys
-  // RightOuter =>
-  //   filter left keys
-  // LeftOuter | LeftAnti =>
-  //   filter right keys
-
-  private[this] lazy val shouldFilterBuiltTableForNulls: Boolean = {
-    val builtAnyNullable = gpuBuildKeys.exists(_.nullable)
-    (joinType, buildSide) match {
-      case (_: InnerLike | LeftSemi, _) => builtAnyNullable
-      case (RightOuter, GpuBuildLeft) => builtAnyNullable
-      case (LeftOuter | LeftAnti, GpuBuildRight) => builtAnyNullable
-      case _ => false
-    }
-  }
-
-  private[this] lazy val shouldFilterStreamTableForNulls: Boolean = {
-    val streamedAnyNullable = gpuStreamedKeys.exists(_.nullable)
-    (joinType, buildSide) match {
-      case (_: InnerLike | LeftSemi, _) => streamedAnyNullable
-      case (RightOuter, GpuBuildRight) => streamedAnyNullable
-      case (LeftOuter | LeftAnti, GpuBuildLeft) => streamedAnyNullable
-      case _ => false
-    }
-  }
-
-  private[this] def mkNullFilterExpr(exprs: Seq[GpuExpression]): GpuExpression =
-    exprs.zipWithIndex.map { kv =>
-      GpuIsNotNull(GpuBoundReference(kv._2, kv._1.dataType, kv._1.nullable))
-    }.reduce(GpuAnd)
-
-  private[this] lazy val builtTableNullFilterExpression: GpuExpression =
-    mkNullFilterExpr(gpuBuildKeys)
-
-  private[this] lazy val streamedTableNullFilterExpression: GpuExpression =
-    mkNullFilterExpr(gpuStreamedKeys)
-
-  /**
-   * Filter the builtBatch if needed.  builtBatch will be closed.
-   */
-  def filterBuiltTableIfNeeded(builtBatch: ColumnarBatch): ColumnarBatch =
-    if (shouldFilterBuiltTableForNulls) {
-      GpuFilter(builtBatch, builtTableNullFilterExpression)
-    } else {
-      builtBatch
-    }
-
-  private[this] def filterStreamedTableIfNeeded(streamedBatch:ColumnarBatch): ColumnarBatch =
-    if (shouldFilterStreamTableForNulls) {
-      GpuFilter(streamedBatch, streamedTableNullFilterExpression)
-    } else {
-      streamedBatch
-    }
-
   def doJoin(builtTable: Table,
       stream: Iterator[ColumnarBatch],
       boundCondition: Option[Expression],
@@ -287,7 +228,7 @@ trait GpuHashJoin extends GpuExec {
           GpuHashJoin.incRefCount(combine(streamedKeysBatch, streamedBatch))
       }
     }
-    val streamedTable = withResource(filterStreamedTableIfNeeded(combined)) { cb =>
+    val streamedTable = withResource(combined) { cb =>
       GpuColumnVector.from(cb)
     }
 
