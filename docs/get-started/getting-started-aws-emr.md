@@ -1,7 +1,8 @@
 # Get Started with RAPIDS on AWS EMR
 
 
-This is a getting started guide for Rapids on AWS EMR. At the end of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS EMR.
+This is a getting started guide for the RAPIDS Accelerator for Apache Spark on AWS EMR. At the end of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA GPUs on AWS EMR.
+
 
 The current EMR 6.2.0 release support Spark version 3.0.1 and Nvidia spark-rapids 0.2.0. For more details of supported applications, please see the [EMR release notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).  
 
