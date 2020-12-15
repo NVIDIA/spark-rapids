@@ -2333,29 +2333,30 @@ class OpcodeSuite extends FunSuite {
     }
 
     val u = makeUdf((x: String, y: String, z: Boolean) => {
-        var r = new mutable.ArrayBuffer[String]()
-        r = r :+ x
-        if (!cond(y)) {
-          r = r :+ y
+      var r = new mutable.ArrayBuffer[String]()
+      r = r :+ x
+      if (!cond(y)) {
+        r = r :+ y
 
-          if (z) {
-            r = r :+ transform(y)
-          }
-        }
         if (z) {
-          r = r :+ transform(x)
+          r = r :+ transform(y)
         }
-        r.distinct.toArray
-      })
+      }
+      if (z) {
+        r = r :+ transform(x)
+      }
+      r.distinct.toArray
+    })
 
     val dataset = List(("######hello", null),
-                       ("world", "######hello"),
-                       ("", "@@@@target")).toDF("x", "y")
+      ("world", "######hello"),
+      ("", "@@@@target")).toDF("x", "y")
     val result = dataset.withColumn("new", u('x, 'y, lit(true)))
     val ref = List(("######hello", null, Array("######hello", "@@@@hello")),
-                   ("world", "######hello", Array("world", "######hello", "@@@@hello")),
-                   ("", "@@@@target", Array("", "@@@@target", "######target", null))).toDF
+      ("world", "######hello", Array("world", "######hello", "@@@@hello")),
+      ("", "@@@@target", Array("", "@@@@target", "######target", null))).toDF
     checkEquiv(result, ref)
+  }
 
   test("compile child expresion in explode") {
     val myudf: (String) => Array[String] = a => {
@@ -2366,16 +2367,5 @@ class OpcodeSuite extends FunSuite {
     var result = dataset.withColumn("new", explode(u(col("x"))))
     val ref = List(("first,second","first"),("first,second","second")).toDF("x","new")
     checkEquiv(result,ref)
-  }
-
-  test("compile child expresion in flatten") {
-    val myudf: (String) => Array[Array[String]] = a => {
-      a.split(",").map(x => Array(x))
-    }
-    val u = makeUdf(myudf)
-    val dataset = List("a,b").toDF("x").repartition(1)
-    val ref = dataset.withColumn("new", lit(Array("a","b")))
-    val result = dataset.withColumn("new", flatten(u(col("x"))))
-    checkEquiv(ref,result)
   }
 }
