@@ -990,6 +990,69 @@ class MultiFileParquetPartitionReader(
     }
   }
 
+  private def buildAndConcatPartitionColumns(
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow]): Array[GpuColumnVector] = {
+    val numCols = partitionSchema.fields.size
+    val allPartCols = new Array[GpuColumnVector](numCols)
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
+      val dataType = field.dataType
+      val partitionColumns = new Array[GpuColumnVector](inPartitionValues.size)
+      try {
+        for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
+          val partInternalRow = inPartitionValues(partIndex)
+          val partValueForCol = partInternalRow.get(colIndex, dataType)
+          val partitionScalar = GpuScalar.from(partValueForCol, dataType)
+          withResource(partitionScalar) { scalar =>
+            partitionColumns(partIndex) = GpuColumnVector.from(
+              ai.rapids.cudf.ColumnVector.fromScalar(scalar, rowsInPart.toInt),
+              dataType)
+          }
+        }
+        val baseOfCols = partitionColumns.map(_.getBase)
+        allPartCols(colIndex) = GpuColumnVector.from(
+          ColumnVector.concatenate(baseOfCols: _*), field.dataType())
+      } finally {
+        partitionColumns.safeClose()
+      }
+    }
+    allPartCols
+  }
+
+  private def concatAndAddPartitionColsToBatch(
+      cb: ColumnarBatch,
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow]): ColumnarBatch = {
+    var succeeded = false
+    val numCols = partitionSchema.fields.size
+    logWarning("num cols is: " + numCols + " partitions is: " + inPartitionValues.size)
+    var allPartCols = Array.empty[GpuColumnVector]
+    try {
+      allPartCols = buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues)
+      val finalCb =
+        ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, allPartCols)
+      succeeded = true
+      finalCb
+    } finally {
+      if (!succeeded) {
+        allPartCols.safeClose()
+      }
+    }
+  }
+
+  /**
+   * Add all partition values found to the batch. There could be more then one partition
+   * value in the batch so we have to build up columns with the correct number of rows
+   * for each partition value.
+   *
+   * @param batch - columnar batch to append partition values to
+   * @param inPartitionValues - array of partition values
+   * @param rowsPerPartition - the number of rows that require each partition value
+   * @param partitionSchema - schema of the partitions
+   * @return
+   */
   protected def addAllPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: Array[InternalRow],
@@ -998,101 +1061,12 @@ class MultiFileParquetPartitionReader(
     assert(rowsPerPartition.size == inPartitionValues.size)
     if (partitionSchema.nonEmpty) {
       batch.map { cb =>
-        // construct a column using the partition values and rowsPerPartition, concat all those
-        // and add it to the batch
-        var allPartitionColumns: Array[Array[GpuColumnVector]] = null
-        try {
-          var succeeded = false
-          try {
-            allPartitionColumns =
-              rowsPerPartition.zipWithIndex.map { case (rowsInPart, rowIndex) =>
-                // logWarning(s"rows per partition is $rowsInPart index is $rowIndex")
-                val partitionValues = inPartitionValues(rowIndex).toSeq(partitionSchema)
-                // logWarning(s"partition values size is ${partitionValues.size}")
-                val partitionScalars = ColumnarPartitionReaderWithPartitionValues
-                  .createPartitionValues(partitionValues, partitionSchema)
-                withResource(partitionScalars) { scalars =>
-                    ColumnarPartitionReaderWithPartitionValues.buildPartitionColumns(
-                      rowsInPart.toInt, scalars, GpuColumnVector.extractTypes(partitionSchema))
-                  // ColumnarPartitionReaderWithPartitionValues.addPartitionValues(cb, scalars,
-                  //   GpuColumnVector.extractTypes(partitionSchema))
-                }
-              }
-            succeeded = true
-          } finally {
-            if (!succeeded) {
-              logWarning("failed all partition columns close")
-              allPartitionColumns.foreach(_.safeClose())
-            }
-          }
-
-          if (allPartitionColumns.size > 1) {
-            var succeeded = false
-            val numCols = allPartitionColumns.head.size
-            logWarning("num cols is: " + numCols + " partitions is: " + allPartitionColumns.size)
-            val result = new Array[GpuColumnVector](numCols)
-            try {
-              for (i <- result.indices) {
-                result(i) = allPartitionColumns(0)(i)
-              }
-              for (i <- result.indices) {
-                for (j <- 1 until allPartitionColumns.size) {
-                  val part = allPartitionColumns(j)
-                  val concatCol = result(i)
-                  try {
-                    result(i) = GpuColumnVector.from(
-                      ColumnVector.concatenate(
-                        concatCol.getBase,
-                        part(i).getBase), concatCol.dataType())
-                  } finally {
-                    concatCol.safeClose()
-                    part(i).safeClose()
-                  }
-                }
-              }
-              // allPartitionColumns.foreach(_.safeClose())
-              // allPartitionColumns = null
-              // logWarning("result num rows is: " + result(0).getRowCount() +
-                // " cb rows is: " + cb.numRows())
-              // concat all those
-              val fileBatchCols = (0 until cb.numCols).map(cb.column)
-              val resultCols = fileBatchCols ++ result
-              val finalCb = new ColumnarBatch(resultCols.toArray, cb.numRows)
-              fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-              // logWarning("after inc ref count")
-              succeeded = true
-              finalCb
-            } finally {
-              if (!succeeded) {
-                allPartitionColumns.foreach(arrVec => arrVec.filter(_ != null).safeClose())
-                result.safeClose()
-              }
-            }
-          } else if (allPartitionColumns.size == 1) {
-            try {
-              logWarning("num cols is: " + allPartitionColumns.head.size + " partitions is 1")
-              val partitionColumns = allPartitionColumns.head
-              // just create column batch
-              val fileBatchCols = (0 until cb.numCols).map(cb.column)
-              val resultCols = fileBatchCols ++ partitionColumns
-              val finalCb = new ColumnarBatch(resultCols.toArray, cb.numRows)
-              fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
-              succeeded = true
-              finalCb
-            } finally {
-              if (!succeeded) {
-                allPartitionColumns.foreach(arrVec => arrVec.filter(_ != null).safeClose())
-              }
-            }
-          } else {
-            // TODO - dont really need
-            cb
-          }
-        } finally {
-
-          if (cb != null) {
-            cb.close()
-          }
+        val numPartitions = inPartitionValues.size
+        if (numPartitions > 1) {
+          concatAndAddPartitionColsToBatch(cb, rowsPerPartition, inPartitionValues)
+        } else {
+          // single partition, add like other readers
+          addPartitionValues(Some(cb), inPartitionValues.head, partitionSchema).get
         }
       }
     } else {
@@ -1102,23 +1076,21 @@ class MultiFileParquetPartitionReader(
 
   private def readBatch(): Option[ColumnarBatch] = {
     withResource(new NvtxRange("Parquet readBatch", NvtxColor.GREEN)) { _ =>
-      val (isCorrectRebaseMode, clippedSchema, seqPathsAndBlocks,
-        rowsPerPartition, numRows, allPartValues) = populateCurrentBlockChunk()
+      val currentChunkMeta = populateCurrentBlockChunk()
       if (readDataSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
-        // TODO - perhaps test this
-        // val numRows = seqPathsAndBlocks.map(_._2.getRowCount).sum.toInt
-        if (numRows == 0) {
+        if (currentChunkMeta.numTotalRows == 0) {
           None
         } else {
           // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
-          val emptyBatch = new ColumnarBatch(Array.empty, numRows.toInt)
-          addAllPartitionValues(Some(emptyBatch), allPartValues, rowsPerPartition,
-            partitionSchema)
+          val emptyBatch = new ColumnarBatch(Array.empty, currentChunkMeta.numTotalRows.toInt)
+          addAllPartitionValues(Some(emptyBatch), currentChunkMeta.allPartValues,
+            currentChunkMeta.rowsPerPartition, partitionSchema)
         }
       } else {
-        val table = readToTable(seqPathsAndBlocks, clippedSchema, isCorrectRebaseMode)
+        val table = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
+          currentChunkMeta.isCorrectRebaseMode)
         try {
           val colTypes = readDataSchema.fields.map(f => f.dataType)
           val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes))
@@ -1127,8 +1099,8 @@ class MultiFileParquetPartitionReader(
           }
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          addAllPartitionValues(maybeBatch, allPartValues, rowsPerPartition,
-            partitionSchema)
+          addAllPartitionValues(maybeBatch, currentChunkMeta.allPartValues,
+            currentChunkMeta.rowsPerPartition, partitionSchema)
         } finally {
           table.foreach(_.close())
         }
@@ -1184,10 +1156,15 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  private def populateCurrentBlockChunk():
-      (Boolean, MessageType, Seq[(Path, BlockMetaData)], Array[Long],
-        Long, Array[InternalRow]) = {
+  private case class CurrentChunkMeta(
+      isCorrectRebaseMode: Boolean,
+      clippedSchema: MessageType,
+      currentChunk: Seq[(Path, BlockMetaData)],
+      numTotalRows: Long,
+      rowsPerPartition: Array[Long],
+      allPartValues: Array[InternalRow])
 
+  private def populateCurrentBlockChunk(): CurrentChunkMeta = {
     val currentChunk = new ArrayBuffer[(Path, BlockMetaData)]
     var numRows: Long = 0
     var numBytes: Long = 0
@@ -1196,7 +1173,7 @@ class MultiFileParquetPartitionReader(
     var currentPartitionValues: InternalRow = null
     var currentClippedSchema: MessageType = null
     var currentIsCorrectRebaseMode: Boolean = false
-    val partitionedDataRows = new ArrayBuffer[Long]()
+    val rowsPerPartition = new ArrayBuffer[Long]()
     var lastPartRows: Long = 0
     val allPartValues = new ArrayBuffer[InternalRow]()
 
@@ -1230,21 +1207,6 @@ class MultiFileParquetPartitionReader(
                   s"splitting into another batch.")
                 return
               }
-              // if partition values different we have to track when it changes and build and
-              // concat later
-              if (blockIterator.head.partValues != currentPartitionValues) {
-                logInfo(s"Partition values for the next file ${blockIterator.head.filePath}" +
-                  s" doesn't match current $currentFile, recording it and coalescing!")
-                // get number of rows in previous partition (where partition is block chunks before
-                // partition value changed)
-                partitionedDataRows += (numRows - lastPartRows)
-                // logWarning("num rows is: " + numRows + " last: " + lastPartRows +
-                  // " all: "  + partitionedDataRows.mkString(","))
-                lastPartRows = numRows
-                currentPartitionValues = blockIterator.head.partValues
-                allPartValues += currentPartitionValues
-                // return
-              }
               val schemaNextfile =
                 blockIterator.head.schema.asGroupType().getFields.asScala.map(_.getName)
               val schemaCurrentfile =
@@ -1253,6 +1215,17 @@ class MultiFileParquetPartitionReader(
                 logInfo(s"File schema for the next file ${blockIterator.head.filePath}" +
                   s" doesn't match current $currentFile, splitting it into another batch!")
                 return
+              }
+              // If the partition values are different we have to track the number of rows that get
+              // each partition value and the partition values themselves so that we can build
+              // the full columns with different partition values later.
+              if (blockIterator.head.partValues != currentPartitionValues) {
+                rowsPerPartition += (numRows - lastPartRows)
+                lastPartRows = numRows
+                // we add the actual partition values here but then
+                // the number of rows in that partition at the end or
+                // when the partition changes
+                allPartValues += blockIterator.head.partValues
               }
               currentFile = blockIterator.head.filePath
               currentPartitionValues = blockIterator.head.partValues
@@ -1271,11 +1244,11 @@ class MultiFileParquetPartitionReader(
       }
     }
     readNextBatch()
-    partitionedDataRows += (numRows - lastPartRows)
+    rowsPerPartition += (numRows - lastPartRows)
     logDebug(s"Loaded $numRows rows from Parquet. Parquet bytes read: $numParquetBytes. " +
-      s"Estimated GPU bytes: $numBytes")
-    (currentIsCorrectRebaseMode, currentClippedSchema, currentChunk,
-      partitionedDataRows.toArray, numRows, allPartValues.toArray)
+      s"Estimated GPU bytes: $numBytes. Number of different partitions: ${allPartValues.size}")
+    CurrentChunkMeta(currentIsCorrectRebaseMode, currentClippedSchema, currentChunk,
+      numRows, rowsPerPartition.toArray, allPartValues.toArray)
   }
 }
 

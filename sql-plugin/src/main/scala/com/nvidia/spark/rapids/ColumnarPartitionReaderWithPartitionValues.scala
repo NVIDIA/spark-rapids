@@ -77,23 +77,33 @@ object ColumnarPartitionReaderWithPartitionValues extends Arm {
     var partitionColumns: Array[GpuColumnVector] = null
     try {
       partitionColumns = buildPartitionColumns(fileBatch.numRows, partitionValues, sparkTypes)
-      val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
-      val resultCols = fileBatchCols ++ partitionColumns
-      val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
-      fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
+      val result = addGpuColumVectorsToBatch(fileBatch, partitionColumns)
       partitionColumns = null
       result
     } finally {
-      if (fileBatch != null) {
-        fileBatch.close()
-      }
       if (partitionColumns != null) {
         partitionColumns.safeClose()
       }
     }
   }
 
-  def buildPartitionColumns(
+  def addGpuColumVectorsToBatch(
+      fileBatch: ColumnarBatch,
+      partitionColumns: Array[GpuColumnVector]): ColumnarBatch = {
+    try {
+      val fileBatchCols = (0 until fileBatch.numCols).map(fileBatch.column)
+      val resultCols = fileBatchCols ++ partitionColumns
+      val result = new ColumnarBatch(resultCols.toArray, fileBatch.numRows)
+      fileBatchCols.foreach(_.asInstanceOf[GpuColumnVector].incRefCount())
+      result
+    } finally {
+      if (fileBatch != null) {
+        fileBatch.close()
+      }
+    }
+  }
+
+  private def buildPartitionColumns(
       numRows: Int,
       partitionValues: Array[Scalar],
       sparkTypes: Array[DataType]): Array[GpuColumnVector] = {

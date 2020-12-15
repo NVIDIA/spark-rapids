@@ -60,7 +60,6 @@ def _assert_equal(cpu, gpu, float_check, path):
 
             index = index + 1
     elif (t is dict):
-        # TODO eventually we need to split this up so we can do the right thing for float/double
         # values stored under the map some where, especially for NaNs
         assert cpu == gpu, "GPU and CPU map values are different at {}".format(path)
     elif (t is int):
