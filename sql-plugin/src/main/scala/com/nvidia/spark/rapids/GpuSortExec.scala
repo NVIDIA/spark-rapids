@@ -34,17 +34,12 @@ class GpuSortMeta(
     sort: SortExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[SortExec](sort, conf, parent, rule) {
   override def convertToGpu(): GpuExec =
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans(0).convertIfNeeded())
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowDecimal = conf.decimalTypeEnabled,
-      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {

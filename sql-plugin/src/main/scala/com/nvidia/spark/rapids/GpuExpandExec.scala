@@ -35,7 +35,7 @@ class GpuExpandExecMeta(
     expand: ExpandExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[ExpandExec](expand, conf, parent, rule) {
 
   private val gpuProjections: Seq[Seq[BaseExprMeta[_]]] =
@@ -45,10 +45,6 @@ class GpuExpandExecMeta(
     expand.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = gpuProjections.flatten ++ outputAttributes
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   /**
    * Convert what this wraps to a GPU enabled version.
