@@ -28,9 +28,7 @@ def test_hive_simple_udf():
     def evalfn(spark):
         spark.sql("DROP TEMPORARY FUNCTION IF EXISTS urldecode")
         spark.sql("CREATE TEMPORARY FUNCTION urldecode AS 'com.nvidia.spark.rapids.udf.URLDecode'")
-        df = gen_df(spark, data_gens)
-        df.write.mode("overwrite").parquet("/home/jlowe/tmp/hmmm.parquet")
-        return df
+        return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
         "hive_simple_udf_test_table",
