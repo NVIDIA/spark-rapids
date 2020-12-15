@@ -1013,7 +1013,7 @@ class MultiFileParquetPartitionReader(
         }
         val baseOfCols = partitionColumns.map(_.getBase)
         allPartCols(colIndex) = GpuColumnVector.from(
-          ColumnVector.concatenate(baseOfCols: _*), field.dataType())
+          ColumnVector.concatenate(baseOfCols: _*), field.dataType)
       } finally {
         partitionColumns.safeClose()
       }
