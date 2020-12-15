@@ -18,7 +18,7 @@ package org.apache.spark.sql.hive.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprMeta, ExprRule, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar}
+import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RepeatingParamCheck, TypeSig}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.hive.ql.exec.UDF
 
@@ -99,7 +99,14 @@ object GpuHiveSimpleUDF {
    * to the `HiveSimpleUDF` class that is normally hidden.
    */
   private def buildRule(): ExprRule[HiveSimpleUDF] = GpuOverrides.expr[HiveSimpleUDF](
-    "",
+    "Hive UDF",
+    ExprChecks.fullAggAndProject(
+      TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
+      TypeSig.all,
+      repeatingParamCheck = Some(RepeatingParamCheck(
+        "param",
+        TypeSig.commonCudfTypes,
+        TypeSig.all))),
     (a, conf, p, r) => new ExprMeta[HiveSimpleUDF](a, conf, p, r) {
       override def tagExprForGpu(): Unit = {
         a.function match {
