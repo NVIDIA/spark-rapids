@@ -1027,7 +1027,6 @@ class MultiFileParquetPartitionReader(
       inPartitionValues: Array[InternalRow]): ColumnarBatch = {
     var succeeded = false
     val numCols = partitionSchema.fields.size
-    logWarning("num cols is: " + numCols + " partitions is: " + inPartitionValues.size)
     var allPartCols = Array.empty[GpuColumnVector]
     try {
       allPartCols = buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues)
@@ -1196,7 +1195,6 @@ class MultiFileParquetPartitionReader(
           val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema,
             peekedRowGroup.getRowCount)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
-
             // only care to check if we are actually adding in the next chunk
             if (currentFile != blockIterator.head.filePath) {
               // We need to ensure all files we are going to combine have the same datetime
