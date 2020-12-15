@@ -56,7 +56,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     case (TimestampType | DateType, _: NumericType) => true
     case (TimestampType | DateType, BooleanType) => true
     case (StringType, TimestampType) => true
-    case (FloatType, IntegerType) => true
     case _ => false
   }
 
@@ -531,7 +530,10 @@ object CastOpSuite {
 
   def intsAsFloats(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    intValues.map(_.toFloat).toDF("c0")
+    // Spark 3.1.0 changed the range of floats that can be cast to integral types and this
+    // required the intsAsFloats to be updated to avoid using Int.MaxValue. The supported
+    // range is now `Math.floor(x) <= Int.MaxValue && Math.ceil(x) >= Int.MinValue`
+    Seq(Int.MinValue.toFloat, 2147483583.toFloat, 0, -0, -1, 1).toDF("c0")
   }
 
   def intsAsDoubles(session: SparkSession): DataFrame = {
