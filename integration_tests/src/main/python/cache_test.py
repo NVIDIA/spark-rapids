@@ -39,6 +39,7 @@ def test_passing_gpuExpr_as_Expr(enableVectorizedConf):
             .limit(50), enableVectorizedConf)
 
 # creating special cases to just remove -0.0 because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min Spark version we can drop this
 double_special_cases = [
     DoubleGen.make_from(1, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
     DoubleGen.make_from(0, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
@@ -148,46 +149,6 @@ def test_cache_broadcast_nested_loop_join(data_gen, join_type, enableVectorizedC
         cached.count()
         return cached
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
-
-all_gen_restricting_dates = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-           pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
-           pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
-           BooleanGen(),
-           # due to backward compatibility we are avoiding writing dates prior to 1582-10-15
-           # For more detail please look at SPARK-31404
-           # This issue is tracked by https://github.com/NVIDIA/spark-rapids/issues/133 in the plugin
-           DateGen(start=date(1582, 10, 15)),
-           TimestampGen()]
-
-@pytest.mark.parametrize('ts_rebase', ['CORRECTED', 'LEGACY'])
-@pytest.mark.parametrize('data_gen', all_gen_restricting_dates, ids=idfn)
-@pytest.mark.parametrize('ts_write', ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
-@pytest.mark.parametrize('enableVectorized', ['true', 'false'], ids=idfn)
-@pytest.mark.xfail(condition=not(is_before_spark_310()), reason='https://github.com/NVIDIA/spark-rapids/issues/953')
-@allow_non_gpu('DataWritingCommandExec')
-def test_cache_posexplode_makearray(spark_tmp_path, data_gen, ts_rebase, ts_write, enableVectorized):
-    if is_spark_300() and data_gen.data_type == BooleanType():
-        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
-    data_path_cpu = spark_tmp_path + '/PARQUET_DATA_CPU'
-    data_path_gpu = spark_tmp_path + '/PARQUET_DATA_GPU'
-    def write_posExplode(data_path):
-        def posExplode(spark):
-            cached = four_op_df(spark, data_gen).selectExpr('posexplode(array(b, c, d))', 'a').cache()
-            cached.count()
-            cached.write.parquet(data_path)
-            spark.read.parquet(data_path)
-        return posExplode
-    from_cpu = with_cpu_session(write_posExplode(data_path_cpu),
-                  conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-                        'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : ts_rebase,
-                        'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized,
-                        'spark.sql.parquet.outputTimestampType': ts_write})
-    from_gpu = with_gpu_session(write_posExplode(data_path_gpu),
-                  conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-                        'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : ts_rebase,
-                        'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized,
-                        'spark.sql.parquet.outputTimestampType': ts_write})
-    assert_equal(from_cpu, from_gpu)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)

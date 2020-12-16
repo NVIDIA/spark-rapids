@@ -25,8 +25,8 @@ produce the same output order that Spark does. In cases such as an `order by` op
 where the ordering is explicit the plugin will produce an ordering that is compatible with
 Spark's guarantee. It may not be 100% identical if the ordering is ambiguous.
 
-The one known issue with this is [a bug](https://github.com/NVIDIA/spark-rapids/issues/84) where
-`-0.0` and `0.0` compare as equal with the GPU plugin enabled but on the CPU `-0.0 < 0.0`.
+In versions of Spark prior to 3.1.0 `-0.0` is always < `0.0` but in 3.1.0 and above this is
+not true for sorting. For all versions of the plugin `-0.0` == `0.0` for sorting.
 
 ## Floating Point
 
@@ -46,17 +46,14 @@ properly with the plugin but would have worked with plain Spark. Because of this
 floating point aggregations are off by default but can be enabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
-Additionally, some aggregations on floating point columns that contain `NaN` can produce
-incorrect results. More details on this behavior can be found
-[here](https://github.com/NVIDIA/spark-rapids/issues/87),
-[here](https://github.com/NVIDIA/spark-rapids/issues/837),
-and in this cudf [feature request](https://github.com/rapidsai/cudf/issues/4753).
+Additionally, some aggregations on floating point columns that contain `NaN` can produce results
+different from Spark in versions prior to Spark 3.1.0.
 If it is known with certainty that the floating point columns do not contain `NaN`,
 set [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to `false` to run GPU enabled
 aggregations on them.
 
-In the case of a distinct count on `NaN` values the 
-[issue](https://github.com/NVIDIA/spark-rapids/issues/837) only shows up if you have different
+In the case of a distinct count on `NaN` values, prior to Spark 3.1.0, the issue
+ only shows up if you have different
 `NaN` values. There are several different binary values that are all considered to be `NaN` by
 floating point. The plugin treats all of these as the same value, where as Spark treats them
 all as different values. Because this is considered to be rare we do not disable distinct count
@@ -69,10 +66,10 @@ they should be interpreted as the same. Most databases normalize these values to
 be `0.0`. Spark does this in some cases but not all as is documented
 [here](https://issues.apache.org/jira/browse/SPARK-32110). The underlying implementation of
 this plugin treats them as the same for essentially all processing. This can result in some
-differences with Spark for operations like
-[sorting](https://github.com/NVIDIA/spark-rapids/issues/84),
-[distinct count](https://github.com/NVIDIA/spark-rapids/issues/837),
-[joins, and comparisons](https://github.com/NVIDIA/spark-rapids/issues/294).
+differences with Spark for operations, prior to Spark 3.1.0, like sorting, and distinct count.
+There are still differences with
+[joins, and comparisons](https://github.com/NVIDIA/spark-rapids/issues/294) even after Spark
+3.1.0.
 
 We do not disable operations that produce different results due to `-0.0` in the data because
 it is considered to be a rare occurrence.
