@@ -364,7 +364,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * This should only ever be called from an assertion.
+   * Returns true if the cudf column can be used for the specified Spark type.
    */
   private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
@@ -509,6 +509,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
     assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " + cudfCv +
         " to " + type;
+    return new GpuColumnVector(type, cudfCv);
+  }
+
+  /**
+   * Converts a cudf internal vector to a Spark compatible vector. No reference counts
+   * are incremented so you need to either close the returned value or the input value,
+   * but not both. This conversion performs an unconditional check that the types are
+   * convertible rather than an assertion check.
+   * @throws IllegalArgumentException if the type conversion check fails
+   */
+  public static GpuColumnVector fromChecked(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
+    if (!typeConversionAllowed(cudfCv, type)) {
+      throw new IllegalArgumentException("Type conversion is not allowed from " + cudfCv +
+          " to " + type);
+    }
     return new GpuColumnVector(type, cudfCv);
   }
 

@@ -71,14 +71,15 @@
     </developers>
 
     <modules>
+        <module>api_validation</module>
         <module>dist</module>
+        <module>integration_tests</module>
+        <module>shims</module>
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>tests</module>
-        <module>integration_tests</module>
-        <module>shims</module>
-        <module>api_validation</module>
         <module>udf-compiler</module>
+        <module>udf-examples</module>
     </modules>
 
     <profiles>
@@ -177,11 +178,6 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.apache.spark</groupId>
-                <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                <version>${spark.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>ai.rapids</groupId>
                 <artifactId>cudf</artifactId>
                 <version>${cudf.version}</version>
@@ -204,6 +200,17 @@
                 <artifactId>scala-library</artifactId>
                 <version>${scala.version}</version>
                 <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                <version>${spark.version}</version>
+            </dependency>
+            <dependency>
+              <groupId>org.apache.spark</groupId>
+              <artifactId>spark-hive_${scala.binary.version}</artifactId>
+              <version>${spark.version}</version>
+              <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>

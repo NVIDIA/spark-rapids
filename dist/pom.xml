@@ -57,6 +57,12 @@
        <artifactId>spark-sql_${scala.binary.version}</artifactId>
        <scope>provided</scope>
     </dependency>
+    <dependency>
+      <!-- required for conf generation script -->
+      <groupId>org.apache.spark</groupId>
+      <artifactId>spark-hive_${scala.binary.version}</artifactId>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -79,6 +85,9 @@
             <relocation>
               <pattern>org.apache.hadoop.hive.</pattern>
               <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
+              <excludes>
+                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+              </excludes>
             </relocation>
             <relocation>
               <pattern>org.apache.hive.</pattern>
