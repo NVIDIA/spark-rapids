@@ -183,24 +183,28 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
 
+@incompat
 @approximate_float
 @pytest.mark.parametrize('data_gen', round_gens, ids=idfn)
 def test_decimal_bround(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: debug_df(unary_op_df(spark, data_gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'bround(a)',
-                #'bround(a, -2)',
-                'bround(a, 10)')),
+                'bround(a, -1)',
+                'bround(a, 1)',
+                'bround(a, 10)'),
                 conf=allow_negative_scale_of_decimal_conf)
 
+@incompat
 @approximate_float
 @pytest.mark.parametrize('data_gen', round_gens, ids=idfn)
 def test_decimal_round(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: debug_df(unary_op_df(spark, data_gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'round(a)',
-                #'round(a, -2)',
-                'round(a, 10)')),
+                'round(a, -1)',
+                'round(a, 1)',
+                'round(a, 10)'),
                conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
