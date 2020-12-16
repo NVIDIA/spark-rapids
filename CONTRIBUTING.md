@@ -28,7 +28,7 @@ Contributions to RAPIDS Accelerator for Apache Spark fall into the following thr
     or [help wanted](https://github.com/NVIDIA/spark-rapids/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
     labels.
 3. Comment on the issue stating that you are going to work on it.
-4. Code! Make sure to update unit tests!
+4. Code! Make sure to update unit tests and integration tests if needed! [refer to test section](#testing-your-code)
 5. When done, [create your pull request](https://github.com/NVIDIA/spark-rapids/compare).
 6. Verify that CI passes all [status checks](https://help.github.com/articles/about-status-checks/).
     Fix if needed.
@@ -119,6 +119,8 @@ By making a contribution to this project, I certify that:
     this project or the open source license(s) involved.
 ```
 
+### Testing Your Code
+Please visit the [testing doc](tests/README.md) for details about how to run tests
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md  

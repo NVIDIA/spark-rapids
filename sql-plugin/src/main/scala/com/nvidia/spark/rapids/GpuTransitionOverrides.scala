@@ -26,7 +26,7 @@ import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -53,7 +53,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (GpuShuffleEnv.isRapidsShuffleEnabled) {
       GpuCoalesceBatches(plan, TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
-      GpuShuffleCoalesceExec(plan, conf)
+      GpuShuffleCoalesceExec(plan, conf.gpuTargetBatchSizeBytes)
     }
   }
 
@@ -119,7 +119,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       getColumnarToRowExec(e)
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      getColumnarToRowExec(e)
+      getColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
@@ -301,7 +301,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def insertShuffleCoalesce(plan: SparkPlan): SparkPlan = plan match {
     case exec: GpuShuffleExchangeExecBase =>
       // always follow a GPU shuffle with a shuffle coalesce
-      GpuShuffleCoalesceExec(exec.withNewChildren(exec.children.map(insertShuffleCoalesce)), conf)
+      GpuShuffleCoalesceExec(exec.withNewChildren(exec.children.map(insertShuffleCoalesce)),
+        conf.gpuTargetBatchSizeBytes)
     case exec => exec.withNewChildren(plan.children.map(insertShuffleCoalesce))
   }
 
@@ -349,7 +350,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // intermediate nodes that have a specified sort order. This helps with the size of
       // Parquet and Orc files
       plan match {
-        case s if ShimLoader.getSparkShims.isGpuHashJoin(s) =>
+        case _: GpuHashJoin =>
           val sortOrder = getOptimizedSortOrder(plan)
           GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
         case _: GpuHashAggregateExec =>

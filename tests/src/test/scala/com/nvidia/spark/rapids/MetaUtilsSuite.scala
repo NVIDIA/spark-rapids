@@ -215,8 +215,10 @@ class MetaUtilsSuite extends FunSuite with Arm {
           assertResult(table.getRowCount)(batch.numRows)
           assertResult(table.getNumberOfColumns)(batch.numCols)
           (0 until table.getNumberOfColumns).foreach { i =>
+            val batchColumn = batch.column(i)
+            assert(batchColumn.isInstanceOf[GpuColumnVectorFromBuffer])
             TestUtils.compareColumns(table.getColumn(i),
-              batch.column(i).asInstanceOf[GpuColumnVector].getBase)
+              batchColumn.asInstanceOf[GpuColumnVector].getBase)
           }
         }
       }

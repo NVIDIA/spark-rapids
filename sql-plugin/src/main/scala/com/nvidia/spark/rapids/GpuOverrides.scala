@@ -402,42 +402,44 @@ object GpuOverrides {
     !regexList.exists(pattern => s.contains(pattern))
   }
 
-  private def canonicalizeToCpuForSortOrder(exp: Expression): Expression = exp match {
-    case g: GpuLiteral => Literal(g.value, g.dataType).canonicalized
-    case g: GpuKnownFloatingPointNormalized =>
-      KnownFloatingPointNormalized(canonicalizeToCpuForSortOrder(g.child)).canonicalized
-    case g: GpuNormalizeNaNAndZero =>
-      NormalizeNaNAndZero(canonicalizeToCpuForSortOrder(g.child)).canonicalized
-    case g: GpuAlias =>
-      ShimLoader.getSparkShims.alias(canonicalizeToCpuForSortOrder(g.child), g.name)(
-        g.exprId,
-        g.qualifier,
-        g.explicitMetadata)
-          .canonicalized
-    case g: GpuSubstring =>
-      Substring(
-        canonicalizeToCpuForSortOrder(g.str),
-        canonicalizeToCpuForSortOrder(g.pos),
-        canonicalizeToCpuForSortOrder(g.len))
-          .canonicalized
-    case o: GpuExpression =>
-      throw new IllegalStateException(s"${o.getClass} is not expected to be a part of a SortOrder")
-    case other => other.canonicalized
+  private def convertExprToGpuIfPossible(expr: Expression, conf: RapidsConf): Expression = {
+    if (expr.find(_.isInstanceOf[GpuExpression]).isDefined) {
+      // already been converted
+      expr
+    } else {
+      val wrapped = wrapExpr(expr, conf, None)
+      wrapped.tagForGpu()
+      if (wrapped.canExprTreeBeReplaced) {
+        wrapped.convertToGpu()
+      } else {
+        expr
+      }
+    }
   }
 
-  private def gpuOrderingSemanticEquals(found: Expression, required: Expression): Boolean = {
-    found.deterministic && required.deterministic &&
-        canonicalizeToCpuForSortOrder(found) == canonicalizeToCpuForSortOrder(required)
-  }
+  private def gpuOrderingSemanticEquals(
+      found: Expression,
+      required: Expression,
+      conf: RapidsConf): Boolean =
+    found.deterministic &&
+        required.deterministic &&
+        convertExprToGpuIfPossible(found, conf).canonicalized ==
+            convertExprToGpuIfPossible(required, conf).canonicalized
 
-  private def orderingSatisfies(found: SortOrder, required: SortOrder): Boolean = {
+  private def orderingSatisfies(
+      found: SortOrder,
+      required: SortOrder,
+      conf: RapidsConf): Boolean = {
     val foundChildren = ShimLoader.getSparkShims.sortOrderChildren(found)
-    foundChildren.exists(gpuOrderingSemanticEquals(_, required.child)) &&
-        found.direction == required.direction &&
-        found.nullOrdering == required.nullOrdering
+    found.direction == required.direction &&
+        found.nullOrdering == required.nullOrdering &&
+        foundChildren.exists(gpuOrderingSemanticEquals(_, required.child, conf))
   }
 
-  private def orderingSatisfies(ordering1: Seq[SortOrder], ordering2: Seq[SortOrder]): Boolean = {
+  private def orderingSatisfies(
+      ordering1: Seq[SortOrder],
+      ordering2: Seq[SortOrder],
+      conf: RapidsConf): Boolean = {
     // We cannot use SortOrder.orderingSatisfies because there is a corner case where
     // some operators like a Literal can be a part of SortOrder, which then results in errors
     // because we may have converted it over to a GpuLiteral at that point and a Literal
@@ -448,7 +450,7 @@ object GpuOverrides {
       false
     } else {
       ordering2.zip(ordering1).forall {
-        case (o2, o1) => orderingSatisfies(o1, o2)
+        case (o2, o1) => orderingSatisfies(o1, o2, conf)
       }
     }
   }
@@ -1946,7 +1948,7 @@ object GpuOverrides {
             }
             val schema = new StructType(tmp.toArray)
 
-            GpuRangePartitioning(gpuOrdering, rp.numPartitions, new GpuRangePartitioner, schema)
+            GpuRangePartitioning(gpuOrdering, rp.numPartitions, schema)(new GpuRangePartitioner)
           } else {
             GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
           }
@@ -2269,16 +2271,25 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled) {
       val wrap = GpuOverrides.wrapPlan(plan, conf, None)
       wrap.tagForGpu()
-      wrap.runAfterTagRules()
+      val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
       val exp = conf.explain
-      if (!exp.equalsIgnoreCase("NONE")) {
-        val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
-        if (!explain.isEmpty) {
-          logWarning(s"\n$explain")
+      if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
+        if (!exp.equalsIgnoreCase("NONE")) {
+          logWarning("Can't replace any part of this plan due to: " +
+            s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
         }
+        plan
+      } else {
+        wrap.runAfterTagRules()
+        if (!exp.equalsIgnoreCase("NONE")) {
+          val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
+          if (!explain.isEmpty) {
+            logWarning(s"\n$explain")
+          }
+        }
+        val convertedPlan = wrap.convertIfNeeded()
+        addSortsIfNeeded(convertedPlan, conf)
       }
-      val convertedPlan = wrap.convertIfNeeded()
-      addSortsIfNeeded(convertedPlan, conf)
     } else {
       plan
     }
@@ -2299,7 +2310,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
+      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering, conf)) {
         child
       } else {
         val sort = SortExec(requiredOrdering, global = false, child = child)
