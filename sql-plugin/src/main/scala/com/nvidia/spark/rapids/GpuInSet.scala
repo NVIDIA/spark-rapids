@@ -80,9 +80,18 @@ case class GpuInSet(
       ColumnVector.timestampMicroSecondsFromBoxedLongs(timestamps:_*)
     case StringType =>
       val strings = values.asInstanceOf[Seq[UTF8String]]
-      val builder = HostColumnVector.builder(DType.STRING, strings.size)
-      strings.foreach(s => builder.appendUTF8String(s.getBytes))
-      builder.buildAndPutOnDevice()
+      withResource(HostColumnVector.builder(DType.STRING, strings.size)) { builder =>
+        strings.foreach(s => builder.appendUTF8String(s.getBytes))
+        builder.buildAndPutOnDevice()
+      }
+    case t: DecimalType =>
+      val decs = values.asInstanceOf[Seq[Decimal]]
+      // When we support DECIMAL32 this will need to change to support that
+      withResource(HostColumnVector.builder(DType.create(DType.DTypeEnum.DECIMAL64, - t.scale),
+        decs.size)) { builder =>
+        decs.foreach(d => builder.appendUnscaledDecimal(d.toUnscaledLong))
+        builder.buildAndPutOnDevice()
+      }
     case _ =>
       throw new UnsupportedOperationException(s"Unsupported list type: ${child.dataType}")
     }

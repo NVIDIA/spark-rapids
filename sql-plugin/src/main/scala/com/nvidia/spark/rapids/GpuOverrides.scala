@@ -969,7 +969,7 @@ object GpuOverrides {
       "Checks if number of non null/Nan values is greater than a given value",
       ExprChecks.projectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP + TypeSig.ARRAY +
               TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[AtLeastNNonNulls](a, conf, p, r) {
@@ -1466,8 +1466,10 @@ object GpuOverrides {
     expr[In](
       "IN operator",
       ExprChecks.projectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        Seq(ParamCheck("value", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all)),
-        Some(RepeatingParamCheck("list", TypeSig.commonCudfTypes.withAllLit(), TypeSig.all))),
+        Seq(ParamCheck("value", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all)),
+        Some(RepeatingParamCheck("list", (TypeSig.commonCudfTypes + TypeSig.DECIMAL).withAllLit(),
+          TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val unaliased = in.list.map(extractLit)
@@ -1485,7 +1487,7 @@ object GpuOverrides {
     expr[InSet](
       "INSET operator",
       ExprChecks.unaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (in.hset.contains(null)) {
@@ -1864,10 +1866,11 @@ object GpuOverrides {
     expr[GetStructField](
       "Gets the named field of the struct",
       ExprChecks.unaryProjectNotLambda(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL +
+            TypeSig.DECIMAL).nested(),
         TypeSig.all,
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL + TypeSig.DECIMAL),
         TypeSig.STRUCT.nested(TypeSig.all)),
       (expr, conf, p, r) => new UnaryExprMeta[GetStructField](expr, conf, p, r) {
         override def convertToGpu(arr: Expression): GpuExpression =
@@ -1876,10 +1879,11 @@ object GpuOverrides {
     expr[GetArrayItem](
       "Gets the field at `ordinal` in the Array",
       ExprChecks.binaryProjectNotLambda(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+            TypeSig.DECIMAL + TypeSig.MAP).nested(),
         TypeSig.all,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.NULL),
+            TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
@@ -2165,10 +2169,10 @@ object GpuOverrides {
     exec[GenerateExec] (
       "The backend for operations that generate more output rows than input rows like explode",
       ExecChecks(
-        TypeSig.commonCudfTypes
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL
             .withPsNote(TypeEnum.ARRAY,
               "Only literal arrays and the output of the array function are supported")
-            .nested(TypeSig.commonCudfTypes),
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
         TypeSig.all),
       (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
     exec[ProjectExec](
