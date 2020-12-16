@@ -364,7 +364,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * This should only ever be called from an assertion.
+   * Returns true if the cudf column can be used for the specified Spark type.
    */
   private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
