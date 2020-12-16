@@ -69,7 +69,13 @@ case class GpuHiveSimpleUDF(
     withResource(children.safeMap(evalExpr(_, batch))) { exprResults =>
       val funcInputs = exprResults.map(_.getBase()).toArray
       withResource(new NvtxRange(nvtxRangeName, NvtxColor.PURPLE)) { _ =>
-        GpuColumnVector.from(function.evaluateColumnar(funcInputs: _*), dataType)
+        closeOnExcept(function.evaluateColumnar(funcInputs: _*)) { resultColumn =>
+          if (batch.numRows() != resultColumn.getRowCount) {
+            throw new IllegalStateException("UDF returned a different row count than the input, " +
+                s"expected ${batch.numRows} found ${resultColumn.getRowCount}")
+          }
+          GpuColumnVector.fromChecked(resultColumn, dataType)
+        }
       }
     }
   }

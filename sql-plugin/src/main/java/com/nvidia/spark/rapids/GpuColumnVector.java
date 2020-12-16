@@ -512,6 +512,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new GpuColumnVector(type, cudfCv);
   }
 
+  /**
+   * Converts a cudf internal vector to a Spark compatible vector. No reference counts
+   * are incremented so you need to either close the returned value or the input value,
+   * but not both. This conversion performs an unconditional check that the types are
+   * convertible rather than an assertion check.
+   * @throws IllegalArgumentException if the type conversion check fails
+   */
+  public static GpuColumnVector fromChecked(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
+    if (!typeConversionAllowed(cudfCv, type)) {
+      throw new IllegalArgumentException("Type conversion is not allowed from " + cudfCv +
+          " to " + type);
+    }
+    return new GpuColumnVector(type, cudfCv);
+  }
+
   public static GpuColumnVector from(Scalar scalar, int count, DataType sparkType) {
     return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count), sparkType);
   }
