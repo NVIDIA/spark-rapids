@@ -105,10 +105,6 @@ of issues surrounding it and they should be avoided.
 Escaped quote characters `'\"'` are not supported well as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/129).
 
-Null values are not respected as described
-[here](https://github.com/NVIDIA/spark-rapids/issues/127) even though they are
-supported for other types.
-
 ### CSV Dates
 Parsing a `timestamp` as a `date` does not work. The details are documented in this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/869).
