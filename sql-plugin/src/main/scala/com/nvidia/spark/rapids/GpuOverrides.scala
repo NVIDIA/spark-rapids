@@ -2202,19 +2202,22 @@ object GpuOverrides {
     exec[BatchScanExec](
       "The backend for most file input",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+            TypeSig.DECIMAL).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
+        override def tagPlanForGpu(): Unit = {
+          val hasDecimal = p.scan.readSchema().exists(_.dataType.isInstanceOf[DecimalType])
+          if (hasDecimal) {
+            if (!(p.scan.isInstanceOf[ParquetScan] && this.conf.decimalTypeEnabled)) {
+              this.willNotWorkOnGpu(
+                "Only supports reading decimal from parquet with DECIMAL_TYPE_ENABLED = true")
+            }
+          }
+        }
+
         override val childScans: scala.Seq[ScanMeta[_]] =
           Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
-
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t,
-            allowMaps = true,
-            allowArray = true,
-            allowStruct = true,
-            allowNesting = true,
-            allowDecimal = conf.decimalTypeEnabled && p.scan.isInstanceOf[ParquetScan])
 
         override def convertToGpu(): GpuExec =
           GpuBatchScanExec(p.output, childScans(0).convertToGpu())

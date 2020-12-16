@@ -147,15 +147,8 @@ class Spark300Shims extends SparkShims {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY).nested(), TypeSig.all),
+            TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t,
-              allowArray = true,
-              allowMaps = true,
-              allowStruct = true,
-              allowNesting = true,
-              allowDecimal = conf.decimalTypeEnabled)
 
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
