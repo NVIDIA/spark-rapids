@@ -93,6 +93,48 @@ class Spark310Shims extends Spark301Shims {
   }
 
   def exprs310: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[AnsiCast](
+      "Convert a column of one type of data into another type",
+      new CastChecks() {
+        import TypeSig._
+        // nullChecks are the same
+
+        override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
+        override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
+
+        override val integralChecks: TypeSig = integral + fp + BOOLEAN + STRING
+        override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
+
+        override val fpChecks: TypeSig = integral + fp + BOOLEAN + STRING
+        override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
+
+        override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
+        override val sparkDateSig: TypeSig = TIMESTAMP + DATE + STRING
+
+        override val timestampChecks: TypeSig = TIMESTAMP + DATE + STRING
+        override val sparkTimestampSig: TypeSig = TIMESTAMP + DATE + STRING
+
+        // stringChecks are the same
+        // binaryChecks are the same
+
+        override val decimalChecks: TypeSig = none
+        override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
+
+        // calendarChecks are the same
+
+        override val arrayChecks: TypeSig = none
+        override val sparkArraySig: TypeSig = ARRAY.nested(all)
+
+        override val mapChecks: TypeSig = none
+        override val sparkMapSig: TypeSig = MAP.nested(all)
+
+        override val structChecks: TypeSig = none
+        override val sparkStructSig: TypeSig = STRUCT.nested(all)
+
+        override val udtChecks: TypeSig = none
+        override val sparkUdtSig: TypeSig = UDT
+      },
+      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
     GpuOverrides.expr[RegExpReplace](
       "RegExpReplace support for string literal input patterns",
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,

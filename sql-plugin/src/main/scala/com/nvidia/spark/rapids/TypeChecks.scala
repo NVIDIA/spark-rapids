@@ -22,7 +22,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.catalyst.expressions.{CaseWhen, Expression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 
@@ -132,6 +132,7 @@ final class TypeSig private(
     private val nestedTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val litOnlyTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val notes: Map[TypeEnum.Value, String] = Map.empty) {
+
   import TypeSig._
 
   /**
@@ -247,6 +248,37 @@ final class TypeSig private(
     case _: StructType => litOnlyTypes.contains(TypeEnum.STRUCT)
     case _ => false
   }
+
+  def isSupportedBySpark(dataType: DataType): Boolean =
+    isSupportedBySpark(initialTypes, dataType)
+
+  private[this] def isSupportedBySpark(check: TypeEnum.ValueSet, dataType: DataType): Boolean =
+    dataType match {
+      case BooleanType => check.contains(TypeEnum.BOOLEAN)
+      case ByteType => check.contains(TypeEnum.BYTE)
+      case ShortType => check.contains(TypeEnum.SHORT)
+      case IntegerType => check.contains(TypeEnum.INT)
+      case LongType => check.contains(TypeEnum.LONG)
+      case FloatType => check.contains(TypeEnum.FLOAT)
+      case DoubleType => check.contains(TypeEnum.DOUBLE)
+      case DateType => check.contains(TypeEnum.DATE)
+      case TimestampType => check.contains(TypeEnum.TIMESTAMP)
+      case StringType => check.contains(TypeEnum.STRING)
+      case _: DecimalType => check.contains(TypeEnum.DECIMAL)
+      case NullType => check.contains(TypeEnum.NULL)
+      case BinaryType => check.contains(TypeEnum.BINARY)
+      case CalendarIntervalType => check.contains(TypeEnum.CALENDAR)
+      case ArrayType(elementType, _) if check.contains(TypeEnum.ARRAY) =>
+        isSupportedBySpark(nestedTypes, elementType)
+      case MapType(keyType, valueType, _) if check.contains(TypeEnum.MAP) =>
+        isSupportedBySpark(nestedTypes, keyType) &&
+            isSupportedBySpark(nestedTypes, valueType)
+      case StructType(fields) if check.contains(TypeEnum.STRUCT) =>
+        fields.map(_.dataType).forall { t =>
+          isSupportedBySpark(nestedTypes, t)
+        }
+      case _ => false
+    }
 
   private[this] def isSupportedByPlugin(
       check: TypeEnum.ValueSet,
@@ -637,6 +669,127 @@ object WindowSpecCheck extends ExprChecks {
   }
 }
 
+class CastChecks extends ExprChecks {
+  // Don't show this with other operators show it in a different location
+  override val shown: Boolean = false
+
+  // When updating these please check child classes too
+  import TypeSig._
+  val nullChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING + NULL
+  val sparkNullSig: TypeSig = all
+
+  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
+  val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+
+  val integralChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + BINARY
+  val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+
+  val fpChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
+  val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+
+  val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkDateSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
+
+  val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkTimestampSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
+
+  val stringChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING + BINARY
+  val sparkStringSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
+
+  val binaryChecks: TypeSig = none
+  val sparkBinarySig: TypeSig = STRING + BINARY
+
+  val decimalChecks: TypeSig = none
+  val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+
+  val calendarChecks: TypeSig = none
+  val sparkCalendarSig: TypeSig = CALENDAR + STRING
+
+  val arrayChecks: TypeSig = none
+  val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
+
+  val mapChecks: TypeSig = none
+  val sparkMapSig: TypeSig = STRING + MAP.nested(all)
+
+  val structChecks: TypeSig = none
+  val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
+
+  val udtChecks: TypeSig = none
+  val sparkUdtSig: TypeSig = STRING + UDT
+
+  private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
+    case NullType => (nullChecks, sparkNullSig)
+    case BooleanType => (booleanChecks, sparkBooleanSig)
+    case ByteType | ShortType | IntegerType | LongType => (integralChecks, sparkIntegralSig)
+    case FloatType | DoubleType => (fpChecks, sparkFpSig)
+    case DateType => (dateChecks, sparkDateSig)
+    case TimestampType => (timestampChecks, sparkTimestampSig)
+    case StringType => (stringChecks, sparkStringSig)
+    case BinaryType => (binaryChecks, sparkBinarySig)
+    case _: DecimalType => (decimalChecks, sparkDecimalSig)
+    case CalendarIntervalType => (calendarChecks, sparkCalendarSig)
+    case _: ArrayType => (arrayChecks, sparkArraySig)
+    case _: MapType => (mapChecks, sparkMapSig)
+    case _: StructType => (structChecks, sparkStructSig)
+    case _ => (udtChecks, sparkUdtSig)
+  }
+
+  private[this] def getChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) = from match {
+    case TypeEnum.NULL => (nullChecks, sparkNullSig)
+    case TypeEnum.BOOLEAN => (booleanChecks, sparkBooleanSig)
+    case TypeEnum.BYTE | TypeEnum.SHORT | TypeEnum.INT | TypeEnum.LONG =>
+      (integralChecks, sparkIntegralSig)
+    case TypeEnum.FLOAT | TypeEnum.DOUBLE => (fpChecks, sparkFpSig)
+    case TypeEnum.DATE => (dateChecks, sparkDateSig)
+    case TypeEnum.TIMESTAMP => (timestampChecks, sparkTimestampSig)
+    case TypeEnum.STRING => (stringChecks, sparkStringSig)
+    case TypeEnum.BINARY => (binaryChecks, sparkBinarySig)
+    case TypeEnum.DECIMAL => (decimalChecks, sparkDecimalSig)
+    case TypeEnum.CALENDAR => (calendarChecks, sparkCalendarSig)
+    case TypeEnum.ARRAY => (arrayChecks, sparkArraySig)
+    case TypeEnum.MAP => (mapChecks, sparkMapSig)
+    case TypeEnum.STRUCT => (structChecks, sparkStructSig)
+    case TypeEnum.UDT => (udtChecks, sparkUdtSig)
+  }
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
+    val context = exprMeta.context
+    if (context != ProjectExprContext) {
+      meta.willNotWorkOnGpu(s"this is not supported in the $context context")
+    } else {
+      val cast = meta.wrapped.asInstanceOf[UnaryExpression]
+      val from = cast.child.dataType
+      val to = cast.dataType
+      val (checks, _) = getChecksAndSigs(from)
+      if (!checks.isSupportedByPlugin(to, meta.conf.decimalTypeEnabled)) {
+        meta.willNotWorkOnGpu(
+          s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
+      }
+    }
+  }
+
+  override def support(
+      dataType: TypeEnum.Value): Map[ExpressionContext, Map[String, SupportLevel]] = {
+    throw new IllegalStateException("support is different for cast")
+  }
+
+  def support(from: TypeEnum.Value, to: TypeEnum.Value): SupportLevel = {
+    val (checks, sparkSig) = getChecksAndSigs(from)
+    checks.getSupportLevel(to, sparkSig)
+  }
+
+  def sparkCanCast(from: DataType, to: DataType): Boolean = {
+    val (_, sparkSig) = getChecksAndSigs(from)
+    sparkSig.isSupportedBySpark(to)
+  }
+
+  def gpuCanCast(from: DataType, to: DataType, allowDecimal: Boolean = true): Boolean = {
+    val (_, sparkSig) = getChecksAndSigs(from)
+    sparkSig.isSupportedByPlugin(to, allowDecimal)
+  }
+}
+
 object ExprChecks {
   /**
    * A check for an expression that only supports project, both in Spark and in the plugin.
@@ -994,379 +1147,53 @@ object SupportedOpsDocs {
     println("UTC time zone. Decimals are off by default due to performance impact in")
     println("some cases.")
     println()
-    println("## `Cast`")
-    println("The above table does not show what is and is not supported for cast very well.")
-    println("This table shows the matrix of supported casts. UDT types are not show as they are")
-    println("not supported by the accelerator, and have very limited support in Spark.")
+    println("## Casting")
+    println("The above table does not show what is and is not supported for cast.")
+    println("This table shows the matrix of supported casts.")
     println("Nested types like MAP, Struct, and Array can only be cast if the child types")
     println("can be cast.")
     println()
     println("Some of the casts to/from string on the GPU are not 100% the same and are disabled")
     println("by default. Please see the configs for more details on these specific cases.")
     println()
-    // TODO this should be autogenerated or at least based off of the spark version because it
-    // changed in 3.1 and we would need a way to separate ANSI from non-ANSI
-    println("<table>")
-    println("<tr><th rowSpan=\"2\" colSpan=\"2\"></th><th colSpan=\"17\">TO</th></tr>")
-    println("<tr>")
-    println("<th>BOOLEAN</th>")
-    println("<th>BYTE</th>")
-    println("<th>SHORT</th>")
-    println("<th>INT</th>")
-    println("<th>LONG</th>")
-    println("<th>FLOAT</th>")
-    println("<th>DOUBLE</th>")
-    println("<th>DATE</th>")
-    println("<th>TIMESTAMP</th>")
-    println("<th>STRING</th>")
-    println("<th>DECIMAL</th>")
-    println("<th>NULL</th>")
-    println("<th>BINARY</th>")
-    println("<th>CALENDAR</th>")
-    println("<th>ARRAY</th>")
-    println("<th>MAP</th>")
-    println("<th>STRUCT</th>")
-    println("</tr>")
-    println("<tr><th rowSpan=\"17\">FROM</th>")
-    println("<th>BOOLEAN</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>BYTE</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td>S</td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>SHORT</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td>S</td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>INT</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td>S</td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>LONG</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td>S</td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>FLOAT</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>DOUBLE</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>DATE</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td>S</td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>TIMESTAMP</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td>S</td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>STRING</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td>S</td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td>S</td>") // TO BINARY
-    println("<td><b>NS</b></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>DECIMAL</th>")
-    println("<td><b>NS</b></td>") // TO BOOLEAN
-    println("<td><b>NS</b></td>") // TO BYTE
-    println("<td><b>NS</b></td>") // TO SHORT
-    println("<td><b>NS</b></td>") // TO INT
-    println("<td><b>NS</b></td>") // TO LONG
-    println("<td><b>NS</b></td>") // TO FLOAT
-    println("<td><b>NS</b></td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td><b>NS</b></td>") // TO TIMESTAMP
-    println("<td><b>NS</b></td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td><b>NS</b></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>NULL</th>")
-    println("<td>S</td>") // TO BOOLEAN
-    println("<td>S</td>") // TO BYTE
-    println("<td>S</td>") // TO SHORT
-    println("<td>S</td>") // TO INT
-    println("<td>S</td>") // TO LONG
-    println("<td>S</td>") // TO FLOAT
-    println("<td>S</td>") // TO DOUBLE
-    println("<td>S</td>") // TO DATE
-    println("<td>S</td>") // TO TIMESTAMP
-    println("<td>S</td>") // TO STRING
-    println("<td><b>NS</b></td>") // TO DECIMAL
-    println("<td><b>NS</b></td>") // TO NULL
-    println("<td><b>NS</b></td>") // TO BINARY
-    println("<td><b>NS</b></td>") // TO CALENDAR
-    println("<td><b>NS</b></td>") // TO ARRAY
-    println("<td><b>NS</b></td>") // TO MAP
-    println("<td><b>NS</b></td>") // TO STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>BINARY</th>")
-    println("<td></td>") // TO BOOLEAN
-    println("<td></td>") // TO BYTE
-    println("<td></td>") // TO SHORT
-    println("<td></td>") // TO INT
-    println("<td></td>") // TO LONG
-    println("<td></td>") // TO FLOAT
-    println("<td></td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td></td>") // TO TIMESTAMP
-    println("<td><b>NS</b></td>") // TO STRING
-    println("<td></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td><b>NS</b></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("<th>CALENDAR</th>")
-    println("<td></td>") // TO BOOLEAN
-    println("<td></td>") // TO BYTE
-    println("<td></td>") // TO SHORT
-    println("<td></td>") // TO INT
-    println("<td></td>") // TO LONG
-    println("<td></td>") // TO FLOAT
-    println("<td></td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td></td>") // TO TIMESTAMP
-    println("<td><b>NS</b></td>") // TO STRING
-    println("<td></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td><b>NS</b></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("</tr>")
-    println("<th>ARRAY</th>")
-    println("<td></td>") // TO BOOLEAN
-    println("<td></td>") // TO BYTE
-    println("<td></td>") // TO SHORT
-    println("<td></td>") // TO INT
-    println("<td></td>") // TO LONG
-    println("<td></td>") // TO FLOAT
-    println("<td></td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td></td>") // TO TIMESTAMP
-    println("<td><b>NS</b></td>") // TO STRING
-    println("<td></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td><b>NS</b></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("</tr>")
-    println("<th>MAP</th>")
-    println("<td></td>") // TO BOOLEAN
-    println("<td></td>") // TO BYTE
-    println("<td></td>") // TO SHORT
-    println("<td></td>") // TO INT
-    println("<td></td>") // TO LONG
-    println("<td></td>") // TO FLOAT
-    println("<td></td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td></td>") // TO TIMESTAMP
-    println("<td><b>NS</b></td>") // TO STRING
-    println("<td></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td><b>NS</b></td>") // TO MAP
-    println("<td></td>") // TO STRUCT
-    println("</tr>")
-    println("</tr>")
-    println("<th>STRUCT</th>")
-    println("<td></td>") // TO BOOLEAN
-    println("<td></td>") // TO BYTE
-    println("<td></td>") // TO SHORT
-    println("<td></td>") // TO INT
-    println("<td></td>") // TO LONG
-    println("<td></td>") // TO FLOAT
-    println("<td></td>") // TO DOUBLE
-    println("<td></td>") // TO DATE
-    println("<td></td>") // TO TIMESTAMP
-    println("<td><b>NS</b></td>") // TO STRING
-    println("<td></td>") // TO DECIMAL
-    println("<td></td>") // TO NULL
-    println("<td></td>") // TO BINARY
-    println("<td></td>") // TO CALENDAR
-    println("<td></td>") // TO ARRAY
-    println("<td></td>") // TO MAP
-    println("<td><b>NS</b></td>") // TO STRUCT
-    println("</tr>")
-    println("</table>")
+    println("Please note that even though casting from one type to another is supported")
+    println("by Spark it does not mean they all produce usable results.  For example casting")
+    println("from a date to a boolean always produces a null. This is for Hive compatibility")
+    println("and the accelerator produces the same result.")
+    println()
+    GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      rule.getChecks match {
+        case Some(cc: CastChecks) =>
+          println(s"### `${rule.tag.runtimeClass.getSimpleName}`")
+          println()
+          println("<table>")
+          val numTypes = TypeEnum.values.size
+          println("<tr><th rowSpan=\"2\" colSpan=\"2\"></th><th colSpan=\"" + numTypes + "\">TO</th></tr>")
+          println("<tr>")
+          TypeEnum.values.foreach { t =>
+            println(s"<th>$t</th>")
+          }
+          println("</tr>")
+
+          println("<tr><th rowSpan=\"" + numTypes + "\">FROM</th>")
+          var count = 0
+          TypeEnum.values.foreach { from =>
+            println(s"<th>$from</th>")
+            TypeEnum.values.foreach { to =>
+              println(cc.support(from, to).htmlTag)
+            }
+            println("</tr>")
+            count += 1
+            if (count < numTypes) {
+              println("<tr>")
+            }
+          }
+          println("</table>")
+          println()
+        case _ => // Nothing
+      }
+    }
+
     println()
     println("## Input/Output")
     println("For Input and Output it is not cleanly exposed what types are supported and which are not.")
