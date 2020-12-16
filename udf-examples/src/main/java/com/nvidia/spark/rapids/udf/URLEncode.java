@@ -43,7 +43,7 @@ public class URLEncode extends GenericUDF implements RapidsUDF {
   private final Text textResult = new Text();
 
   /** Standard getDisplayString method for implementing GenericUDF */
-   @Override
+  @Override
   public String getDisplayString(String[] children) {
     return getStandardDisplayString("urlencode", children);
   }
