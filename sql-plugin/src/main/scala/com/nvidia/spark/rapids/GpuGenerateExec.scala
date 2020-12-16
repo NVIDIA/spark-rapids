@@ -34,7 +34,7 @@ class GpuGenerateExecSparkPlanMeta(
     gen: GenerateExec,
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
-    r: ConfKeysAndIncompat) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) {
+    r: DataFromReplacementRule) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) {
 
   private def exprsFromArray(data: ArrayData, dataType: DataType): Seq[BaseExprMeta[Expression]] = {
     (0 until data.numElements()).map { i =>

@@ -579,23 +579,17 @@ class SubstringIndexMeta(
     expr: SubstringIndex,
     override val conf: RapidsConf,
     override val parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat) extends TernaryExprMeta[SubstringIndex](expr, conf, parent, rule) {
+    rule: DataFromReplacementRule)
+    extends TernaryExprMeta[SubstringIndex](expr, conf, parent, rule) {
   private var regexp: String = _
 
   override def tagExprForGpu(): Unit = {
-    val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse{
-      willNotWorkOnGpu("only literal parameters supported for deliminator")
-      ""
-    }
-
+    val delim = GpuOverrides.extractStringLit(expr.delimExpr).getOrElse("")
     if (delim == null || delim.length != 1) {
       willNotWorkOnGpu("only a single character deliminator is supported")
     }
 
     val count = GpuOverrides.extractLit(expr.countExpr)
-    if (count.isEmpty) {
-      willNotWorkOnGpu("only literal parameters supported for count")
-    }
     if (canThisBeReplaced) {
       val c = count.get.value.asInstanceOf[Integer]
       this.regexp = GpuSubstringIndex.makeExtractRe(delim, c)
@@ -803,7 +797,7 @@ class GpuStringSplitMeta(
     expr: StringSplit,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
     extends TernaryExprMeta[StringSplit](expr, conf, parent, rule) {
   import GpuOverrides._
 
@@ -833,9 +827,6 @@ class GpuStringSplitMeta(
       regexp: Expression,
       limit: Expression): GpuExpression =
     GpuStringSplit(str, regexp, limit)
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowArray = true, allowNesting = false)
 }
 
 case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)

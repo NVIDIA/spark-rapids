@@ -22,7 +22,7 @@ import java.util.TimeZone
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.Cast
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 
@@ -50,20 +50,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     for (from <- supportedTypes; to <- supportedTypes) yield (from, to)
   }
 
-  def should310SkipAnsiCast(from: DataType, to: DataType): Boolean = (from, to) match {
-    case (_: NumericType, TimestampType | DateType) => true
-    case (BooleanType, TimestampType | DateType) => true
-    case (TimestampType | DateType, _: NumericType) => true
-    case (TimestampType | DateType, BooleanType) => true
-    case (StringType, TimestampType) => true
-    case (FloatType, IntegerType) => true
-    case _ => false
-  }
-
-
   test("Test all supported casts with in-range values") {
-    val is310OrAfter = !withCpuSparkSession(s => s.version < "3.1.0")
-
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
@@ -74,16 +61,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
 
+      val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
+      val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
+
       typeMatrix.foreach {
         case (from, to) =>
-          // In 3.1.0 Cast.canCast was split with a separate ANSI version
-          // Until we are on 3.1.0 or more we cannot call this easily so for now
-          // We will check and skip a very specific one.
-          val shouldSkip = is310OrAfter && ansiEnabled && should310SkipAnsiCast(from, to)
           // check if Spark supports this cast
-          if (!shouldSkip && Cast.canCast(from, to)) {
+          if (checks.sparkCanCast(from, to)) {
             // check if plugin supports this cast
-            if (GpuCast.canCast(from, to)) {
+            if (checks.gpuCanCast(from, to)) {
               // test the cast
               try {
                 val (fromCpu, fromGpu) =
@@ -98,15 +84,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
                   case _ =>
                     compareResults(sort = false, 0.00001, fromCpu, fromGpu)
                 }
-
               } catch {
                 case e: Exception =>
                   fail(s"Cast from $from to $to failed; ansi=$ansiEnabled $e", e)
               }
             }
-          } else if (!shouldSkip) {
+          } else {
             // if Spark doesn't support this cast then the plugin shouldn't either
-            assert(!GpuCast.canCast(from, to))
+            assert(!checks.gpuCanCast(from, to))
           }
       }
     }
@@ -140,10 +125,13 @@ class CastOpSuite extends GpuExpressionTestSuite {
     assert(unsupported == expected)
   }
 
-  private def getUnsupportedCasts(ansiEnabled: Boolean) = {
+  private def getUnsupportedCasts(ansiEnabled: Boolean): Seq[(DataType, DataType)] = {
+    val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
+    val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
+
     val unsupported = typeMatrix.flatMap {
       case (from, to) =>
-        if (Cast.canCast(from, to) && !GpuCast.canCast(from, to)) {
+        if (checks.sparkCanCast(from, to) && !checks.gpuCanCast(from, to)) {
           Some((from, to))
         } else {
           None
@@ -182,8 +170,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
       case (DataTypes.StringType, DataTypes.FloatType) if ansiEnabled => floatsAsStrings(spark)
       case (DataTypes.StringType, DataTypes.DoubleType) if ansiEnabled => doublesAsStrings(spark)
 
-      case (DataTypes.StringType, DataTypes.DateType) => timestampsAsStrings(spark, false)
-      case (DataTypes.StringType, DataTypes.TimestampType) => timestampsAsStrings(spark, true)
+      case (DataTypes.StringType, DataTypes.DateType) =>
+        timestampsAsStrings(spark, false, ansiEnabled)
+      case (DataTypes.StringType, DataTypes.TimestampType) =>
+        timestampsAsStrings(spark, true, ansiEnabled)
 
       case (DataTypes.ShortType, DataTypes.ByteType) if ansiEnabled => bytesAsShorts(spark)
       case (DataTypes.IntegerType, DataTypes.ByteType) if ansiEnabled => bytesAsInts(spark)
@@ -246,7 +236,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private def testCastToString[T](
       dataType: DataType,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
-    assert(GpuCast.canCast(dataType, DataTypes.StringType))
+    val checks = GpuOverrides.expressions(classOf[Cast]).getChecks.get.asInstanceOf[CastChecks]
+
+    assert(checks.gpuCanCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType),
@@ -531,7 +523,10 @@ object CastOpSuite {
 
   def intsAsFloats(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    intValues.map(_.toFloat).toDF("c0")
+    // Spark 3.1.0 changed the range of floats that can be cast to integral types and this
+    // required the intsAsFloats to be updated to avoid using Int.MaxValue. The supported
+    // range is now `Math.floor(x) <= Int.MaxValue && Math.ceil(x) >= Int.MinValue`
+    Seq(Int.MinValue.toFloat, 2147483583.toFloat, 0, -0, -1, 1).toDF("c0")
   }
 
   def intsAsDoubles(session: SparkSession): DataFrame = {
@@ -584,7 +579,9 @@ object CastOpSuite {
     timestampValues.map(_.toDouble).toDF("c0")
   }
 
-  def timestampsAsStrings(session: SparkSession, castStringToTimestamp: Boolean): DataFrame = {
+  def timestampsAsStrings(session: SparkSession,
+      castStringToTimestamp: Boolean,
+      validOnly: Boolean): DataFrame = {
     import session.sqlContext.implicits._
 
     val specialDates = Seq(
@@ -618,22 +615,7 @@ object CastOpSuite {
       "2009-01-03 ",
       "2009-01-4 ",
       "2009-1-05 ",
-      "2009-1-6 ",
-      // `yyyy-[m]m-[d]d *`
-      "2010-1-01 !@#$%",
-      "2010-1-02 ,",
-      "2010-01-03 *",
-      "2010-01-04 T",
-      "2010-01-5 T",
-      "2010-1-06 T",
-      "2010-1-7 T",
-      // `yyyy-[m]m-[d]dT*`
-      "2010-1-01T!@#$%",
-      "2010-1-02T,",
-      "2010-01-03T*",
-      "2010-01-04TT",
-      "2010-02-3T*",
-      "2010-02-4TT"
+      "2009-1-6 "
     )
 
     val validTimestamps = Seq(
@@ -648,38 +630,56 @@ object CastOpSuite {
     )
 
     // invalid values that should be cast to null on both CPU and GPU
-    val invalidValues = Seq(
-      "200", // year too few digits
-      "20000", // year too many digits
-      "1999\rGARBAGE",
-      "1999-1\rGARBAGE",
-      "1999-12\rGARBAGE",
-      "1999-12-31\rGARBAGE",
-      "1999-10-1 TGARBAGE\nMORE GARBAGE",
-      "200-1-1",
-      "2000-1-1-1",
-      "2000-1-1-1-1",
-      "-1-1-1-",
-      "2010-01-6\r\nT\r\n12:34:56.000111Z",
-      "2010-01-6\nT 12:34:56.000111Z",
-      "2010-01-6\nT\n12:34:56.000111Z",
-      "2010-01-6 T 12:34:56.000111Z",
-      "2010-01-6\tT\t12:34:56.000111Z",
-      "2010-01-6T\t12:34:56.000111Z",
-      "2010-01-6T 12:34:56.000111Z",
-      "2010-01-6T  12:34:56.000111Z",
-      "2010-01-6 T 12:34:56.000111Z",
-      "2010-01-6  T12:34:56.000111Z",
-      "2010-01-6 ",
-      "2010-01-6 T",
-      "2010-01-6 T\n",
-      "2010-01-6 T\n12:34:56.000111Z",
-      "2018random_text",
-      "2018-11random_text",
-      "2018-1random_text",
-      "2018-11-08random_text",
-      "2018-11-9random_text"
-    )
+    val invalidValues = if (validOnly) {
+      Seq.empty
+    } else {
+      Seq(
+        "200", // year too few digits
+        "20000", // year too many digits
+        "1999\rGARBAGE",
+        "1999-1\rGARBAGE",
+        "1999-12\rGARBAGE",
+        "1999-12-31\rGARBAGE",
+        "1999-10-1 TGARBAGE\nMORE GARBAGE",
+        "200-1-1",
+        "2000-1-1-1",
+        "2000-1-1-1-1",
+        "-1-1-1-",
+        "2010-01-6\r\nT\r\n12:34:56.000111Z",
+        "2010-01-6\nT 12:34:56.000111Z",
+        "2010-01-6\nT\n12:34:56.000111Z",
+        "2010-01-6 T 12:34:56.000111Z",
+        "2010-01-6\tT\t12:34:56.000111Z",
+        "2010-01-6T\t12:34:56.000111Z",
+        "2010-01-6T 12:34:56.000111Z",
+        "2010-01-6T  12:34:56.000111Z",
+        "2010-01-6 T 12:34:56.000111Z",
+        "2010-01-6  T12:34:56.000111Z",
+        "2010-01-6 ",
+        "2010-01-6 T",
+        "2010-01-6 T\n",
+        "2010-01-6 T\n12:34:56.000111Z",
+        "2018random_text",
+        "2018-11random_text",
+        "2018-1random_text",
+        "2018-11-08random_text",
+        "2018-11-9random_text",
+        // `yyyy-[m]m-[d]dT*` in Spark 3.1+ these no longer work for AnsiCast, but did before
+        "2010-1-01T!@#$%",
+        "2010-1-02T,",
+        "2010-01-03T*",
+        "2010-01-04TT",
+        "2010-02-3T*",
+        "2010-02-4TT",
+        // `yyyy-[m]m-[d]d *` in Spark 3.1+ these no longer work for AnsiCast, but did before
+        "2010-1-01 !@#$%",
+        "2010-1-02 ,",
+        "2010-01-03 *",
+        "2010-01-04 T",
+        "2010-01-5 T",
+        "2010-1-06 T",
+        "2010-1-7 T")
+    }
 
     val timestampWithoutDate = Seq(
       "23:59:59.333666Z",
