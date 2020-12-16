@@ -201,6 +201,23 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             lambda spark : readParquetCatchException(spark, data_path),
             conf=all_confs)
 
+
+# https://github.com/NVIDIA/spark-rapids/issues/1324
+@pytest.mark.parametrize('parquet_gens', [decimal_gens], ids=idfn)
+@pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
+            conf={'spark.sql.parquet.writeLegacyFormat': 'true'})
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(read_func(data_path), conf=all_confs)
+
+
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
     TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens,

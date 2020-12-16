@@ -1071,6 +1071,7 @@ class MultiFileParquetPartitionReader(
         }
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+          .enableStrictDecimalType(true)
           .includeColumn(readDataSchema.fieldNames:_*).build()
 
         // about to start using the GPU
@@ -1460,6 +1461,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       val parseOpts = ParquetOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+        .enableStrictDecimalType(true)
         .includeColumn(readDataSchema.fieldNames: _*).build()
 
       // about to start using the GPU
@@ -1595,6 +1597,7 @@ class ParquetPartitionReader(
         }
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+          .enableStrictDecimalType(true)
           .includeColumn(readDataSchema.fieldNames:_*).build()
 
         // about to start using the GPU

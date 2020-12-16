@@ -43,11 +43,17 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("*"))
   }
 
-  // Column schema of decimal-test.parquet is: [_c0: decimal(18, 0), _c1: decimal(7, 3),
-  // _c2: decimal(10, 10), _c3: decimal(15, 12), _c4: int64, _c5: float]
-  testSparkResultsAreEqual("Test Parquet decimal",
-    frameFromParquet("decimal-test.parquet"),
-    new SparkConf().set("spark.sql.sources.useV1SourceList", "")) {
+  // Column schema of decimal-test.parquet is: [c_0: decimal(18, 0), c_1: decimal(7, 3),
+  // c_2: decimal(10, 10), c_3: decimal(15, 12), c_4: int64, c_5: float]
+  testSparkResultsAreEqual("Test Parquet decimal stored as INT32/64",
+    frameFromParquet("decimal-test.parquet")) {
+    frame => frame.select(col("*"))
+  }
+
+  // Column schema of decimal-test-legacy.parquet is: [c_0: decimal(18, 0), c_1: decimal(7, 3),
+  // c_2: decimal(10, 10), c_3: decimal(15, 12), c_4: int64, c_5: float]
+  testSparkResultsAreEqual("Test Parquet decimal stored as FIXED_LEN_BYTE_ARRAY",
+    frameFromParquet("decimal-test-legacy.parquet")) {
     frame => frame.select(col("*"))
   }
 }
