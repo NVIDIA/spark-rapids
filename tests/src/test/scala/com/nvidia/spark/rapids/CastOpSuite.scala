@@ -664,14 +664,14 @@ object CastOpSuite {
         "2018-1random_text",
         "2018-11-08random_text",
         "2018-11-9random_text",
-        // `yyyy-[m]m-[d]dT*` in some version of Spark this is valid and in others it is not
+        // `yyyy-[m]m-[d]dT*` in Spark 3.1+ these no longer work for AnsiCast, but did before
         "2010-1-01T!@#$%",
         "2010-1-02T,",
         "2010-01-03T*",
         "2010-01-04TT",
         "2010-02-3T*",
         "2010-02-4TT",
-        // `yyyy-[m]m-[d]d *` in some version of Spark this is valid and in others it is not
+        // `yyyy-[m]m-[d]d *` in Spark 3.1+ these no longer work for AnsiCast, but did before
         "2010-1-01 !@#$%",
         "2010-1-02 ,",
         "2010-01-03 *",
