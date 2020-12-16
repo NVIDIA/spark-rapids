@@ -105,7 +105,7 @@ object GpuHiveSimpleUDF {
    * to the `HiveSimpleUDF` class that is normally hidden.
    */
   private def buildRule(): ExprRule[HiveSimpleUDF] = GpuOverrides.expr[HiveSimpleUDF](
-    "Hive UDF",
+    "Hive UDF, support requires the UDF to implement a RAPIDS-accelerated interface",
     ExprChecks.projectNotLambda(
       TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
       TypeSig.all,

@@ -16177,7 +16177,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="4">HiveSimpleUDF</td>
 <td rowSpan="4"> </td>
-<td rowSpan="4">Hive UDF</td>
+<td rowSpan="4">Hive UDF, support requires the UDF to implement a RAPIDS-accelerated interface</td>
 <td rowSpan="4">None</td>
 <td rowSpan="2">project</td>
 <td>param</td>
