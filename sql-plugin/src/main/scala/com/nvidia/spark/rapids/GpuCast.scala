@@ -38,12 +38,23 @@ class CastExprMeta[INPUT <: CastBase](
   private val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
+
+    def buildMessage(entry: ConfEntry[_]): String = {
+      s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
+    }
+
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
         "converting floating point data types to strings and this can produce results that " +
         "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
+    }
+    if (!conf.isCastFloatToIntegralTypesEnabled &&
+        (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
+        (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
+            toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
+      willNotWorkOnGpu(buildMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
     }
     if (!conf.isCastStringToFloatEnabled && cast.child.dataType == DataTypes.StringType &&
       Seq(DataTypes.FloatType, DataTypes.DoubleType).contains(cast.dataType)) {

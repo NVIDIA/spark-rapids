@@ -30,6 +30,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
 
   private val sparkConf = new SparkConf()
+    .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
 
   private val timestampDatesMsecParquet = frameFromParquet("timestamp-date-test-msec.parquet")
@@ -55,6 +56,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     Seq(false, true).foreach { ansiEnabled =>
 
       val conf = new SparkConf()
+        .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
@@ -264,7 +266,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(TimestampType))
   }
 
-  testSparkResultsAreEqual("Test cast from float", mixedFloatDf) {
+  testSparkResultsAreEqual("Test cast from float", mixedFloatDf,
+      conf = sparkConf) {
     frame => frame.select(
       col("floats").cast(IntegerType),
       col("floats").cast(LongType),
@@ -277,7 +280,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("floats").cast(TimestampType))
   }
 
-  testSparkResultsAreEqual("Test cast from double", doubleWithNansDf) {
+  testSparkResultsAreEqual("Test cast from double", doubleWithNansDf,
+      conf = sparkConf) {
     frame => frame.select(
       col("doubles").cast(IntegerType),
       col("doubles").cast(LongType),

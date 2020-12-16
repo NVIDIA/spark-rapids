@@ -482,6 +482,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
+    conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
+      .doc("Casting from floating point types to integral types on the GPU supports a " +
+          "slightly different range of values than Spark 3.1.0, which uses the " +
+          "following logic to determine valid inputs (example given is for Int): " +
+          "`Math.floor(x) <= Int.MaxValue && Math.ceil(x) >= Int.MinValue`")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
       "on the GPU. Currently hex values aren't supported on the GPU. Also note that casting from " +
@@ -1011,6 +1020,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
+
+  lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
