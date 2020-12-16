@@ -100,7 +100,7 @@ object GpuHiveSimpleUDF {
    */
   private def buildRule(): ExprRule[HiveSimpleUDF] = GpuOverrides.expr[HiveSimpleUDF](
     "Hive UDF",
-    ExprChecks.fullAggAndProject(
+    ExprChecks.projectNotLambda(
       TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
       TypeSig.all,
       repeatingParamCheck = Some(RepeatingParamCheck(
