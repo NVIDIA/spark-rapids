@@ -2169,10 +2169,10 @@ object GpuOverrides {
     exec[GenerateExec] (
       "The backend for operations that generate more output rows than input rows like explode",
       ExecChecks(
-        TypeSig.commonCudfTypes
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL
             .withPsNote(TypeEnum.ARRAY,
               "Only literal arrays and the output of the array function are supported")
-            .nested(TypeSig.commonCudfTypes),
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
         TypeSig.all),
       (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
     exec[ProjectExec](

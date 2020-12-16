@@ -233,11 +233,11 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
+<td>S*</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (Only literal arrays and the output of the array function are supported; missing nested DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (Only literal arrays and the output of the array function are supported; missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
