@@ -18,23 +18,22 @@ package org.apache.spark.sql.hive.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.hive.ql.exec.UDF
+import org.apache.hadoop.hive.ql.udf.generic.GenericUDF
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, UserDefinedExpression}
 import org.apache.spark.sql.hive.HiveShim.HiveFunctionWrapper
-import org.apache.spark.sql.hive.HiveSimpleUDF
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/** GPU-accelerated version of Spark's `HiveSimpleUDF` */
-case class GpuHiveSimpleUDF(
+abstract class GpuHiveUDFBase(
     name: String,
     funcWrapper: HiveFunctionWrapper,
     children: Seq[Expression],
     dataType: DataType,
-    udfDeterministic: Boolean) extends GpuExpression with UserDefinedExpression {
+    udfDeterministic: Boolean) extends GpuExpression with UserDefinedExpression with Serializable {
 
   private[this] val nvtxRangeName = "UDF: " + name
 
@@ -45,15 +44,13 @@ case class GpuHiveSimpleUDF(
   override def foldable: Boolean = udfDeterministic && children.forall(_.foldable)
 
   @transient
-  lazy val function: RapidsUDF = funcWrapper.createFunction[UDF]().asInstanceOf[RapidsUDF]
+  val function: RapidsUDF
 
   override def toString: String = {
     s"$nodeName#${funcWrapper.functionClassName}(${children.mkString(",")})"
   }
 
   override def prettyName: String = name
-
-  override def sql: String = s"$name(${children.map(_.sql).mkString(", ")})"
 
   private[this] def evalExpr(expr: Expression, batch: ColumnarBatch): GpuColumnVector = {
     expr.columnarEval(batch) match {
@@ -81,57 +78,30 @@ case class GpuHiveSimpleUDF(
   }
 }
 
-object GpuHiveSimpleUDF {
-  /**
-   * Potentially builds a mapping from `HiveSimpleUDF` to a GPU replacement rule.
-   * Returns an empty map if the Spark distribution does not contain Hive support.
-   */
-  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    try {
-      Map(classOf[HiveSimpleUDF] -> buildRule())
-    } catch {
-      case e: NoClassDefFoundError =>
-        // This is likely caused by the Spark distribution not containing Hive support.
-        if (e.getMessage != null && e.getMessage.contains("HiveSimpleUDF")) {
-          Map.empty
-        } else {
-          throw e
-        }
-    }
-  }
+/** GPU-accelerated version of Spark's `HiveSimpleUDF` */
+case class GpuHiveSimpleUDF(
+    name: String,
+    funcWrapper: HiveFunctionWrapper,
+    children: Seq[Expression],
+    dataType: DataType,
+    udfDeterministic: Boolean)
+    extends GpuHiveUDFBase(name, funcWrapper, children, dataType, udfDeterministic) {
+  @transient
+  override lazy val function: RapidsUDF = funcWrapper.createFunction[UDF]().asInstanceOf[RapidsUDF]
 
-  /**
-   * Builds an expression rule for `HiveSimpleUDF`. This code is here to obtain access
-   * to the `HiveSimpleUDF` class that is normally hidden.
-   */
-  private def buildRule(): ExprRule[HiveSimpleUDF] = GpuOverrides.expr[HiveSimpleUDF](
-    "Hive UDF, support requires the UDF to implement a RAPIDS-accelerated interface",
-    ExprChecks.projectNotLambda(
-      TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
-      TypeSig.all,
-      repeatingParamCheck = Some(RepeatingParamCheck(
-        "param",
-        TypeSig.commonCudfTypes,
-        TypeSig.all))),
-    (a, conf, p, r) => new ExprMeta[HiveSimpleUDF](a, conf, p, r) {
-      override def tagExprForGpu(): Unit = {
-        a.function match {
-          case _: RapidsUDF =>
-          case _ =>
-            willNotWorkOnGpu(s"Hive UDF ${a.name} implemented by " +
-                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation")
-        }
-      }
+  override def sql: String = s"$name(${children.map(_.sql).mkString(", ")})"
+}
 
-      override def convertToGpu(): GpuExpression = {
-        // To avoid adding a Hive dependency just to check if the UDF function is deterministic,
-        // we use the original HiveSimpleUDF `deterministic` method as a proxy.
-        GpuHiveSimpleUDF(
-          a.name,
-          a.funcWrapper,
-          childExprs.map(_.convertToGpu()),
-          a.dataType,
-          a.deterministic)
-      }
-    })
+/** GPU-accelerated version of Spark's `HiveGenericUDF` */
+case class GpuHiveGenericUDF(
+    name: String,
+    funcWrapper: HiveFunctionWrapper,
+    children: Seq[Expression],
+    dataType: DataType,
+    udfDeterministic: Boolean,
+    override val foldable: Boolean)
+    extends GpuHiveUDFBase(name, funcWrapper, children, dataType, udfDeterministic) {
+  @transient
+  override lazy val function: RapidsUDF = funcWrapper.createFunction[GenericUDF]()
+      .asInstanceOf[RapidsUDF]
 }

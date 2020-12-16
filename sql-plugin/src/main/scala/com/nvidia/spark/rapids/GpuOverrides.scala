@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleEx
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.hive.rapids.GpuHiveSimpleUDF
+import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
@@ -2044,7 +2044,7 @@ object GpuOverrides {
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    commonExpressions ++ ShimLoader.getSparkShims.getExprs ++ GpuHiveSimpleUDF.getExprs
+    commonExpressions ++ ShimLoader.getSparkShims.getExprs ++ GpuHiveOverrides.exprs
 
 
   def wrapScan[INPUT <: Scan](

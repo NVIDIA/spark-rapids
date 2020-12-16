@@ -33,3 +33,15 @@ def test_hive_simple_udf():
         evalfn,
         "hive_simple_udf_test_table",
         "SELECT i, urldecode(s) FROM hive_simple_udf_test_table")
+
+def test_hive_generic_udf():
+    with_spark_session(skip_if_no_hive)
+    data_gens = [["s", StringGen('.{0,30}')]]
+    def evalfn(spark):
+        spark.sql("DROP TEMPORARY FUNCTION IF EXISTS urlencode")
+        spark.sql("CREATE TEMPORARY FUNCTION urlencode AS 'com.nvidia.spark.rapids.udf.URLEncode'")
+        return gen_df(spark, data_gens)
+    assert_gpu_and_cpu_are_equal_sql(
+        evalfn,
+        "hive_generic_udf_test_table",
+        "SELECT urlencode(s) FROM hive_generic_udf_test_table")
