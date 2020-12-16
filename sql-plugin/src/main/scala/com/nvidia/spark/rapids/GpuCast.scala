@@ -30,7 +30,7 @@ class CastExprMeta[INPUT <: CastBase](
     ansiEnabled: Boolean,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
   private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
@@ -75,11 +75,6 @@ class CastExprMeta[INPUT <: CastBase](
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
     }
   }
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true,
-      allowBinary = true)
 
   override def convertToGpu(child: Expression): GpuExpression =
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId)

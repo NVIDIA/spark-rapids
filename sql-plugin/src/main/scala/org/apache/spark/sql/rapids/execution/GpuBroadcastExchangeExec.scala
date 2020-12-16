@@ -203,12 +203,8 @@ class GpuBroadcastMeta(
     exchange: BroadcastExchangeExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat) extends
+    rule: DataFromReplacementRule) extends
   SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {

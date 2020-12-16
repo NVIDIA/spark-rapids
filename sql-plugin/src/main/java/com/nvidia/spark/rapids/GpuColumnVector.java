@@ -39,6 +39,59 @@ import java.util.List;
  */
 public class GpuColumnVector extends GpuColumnVectorBase {
 
+  /**
+   * Print to standard error the contents of a table. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the table to print out.
+   * @param table the table to print out.
+   */
+  public static synchronized void debug(String name, Table table) {
+    System.err.println("DEBUG " + name + " " + table);
+    for (int col = 0; col < table.getNumberOfColumns(); col++) {
+      debug(String.valueOf(col), table.getColumn(col));
+    }
+  }
+
+  /**
+   * Print to standard error the contents of a column. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the column to print out.
+   * @param col the column to print out.
+   */
+  public static synchronized void debug(String name, ai.rapids.cudf.ColumnVector col) {
+    try (HostColumnVector hostCol = col.copyToHost()) {
+      debug(name, hostCol);
+    }
+  }
+
+  /**
+   * Print to standard error the contents of a column. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the column to print out.
+   * @param hostCol the column to print out.
+   */
+  public static synchronized void debug(String name, HostColumnVector hostCol) {
+    DType type = hostCol.getType();
+    System.err.println("COLUMN " + name + " " + type);
+    if (type.getTypeId() == DType.DTypeEnum.DECIMAL64) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getBigDecimal(i));
+        }
+      }
+    } else {
+      System.err.println("TYPE " + type + " NOT SUPPORTED FOR DEBUG PRINT");
+    }
+  }
+
   private static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
     if (spark instanceof ArrayType) {
       ArrayType arrayType = (ArrayType) spark;

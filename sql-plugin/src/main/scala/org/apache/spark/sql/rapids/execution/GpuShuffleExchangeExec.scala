@@ -29,13 +29,13 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, RangePartitioning, SinglePartition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, DecimalType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -43,7 +43,7 @@ class GpuShuffleMeta(
     shuffle: ShuffleExchangeExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[ShuffleExchangeExec](shuffle, conf, parent, rule) {
   // Some kinds of Partitioning are a type of expression, but Partitioning itself is not
   // so don't let them leak through as expressions
@@ -55,11 +55,18 @@ class GpuShuffleMeta(
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this exchange can run on GPU
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
-  }
 
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
+    val hasDec = shuffle.schema.fields.map(_.dataType).exists(_.isInstanceOf[DecimalType])
+    if (hasDec) {
+      shuffle.outputPartitioning match {
+        case SinglePartition => // OK
+//        case _: HashPartitioning => //Hash Partitioning on decimal corrupts data
+          // https://github.com/rapidsai/cudf/issues/6996
+        case _: RangePartitioning => // OK
+        case o => willNotWorkOnGpu(s"Decimal for $o is not supported right now")
+      }
+    }
+  }
 
   override def convertToGpu(): GpuExec =
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
