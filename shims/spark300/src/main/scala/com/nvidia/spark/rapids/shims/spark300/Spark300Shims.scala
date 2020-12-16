@@ -193,6 +193,10 @@ class Spark300Shims extends SparkShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
+      GpuOverrides.expr[AnsiCast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
       GpuOverrides.expr[TimeSub](
         "Subtracts interval from timestamp",
         ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
