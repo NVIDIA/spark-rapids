@@ -117,8 +117,8 @@ object TpcdsLikeSpark {
       coalesce: Map[String, Int] = Map.empty,
       repartition: Map[String, Int] = Map.empty,
       writePartitioning: Boolean = false,
-      useDecimalType: Boolean = false,
-      appendDat: Boolean = true): Unit = {
+      appendDat: Boolean = true,
+      useDecimalType: Boolean = false): Unit = {
     tables(useDecimalType).foreach(_.csvToParquet(
       spark,
       baseInput,
@@ -136,8 +136,8 @@ object TpcdsLikeSpark {
       coalesce: Map[String, Int] = Map.empty,
       repartition: Map[String, Int] = Map.empty,
       writePartitioning: Boolean = false,
-      useDecimalType: Boolean = false,
-      appendDat: Boolean = true): Unit = {
+      appendDat: Boolean = true,
+      useDecimalType: Boolean = false): Unit = {
     tables(useDecimalType).foreach(_.csvToOrc(
       spark,
       baseInput,
@@ -151,24 +151,24 @@ object TpcdsLikeSpark {
   def setupAllCSV(
       spark: SparkSession,
       basePath: String,
-      useDecimalType: Boolean = false,
-      appendDat: Boolean = true): Unit = {
+      appendDat: Boolean = true,
+      useDecimalType: Boolean = false): Unit = {
     tables(useDecimalType).foreach(_.setupCSV(spark, basePath, appendDat))
   }
 
   def setupAllParquet(
       spark: SparkSession,
       basePath: String,
-      useDecimalType: Boolean,
-      appendDat: Boolean = true): Unit = {
+      appendDat: Boolean = true,
+      useDecimalType: Boolean = false): Unit = {
     tables(useDecimalType).foreach(_.setupParquet(spark, basePath, appendDat))
   }
 
   def setupAllOrc(
       spark: SparkSession,
       basePath: String,
-      useDecimalType: Boolean,
-      appendDat: Boolean = true): Unit = {
+      appendDat: Boolean = true,
+      useDecimalType: Boolean = false): Unit = {
     tables(useDecimalType).foreach(_.setupOrc(spark, basePath, appendDat))
   }
 
@@ -177,7 +177,7 @@ object TpcdsLikeSpark {
       basePath: String,
       format: String,
       appendDat: Boolean = true,
-      useDecimalType: Boolean): Unit = {
+      useDecimalType: Boolean = false): Unit = {
     tables(useDecimalType).foreach(_.setup(spark, basePath, format, appendDat))
   }
 
