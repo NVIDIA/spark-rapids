@@ -1866,10 +1866,11 @@ object GpuOverrides {
     expr[GetStructField](
       "Gets the named field of the struct",
       ExprChecks.unaryProjectNotLambda(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL +
+            TypeSig.DECIMAL).nested(),
         TypeSig.all,
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL + TypeSig.DECIMAL),
         TypeSig.STRUCT.nested(TypeSig.all)),
       (expr, conf, p, r) => new UnaryExprMeta[GetStructField](expr, conf, p, r) {
         override def convertToGpu(arr: Expression): GpuExpression =
@@ -1878,10 +1879,11 @@ object GpuOverrides {
     expr[GetArrayItem](
       "Gets the field at `ordinal` in the Array",
       ExprChecks.binaryProjectNotLambda(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+            TypeSig.DECIMAL + TypeSig.MAP).nested(),
         TypeSig.all,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.NULL),
+            TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),

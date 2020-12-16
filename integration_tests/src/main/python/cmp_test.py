@@ -105,11 +105,12 @@ def test_gte(data_gen):
                 f.col('b') >= f.lit(None).cast(data_type),
                 f.col('a') >= f.col('b')), conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_isnull(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(
-                f.isnull(f.col('a'))))
+                f.isnull(f.col('a'))),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [FloatGen(), DoubleGen()], ids=idfn)
 def test_isnan(data_gen):

@@ -33,7 +33,8 @@ def test_array_index(data_gen):
                 'a[null]',
                 'a[3]',
                 'a[50]',
-                'a[-1]'))
+                'a[-1]'),
+            conf=allow_negative_scale_of_decimal_conf)
 
 # Once we support arrays as literals then we can support a[null] for
 # all array gens. See test_array_index for more info
