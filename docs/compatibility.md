@@ -250,9 +250,11 @@ values such as `Int.MaxValue.toFloat` but starting with 3.1.0 these are now inte
 `Int.MaxValue` so this has slightly affected the valid range of values and now differs slightly
 from the behavior on GPU in some cases.
 
-To enable this operation on the GPU, set
+To enable this operation on the GPU when using Spark 3.1.0 or later, set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
 to `true`.
+
+This configuration setting is ignored when using Spark versions prior to 3.1.0.
 
 ### Float to String
 
