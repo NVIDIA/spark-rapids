@@ -46,6 +46,7 @@ CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStd
 # the version of spark used when we install the databricks jars in .m2
 SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
+RAPIDS_UDF_JAR=rapids-4-spark-udf-examples-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
 mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
@@ -97,10 +98,10 @@ mvn -B install:install-file \
 
 mvn -B -P${BUILD_PROFILES} clean package -DskipTests
 
-# Copy so we pick up new built jar and latesty CuDF jar. Note that the jar names has to be
-# exactly what is in the staticly setup Databricks cluster we use. 
-echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC"
-sudo cp dist/target/$RAPIDS_BUILT_JAR $DB_JAR_LOC
+# Copy so we pick up new built jar and latest CuDF jar. Note that the jar names have to be
+# exactly what is in the statically setup Databricks cluster we use.
+echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR udf-examples/target/$RAPIDS_UDF_JAR $DB_JAR_LOC"
+sudo cp dist/target/$RAPIDS_BUILT_JAR udf-examples/target/$RAPIDS_UDF_JAR $DB_JAR_LOC
 echo "Copying cudf jars: $CUDF_JAR $DB_JAR_LOC"
 sudo cp $CUDF_JAR $DB_JAR_LOC
 
@@ -116,7 +117,7 @@ sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
-if [ `ls $DB_JAR_LOC/rapids* | wc -l` -gt 1 ]; then
+if [ `ls $DB_JAR_LOC/rapids* | wc -l` -gt 2 ]; then
     echo "ERROR: Too many rapids jars in $DB_JAR_LOC"
     ls $DB_JAR_LOC/rapids*
     exit 1
