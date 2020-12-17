@@ -485,9 +485,8 @@ object RapidsConf {
   val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
     conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
       .doc("Casting from floating point types to integral types on the GPU supports a " +
-          "slightly different range of values than Spark 3.1.0, which uses the " +
-          "following logic to determine valid inputs (example given is for Int): " +
-          "`Math.floor(x) <= Int.MaxValue && Math.ceil(x) >= Int.MinValue`")
+          "slightly different range of values when using Spark 3.1.0 or later. Refer to the CAST " +
+          "documentation for more details.")
       .booleanConf
       .createWithDefault(false)
 
