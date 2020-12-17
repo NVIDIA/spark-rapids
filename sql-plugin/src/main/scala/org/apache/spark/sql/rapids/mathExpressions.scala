@@ -152,16 +152,26 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
     Seq(TypeCollection(DoubleType, DecimalType, LongType))
 
   override def unaryOp: UnaryOp = UnaryOp.CEIL
-  override def outputTypeOverride: DType = DType.INT64
+  override def outputTypeOverride: DType =
+    dataType match {
+      case dt: DecimalType =>
+        val scale = dt.scale
+        DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+      case _ =>
+        DType.INT64
+    }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    if (input.dataType() == DoubleType) {
-      withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
-        super.doColumnar(GpuColumnVector.from(inputWithNansToZero, DoubleType))
-      }
-    } else {
-      // Long is a noop in spark, but for cudf it is not.
-      input.getBase.incRefCount()
+    input.dataType() match {
+      case DoubleType =>
+        withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
+          super.doColumnar(GpuColumnVector.from(inputWithNansToZero, DoubleType))
+        }
+      case LongType =>
+        // Long is a noop in spark, but for cudf it is not.
+        input.getBase.incRefCount()
+      case _: DecimalType =>
+        super.doColumnar(input)
     }
   }
 }
@@ -202,16 +212,26 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
 
   override def unaryOp: UnaryOp = UnaryOp.FLOOR
 
-  override def outputTypeOverride: DType = DType.INT64
+  override def outputTypeOverride: DType =
+    dataType match {
+      case dt: DecimalType =>
+        val scale = dt.scale
+        DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+      case _ =>
+        DType.INT64
+    }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    if (input.dataType() == DoubleType) {
-      withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
-        super.doColumnar(GpuColumnVector.from(inputWithNansToZero, DoubleType))
-      }
-    } else {
-      // Long is a noop in spark, but for cudf it is not.
-      input.getBase.incRefCount()
+    input.dataType() match {
+      case DoubleType =>
+        withResource(FloatUtils.nanToZero(input.getBase)) { inputWithNansToZero =>
+          super.doColumnar(GpuColumnVector.from(inputWithNansToZero, DoubleType))
+        }
+      case LongType =>
+        // Long is a noop in spark, but for cudf it is not.
+        input.getBase.incRefCount()
+      case _: DecimalType =>
+        super.doColumnar(input)
     }
   }
 }
