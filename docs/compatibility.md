@@ -238,6 +238,21 @@ To enable all formats on GPU, set
 
 In general, performing `cast` and `ansi_cast` operations on the GPU is compatible with the same operations on the CPU. However, there are some exceptions. For this reason, certain casts are disabled on the GPU by default and require configuration options to be specified to enable them. 
 
+### Float to Integral Types
+
+With both `cast` and `ansi_cast`, Spark uses the expression
+`Math.floor(x) <= MAX && Math.ceil(x) >= MIN` to determine whether a floating-point value can be
+converted to an integral type. Prior to Spark 3.1.0 the MIN and MAX values were floating-point
+values such as `Int.MaxValue.toFloat` but starting with 3.1.0 these are now integral types such as
+`Int.MaxValue` so this has slightly affected the valid range of values and now differs slightly
+from the behavior on GPU in some cases.
+
+To enable this operation on the GPU when using Spark 3.1.0 or later, set
+[`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
+to `true`.
+
+This configuration setting is ignored when using Spark versions prior to 3.1.0.
+
 ### Float to String
 
 The GPU will use different precision than Java's toString method when converting floating-point data types to strings and this can produce results that differ from the default behavior in Spark. 
@@ -283,7 +298,7 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 | `"tomorrow"`          | Yes               |
 | `"yesterday"`         | Yes               |
 
-## String to Timestamp
+### String to Timestamp
 
 To allow casts from string to timestamp on the GPU, enable the configuration property 
 [`spark.rapids.sql.castStringToTimestamp.enabled`](configs.md#sql.castStringToTimestamp.enabled).
