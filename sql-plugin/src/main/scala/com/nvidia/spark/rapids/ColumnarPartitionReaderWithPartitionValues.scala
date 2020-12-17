@@ -74,14 +74,10 @@ object ColumnarPartitionReaderWithPartitionValues extends Arm {
       fileBatch: ColumnarBatch,
       partitionValues: Array[Scalar],
       sparkTypes: Array[DataType]): ColumnarBatch = {
-    if (fileBatch != null ) {
-      withResource(fileBatch) { _ =>
-        closeOnExcept(buildPartitionColumns(fileBatch.numRows, partitionValues, sparkTypes)) {
-          partitionColumns => addGpuColumVectorsToBatch(fileBatch, partitionColumns)
-        }
+    withResource(fileBatch) { _ =>
+      closeOnExcept(buildPartitionColumns(fileBatch.numRows, partitionValues, sparkTypes)) {
+        partitionColumns => addGpuColumVectorsToBatch(fileBatch, partitionColumns)
       }
-    } else {
-      fileBatch
     }
   }
 
