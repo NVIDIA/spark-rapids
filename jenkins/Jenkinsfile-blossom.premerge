@@ -104,13 +104,13 @@ pipeline {
                             changelog: false,
                             poll: true,
                             scm: [
-                                    $class: 'GitSCM', branches: [[name: "pr/" + githubHelper.getPRNumber()]],
+                                    $class: 'GitSCM', branches: [[name: githubHelper.getMergedSHA()]],
                                     doGenerateSubmoduleConfigurations: false,
                                     submoduleCfg: [],
                                     userRemoteConfigs: [[
                                         credentialsId: 'github-token',
                                         url: githubHelper.getCloneUrl(),
-                                        refspec: '+refs/pull/*/head:refs/remotes/origin/pr/*']]
+                                        refspec: '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
                             ]
                     )
 
