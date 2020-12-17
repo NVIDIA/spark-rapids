@@ -705,11 +705,6 @@ object GpuOverrides {
           }
         }
       }),
-    expr[Cast](
-      "Convert a column of one type of data into another type",
-      new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-          .ansiEnabled, conf, p, r)),
     expr[ToDegrees](
       "Converts radians to degrees",
       ExprChecks.mathUnary,

@@ -193,6 +193,11 @@ class Spark300Shims extends SparkShims {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
+      GpuOverrides.expr[Cast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
+            .ansiEnabled, conf, p, r)),
       GpuOverrides.expr[AnsiCast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
