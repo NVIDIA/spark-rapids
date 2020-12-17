@@ -20,7 +20,7 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_spark_session, is_spark_300
+from spark_session import with_spark_session, is_spark_300, is_before_spark_310
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -374,7 +374,7 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
-        # https://github.com/NVIDIA/spark-rapids/issues/84 in the ordering
+        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
@@ -401,7 +401,8 @@ def test_distinct_count_reductions(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'count(DISTINCT a)'))
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/837')
+@pytest.mark.xfail(condition=is_before_spark_310(),
+        reason='Spark fixed distinct count of NaNs in 3.1')
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_distinct_float_count_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
