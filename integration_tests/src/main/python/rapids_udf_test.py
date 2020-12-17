@@ -17,17 +17,24 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from spark_session import with_spark_session
+from pyspark.sql.utils import AnalysisException
 
 def skip_if_no_hive(spark):
     if spark.conf.get("spark.sql.catalogImplementation") != "hive":
         pytest.skip("The Spark session does not have Hive support")
 
+def load_udf_or_skip_test(spark, udfname, udfclass):
+    spark.sql("DROP TEMPORARY FUNCTION IF EXISTS {}".format(udfname))
+    try:
+        spark.sql("CREATE TEMPORARY FUNCTION {} AS '{}'".format(udfname, udfclass))
+    except AnalysisException:
+        pytest.skip("UDF {} failed to load, udf-examples jar is probably missing".format(udfname))
+
 def test_hive_simple_udf():
     with_spark_session(skip_if_no_hive)
     data_gens = [["i", int_gen], ["s", StringGen('([^%]{0,1}(%[0-9A-F][0-9A-F]){0,1}){0,30}')]]
     def evalfn(spark):
-        spark.sql("DROP TEMPORARY FUNCTION IF EXISTS urldecode")
-        spark.sql("CREATE TEMPORARY FUNCTION urldecode AS 'com.nvidia.spark.rapids.udf.URLDecode'")
+        load_udf_or_skip_test(spark, "urldecode", "com.nvidia.spark.rapids.udf.URLDecode")
         return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
@@ -38,8 +45,7 @@ def test_hive_generic_udf():
     with_spark_session(skip_if_no_hive)
     data_gens = [["s", StringGen('.{0,30}')]]
     def evalfn(spark):
-        spark.sql("DROP TEMPORARY FUNCTION IF EXISTS urlencode")
-        spark.sql("CREATE TEMPORARY FUNCTION urlencode AS 'com.nvidia.spark.rapids.udf.URLEncode'")
+        load_udf_or_skip_test(spark, "urlencode", "com.nvidia.spark.rapids.udf.URLEncode")
         return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
