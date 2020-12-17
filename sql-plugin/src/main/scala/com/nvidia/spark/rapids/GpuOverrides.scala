@@ -2209,9 +2209,8 @@ object GpuOverrides {
         override def tagPlanForGpu(): Unit = {
           val hasDecimal = p.scan.readSchema().exists(_.dataType.isInstanceOf[DecimalType])
           if (hasDecimal) {
-            if (!(p.scan.isInstanceOf[ParquetScan] && this.conf.decimalTypeEnabled)) {
-              this.willNotWorkOnGpu(
-                "Only supports reading decimal from parquet with DECIMAL_TYPE_ENABLED = true")
+            if (!(p.scan.isInstanceOf[ParquetScan])) {
+              willNotWorkOnGpu("Decimals are only supported by Parquet")
             }
           }
         }
