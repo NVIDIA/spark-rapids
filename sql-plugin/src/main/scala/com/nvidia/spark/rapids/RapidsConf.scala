@@ -560,13 +560,16 @@ object RapidsConf {
       "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
-      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "This can be set to AUTO to select the reader we think is best. This will " +
       "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
-      "in the cloud. See spark.rapids.cloudSchemes.")
+      "in the cloud. See spark.rapids.cloudSchemes. " +
+      "The default is currently set to MULTITHREADED because the COALESCING reader " +
+      "does not handle partitioned data efficiently. If you aren't using partitioned data " +
+      "in a non cloud environment, the COALESCING reader would be a good choice.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(ParquetReaderType.values.map(_.toString))
-    .createWithDefault(ParquetReaderType.AUTO.toString)
+    .createWithDefault(ParquetReaderType.MULTITHREADED.toString)
 
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
