@@ -333,6 +333,14 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1))
 
+  val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
+    .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
+      "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
+      "experimental feature. For more information on GDS, see " +
+      "https://docs.nvidia.com/gpudirect-storage/.")
+    .booleanConf
+    .createWithDefault(false)
+
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -975,6 +983,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
+
+  lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 

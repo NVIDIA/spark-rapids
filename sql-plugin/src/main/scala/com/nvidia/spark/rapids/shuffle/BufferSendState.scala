@@ -152,7 +152,7 @@ class BufferSendState(
             requestHandler.acquireShuffleBuffer(bufferId)) { rapidsBuffer =>
             //these are closed later, after we synchronize streams
             rapidsBuffer.storageTier match {
-              case StorageTier.DEVICE =>
+              case StorageTier.DEVICE | StorageTier.GDS =>
                 deviceBuffs += blockRange.rangeSize()
               case _ => // host/disk
                 hostBuffs += blockRange.rangeSize()
