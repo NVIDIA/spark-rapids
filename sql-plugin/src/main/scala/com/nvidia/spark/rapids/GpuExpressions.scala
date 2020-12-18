@@ -113,7 +113,7 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
 
   private[this] def doItColumnar(input: GpuColumnVector): GpuColumnVector = {
     withResource(doColumnar(input)) { vec =>
-      if (outputTypeOverride != null && outputTypeOverride != vec.getType) {
+      if (outputTypeOverride != null && !outputTypeOverride.equals(vec.getType)) {
         GpuColumnVector.from(vec.castTo(outputTypeOverride), dataType)
       } else {
         GpuColumnVector.from(vec.incRefCount(), dataType)
