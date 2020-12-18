@@ -49,9 +49,8 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
 multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
-decimal_type_enable_conf = {'spark.rapids.sql.decimalType.enabled': 'true'}
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
-                    coalesce_parquet_file_reader_conf, decimal_type_enable_conf]
+                    coalesce_parquet_file_reader_conf]
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -202,7 +201,6 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             conf=all_confs)
 
 
-# https://github.com/NVIDIA/spark-rapids/issues/1324
 @pytest.mark.parametrize('parquet_gens', [decimal_gens], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -219,8 +217,8 @@ def test_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_con
 
 
 parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens,
+                            string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+                            TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens,
                             pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
                             pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
 

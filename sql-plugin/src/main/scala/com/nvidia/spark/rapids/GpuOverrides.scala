@@ -2206,15 +2206,6 @@ object GpuOverrides {
             TypeSig.DECIMAL).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
-        override def tagPlanForGpu(): Unit = {
-          val hasDecimal = p.scan.readSchema().exists(_.dataType.isInstanceOf[DecimalType])
-          if (hasDecimal) {
-            if (!(p.scan.isInstanceOf[ParquetScan])) {
-              willNotWorkOnGpu("Decimals are only supported by Parquet")
-            }
-          }
-        }
-
         override val childScans: scala.Seq[ScanMeta[_]] =
           Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
