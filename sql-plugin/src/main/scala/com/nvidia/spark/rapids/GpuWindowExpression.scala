@@ -23,9 +23,7 @@ import com.nvidia.spark.rapids.GpuWindowExpression.{getRangeBasedLower, getRange
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -34,7 +32,7 @@ class GpuWindowExpressionMeta(
     windowExpression: WindowExpression,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[WindowExpression](windowExpression, conf, parent, rule) {
 
   private def getBoundaryValue(boundary : Expression) : Int = boundary match {
@@ -65,33 +63,7 @@ class GpuWindowExpressionMeta(
     // Must have two children:
     //  1. An AggregateExpression as the window function: SUM, MIN, MAX, COUNT
     //  2. A WindowSpecDefinition, defining the window-bounds, partitioning, and ordering.
-
-    if (wrapped.children.size != 2) {
-      willNotWorkOnGpu("Unsupported children in WindowExpression. " +
-        "Expected only WindowFunction, and WindowSpecDefinition")
-    }
-
     val windowFunction = wrapped.windowFunction
-
-    windowFunction match {
-      case aggregateExpression : AggregateExpression =>
-        aggregateExpression.aggregateFunction match {
-          // Sadly not all aggregations work for window operations yet, so explicitly allow the
-          // ones that do work.
-          case Count(_) | Sum(_) | Min(_) | Max(_) => // Supported.
-          case other: AggregateFunction =>
-            willNotWorkOnGpu(s"AggregateFunction ${other.prettyName} " +
-              s"is not supported in windowing.")
-          case anythingElse =>
-            willNotWorkOnGpu(s"Expression not supported in windowing. " +
-              s"Found ${anythingElse.prettyName}")
-        }
-      case _: WindowFunction =>
-      case _: PythonUDF =>
-      case _ =>
-        willNotWorkOnGpu("Only AggregateExpressions are supported on GPU as WindowFunctions. " +
-        s"Found ${windowFunction.prettyName}")
-    }
 
     wrapped.windowSpec.frameSpecification match {
       case spec: SpecifiedWindowFrame =>
@@ -145,13 +117,6 @@ class GpuWindowExpressionMeta(
         willNotWorkOnGpu(s"only SpecifiedWindowFrame is a supported window-frame specification. " +
             s"Found ${other.prettyName}")
     }
-
-    // Allow array type only for Python UDF which has been verified.
-    if (windowFunction.dataType.isInstanceOf[ArrayType] &&
-        !windowFunction.isInstanceOf[PythonUDF]) {
-      willNotWorkOnGpu(s"function ${windowFunction.prettyName}[$windowFunction]" +
-        s" does not supports array type for now")
-    }
   }
 
   /**
@@ -162,11 +127,6 @@ class GpuWindowExpressionMeta(
       childExprs.head.convertToGpu(),
       childExprs(1).convertToGpu().asInstanceOf[GpuWindowSpecDefinition]
     )
-
-  // Allow array type only for Python UDF, also add an extra check in
-  // `tagExprForGpu` to make sure this.
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowArray = true)
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
@@ -392,7 +352,7 @@ class GpuWindowSpecDefinitionMeta(
     windowSpec: WindowSpecDefinition,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[WindowSpecDefinition](windowSpec, conf, parent, rule) {
 
   val partitionSpec: Seq[BaseExprMeta[Expression]] =
@@ -492,16 +452,11 @@ class GpuSpecifiedWindowFrameMeta(
     windowFrame: SpecifiedWindowFrame,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[SpecifiedWindowFrame](windowFrame, conf, parent, rule) {
 
   // SpecifiedWindowFrame has no associated dataType.
   override val ignoreUnsetDataTypes: Boolean = true
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true,
-      allowCalendarInterval = true)
 
   override def tagExprForGpu(): Unit = {
     if (windowFrame.frameType.equals(RangeFrame)) {
@@ -532,11 +487,9 @@ class GpuSpecifiedWindowFrameMeta(
 
         if (isLower && interval.days > 0) {
           Some(s"Lower-bounds ahead of current row is not supported. Found: ${interval.days}")
-        }
-        else if (!isLower && interval.days < 0) {
+        } else if (!isLower && interval.days < 0) {
           Some(s"Upper-bounds behind current row is not supported. Found: ${interval.days}")
-        }
-        else {
+        } else {
           None
         }
       }
@@ -773,26 +726,12 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
-
   val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
   val offset: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.offset, conf, Some(this))
   val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
-  override val childExprs: Seq[BaseExprMeta[_]] =
-    if (expr.default.dataType == NullType) {
-      // We don't support NullType, except for this one case...
-      Seq(input, offset)
-    } else {
-      Seq(input, offset, default)
-    }
-
-  override def tagExprForGpu(): Unit = {
-    expr.input.dataType match {
-      case StringType => willNotWorkOnGpu("Strings are not currently supported as input")
-      case _ => // Good
-    }
-  }
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
 }
 
 trait GpuOffsetWindowFunction extends GpuAggregateWindowFunction {

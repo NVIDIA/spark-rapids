@@ -28,6 +28,8 @@ class DataGen:
     """Base class for data generation"""
 
     def __repr__(self):
+        if not self.nullable:
+            return self.__class__.__name__[:-3] + '(not_null)'
         return self.__class__.__name__[:-3]
 
     def __hash__(self):
@@ -587,11 +589,15 @@ def gen_df(spark, data_gen, length=2048, seed=0):
     data = [src.gen() for index in range(0, length)]
     return spark.createDataFrame(data, src.data_type)
 
-def _mark_as_lit(data):
+def _mark_as_lit(data, data_type = None):
     # Sadly you cannot create a literal from just an array in pyspark
     if isinstance(data, list):
         return f.array([_mark_as_lit(x) for x in data])
-    return f.lit(data)
+    if data_type is None:
+        return f.lit(data)
+    else:
+        # lit does not take a data type so we might have to cast it
+        return f.lit(data).cast(data_type)
 
 def _gen_scalars_common(data_gen, count, seed=0):
     if isinstance(data_gen, list):
@@ -612,7 +618,8 @@ def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     if force_no_nulls:
         assert(not isinstance(data_gen, NullGen))
     src = _gen_scalars_common(data_gen, count, seed=seed)
-    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+    data_type = src.data_type
+    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
 
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""
@@ -722,6 +729,7 @@ decimal_gen_default = DecimalGen()
 decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
 decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
 decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
+decimal_gen_64bit = DecimalGen(precision=12, scale=2)
 
 null_gen = NullGen()
 
@@ -734,7 +742,7 @@ double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
 decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision]
+        decimal_gen_same_scale_precision, decimal_gen_64bit]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -758,7 +766,7 @@ date_n_time_gens = [date_gen, timestamp_gen]
 
 boolean_gens = [boolean_gen]
 
-single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
+single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens + [null_gen]]
 
 # Be careful to not make these too large of data generation takes for ever
 # This is only a few nested array gens, because nesting can be very deep

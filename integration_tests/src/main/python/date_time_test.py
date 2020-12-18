@@ -185,6 +185,8 @@ def test_to_unix_timestamp_improved(data_gen):
 
 str_date_and_format_gen = [pytest.param(StringGen('[0-9]{4}/[01][0-9]'),'yyyy/MM', marks=pytest.mark.xfail(reason="cudf does no checks")),
         (StringGen('[0-9]{4}/[01][12]/[0-2][1-8]'),'yyyy/MM/dd'),
+        (StringGen('[01][12]/[0-2][1-8]'), 'MM/dd'),
+        (StringGen('[0-2][1-8]/[01][12]'), 'dd/MM'),
         (ConvertGen(DateGen(nullable=False), lambda d: d.strftime('%Y/%m').zfill(7), data_type=StringType()), 'yyyy/MM')]
 
 @pytest.mark.parametrize('data_gen,date_form', str_date_and_format_gen, ids=idfn)
@@ -196,5 +198,3 @@ def test_string_to_unix_timestamp(data_gen, date_form):
 def test_string_unix_timestamp(data_gen, date_form):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen, seed=1).select(f.unix_timestamp(f.col('a'), date_form)))
-
-

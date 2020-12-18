@@ -23,7 +23,7 @@ import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 
   def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {

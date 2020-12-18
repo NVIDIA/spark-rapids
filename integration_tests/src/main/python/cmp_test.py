@@ -105,11 +105,12 @@ def test_gte(data_gen):
                 f.col('b') >= f.lit(None).cast(data_type),
                 f.col('a') >= f.col('b')), conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_isnull(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(
-                f.isnull(f.col('a'))))
+                f.isnull(f.col('a'))),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [FloatGen(), DoubleGen()], ids=idfn)
 def test_isnan(data_gen):
@@ -117,27 +118,31 @@ def test_isnan(data_gen):
             lambda spark : unary_op_df(spark, data_gen).select(
                 f.isnan(f.col('a'))))
 
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_dropna_any(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).dropna())
+            lambda spark : binary_op_df(spark, data_gen).dropna(),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_dropna_all(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).dropna(how='all'))
+            lambda spark : binary_op_df(spark, data_gen).dropna(how='all'),
+            conf=allow_negative_scale_of_decimal_conf)
 
 #dropna is really a filter along with a test for null, but lets do an explicit filter test too
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_filter(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : three_col_df(spark, BooleanGen(), data_gen, data_gen).filter(f.col('a')))
+            lambda spark : three_col_df(spark, BooleanGen(), data_gen, data_gen).filter(f.col('a')),
+            conf=allow_negative_scale_of_decimal_conf)
 
 # coalesce batch happens after a filter, but only if something else happens on the GPU after that
-@pytest.mark.parametrize('data_gen', eq_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_filter_with_project(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, BooleanGen(), data_gen).filter(f.col('a')).selectExpr('*', 'a as a2'))
+            lambda spark : two_col_df(spark, BooleanGen(), data_gen).filter(f.col('a')).selectExpr('*', 'a as a2'),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('expr', [f.lit(True), f.lit(False), f.lit(None).cast('boolean')], ids=idfn)
 def test_filter_with_lit(expr):
@@ -146,21 +151,27 @@ def test_filter_with_lit(expr):
 
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries under that value.
-@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_in(data_gen):
     # nulls are not supported for in on the GPU yet
     num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) - 1
-    scalars = list(gen_scalars(data_gen, num_entries, force_no_nulls=not isinstance(data_gen, NullGen)))
+    # we have to make the scalars in a session so negative scales in decimals are supported
+    scalars = with_cpu_session(lambda spark: list(gen_scalars(data_gen, num_entries, force_no_nulls=not isinstance(data_gen, NullGen))),
+            conf=allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)),
+            conf=allow_negative_scale_of_decimal_conf)
 
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries over that value.
-@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_in_set(data_gen):
     # nulls are not supported for in on the GPU yet
     num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) + 1
-    scalars = list(gen_scalars(data_gen, num_entries, force_no_nulls=not isinstance(data_gen, NullGen)))
+    # we have to make the scalars in a session so negative scales in decimals are supported
+    scalars = with_cpu_session(lambda spark: list(gen_scalars(data_gen, num_entries, force_no_nulls=not isinstance(data_gen, NullGen))),
+            conf=allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)))
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)),
+            conf=allow_negative_scale_of_decimal_conf)
 

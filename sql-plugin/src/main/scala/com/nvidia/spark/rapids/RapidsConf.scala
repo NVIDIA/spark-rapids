@@ -333,6 +333,14 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1))
 
+  val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
+    .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
+      "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
+      "experimental feature. For more information on GDS, see " +
+      "https://docs.nvidia.com/gpudirect-storage/.")
+    .booleanConf
+    .createWithDefault(false)
+
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -481,6 +489,14 @@ object RapidsConf {
       "a different precision than the default Java toString behavior.")
     .booleanConf
     .createWithDefault(false)
+
+  val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
+    conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
+      .doc("Casting from floating point types to integral types on the GPU supports a " +
+          "slightly different range of values when using Spark 3.1.0 or later. Refer to the CAST " +
+          "documentation for more details.")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
@@ -976,6 +992,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
+  lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
+
   lazy val hasNans: Boolean = get(HAS_NANS)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
@@ -1011,6 +1029,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
+
+  lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 

@@ -56,6 +56,7 @@ object StorageTier extends Enumeration {
   val DEVICE: StorageTier = Value(0, "device memory")
   val HOST: StorageTier = Value(1, "host memory")
   val DISK: StorageTier = Value(2, "local disk")
+  val GDS: StorageTier = Value(3, "GPUDirect Storage")
 }
 
 /** Interface provided by all types of RAPIDS buffers */

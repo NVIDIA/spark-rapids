@@ -57,6 +57,12 @@
        <artifactId>spark-sql_${scala.binary.version}</artifactId>
        <scope>provided</scope>
     </dependency>
+    <dependency>
+      <!-- required for conf generation script -->
+      <groupId>org.apache.spark</groupId>
+      <artifactId>spark-hive_${scala.binary.version}</artifactId>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -79,6 +85,11 @@
             <relocation>
               <pattern>org.apache.hadoop.hive.</pattern>
               <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
+              <excludes>
+                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
+                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
+              </excludes>
             </relocation>
             <relocation>
               <pattern>org.apache.hive.</pattern>
@@ -136,19 +147,37 @@
             <goals>
               <goal>run</goal>
             </goals>
+            <configuration>
+              <launchers>
+                <launcher>
+                  <id>update_rapids_config</id>
+                  <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
+                  <args>
+                    <arg>${project.basedir}/../docs/configs.md</arg>
+                  </args>
+                </launcher>
+              </launchers>
+            </configuration>
+          </execution>
+          <execution>
+            <id>update_supported</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <launchers>
+                <launcher>
+                  <id>update_rapids_support</id>
+                  <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
+                  <args>
+                    <arg>${project.basedir}/../docs/supported_ops.md</arg>
+                  </args>
+                </launcher>
+              </launchers>
+            </configuration>
           </execution>
         </executions>
-        <configuration>
-          <launchers>
-            <launcher>
-              <id>update_rapids_config</id>
-              <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
-              <args>
-                <arg>${project.basedir}/../docs/configs.md</arg>
-              </args>
-            </launcher>
-          </launchers>
-        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.rat</groupId>

@@ -164,7 +164,8 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
   public final Decimal getDecimal(int rowId, int precision, int scale) {
     assert precision <= DType.DECIMAL64_MAX_PRECISION : "Assert " + precision + " <= DECIMAL64_MAX_PRECISION(" + DType.DECIMAL64_MAX_PRECISION + ")";
     assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL64: "Assert DType to be DECIMAL64";
-    assert scale == -cudfCv.getType().getScale() : "Assert fetch decimal with its original scale";
+    assert scale == -cudfCv.getType().getScale() :
+        "Assert fetch decimal with its original scale " + scale + " expected " + (-cudfCv.getType().getScale());
     return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
   }
 
