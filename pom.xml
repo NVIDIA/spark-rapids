@@ -136,6 +136,9 @@
         </profile>
         <profile>
             <id>spark310tests</id>
+            <modules>
+                <module>tests-next-spark</module>
+            </modules>
         </profile>
     </profiles>
 
@@ -530,6 +533,7 @@
                         <exclude>docs/demo/**/*.ipynb</exclude>
                         <exclude>docs/demo/**/*.zpln</exclude>
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
+                        <exclude>tests-next-spark/target/**/*</exclude>
                     </excludes>
                 </configuration>
             </plugin>
