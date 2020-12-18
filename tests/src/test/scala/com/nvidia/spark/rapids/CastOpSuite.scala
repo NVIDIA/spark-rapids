@@ -19,12 +19,15 @@ package com.nvidia.spark.rapids
 import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
+
+import java.io.File
+import java.nio.file.Files
+import scala.math.BigDecimal.RoundingMode
 
 class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
@@ -247,6 +250,80 @@ class CastOpSuite extends GpuExpressionTestSuite {
       expectedFun = castToStringExpectedFun[T],
       schema = schema,
       comparisonFunc = comparisonFunc)
+  }
+
+  test("cast int to decimal", org.scalatest.Tag("decimal")) {
+    List(-9, -5, -2, 0, 1, 5, 9).foreach { scale =>
+      testCastToDecimal(DataTypes.IntegerType, scale)
+    }
+  }
+
+  test("cast long to decimal", org.scalatest.Tag("decimal")) {
+    List(-18, -10, -3, 0, 1, 5, 18).foreach { scale =>
+      testCastToDecimal(DataTypes.LongType, scale)
+    }
+  }
+
+  private def testCastToDecimal(dataType: DataType, scale: Int) {
+    val dir = Files.createTempDirectory("spark-rapids-test").toFile
+    val path = new File(dir,
+      s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
+
+    try {
+      val conf = new SparkConf()
+        .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+        .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+        .set("spark.sql.ansi.enabled", "true")
+
+      val integralSize = (ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION - scale) match {
+        case s if dataType == IntegerType => s min ai.rapids.cudf.DType.DECIMAL32_MAX_PRECISION
+        case s => s min ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
+      }
+      val genFun = generateCastNumericToDecimalDataFrame(dataType, integralSize, 300) _
+      withCpuSparkSession(spark => genFun(spark).write.parquet(path), conf)
+
+      val createDF = (ss: SparkSession) => ss.read.parquet(path)
+      val decType = DataTypes.createDecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, scale)
+      val execFun = (df: DataFrame) => {
+        df.withColumn("col2", col("col").cast(decType))
+      }
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
+      var cc = 0
+      fromCpu.zip(fromGpu).take(30).foreach { case (x, y) =>
+        val (xx, yy) = x.getDecimal(1).unscaledValue() -> y.getDecimal(1).unscaledValue()
+        if (xx != yy) cc += 1
+        println((xx == yy, y.get(0), xx, yy))
+      }
+      println(s"dataType: $dataType; scale: $scale, number of unEqual: $cc \n")
+      compareResults(false, 0, fromCpu, fromGpu)
+    } finally {
+      dir.delete()
+    }
+  }
+
+  private def generateCastNumericToDecimalDataFrame(
+    dataType: DataType, integralSize: Int, rowCount: Int = 100)(ss: SparkSession): DataFrame = {
+    import ss.sqlContext.implicits._
+
+    val rnd = new EnhancedRandom(new scala.util.Random(1001L), FuzzerOptions())
+    val scaleRnd = new scala.util.Random(1000L)
+    val rawColumn: Seq[Double] = (0 until rowCount).map { _ =>
+      val scale = integralSize - 19 - scaleRnd.nextInt(integralSize + 1)
+      val rawValue = rnd.nextLong() * math.pow(10, scale)
+      dataType match {
+        case IntegerType | LongType => math.signum(rawValue) * math.floor(math.abs(rawValue))
+        case FloatType | DoubleType => rawValue
+        case _ => throw new IllegalArgumentException("")
+      }
+    }
+
+    dataType match {
+      case IntegerType => rawColumn.map(_.toInt).toDF("col")
+      case LongType => rawColumn.map(_.toLong).toDF("col")
+      case FloatType => rawColumn.map(_.toFloat).toDF("col")
+      case DoubleType => rawColumn.toDF("col")
+    }
   }
 
   testSparkResultsAreEqual("Test cast from long", longsDf) {

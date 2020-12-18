@@ -368,6 +368,25 @@ case class GpuCast(
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.getBase.asByteList(true)
 
+      case (IntegerType | LongType, dt: DecimalType) =>
+        assert(ansiMode, "GpuCastToDecimal can only run under ansiMode")
+        assertValuesInRange(input.getBase,
+          Scalar.fromDouble(Long.MinValue * math.pow(10, -dt.scale)),
+          Scalar.fromDouble(Long.MaxValue * math.pow(10, -dt.scale)))
+        val zeroScaledDec = input.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))
+        if (dt.scale == 0) {
+          zeroScaledDec
+        } else {
+          // For keeping align with CpuCast, we apply HALF_UP round to get the exact decimal value
+          withResource(zeroScaledDec) { _ =>
+            zeroScaledDec.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+          }
+        }
+
+      case (from: DecimalType, to: DecimalType) =>
+        assert(ansiMode, "GpuCastToDecimal can only run under ansiMode")
+
+
       case _ =>
         input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
     }
