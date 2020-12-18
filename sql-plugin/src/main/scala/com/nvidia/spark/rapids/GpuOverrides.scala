@@ -1728,17 +1728,21 @@ object GpuOverrides {
       }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
       (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowDecimal = conf.decimalTypeEnabled)
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBRound(lhs, rhs)
       }),
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
       (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t, allowDecimal = conf.decimalTypeEnabled)
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRound(lhs, rhs)
       }),
