@@ -20,7 +20,7 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_spark_session, is_spark_300
+from spark_session import with_spark_session, is_spark_300, is_before_spark_310
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -162,7 +162,7 @@ _confs = [_no_nans_float_conf, _no_nans_float_conf_final, _no_nans_float_conf_pa
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
 _excluded_operators_marker = pytest.mark.allow_non_gpu(
-    'HashAggregateExec', 'AggregateExpression',
+    'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
@@ -173,10 +173,18 @@ params_markers_for_confs = [
 ]
 
 
+_grpkey_small_decimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=7, scale=3, nullable=(True, 10.0)), length=50)),
+    ('b', DecimalGen(precision=5, scale=2)),
+    ('c', DecimalGen(precision=8, scale=3))]
+
+_init_list_no_nans_with_decimal = _init_list_no_nans + [
+    _grpkey_small_decimals]
+
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -366,7 +374,7 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
-        # https://github.com/NVIDIA/spark-rapids/issues/84 in the ordering
+        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
@@ -393,7 +401,8 @@ def test_distinct_count_reductions(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'count(DISTINCT a)'))
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/837')
+@pytest.mark.xfail(condition=is_before_spark_310(),
+        reason='Spark fixed distinct count of NaNs in 3.1')
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_distinct_float_count_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(

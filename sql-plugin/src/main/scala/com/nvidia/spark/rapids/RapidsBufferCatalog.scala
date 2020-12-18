@@ -113,6 +113,7 @@ object RapidsBufferCatalog extends Logging with Arm {
   private var deviceStorage: RapidsDeviceMemoryStore = _
   private var hostStorage: RapidsHostMemoryStore = _
   private var diskStorage: RapidsDiskStore = _
+  private var gdsStorage: RapidsGdsStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
 
   private lazy val conf: SparkConf = {
@@ -130,11 +131,16 @@ object RapidsBufferCatalog extends Logging with Arm {
     closeImpl()
     assert(memoryEventHandler == null)
     deviceStorage = new RapidsDeviceMemoryStore()
-    hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
     val diskBlockManager = new RapidsDiskBlockManager(conf)
-    diskStorage = new RapidsDiskStore(diskBlockManager)
-    deviceStorage.setSpillStore(hostStorage)
-    hostStorage.setSpillStore(diskStorage)
+    if (rapidsConf.isGdsSpillEnabled) {
+      gdsStorage = new RapidsGdsStore(diskBlockManager)
+      deviceStorage.setSpillStore(gdsStorage)
+    } else {
+      hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
+      diskStorage = new RapidsDiskStore(diskBlockManager)
+      deviceStorage.setSpillStore(hostStorage)
+      hostStorage.setSpillStore(diskStorage)
+    }
 
     logInfo("Installing GPU memory handler for spill")
     memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage, rapidsConf.gpuOomDumpDir)
@@ -165,6 +171,10 @@ object RapidsBufferCatalog extends Logging with Arm {
     if (diskStorage != null) {
       diskStorage.close()
       diskStorage = null
+    }
+    if (gdsStorage != null) {
+      gdsStorage.close()
+      gdsStorage = null
     }
   }
 

@@ -127,7 +127,7 @@ class GpuCollectLimitMeta(
                       collectLimit: CollectLimitExec,
                       conf: RapidsConf,
                       parent: Option[RapidsMeta[_, _, _]],
-                      rule: ConfKeysAndIncompat)
+                      rule: DataFromReplacementRule)
   extends SparkPlanMeta[CollectLimitExec](collectLimit, conf, parent, rule) {
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))

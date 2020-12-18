@@ -45,6 +45,7 @@ def create_df(spark, data_gen, left_length, right_length):
     return left, right
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
@@ -56,6 +57,7 @@ def test_sortmerge_join(data_gen, join_type):
 
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
@@ -68,6 +70,7 @@ def test_broadcast_join_right_table(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_cartesean_join(data_gen):
@@ -77,6 +80,7 @@ def test_cartesean_join(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.CartesianProductExec': 'true'})
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
@@ -88,6 +92,7 @@ def test_cartesean_join_special_case(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.CartesianProductExec': 'true'})
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_broadcast_nested_loop_join(data_gen):
@@ -97,6 +102,7 @@ def test_broadcast_nested_loop_join(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_broadcast_nested_loop_join_special_case(data_gen):
@@ -106,6 +112,7 @@ def test_broadcast_nested_loop_join_special_case(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Cross'], ids=idfn)
@@ -121,6 +128,7 @@ def test_broadcast_nested_loop_join_with_conditionals(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
@@ -133,6 +141,7 @@ def test_broadcast_join_left_table(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Cross'], ids=idfn)

@@ -22,7 +22,7 @@ import scala.util.Random
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{Alias, CastBase}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, CastBase}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -34,6 +34,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private val sparkConf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
+    .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
@@ -383,7 +384,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
-    assert(GpuCast.canCast(dataType, DataTypes.StringType))
+    val checks = GpuOverrides.expressions(classOf[AnsiCast]).getChecks.get.asInstanceOf[CastChecks]
+    assert(checks.gpuCanCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true),
@@ -478,7 +480,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats,
-    sparkConf, assumeCondition = before3_1_0) {
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 

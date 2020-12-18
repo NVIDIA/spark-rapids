@@ -49,7 +49,7 @@ class GpuShuffledHashJoinMeta(
     join: ShuffledHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -59,10 +59,6 @@ class GpuShuffledHashJoinMeta(
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
@@ -142,11 +138,11 @@ case class GpuShuffledHashJoinExec(
           buildIter, localBuildOutput)) { buildBatch: ColumnarBatch =>
           withResource(GpuProjectExec.project(buildBatch, gpuBuildKeys)) { keys =>
             val combined = GpuHashJoin.incRefCount(combine(keys, buildBatch))
-            withResource(filterBuiltTableIfNeeded(combined)) { filtered =>
+            withResource(combined) { combined =>
               combinedSize =
-                  GpuColumnVector.extractColumns(filtered)
+                  GpuColumnVector.extractColumns(combined)
                       .map(_.getBase.getDeviceMemorySize).sum.toInt
-              GpuColumnVector.from(filtered)
+              GpuColumnVector.from(combined)
             }
           }
         }
