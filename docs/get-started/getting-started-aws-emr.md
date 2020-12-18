@@ -44,7 +44,91 @@ Select **emr-6.2.0** or latest EMR version for the release, uncheck all the soft
 
 In the "Edit software settings" field, copy and paste the configuration from the [EMR document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also create a JSON file on you own S3 bucket.
 
-![Step 1: Step 1:  Software, Configuration and Steps](pics/Rapids_EMR_GUI_1.PNG)
+For cluster with 2x g4dn.2xlarge GPU instance as core/task nodes, we recommend following default settings
+```
+[
+	{
+		"Classification":"spark",
+		"Properties":{
+			"enableSparkRapids":"true"
+		}
+	},
+	{
+		"Classification":"yarn-site",
+		"Properties":{
+			"yarn.nodemanager.resource-plugins":"yarn.io/gpu",
+			"yarn.resource-types":"yarn.io/gpu",
+			"yarn.nodemanager.resource-plugins.gpu.allowed-gpu-devices":"auto",
+			"yarn.nodemanager.resource-plugins.gpu.path-to-discovery-executables":"/usr/bin",
+			"yarn.nodemanager.linux-container-executor.cgroups.mount":"true",
+			"yarn.nodemanager.linux-container-executor.cgroups.mount-path":"/sys/fs/cgroup",
+			"yarn.nodemanager.linux-container-executor.cgroups.hierarchy":"yarn",
+			"yarn.nodemanager.container-executor.class":"org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExecutor"
+		}
+	},
+	{
+		"Classification":"container-executor",
+		"Properties":{
+			
+		},
+		"Configurations":[
+			{
+				"Classification":"gpu",
+				"Properties":{
+					"module.enabled":"true"
+				}
+			},
+			{
+				"Classification":"cgroups",
+				"Properties":{
+					"root":"/sys/fs/cgroup",
+					"yarn-hierarchy":"yarn"
+				}
+			}
+		]
+	},
+	{
+        "Classification":"spark-defaults",
+        "Properties":{
+        "spark.plugins":"com.nvidia.spark.SQLPlugin",
+        "spark.sql.sources.useV1SourceList":"",
+        "spark.executor.extraJavaOptions":"-Dai.rapids.cudf.prefer-pinned=true",
+        "spark.executor.resource.gpu.discoveryScript":"/usr/lib/spark/scripts/gpu/getGpusResources.sh",
+        "spark.submit.pyFiles":"/usr/lib/spark/jars/xgboost4j-spark_3.0-1.0.0-0.2.0.jar",
+        "spark.executor.extraLibraryPath":"/usr/local/cuda/targets/x86_64-linux/lib:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/cuda/compat/lib:/usr/local/cuda/lib:/usr/local/cuda/lib64:/usr/lib/hadoop/lib/native:/usr/lib/hadoop-lzo/lib/native:/docker/usr/lib/hadoop/lib/native:/docker/usr/lib/hadoop-lzo/lib/native",
+        "spark.rapids.sql.concurrentGpuTasks":"4",
+        "spark.executor.resource.gpu.amount":"1",
+        "spark.executor.cores":"8",
+        "spark.task.cpus ":"1",
+        "spark.task.resource.gpu.amount":"0.125",
+        "spark.rapids.memory.pinnedPool.size":"2G",
+        "spark.executor.memoryOverhead":"2G",
+        "spark.locality.wait":"0s",
+        "spark.sql.shuffle.partitions":"200",
+        "spark.sql.files.maxPartitionBytes":"256m",
+        "spark.sql.adaptive.enabled":"false"
+        }
+	},
+	{
+		"Classification":"capacity-scheduler",
+		"Properties":{
+			"yarn.scheduler.capacity.resource-calculator":"org.apache.hadoop.yarn.util.resource.DominantResourceCalculator"
+		}
+	}
+]
+
+```
+
+For cluster with 2x g4dn.12xlarge as core nodes, you can also make minor change from above settings
+
+```
+        "spark.rapids.sql.concurrentGpuTasks":"2",
+        "spark.executor.cores":"12",
+        "spark.task.resource.gpu.amount":"0.0833",
+```
+
+
+![Step 1: Step 1:  Software, Configuration and Steps](img/Rapids_EMR_GUI_1.PNG)
 
 #### Step 2: Hardware
 
@@ -52,7 +136,7 @@ Select the desired VPC and availability zone in the "Network" and "EC2 Subnet" f
 
 In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2xlarge**, or **p3.2xlarge** and ensure "Instance count" is set to **1** or any higher number. Keep the default "Master" node instance type of **m5.xlarge**.
 
-![Step 2: Hardware](pics/Rapids_EMR_GUI_2.PNG)
+![Step 2: Hardware](img/Rapids_EMR_GUI_2.PNG)
 
 #### Step 3:  General Cluster Settings
 
@@ -60,7 +144,7 @@ Enter a custom "Cluster name" and make a note of the s3 folder that cluster logs
 
 *Optionally* add key-value "Tags", configure a "Custom AMI", or add custom "Bootstrap Actions"  for the EMR cluster on this page.
 
-![Step 3: General Cluster Settings](pics/Rapids_EMR_GUI_3.PNG)
+![Step 3: General Cluster Settings](img/Rapids_EMR_GUI_3.PNG)
 
 ####  Step 4: Security
 
@@ -70,7 +154,7 @@ Select an existing "EC2 key pair" that will be used to authenticate SSH access t
 
 In the "EC2 security groups" tab, confirm that the security group chosen for the "Master" node allows for SSH access. Follow these instructions to [allow inbound SSH traffic](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/authorizing-access-to-an-instance.html) if the security group does not allow it yet.
 
-![Step 4: Security](pics/Rapids_EMR_GUI_4.PNG)
+![Step 4: Security](img/Rapids_EMR_GUI_4.PNG)
 
 #### Finish Cluster Configuration
 
@@ -80,7 +164,7 @@ When the cluster is ready, a green-dot will appear next to the cluster name and 
 
 In the cluster's "Summary" tab, find the "Master public DNS" field and click the `SSH` button. Follow the instructions to SSH to the new cluster's master node.
 
-![Finish Cluster Configuration](pics/Rapids_EMR_GUI_5.PNG)
+![Finish Cluster Configuration](img/Rapids_EMR_GUI_5.PNG)
 
 
 ### Running an example joint operation using Spark Shell
@@ -111,15 +195,15 @@ Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark applicati
 
 An EMR Notebook is a "serverless" Jupyter notebook. Unlike a traditional notebook, the contents of an EMR Notebook itself—the equations, visualizations, queries, models, code, and narrative text—are saved in Amazon S3 separately from the cluster that runs the code. This provides an EMR Notebook with durable storage, efficient access, and flexibility.
 
-You can use the following step-by-step guide to run the example mortgage dataset using Rapids on Amazon EMR GPU clusters. For more examples, please refer to [NVIDIA/spark-rapids](https://github.com/NVIDIA/spark-rapids/)
+You can use the following step-by-step guide to run the example mortgage dataset using Rapids on Amazon EMR GPU clusters. For more examples, please refer to [NVIDIA/spark-rapids for ETL](https://github.com/NVIDIA/spark-rapids/tree/main/docs/demo) and [NVIDIA/spark-rapids for XGBoost](https://github.com/NVIDIA/spark-xgboost-examples/tree/spark-3/examples) 
 
-![Create EMR Notebook](pics/EMR_notebook_2.png)
+![Create EMR Notebook](img/EMR_notebook_2.png)
 
 #### Create EMR Notebook and Connect to EMR GPU Cluster 
 
 Go to the AWS Management Console and select Notebooks on the left column. Click the Create notebook button. You can then click "Choose an existing cluster" and pick the right cluster after click Choose button. Once the instance is ready,  launch the Jupyter from EMR Notebook instance. 
 
-![Create EMR Notebook](pics/EMR_notebook_1.png)
+![Create EMR Notebook](img/EMR_notebook_1.png)
 
 #### Runn Mortgage ETL PySpark Notebook on EMR GPU Cluster 
 
@@ -127,7 +211,7 @@ Download [the Mortgate ETL PySpark Notebook](Mortgage-ETL-GPU-EMR.ipynb). Make s
 
 When executing the ETL code, you can also saw the Spark Job Progress within the notebook and the code will also display how long it takes to run the query
 
-![Create EMR Notebook](pics/EMR_notebook_3.png)
+![Create EMR Notebook](img/EMR_notebook_3.png)
 
 #### Runn Mortgage XGBoost Scala Notebook on EMR GPU Cluster 
 
