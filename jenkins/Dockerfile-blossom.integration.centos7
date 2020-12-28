@@ -46,7 +46,7 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
 ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
 
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
-RUN conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.7 cudatoolkit=${CUDA_VER} && \
+RUN conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.8 cudatoolkit=${CUDA_VER} && \
     conda install -y spacy && python -m spacy download en_core_web_sm && \
     conda install -y -c anaconda pytest requests && \
     conda install -y -c conda-forge sre_yield && \
