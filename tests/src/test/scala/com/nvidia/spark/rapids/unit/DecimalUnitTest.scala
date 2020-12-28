@@ -21,10 +21,16 @@ import java.math.RoundingMode
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuAlias, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
+import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExec, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
 
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
-import org.apache.spark.sql.types.{Decimal, DecimalType}
+import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.types.{Decimal, DecimalType, IntegerType, LongType, StructField, StructType}
 
 class DecimalUnitTest extends GpuUnitTests {
   Random.setSeed(1234L)
@@ -259,5 +265,35 @@ class DecimalUnitTest extends GpuUnitTests {
         }
       }
     }
+  }
+
+  test("test type checking of Scans") {
+    val conf = new SparkConf().set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "BatchScanExec,ColumnarToRowExec,FileSourceScanExec")
+    val decimalCsvStruct = StructType(Array(
+      StructField("c_0", DecimalType(18, 0), true),
+      StructField("c_1", DecimalType(7, 3), true),
+      StructField("c_2", DecimalType(10, 10), true),
+      StructField("c_3", DecimalType(15, 12), true),
+      StructField("c_4", LongType, true),
+      StructField("c_5", IntegerType, true)))
+
+    withGpuSparkSession((ss: SparkSession) => {
+      var rootPlan = frameFromOrc("decimal-test.orc")(ss).queryExecution.executedPlan
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[FileSourceScanExec]))
+      rootPlan = fromCsvDf("decimal-test.csv", decimalCsvStruct)(ss).queryExecution.executedPlan
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[FileSourceScanExec]))
+      rootPlan = frameFromParquet("decimal-test.parquet")(ss).queryExecution.executedPlan
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuFileSourceScanExec]))
+    }, conf)
+
+    withGpuSparkSession((ss: SparkSession) => {
+      var rootPlan = frameFromOrc("decimal-test.orc")(ss).queryExecution.executedPlan
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[BatchScanExec]))
+      rootPlan = fromCsvDf("decimal-test.csv", decimalCsvStruct)(ss).queryExecution.executedPlan
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[BatchScanExec]))
+      rootPlan = frameFromParquet("decimal-test.parquet")(ss).queryExecution.executedPlan
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuBatchScanExec]))
+    }, conf.set(SQLConf.USE_V1_SOURCE_LIST.key, ""))
   }
 }

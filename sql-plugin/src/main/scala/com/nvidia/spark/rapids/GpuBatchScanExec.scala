@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, DecimalType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -229,6 +229,10 @@ object GpuCSVScan {
       }
     }
     // TODO parsedOptions.emptyValueInRead
+
+    if (readSchema.exists(_.dataType.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu("DecimalType is not supported")
+    }
   }
 }
 
