@@ -16,18 +16,17 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.nio.file.Files
 import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
-
-import java.io.File
-import java.nio.file.Files
-import scala.math.BigDecimal.RoundingMode
 
 class CastOpSuite extends GpuExpressionTestSuite {
   import CastOpSuite._
