@@ -34,8 +34,8 @@ class CastExprMeta[INPUT <: CastBase](
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
   private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
-  private val fromType = cast.child.dataType
-  private val toType = cast.dataType
+  val fromType = cast.child.dataType
+  val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
@@ -70,6 +70,10 @@ class CastExprMeta[INPUT <: CastBase](
         "for more details. To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
     }
+  }
+
+  def buildTagMessage(entry: ConfEntry[_]): String = {
+    s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
   }
 
   override def convertToGpu(child: Expression): GpuExpression =

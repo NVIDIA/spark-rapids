@@ -29,7 +29,8 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     apt-get install -y maven \
-    openjdk-8-jdk python3.6 python3-pip
+    openjdk-8-jdk python3.8 python3.8-distutils python3-setuptools
+RUN python3.8 -m easy_install pip
 
-RUN ln -s /usr/bin/python3.6 /usr/bin/python
+RUN ln -s /usr/bin/python3.8 /usr/bin/python
 RUN python -m pip install pytest sre_yield

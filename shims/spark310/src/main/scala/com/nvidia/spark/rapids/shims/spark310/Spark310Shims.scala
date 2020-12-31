@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
@@ -93,6 +94,21 @@ class Spark310Shims extends Spark301Shims {
   }
 
   def exprs310: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[Cast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
+            .ansiEnabled, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            if (!conf.isCastFloatToIntegralTypesEnabled &&
+                (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
+                (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
+                    toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
+              willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
+            }
+            super.tagExprForGpu()
+          }
+        }),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
       new CastChecks() {
@@ -134,7 +150,17 @@ class Spark310Shims extends Spark301Shims {
         override val udtChecks: TypeSig = none
         override val sparkUdtSig: TypeSig = UDT
       },
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
+      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!conf.isCastFloatToIntegralTypesEnabled &&
+              (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
+              (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
+                  toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
+            willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
+          }
+          super.tagExprForGpu()
+        }
+      }),
     GpuOverrides.expr[RegExpReplace](
       "RegExpReplace support for string literal input patterns",
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,

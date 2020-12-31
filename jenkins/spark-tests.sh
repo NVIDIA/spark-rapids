@@ -34,6 +34,8 @@ $MVN_GET_CMD \
 $MVN_GET_CMD \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 $MVN_GET_CMD \
+    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples -Dversion=$PROJECT_VER
+$MVN_GET_CMD \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 if [ "$CUDA_CLASSIFIER"x == x ];then
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
@@ -41,6 +43,7 @@ else
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
 fi
 RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
+RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples-$PROJECT_VER.jar"
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 
 $MVN_GET_CMD \
@@ -69,8 +72,8 @@ BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 \
     --executor-memory 12G \
     --total-executor-cores 6 \
     --conf spark.sql.shuffle.partitions=12 \
-    --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
-    --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
+    --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR}:${RAPIDS_UDF_JAR} \
+    --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR}:${RAPIDS_UDF_JAR} \
     --conf spark.driver.extraJavaOptions=-Duser.timezone=UTC \
     --conf spark.executor.extraJavaOptions=-Duser.timezone=UTC \
     --conf spark.sql.session.timeZone=UTC"
