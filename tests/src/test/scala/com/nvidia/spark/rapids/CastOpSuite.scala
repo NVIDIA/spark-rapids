@@ -252,19 +252,63 @@ class CastOpSuite extends GpuExpressionTestSuite {
       comparisonFunc = comparisonFunc)
   }
 
-  test("cast int to decimal", org.scalatest.Tag("decimal")) {
+  test("cast int to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
     List(-9, -5, -2, 0, 1, 5, 9).foreach { scale =>
-      testCastToDecimal(DataTypes.IntegerType, scale)
+      testCastToDecimal(DataTypes.IntegerType, scale, customRandGenerator = Some(gen))
     }
   }
 
-  test("cast long to decimal", org.scalatest.Tag("decimal")) {
+  test("cast long to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
     List(-18, -10, -3, 0, 1, 5, 18).foreach { scale =>
-      testCastToDecimal(DataTypes.LongType, scale)
+      testCastToDecimal(DataTypes.LongType, scale, customRandGenerator = Some(gen))
     }
   }
 
-  private def testCastToDecimal(dataType: DataType, scale: Int) {
+  test("cast float to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
+    List(-18, -10, -3, 0, 1, 3, 18).foreach { scale =>
+      testCastToDecimal(DataTypes.FloatType, scale, customRandGenerator = Some(gen))
+    }
+  }
+
+  test("cast double to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
+    List(-18, -10, -3, 0, 1, 3, 18).foreach { scale =>
+      testCastToDecimal(DataTypes.DoubleType, scale, customRandGenerator = Some(gen))
+    }
+  }
+
+  test("cast numeric to decimal: range check") {
+    val outOfRangeMessage = "Column contains at least one value that is not in the required range"
+    def generator(column: Seq[Double])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    List(-1, 0, 3, 10, 17).foreach { scale =>
+      var gen = generator(Seq(1.1e18 * math.pow(10, -(scale + 1)))) _
+      assert(
+        intercept[org.apache.spark.SparkException] {
+          testCastToDecimal(DataTypes.FloatType, scale, customDataGenerator = Some(gen))
+        }.getMessage.contains(outOfRangeMessage)
+      )
+      gen = generator(Seq(-1.1e18 * math.pow(10, -(scale + 1))))
+      assert(
+        intercept[org.apache.spark.SparkException] {
+          testCastToDecimal(DataTypes.DoubleType, scale, customDataGenerator = Some(gen))
+        }.getMessage.contains(outOfRangeMessage)
+      )
+    }
+  }
+
+  private def testCastToDecimal(
+    dataType: DataType,
+    scale: Int,
+    maxFloatDiff: Double = 1e-9,
+    customDataGenerator: Option[SparkSession => DataFrame] = None,
+    customRandGenerator: Option[EnhancedRandom] = None) {
+
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
       s"HostColumnarToGpu-${System.currentTimeMillis()}.parquet").getAbsolutePath
@@ -276,12 +320,17 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
         .set("spark.sql.ansi.enabled", "true")
 
-      val integralSize = (ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION - scale) match {
-        case s if dataType == IntegerType => s min ai.rapids.cudf.DType.DECIMAL32_MAX_PRECISION
-        case s => s min ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
+      val defaultRandomGenerator: SparkSession => DataFrame = {
+        val integralSize = ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION - scale match {
+          case s if dataType == IntegerType => s min ai.rapids.cudf.DType.DECIMAL32_MAX_PRECISION
+          case s => s min ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
+        }
+        val rnd = customRandGenerator.getOrElse(
+          new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions()))
+        generateCastNumericToDecimalDataFrame(dataType, integralSize, rnd, 500)
       }
-      val genFun = generateCastNumericToDecimalDataFrame(dataType, integralSize, 300) _
-      withCpuSparkSession(spark => genFun(spark).write.parquet(path), conf)
+      val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
+      withCpuSparkSession(spark => generator(spark).write.parquet(path), conf)
 
       val createDF = (ss: SparkSession) => ss.read.parquet(path)
       val decType = DataTypes.createDecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, scale)
@@ -289,35 +338,40 @@ class CastOpSuite extends GpuExpressionTestSuite {
         df.withColumn("col2", col("col").cast(decType))
       }
       val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
-      var cc = 0
-      fromCpu.zip(fromGpu).take(30).foreach { case (x, y) =>
-        val (xx, yy) = x.getDecimal(1).unscaledValue() -> y.getDecimal(1).unscaledValue()
-        if (xx != yy) cc += 1
-        println((xx == yy, y.get(0), xx, yy))
+      val (cpuResult, gpuResult) = dataType match {
+        case IntegerType | LongType =>
+          fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
+        case FloatType | DoubleType =>
+          // There may be tiny difference between CPU and GPU result when casting from double
+          fromCpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue())) ->
+            fromGpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue()))
       }
-      println(s"dataType: $dataType; scale: $scale, number of unEqual: $cc \n")
-      compareResults(false, 0, fromCpu, fromGpu)
+      compareResults(false, maxFloatDiff, cpuResult, gpuResult)
     } finally {
       dir.delete()
     }
   }
 
   private def generateCastNumericToDecimalDataFrame(
-    dataType: DataType, integralSize: Int, rowCount: Int = 100)(ss: SparkSession): DataFrame = {
+    dataType: DataType,
+    integralSize: Int,
+    rndGenerator: EnhancedRandom,
+    rowCount: Int = 100)(ss: SparkSession): DataFrame = {
     import ss.sqlContext.implicits._
 
-    val rnd = new EnhancedRandom(new scala.util.Random(1001L), FuzzerOptions())
-    val scaleRnd = new scala.util.Random(1000L)
+    val scaleRnd = new scala.util.Random(rndGenerator.nextLong())
     val rawColumn: Seq[Double] = (0 until rowCount).map { _ =>
       val scale = integralSize - 19 - scaleRnd.nextInt(integralSize + 1)
-      val rawValue = rnd.nextLong() * math.pow(10, scale)
+      val rawValue = math.pow(10, scale) * (rndGenerator.nextLong() match {
+        case x if x < 0 => -1e18 max x
+        case x => 1e18 min x
+      })
       dataType match {
         case IntegerType | LongType => math.signum(rawValue) * math.floor(math.abs(rawValue))
         case FloatType | DoubleType => rawValue
-        case _ => throw new IllegalArgumentException("")
+        case _ => throw new IllegalArgumentException(s"unsupported dataType: $dataType")
       }
     }
-
     dataType match {
       case IntegerType => rawColumn.map(_.toInt).toDF("col")
       case LongType => rawColumn.map(_.toLong).toDF("col")

@@ -684,7 +684,7 @@ class CastChecks extends ExprChecks {
   val integralChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
-  val fpChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
+  val fpChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING

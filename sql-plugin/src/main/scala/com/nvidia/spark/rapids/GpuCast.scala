@@ -370,22 +370,56 @@ case class GpuCast(
 
       case (IntegerType | LongType, dt: DecimalType) =>
         assert(ansiMode, "GpuCastToDecimal can only run under ansiMode")
+
+        // Check whether max precision of target decimal exceeds DType.DECIMAL64_MAX_PRECISION,
+        // so the sanity range is relied on the scale of target DecimalType.
         assertValuesInRange(input.getBase,
-          Scalar.fromDouble(Long.MinValue * math.pow(10, -dt.scale)),
-          Scalar.fromDouble(Long.MaxValue * math.pow(10, -dt.scale)))
-        val zeroScaledDec = input.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))
-        if (dt.scale == 0) {
-          zeroScaledDec
-        } else {
-          // For keeping align with CpuCast, we apply HALF_UP round to get the exact decimal value
-          withResource(zeroScaledDec) { _ =>
-            zeroScaledDec.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+          Scalar.fromDouble(-math.pow(10, DType.DECIMAL64_MAX_PRECISION - dt.scale)),
+          Scalar.fromDouble(math.pow(10, DType.DECIMAL64_MAX_PRECISION - dt.scale)))
+
+        if (dt.scale < 0) {
+          // Rounding is essential when scale is negative,
+          // so we apply HALF_UP rounding manually to keep align with CpuCast.
+          withResource(input.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))) { zero =>
+            zero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
           }
+        } else if (dt.scale > 0) {
+          // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
+          // before casting it to decimal in case of overflow.
+          withResource(input.getBase.castTo(DType.INT64)) { long =>
+            long.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+          }
+        } else {
+          input.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
         }
 
-      case (from: DecimalType, to: DecimalType) =>
+      case (FloatType | DoubleType, dt: DecimalType) =>
         assert(ansiMode, "GpuCastToDecimal can only run under ansiMode")
 
+        // Approach to minimize difference between CPUCast and GPUCast:
+        // step 1. cast input to FLOAT64 (if necessary)
+        // step 2. cast FLOAT64 to container DECIMAL (who keeps one more digit for rounding)
+        // step 3. perform HALF_UP rounding on container DECIMAL
+        // Corner case: If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
+        // be created because of precision overflow. In this case, we perform casting op directly.
+        withResource(input.getBase.castTo(DType.FLOAT64)) { double =>
+          val scale = (dt.scale + 1) min DType.DECIMAL64_MAX_PRECISION
+          // SafeFactor here is to adapt the tolerance caused by FLOAT32 to FLOAT64 conversion.
+          // For example, 1e16f will become 1.000000003e16 after casting to double type.
+          val safeFactor = 1.0001
+          assertValuesInRange(double,
+            Scalar.fromDouble(-safeFactor * math.pow(10, DType.DECIMAL64_MAX_PRECISION - scale)),
+            Scalar.fromDouble(safeFactor * math.pow(10, DType.DECIMAL64_MAX_PRECISION - scale)))
+
+          val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+          if (scale == dt.scale) {
+            double.castTo(containerType)
+          } else {
+            withResource(double.castTo(containerType)) { container =>
+              container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+            }
+          }
+        }
 
       case _ =>
         input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))

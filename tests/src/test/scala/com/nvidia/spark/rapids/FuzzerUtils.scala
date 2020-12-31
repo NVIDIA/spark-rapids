@@ -300,8 +300,7 @@ class EnhancedRandom(r: Random, options: FuzzerOptions) {
     }
   }
 
-  def
-  nextFloat(): Float = {
+  def nextFloat(): Float = {
     r.nextInt(9) match {
       case 0 => Float.NaN
       case 1 => Float.PositiveInfinity
