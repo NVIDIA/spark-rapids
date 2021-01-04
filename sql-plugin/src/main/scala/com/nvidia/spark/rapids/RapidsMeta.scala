@@ -543,11 +543,21 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
+  // This has to handle adaptive execution and the fact that it splits and
+  // runs subqueries at shuffle boundaries. When we analyze the subquery
+  // we don't know what the other side of the join is so we have to ensure it
+  // gets marked properly the first time through. It also only sees see the
+  // children when doing the subquery so if any child can't be replaced
+  // when AQE is on we make sure to mark the exchange as can't be replaced.
+  // Otherwise we could get a mismatch like
+  // https://github.com/NVIDIA/spark-rapids/issues/1423
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      (parent.filter(_.canThisBeReplaced).isEmpty &&
-        childPlans.filter(_.canThisBeReplaced).isEmpty)) {
+      ((parent.filter(_.canThisBeReplaced).isEmpty &&
+        childPlans.filter(_.canThisBeReplaced).isEmpty) ||
+        plan.conf.adaptiveExecutionEnabled &&
+          childPlans.filter(_.canThisBeReplaced).isEmpty)) {
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
     }
   }
