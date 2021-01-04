@@ -534,8 +534,7 @@
                         <exclude>docs/demo/**/*.zpln</exclude>
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
-                        default. The reason we are explicitly excluding the target folder is because
-                        the tests-spark310+ project isn't included by default -->
+                        default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                     </excludes>
                 </configuration>
