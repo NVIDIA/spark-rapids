@@ -137,7 +137,7 @@
         <profile>
             <id>spark310tests</id>
             <modules>
-                <module>tests-next-spark</module>
+                <module>tests-spark310+</module>
             </modules>
         </profile>
     </profiles>
@@ -533,7 +533,10 @@
                         <exclude>docs/demo/**/*.ipynb</exclude>
                         <exclude>docs/demo/**/*.zpln</exclude>
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
-                        <exclude>tests-next-spark/target/**/*</exclude>
+                        <!-- Apache Rat excludes target folder for projects that are included by
+                        default. The reason we are explicitly excluding the target folder is because
+                        the tests-spark310+ project isn't included by default -->
+                        <exclude>**/target/**/*</exclude>
                     </excludes>
                 </configuration>
             </plugin>
