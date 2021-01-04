@@ -556,10 +556,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      ((parent.filter(_.canThisBeReplaced).isEmpty &&
-        childPlans.filter(_.canThisBeReplaced).isEmpty) ||
-        (plan.conf.adaptiveExecutionEnabled &&
-          childPlans.filter(_.canThisBeReplaced).isEmpty))) {
+      childPlans.filter(_.canThisBeReplaced).isEmpty &&
+        (plan.conf.adaptiveExecutionEnabled ||
+        parent.filter(_.canThisBeReplaced).isEmpty)) {
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
     }
   }
