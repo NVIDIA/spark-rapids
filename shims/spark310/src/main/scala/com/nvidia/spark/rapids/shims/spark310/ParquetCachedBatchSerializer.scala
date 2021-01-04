@@ -329,7 +329,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         cbIter =>
           new CachedBatchIteratorProducer[ColumnarBatch](cbIter, cachedSchema,
             broadcastedHadoopConf.value.value, broadcastedConf.value)
-            .getColumnarBatchToCachedBatchIterator()
+            .getColumnarBatchToCachedBatchIterator
       }
     }
   }
@@ -921,14 +921,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      sharedHadoopConf: Configuration,
      sharedConf: SQLConf) {
 
-    def getInternalRowToCachedBatchIterator(
-       p: ParquetOutputFileFormat = new ParquetOutputFileFormat()): Iterator[CachedBatch] = {
-      new InternalRowToCachedBatchIterator(p)
+    def getInternalRowToCachedBatchIterator: Iterator[CachedBatch] = {
+      new InternalRowToCachedBatchIterator
     }
 
-    def getColumnarBatchToCachedBatchIterator(
-      p: ParquetOutputFileFormat = new ParquetOutputFileFormat()): Iterator[CachedBatch] = {
-        new ColumnarBatchToCachedBatchIterator(p)
+    def getColumnarBatchToCachedBatchIterator: Iterator[CachedBatch] = {
+        new ColumnarBatchToCachedBatchIterator
     }
 
     /**
@@ -936,8 +934,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      * relationship. Each partition represents a single parquet file, so we encode it
      * and return the CachedBatch when next is called.
      */
-    private class InternalRowToCachedBatchIterator(
-       parquetOutputFileFormat: ParquetOutputFileFormat) extends Iterator[CachedBatch]() {
+    class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() {
+
+      var parquetOutputFileFormat = new ParquetOutputFileFormat()
+
+      // For testing only
+      private[rapids] def setParquetOutputFileFormat(p: ParquetOutputFileFormat): Unit = {
+        parquetOutputFileFormat = p
+      }
+
       // is there a type that spark doesn't support by default in the schema?
       val hasUnsupportedType: Boolean = cachedAttributes.exists { attribute =>
         !isTypeSupportedByParquet(attribute.dataType)
@@ -1109,8 +1114,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      * relationship. Each ColumnarBatch is converted to a single ParquetCachedBatch when next()
      * is called on this iterator
      */
-    private class ColumnarBatchToCachedBatchIterator(
-       p: ParquetOutputFileFormat) extends InternalRowToCachedBatchIterator(p) {
+    class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator {
       override def getIterator: Iterator[InternalRow] = {
         iter.asInstanceOf[Iterator[ColumnarBatch]].next.rowIterator().asScala
       }
@@ -1255,7 +1259,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         cbIter =>
           new CachedBatchIteratorProducer[InternalRow](cbIter, schema,
             broadcastedHadoopConf.value.value, broadcastedConf.value)
-            .getInternalRowToCachedBatchIterator()
+            .getInternalRowToCachedBatchIterator
       }
     }
   }
