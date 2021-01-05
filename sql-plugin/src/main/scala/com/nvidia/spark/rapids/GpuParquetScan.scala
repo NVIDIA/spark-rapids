@@ -139,7 +139,8 @@ object GpuParquetScanBase {
         allowMaps = true,
         allowArray = true,
         allowStruct = true,
-        allowNesting = true)) {
+        allowNesting = true,
+        allowDecimal = meta.conf.decimalTypeEnabled)) {
         meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
       }
     }
@@ -195,6 +196,33 @@ object GpuParquetScanBase {
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
+    }
+  }
+
+  private[rapids] def convertDecimal32Columns(t: Table): Table = {
+    val containDecimal32Column = (0 until t.getNumberOfColumns).exists { i =>
+      t.getColumn(i).getType.getTypeId == DType.DTypeEnum.DECIMAL32
+    }
+    // return input table if there exists no DECIMAL32 columns
+    if (!containDecimal32Column) return t
+
+    val columns = new Array[ColumnVector](t.getNumberOfColumns)
+    try {
+      RebaseHelper.withResource(t) { _ =>
+        (0 until t.getNumberOfColumns).foreach { i =>
+          t.getColumn(i).getType match {
+            case tpe if tpe.getTypeId == DType.DTypeEnum.DECIMAL32 =>
+              columns(i) = t.getColumn(i).castTo(
+                DType.create(DType.DTypeEnum.DECIMAL64, tpe.getScale))
+            case _ =>
+              columns(i) = t.getColumn(i).incRefCount()
+          }
+        }
+      }
+      new Table(columns: _*)
+    } finally {
+      // clean temporary column vectors
+      columns.safeClose()
     }
   }
 }
@@ -657,13 +685,16 @@ abstract class FileParquetPartitionReaderBase(
       inputTable: Table,
       filePath: String,
       clippedSchema: MessageType): Table = {
-    if (readDataSchema.length > inputTable.getNumberOfColumns) {
+    // Convert Decimal32 columns to Decimal64, because spark-rapids only supports Decimal64.
+    val inTable = GpuParquetScanBase.convertDecimal32Columns(inputTable)
+
+    if (readDataSchema.length > inTable.getNumberOfColumns) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
       try {
-        withResource(inputTable) { table =>
+        withResource(inTable) { table =>
           var readAt = 0
           (0 until readDataSchema.length).foreach(writeAt => {
             val readField = readDataSchema(writeAt)
@@ -686,7 +717,7 @@ abstract class FileParquetPartitionReaderBase(
         newColumns.safeClose()
       }
     } else {
-      inputTable
+      inTable
     }
   }
 
@@ -1115,6 +1146,7 @@ class MultiFileParquetPartitionReader(
         }
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+          .enableStrictDecimalType(true)
           .includeColumn(readDataSchema.fieldNames:_*).build()
 
         // about to start using the GPU
@@ -1523,6 +1555,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       val parseOpts = ParquetOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+        .enableStrictDecimalType(true)
         .includeColumn(readDataSchema.fieldNames: _*).build()
 
       // about to start using the GPU
@@ -1658,6 +1691,7 @@ class ParquetPartitionReader(
         }
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+          .enableStrictDecimalType(true)
           .includeColumn(readDataSchema.fieldNames:_*).build()
 
         // about to start using the GPU

@@ -1236,13 +1236,13 @@ object SupportedOpsDocs {
     println("<td>S</td>") // DATE
     println("<td>S</td>") // TIMESTAMP
     println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
+    println("<td>S</td>") // DECIMAL
     println("<td></td>") // NULL
     println("<td><b>NS</b></td>") // BINARY
     println("<td></td>") // CALENDAR
-    println("<td><em>PS (missing nested DECIMAL, BINARY)</em></td>") // ARRAY
-    println("<td><em>PS (missing nested DECIMAL, BINARY)</em></td>") // MAP
-    println("<td><em>PS (missing nested DECIMAL, BINARY)</em></td>") // STRUCT
+    println("<td><em>PS (missing nested BINARY)</em></td>") // ARRAY
+    println("<td><em>PS (missing nested BINARY)</em></td>") // MAP
+    println("<td><em>PS (missing nested BINARY)</em></td>") // STRUCT
     println("</tr>")
     println("<tr>")
     println("<th>Output</th>")
