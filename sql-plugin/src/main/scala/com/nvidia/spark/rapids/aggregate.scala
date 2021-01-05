@@ -98,11 +98,10 @@ class GpuHashAggregateMeta(
       aggregateAttributes ++
       resultExpressions
 
-  def isSupported(t: DataType) = t match {
-    case MapType(StringType, StringType, _) => true
-    case _ => isSupportedType(t)
-  }
-  override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true,
+      allowStringMaps = true)
 
   override def tagPlanForGpu(): Unit = {
     if (agg.resultExpressions.isEmpty) {
@@ -269,6 +268,10 @@ class GpuSortAggregateMeta(
     }
   }
 
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
+
   override def convertToGpu(): GpuExec = {
     // we simply convert to a HashAggregateExec and let GpuOverrides take care of inserting a
     // GpuSortExec if one is needed
@@ -372,6 +375,9 @@ case class GpuHashAggregateExec(
     //
     val rdd = child.executeColumnar()
 
+    // cache in a local variable to avoid serializing the full child plan
+    val childOutput = child.output
+
     rdd.mapPartitions { cbIter => {
       var batch: ColumnarBatch = null // incoming batch
       //
@@ -422,7 +428,7 @@ case class GpuHashAggregateExec(
       //  3. boundFinalProjections: on merged batches, finalize aggregates
       //     (GpuAverage => CudfSum/CudfCount)
       //  4. boundResultReferences: project the result expressions Spark expects in the output.
-      val boundExpression = setupReferences(child.output, groupingExpressions, aggregateExpressions)
+      val boundExpression = setupReferences(childOutput, groupingExpressions, aggregateExpressions)
       try {
         while (cbIter.hasNext) {
           // 1) Consume the raw incoming batch, evaluating nested expressions
@@ -499,7 +505,7 @@ case class GpuHashAggregateExec(
             val vecs = defaultValues.map { ref =>
               val scalar = GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType)
               try {
-                GpuColumnVector.from(scalar, 1)
+                GpuColumnVector.from(scalar, 1, ref.dataType)
               } finally {
                 scalar.close()
               }
@@ -542,11 +548,8 @@ case class GpuHashAggregateExec(
               result match {
                 case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
                 case _ =>
-                  val scalar = GpuScalar.from(result, ref.dataType)
-                  try {
-                    GpuColumnVector.from(scalar, finalCb.numRows)
-                  } finally {
-                    scalar.close()
+                  withResource(GpuScalar.from(result, ref.dataType)) { scalar =>
+                    GpuColumnVector.from(scalar, finalCb.numRows, ref.dataType)
                   }
               }
             }
@@ -605,15 +608,15 @@ case class GpuHashAggregateExec(
         case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
         case _ =>
           withResource(GpuScalar.from(in, ref.dataType)) { scalar =>
-            GpuColumnVector.from(scalar, batch.numRows)
+            GpuColumnVector.from(scalar, batch.numRows, ref.dataType)
           }
       }
       if (childCv.dataType == ref.dataType) {
         childCv
       } else {
         withResource(childCv) { childCv =>
-          val rapidsType = GpuColumnVector.getRapidsType(ref.dataType)
-          GpuColumnVector.from(childCv.getBase.castTo(rapidsType))
+          val rapidsType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
+          GpuColumnVector.from(childCv.getBase.castTo(rapidsType), ref.dataType)
         }
       }
     }
@@ -626,27 +629,23 @@ case class GpuHashAggregateExec(
    * @param aggregatedCb this is a batch that was kept for concatenation
    * @return Seq[GpuColumnVector] with concatenated vectors
    */
-  private def concatenateBatches(aggregatedInputCb: ColumnarBatch, aggregatedCb: ColumnarBatch,
+  private def concatenateBatches(aggregatedInputCb: ColumnarBatch,
+      aggregatedCb: ColumnarBatch,
       concatTime: SQLMetric): Seq[GpuColumnVector] = {
-    val nvtxRange = new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)
-    try {
+    withResource(new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)) { _ =>
       // get tuples of columns to concatenate
 
       val zipped = (0 until aggregatedCb.numCols()).map { i =>
         (aggregatedInputCb.column(i), aggregatedCb.column(i))
       }
 
-      val concatCvs = zipped.map {
+      zipped.map {
         case (col1, col2) =>
           GpuColumnVector.from(
             cudf.ColumnVector.concatenate(
               col1.asInstanceOf[GpuColumnVector].getBase,
-              col2.asInstanceOf[GpuColumnVector].getBase))
+              col2.asInstanceOf[GpuColumnVector].getBase), col1.dataType())
       }
-
-      concatCvs
-    } finally {
-      nvtxRange.close()
     }
   }
 
@@ -860,17 +859,10 @@ case class GpuHashAggregateExec(
 
           val resCols = new ArrayBuffer[ColumnVector](result.getNumberOfColumns)
           for (i <- 0 until result.getNumberOfColumns) {
-            val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
+            val rapidsType = GpuColumnVector.getNonNestedRapidsType(dataTypes(i))
             // cast will be cheap if type matches, only does refCount++ in that case
-            val castedCol = result.getColumn(i).castTo(rapidsType)
-            var success = false
-            try {
-              resCols += GpuColumnVector.from(castedCol)
-              success = true
-            } finally {
-              if (!success) {
-                castedCol.close()
-              }
+            closeOnExcept(result.getColumn(i).castTo(rapidsType)) { castedCol =>
+              resCols += GpuColumnVector.from(castedCol, dataTypes(i))
             }
           }
           new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
@@ -888,23 +880,20 @@ case class GpuHashAggregateExec(
         // reduction merge or update aggregates functions are
         val cvs = ArrayBuffer[GpuColumnVector]()
         aggModeCudfAggregates.foreach { case (mode, aggs) =>
-         aggs.foreach {agg =>
-           val aggFn = if (mode == Partial && !merge) {
-             agg.updateReductionAggregate
-           } else {
-             agg.mergeReductionAggregate
-           }
-           val res = aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)
-           try {
-             val rapidsType = GpuColumnVector.getRapidsType(agg.dataType)
-             withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
-               cvs += GpuColumnVector.from(cv.castTo(rapidsType))
-             }
-           } finally {
-             res.close()
-           }
-         }
-       }
+          aggs.foreach {agg =>
+            val aggFn = if ((mode == Partial || mode == Complete) && !merge) {
+              agg.updateReductionAggregate
+            } else {
+              agg.mergeReductionAggregate
+            }
+            withResource(aggFn(toAggregateCvs(agg.getOrdinal(agg.ref)).getBase)) { res =>
+              val rapidsType = GpuColumnVector.getNonNestedRapidsType(agg.dataType)
+              withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
+                cvs += GpuColumnVector.from(cv.castTo(rapidsType), agg.dataType)
+              }
+            }
+          }
+        }
         new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)
       }
     } finally {

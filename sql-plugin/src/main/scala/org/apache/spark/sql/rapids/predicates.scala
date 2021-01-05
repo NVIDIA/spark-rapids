@@ -72,7 +72,7 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
   //    IF (B <=> FALSE, FALSE,
   //      A cudf_and B))
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val l = lhs.getBase
     val r = rhs.getBase
     withResource(Scalar.fromBool(false)) { falseVal =>
@@ -83,41 +83,40 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
       }
       withResource(firstPass) { firstPass =>
         withResource(r.equalToNullAware(falseVal)) { rIsFalse =>
-          GpuColumnVector.from(rIsFalse.ifElse(falseVal, firstPass))
+          rIsFalse.ifElse(falseVal, firstPass)
         }
       }
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val l = lhs
     val r = rhs.getBase
     withResource(Scalar.fromBool(false)) { falseVal =>
       if (eqNullAware(l, false)) {
-        GpuColumnVector.from(ColumnVector.fromScalar(falseVal, r.getRowCount.toInt))
+        ColumnVector.fromScalar(falseVal, r.getRowCount.toInt)
       } else {
         withResource(l.and(r)) { lAndR =>
           withResource(r.equalToNullAware(falseVal)) { rIsFalse =>
-            GpuColumnVector.from(rIsFalse.ifElse(falseVal, lAndR))
+            rIsFalse.ifElse(falseVal, lAndR)
           }
         }
       }
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val l = lhs.getBase
     val r = rhs
     withResource(Scalar.fromBool(false)) { falseVal =>
       if (eqNullAware(r, false)) {
-        GpuColumnVector.from(ColumnVector.fromScalar(falseVal, l.getRowCount.toInt))
+        ColumnVector.fromScalar(falseVal, l.getRowCount.toInt)
       } else {
-        val firstPass = withResource(l.and(r)) { lAndR =>
+        withResource(l.and(r)) { lAndR =>
           withResource(l.equalToNullAware(falseVal)) { lIsFalse =>
             lIsFalse.ifElse(falseVal, lAndR)
           }
         }
-        GpuColumnVector.from(firstPass)
       }
     }
   }
@@ -145,7 +144,7 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
   //    IF (B <=> TRUE, TRUE,
   //      A cudf_or B))
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val l = lhs.getBase
     val r = rhs.getBase
     withResource(Scalar.fromBool(true)) { trueVal =>
@@ -156,41 +155,40 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
       }
       withResource(firstPass) { firstPass =>
         withResource(r.equalToNullAware(trueVal)) { rIsTrue =>
-          GpuColumnVector.from(rIsTrue.ifElse(trueVal, firstPass))
+          rIsTrue.ifElse(trueVal, firstPass)
         }
       }
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val l = lhs
     val r = rhs.getBase
     withResource(Scalar.fromBool(true)) { trueVal =>
       if (eqNullAware(l, true)) {
-        GpuColumnVector.from(ColumnVector.fromScalar(trueVal, r.getRowCount.toInt))
+        ColumnVector.fromScalar(trueVal, r.getRowCount.toInt)
       } else {
         withResource(l.or(r)) { lOrR =>
           withResource(r.equalToNullAware(trueVal)) { rIsTrue =>
-            GpuColumnVector.from(rIsTrue.ifElse(trueVal, lOrR))
+            rIsTrue.ifElse(trueVal, lOrR)
           }
         }
       }
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val l = lhs.getBase
     val r = rhs
     withResource(Scalar.fromBool(true)) { trueVal =>
       if (eqNullAware(r, true)) {
-        GpuColumnVector.from(ColumnVector.fromScalar(trueVal, l.getRowCount.toInt))
+        ColumnVector.fromScalar(trueVal, l.getRowCount.toInt)
       } else {
-        val firstPass = withResource(l.or(r)) { lOrR =>
+        withResource(l.or(r)) { lOrR =>
           withResource(l.equalToNullAware(trueVal)) { lIsFalse =>
             lIsFalse.ifElse(trueVal, lOrR)
           }
         }
-        GpuColumnVector.from(firstPass)
       }
     }
   }
@@ -233,14 +231,14 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
         withResource(lhs.getBase.isNan()) { lhsNan =>
           withResource(rhs.getBase.isNan()) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
-              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+              lhsNanAndRhsNan.or(result)
             }
           }
         }
@@ -250,14 +248,14 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
         withResource(GpuScalar.from(GpuScalar.isNan(lhs))) { lhsNan =>
           withResource(rhs.getBase.isNan()) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
-              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+              lhsNanAndRhsNan.or(result)
             }
           }
         }
@@ -267,14 +265,14 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
+        withResource(lhs.getBase.isNan) { lhsNan =>
           withResource(GpuScalar.from(GpuScalar.isNan(rhs))) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
-              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+              lhsNanAndRhsNan.or(result)
             }
           }
         }
@@ -292,14 +290,14 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
   override def outputTypeOverride: DType = DType.BOOL8
   override def binaryOp: BinaryOp = BinaryOp.NULL_EQUALS
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
-          withResource(rhs.getBase.isNan()) { rhsNan =>
+        withResource(lhs.getBase.isNan) { lhsNan =>
+          withResource(rhs.getBase.isNan) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
-              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+              lhsNanAndRhsNan.or(result)
             }
           }
         }
@@ -309,14 +307,14 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
         withResource(GpuScalar.from(GpuScalar.isNan(lhs))) { lhsNan =>
-          withResource(rhs.getBase.isNan()) { rhsNan =>
+          withResource(rhs.getBase.isNan) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
-              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+              lhsNanAndRhsNan.or(result)
             }
           }
         }
@@ -326,14 +324,14 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
         withResource(lhs.getBase.isNan()) { lhsNan =>
           withResource(GpuScalar.from(GpuScalar.isNan(rhs))) { rhsNan =>
             withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
-              GpuColumnVector.from(lhsNanAndRhsNan.or(result.getBase))
+              lhsNanAndRhsNan.or(result)
             }
           }
         }
@@ -368,14 +366,14 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
 
   override def binaryOp: BinaryOp = BinaryOp.GREATER
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
-          withResource(rhs.getBase.isNotNan()) { rhsNotNan =>
+        withResource(lhs.getBase.isNan) { lhsNan =>
+          withResource(rhs.getBase.isNotNan) { rhsNotNan =>
             withResource(lhsNan.and(rhsNotNan)) { lhsNanAndRhsNotNan =>
-              GpuColumnVector.from(lhsNanAndRhsNotNan.or(result.getBase))
+              lhsNanAndRhsNotNan.or(result)
             }
           }
         }
@@ -385,14 +383,14 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
+        withResource(lhs.getBase.isNan) { lhsNan =>
           withResource(GpuScalar.from(!GpuScalar.isNan(rhs))) { rhsNotNan =>
             withResource(lhsNan.and(rhsNotNan)) { lhsNanAndRhsNotNan =>
-              GpuColumnVector.from(lhsNanAndRhsNotNan.or(result.getBase))
+              lhsNanAndRhsNotNan.or(result)
             }
           }
         }
@@ -402,14 +400,14 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
         withResource(GpuScalar.from(GpuScalar.isNan(lhs))) { lhsNan =>
-          withResource(rhs.getBase.isNotNan()) { rhsNotNan =>
+          withResource(rhs.getBase.isNotNan) { rhsNotNan =>
             withResource(lhsNan.and(rhsNotNan)) { lhsNanAndRhsNotNan =>
-              GpuColumnVector.from(lhsNanAndRhsNotNan.or(result.getBase))
+              lhsNanAndRhsNotNan.or(result)
             }
           }
         }
@@ -444,12 +442,12 @@ case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends Cu
 
   override def binaryOp: BinaryOp = BinaryOp.GREATER_EQUAL
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
-          GpuColumnVector.from(lhsNan.or(result.getBase))
+        withResource(lhs.getBase.isNan) { lhsNan =>
+          lhsNan.or(result)
         }
       }
     } else {
@@ -457,12 +455,12 @@ case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends Cu
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if(hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNan()) { lhsNan =>
-          GpuColumnVector.from(lhsNan.or(result.getBase))
+        withResource(lhs.getBase.isNan) { lhsNan =>
+          lhsNan.or(result)
         }
       }
     } else {
@@ -470,15 +468,15 @@ case class GpuGreaterThanOrEqual(left: Expression, right: Expression) extends Cu
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     if ((lhs.getType == DType.FLOAT32 || lhs.getType == DType.FLOAT64) && GpuScalar.isNan(lhs)) {
       withResource(GpuScalar.from(true)) { trueScalar =>
         if (rhs.hasNull) {
-          withResource(rhs.getBase.isNotNull()) { rhsIsNotNull =>
-            GpuColumnVector.from(trueScalar.and(rhsIsNotNull))
+          withResource(rhs.getBase.isNotNull) { rhsIsNotNull =>
+            trueScalar.and(rhsIsNotNull)
           }
         } else {
-          GpuColumnVector.from(ColumnVector.fromScalar(trueScalar, rhs.getRowCount.toInt))
+          ColumnVector.fromScalar(trueScalar, rhs.getRowCount.toInt)
         }
       }
     } else {
@@ -511,14 +509,14 @@ case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryCo
 
   override def binaryOp: BinaryOp = BinaryOp.LESS
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNotNan()) { lhsNotNan =>
-          withResource(rhs.getBase.isNan()) { rhsNan =>
+        withResource(lhs.getBase.isNotNan) { lhsNotNan =>
+          withResource(rhs.getBase.isNan) { rhsNan =>
             withResource(lhsNotNan.and(rhsNan)) { lhsNotNanAndRhsNan =>
-              GpuColumnVector.from(lhsNotNanAndRhsNan.or(result.getBase))
+              lhsNotNanAndRhsNan.or(result)
             }
           }
         }
@@ -528,14 +526,14 @@ case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryCo
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(lhs.getBase.isNotNan()) { lhsNotNan =>
+        withResource(lhs.getBase.isNotNan) { lhsNotNan =>
           withResource(GpuScalar.from(GpuScalar.isNan(rhs))) { rhsNan =>
             withResource(lhsNotNan.and(rhsNan)) { lhsNotNanAndRhsNan =>
-              GpuColumnVector.from(lhsNotNanAndRhsNan.or(result.getBase))
+              lhsNotNanAndRhsNan.or(result)
             }
           }
         }
@@ -545,14 +543,14 @@ case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryCo
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
         withResource(GpuScalar.from(!GpuScalar.isNan(lhs))) { lhsNotNan =>
-          withResource(rhs.getBase.isNan()) { rhsNan =>
+          withResource(rhs.getBase.isNan) { rhsNan =>
             withResource(lhsNotNan.and(rhsNan)) { lhsNotNanAndRhsNan =>
-              GpuColumnVector.from(lhsNotNanAndRhsNan.or(result.getBase))
+              lhsNotNanAndRhsNan.or(result)
             }
           }
         }
@@ -587,12 +585,12 @@ case class GpuLessThanOrEqual(left: Expression, right: Expression) extends CudfB
 
   override def binaryOp: BinaryOp = BinaryOp.LESS_EQUAL
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(rhs.getBase.isNan()) { rhsNan =>
-          GpuColumnVector.from(rhsNan.or(result.getBase))
+        withResource(rhs.getBase.isNan) { rhsNan =>
+          rhsNan.or(result)
         }
       }
     } else {
@@ -600,15 +598,15 @@ case class GpuLessThanOrEqual(left: Expression, right: Expression) extends CudfB
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     if ((rhs.getType == DType.FLOAT32 || rhs.getType == DType.FLOAT64) && GpuScalar.isNan(rhs)) {
       withResource(GpuScalar.from(true)) { trueScalar =>
         if (lhs.hasNull) {
-          withResource(lhs.getBase.isNotNull()) { lhsIsNotNull =>
-            GpuColumnVector.from(trueScalar.and(lhsIsNotNull))
+          withResource(lhs.getBase.isNotNull) { lhsIsNotNull =>
+            trueScalar.and(lhsIsNotNull)
           }
         } else {
-          GpuColumnVector.from(ColumnVector.fromScalar(trueScalar, lhs.getRowCount.toInt))
+          ColumnVector.fromScalar(trueScalar, lhs.getRowCount.toInt)
         }
       }
     } else {
@@ -616,12 +614,12 @@ case class GpuLessThanOrEqual(left: Expression, right: Expression) extends CudfB
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val result = super.doColumnar(lhs, rhs)
     if (hasFloatingPointInputs) {
       withResource(result) { result =>
-        withResource(rhs.getBase.isNan()) { rhsNan =>
-          GpuColumnVector.from(rhsNan.or(result.getBase))
+        withResource(rhs.getBase.isNan) { rhsNan =>
+          rhsNan.or(result)
         }
       }
     } else {

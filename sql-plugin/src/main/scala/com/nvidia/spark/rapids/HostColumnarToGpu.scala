@@ -24,14 +24,14 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object HostColumnarToGpu {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
-    (GpuColumnVector.getRapidsType(cv.dataType()), nullable) match {
-      case (DType.INT8 | DType.BOOL8, true) =>
+    (cv.dataType(), nullable) match {
+      case (ByteType | BooleanType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -39,11 +39,11 @@ object HostColumnarToGpu {
             b.append(cv.getByte(i))
           }
         }
-      case (DType.INT8 | DType.BOOL8, false) =>
+      case (ByteType | BooleanType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getByte(i))
         }
-      case (DType.INT16, true) =>
+      case (ShortType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -51,11 +51,11 @@ object HostColumnarToGpu {
             b.append(cv.getShort(i))
           }
         }
-      case (DType.INT16, false) =>
+      case (ShortType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getShort(i))
         }
-      case (DType.INT32 | DType.TIMESTAMP_DAYS, true) =>
+      case (IntegerType | DateType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -63,12 +63,11 @@ object HostColumnarToGpu {
             b.append(cv.getInt(i))
           }
         }
-      case (DType.INT32 | DType.TIMESTAMP_DAYS, false) =>
+      case (IntegerType | DateType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getInt(i))
         }
-      case (DType.INT64 | DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS
-            | DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS, true) =>
+      case (LongType | TimestampType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -76,12 +75,11 @@ object HostColumnarToGpu {
             b.append(cv.getLong(i))
           }
         }
-      case (DType.INT64 | DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS
-            | DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS, false) =>
+      case (LongType | TimestampType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getLong(i))
         }
-      case (DType.FLOAT32, true) =>
+      case (FloatType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -89,11 +87,11 @@ object HostColumnarToGpu {
             b.append(cv.getFloat(i))
           }
         }
-      case (DType.FLOAT32, false) =>
+      case (FloatType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getFloat(i))
         }
-      case (DType.FLOAT64, true) =>
+      case (DoubleType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -101,11 +99,11 @@ object HostColumnarToGpu {
             b.append(cv.getDouble(i))
           }
         }
-      case (DType.FLOAT64, false) =>
+      case (DoubleType, false) =>
         for (i <- 0 until rows) {
           b.append(cv.getDouble(i))
         }
-      case (DType.STRING, true) =>
+      case (StringType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
             b.appendNull()
@@ -113,12 +111,32 @@ object HostColumnarToGpu {
             b.appendUTF8String(cv.getUTF8String(i).getBytes)
           }
         }
-      case (DType.STRING, false) =>
+      case (StringType, false) =>
         for (i <- 0 until rows) {
           b.appendUTF8String(cv.getUTF8String(i).getBytes)
         }
-      case (t, n) =>
-        throw new UnsupportedOperationException(s"Converting to GPU for ${t} is not currently " +
+      case (NullType, true) =>
+        for (_ <- 0 until rows) {
+          b.appendNull()
+        }
+      case (dt: DecimalType, nullable) =>
+        // Because DECIMAL64 is the only supported decimal DType, we can
+        // append unscaledLongValue instead of BigDecimal itself to speedup this conversion.
+        if (nullable) {
+          for (i <- 0 until rows) {
+            if (cv.isNullAt(i)) {
+              b.appendNull()
+            } else {
+              b.append(cv.getDecimal(i, DType.DECIMAL64_MAX_PRECISION, dt.scale).toUnscaledLong)
+            }
+          }
+        } else {
+          for (i <- 0 until rows) {
+            b.append(cv.getDecimal(i, DType.DECIMAL64_MAX_PRECISION, dt.scale).toUnscaledLong)
+          }
+        }
+      case (t, _) =>
+        throw new UnsupportedOperationException(s"Converting to GPU for $t is not currently " +
           s"supported")
     }
   }
@@ -142,7 +160,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     peakDevMemory: SQLMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
-    schema,
     goal,
     numInputRows,
     numInputBatches,
@@ -187,8 +204,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows += rows
   }
 
-  override def getColumnSizes(batch: ColumnarBatch): Array[Long] = {
-    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batchRowLimit)).toArray
+  override def getBatchDataSize(batch: ColumnarBatch): Long = {
+    schema.fields.indices.map(GpuBatchUtils.estimateGpuMemory(schema, _, batch.numRows())).sum
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
@@ -278,9 +295,12 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
     val totalTime = longMetric(TOTAL_TIME)
     val peakDevMemory = longMetric("peakDevMemory")
 
+    // cache in a local to avoid serializing the plan
+    val outputSchema = schema
+
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      new HostToGpuCoalesceIterator(iter, goal, schema,
+      new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
         totalTime, peakDevMemory, "HostColumnarToGpu")
     }

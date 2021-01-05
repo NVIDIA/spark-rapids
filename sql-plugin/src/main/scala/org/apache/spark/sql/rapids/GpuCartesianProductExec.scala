@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.util.{CompletionIterator, Utils}
 
@@ -49,6 +50,8 @@ class GpuSerializableBatch(batch: ColumnarBatch)
       if (internalBatch == null) {
         throw new IllegalStateException("Cannot re-serialize a batch this way...")
       } else {
+        val schemaArray = (0 until batch.numCols()).map(batch.column(_).dataType()).toArray
+        out.writeObject(schemaArray)
         val numRows = internalBatch.numRows()
         val columns = GpuColumnVector.extractBases(internalBatch).map(_.copyToHost())
         try {
@@ -66,12 +69,13 @@ class GpuSerializableBatch(batch: ColumnarBatch)
   private def readObject(in: ObjectInputStream): Unit = {
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
     withResource (new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
+      val schemaArray = in.readObject().asInstanceOf[Array[DataType]]
       withResource(JCudfSerialization.readTableFrom(in)) { tableInfo =>
         val tmp = tableInfo.getTable
         if (tmp == null) {
           throw new IllegalStateException("Empty Batch???")
         }
-        this.internalBatch = GpuColumnVector.from(tmp)
+        this.internalBatch = GpuColumnVector.from(tmp, schemaArray)
       }
     }
   }
@@ -106,6 +110,7 @@ class GpuCartesianPartition(
 class GpuCartesianRDD(
     sc: SparkContext,
     boundCondition: Option[GpuExpression],
+    outputSchema: Array[DataType],
     joinTime: SQLMetric,
     joinOutputRows: SQLMetric,
     numOutputRows: SQLMetric,
@@ -149,6 +154,7 @@ class GpuCartesianRDD(
         table,
         GpuBuildLeft,
         boundCondition,
+        outputSchema,
         joinTime,
         joinOutputRows,
         numOutputRows,
@@ -208,7 +214,7 @@ object GpuNoColumnCrossJoin extends Arm {
   def divideIntoBatches(
       table: Table,
       numTimes: Long,
-      targetSizeBytes: Long,
+      outputSchema: Array[DataType],
       numOutputRows: SQLMetric,
       numOutputBatches: SQLMetric): Iterator[ColumnarBatch] = {
     // TODO if we hit a point where we need to we can divide the data up into batches
@@ -217,7 +223,7 @@ object GpuNoColumnCrossJoin extends Arm {
     withResource(table.repeat(numTimes.toInt)) { repeated =>
       numOutputBatches += 1
       numOutputRows += repeated.getRowCount
-      Iterator(GpuColumnVector.from(repeated))
+      Iterator(GpuColumnVector.from(repeated, outputSchema))
     }
   }
 }
@@ -254,6 +260,7 @@ case class GpuCartesianProductExec(
     val joinOutputRows = longMetric("joinOutputRows")
     val filterTime = longMetric("filterTime")
     val totalTime = longMetric(TOTAL_TIME)
+    val outputSchema = output.map(_.dataType).toArray
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
 
@@ -283,6 +290,7 @@ case class GpuCartesianProductExec(
     } else {
       new GpuCartesianRDD(sparkContext,
         boundCondition,
+        outputSchema,
         joinTime,
         joinOutputRows,
         numOutputRows,

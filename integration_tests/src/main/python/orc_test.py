@@ -14,12 +14,12 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session, is_before_spark_310
+from spark_session import with_cpu_session, with_spark_session, is_before_spark_310, is_spark_300
 
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
@@ -30,10 +30,12 @@ def read_orc_sql(data_path):
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
-def test_basic_read(std_input_path, name, read_func, v1_enabled_list):
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl):
     assert_gpu_and_cpu_are_equal_collect(
             read_func(std_input_path + '/' + name),
-            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
+            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                  'spark.sql.orc.impl': orc_impl})
 
 orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -50,7 +52,7 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
  
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_path = spark_tmp_path + '/ORC_DATA'
     reader = read_func(data_path)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.orc(data_path))
@@ -151,55 +153,6 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list):
             lambda spark : spark.read.option('mergeSchema', 'true').orc(data_path),
             conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-orc_write_gens_list = [
-        [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-            string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-            TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))],
-        pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/139')),
-        pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/140'))]
-
-@pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
-def test_write_round_trip(spark_tmp_path, orc_gens):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
-    data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.orc(path),
-            lambda spark, path: spark.read.orc(path),
-            data_path)
-
-orc_part_write_gens = [
-        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
-        # Some file systems have issues with UTF8 strings so to help the test pass even there
-        StringGen('(\\w| ){0,50}'),
-        # Once https://github.com/NVIDIA/spark-rapids/issues/139 is fixed replace this with
-        # date_gen
-        DateGen(start=date(1590, 1, 1)),
-        # Once https://github.com/NVIDIA/spark-rapids/issues/140 is fixed replace this with
-        # timestamp_gen 
-        TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
-
-# There are race conditions around when individual files are read in for partitioned data
-@ignore_order
-@pytest.mark.parametrize('orc_gen', orc_part_write_gens, ids=idfn)
-def test_part_write_round_trip(spark_tmp_path, orc_gen):
-    gen_list = [('a', RepeatSeqGen(orc_gen, 10)),
-            ('b', orc_gen)]
-    data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').orc(path),
-            lambda spark, path: spark.read.orc(path),
-            data_path)
-
-orc_write_compress_options = ['none', 'uncompressed', 'snappy']
-@pytest.mark.parametrize('compress', orc_write_compress_options)
-def test_compress_write_round_trip(spark_tmp_path, compress):
-    data_path = spark_tmp_path + '/ORC_DATA'
-    assert_gpu_and_cpu_writes_are_equal_collect(
-            lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.orc(path),
-            lambda spark, path : spark.read.orc(path),
-            data_path,
-            conf={'spark.sql.orc.compression.codec': compress})
-
 @pytest.mark.xfail(
     condition=not(is_before_spark_310()),
     reason='https://github.com/NVIDIA/spark-rapids/issues/576')
@@ -218,3 +171,27 @@ def test_input_meta(spark_tmp_path):
                         'input_file_name()',
                         'input_file_block_start()',
                         'input_file_block_length()'))
+
+def setup_orc_file_no_column_names(spark):
+    drop_query = "DROP TABLE IF EXISTS test_orc_data"
+    create_query = "CREATE TABLE `test_orc_data` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc"
+    insert_query = "INSERT INTO test_orc_data VALUES(13, '155', 2020)"
+    spark.sql(drop_query).collect
+    spark.sql(create_query).collect
+    spark.sql(insert_query).collect
+
+def test_missing_column_names():
+    if is_spark_300():
+        pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
+
+    with_cpu_session(setup_orc_file_no_column_names)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM test_orc_data"))
+
+def test_missing_column_names_filter():
+    if is_spark_300():
+        pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
+
+    with_cpu_session(setup_orc_file_no_column_names)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM test_orc_data WHERE _col2 = '155'"))

@@ -71,18 +71,17 @@ BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 \
     --conf spark.sql.shuffle.partitions=12 \
     --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
     --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR} \
-    --conf spark.driver.extraJavaOptions=-Duser.timezone=GMT \
-    --conf spark.executor.extraJavaOptions=-Duser.timezone=GMT \
+    --conf spark.driver.extraJavaOptions=-Duser.timezone=UTC \
+    --conf spark.executor.extraJavaOptions=-Duser.timezone=UTC \
     --conf spark.sql.session.timeZone=UTC"
 MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=com.nvidia.spark.SQLPlugin \
     --class com.nvidia.spark.rapids.tests.mortgage.Main \
     $RAPIDS_TEST_JAR"
 
-RAPIDS_FILE_NAME=${RAPIDS_PLUGIN_JAR##*/}
 CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.concurrentPythonWorkers=2 \
-    --conf spark.executorEnv.PYTHONPATH=${RAPIDS_FILE_NAME} \
+    --conf spark.executorEnv.PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
     --conf spark.pyspark.python=/opt/conda/bin/python \
     --py-files ${RAPIDS_PLUGIN_JAR}" # explicitly specify python binary path in env w/ multiple python versions
 
@@ -100,5 +99,10 @@ jps
 echo "----------------------------START TEST------------------------------------"
 rm -rf $OUTPUT
 spark-submit $BASE_SPARK_SUBMIT_ARGS $SERIALIZER $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
-cd $RAPIDS_INT_TESTS_HOME && spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
+pushd $RAPIDS_INT_TESTS_HOME
+spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
 spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf
+popd
+stop-slave.sh
+stop-master.sh
+

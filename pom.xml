@@ -125,7 +125,7 @@
             </build>
         </profile>
         <profile>
-            <id>databricks</id>
+            <id>databricks301</id>
             <properties>
 	        <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
@@ -143,7 +143,7 @@
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>3.0.0</spark.version>
         <cuda.version>cuda10-1</cuda.version>
-        <cudf.version>0.16</cudf.version>
+        <cudf.version>0.17</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
@@ -159,6 +159,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
         <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
+        <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
         <rat.consoleOutput>false</rat.consoleOutput>
         <slf4j.version>1.7.30</slf4j.version>
         <spark300.version>3.0.0</spark300.version>
@@ -170,6 +171,7 @@
         <spark301.version>3.0.1</spark301.version>
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
         <spark310.version>3.1.0-SNAPSHOT</spark310.version>
+        <mockito.version>3.6.0</mockito.version>
     </properties>
 
     <dependencyManagement>
@@ -318,7 +320,7 @@
             <dependency>
               <groupId>org.mockito</groupId>
               <artifactId>mockito-core</artifactId>
-              <version>2.28.2</version>
+              <version>${mockito.version}</version>
               <scope>test</scope>
             </dependency>
         </dependencies>
@@ -439,7 +441,7 @@
                     <configuration>
                         <verbose>false</verbose>
                         <failOnViolation>true</failOnViolation>
-                        <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                        <includeTestSourceDirectory>false</includeTestSourceDirectory>
                         <failOnWarning>false</failOnWarning>
                         <sourceDirectory>${basedir}/src/main/scala</sourceDirectory>
                         <testSourceDirectory>${basedir}/src/test/scala</testSourceDirectory>
@@ -535,9 +537,10 @@
                             <target>
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${project.basedir}/../build/build-info"/>
+                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${user.dir}/build/build-info"/>
                                     <arg value="${project.version}"/>
+                                    <arg value="${cudf.version}"/>
                                 </exec>
                             </target>
                         </configuration>

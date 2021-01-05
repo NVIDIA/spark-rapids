@@ -40,18 +40,19 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 @SerialVersionUID(100L)
 class SerializeConcatHostBuffersDeserializeBatch(
     private val data: Array[SerializeBatchDeserializeHostBuffer],
     private val output: Seq[Attribute])
-  extends Serializable with AutoCloseable {
+  extends Serializable with Arm with AutoCloseable {
   @transient private val headers = data.map(_.header)
   @transient private val buffers = data.map(_.buffer)
   @transient private var batchInternal: ColumnarBatch = null
 
-  def batch: ColumnarBatch = {
+  def batch: ColumnarBatch = this.synchronized {
     if (batchInternal == null) {
       // TODO we should come up with a better way for this to happen directly...
       val out = new ByteArrayOutputStream()
@@ -68,16 +69,15 @@ class SerializeConcatHostBuffersDeserializeBatch(
     if (headers.length == 0) {
       import scala.collection.JavaConverters._
       // We didn't get any data back, but we need to write out an empty table that matches
-      val empty = GpuColumnVector.emptyBatch(output.asJava)
-      try {
-        JCudfSerialization.writeToStream(GpuColumnVector.extractBases(empty), out, 0, 0)
-      } finally {
-        empty.close()
+      withResource(GpuColumnVector.emptyHostColumns(output.asJava)) { hostVectors =>
+        JCudfSerialization.writeToStream(hostVectors, out, 0, 0)
       }
+      out.writeObject(output.map(_.dataType).toArray)
     } else if (headers.head.getNumColumns == 0) {
       JCudfSerialization.writeRowsToStream(out, numRows)
     } else {
       JCudfSerialization.writeConcatedStream(headers, buffers, out)
+      out.writeObject(output.map(_.dataType).toArray)
     }
   }
 
@@ -90,12 +90,12 @@ class SerializeConcatHostBuffersDeserializeBatch(
         val table = tableInfo.getTable
         if (table == null) {
           val numRows = tableInfo.getNumRows
-          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0))
-          batchInternal.setNumRows(numRows.toInt)
+          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows.toInt)
         } else {
+          val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
           // This is read as part of the broadcast join so we expect it to leak.
           (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
-          this.batchInternal = GpuColumnVector.from(table)
+          this.batchInternal = GpuColumnVector.from(table, colDataTypes)
         }
       } finally {
         tableInfo.close()
@@ -205,6 +205,10 @@ class GpuBroadcastMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: ConfKeysAndIncompat) extends
   SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {

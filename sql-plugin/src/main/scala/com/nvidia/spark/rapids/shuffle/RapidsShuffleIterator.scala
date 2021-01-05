@@ -21,12 +21,13 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
+import com.nvidia.spark.rapids.{Arm, GpuSemaphore, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.{RapidsShuffleFetchFailedException, RapidsShuffleTimeoutException}
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleMetricsUpdater}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
 
@@ -51,10 +52,11 @@ class RapidsShuffleIterator(
     transport: RapidsShuffleTransport,
     blocksByAddress: Array[(BlockManagerId, Seq[(BlockId, Long, Int)])],
     metricsUpdater: ShuffleMetricsUpdater,
+    sparkTypes: Array[DataType],
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
   extends Iterator[ColumnarBatch]
-    with Logging {
+    with Logging with Arm {
 
   /**
    * General trait encapsulating either a buffer or an error. Used to hand off batches
@@ -81,7 +83,8 @@ class RapidsShuffleIterator(
       blockManagerId: BlockManagerId,
       blockId: ShuffleBlockBatchId,
       mapIndex: Int,
-      errorMessage: String) extends ShuffleClientResult
+      errorMessage: String,
+      throwable: Throwable) extends ShuffleClientResult
 
   // when batches (or errors) arrive from the transport, the are pushed
   // to the `resolvedBatches` queue.
@@ -103,6 +106,10 @@ class RapidsShuffleIterator(
   // [[totalBathcesExpected]] must equal [[totalBatchesResolved]], as long as
   // [[pendingFetchesByAddress]] is empty, and there are no [[batchesInFlight]].
   private[this] var totalBatchesResolved: Long = 0L
+
+  // If the task finishes, and this iterator is releasing resources, we set this to true
+  // which allows us to reject incoming batches that would otherwise get leaked
+  private[this] var taskComplete: Boolean = false
 
   blocksByAddress.foreach(bba => {
     // expected blocks per address
@@ -180,8 +187,6 @@ class RapidsShuffleIterator(
           transport.makeClient(localExecutorId, blockManagerId)
         } catch {
           case t: Throwable => {
-            val errorMsg = s"Error getting client to fetch ${blockIds} from ${blockManagerId}: ${t}"
-            logError(errorMsg, t)
             val BlockIdMapIndex(firstId, firstMapIndex) = shuffleRequestsMapIndex.head
             throw new RapidsShuffleFetchFailedException(
               blockManagerId,
@@ -189,65 +194,70 @@ class RapidsShuffleIterator(
               firstId.mapId,
               firstMapIndex,
               firstId.startReduceId,
-              errorMsg)
+              s"Error getting client to fetch ${blockIds} from ${blockManagerId}",
+              t)
           }
         }
 
         val handler = new RapidsShuffleFetchHandler {
           private[this] var clientExpectedBatches = 0L
           private[this] var clientResolvedBatches = 0L
+
           def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
             if (expectedBatches == 0) {
               throw new IllegalStateException(
                 s"Received an invalid response from shuffle server: " +
-                  s"0 expected batches for $shuffleRequestsMapIndex")
+                    s"0 expected batches for $shuffleRequestsMapIndex")
             }
             pendingFetchesByAddress.remove(blockManagerId)
             batchesInFlight = batchesInFlight + expectedBatches
             totalBatchesExpected = totalBatchesExpected + expectedBatches
             clientExpectedBatches = expectedBatches
             logDebug(s"Task: $taskAttemptId Client $blockManagerId " +
-              s"Expecting $expectedBatches batches, $batchesInFlight batches currently in " +
-              s"flight, total expected by this client: $clientExpectedBatches, total resolved by " +
-              s"this client: $clientResolvedBatches")
+                s"Expecting $expectedBatches batches, $batchesInFlight batches currently in " +
+                s"flight, total expected by this client: $clientExpectedBatches, total " +
+                s"resolved by this client: $clientResolvedBatches")
           }
 
-          def batchReceived(bufferId: ShuffleReceivedBufferId): Unit =
+          def batchReceived(bufferId: ShuffleReceivedBufferId): Boolean =
             resolvedBatches.synchronized {
-              batchesInFlight = batchesInFlight - 1
-              val nvtxRange = new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)
-              try {
-                if (markedAsDone) {
-                  throw new IllegalStateException(
-                    "This iterator was marked done, but a batched showed up after!!")
-                }
-                totalBatchesResolved = totalBatchesResolved + 1
-                clientResolvedBatches = clientResolvedBatches + 1
-                resolvedBatches.offer(BufferReceived(bufferId))
+              if (taskComplete) {
+                false
+              } else {
+                batchesInFlight = batchesInFlight - 1
+                withResource(new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)) { _ =>
+                  if (markedAsDone) {
+                    throw new IllegalStateException(
+                      "This iterator was marked done, but a batched showed up after!!")
+                  }
+                  totalBatchesResolved = totalBatchesResolved + 1
+                  clientResolvedBatches = clientResolvedBatches + 1
+                  resolvedBatches.offer(BufferReceived(bufferId))
 
-                if (clientExpectedBatches == clientResolvedBatches) {
-                  logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
-                    s"done fetching batches. Total batches expected $clientExpectedBatches, " +
-                    s"total batches resolved $clientResolvedBatches.")
-                } else {
-                  logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
-                    s"NOT done fetching batches. Total batches expected $clientExpectedBatches, " +
-                    s"total batches resolved $clientResolvedBatches.")
+                  if (clientExpectedBatches == clientResolvedBatches) {
+                    logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
+                        s"done fetching batches. Total batches expected $clientExpectedBatches, " +
+                        s"total batches resolved $clientResolvedBatches.")
+                  } else {
+                    logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
+                        s"NOT done fetching batches. Total batches expected " +
+                        s"$clientExpectedBatches, total batches resolved $clientResolvedBatches.")
+                  }
                 }
-              } finally {
-                nvtxRange.close()
+                true
               }
             }
 
-          override def transferError(errorMessage: String): Unit = resolvedBatches.synchronized {
-            // If Spark detects a single fetch failure, the whole task has failed
-            // as per `FetchFailedException`. In the future `mapIndex` will come from the
-            // error callback.
-            shuffleRequestsMapIndex.map { case BlockIdMapIndex(id, mapIndex) =>
-              resolvedBatches.offer(TransferError(
-              blockManagerId, id, mapIndex, errorMessage))
+          override def transferError(errorMessage: String, throwable: Throwable): Unit =
+            resolvedBatches.synchronized {
+              // If Spark detects a single fetch failure, the whole task has failed
+              // as per `FetchFailedException`. In the future `mapIndex` will come from the
+              // error callback.
+              shuffleRequestsMapIndex.map { case BlockIdMapIndex(id, mapIndex) =>
+                resolvedBatches.offer(TransferError(
+                  blockManagerId, id, mapIndex, errorMessage, throwable))
+              }
             }
-          }
         }
 
         logInfo(s"Client $blockManagerId triggered, for ${shuffleRequestsMapIndex.size} blocks")
@@ -260,7 +270,8 @@ class RapidsShuffleIterator(
       s"${clients.size} clients.")
   }
 
-  private[this] def receiveBufferCleaner(): Unit = {
+  private[this] def receiveBufferCleaner(): Unit = resolvedBatches.synchronized {
+    taskComplete = true
     if (hasNext) {
       logWarning(s"Iterator for task ${taskAttemptId} closing, " +
           s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
@@ -325,7 +336,7 @@ class RapidsShuffleIterator(
           NvtxColor.PURPLE)
         try {
           sb = catalog.acquireBuffer(bufferId)
-          cb = sb.getColumnarBatch
+          cb = sb.getColumnarBatch(sparkTypes)
           metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
         } finally {
           nvtxRangeAfterGettingBatch.close()
@@ -335,18 +346,19 @@ class RapidsShuffleIterator(
           }
           catalog.removeBuffer(bufferId)
         }
-      case Some(TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage)) =>
+      case Some(
+        TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage, throwable)) =>
         taskContext.foreach(GpuSemaphore.releaseIfNecessary)
         metricsUpdater.update(blockedTime, 0, 0, 0)
-        val errorMsg = s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}"
-        logError(errorMsg)
-        throw new RapidsShuffleFetchFailedException(
+        val exp = new RapidsShuffleFetchFailedException(
           blockManagerId,
           shuffleBlockBatchId.shuffleId,
           shuffleBlockBatchId.mapId,
           mapIndex,
           shuffleBlockBatchId.startReduceId,
-          errorMsg)
+          s"Transfer error detected by shuffle iterator, failing task. ${errorMessage}",
+          throwable)
+        throw exp
       case None =>
         // NOTE: this isn't perfect, since what we really want is the transport to
         // bubble this error, but for now we'll make this a fatal exception.

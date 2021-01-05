@@ -25,6 +25,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPartitioning extends Partitioning with Arm {
@@ -45,16 +46,17 @@ trait GpuPartitioning extends Partitioning with Arm {
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // The first index will always be 0, so we need to skip it.
     val batches = if (numRows > 0) {
+      val dataTypes = partitionColumns.map(_.dataType())
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
       closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
         val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
         val contiguousTables = withResource(table)(t => t.contiguousSplit(parts: _*))
         GpuShuffleEnv.rapidsShuffleCodec match {
           case Some(codec) =>
-            compressSplits(splits, codec, contiguousTables)
+            compressSplits(splits, codec, contiguousTables, dataTypes)
           case None =>
             withResource(contiguousTables) { cts =>
-              cts.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct)) }
+              cts.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct, dataTypes)) }
             }
         }
         splits.toArray
@@ -124,7 +126,8 @@ trait GpuPartitioning extends Partitioning with Arm {
   def compressSplits(
       outputBatches: ArrayBuffer[ColumnarBatch],
       codec: TableCompressionCodec,
-      contiguousTables: Array[ContiguousTable]): Unit = {
+      contiguousTables: Array[ContiguousTable],
+      dataTypes: Array[DataType]): Unit = {
     withResource(codec.createBatchCompressor(maxCompressionBatchSize,
         Cuda.DEFAULT_STREAM)) { compressor =>
       // tracks batches with no data and the corresponding output index for the batch
@@ -134,7 +137,7 @@ trait GpuPartitioning extends Partitioning with Arm {
       contiguousTables.zipWithIndex.foreach { case (ct, i) =>
         if (ct.getTable.getRowCount == 0) {
           withResource(ct) { _ =>
-            emptyBatches.append((GpuColumnVector.from(ct.getTable), i))
+            emptyBatches.append((GpuColumnVector.from(ct.getTable, dataTypes), i))
           }
         } else {
           compressor.addTableToCompress(ct)
@@ -150,7 +153,7 @@ trait GpuPartitioning extends Partitioning with Arm {
           val numCompressedToAdd = emptyOutputIndex - outputIndex
           (0 until numCompressedToAdd).foreach { _ =>
             val compressedTable = compressedTables(compressedTableIndex)
-            outputBatches.append(GpuCompressedColumnVector.from(compressedTable))
+            outputBatches.append(GpuCompressedColumnVector.from(compressedTable, dataTypes))
             compressedTableIndex += 1
           }
           outputBatches.append(emptyBatch)
@@ -160,7 +163,7 @@ trait GpuPartitioning extends Partitioning with Arm {
         // add any compressed batches that remain after the last empty batch
         (compressedTableIndex until compressedTables.length).foreach { i =>
           val ct = compressedTables(i)
-          outputBatches.append(GpuCompressedColumnVector.from(ct))
+          outputBatches.append(GpuCompressedColumnVector.from(ct, dataTypes))
         }
       }
     }

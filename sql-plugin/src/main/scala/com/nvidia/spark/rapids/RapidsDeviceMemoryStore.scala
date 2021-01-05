@@ -20,6 +20,7 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -82,13 +83,8 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       // buffer is compressed so there is no Table.
       None
     } else {
-      val batch = MetaUtils.getBatchFromMeta(buffer, tableMeta) // REFCOUNT 1 + # COLS
       // hold the 1 ref count extra in buffer, it will be removed later in releaseResources
-      try {
-        Some(GpuColumnVector.from(batch)) // batch cols have 2 ref count
-      } finally {
-        batch.close() // cols should have single references
-      }
+      Some(MetaUtils.getTableFromMeta(buffer, tableMeta)) // REFCOUNT 1 + # COLS
     }
 
     val buff = new RapidsDeviceMemoryBuffer(
@@ -139,11 +135,12 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer
     }
 
-    override def getColumnarBatch: ColumnarBatch = {
+    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {
-        GpuColumnVectorFromBuffer.from(table.get, contigBuffer) //REFCOUNT ++ of all columns
+        //REFCOUNT ++ of all columns
+        GpuColumnVectorFromBuffer.from(table.get, contigBuffer, sparkTypes)
       } else {
-        columnarBatchFromDeviceBuffer(contigBuffer)
+        columnarBatchFromDeviceBuffer(contigBuffer, sparkTypes)
       }
     }
   }

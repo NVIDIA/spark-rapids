@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableArray
 
 import org.apache.spark.sql.rapids.TempSpillBufferId
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -64,7 +65,9 @@ class JustRowsColumnarBatch(numRows: Int) extends SpillableColumnarBatch {
  *       ownership of the life cycle of the batch.  So don't call this constructor directly please
  *       use `SpillableColumnarBatch.apply` instead.
  */
-class SpillableColumnarBatchImpl (id: TempSpillBufferId, rowCount: Int)
+class SpillableColumnarBatchImpl (id: TempSpillBufferId,
+    rowCount: Int,
+    sparkTypes: Array[DataType])
     extends  SpillableColumnarBatch with Arm {
   private var closed = false
 
@@ -97,7 +100,7 @@ class SpillableColumnarBatchImpl (id: TempSpillBufferId, rowCount: Int)
    */
   override def getColumnarBatch(): ColumnarBatch = {
     withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
-      rapidsBuffer.getColumnarBatch
+      rapidsBuffer.getColumnarBatch(sparkTypes)
     }
   }
 
@@ -124,9 +127,10 @@ object SpillableColumnarBatch extends Arm {
       batch.close()
       new JustRowsColumnarBatch(numRows)
     } else {
+      val types =  GpuColumnVector.extractTypes(batch)
       val id = TempSpillBufferId()
       addBatch(id, batch, priority)
-      new SpillableColumnarBatchImpl(id, numRows)
+      new SpillableColumnarBatchImpl(id, numRows, types)
     }
   }
 

@@ -83,14 +83,14 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
           try {
             if (numColumns > 0) {
               table = GpuColumnVector.from(batch)
-              (0 until numColumns).foreach(i => {
+              (0 until numColumns).zip(output).foreach{ case (i, attr) =>
                 val subVector = table.getColumn(i).subVector(0, remainingLimit)
                 assert(subVector != null)
-                resultCVs.append(GpuColumnVector.from(subVector))
+                resultCVs.append(GpuColumnVector.from(subVector, attr.dataType))
                 assert(subVector.getRowCount == remainingLimit,
                   s"result rowcount ${subVector.getRowCount} is not equal to the " +
                     s"remainingLimit $remainingLimit")
-              })
+              }
             }
             new ColumnarBatch(resultCVs.toArray, remainingLimit)
           } catch {

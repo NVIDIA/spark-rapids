@@ -17,12 +17,51 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant}
-import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StringType}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
+import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StructType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
+    extends UnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
+
+  lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
+
+  override def dataType: DataType = childSchema(ordinal).dataType
+  override def nullable: Boolean = child.nullable || childSchema(ordinal).nullable
+
+  override def toString: String = {
+    val fieldName = if (resolved) childSchema(ordinal).name else s"_$ordinal"
+    s"$child.${name.getOrElse(fieldName)}"
+  }
+
+  override def sql: String =
+    child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResourceIfAllowed(child.columnarEval(batch)) { input =>
+      val dt = dataType
+      input match {
+        case cv: GpuColumnVector =>
+          withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
+            GpuColumnVector.from(view.copyToColumnVector(), dt)
+          }
+        case null => null
+        case ir: InternalRow =>
+          // Literal struct values are not currently supported, but just in case...
+          val tmp = ir.get(ordinal, dt)
+          withResource(GpuScalar.from(tmp, dt)) { scalar =>
+            GpuColumnVector.from(scalar, batch.numRows(), dt)
+          }
+      }
+    }
+  }
+}
 
 class GpuGetArrayItemMeta(
     expr: GetArrayItem,
@@ -33,8 +72,19 @@ class GpuGetArrayItemMeta(
   import GpuOverrides._
 
   override def tagExprForGpu(): Unit = {
-    if (!isLit(expr.ordinal)) {
+    val litOrd = extractLit(expr.ordinal)
+    if (litOrd.isEmpty) {
       willNotWorkOnGpu("only literal ordinals are supported")
+    } else {
+      // Once literal array/struct types are supported this can go away
+      val ord = litOrd.get.value
+      if (ord == null || ord.asInstanceOf[Int] < 0) {
+        expr.dataType match {
+          case ArrayType(_, _) | MapType(_, _, _) | StructType(_) =>
+            willNotWorkOnGpu("negative and null indexes are not supported for nested types")
+          case _ =>
+        }
+      }
     }
   }
   override def convertToGpu(
@@ -42,13 +92,12 @@ class GpuGetArrayItemMeta(
       ordinal: Expression): GpuExpression =
     GpuGetArrayItem(arr, ordinal)
 
-  def isSupported(t: DataType) = t match {
-    // For now we will only do one level of array type support
-    case a : ArrayType => isSupportedType(a.elementType)
-    case _ => isSupportedType(t)
-  }
-
-  override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true,
+      allowArray = true,
+      allowStruct = true,
+      allowNesting = true)
 }
 
 /**
@@ -72,21 +121,27 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType.asInstanceOf[ArrayType].elementType
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): GpuColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
     // Need to handle negative indexes...
     if (ordinal.isValid && ordinal.getInt >= 0) {
-      GpuColumnVector.from(lhs.getBase.extractListElement(ordinal.getInt), lhs.dataType())
+      lhs.getBase.extractListElement(ordinal.getInt)
     } else {
-      withResource(Scalar.fromNull(GpuColumnVector.getRapidsType(dataType))) { nullScalar =>
-        GpuColumnVector.from(
-          ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt), lhs.dataType())
+      withResource(Scalar.fromNull(
+        GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
+        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
       }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
     }
   }
 }
@@ -110,12 +165,8 @@ class GpuGetMapValueMeta(
     key: Expression): GpuExpression =
     GpuGetMapValue(child, key)
 
-  def isSupported(t: DataType) = t match {
-    case MapType(StringType, StringType, _) => true
-    case StringType => true
-  }
-
-  override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t, allowStringMaps = true)
 }
 
 case class GpuGetMapValue(child: Expression, key: Expression)
@@ -137,17 +188,19 @@ case class GpuGetMapValue(child: Expression, key: Expression)
 
   override def prettyName: String = "getMapValue"
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: Scalar): GpuColumnVector = GpuColumnVector.from(
-    lhs.getBase.getMapValue(rhs), lhs.dataType())
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
+    lhs.getBase.getMapValue(rhs)
 
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
 
-  override def doColumnar(lhs: Scalar,
-    rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector,
-    rhs: GpuColumnVector): GpuColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def left: Expression = child

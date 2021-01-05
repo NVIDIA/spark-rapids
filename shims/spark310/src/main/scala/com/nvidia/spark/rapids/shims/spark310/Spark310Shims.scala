@@ -17,25 +17,26 @@
 package com.nvidia.spark.rapids.shims.spark310
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuOverrides.isSupportedType
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark310.RapidsShuffleManager
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
+import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, ShuffleManagerShimBase}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark310._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -80,21 +81,21 @@ class Spark310Shims extends Spark301Shims {
   override def isGpuHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuHashJoin => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
   override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffledHashJoinExec => true
-      case p => false
+      case _ => false
     }
   }
 
@@ -134,18 +135,20 @@ class Spark310Shims extends Spark301Shims {
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    Seq(
+    super.getExecs ++ Seq(
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+          override def isSupportedType(t: DataType): Boolean =
+            GpuOverrides.isSupportedType(t,
+              allowArray = true,
+              allowMaps = true,
+              allowStruct = true,
+              allowNesting = true)
+
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-          def isSupported(t: DataType) = t match {
-            case MapType(StringType, StringType, _) => true
-            case _ => isSupportedType(t)
-          }
-          override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
 
           override def convertToGpu(): GpuExec = {
@@ -167,8 +170,7 @@ class Spark310Shims extends Spark301Shims {
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
-              wrapped.tableIdentifier,
-              conf)
+              wrapped.tableIdentifier)(conf)
           }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
@@ -194,13 +196,8 @@ class Spark310Shims extends Spark301Shims {
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[WindowInPandasExec](
-          "The backend for Pandas UDF with window functions, it runs on CPU itself now but" +
-          " supports running the Python UDFs code on GPU when calling cuDF APIs in the UDF",
-      (winPy, conf, p, r) => new GpuWindowInPandasExecMeta(winPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now")
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
@@ -222,11 +219,6 @@ class Spark310Shims extends Spark301Shims {
             a.dataFilters,
             conf)
         }
-        def isSupported(t: DataType) = t match {
-          case MapType(StringType, StringType, _) => true
-          case _ => isSupportedType(t)
-        }
-        override def areAllSupportedTypes(types: DataType*): Boolean = types.forall(isSupported)
       }),
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
@@ -277,7 +269,7 @@ class Spark310Shims extends Spark301Shims {
   override def copyFileSourceScanExec(
       scanExec: GpuFileSourceScanExec,
       queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
-    scanExec.copy(queryUsesInputFile=queryUsesInputFile)
+    scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
@@ -289,5 +281,38 @@ class Spark310Shims extends Spark301Shims {
     } else {
       GpuColumnarToRowExec(plan)
     }
+  }
+
+  override def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan,
+      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
+    val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
+    GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
+  }
+
+  override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
+
+  override def sortOrder(
+      child: Expression,
+      direction: SortDirection,
+      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
+
+  override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
+    s.copy(child = child)
+  }
+
+  override def alias(child: Expression, name: String)(
+      exprId: ExprId,
+      qualifier: Seq[String],
+      explicitMetadata: Option[Metadata]): Alias = {
+    Alias(child, name)(exprId, qualifier, explicitMetadata)
   }
 }

@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuDataSourceRDD, GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -32,9 +32,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partition
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, FileSourceScanExec, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
-import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.execution.datasources.v2.DataSourceRDD
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
@@ -67,12 +65,13 @@ case class GpuFileSourceScanExec(
     optionalNumCoalescedBuckets: Option[Int],
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
-    @transient rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = false)
+    queryUsesInputFile: Boolean = false)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
 
   private val isParquetFileFormat: Boolean = relation.fileFormat.isInstanceOf[ParquetFileFormat]
   private val isPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled || !isParquetFileFormat
+
+  override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
@@ -469,8 +468,7 @@ case class GpuFileSourceScanExec(
         queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      new DataSourceRDD(relation.sparkSession.sparkContext, filePartitions,
-        factory, supportsColumnar)
+      new GpuDataSourceRDD(relation.sparkSession.sparkContext, filePartitions, factory)
     }
   }
 
@@ -522,7 +520,7 @@ case class GpuFileSourceScanExec(
         queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      new DataSourceRDD(relation.sparkSession.sparkContext, partitions, factory, supportsColumnar)
+      new GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, factory)
     }
   }
 
@@ -544,8 +542,7 @@ case class GpuFileSourceScanExec(
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, output),
       None,
-      rapidsConf,
-      queryUsesInputFile)
+      queryUsesInputFile)(rapidsConf)
   }
 }
 
@@ -553,7 +550,7 @@ object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     meta.wrapped.relation.fileFormat match {
       case _: CSVFileFormat => GpuReadCSVFileFormat.tagSupport(meta)
-      case _: OrcFileFormat => GpuReadOrcFileFormat.tagSupport(meta)
+      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => GpuReadOrcFileFormat.tagSupport(meta)
       case _: ParquetFileFormat => GpuReadParquetFileFormat.tagSupport(meta)
       case f =>
         meta.willNotWorkOnGpu(s"unsupported file format: ${f.getClass.getCanonicalName}")
@@ -563,7 +560,7 @@ object GpuFileSourceScanExec {
   def convertFileFormat(format: FileFormat): FileFormat = {
     format match {
       case _: CSVFileFormat => new GpuReadCSVFileFormat
-      case _: OrcFileFormat => new GpuReadOrcFileFormat
+      case f if GpuOrcFileFormat.isSparkOrcFormat(f) => new GpuReadOrcFileFormat
       case _: ParquetFileFormat => new GpuReadParquetFileFormat
       case f =>
         throw new IllegalArgumentException(s"${f.getClass.getCanonicalName} is not supported")

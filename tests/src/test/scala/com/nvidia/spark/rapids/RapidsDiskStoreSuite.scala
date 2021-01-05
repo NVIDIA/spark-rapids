@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
+import java.math.RoundingMode
 
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer, Table}
 import org.mockito.ArgumentMatchers
@@ -25,6 +26,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
+import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
 class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with MockitoSugar {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
@@ -42,6 +44,7 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1)
         .column("five", "two", null, null)
         .column(5.0, 2.0, 3.0, 1.0)
+        .decimal64Column(-5, RoundingMode.UNNECESSARY, 0, null, -1.4, 10.123)
         .build()) { table =>
       table.contiguousSplit()(0)
     }
@@ -82,6 +85,8 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
   }
 
   test("get columnar batch") {
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
     val bufferPath = bufferId.getDiskPath(null)
     assert(!bufferPath.exists)
@@ -96,14 +101,16 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
           addTableToStore(devStore, bufferId, spillPriority)
           val expectedBatch = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             assertResult(StorageTier.DEVICE)(buffer.storageTier)
-            buffer.getColumnarBatch
+            buffer.getColumnarBatch(sparkTypes)
           }
           withResource(expectedBatch) { expectedBatch =>
             devStore.synchronousSpill(0)
             hostStore.synchronousSpill(0)
             withResource(catalog.acquireBuffer(bufferId)) { buffer =>
               assertResult(StorageTier.DISK)(buffer.storageTier)
-              TestUtils.compareBatches(expectedBatch, buffer.getColumnarBatch)
+              withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
+                TestUtils.compareBatches(expectedBatch, actualBatch)
+              }
             }
           }
         }

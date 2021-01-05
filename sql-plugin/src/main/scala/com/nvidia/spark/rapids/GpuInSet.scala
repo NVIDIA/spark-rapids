@@ -33,9 +33,9 @@ case class GpuInSet(
 
   override def nullable: Boolean = child.nullable || list.contains(null)
 
-  override def doColumnar(haystack: GpuColumnVector): GpuColumnVector = {
+  override def doColumnar(haystack: GpuColumnVector): ColumnVector = {
     val needles = getNeedles
-    GpuColumnVector.from(haystack.getBase.contains(needles))
+    haystack.getBase.contains(needles)
   }
 
   private def getNeedles: ColumnVector = {

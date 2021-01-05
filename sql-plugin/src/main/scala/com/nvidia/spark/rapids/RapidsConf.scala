@@ -363,8 +363,11 @@ object RapidsConf {
 
   val GPU_BATCH_SIZE_BYTES = conf("spark.rapids.sql.batchSizeBytes")
     .doc("Set the target number of bytes for a GPU batch. Splits sizes for input data " +
-      "is covered by separate configs.")
+      "is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the " +
+      "cudf row count limit of a column.")
     .bytesConf(ByteUnit.BYTE)
+    .checkValue(v => v >= 0 && v <= Integer.MAX_VALUE,
+      s"Batch size must be positive and not exceed ${Integer.MAX_VALUE} bytes.")
     .createWithDefault(Integer.MAX_VALUE)
 
   val MAX_READER_BATCH_SIZE_ROWS = conf("spark.rapids.sql.reader.batchSizeRows")
@@ -424,6 +427,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
+      .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, " +
+          "setting this to true will force all parsing onto GPU even for formats that can " +
+          "result in incorrect results when parsing invalid inputs.")
+      .booleanConf
+      .createWithDefault(false)
+
   val IMPROVED_FLOAT_OPS = conf("spark.rapids.sql.improvedFloatOps.enabled")
     .doc("For some floating point operations spark uses one way to compute the value " +
       "and the underlying cudf implementation can use an improved algorithm. " +
@@ -446,6 +456,14 @@ object RapidsConf {
       "those operations if you know the query is only computing it once.")
     .booleanConf
     .createWithDefault(false)
+
+  val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
+      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
+          "less than 18 digits and is only supported by a small number of operations currently.  " +
+          "This can result in a lot of data movement to and from the GPU, which can slow down " +
+          "processing in some cases.")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
@@ -526,13 +544,16 @@ object RapidsConf {
       "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
-      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "This can be set to AUTO to select the reader we think is best. This will " +
       "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
-      "in the cloud. See spark.rapids.cloudSchemes.")
+      "in the cloud. See spark.rapids.cloudSchemes. " +
+      "The default is currently set to MULTITHREADED because the COALESCING reader " +
+      "does not handle partitioned data efficiently. If you aren't using partitioned data " +
+      "in a non cloud environment, the COALESCING reader would be a good choice.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(ParquetReaderType.values.map(_.toString))
-    .createWithDefault(ParquetReaderType.AUTO.toString)
+    .createWithDefault(ParquetReaderType.MULTITHREADED.toString)
 
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
@@ -759,6 +780,23 @@ object RapidsConf {
     .stringConf
     .createOptional
 
+  val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudfVersionOverride")
+    .internal()
+    .doc("Overrides the cudf version compatibility check between cudf jar and RAPIDS Accelerator " +
+      "jar. If you are sure that the cudf jar which is mentioned in the classpath is compatible " +
+      "with the RAPIDS Accelerator version, then set this to true.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ALLOW_DISABLE_ENTIRE_PLAN = conf("spark.rapids.allowDisableEntirePlan")
+    .internal()
+    .doc("The plugin has the ability to detect possibe incompatibility with some specific " +
+      "queries and cluster configurations. In those cases the plugin will disable GPU support " +
+      "for the entire query. Set this to false if you want to override that behavior, but use " +
+      "with caution.")
+    .booleanConf
+    .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -789,7 +827,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.16-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -911,6 +949,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
+  lazy val incompatDateFormats: Boolean = get(INCOMPATIBLE_DATE_FORMATS)
+
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
@@ -944,6 +984,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
+
+  lazy val decimalTypeEnabled: Boolean = get(DECIMAL_TYPE_ENABLED)
 
   lazy val explain: String = get(EXPLAIN)
 
@@ -1039,6 +1081,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
+
+  lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
+
+  lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 

@@ -18,9 +18,8 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BufferType, Cuda, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.format.{ColumnMeta, SubBufferMeta, TableMeta}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -30,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.{DataTypes, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -43,9 +42,11 @@ object ConcatAndConsumeAll {
    * blow up.
    * @param arrayOfBatches the batches to concat. This will be consumed and you do not need to
    *                       close any of the batches after this is called.
+   * @param schema the schema of the output types.
    * @return a single batch with all of them concated together.
    */
-  def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch]): ColumnarBatch = {
+  def buildNonEmptyBatch(arrayOfBatches: Array[ColumnarBatch],
+      schema: StructType): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
       arrayOfBatches(0)
     } else {
@@ -53,7 +54,7 @@ object ConcatAndConsumeAll {
       try {
         val combined = Table.concatenate(tables: _*)
         try {
-          GpuColumnVector.from(combined)
+          GpuColumnVector.from(combined, GpuColumnVector.extractTypes(schema))
         } finally {
           combined.close()
         }
@@ -125,11 +126,13 @@ object RequireSingleBatch extends CoalesceGoal {
   override def toString: String = "RequireSingleBatch"
 }
 
-case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal
+case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal {
+  require(targetSizeBytes <= Integer.MAX_VALUE,
+    "Target cannot exceed 2GB without checks for cudf row count limit")
+}
 
 abstract class AbstractGpuCoalesceIterator(
     iter: Iterator[ColumnarBatch],
-    schema: StructType,
     goal: CoalesceGoal,
     numInputRows: SQLMetric,
     numInputBatches: SQLMetric,
@@ -160,11 +163,6 @@ abstract class AbstractGpuCoalesceIterator(
    * Remove whatever is on deck and return it.
    */
   protected def popOnDeck(): ColumnarBatch
-
-  /** We need to track the sizes of string columns to make sure we don't exceed 2GB */
-  private val stringFieldIndices: Array[Int] = schema.fields.zipWithIndex
-      .filter(_._1.dataType == DataTypes.StringType)
-      .map(_._2)
 
   /** Optional row limit */
   var batchRowLimit: Int = 0
@@ -213,13 +211,6 @@ abstract class AbstractGpuCoalesceIterator(
   def addBatchToConcat(batch: ColumnarBatch): Unit
 
   /**
-   * Calculate (or estimate) the size of each column in a batch in bytes.
-   *
-   * @return Array of column sizes in bytes
-   */
-  def getColumnSizes(batch: ColumnarBatch): Array[Long]
-
-  /**
    * Called after all of the batches have been added in.
    *
    * @return the concated batches on the GPU.
@@ -234,19 +225,22 @@ abstract class AbstractGpuCoalesceIterator(
   /**
    * Gets the size in bytes of the data buffer for a given column
    */
-  def getColumnDataSize(cb: ColumnarBatch, index: Int, defaultSize: Long): Long = {
-    cb.column(index) match {
-      case g: GpuColumnVector =>
-        val buff = g.getBase.getDeviceBufferFor(BufferType.DATA)
-        if (buff == null) 0 else buff.getLength
-      case h: RapidsHostColumnVector =>
-        val buff = h.getBase.getHostBufferFor(BufferType.DATA)
-        if (buff == null) 0 else buff.getLength
-      case g: GpuCompressedColumnVector =>
-        val columnMeta = g.getTableMeta.columnMetas(index)
-        columnMeta.data().length()
-      case _ =>
-        defaultSize
+  def getBatchDataSize(cb: ColumnarBatch): Long = {
+    if (cb.numCols() > 0) {
+      cb.column(0) match {
+        case g: GpuColumnVectorFromBuffer =>
+          g.getBuffer.getLength
+        case _: GpuColumnVector =>
+          (0 until cb.numCols()).map {
+            i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize
+          }.sum
+        case g: GpuCompressedColumnVector =>
+          g.getBuffer.getLength
+        case g =>
+          throw new IllegalStateException(s"Unexpected column type: $g")
+      }
+    } else {
+      0
     }
   }
 
@@ -268,18 +262,12 @@ abstract class AbstractGpuCoalesceIterator(
     try {
       var numRows: Long = 0 // to avoid overflows
       var numBytes: Long = 0
-      var columnSizes: Array[Long] = schema.fields.indices.map(_ => 0L).toArray
-      var stringColumnSizes: Array[Long] = stringFieldIndices.map(_ => 0L)
 
       // check if there is a batch "on deck" from a previous call to next()
       if (hasOnDeck) {
         val batch = popOnDeck()
         numRows += batch.numRows()
-        columnSizes = getColumnSizes(batch)
-        numBytes += columnSizes.sum
-        stringColumnSizes = stringFieldIndices.map(i => getColumnDataSize(batch, i, columnSizes(i)))
-            .zip(stringColumnSizes)
-            .map(pair => pair._1 + pair._2)
+        numBytes += getBatchDataSize(batch)
         addBatch(batch)
       }
 
@@ -292,25 +280,12 @@ abstract class AbstractGpuCoalesceIterator(
           // filter out empty batches
           if (nextRows > 0) {
             numInputRows += nextRows
-            val nextColumnSizes = getColumnSizes(cb)
-            val nextBytes = nextColumnSizes.sum
+            val nextBytes = getBatchDataSize(cb)
 
             // calculate the new sizes based on this input batch being added to the current
             // output batch
             val wouldBeRows = numRows + nextRows
             val wouldBeBytes = numBytes + nextBytes
-            val wouldBeColumnSizes = columnSizes.zip(nextColumnSizes).map(pair => pair._1 + pair._2)
-
-            // CuDF has a hard limit on the size of string data in a column so we check to make
-            // sure that the string columns each use no more than Int.MaxValue bytes. This check is
-            // overly cautious because the calculated size includes the offset bytes. When nested
-            // types are supported, this logic will need to be enhanced to take offset and validity
-            // buffers into account since they could account for a larger percentage of overall
-            // memory usage.
-            val wouldBeStringColumnSizes =
-            stringFieldIndices.map(i => getColumnDataSize(cb, i, wouldBeColumnSizes(i)))
-                .zip(stringColumnSizes)
-                .map(pair => pair._1 + pair._2)
 
             if (wouldBeRows > Int.MaxValue) {
               if (goal == RequireSingleBatch) {
@@ -322,21 +297,15 @@ abstract class AbstractGpuCoalesceIterator(
             } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
               saveOnDeck(cb)
             } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
-              saveOnDeck(cb)
-            } else if (wouldBeStringColumnSizes.exists(size => size > Int.MaxValue)) {
-              if (goal == RequireSingleBatch) {
-                throw new IllegalStateException("A single batch is required for this operation," +
-                    s" but cuDF only supports ${Int.MaxValue} bytes in a single string column." +
-                    s" At least ${wouldBeStringColumnSizes.max} are in a single column in this" +
-                    s" partition. Please try increasing your partition count.")
-              }
+              // There are no explicit checks for the concatenate result exceeding the cudf 2^31
+              // row count limit for any column. We are relying on cudf's concatenate to throw
+              // an exception if this occurs and limiting performance-oriented goals to under
+              // 2GB data total to avoid hitting that error.
               saveOnDeck(cb)
             } else {
               addBatch(cb)
               numRows = wouldBeRows
               numBytes = wouldBeBytes
-              columnSizes = wouldBeColumnSizes
-              stringColumnSizes = wouldBeStringColumnSizes
             }
           } else {
             cb.close()
@@ -370,7 +339,7 @@ abstract class AbstractGpuCoalesceIterator(
 }
 
 // Remove this iterator when contiguous_split supports nested types
-class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
+class GpuCoalesceIteratorNoSpill(iter: Iterator[ColumnarBatch],
   schema: StructType,
   goal: CoalesceGoal,
   maxDecompressBatchMemory: Long,
@@ -384,7 +353,6 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
   peakDevMemory: SQLMetric,
   opName: String)
   extends AbstractGpuCoalesceIterator(iter,
-    schema,
     goal,
     numInputRows,
     numInputBatches,
@@ -395,6 +363,7 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
     totalTime,
     opName) with Arm {
 
+  private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
   private var batches: ArrayBuffer[ColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
@@ -426,46 +395,12 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
     }
   }
 
-  private def getUncompressedColumnSizes(tableMeta: TableMeta): Array[Long] = {
-    val numCols = tableMeta.columnMetasLength
-    val columnMeta = new ColumnMeta
-    val subBufferMetaObj = new SubBufferMeta
-    val sizes = new Array[Long](numCols)
-    (0 until numCols).foreach { i =>
-      tableMeta.columnMetas(columnMeta, i)
-      var subBuffer = columnMeta.data(subBufferMetaObj)
-      if (subBuffer != null) {
-        sizes(i) += subBuffer.length
-      }
-      subBuffer = columnMeta.offsets(subBufferMetaObj)
-      if (subBuffer != null) {
-        sizes(i) += subBuffer.length
-      }
-      subBuffer = columnMeta.validity(subBufferMetaObj)
-      if (subBuffer != null) {
-        sizes(i) += subBuffer.length
-      }
-    }
-    sizes
-  }
-
-  override def getColumnSizes(cb: ColumnarBatch): Array[Long] = {
-    if (!isBatchCompressed(cb)) {
-      GpuColumnVector.extractBases(cb).map(_.getDeviceMemorySize)
-    } else {
-      val compressedVector = cb.column(0).asInstanceOf[GpuCompressedColumnVector]
-      val tableMeta = compressedVector.getTableMeta
-      require(tableMeta.columnMetasLength == cb.numCols)
-      getUncompressedColumnSizes(tableMeta)
-    }
-  }
-
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     decompressBatches()
     val tmp = batches.toArray
     // Clear the buffer so we don't close it again (buildNonEmptyBatch closed it for us).
     batches = ArrayBuffer.empty
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(tmp)
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(tmp, schema)
     // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     ret
@@ -493,7 +428,8 @@ class GpuCoalesceIteratorForMaps(iter: Iterator[ColumnarBatch],
             val cv = compressedVecs(outputIndex)
             val batchIndex = compressedBatchIndices(outputIndex)
             val compressedBatch = batches(batchIndex)
-            batches(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
+            batches(batchIndex) =
+                MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
             compressedBatch.close()
           }
         }
@@ -535,7 +471,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     peakDevMemory: SQLMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
-    schema,
     goal,
     numInputRows,
     numInputBatches,
@@ -546,6 +481,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalTime,
     opName) with Arm {
 
+  private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
   private val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
@@ -556,14 +492,6 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit =
     batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
-
-  override def getColumnSizes(cb: ColumnarBatch): Array[Long] = {
-    if (!GpuCompressedColumnVector.isBatchCompressed(cb)) {
-      GpuColumnVector.extractBases(cb).map(_.getDeviceMemorySize)
-    } else {
-      GpuCompressedColumnVector.getUncompressedColumnSizes(cb)
-    }
-  }
 
   private[this] var codec: TableCompressionCodec = _
 
@@ -597,7 +525,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
               val cv = compressedVecs(outputIndex)
               val batchIndex = compressedBatchIndices(outputIndex)
               val compressedBatch = wip(batchIndex)
-              wip(batchIndex) = MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta)
+              wip(batchIndex) =
+                  MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
               compressedBatch.close()
             }
           }
@@ -608,7 +537,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(popAllDecompressed())
+    val ret = ConcatAndConsumeAll.buildNonEmptyBatch(popAllDecompressed(), schema)
     // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret) * 2
     ret
@@ -675,21 +604,30 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val totalTime = longMetric(TOTAL_TIME)
     val peakDevMemory = longMetric("peakDevMemory")
 
+    // cache in local vars to avoid serializing the plan
+    val outputSchema = schema
+    val decompressMemoryTarget = maxDecompressBatchMemory
+    val cannotSpill = child.schema.fields.exists { f =>
+      f.dataType match {
+        case MapType(_, _, _) | ArrayType(_, _) | StructType(_) => true
+        case _ => false
+      }
+    }
+
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
-      val hasMaps = child.schema.fields.exists(field => field.dataType.isInstanceOf[MapType])
-      if (child.schema.nonEmpty && !hasMaps) {
-        new GpuCoalesceIterator(iter, schema, goal, maxDecompressBatchMemory,
-          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
-      } else if (hasMaps) {
-        new GpuCoalesceIteratorForMaps(iter, schema, goal, maxDecompressBatchMemory,
-          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
-      } else {
+      if (outputSchema.isEmpty) {
         val numRows = iter.map(_.numRows).sum
         val combinedCb = new ColumnarBatch(Array.empty, numRows)
         Iterator.single(combinedCb)
+      } else if (cannotSpill) {
+        new GpuCoalesceIteratorNoSpill(iter, outputSchema, goal, decompressMemoryTarget,
+          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
+          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
+      } else {
+        new GpuCoalesceIterator(iter, outputSchema, goal, decompressMemoryTarget,
+          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
+          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
       }
     }
   }

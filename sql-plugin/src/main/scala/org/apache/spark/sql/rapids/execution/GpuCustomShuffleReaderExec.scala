@@ -16,7 +16,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, ShimLoader}
-import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_TOTAL_TIME, TOTAL_TIME}
+import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_PARTITIONS, DESCRIPTION_PARTITION_SIZE, DESCRIPTION_TOTAL_TIME, NUM_PARTITIONS, PARTITION_SIZE, TOTAL_TIME}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -47,6 +47,10 @@ case class GpuCustomShuffleReaderExec(
    * The Spark version of this operator does not output any metrics.
    */
   override lazy val metrics: Map[String, SQLMetric] = Map(
+    PARTITION_SIZE ->
+        SQLMetrics.createSizeMetric(sparkContext, DESCRIPTION_PARTITION_SIZE),
+    NUM_PARTITIONS ->
+        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_PARTITIONS),
     TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME)
   )
 

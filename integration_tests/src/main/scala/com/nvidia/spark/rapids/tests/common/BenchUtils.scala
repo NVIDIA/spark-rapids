@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.tests.common
 
-import java.io.{File, FileOutputStream, FileWriter, PrintWriter}
+import java.io.{File, FileOutputStream, FileWriter, PrintWriter, StringWriter}
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeUnit.NANOSECONDS
@@ -46,7 +46,7 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean
-  ): Unit = {
+  ): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -67,7 +67,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -88,7 +88,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -109,7 +109,7 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): Unit = {
+      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -143,67 +143,88 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean
-  ): Unit = {
+  ): BenchmarkReport = {
 
     assert(iterations > 0)
 
     val queryStartTime = Instant.now()
 
     val queryPlansWithMetrics = new ListBuffer[SparkPlanNode]()
+    val exceptions = new ListBuffer[String]()
 
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
+      spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
+      
+      // cause Spark to call unregisterShuffle
+      if (i > 0 && gcBetweenRuns) {
+        // we must null out the dataframe reference to allow
+        // GC to clean up the shuffle
+        df = null
+        System.gc()
+        System.gc()
+      }
 
-      // capture spark plan metrics on the final run
-      if (i+1 == iterations) {
-        spark.listenerManager.register(new BenchmarkListener(queryPlansWithMetrics))
+      // capture spark plan metrics on the first run
+      if (i == 0) {
+        spark.listenerManager.register(new BenchmarkListener(queryPlansWithMetrics, exceptions))
       }
 
       println(s"*** Start iteration $i:")
       val start = System.nanoTime()
-      df = createDataFrame(spark)
+      try {
+        df = createDataFrame(spark)
 
-      resultsAction match {
-        case Collect() => df.collect()
-        case WriteCsv(path, mode, options) =>
-          df.write.mode(mode).options(options).csv(path)
-        case WriteOrc(path, mode, options) =>
-          df.write.mode(mode).options(options).orc(path)
-        case WriteParquet(path, mode, options) =>
-          df.write.mode(mode).options(options).parquet(path)
-      }
+        resultsAction match {
+          case Collect() => df.collect()
+          case WriteCsv(path, mode, options) =>
+            ensureValidColumnNames(df).write.mode(mode).options(options).csv(path)
+          case WriteOrc(path, mode, options) =>
+            ensureValidColumnNames(df).write.mode(mode).options(options).orc(path)
+          case WriteParquet(path, mode, options) =>
+            ensureValidColumnNames(df).write.mode(mode).options(options).parquet(path)
+        }
 
-      val end = System.nanoTime()
-      val elapsed = NANOSECONDS.toMillis(end - start)
-      queryTimes.append(elapsed)
-      println(s"*** Iteration $i took $elapsed msec.")
+        val end = System.nanoTime()
+        val elapsed = NANOSECONDS.toMillis(end - start)
+        queryTimes.append(elapsed)
+        println(s"*** Iteration $i took $elapsed msec.")
 
-      // cause Spark to call unregisterShuffle
-      if (gcBetweenRuns) {
-        System.gc()
-        System.gc()
+      } catch {
+        case e: Exception =>
+          val end = System.nanoTime()
+          val elapsed = NANOSECONDS.toMillis(end - start)
+          println(s"*** Iteration $i failed after $elapsed msec.")
+          queryTimes.append(-1)
+          exceptions.append(BenchUtils.toString(e))
+          e.printStackTrace()
       }
     }
 
-    // summarize all query times
-    for (i <- 0 until iterations) {
-      println(s"Iteration $i took ${queryTimes(i)} msec.")
-    }
+    // only show query times if there were no failed queries
+    if (!queryTimes.contains(-1)) {
 
-    // for multiple runs, summarize cold/hot timings
-    if (iterations > 1) {
-      println(s"Cold run: ${queryTimes(0)} msec.")
-      val hotRuns = queryTimes.drop(1)
-      val numHotRuns = hotRuns.length
-      println(s"Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
-      println(s"Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
-      println(s"Average of $numHotRuns hot run(s): " +
-          s"${hotRuns.sum.toDouble / numHotRuns} msec.")
+      // summarize all query times
+      for (i <- 0 until iterations) {
+        println(s"Iteration $i took ${queryTimes(i)} msec.")
+      }
+
+      // for multiple runs, summarize cold/hot timings
+      if (iterations > 1) {
+        println(s"Cold run: ${queryTimes(0)} msec.")
+        val hotRuns = queryTimes.drop(1)
+        val numHotRuns = hotRuns.length
+        println(s"Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
+        println(s"Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
+        println(s"Average of $numHotRuns hot run(s): " +
+            s"${hotRuns.sum.toDouble / numHotRuns} msec.")
+      }
     }
 
     // write results to file
-    val filename = s"$filenameStub-${queryStartTime.toEpochMilli}.json"
+    val suffix = if (exceptions.isEmpty) "" else "-failed"
+    val filename = s"$filenameStub-${queryStartTime.toEpochMilli}$suffix.json"
     println(s"Saving benchmark report to $filename")
 
     // try not to leak secrets
@@ -236,7 +257,8 @@ object BenchUtils {
         queryDescription,
         queryPlan,
         queryPlansWithMetrics,
-        queryTimes)
+        queryTimes,
+        exceptions)
 
       case w: WriteCsv => BenchmarkReport(
         filename,
@@ -248,7 +270,8 @@ object BenchUtils {
         queryDescription,
         queryPlan,
         queryPlansWithMetrics,
-        queryTimes)
+        queryTimes,
+        exceptions)
 
       case w: WriteOrc => BenchmarkReport(
         filename,
@@ -260,7 +283,8 @@ object BenchUtils {
         queryDescription,
         queryPlan,
         queryPlansWithMetrics,
-        queryTimes)
+        queryTimes,
+        exceptions)
 
       case w: WriteParquet => BenchmarkReport(
         filename,
@@ -272,10 +296,34 @@ object BenchUtils {
         queryDescription,
         queryPlan,
         queryPlansWithMetrics,
-        queryTimes)
+        queryTimes,
+        exceptions)
     }
 
     writeReport(report, filename)
+
+    report
+  }
+
+  /**
+   * Replace any invalid column names with c0, c1, and so on so that there are no columns with
+   * names based on expressions such as "round((sun_sales1 / sun_sales2), 2)". This is necessary
+   * when writing query output to Parquet.
+   */
+  private def ensureValidColumnNames(df: DataFrame): DataFrame = {
+    def isColumnStart(ch: Char) = ch.isLetter || ch == '_'
+    def isColumnPart(ch: Char) = ch.isLetterOrDigit || ch == '_'
+    def isValid(name: String) = name.length > 0 &&
+        isColumnStart(name.charAt(0)) &&
+        name.substring(1).toCharArray.forall(isColumnPart)
+    val renameColumnExprs = df.columns.zipWithIndex.map {
+      case (name, i) => if (isValid(name)) {
+        col(name)
+      } else {
+        col(name).as("c" + i)
+      }
+    }
+    df.select(renameColumnExprs: _*)
   }
 
   def readReport(file: File): BenchmarkReport = {
@@ -316,7 +364,6 @@ object BenchUtils {
       case _ => df
     }
   }
-
 
   /**
    * Generate a DOT graph for one query plan, or showing differences between two query plans.
@@ -614,37 +661,49 @@ object BenchUtils {
       case (a, b) => a == b
     }
   }
+
+  def toString(e: Exception): String = {
+    val sw = new StringWriter()
+    val w = new PrintWriter(sw)
+    e.printStackTrace(w)
+    w.close()
+    sw.toString
+  }
 }
 
-class BenchmarkListener(list: ListBuffer[SparkPlanNode]) extends QueryExecutionListener {
+class BenchmarkListener(
+    queryPlans: ListBuffer[SparkPlanNode],
+    exceptions: ListBuffer[String]) extends QueryExecutionListener {
 
   override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
-    def toJson(plan: SparkPlan): SparkPlanNode = {
-      plan match {
-        case WholeStageCodegenExec(child) => toJson(child)
-        case InputAdapter(child) => toJson(child)
-        case _ =>
-          val children: Seq[SparkPlanNode] = plan match {
-            case s: AdaptiveSparkPlanExec => Seq(toJson(s.executedPlan))
-            case s: QueryStageExec => Seq(toJson(s.plan))
-            case _ => plan.children.map(child => toJson(child))
-          }
-          val metrics: Seq[SparkSQLMetric] = plan.metrics
-              .map(m => SparkSQLMetric(m._1, m._2.metricType, m._2.value)).toSeq
-
-          SparkPlanNode(
-            plan.id,
-            plan.nodeName,
-            plan.simpleStringWithNodeId(),
-            metrics,
-            children)
-      }
-    }
-    list += toJson(qe.executedPlan)
+    queryPlans += toJson(qe.executedPlan)
   }
 
   override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit = {
-    exception.printStackTrace()
+    queryPlans += toJson(qe.executedPlan)
+    exceptions += BenchUtils.toString(exception)
+  }
+
+  private def toJson(plan: SparkPlan): SparkPlanNode = {
+    plan match {
+      case WholeStageCodegenExec(child) => toJson(child)
+      case InputAdapter(child) => toJson(child)
+      case _ =>
+        val children: Seq[SparkPlanNode] = plan match {
+          case s: AdaptiveSparkPlanExec => Seq(toJson(s.executedPlan))
+          case s: QueryStageExec => Seq(toJson(s.plan))
+          case _ => plan.children.map(child => toJson(child))
+        }
+        val metrics: Seq[SparkSQLMetric] = plan.metrics
+            .map(m => SparkSQLMetric(m._1, m._2.metricType, m._2.value)).toSeq
+
+        SparkPlanNode(
+          plan.id,
+          plan.nodeName,
+          plan.simpleStringWithNodeId(),
+          metrics,
+          children)
+    }
   }
 }
 
@@ -668,7 +727,8 @@ case class BenchmarkReport(
     query: String,
     queryPlan: QueryPlan,
     queryPlans: Seq[SparkPlanNode],
-    queryTimes: Seq[Long])
+    queryTimes: Seq[Long],
+    exceptions: Seq[String])
 
 /** Configuration options that affect how the tests are run */
 case class TestConfiguration(

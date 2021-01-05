@@ -24,6 +24,7 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, Nv
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object RapidsBufferStore {
@@ -271,7 +272,7 @@ abstract class RapidsBufferStore(
       isValid
     }
 
-    override def getColumnarBatch: ColumnarBatch = {
+    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       // NOTE: Cannot hold a lock on this buffer here because memory is being
       // allocated. Allocations can trigger synchronous spills which can
       // deadlock if another thread holds the device store lock and is trying
@@ -284,16 +285,17 @@ abstract class RapidsBufferStore(
           case _ => throw new IllegalStateException(
             "must override getColumnarBatch if not providing a host buffer")
         }
-        columnarBatchFromDeviceBuffer(deviceBuffer)
+        columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
 
-    protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer): ColumnarBatch = {
+    protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer,
+        sparkTypes: Array[DataType]): ColumnarBatch = {
       val bufferMeta = meta.bufferMeta()
       if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
-        MetaUtils.getBatchFromMeta(devBuffer, meta)
+        MetaUtils.getBatchFromMeta(devBuffer, meta, sparkTypes)
       } else {
-        GpuCompressedColumnVector.from(devBuffer, meta)
+        GpuCompressedColumnVector.from(devBuffer, meta, sparkTypes)
       }
     }
 

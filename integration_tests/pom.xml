@@ -33,9 +33,9 @@
     </properties>
     <profiles>
         <profile>
-            <id>spark300dbtests</id>
+            <id>spark301dbtests</id>
             <properties>
-                <spark.test.version>3.0.0-databricks</spark.test.version>
+                <spark.test.version>3.0.1-databricks</spark.test.version>
             </properties>
         </profile>
         <profile>
@@ -90,7 +90,7 @@
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>
             <classifier>${cuda.version}</classifier>
-	    <scope>provided</scope>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -112,6 +112,9 @@
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
                     <descriptors>
                         <descriptor>src/assembly/bin.xml</descriptor>
                     </descriptors>
@@ -125,26 +128,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <artifactId>maven-assembly-plugin</artifactId>
-
-                <configuration>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                </configuration>
-
-                <executions>
-                    <execution>
-                        <id>make-assembly</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>single</goal>
-                        </goals>
-                    </execution>
-                </executions>
-
             </plugin>
             <!-- disable surefire as we are using scalatest only -->
             <plugin>
@@ -165,6 +148,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
+                <configuration>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -216,8 +202,9 @@
                             <environmentVariables>
                                 <SKIP_TESTS>${skipTests}</SKIP_TESTS>
                                 <TEST>${test}</TEST>
-				<COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
-				<TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
+                                <COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
+                                <TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
+                                <TEST_PARALLEL>${pytest.TEST_PARALLEL}</TEST_PARALLEL>
                             </environmentVariables>
                         </configuration>
                     </execution>

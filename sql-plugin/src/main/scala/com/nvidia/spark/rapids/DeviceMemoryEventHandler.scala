@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.lang.management.ManagementFactory
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange, RmmEventHandler}
+import ai.rapids.cudf.{NvtxColor, NvtxRange, Rmm, RmmEventHandler}
 import com.sun.management.HotSpotDiagnosticMXBean
 
 import org.apache.spark.internal.Logging
@@ -44,11 +44,11 @@ class DeviceMemoryEventHandler(
       val nvtx = new NvtxRange("onAllocFailure", NvtxColor.RED)
       try {
         val storeSize = store.currentSize
-        logInfo(s"Device allocation of $allocSize bytes failed," +
-            s" device store has $storeSize bytes")
+        logInfo(s"Device allocation of $allocSize bytes failed, device store has " +
+            s"$storeSize bytes. Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
         if (storeSize == 0) {
-          logWarning("Device store exhausted, unable to satisfy "
-              + s"allocation of $allocSize bytes")
+          logWarning(s"Device store exhausted, unable to allocate $allocSize bytes. " +
+              s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
           oomDumpDir.foreach(heapDump)
           return false
         }

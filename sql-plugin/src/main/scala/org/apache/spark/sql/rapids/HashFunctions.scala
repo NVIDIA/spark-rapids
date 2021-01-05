@@ -28,12 +28,9 @@ case class GpuMd5(child: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
   override def dataType: DataType = StringType
 
-  override def doColumnar(input: GpuColumnVector): GpuColumnVector = {
-    val fullResult = ColumnVector.md5Hash(input.getBase)
-    try {
-      GpuColumnVector.from(fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase))
-    } finally {
-      fullResult.close()
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    withResource(ColumnVector.md5Hash(input.getBase)) { fullResult =>
+      fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
     }
   }
 }

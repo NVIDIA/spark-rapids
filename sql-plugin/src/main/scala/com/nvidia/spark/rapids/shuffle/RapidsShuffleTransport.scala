@@ -61,47 +61,6 @@ class AddressLengthTag(val address: Long, var length: Long, val tag: Long,
   }
 
   /**
-   * Copy to a destination [[AddressLengthTag]]
-   * @param dstAlt the destination [[AddressLengthTag]]
-   * @param srcOffset the offset to start copying from
-   * @param toCopy amount to copy to dstAlt
-   * @return amount of bytes copied
-   */
-  def cudaCopyTo(dstAlt: AddressLengthTag, srcOffset: Long, toCopy: Long): Long = {
-    require(srcOffset + toCopy <= length,
-      "Attempting to copy more bytes than the source buffer provides")
-    require(toCopy <= length,
-      "Attempting to copy more than this buffer can hold.")
-    CudaUtil.copy(
-      memoryBuffer.get,
-      srcOffset,
-      dstAlt.memoryBuffer.get,
-      0,
-      toCopy)
-    toCopy
-  }
-
-  /**
-   * Copy from a source [[AddressLengthTag]]
-   * @param srcAlt the source [[AddressLengthTag]]
-   * @param dstOffset the offset in which to start copying from
-   * @return amount of bytes copied
-   */
-  def cudaCopyFrom(srcAlt: AddressLengthTag, dstOffset: Long): Long = {
-    require(dstOffset + srcAlt.length <= length,
-      s"Attempting to copy to a buffer that isn't big enough! $dstOffset + ${srcAlt.length} " +
-        s"(${dstOffset+srcAlt.length}) <= ${length}")
-    // TODO: replace this with an async copy on target stream
-    CudaUtil.copy(
-      srcAlt.memoryBuffer.get,
-      0,
-      memoryBuffer.get,
-      dstOffset,
-      srcAlt.length)
-    srcAlt.length
-  }
-
-  /**
    * A bounce buffer at the end of the transfer needs to be sized with the remaining
    * amount. This method is used to communicate that last length.
    * @param newLength the truncated length of this buffer for the transfer
@@ -426,19 +385,6 @@ trait RapidsShuffleTransport extends AutoCloseable {
    * to be received, and a hard limit on the number of buffers set by the caller
    * using `totalRequired`.
    *
-   * This function blocks if it can't satisfy the bounce buffer request.
-   *
-   * @param remaining amount of bytes remaining in the receive
-   * @param totalRequired maximum no. of buffers that should be returned
-   * @return a sequence of bounce buffers
-   */
-  def getReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer]
-
-  /**
-   * Get receive bounce buffers needed for a receive, limited by the amount of bytes
-   * to be received, and a hard limit on the number of buffers set by the caller
-   * using `totalRequired`.
-   *
    * This function is non blocking. If it can't satisfy the bounce buffer request, an empty
    * sequence is returned.
    *
@@ -446,28 +392,7 @@ trait RapidsShuffleTransport extends AutoCloseable {
    * @param totalRequired maximum no. of buffers that should be returned
    * @return a sequence of bounce buffers, or empty if the request can't be satisfied
    */
-  def tryGetReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[MemoryBuffer]
-
-  /**
-   * Free receive bounce buffers. These may be pooled and so reused by other requests.
-   * @param bounceBuffers the bounce buffers to free
-   */
-  def freeReceiveBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit
-
-  /**
-   * Get send bounce buffers needed for a receive, limited by the amount of bytes
-   * to be sent, and a hard limit on the number of buffers set by the caller
-   * using `totalRequired`.
-   *
-   * This function blocks if it can't satisfy the bounce buffer request.
-   *
-   * @param deviceMemory true: returns a device buffer, false: returns a host buffer
-   * @param remaining amount of bytes remaining in the receive
-   * @param totalRequired maximum no. of buffers that should be returned
-   * @return a sequence of bounce buffers
-   */
-  def getSendBounceBuffers(deviceMemory: Boolean, remaining: Long,
-      totalRequired: Int): Seq[MemoryBuffer]
+  def tryGetReceiveBounceBuffers(remaining: Long, totalRequired: Int): Seq[BounceBuffer]
 
   /**
    * Get send bounce buffers needed for a receive, limited by the amount of bytes
@@ -477,19 +402,13 @@ trait RapidsShuffleTransport extends AutoCloseable {
    * This function is non blocking. If it can't satisfy the bounce buffer request, an empty
    * sequence is returned.
    *
-   * @param deviceMemory true: returns a device buffer, false: returns a host buffer
    * @param remaining amount of bytes remaining in the receive
    * @param totalRequired maximum no. of buffers that should be returned
-   * @return a sequence of bounce buffers, or empty if the request can't be satisfied
+   * @return a sequence of send bounce buffers, or empty if the request can't be satisfied
+   * @note the send bounce buffer object most likely includes both a device buffer and a host
+   *       memory buffer, since sends can come from the device or the host.
    */
-  def tryGetSendBounceBuffers(deviceMemory: Boolean, remaining: Long,
-      totalRequired: Int): Seq[MemoryBuffer]
-
-  /**
-   * Free send bounce buffers. These may be pooled and so reused by other requests.
-   * @param bounceBuffers the bounce buffers to free
-   */
-  def freeSendBounceBuffers(bounceBuffers: Seq[MemoryBuffer]): Unit
+  def tryGetSendBounceBuffers(remaining: Long, totalRequired: Int): Seq[SendBounceBuffers]
 }
 
 /**

@@ -135,6 +135,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
+        case GpuColumnarToRowExec(plan, _) => // Codegen disabled
+          assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
         case a: AdaptiveSparkPlanExec =>
           assert(a.toString.startsWith("AdaptiveSparkPlan isFinalPlan=true"))
           assert(a.executedPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
@@ -172,6 +177,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
+        case GpuColumnarToRowExec(plan, _) => // codegen disabled
+          assert(plan.isInstanceOf[GpuSortExec])
+          assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
+          assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
+          assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
+
         case a: AdaptiveSparkPlanExec =>
           assert(a.toString.startsWith("AdaptiveSparkPlan isFinalPlan=true"))
           assert(a.executedPlan.find(_.isInstanceOf[GpuSortExec]).isDefined)
@@ -179,7 +190,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(a.executedPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
         case _ =>
-          fail("Incorrect plan")
+          fail(s"Incorrect plan $gpuPlan")
       }
 
     }, conf)
@@ -272,10 +283,9 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.agg(avg(lit("abc")),avg(lit("pqr")))
   }
 
-  testExpectedExceptionStartsWith(
+  testExpectedException[AnalysisException](
       "avg literals bools fail",
-      classOf[AnalysisException],
-      "cannot resolve",
+      _.getMessage.startsWith("cannot resolve"),
       longsFromCSVDf,
       conf = floatAggConf) {
     frame => frame.agg(avg(lit(true)),avg(lit(false)))
@@ -1539,10 +1549,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   if (spark.SPARK_VERSION_SHORT < "3.1.0") {
     // A test that verifies that Distinct with Filter is not supported on the CPU or the GPU.
-    testExpectedExceptionStartsWith(
+    testExpectedException[AnalysisException](
         "Avg Distinct with filter - unsupported on CPU and GPU",
-        classOf[AnalysisException],
-        "DISTINCT and FILTER cannot be used in aggregate functions at the same time",
+        _.getMessage.startsWith(
+          "DISTINCT and FILTER cannot be used in aggregate functions at the same time"),
         longsFromCSVDf, conf = floatAggConf) {
       frame => frame.selectExpr("avg(distinct longs) filter (where longs < 5)")
     }

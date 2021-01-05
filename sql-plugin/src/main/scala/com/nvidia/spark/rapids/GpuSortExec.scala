@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLa
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
@@ -39,6 +40,10 @@ class GpuSortMeta(
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans(0).convertIfNeeded())
+
+  override def isSupportedType(t: DataType): Boolean =
+    GpuOverrides.isSupportedType(t,
+      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
@@ -84,13 +89,14 @@ case class GpuSortExec(
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sortTime = longMetric("sortTime")
+    val peakDevMemory = longMetric("peakDevMemory")
 
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
       val sorter = createBatchGpuSorter()
       val sortedIterator = sorter.sort(cbIter)
       sortTime += sorter.getSortTimeNanos
-      metrics("peakDevMemory") += sorter.getPeakMemoryUsage
+      peakDevMemory += sorter.getPeakMemoryUsage
       sortedIterator
     }
   }
@@ -160,18 +166,22 @@ class GpuColumnarBatchSorter(
       private def sortBatch(inputBatch: ColumnarBatch): ColumnarBatch = {
         val nvtxRange = initNvtxRange
         try {
+          var outputTypes: Seq[DataType] = Nil
           var inputTbl: Table = null
           var inputCvs: Seq[GpuColumnVector] = Nil
           try {
             if (sortOrder.nonEmpty) {
               inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
               inputTbl = new cudf.Table(inputCvs.map(_.getBase): _*)
+              outputTypes = sortOrder.map(_.child.dataType) ++
+                  GpuColumnVector.extractTypes(inputBatch)
             } else if (inputBatch.numCols() > 0) {
               inputTbl = GpuColumnVector.from(inputBatch)
+              outputTypes = GpuColumnVector.extractTypes(inputBatch)
             }
             val orderByArgs = getOrderArgs(inputTbl)
             val startTimestamp = System.nanoTime()
-            val batch = doGpuSort(inputTbl, orderByArgs)
+            val batch = doGpuSort(inputTbl, orderByArgs, outputTypes)
             updateMetricValues(inputTbl, startTimestamp, batch)
             batch
           } finally {
@@ -244,11 +254,12 @@ class GpuColumnarBatchSorter(
 
   private def doGpuSort(
       tbl: Table,
-      orderByArgs: Seq[Table.OrderByArg]): ColumnarBatch = {
+      orderByArgs: Seq[Table.OrderByArg],
+      types: Seq[DataType]): ColumnarBatch = {
     var resultTbl: cudf.Table = null
     try {
       resultTbl = tbl.orderBy(orderByArgs: _*)
-      GpuColumnVector.from(resultTbl, numSortCols, resultTbl.getNumberOfColumns)
+      GpuColumnVector.from(resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
     } finally {
       if (resultTbl != null) {
         resultTbl.close()

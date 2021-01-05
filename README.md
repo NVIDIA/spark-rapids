@@ -55,7 +55,9 @@ the "verify" phase of maven.  We recommend when building at least running to the
 mvn verify
 ```
 
-Tests are described [here](./docs/testing.md).
+## Testing 
+
+Tests are described [here](tests/README.md).
 
 ## Integration
 The RAPIDS Accelerator For Apache Spark does provide some APIs for doing zero copy data

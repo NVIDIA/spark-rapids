@@ -5,7 +5,7 @@ are intended to be able to be run against any Spark-compatible cluster/release t
 verify that the plugin is doing the right thing in as many cases as possible.
 
 There are two sets of tests here. The pyspark tests are described here. The scala tests
-are described [here](../docs/testing.md)
+are described [here](../tests/README.md)
 
 ## Dependencies
 
@@ -27,41 +27,121 @@ Should be enough to get the basics started.
 ### pandas
 `pip install pandas`
 
-`pandas` is a fast, powerful, flexible and easy to use open source data analysis and manipulation tool.
+`pandas` is a fast, powerful, flexible and easy to use open source data analysis and manipulation tool and is
+only needed when testing integration with pandas.
 
 ### pyarrow
 `pip install pyarrow`
 
-`pyarrow` provides a Python API for functionality provided by the Arrow C++ libraries, along with tools for Arrow integration and interoperability with pandas, NumPy, and other software in the Python ecosystem.
+`pyarrow` provides a Python API for functionality provided by the Arrow C++ libraries, along with tools for Arrow
+integration and interoperability with pandas, NumPy, and other software in the Python ecosystem. This is used
+to test improved transfer performance to pandas based user defined functions.
+
+## pytest-xdist and findspark
+
+`pytest-xdist` and `findspark` can be used to speed up running the tests by running them in parallel.
 
 ## Running
 
-Running the tests follows the pytest conventions, the main difference is using
-`spark-submit` to launch the tests instead of pytest.
+Tests will run as a part of the maven build if you have the environment variable `SPARK_HOME` set.
 
-```
-$SPARK_HOME/bin/spark-submit ./runtests.py
+The suggested way to run these tests is to use the shell-script file located in the
+ integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes 
+care of some of the flags that are required to run the tests which will have to be set for the 
+plugin to work. It will be very useful to read the contents of the 
+[run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight 
+into what is needed as we constantly keep working on to improve and expand the plugin-support.
+
+The python tests run with pytest and the script honors pytest parameters. Some handy flags are:
+- `-k` <pytest-file-name>. This will run all the tests in that test file.
+- `-k` <test-name>. This will also run an individual test.
+- `-s` Doesn't capture the output and instead prints to the screen.
+- `-v` Increase the verbosity of the tests
+- `-r fExXs` Show extra test summary info as specified by chars: (f)ailed, (E)rror, (x)failed, (X)passed, (s)kipped
+- For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
+
+By default the tests try to use the python packages `pytest-xdist` and `findspark` to oversubscribe
+your GPU and run the tests in Spark local mode. This can speed up these tests significantly as all
+of the tests that run by default process relatively small amounts of data. Be careful because if
+you have `SPARK_CONF_DIR` also set the tests will try to use whatever cluster you have configured.
+If you do want to run the tests in parallel on an existing cluster it is recommended that you set
+`-Dpytest.TEST_PARALLEL` to one less than the number of worker applications that will be
+running on the cluster.  This is because `pytest-xdist` will launch one control application that
+is not included in that number. All it does is farm out work to the other applications, but because
+it needs to know about the Spark cluster to determine which tests to run and how it still shows up
+as a Spark application.
+
+To run the tests separate from the build go to the `integration_tests` directory. You can submit
+`runtests.py` through `spark-submit`, but if you want to run the tests in parallel with
+`pytest-xdist` you will need to submit it as a regular python application and have `findspark`
+installed.  Be sure to include the necessary jars for the RAPIDS plugin either with
+`spark-submit` or with the cluster when it is 
+[setup](../docs/get-started/getting-started-on-prem.md).
+The command line arguments to `runtests.py` are the same as for 
+[pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
+is that `spark-submit` uses python if the file name ends with `.py`.
+
+If you want to configure the Spark cluster you may also set environment variables for the tests.
+The name of the env var should be in the form `"PYSP_TEST_" + conf_key.replace('.', '_')`. Linux
+does not allow '.' in the name of an environment variable so we replace it with an underscore. As
+Spark configs avoid this character we have no other special processing.
+
+We also have a large number of integration tests that currently run as a part of the unit tests
+using scala test. Those are in the `src/test/scala` sub-directory and depend on the testing
+framework from the `rapids-4-spark-tests_2.12` test jar.
+
+You can run these tests against a cluster similar to how you can run `pytests` against an
+existing cluster. To do this you need to launch a cluster with the plugin jars on the
+classpath. The tests will enable and disable the plugin as they run.
+
+Next you need to copy over some test files to whatever distributed file system you are using.
+The test files are everything under `./integration_tests/src/test/resources/`  Be sure to note
+where you placed them because you will need to tell the tests where they are.
+
+When running these tests you will need to include the test jar, the integration test jar,
+scala-test and scalactic. You can find scala-test and scalactic under `~/.m2/repository`.
+
+It is recommended that you use `spark-shell` and the scalatest shell to run each test
+individually, so you don't risk running unit tests along with the integration tests.
+http://www.scalatest.org/user_guide/using_the_scalatest_shell
+
+```shell 
+spark-shell --jars rapids-4-spark-tests_2.12-0.3.0-tests.jar,rapids-4-spark-integration-tests_2.12-0.3.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
-See `pytest -h` or `$SPARK_HOME/bin/spark-submit ./runtests.py -h` for more options.
+First you import the `scalatest_shell` and tell the tests where they can find the test files you
+just copied over.
+
+```scala
+import org.scalatest._
+com.nvidia.spark.rapids.TestResourceFinder.setPrefix(PATH_TO_TEST_FILES)
+```
+
+Next you can start to run the tests.
+
+```scala
+durations.run(new com.nvidia.spark.rapids.JoinsSuite)
+...
+```
 
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
-If just want to verify the SQL replacement is working you will need to add the `rapids-4-spark` and `cudf` jars to your `spark-submit` command.
+If you just want to verify the SQL replacement is working you will need to add the
+`rapids-4-spark` and `cudf` jars to your `spark-submit` command. Note the following
+example assumes CUDA 10.1 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.16.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
 
-All of the tests will run in a single application.  They just enable and disable the plugin as needed.
 
 You do need to have access to a compatible GPU with the needed CUDA drivers. The exact details of how to set this up are beyond the scope of this document, but the Spark feature for scheduling GPUs does make this very simple if you have it configured.
 
 ### Runtime Environment
 
 `--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks` and `emr`. This is generally used
-when certain environments have different behavior.
+when certain environments have different behavior, and the tests don't have a good way to auto-detect the environment yet.
 
 ### timezone
 
@@ -70,23 +150,45 @@ To make sure that the tests work properly you need to configure your cluster or 
 The python framework cannot always do this for you because it risks overwriting other java options in the config.
 Please be sure that the following configs are set when running the tests.
 
-  * `spark.driver.extraJavaOptions` should include `-Duser.timezone=GMT`
-  * `spark.executor.extraJavaOptions` should include `-Duser.timezone=GMT`
+  * `spark.driver.extraJavaOptions` should include `-Duser.timezone=UTC`
+  * `spark.executor.extraJavaOptions` should include `-Duser.timezone=UTC`
   * `spark.sql.session.timeZone`=`UTC`
 
-### Enabling TPCxBB/TPCH/Mortgage Tests
+### Running in parallel
 
-The TPCxBB, TPCH, and Mortgage tests in this framework can be enabled by providing a couple of options:
+You may use `pytest-xdist` to run the tests in parallel. This is done by running the tests through `python`, not `spark-submit`,
+and setting the parallelism with the `-n` command line parameter. Be aware that `pytest-xdist` will launch one control application
+and the given number of worker applications, so your cluster needs to be large enough to handle one more application than the parallelism
+you set. Most tests are small and don't need even a full GPU to run. So setting your applications to use a single executor and a single
+GPU per executor is typically enough. When running from maven we assume that we are running in local mode and will try to
+oversubscribe a single GPU.  Typically we find that the tests don't need more than 2GB of GPU memory so we can speed up the tests significantly
+by doing this. It is not easy nor recommended to try and configure an actual cluster so you can oversubscribe GPUs.  Please don't try it.
+
+Under YARN and Kubernetes you can set `spark.executor.instances` to the number of executors you want running in your application
+(1 typically). Spark will auto launch a driver for each application too, but if you configured it correctly that would not take
+any GPU resources on the cluster. For standalone, Mesos, and Kubernetes you can set `spark.cores.max` to one more than the number
+of executors you want to use per application. The extra core is for the driver. Dynamic allocation can mess with these settings
+under YARN and even though it is off by default you probably want to be sure it is disabled (spark.dynamicAllocation.enabled=false).
+
+### Enabling TPCxBB/TPCH/TPCDS/Mortgage Tests
+
+The TPCxBB, TPCH, TPCDS, and Mortgage tests in this framework can be enabled by providing a couple of options:
 
    * TPCxBB `tpcxbb-format` (optional, defaults to "parquet"), and `tpcxbb-path` (required, path to the TPCxBB data).
    * TPCH `tpch-format` (optional, defaults to "parquet"), and `tpch-path` (required, path to the TPCH data).
+   * TPCDS `tpcds-format` (optional, defaults to "parquet"), and `tpcds-path` (required, path to the TPCDS data).
    * Mortgage `mortgage-format` (optional, defaults to "parquet"), and `mortgage-path` (required, path to the Mortgage data).
 
-As an example, here is the `spark-submit` command with the TPCxBB parameters:
+As an example, here is the `spark-submit` command with the TPCxBB parameters on CUDA 10.1:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.16.jar,rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar,rapids-4-spark-tests_2.12-0.3.0.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
 ```
+
+Be aware that running these tests with read data requires at least an entire GPU, and preferable several GPUs/executors
+in your cluster so please be careful when enabling these tests.  Also some of these test actually produce non-deterministic
+results when run in a real cluster. If you do see failures when running these tests please contact us so we can investigate
+them and possibly tag the tests appropriately when running on an actual cluster.
 
 ### Enabling cudf_udf Tests
 
@@ -106,12 +208,11 @@ To run cudf_udf tests, need following configuration changes:
    * Decrease `spark.rapids.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
    * Add `spark.rapids.python.concurrentPythonWorkers` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
 
-As an example, here is the `spark-submit` command with the cudf_udf parameter:
+As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 10.1:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar,cudf-0.16.jar,rapids-4-spark-tests_2.12-0.3.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.3.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.2.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar,rapids-4-spark-tests_2.12-0.3.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.3.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.3.0.jar" ./runtests.py --cudf_udf
 ```
-
 
 ## Writing tests
 

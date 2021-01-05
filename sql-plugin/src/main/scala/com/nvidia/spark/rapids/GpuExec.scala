@@ -33,6 +33,8 @@ object GpuMetricNames {
   val NUM_INPUT_BATCHES = "numInputBatches"
   val NUM_OUTPUT_ROWS = "numOutputRows"
   val NUM_OUTPUT_BATCHES = "numOutputBatches"
+  val PARTITION_SIZE = "partitionSize"
+  val NUM_PARTITIONS = "numPartitions"
   val TOTAL_TIME = "totalTime"
   val PEAK_DEVICE_MEMORY = "peakDevMemory"
 
@@ -41,13 +43,14 @@ object GpuMetricNames {
   val DESCRIPTION_NUM_INPUT_BATCHES = "number of input columnar batches"
   val DESCRIPTION_NUM_OUTPUT_ROWS = "number of output rows"
   val DESCRIPTION_NUM_OUTPUT_BATCHES = "number of output columnar batches"
+  val DESCRIPTION_PARTITION_SIZE = "partition data size"
+  val DESCRIPTION_NUM_PARTITIONS = "number of partitions"
   val DESCRIPTION_TOTAL_TIME = "total time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
 
   def buildGpuScanMetrics(sparkContext: SparkContext): Map[String, SQLMetric] = {
     Map(
       NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
-      TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
       GPU_DECODE_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU decode time"),
       BUFFER_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time"),
       PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,

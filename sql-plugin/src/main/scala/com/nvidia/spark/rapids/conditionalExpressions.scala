@@ -37,11 +37,8 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
 
       // TODO: This null replacement is no longer necessary when
       // https://github.com/rapidsai/cudf/issues/3856 is fixed.
-      val falseScalar = Scalar.fromBool(false)
-      try {
-        GpuColumnVector.from(p.getBase.replaceNulls(falseScalar))
-      } finally {
-        falseScalar.close()
+      withResource(Scalar.fromBool(false)) { falseScalar =>
+        GpuColumnVector.from(p.getBase.replaceNulls(falseScalar), BooleanType)
       }
     } finally {
       predicate match {
@@ -56,30 +53,24 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       predicateExpr: Expression,
       trueExpr: Expression,
       falseValues: GpuColumnVector): GpuColumnVector = {
-    val predicate = computePredicate(batch, predicateExpr)
-    try {
+    withResource(computePredicate(batch, predicateExpr)) { predicate =>
       val trueResult: Any = trueExpr.columnarEval(batch)
       try {
         val result = trueResult match {
           case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValues.getBase)
           case t: Scalar => predicate.getBase.ifElse(t, falseValues.getBase)
           case t =>
-            val tscalar = GpuScalar.from(t, trueExpr.dataType)
-            try {
+            withResource(GpuScalar.from(t, trueExpr.dataType)) { tscalar =>
               predicate.getBase.ifElse(tscalar, falseValues.getBase)
-            } finally {
-              tscalar.close()
             }
         }
-        GpuColumnVector.from(result)
+        GpuColumnVector.from(result, dataType)
       } finally {
         trueResult match {
           case a: AutoCloseable => a.close()
           case _ =>
         }
       }
-    } finally {
-      predicate.close()
     }
   }
 
@@ -88,30 +79,24 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       predicateExpr: Expression,
       trueExpr: Expression,
       falseValue: Scalar): GpuColumnVector = {
-    val predicate = computePredicate(batch, predicateExpr)
-    try {
+    withResource(computePredicate(batch, predicateExpr)) { predicate =>
       val trueResult: Any = trueExpr.columnarEval(batch)
       try {
         val result = trueResult match {
           case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValue)
           case t: Scalar => predicate.getBase.ifElse(t, falseValue)
           case t =>
-            val tscalar = GpuScalar.from(t, trueExpr.dataType)
-            try {
+            withResource(GpuScalar.from(t, trueExpr.dataType)) { tscalar =>
               predicate.getBase.ifElse(tscalar, falseValue)
-            } finally {
-              tscalar.close()
             }
         }
-        GpuColumnVector.from(result)
+        GpuColumnVector.from(result, dataType)
       } finally {
         trueResult match {
           case a: AutoCloseable => a.close()
           case _ =>
         }
       }
-    } finally {
-      predicate.close()
     }
   }
 
@@ -126,11 +111,8 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
         case f: GpuColumnVector => computeIfElse(batch, predicateExpr, trueExpr, f)
         case f: Scalar => computeIfElse(batch, predicateExpr, trueExpr, f)
         case f =>
-          val scalar = GpuScalar.from(f, falseExpr.dataType)
-          try {
+          withResource(GpuScalar.from(f, falseExpr.dataType)) { scalar =>
             computeIfElse(batch, predicateExpr, trueExpr, scalar)
-          } finally {
-            scalar.close()
           }
       }
     } finally {

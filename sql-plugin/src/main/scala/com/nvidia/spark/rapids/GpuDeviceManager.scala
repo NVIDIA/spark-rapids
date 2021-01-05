@@ -127,6 +127,7 @@ object GpuDeviceManager extends Logging {
   }
 
   def shutdown(): Unit = synchronized {
+    RapidsBufferCatalog.close()
     Rmm.shutdown()
     singletonMemoryInitialized = false
   }
@@ -243,6 +244,12 @@ object GpuDeviceManager extends Logging {
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} " +
           s"initial size = ${toMB(initialAllocation)} MB, " +
           s"max size = ${toMB(maxAllocation)} MB on gpuId $gpuId")
+
+      if (Cuda.isPtdsEnabled()) {
+        logInfo("Using per-thread default stream")
+      } else {
+        logInfo("Using legacy default stream")
+      }
 
       try {
         Cuda.setDevice(gpuId)

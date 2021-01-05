@@ -14,10 +14,11 @@
 
 import pytest
 
+from spark_session import is_before_spark_310
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from pyspark.sql.types import *
 from marks import *
+from pyspark.sql.types import *
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
 
@@ -78,6 +79,7 @@ def meta_idfn(meta):
         return meta + idfn(something)
     return tmp
 
+@pytest.mark.xfail(condition=not(is_before_spark_310()), reason='https://github.com/NVIDIA/spark-rapids/issues/999')
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
@@ -142,12 +144,14 @@ def test_multi_types_window_aggs_for_rows(a_gen, b_gen, c_gen):
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
+
 # Test for RANGE queries, with timestamp order-by expressions.
 # Non-timestamp order-by columns are currently unsupported for RANGE queries.
 # See https://github.com/NVIDIA/spark-rapids/issues/216
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_timestamps,
-                                      _grpkey_longs_with_nullable_timestamps], ids=idfn)
+                                      pytest.param(_grpkey_longs_with_nullable_timestamps)],
+                                      ids=idfn)
 def test_window_aggs_for_ranges(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
