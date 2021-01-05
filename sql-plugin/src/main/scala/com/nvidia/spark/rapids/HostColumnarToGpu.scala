@@ -127,6 +127,7 @@ object HostColumnarToGpu {
             if (cv.isNullAt(i)) {
               b.appendNull()
             } else {
+              // The precision here matters for cpu column vectors (such as OnHeapColumnVector).
               b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
             }
           }
