@@ -62,7 +62,8 @@ case class GpuMurmur3Hash(child: Seq[Expression]) extends GpuExpression {
           }
         }
       }
-      GpuColumnVector.from(ColumnVector.spark32BitMurmurHash3(42, columns.toArray[ColumnView]), dataType)
+      GpuColumnVector.from(
+        ColumnVector.spark32BitMurmurHash3(42, columns.toArray[ColumnView]), dataType)
     } finally {
       columns.safeClose()
     }
