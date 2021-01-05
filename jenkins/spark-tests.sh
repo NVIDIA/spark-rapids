@@ -24,36 +24,35 @@ nvidia-smi
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Dmaven.repo.local=$WORKSPACE/.m2 \
-    $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
-    -Ddest=$ARTF_ROOT"
+    $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 # maven download SNAPSHOT jars: cudf, rapids-4-spark, spark3.0
-$MVN_GET_CMD \
+$MVN_GET_CMD -DremoteRepositories=$CUDF_REPO \
     -DgroupId=ai.rapids -DartifactId=cudf -Dversion=$CUDF_VER -Dclassifier=$CUDA_CLASSIFIER
-$MVN_GET_CMD \
+$MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
-$MVN_GET_CMD \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples -Dversion=$PROJECT_VER
-$MVN_GET_CMD \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
+$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
+    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples -Dversion=$PROJECT_TEST_VER
+$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
+    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
 if [ "$CUDA_CLASSIFIER"x == x ];then
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
 else
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
 fi
 RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
-RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples-$PROJECT_VER.jar"
-RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
+RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples-$PROJECT_TEST_VER.jar"
+RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
 
-$MVN_GET_CMD \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=pytest -Dpackaging=tar.gz
+$MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
+    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=pytest -Dpackaging=tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
-RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_VER-pytest.tar.gz"
+RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
-$MVN_GET_CMD \
+$MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
     -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
 
 SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
