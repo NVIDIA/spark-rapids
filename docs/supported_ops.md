@@ -16592,13 +16592,13 @@ dates or timestamps, or for a lack of type coercion support.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td></td>
 <td><b>NS</b></td>
 <td></td>
-<td><em>PS (missing nested DECIMAL, BINARY)</em></td>
-<td><em>PS (missing nested DECIMAL, BINARY)</em></td>
-<td><em>PS (missing nested DECIMAL, BINARY)</em></td>
+<td><em>PS (missing nested BINARY)</em></td>
+<td><em>PS (missing nested BINARY)</em></td>
+<td><em>PS (missing nested BINARY)</em></td>
 </tr>
 <tr>
 <th>Output</th>
