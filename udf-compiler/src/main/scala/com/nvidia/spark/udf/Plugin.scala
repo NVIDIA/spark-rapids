@@ -82,7 +82,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
       plan match {
         case project: Project =>
           Project(project.projectList.map(e => attemptToReplaceExpression(plan, e))
-              .asInstanceOf[Seq[NamedExpression]], project.child)
+              .asInstanceOf[Seq[NamedExpression]], apply(project.child))
         case x => {
           x.transformExpressions(replacePartialFunc(plan))
         }
