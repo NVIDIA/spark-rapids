@@ -43,8 +43,10 @@ aws emr create-cluster \
 Please fill with actual value for `KeyName` and file paths. You can further customize SubnetId,
 EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc. 
 
-The `my-configurations.json` installs the spark-rapids plugin on your cluster, configurs YARN to use
-GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example json
+The `my-configurations.json` installs the spark-rapids plugin on your cluster, configures YARN to use
+
+GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example JSON
+
 configuration can be found in the section on launching in the GUI below. 
 
 The `my-boostrap-action.sh` script referenced in the above script opens cgroup permissions to YARN
