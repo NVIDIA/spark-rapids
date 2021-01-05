@@ -682,10 +682,12 @@ class CastChecks(ansiMode: Option[Boolean] = None) extends ExprChecks {
   val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
   val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
+  // Replace static value with method, because addDecimalSig is relied on active spark session
   def integralChecks: TypeSig = addDecimalSig(
     integral + fp + BOOLEAN + TIMESTAMP + STRING + BINARY)
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
+  // Replace static value with method, because addDecimalSig is relied on active spark session
   def fpChecks: TypeSig = addDecimalSig(integral + fp + BOOLEAN + TIMESTAMP + STRING)
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
@@ -701,7 +703,7 @@ class CastChecks(ansiMode: Option[Boolean] = None) extends ExprChecks {
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
-  val decimalChecks: TypeSig = DECIMAL
+  val decimalChecks: TypeSig = none
   val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none

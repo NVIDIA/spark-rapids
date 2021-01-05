@@ -133,7 +133,7 @@ class Spark310Shims extends Spark301Shims {
         // stringChecks are the same
         // binaryChecks are the same
 
-        override val decimalChecks: TypeSig = DECIMAL
+        override val decimalChecks: TypeSig = none
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same
