@@ -684,6 +684,8 @@ def to_cast_string(spark_type):
         return 'TIMESTAMP'
     elif isinstance(spark_type, StringType):
         return 'STRING'
+    elif isinstance(spark_type, DecimalType):
+        return 'DECIMAL({}, {})'.format(spark_type.precision, spark_type.scale)
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
@@ -796,3 +798,8 @@ map_gens_sample = [simple_string_to_string_map_gen,
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
 allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
+
+all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+           FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
+           decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
+           decimal_gen_64bit]
