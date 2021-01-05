@@ -123,11 +123,10 @@ default settings:
         "Properties":{
         "spark.plugins":"com.nvidia.spark.SQLPlugin",
         "spark.sql.sources.useV1SourceList":"",
-        "spark.executor.extraJavaOptions":"-Dai.rapids.cudf.prefer-pinned=true",
         "spark.executor.resource.gpu.discoveryScript":"/usr/lib/spark/scripts/gpu/getGpusResources.sh",
         "spark.submit.pyFiles":"/usr/lib/spark/jars/xgboost4j-spark_3.0-1.0.0-0.2.0.jar",
         "spark.executor.extraLibraryPath":"/usr/local/cuda/targets/x86_64-linux/lib:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/cuda/compat/lib:/usr/local/cuda/lib:/usr/local/cuda/lib64:/usr/lib/hadoop/lib/native:/usr/lib/hadoop-lzo/lib/native:/docker/usr/lib/hadoop/lib/native:/docker/usr/lib/hadoop-lzo/lib/native",
-        "spark.rapids.sql.concurrentGpuTasks":"4",
+        "spark.rapids.sql.concurrentGpuTasks":"2",
         "spark.executor.resource.gpu.amount":"1",
         "spark.executor.cores":"8",
         "spark.task.cpus ":"1",
@@ -234,8 +233,6 @@ out.explain()
 ### Submit Spark jobs to a EMR Cluster Accelerated by GPUs
 
 Similar to spark-submit for on-prem clusters, AWS EMR supports a Spark application job to be submitted. The mortgage examples we use are also available as a spark application.  You can also use **spark shell** to run the scala code or **pyspark** to run the python code on master node through CLI.
- 
-
 
 ### Running GPU Accelerated Mortgage ETL and XGBoost Example using EMR Notebook
 
