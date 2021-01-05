@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION.
+  Copyright (c) 2021, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -25,59 +25,18 @@
         <version>0.4.0-SNAPSHOT</version>
     </parent>
     <groupId>com.nvidia</groupId>
-    <artifactId>rapids-4-spark-tests_2.12</artifactId>
-    <name>RAPIDS Accelerator for Apache Spark Tests</name>
-    <description>RAPIDS plugin for Apache Spark integration tests</description>
+    <artifactId>rapids-4-spark-tests-next-spark_2.12</artifactId>
     <version>0.4.0-SNAPSHOT</version>
 
     <properties>
-        <spark.test.version>3.0.0</spark.test.version>
+        <spark.test.version>3.1.0-SNAPSHOT</spark.test.version>
     </properties>
-    <profiles>
-        <profile>
-            <id>spark301dbtests</id>
-            <properties>
-                <spark.test.version>3.0.1-databricks</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark301tests</id>
-            <properties>
-                <spark.test.version>3.0.1</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark302tests</id>
-            <properties>
-                <spark.test.version>3.0.2-SNAPSHOT</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark310tests</id>
-            <properties>
-                <spark.test.version>3.1.0-SNAPSHOT</spark.test.version>
-            </properties>
-        </profile>
-    </profiles>
 
     <dependencies>
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>jul-to-slf4j</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>jcl-over-slf4j</artifactId>
-            <!-- runtime scope is appropriate, but causes SBT build problems -->
-        </dependency>
-        <dependency>
-            <groupId>org.scala-lang</groupId>
-            <artifactId>scala-library</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
-	    <version>${spark.test.version}</version>
+            <version>${spark.test.version}</version>
         </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>
@@ -97,20 +56,17 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
+            <artifactId>mockito-inline</artifactId>
+            <version>${mockito.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-          <groupId>org.junit.jupiter</groupId>
-          <artifactId>junit-jupiter-api</artifactId>
-          <scope>test</scope>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -128,7 +84,7 @@
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
                 <configuration>
-                  <sourceDirectory>${project.basedir}/src/test/scala</sourceDirectory>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
                 </configuration>
             </plugin>
             <plugin>
@@ -138,7 +94,6 @@
                     <excludes>
                         <exclude>src/test/resources/**</exclude>
                         <exclude>**/*.md</exclude>
-                        <exclude>rmm_log.txt</exclude>
                     </excludes>
                 </configuration>
             </plugin>

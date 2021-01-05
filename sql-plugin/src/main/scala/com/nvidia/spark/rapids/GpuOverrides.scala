@@ -41,6 +41,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
@@ -803,7 +804,7 @@ object GpuOverrides {
     expr[UnaryMinus](
       "Negate a numeric value",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.integral + TypeSig.FLOAT + TypeSig.DOUBLE,
+        TypeSig.numeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryExprMeta[UnaryMinus](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryMinus(child)
@@ -811,7 +812,7 @@ object GpuOverrides {
     expr[UnaryPositive](
       "A numeric value with a + in front of it",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.integral + TypeSig.FLOAT + TypeSig.DOUBLE,
+        TypeSig.numeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryExprMeta[UnaryPositive](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
@@ -849,8 +850,7 @@ object GpuOverrides {
     expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.integral + TypeSig.FLOAT + TypeSig.DOUBLE,
-        TypeSig.numeric),
+        TypeSig.numeric, TypeSig.numeric),
       (a, conf, p, r) => new UnaryExprMeta[Abs](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child)
       }),
@@ -903,7 +903,7 @@ object GpuOverrides {
     expr[Floor](
       "Floor of a number",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.LONG,
+        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL),
       (a, conf, p, r) => new UnaryExprMeta[Floor](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuFloor(child)
@@ -911,7 +911,7 @@ object GpuOverrides {
     expr[Ceil](
       "Ceiling of a number",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.LONG,
+        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL),
       (a, conf, p, r) => new UnaryExprMeta[Ceil](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCeil(child)
@@ -2214,7 +2214,8 @@ object GpuOverrides {
     exec[BatchScanExec](
       "The backend for most file input",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+            TypeSig.DECIMAL).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
         override val childScans: scala.Seq[ScanMeta[_]] =
