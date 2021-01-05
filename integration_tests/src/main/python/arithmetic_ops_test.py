@@ -103,23 +103,26 @@ def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('signum(a)'))
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
 def test_unary_minus(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'),
+            conf=allow_negative_scale_of_decimal_conf)
 
 # This just ends up being a pass through.  There is no good way to force
 # a unary positive into a plan, because it gets optimized out, but this
 # verifies that we can handle it.
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
 def test_unary_positive(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
 def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -132,15 +135,17 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens, ids=idfn)
 def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens, ids=idfn)
 def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_rint(data_gen):

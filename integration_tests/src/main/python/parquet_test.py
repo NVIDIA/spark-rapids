@@ -223,13 +223,17 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
     TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
-    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
+    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0/key2=20'
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.parquet(first_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY'})
-    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
+    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1/key2=21'
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.parquet(second_data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
+    third_data_path = spark_tmp_path + '/PARQUET_DATA/key=2/key2=22'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.parquet(third_data_path),
             conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED'})
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = reader_confs.copy()

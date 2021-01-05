@@ -106,7 +106,7 @@ class DecimalUnitTest extends GpuUnitTests {
       }
     }
     // assertion error throws because of precision overflow
-    assertThrows[AssertionError] {
+    assertThrows[IllegalArgumentException] {
       withResource(ColumnVector.decimalFromLongs(0, 1L)) { dcv =>
         GpuColumnVector.from(dcv, DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, 0))
       }
