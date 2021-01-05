@@ -685,7 +685,7 @@ def to_cast_string(spark_type):
     elif isinstance(spark_type, StringType):
         return 'STRING'
     elif isinstance(spark_type, DecimalType):
-        return 'DECIMAL'
+        return 'DECIMAL({}, {})'.format(spark_type.precision, spark_type.scale)
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
