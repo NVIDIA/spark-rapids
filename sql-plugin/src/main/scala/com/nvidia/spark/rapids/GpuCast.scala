@@ -38,6 +38,20 @@ class CastExprMeta[INPUT <: CastBase](
   val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
+    if (!conf.isCastLongToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
+      fromType == DataTypes.LongType) {
+      willNotWorkOnGpu("Long values who contains more than 18 digits can not be converted " +
+        "to decimal on the GPU, because max supported precision of decimal under GPU is 18." +
+        "  To enable this operation on the GPU, set " +
+        s"${RapidsConf.ENABLE_CAST_LONG_TO_DECIMAL} to true.")
+    }
+    if (!conf.isCastFloatToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
+      (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
+      willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
+        "floating point data types to decimals and this can produce results that slightly " +
+        "differ from the default behavior in Spark.  To enable this operation on the GPU, set " +
+        s"${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
+    }
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +

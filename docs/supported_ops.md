@@ -16251,7 +16251,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td> </td>
@@ -16272,7 +16272,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td> </td>
@@ -16293,7 +16293,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td> </td>
@@ -16314,7 +16314,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td> </td>
@@ -16335,7 +16335,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16356,7 +16356,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16440,7 +16440,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16844,7 +16844,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>

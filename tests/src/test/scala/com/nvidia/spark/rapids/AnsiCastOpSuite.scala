@@ -16,12 +16,16 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.nio.file.Files
 import java.sql.Timestamp
 
 import scala.util.Random
 
+import com.nvidia.spark.rapids.SparkSessionHolder.withSparkSession
+
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, CastBase}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
@@ -418,6 +422,167 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   testSparkResultsAreEqual("ansi_cast longs to timestamp", testLongs, sparkConf,
     assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
+  }
+
+  ///////////////////////////////////////////////////////////////////////////
+  // Ansi cast from numeric types to decimal
+  ///////////////////////////////////////////////////////////////////////////
+
+  test("ansi_cast int to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
+    List(-9, -5, -2, 0, 1, 5, 9).foreach { scale =>
+      testCastToDecimal(DataTypes.IntegerType, scale, customRandGenerator = Some(gen))
+    }
+  }
+
+  test("ansi_cast long to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
+    List(-18, -10, -3, 0, 1, 5, 18).foreach { scale =>
+      testCastToDecimal(DataTypes.LongType, scale, customRandGenerator = Some(gen))
+    }
+  }
+
+  test("ansi_cast float to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
+    List(-18, -10, -3, 0, 1, 3, 18).foreach { scale =>
+      testCastToDecimal(DataTypes.FloatType, scale, customRandGenerator = Some(gen))
+    }
+  }
+
+  test("ansi_cast double to decimal") {
+    val gen = new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions())
+    List(-18, -10, -3, 0, 1, 3, 18).foreach { scale =>
+      testCastToDecimal(DataTypes.DoubleType, scale, customRandGenerator = Some(gen))
+    }
+  }
+
+  test("Detect overflow from numeric types to decimal") {
+    def generator(column: Seq[Double])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+
+    List(-1, 0, 3, 10, 17).foreach { scale =>
+      var gen = generator(Seq(1.1e18 * math.pow(10, -(scale + 1)))) _
+      assert(exceptionContains(
+        intercept[org.apache.spark.SparkException] {
+          testCastToDecimal(DataTypes.FloatType, scale, customDataGenerator = Some(gen))
+        },
+        GpuCast.INVALID_INPUT_MESSAGE))
+      gen = generator(Seq(-1.1e18 * math.pow(10, -(scale + 1))))
+      assert(exceptionContains(
+        intercept[org.apache.spark.SparkException] {
+          testCastToDecimal(DataTypes.DoubleType, scale, customDataGenerator = Some(gen))
+        },
+        GpuCast.INVALID_INPUT_MESSAGE))
+    }
+  }
+
+  test("Fallback to CPU plan if ansiMode is off") {
+    val dir = Files.createTempDirectory("spark-rapids-test").toFile
+    val path = new File(dir,
+      s"GpuAnsiCast-${System.currentTimeMillis()}.parquet").getAbsolutePath
+    try {
+      withCpuSparkSession((ss: SparkSession) => {
+        import ss.sqlContext.implicits._
+        (1 to 10).toDF("c0").write.parquet(path)
+      })
+      val conf = new SparkConf()
+        .set(RapidsConf.SQL_ENABLED.key, "true")
+        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "false")
+        .set("spark.sql.ansi.enabled", "false")
+        .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+      withSparkSession(conf, (ss: SparkSession) => {
+        val df = ss.read.parquet(path).select(col("c0").cast(DecimalType(18, 0)))
+        df.queryExecution.executedPlan.foreach { p =>
+          if (p.isInstanceOf[GpuExec]) {
+            throw new AssertionError(s"Found unexpected gpu plan: ${p.nodeName}")
+          }
+        }
+      })
+    } finally {
+      dir.delete()
+    }
+  }
+
+  private def testCastToDecimal(
+    dataType: DataType,
+    scale: Int,
+    maxFloatDiff: Double = 1e-9,
+    customDataGenerator: Option[SparkSession => DataFrame] = None,
+    customRandGenerator: Option[EnhancedRandom] = None) {
+
+    val dir = Files.createTempDirectory("spark-rapids-test").toFile
+    val path = new File(dir,
+      s"GpuAnsiCast-${System.currentTimeMillis()}.parquet").getAbsolutePath
+
+    try {
+      val conf = new SparkConf()
+        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+        .set(RapidsConf.ENABLE_CAST_LONG_TO_DECIMAL.key, "true")
+        .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
+        .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+        .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+        .set("spark.sql.ansi.enabled", "true")
+
+      val defaultRandomGenerator: SparkSession => DataFrame = {
+        val integralSize = ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION - scale match {
+          case s if dataType == IntegerType => s min ai.rapids.cudf.DType.DECIMAL32_MAX_PRECISION
+          case s => s min ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
+        }
+        val rnd = customRandGenerator.getOrElse(
+          new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions()))
+        generateCastNumericToDecimalDataFrame(dataType, integralSize, rnd, 500)
+      }
+      val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
+      withCpuSparkSession(spark => generator(spark).write.parquet(path), conf)
+
+      val createDF = (ss: SparkSession) => ss.read.parquet(path)
+      val decType = DataTypes.createDecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, scale)
+      val execFun = (df: DataFrame) => {
+        df.withColumn("col2", col("col").cast(decType))
+      }
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
+      val (cpuResult, gpuResult) = dataType match {
+        case IntegerType | LongType =>
+          fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
+        case FloatType | DoubleType =>
+          // There may be tiny difference between CPU and GPU result when casting from double
+          fromCpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue())) ->
+            fromGpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue()))
+      }
+      compareResults(sort = false, maxFloatDiff, cpuResult, gpuResult)
+    } finally {
+      dir.delete()
+    }
+  }
+
+  private def generateCastNumericToDecimalDataFrame(
+    dataType: DataType,
+    integralSize: Int,
+    rndGenerator: EnhancedRandom,
+    rowCount: Int = 100)(ss: SparkSession): DataFrame = {
+    import ss.sqlContext.implicits._
+
+    val scaleRnd = new scala.util.Random(rndGenerator.nextLong())
+    val rawColumn: Seq[Double] = (0 until rowCount).map { _ =>
+      val scale = integralSize - 19 - scaleRnd.nextInt(integralSize + 1)
+      val rawValue = math.pow(10, scale) * (rndGenerator.nextLong() match {
+        case x if x < 0 => -1e18 max x
+        case x => 1e18 min x
+      })
+      dataType match {
+        case IntegerType | LongType => math.signum(rawValue) * math.floor(math.abs(rawValue))
+        case FloatType | DoubleType => rawValue
+        case _ => throw new IllegalArgumentException(s"unsupported dataType: $dataType")
+      }
+    }
+    dataType match {
+      case IntegerType => rawColumn.map(_.toInt).toDF("col")
+      case LongType => rawColumn.map(_.toLong).toDF("col")
+      case FloatType => rawColumn.map(_.toFloat).toDF("col")
+      case DoubleType => rawColumn.toDF("col")
+    }
   }
 
   ///////////////////////////////////////////////////////////////////////////

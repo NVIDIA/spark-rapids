@@ -22,6 +22,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
@@ -669,7 +670,7 @@ object WindowSpecCheck extends ExprChecks {
   }
 }
 
-class CastChecks extends ExprChecks {
+class CastChecks(ansiMode: Option[Boolean] = None) extends ExprChecks {
   // Don't show this with other operators show it in a different location
   override val shown: Boolean = false
 
@@ -681,10 +682,11 @@ class CastChecks extends ExprChecks {
   val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
   val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
-  val integralChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+  def integralChecks: TypeSig = addDecimalSig(
+    integral + fp + BOOLEAN + TIMESTAMP + STRING + BINARY)
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
-  val fpChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+  def fpChecks: TypeSig = addDecimalSig(integral + fp + BOOLEAN + TIMESTAMP + STRING)
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
@@ -716,6 +718,18 @@ class CastChecks extends ExprChecks {
 
   val udtChecks: TypeSig = none
   val sparkUdtSig: TypeSig = STRING + UDT
+
+  protected def addDecimalSig(sig: TypeSig): TypeSig = {
+    val ansiModeValue = ansiMode.getOrElse(SparkSession.getActiveSession match {
+      case Some(session) => session.sessionState.conf.ansiEnabled
+      case None => false
+    })
+    if (ansiModeValue) {
+      sig + DECIMAL
+    } else {
+      sig
+    }
+  }
 
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
     case NullType => (nullChecks, sparkNullSig)
