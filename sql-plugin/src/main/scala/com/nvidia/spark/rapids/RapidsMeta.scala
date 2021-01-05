@@ -543,11 +543,22 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
+  // For adaptive execution we have to ensure we mark everything properly
+  // the first time through and that has to match what happens when AQE
+  // splits things up and does the subquery analysis at the shuffle boundaries.
+  // If the AQE subquery analysis changes the plan from what is originally
+  // marked we can end up with mismatches like happened in:
+  // https://github.com/NVIDIA/spark-rapids/issues/1423
+  // AQE splits subqueries at shuffle boundaries which means that it only
+  // sees the children at that point. So in our fix up exchange we only
+  // look at the children and mark is at will not work on GPU if the
+  // child can't be replaced.
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      (parent.filter(_.canThisBeReplaced).isEmpty &&
-        childPlans.filter(_.canThisBeReplaced).isEmpty)) {
+      childPlans.filter(_.canThisBeReplaced).isEmpty &&
+        (plan.conf.adaptiveExecutionEnabled ||
+        parent.filter(_.canThisBeReplaced).isEmpty)) {
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
     }
   }
