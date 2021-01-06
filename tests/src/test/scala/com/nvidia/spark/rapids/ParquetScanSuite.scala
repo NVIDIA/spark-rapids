@@ -16,7 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.nio.file.Files
+
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
 
 class ParquetScanSuite extends SparkQueryCompareTestSuite {
@@ -36,6 +40,20 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
   // but the file it depends on is used in other tests too.
   testSparkResultsAreEqual("Test Parquet timestamps and dates",
     frameFromParquet("timestamp-date-test.parquet")) {
+    frame => frame.select(col("*"))
+  }
+
+  // Column schema of decimal-test.parquet is: [c_0: decimal(18, 0), c_1: decimal(7, 3),
+  // c_2: decimal(10, 10), c_3: decimal(15, 12), c_4: int64, c_5: float]
+  testSparkResultsAreEqual("Test Parquet decimal stored as INT32/64",
+    frameFromParquet("decimal-test.parquet")) {
+    frame => frame.select(col("*"))
+  }
+
+  // Column schema of decimal-test-legacy.parquet is: [c_0: decimal(18, 0), c_1: decimal(7, 3),
+  // c_2: decimal(10, 10), c_3: decimal(15, 12), c_4: int64, c_5: float]
+  testSparkResultsAreEqual("Test Parquet decimal stored as FIXED_LEN_BYTE_ARRAY",
+    frameFromParquet("decimal-test-legacy.parquet")) {
     frame => frame.select(col("*"))
   }
 }

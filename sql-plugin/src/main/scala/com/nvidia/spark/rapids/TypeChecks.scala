@@ -602,7 +602,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  * This is specific to CaseWhen, because it does not follow the typical parameter convention.
  */
 object CaseWhenCheck extends ExprChecks {
-  val check: TypeSig = TypeSig.commonCudfTypes + TypeSig.NULL
+  val check: TypeSig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
   val sparkSig: TypeSig = TypeSig.all
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
@@ -1252,13 +1252,13 @@ object SupportedOpsDocs {
     println("<td>S</td>") // DATE
     println("<td>S</td>") // TIMESTAMP
     println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
+    println("<td>S</td>") // DECIMAL
     println("<td></td>") // NULL
     println("<td><b>NS</b></td>") // BINARY
     println("<td></td>") // CALENDAR
-    println("<td><em>PS (missing nested DECIMAL, BINARY)</em></td>") // ARRAY
-    println("<td><em>PS (missing nested DECIMAL, BINARY)</em></td>") // MAP
-    println("<td><em>PS (missing nested DECIMAL, BINARY)</em></td>") // STRUCT
+    println("<td><em>PS (missing nested BINARY)</em></td>") // ARRAY
+    println("<td><em>PS (missing nested BINARY)</em></td>") // MAP
+    println("<td><em>PS (missing nested BINARY)</em></td>") // STRUCT
     println("</tr>")
     println("<tr>")
     println("<th>Output</th>")

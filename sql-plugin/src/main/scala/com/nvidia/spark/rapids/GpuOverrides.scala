@@ -41,6 +41,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
+import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
@@ -1058,9 +1059,9 @@ object GpuOverrides {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          TypeSig.commonCudfTypes + TypeSig.NULL,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1536,11 +1537,14 @@ object GpuOverrides {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectNotLambda(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+      ExprChecks.projectNotLambda(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.psNote(TypeEnum.BOOLEAN,
           "literal values are not supported"), TypeSig.BOOLEAN),
-          ParamCheck("trueValue", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
-          ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("trueValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+            TypeSig.all),
+          ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+            TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (isLit(a.predicate)) {
@@ -2193,7 +2197,8 @@ object GpuOverrides {
     exec[BatchScanExec](
       "The backend for most file input",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+            TypeSig.DECIMAL).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
         override val childScans: scala.Seq[ScanMeta[_]] =

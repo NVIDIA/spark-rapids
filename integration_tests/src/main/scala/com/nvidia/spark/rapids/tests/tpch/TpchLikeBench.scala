@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.tests.common.BenchmarkSuite
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
-object TpchLikeBench extends BenchmarkSuite {
+class TpchLikeBench extends BenchmarkSuite {
   override def name(): String = "TPC-H"
 
   override def shortName(): String = "tpch"

@@ -45,8 +45,8 @@ object BenchmarkRunner {
 
     val benchmarks = Map(
       "tpcds" -> new TpcdsLikeBench(conf.appendDat()),
-      "tpch" -> TpchLikeBench,
-      "tpcxbb" -> TpcxbbLikeBench
+      "tpch" -> new TpchLikeBench(),
+      "tpcxbb" -> new TpcxbbLikeBench()
     )
 
     benchmarks.get(conf.benchmark().toLowerCase) match {

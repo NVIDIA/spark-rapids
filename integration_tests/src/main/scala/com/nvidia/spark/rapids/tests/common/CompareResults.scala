@@ -55,17 +55,10 @@ object CompareResults {
         (spark.read.parquet(conf.input1()), spark.read.parquet(conf.input2()))
     }
 
-    val readPathAction = conf.inputFormat() match {
-      case "csv" =>
-        path: String => spark.read.csv(path)
-      case "parquet" =>
-        path: String => spark.read.parquet(path)
-    }
-
     BenchUtils.compareResults(
       df1,
       df2,
-      readPathAction,
+      conf.inputFormat(),
       conf.ignoreOrdering(),
       conf.useIterator(),
       conf.maxErrors(),

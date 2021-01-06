@@ -21,6 +21,8 @@ import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import com.nvidia.spark.rapids.TestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
+import org.apache.spark.sql.SparkSession
+
 object BenchUtilsSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
 }
@@ -68,6 +70,84 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
     assertThrows[IllegalArgumentException] {
       BenchUtils.validateCoalesceRepartition(Map("a" -> 1, "b" -> 1), Map("c" -> 1, "b" -> 1))
     }
+  }
+
+  // this test is to check that the following code (based on docs/benchmarks.md) compiles
+  ignore("test TPC-DS documented usage") {
+    val spark = SparkSession.builder().getOrCreate()
+
+    import com.nvidia.spark.rapids.tests.tpcds._
+
+    // convert using minimal args
+    TpcdsLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output")
+
+    // convert with explicit partitioning
+    TpcdsLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output",
+      coalesce=Map("customer_address" -> 1), repartition=Map("web_sales" -> 8))
+
+    // set up prior to running benchmarks
+    TpcdsLikeSpark.setupAllParquet(spark, "/path/to/tpcds")
+
+    import com.nvidia.spark.rapids.tests._
+    val benchmark = new BenchmarkRunner(new TpcdsLikeBench())
+
+    // run benchmarks
+    benchmark.collect(spark, "q5", iterations=3)
+    benchmark.writeParquet(spark, "q5", "/path/to/output", iterations=3)
+  }
+
+  // this test is to check that the following code (based on docs/benchmarks.md) compiles
+  ignore("test TPC-H documented usage") {
+    val spark = SparkSession.builder().getOrCreate()
+
+    import com.nvidia.spark.rapids.tests.tpch._
+
+    // convert using minimal args
+    TpchLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output")
+
+    // convert with explicit partitioning
+    TpchLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output",
+      coalesce=Map("orders" -> 8), repartition=Map("lineitem" -> 8))
+
+    // set up prior to running benchmarks
+    import com.nvidia.spark.rapids.tests._
+    val benchmark = new BenchmarkRunner(new TpchLikeBench())
+
+    // run benchmarks
+    benchmark.collect(spark, "q5", iterations=3)
+    benchmark.writeParquet(spark, "q5", "/path/to/output", iterations=3)
+  }
+
+  // this test is to check that the following code (based on docs/benchmarks.md) compiles
+  ignore("test TPCx-BB documented usage") {
+    val spark = SparkSession.builder().getOrCreate()
+
+    import com.nvidia.spark.rapids.tests.tpcxbb._
+
+    // convert using minimal args
+    TpcxbbLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output")
+
+    // convert with explicit partitioning
+    TpcxbbLikeSpark.csvToParquet(spark, "/path/to/input", "/path/to/output",
+      coalesce=Map("customer" -> 1), repartition=Map("item" -> 8))
+
+    // set up prior to running benchmarks
+    import com.nvidia.spark.rapids.tests._
+    val benchmark = new BenchmarkRunner(new TpcxbbLikeBench())
+
+    // run benchmarks
+    benchmark.collect(spark, "q5", iterations=3)
+    benchmark.writeParquet(spark, "q5", "/path/to/output", iterations=3)
+  }
+
+  // this test is to check that the following code (based on docs/benchmarks.md) compiles
+  ignore("test documented usage for comparing results") {
+    val spark = SparkSession.builder().getOrCreate()
+
+    import com.nvidia.spark.rapids.tests.common._
+    val cpu = spark.read.parquet("/data/tpcxbb/q5-cpu")
+    val gpu = spark.read.parquet("/data/tpcxbb/q5-gpu")
+    BenchUtils.compareResults(cpu, gpu, "parquet", ignoreOrdering=true, epsilon=0.0001)
   }
 
 }

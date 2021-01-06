@@ -39,8 +39,8 @@ object TpchLikeSpark {
       spark: SparkSession, 
       basePath: String, 
       baseOutput: String, 
-      coalesce: Map[String, Int],
-      repartition: Map[String, Int]): Unit = {
+      coalesce: Map[String, Int] = Map.empty,
+      repartition: Map[String, Int] = Map.empty): Unit = {
     setupWrite(readOrdersCSV(spark, basePath + "/orders.tbl"), "orders", coalesce, repartition).parquet(baseOutput + "/orders.tbl")
     setupWrite(readLineitemCSV(spark, basePath + "/lineitem.tbl"), "lineitem", coalesce, repartition).parquet(baseOutput + "/lineitem.tbl")
     setupWrite(readCustomerCSV(spark, basePath + "/customer.tbl"), "customers", coalesce, repartition).parquet(baseOutput + "/customer.tbl")
@@ -55,8 +55,8 @@ object TpchLikeSpark {
       spark: SparkSession, 
       basePath: String, 
       baseOutput: String,
-      coalesce: Map[String, Int],
-      repartition: Map[String, Int]): Unit = {
+      coalesce: Map[String, Int] = Map.empty,
+      repartition: Map[String, Int] = Map.empty): Unit = {
     setupWrite(readOrdersCSV(spark, basePath + "/orders.tbl"), "orders", coalesce, repartition).orc(baseOutput + "/orders.tbl")
     setupWrite(readLineitemCSV(spark, basePath + "/lineitem.tbl"), "lineitem", coalesce, repartition).orc(baseOutput + "/lineitem.tbl")
     setupWrite(readCustomerCSV(spark, basePath + "/customer.tbl"), "customers", coalesce, repartition).orc(baseOutput + "/customer.tbl")

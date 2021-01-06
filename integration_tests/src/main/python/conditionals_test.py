@@ -20,7 +20,9 @@ from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+all_gens = all_gen + [NullGen()]
+
+@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
 def test_if_else(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -34,7 +36,7 @@ def test_if_else(data_gen):
                 'IF(a, b, {})'.format(null_lit),
                 'IF(a, {}, c)'.format(null_lit)))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
 def test_case_when(data_gen):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -79,7 +81,7 @@ def test_nvl(data_gen):
                 'nvl(a, {})'.format(null_lit)))
 
 #nvl is translated into a 2 param version of coalesce
-@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
