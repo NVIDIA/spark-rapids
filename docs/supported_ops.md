@@ -1908,131 +1908,131 @@ Accelerator support is described below.
 <td rowSpan="6">Round an expression to d decimal places using HALF_EVEN rounding mode</td>
 <td rowSpan="6">None</td>
 <td rowSpan="3">project</td>
-<td>lhs</td>
+<td>value</td>
+<td> </td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
-<td>rhs</td>
+<td>scale</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td>result</td>
+<td> </td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="3">lambda</td>
-<td>lhs</td>
+<td>value</td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
-<td>rhs</td>
+<td>scale</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td>result</td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="6">BitwiseAnd</td>
@@ -10303,131 +10303,131 @@ Accelerator support is described below.
 <td rowSpan="6">Round an expression to d decimal places using HALF_UP rounding mode</td>
 <td rowSpan="6">None</td>
 <td rowSpan="3">project</td>
-<td>lhs</td>
+<td>value</td>
+<td> </td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
-<td>rhs</td>
+<td>scale</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td>result</td>
+<td> </td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="3">lambda</td>
-<td>lhs</td>
+<td>value</td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
-<td>rhs</td>
+<td>scale</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td>result</td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="1">RowNumber</td>

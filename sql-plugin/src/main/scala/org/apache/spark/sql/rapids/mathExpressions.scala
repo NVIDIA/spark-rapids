@@ -396,30 +396,29 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
 
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
 
-  override def doColumnar(val0: GpuColumnVector, val1: Scalar): ColumnVector = {
-    val scaleVal=val1.getInt
-    val scale = dataType match {
+  override def doColumnar(value: GpuColumnVector, scale: Scalar): ColumnVector = {
+    val scaleVal = dataType match {
       case DecimalType.Fixed(p, s) => s
-      case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => val1.getInt
+      case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => scale.getInt
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }
-    val lhs = val0.getBase
-    lhs.round(scale, roundMode)
+    val lhsValue = value.getBase
+    lhsValue.round(scaleVal, roundMode)
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+  override def doColumnar(value: GpuColumnVector, scale: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
       "the round operator to work")
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+  override def doColumnar(value: Scalar, scale: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
       "the round operator to work")
   }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
-      doColumnar(expandedLhs, rhs)
+  override def doColumnar(numRows: Int, value: Scalar, scale: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(value, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, scale)
     }
   }
 }

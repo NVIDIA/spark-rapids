@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, RoundMode, Scalar, UnaryOp}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions._
@@ -146,10 +146,6 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
   def unaryOp: UnaryOp
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.unaryOp(unaryOp)
-}
-
-trait GpuRoundBase extends GpuBinaryExpression {
-  def roundMode: RoundMode
 }
 
 trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
