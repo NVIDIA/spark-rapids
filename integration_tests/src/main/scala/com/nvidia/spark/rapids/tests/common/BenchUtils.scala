@@ -512,11 +512,20 @@ object BenchUtils {
   def compareResults(
       df1: DataFrame,
       df2: DataFrame,
-      readPathAction: String => DataFrame,
+      inputFormat: String,
       ignoreOrdering: Boolean,
       useIterator: Boolean = false,
       maxErrors: Int = 10,
       epsilon: Double = 0.00001): Unit = {
+
+    val spark = df1.sparkSession
+
+    val readPathAction = inputFormat match {
+      case "csv" =>
+        path: String => spark.read.csv(path)
+      case "parquet" =>
+        path: String => spark.read.parquet(path)
+    }
 
     val count1 = df1.count()
     val count2 = df2.count()

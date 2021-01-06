@@ -28,11 +28,6 @@ def four_op_df(spark, gen, length=2048, seed=0):
         ('c', gen),
         ('d', gen)], nullable=False), length=length, seed=seed)
 
-all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(), 
-         FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
-         decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
-         decimal_gen_64bit]
-
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)

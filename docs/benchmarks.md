@@ -106,7 +106,7 @@ results to the driver.
 
 ```scala
 import com.nvidia.spark.rapids.tests._
-val benchmark = new BenchmarkRunner(TpcdsLikeBench)
+val benchmark = new BenchmarkRunner(new TpcdsLikeBench())
 benchmark.collect(spark, "q5", iterations=3)
 ```
 
@@ -116,7 +116,7 @@ files.
 
 ```scala
 import com.nvidia.spark.rapids.tests._
-val benchmark = new BenchmarkRunner(TpcdsLikeBench)
+val benchmark = new BenchmarkRunner(new TpcdsLikeBench())
 benchmark.writeParquet(spark, "q5", "/data/output/tpcds/q5", iterations=3)
 ```
 
@@ -184,7 +184,7 @@ Example usage from spark-shell:
 val cpu = spark.read.parquet("/data/tpcxbb/q5-cpu")
 val gpu = spark.read.parquet("/data/tpcxbb/q5-gpu")
 import com.nvidia.spark.rapids.tests.common._
-BenchUtils.compareResults(cpu, gpu, ignoreOrdering=true, epsilon=0.0001)
+BenchUtils.compareResults(cpu, gpu, inputFormat="parquet", ignoreOrdering=true, epsilon=0.0001)
 ```
 
 This will report on any differences between the two dataframes.
