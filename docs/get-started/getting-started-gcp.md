@@ -1,7 +1,7 @@
 ---
 layout: page
 title: GCP Dataproc
-nav_order: 2
+nav_order: 4
 parent: Getting-Started
 ---
 
@@ -59,12 +59,12 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
 ``` 
 This may take around 5-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the Google Cloud Console to see the progress.
 
-![Dataproc Cluster](../img/dataproc-cluster.png)
+![Dataproc Cluster](../img/GCP/dataproc-cluster.png)
 
 ## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab and navigate to the "Web Interfaces" tab.  Under "Web Interfaces", click on the JupyterLab or Jupyter link to start to use sample [Mortgage ETL on GPU Jupyter Notebook](../demo/GCP/Mortgage-ETL-GPU.ipynb) to process full 17 years [Mortgage data](https://rapidsai.github.io/demos/datasets/mortgage-data). 
 
-![Dataproc Web Interfaces](../img/dataproc-service.png)
+![Dataproc Web Interfaces](../img/GCP/dataproc-service.png)
 
 The notebook will first transcode CSV files into Parquet files and then run an ETL query to prepare the dataset for training.  In the sample notebook, we use 2016 data as the evaluation set and the rest as a training set, saving to respective GCS locations.  Using the default notebook configuration the first stage should take ~110 seconds (1/3 of CPU execution time with same config) and the second stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook depends on the pre-compiled [Spark RAPIDS SQL plugin](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark) and [cuDF](https://mvnrepository.com/artifact/ai.rapids/cudf/0.15), which are pre-downloaded by the GCP Dataproc [RAPIDS init script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 
