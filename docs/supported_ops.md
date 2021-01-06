@@ -3283,6 +3283,138 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="6">CreateNamedStruct</td>
+<td rowSpan="6">`named_struct`, `struct`</td>
+<td rowSpan="6">Creates a struct with the given field names and values.</td>
+<td rowSpan="6">None</td>
+<td rowSpan="3">project</td>
+<td>name</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>value</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="3">lambda</td>
+<td>name</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>value</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="1">CurrentRow$</td>
 <td rowSpan="1"> </td>
 <td rowSpan="1">Special boundary for a window frame, indicating stopping at the current row</td>

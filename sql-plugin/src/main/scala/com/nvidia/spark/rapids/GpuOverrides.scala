@@ -1891,6 +1891,13 @@ object GpuOverrides {
         ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
+    expr[CreateNamedStruct](
+      "Creates a struct with the given field names and values.",
+      CreateNamedStructCheck,
+      (in, conf, p, r) => new ExprMeta[CreateNamedStruct](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuCreateNamedStruct(childExprs.map(_.convertToGpu()))
+      }),
     expr[StringLocate](
       "Substring search operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
