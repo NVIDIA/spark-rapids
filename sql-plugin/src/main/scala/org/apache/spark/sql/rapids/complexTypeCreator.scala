@@ -81,8 +81,7 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     // The names are only used for the type. Here we really just care about the data
-    val columns: Array[ColumnVector] = new Array(valExprs.size)
-    try {
+    withResource(new Array[ColumnVector](valExprs.size)) { columns =>
       val numRows = batch.numRows()
       valExprs.indices.foreach { index =>
         valExprs(index).columnarEval(batch) match {
@@ -96,8 +95,6 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
         }
       }
       GpuColumnVector.from(ColumnVector.makeStruct(numRows, columns: _*), dataType)
-    } finally {
-      columns.safeClose()
     }
   }
 }
