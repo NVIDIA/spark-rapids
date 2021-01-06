@@ -49,7 +49,6 @@ case class GpuMurmur3Hash(child: Seq[Expression]) extends GpuExpression {
 
   def columnarEval(batch: ColumnarBatch): Any = {
     val rows = batch.numRows()
-    val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
     try {
       children.foreach { child => child.columnarEval(batch) match {
