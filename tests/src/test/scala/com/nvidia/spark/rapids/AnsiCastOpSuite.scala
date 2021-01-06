@@ -492,7 +492,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       }, GpuCast.INVALID_INPUT_MESSAGE))
 
     // Test 2: overflow caused by out of range integers
-    // Good cases
     testCastToDecimal(DataTypes.IntegerType, scale = -1, gpuOnly = true,
       customDataGenerator = Some(intGenerator(Seq(Int.MinValue, Int.MaxValue))))
     testCastToDecimal(DataTypes.LongType, scale = -1, gpuOnly = true,
