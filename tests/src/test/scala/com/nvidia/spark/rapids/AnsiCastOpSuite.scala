@@ -614,9 +614,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
         }
         compareResults(sort = false, maxFloatDiff, cpuResult, gpuResult)
       } else {
-        withGpuSparkSession((ss: SparkSession) => {
-          println(execFun(createDF(ss)).collect().toSeq)
-        }, conf)
+        withGpuSparkSession((ss: SparkSession) => execFun(createDF(ss)).collect(), conf)
       }
     } finally {
       dir.delete()
