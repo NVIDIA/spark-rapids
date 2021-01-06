@@ -34,7 +34,7 @@ We will need to create an initialization script for the cluster that installs th
 4. Go back and edit your cluster to configure it to use the init script.  To do this, click the “Clusters” button on the left panel, then select your cluster.
 5. Click the “Edit” button, then navigate down to the “Advanced Options” section.  Select the “Init Scripts” tab in the advanced options section, and paste the initialization script: `dbfs:/databricks/init_scripts/init.sh`, then click “Add”. 
 
-    ![Init Script](../img/initscript.png)
+    ![Init Script](../img/Databricks/initscript.png)
 
 6. Now select the “Spark” tab, and paste the following config options into the Spark Config section.  Change the config values based on the workers you choose.  See Apache Spark [configuration](https://spark.apache.org/docs/latest/configuration.html) and RAPIDS Accelerator for Apache Spark [descriptions](../configs.md) for each config. 
 
@@ -55,7 +55,7 @@ We will need to create an initialization script for the cluster that installs th
     spark.rapids.sql.concurrentGpuTasks 2
     ```
 
-    ![Spark Config](../img/sparkconfig.png)
+    ![Spark Config](../img/Databricks/sparkconfig.png)
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark with RAPIDS and cuDF.
