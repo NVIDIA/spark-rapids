@@ -504,12 +504,6 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val ENABLE_CAST_LONG_TO_DECIMAL = conf("spark.rapids.sql.castLongToDecimal.enabled")
-    .doc("Long values which contain more than 18 digits can not be converted to decimal on " +
-      "the GPU, because max supported precision of decimal under GPU is 18.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
       "on the GPU. Currently hex values aren't supported on the GPU. Also note that casting from " +
@@ -1037,8 +1031,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
-
-  lazy val isCastLongToDecimalEnabled: Boolean = get(ENABLE_CAST_LONG_TO_DECIMAL)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
 

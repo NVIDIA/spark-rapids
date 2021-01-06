@@ -722,15 +722,9 @@ class CastChecks(ansiMode: Option[Boolean] = None) extends ExprChecks {
   val sparkUdtSig: TypeSig = STRING + UDT
 
   protected def addDecimalSig(sig: TypeSig): TypeSig = {
-    val ansiModeValue = ansiMode.getOrElse(SparkSession.getActiveSession match {
-      case Some(session) => session.sessionState.conf.ansiEnabled
-      case None => false
-    })
-    if (ansiModeValue) {
-      sig + DECIMAL
-    } else {
-      sig
-    }
+    ansiMode.orElse(SparkSession.getActiveSession.map(_.sessionState.conf.ansiEnabled))
+      .collect { case ansiModeValue if ansiModeValue => sig + DECIMAL }
+      .getOrElse(sig)
   }
 
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {

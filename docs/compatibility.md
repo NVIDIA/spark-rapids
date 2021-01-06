@@ -242,7 +242,7 @@ In general, performing `cast` and `ansi_cast` operations on the GPU is compatibl
 
 The GPU will use a different strategy from Java's BigDecimal to handle/store decimal values, which leads to restrictions:
 * It is only available when `ansiMode` is on.
-* Float values can not larger than `1e18` or small than `-1e18` after rescaled.
+* Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
 To enable this operation on the GPU, set
@@ -269,15 +269,6 @@ The GPU will use different precision than Java's toString method when converting
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `true`.
-
-### Long to Decimal
-
-The GPU will use a different strategy from Java's BigDecimal to handle/store decimal values, which leads to restrictions:
-* It is only available when `ansiMode` is on.
-* Long values which contain more than 18 digits can not be converted to decimal on the GPU.
-
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castLongToDecimal.enabled`](configs.md#sql.castLongToDecimal.enabled) to `true` and set `spark.sql.ansi.enabled` to `true`.
 
 ### String to Float
 

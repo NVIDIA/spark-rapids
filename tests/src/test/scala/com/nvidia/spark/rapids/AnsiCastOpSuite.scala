@@ -457,25 +457,84 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Detect overflow from numeric types to decimal") {
-    def generator(column: Seq[Double])(ss: SparkSession): DataFrame = {
+    def intGenerator(column: Seq[Int])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    def longGenerator(column: Seq[Long])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    def floatGenerator(column: Seq[Float])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    def doubleGenerator(column: Seq[Double])(ss: SparkSession): DataFrame = {
       import ss.sqlContext.implicits._
       column.toDF("col")
     }
 
-    List(-1, 0, 3, 10, 17).foreach { scale =>
-      var gen = generator(Seq(1.1e18 * math.pow(10, -(scale + 1)))) _
-      assert(exceptionContains(
-        intercept[org.apache.spark.SparkException] {
-          testCastToDecimal(DataTypes.FloatType, scale, customDataGenerator = Some(gen))
-        },
-        GpuCast.INVALID_INPUT_MESSAGE))
-      gen = generator(Seq(-1.1e18 * math.pow(10, -(scale + 1))))
-      assert(exceptionContains(
-        intercept[org.apache.spark.SparkException] {
-          testCastToDecimal(DataTypes.DoubleType, scale, customDataGenerator = Some(gen))
-        },
-        GpuCast.INVALID_INPUT_MESSAGE))
-    }
+    // Test 1: overflow caused by half-up rounding
+    testCastToDecimal(DataTypes.DoubleType, precision = 5, scale = 2, gpuOnly = true,
+      customDataGenerator = Some(doubleGenerator(Seq(999.994))))
+    testCastToDecimal(DataTypes.DoubleType, precision = 4, scale = -2, gpuOnly = true,
+      customDataGenerator = Some(doubleGenerator(Seq(-999940))))
+
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.DoubleType, precision = 5, scale = 2, gpuOnly = true,
+          customDataGenerator = Some(doubleGenerator(Seq(999.995))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.FloatType, precision = 5, scale = -3, gpuOnly = true,
+          customDataGenerator = Some(floatGenerator(Seq(-99999500f))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
+
+    // Test 2: overflow caused by out of range integers
+    // Good cases
+    testCastToDecimal(DataTypes.IntegerType, scale = -1, gpuOnly = true,
+      customDataGenerator = Some(intGenerator(Seq(Int.MinValue, Int.MaxValue))))
+    testCastToDecimal(DataTypes.LongType, scale = -1, gpuOnly = true,
+      customDataGenerator = Some(longGenerator(Seq(Long.MinValue, Long.MaxValue))))
+
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.IntegerType, scale = 0, gpuOnly = true,
+          customDataGenerator = Some(intGenerator(Seq(Int.MaxValue))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.IntegerType, scale = 0, gpuOnly = true,
+          customDataGenerator = Some(intGenerator(Seq(Int.MinValue))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.LongType, scale = 0, gpuOnly = true,
+          customDataGenerator = Some(longGenerator(Seq(Long.MaxValue))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.LongType, scale = 0, gpuOnly = true,
+          customDataGenerator = Some(longGenerator(Seq(Long.MinValue))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
+
+    // Test 3: overflow caused by out of range floats
+    testCastToDecimal(DataTypes.FloatType, precision = 10, scale = 5, gpuOnly = true,
+      customDataGenerator = Some(floatGenerator(Seq(12345.678f))))
+    testCastToDecimal(DataTypes.DoubleType, precision = 18, scale = 5, gpuOnly = true,
+      customDataGenerator = Some(doubleGenerator(Seq(1234500000000.123456))))
+
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.FloatType, precision = 10, scale = 6, gpuOnly = true,
+          customDataGenerator = Some(floatGenerator(Seq(12345.678f))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
+    assert(exceptionContains(
+      intercept[org.apache.spark.SparkException] {
+        testCastToDecimal(DataTypes.DoubleType, precision = 15, scale = -5, gpuOnly = true,
+          customDataGenerator = Some(doubleGenerator(Seq(1.23e21))))
+      }, GpuCast.INVALID_INPUT_MESSAGE))
   }
 
   test("Fallback to CPU plan if ansiMode is off") {
@@ -508,9 +567,11 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private def testCastToDecimal(
     dataType: DataType,
     scale: Int,
+    precision: Int = ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION,
     maxFloatDiff: Double = 1e-9,
     customDataGenerator: Option[SparkSession => DataFrame] = None,
-    customRandGenerator: Option[EnhancedRandom] = None) {
+    customRandGenerator: Option[EnhancedRandom] = None,
+    gpuOnly: Boolean = false) {
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
@@ -519,39 +580,45 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     try {
       val conf = new SparkConf()
         .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
-        .set(RapidsConf.ENABLE_CAST_LONG_TO_DECIMAL.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", "true")
 
+      val precisionInUse = if (dataType == IntegerType) {
+        precision min ai.rapids.cudf.DType.DECIMAL32_MAX_PRECISION
+      } else {
+        precision min ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
+      }
       val defaultRandomGenerator: SparkSession => DataFrame = {
-        val integralSize = ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION - scale match {
-          case s if dataType == IntegerType => s min ai.rapids.cudf.DType.DECIMAL32_MAX_PRECISION
-          case s => s min ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION
-        }
         val rnd = customRandGenerator.getOrElse(
           new EnhancedRandom(new scala.util.Random(1234L), FuzzerOptions()))
-        generateCastNumericToDecimalDataFrame(dataType, integralSize, rnd, 500)
+        generateCastNumericToDecimalDataFrame(dataType, precisionInUse - scale, rnd, 500)
       }
       val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
       withCpuSparkSession(spark => generator(spark).write.parquet(path), conf)
 
       val createDF = (ss: SparkSession) => ss.read.parquet(path)
-      val decType = DataTypes.createDecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, scale)
+      val decType = DataTypes.createDecimalType(precisionInUse, scale)
       val execFun = (df: DataFrame) => {
         df.withColumn("col2", col("col").cast(decType))
       }
-      val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
-      val (cpuResult, gpuResult) = dataType match {
-        case IntegerType | LongType =>
-          fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
-        case FloatType | DoubleType =>
-          // There may be tiny difference between CPU and GPU result when casting from double
-          fromCpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue())) ->
-            fromGpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue()))
+      if (!gpuOnly) {
+        val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
+        val (cpuResult, gpuResult) = dataType match {
+          case IntegerType | LongType =>
+            fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
+          case FloatType | DoubleType =>
+            // There may be tiny difference between CPU and GPU result when casting from double
+            fromCpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue())) ->
+              fromGpu.map(r => Row(r.getDecimal(1).unscaledValue().doubleValue()))
+        }
+        compareResults(sort = false, maxFloatDiff, cpuResult, gpuResult)
+      } else {
+        withGpuSparkSession((ss: SparkSession) => {
+          println(execFun(createDF(ss)).collect().toSeq)
+        }, conf)
       }
-      compareResults(sort = false, maxFloatDiff, cpuResult, gpuResult)
     } finally {
       dir.delete()
     }
@@ -566,14 +633,15 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
     val scaleRnd = new scala.util.Random(rndGenerator.nextLong())
     val rawColumn: Seq[Double] = (0 until rowCount).map { _ =>
-      val scale = integralSize - 19 - scaleRnd.nextInt(integralSize + 1)
-      val rawValue = math.pow(10, scale) * (rndGenerator.nextLong() match {
+      val scale = scaleRnd.nextInt(integralSize + 1) - 19
+      val longValue = rndGenerator.nextLong() match {
         case x if x < 0 => -1e18 max x
         case x => 1e18 min x
-      })
+      }
       dataType match {
-        case IntegerType | LongType => math.signum(rawValue) * math.floor(math.abs(rawValue))
-        case FloatType | DoubleType => rawValue
+        case IntegerType => math.pow(10, scale min -9) * longValue
+        case LongType => math.pow(10, scale min 0) * longValue
+        case FloatType | DoubleType => math.pow(10, scale) * longValue
         case _ => throw new IllegalArgumentException(s"unsupported dataType: $dataType")
       }
     }
