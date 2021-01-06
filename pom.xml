@@ -176,6 +176,7 @@
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
         <spark310.version>3.1.0-SNAPSHOT</spark310.version>
         <mockito.version>3.6.0</mockito.version>
+        <scala.plugin.version>4.3.0</scala.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -357,7 +358,7 @@
                 <plugin>
                     <groupId>net.alchim31.maven</groupId>
                     <artifactId>scala-maven-plugin</artifactId>
-                    <version>3.4.4</version>
+                    <version>${scala.plugin.version}</version>
                     <executions>
                         <execution>
                             <id>eclipse-add-source</id>
