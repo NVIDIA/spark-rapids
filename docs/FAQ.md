@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 8
+nav_order: 9
 ---
 # Frequently Asked Questions
 
@@ -168,7 +168,9 @@ can throw at it.
 
 ### How can I run custom expressions/UDFs on the GPU?
 
-We do not currently support this, but we are working on ways to make it possible.
+UDFs can provide a RAPIDS-accelerated implementation which allows the
+RAPIDS Accelerator to perform the operation on the GPU.  See the
+[RAPIDS-accelerated UDF documentation](../docs/rapids-udfs.md) for details.
 
 ### Why am I getting an error when trying to use pinned memory?
 
