@@ -670,7 +670,7 @@ object WindowSpecCheck extends ExprChecks {
   }
 }
 
-class CastChecks(ansiMode: Option[Boolean] = None) extends ExprChecks {
+class CastChecks extends ExprChecks {
   // Don't show this with other operators show it in a different location
   override val shown: Boolean = false
 
@@ -682,13 +682,10 @@ class CastChecks(ansiMode: Option[Boolean] = None) extends ExprChecks {
   val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
   val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
-  // Replace static value with method, because addDecimalSig is relied on active spark session
-  def integralChecks: TypeSig = addDecimalSig(
-    integral + fp + BOOLEAN + TIMESTAMP + STRING + BINARY)
+  val integralChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
-  // Replace static value with method, because addDecimalSig is relied on active spark session
-  def fpChecks: TypeSig = addDecimalSig(integral + fp + BOOLEAN + TIMESTAMP + STRING)
+  val fpChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
@@ -720,12 +717,6 @@ class CastChecks(ansiMode: Option[Boolean] = None) extends ExprChecks {
 
   val udtChecks: TypeSig = none
   val sparkUdtSig: TypeSig = STRING + UDT
-
-  protected def addDecimalSig(sig: TypeSig): TypeSig = {
-    ansiMode.orElse(SparkSession.getActiveSession.map(_.sessionState.conf.ansiEnabled))
-      .collect { case ansiModeValue if ansiModeValue => sig + DECIMAL }
-      .getOrElse(sig)
-  }
 
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
     case NullType => (nullChecks, sparkNullSig)

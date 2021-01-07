@@ -201,7 +201,7 @@ class Spark300Shims extends SparkShims {
             .ansiEnabled, conf, p, r)),
       GpuOverrides.expr[AnsiCast](
         "Convert a column of one type of data into another type",
-        new CastChecks(ansiMode = Some(true)),
+        new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
       GpuOverrides.expr[TimeSub](
         "Subtracts interval from timestamp",

@@ -111,17 +111,17 @@ class Spark310Shims extends Spark301Shims {
         }),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
-      new CastChecks(ansiMode = Some(true)) {
+      new CastChecks {
         import TypeSig._
         // nullChecks are the same
 
         override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
         override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override def integralChecks: TypeSig = addDecimalSig(integral + fp + BOOLEAN + STRING)
+        override val integralChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override def fpChecks: TypeSig = addDecimalSig(integral + fp + BOOLEAN + STRING)
+        override val fpChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING

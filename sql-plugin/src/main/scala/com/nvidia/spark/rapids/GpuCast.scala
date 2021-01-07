@@ -379,49 +379,81 @@ case class GpuCast(
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.getBase.asByteList(true)
 
-      case (IntegerType | LongType, dt: DecimalType) =>
-        assert(ansiMode, "GpuCastToDecimal can only run under ansiMode")
+      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
 
-        val bound = math.pow(10, dt.precision - dt.scale)
-        assertValuesInRange(input.getBase, Scalar.fromDouble(-bound), Scalar.fromDouble(bound))
-
-        if (dt.scale < 0) {
-          // Rounding is essential when scale is negative,
-          // so we apply HALF_UP rounding manually to keep align with CpuCast.
-          withResource(input.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))) {
-            scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
-          }
-        } else if (dt.scale > 0) {
-          // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
-          // before casting it to decimal in case of overflow.
-          withResource(input.getBase.castTo(DType.INT64)) { long =>
-            long.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
-          }
+        // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
+        val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
+          case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
+          case bound => (-bound.toLong + 1, bound.toLong - 1)
+        }
+        val checkedInput = if (ansiMode) {
+          assertValuesInRange(input.getBase,
+            minValue = Scalar.fromLong(lowBound),
+            maxValue = Scalar.fromLong(upBound))
+          input.getBase.incRefCount()
         } else {
-          input.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+          replaceOutOfRangeValues(input.getBase,
+            minValue = Scalar.fromLong(lowBound),
+            maxValue = Scalar.fromLong(upBound),
+            replaceValue = Scalar.fromNull(input.getBase.getType))
+        }
+
+        withResource(checkedInput) { checked =>
+          if (dt.scale < 0) {
+            // Rounding is essential when scale is negative,
+            // so we apply HALF_UP rounding manually to keep align with CpuCast.
+            withResource(checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))) {
+              scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+            }
+          } else if (dt.scale > 0) {
+            // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
+            // before casting it to decimal in case of overflow.
+            withResource(checked.castTo(DType.INT64)) { long =>
+              long.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+            }
+          } else {
+            checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+          }
         }
 
       case (FloatType | DoubleType, dt: DecimalType) =>
-        assert(ansiMode, "GpuCastToDecimal can only run under ansiMode")
-
         // Approach to minimize difference between CPUCast and GPUCast:
         // step 1. cast input to FLOAT64 (if necessary)
         // step 2. cast FLOAT64 to container DECIMAL (who keeps one more digit for rounding)
         // step 3. perform HALF_UP rounding on container DECIMAL
-        // Corner case: If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
-        // be created because of precision overflow. In this case, we perform casting op directly.
-        withResource(input.getBase.castTo(DType.FLOAT64)) { double =>
-          withResource(double.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)) { rounded =>
-            val floatTolerance = math.pow(10, -(dt.scale + 1))
-            val bound = math.pow(10, dt.precision - dt.scale) - floatTolerance
-            assertValuesInRange(rounded, Scalar.fromDouble(-bound), Scalar.fromDouble(bound))
+        val checkedInput = withResource(input.getBase.castTo(DType.FLOAT64)) { double =>
+          val roundedDouble = double.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+          withResource(roundedDouble) { rounded =>
+            // We rely on containerDecimal to perform preciser rounding. So, we have to take extra
+            // space cost of container into consideration when we run bound check.
+            val containerScaleBound = DType.DECIMAL64_MAX_PRECISION - (dt.scale + 1)
+            val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
+            if (ansiMode) {
+              assertValuesInRange(rounded,
+                minValue = Scalar.fromDouble(-bound),
+                maxValue = Scalar.fromDouble(bound),
+                inclusiveMin = false,
+                inclusiveMax = false)
+              rounded.incRefCount()
+            } else {
+              replaceOutOfRangeValues(rounded,
+                minValue = Scalar.fromDouble(-bound),
+                maxValue = Scalar.fromDouble(bound),
+                inclusiveMin = false,
+                inclusiveMax = false,
+                replaceValue = Scalar.fromNull(DType.FLOAT64))
+            }
           }
+        }
 
-          if (dt.precision == dt.scale) {
-            double.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+        withResource(checkedInput) { checked =>
+          // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
+          // be created because of precision overflow. In this case, we perform casting op directly.
+          if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+            checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
           } else {
             val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -(dt.scale + 1))
-            withResource(double.castTo(containerType)) { container =>
+            withResource(checked.castTo(containerType)) { container =>
               container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
             }
           }
@@ -433,16 +465,20 @@ case class GpuCast(
   }
 
   /**
-   * Asserts that all values in a column are within the specfied range.
+   * Asserts that all values in a column are within the specific range.
    *
    * @param values ColumnVector
    * @param minValue Named parameter for function to create Scalar representing range minimum value
    * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
   private def assertValuesInRange(values: ColumnVector,
     minValue: => Scalar,
-    maxValue: => Scalar): Unit = {
+    maxValue: => Scalar,
+    inclusiveMin: Boolean = true,
+    inclusiveMax: Boolean = true): Unit = {
 
     def throwIfAny(cv: ColumnVector): Unit = {
       withResource(cv) { cv =>
@@ -455,11 +491,58 @@ case class GpuCast(
     }
 
     withResource(minValue) { minValue =>
-      throwIfAny(values.lessThan(minValue))
+      throwIfAny(inclusiveMin match {
+        case true => values.lessThan(minValue)
+        case false => values.lessOrEqualTo(minValue)
+      })
     }
 
     withResource(maxValue) { maxValue =>
-      throwIfAny(values.greaterThan(maxValue))
+      throwIfAny(inclusiveMax match {
+        case true => values.greaterThan(maxValue)
+        case false => values.greaterOrEqualTo(maxValue)
+      })
+    }
+  }
+
+  /**
+   * Detects outlier values of a column given with specific range, and replaces them with
+   * a inputted substitution value.
+   *
+   * @param values ColumnVector
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param replaceValue Named parameter for function to create scalar to substitute outlier value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
+   */
+  private def replaceOutOfRangeValues(values: ColumnVector,
+    minValue: => Scalar,
+    maxValue: => Scalar,
+    replaceValue: => Scalar,
+    inclusiveMin: Boolean = true,
+    inclusiveMax: Boolean = true): ColumnVector = {
+
+    withResource(minValue) { minValue =>
+      withResource(maxValue) { maxValue =>
+        val minPredicate = inclusiveMin match {
+          case true => values.lessThan(minValue)
+          case false => values.lessOrEqualTo(minValue)
+        }
+        val maxPredicate = inclusiveMax match {
+          case true => values.greaterThan(maxValue)
+          case false => values.greaterOrEqualTo(maxValue)
+        }
+        withResource(minPredicate) { minPredicate =>
+          withResource(maxPredicate) { maxPredicate =>
+            withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
+              withResource(replaceValue) { nullScalar =>
+                rangePredicate.ifElse(nullScalar, values)
+              }
+            }
+          }
+        }
+      }
     }
   }
 
