@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -666,6 +666,61 @@ object WindowSpecCheck extends ExprChecks {
           ("partition", projectSupport),
           ("value", projectSupport),
           ("result", projectSupport))))
+  }
+}
+
+/**
+ * A check for CreateNamedStruct.  The parameter values alternate between one type and another.
+ * If this pattern shows up again we can make this more generic at that point.
+ */
+object CreateNamedStructCheck extends ExprChecks {
+  val nameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
+  val sparkNameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
+  val valueSig: TypeSig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+  val sparkValueSig: TypeSig = TypeSig.all
+  val resultSig: TypeSig = TypeSig.STRUCT.nested(valueSig)
+  val sparkResultSig: TypeSig = TypeSig.STRUCT.nested(sparkValueSig)
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
+    val context = exprMeta.context
+    if (context != ProjectExprContext) {
+      meta.willNotWorkOnGpu(s"this is not supported in the $context context")
+    } else {
+      val origExpr = exprMeta.wrapped.asInstanceOf[Expression]
+      val (nameExprs, valExprs) = origExpr.children.grouped(2).map {
+        case Seq(name, value) => (name, value)
+      }.toList.unzip
+      nameExprs.foreach { expr =>
+        nameSig.tagExprParam(meta, expr, "name")
+      }
+      valExprs.foreach { expr =>
+        valueSig.tagExprParam(meta, expr, "value")
+      }
+      if (!resultSig.isSupportedByPlugin(origExpr.dataType, meta.conf.decimalTypeEnabled)) {
+        meta.willNotWorkOnGpu(s"unsupported data types in output: ${origExpr.dataType}")
+      }
+    }
+  }
+
+  override def support(dataType: TypeEnum.Value):
+  Map[ExpressionContext, Map[String, SupportLevel]] = {
+    val nameProjectSupport = nameSig.getSupportLevel(dataType, sparkNameSig)
+    val nameLambdaSupport = TypeSig.none.getSupportLevel(dataType, sparkNameSig)
+    val valueProjectSupport = valueSig.getSupportLevel(dataType, sparkValueSig)
+    val valueLambdaSupport = TypeSig.none.getSupportLevel(dataType, sparkValueSig)
+    val resultProjectSupport = resultSig.getSupportLevel(dataType, sparkResultSig)
+    val resultLambdaSupport = TypeSig.none.getSupportLevel(dataType, sparkResultSig)
+    Map((ProjectExprContext,
+        Map(
+          ("name", nameProjectSupport),
+          ("value", valueProjectSupport),
+          ("result", resultProjectSupport))),
+      (LambdaExprContext,
+          Map(
+            ("name", nameLambdaSupport),
+            ("value", valueLambdaSupport),
+            ("result", resultLambdaSupport))))
   }
 }
 
