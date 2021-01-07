@@ -14,11 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from marks import incompat
 from pyspark.sql.types import *
-import pyspark.sql.functions as f
 
 # Once we support arrays as literals then we can support a[null] and
 # negative indexes for all array gens. When that happens
@@ -46,3 +44,10 @@ def test_nested_array_index(data_gen):
                 'a[1]',
                 'a[3]',
                 'a[50]'))
+
+@pytest.mark.parametrize('data_gen', single_level_array_gens_non_decimal, ids=idfn)
+def test_orderby_array(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+    lambda spark : unary_op_df(spark, data_gen),
+        'array_table',
+        'select array_table.a, array_table.a[0] as first_val from array_table order by first_val')
