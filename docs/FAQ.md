@@ -42,8 +42,8 @@ Reference architectures should be available around Q4 2020.
 ### What CUDA versions are supported?
 
 CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here][version/stable-release.md] for download 
-links for the stable release.
+corresponds to the version you are using. Please look [here][download.md] for download 
+links for the latest release.
 
 ### What parts of Apache Spark are accelerated?
 
