@@ -67,7 +67,8 @@ OUTPUT="$WORKSPACE/output"
 # spark.sql.cache.serializer conf is ignored for versions prior to 3.1.0
 SERIALIZER="--conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark310.ParquetCachedBatchSerializer"
 
-BASE_SPARK_SUBMIT_ARGS="--master spark://$HOSTNAME:7077 \
+BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
+    --master spark://$HOSTNAME:7077 \
     --executor-memory 12G \
     --total-executor-cores 6 \
     --conf spark.sql.shuffle.partitions=12 \
