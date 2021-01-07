@@ -184,6 +184,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|`monotonically_increasing_id`|Returns monotonically increasing 64-bit integers|true|None|
 <a name="sql.expression.Month"></a>spark.rapids.sql.expression.Month|`month`|Returns the month from a date or timestamp|true|None|
 <a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|`*`|Multiplication|true|None|
+<a name="sql.expression.Murmur3Hash"></a>spark.rapids.sql.expression.Murmur3Hash|`hash`|Murmur3 hash operator|true|None|
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|
 <a name="sql.expression.Not"></a>spark.rapids.sql.expression.Not|`!`, `not`|Boolean not operator|true|None|
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
