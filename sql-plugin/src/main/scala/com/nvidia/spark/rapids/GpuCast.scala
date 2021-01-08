@@ -467,7 +467,7 @@ case class GpuCast(
   /**
    * Asserts that all values in a column are within the specific range.
    *
-   * @param values ColumnVector
+   * @param values ColumnVector to be performed with range check
    * @param minValue Named parameter for function to create Scalar representing range minimum value
    * @param maxValue Named parameter for function to create Scalar representing range maximum value
    * @param inclusiveMin Whether the min value is included in the valid range or not
@@ -509,7 +509,7 @@ case class GpuCast(
    * Detects outlier values of a column given with specific range, and replaces them with
    * a inputted substitution value.
    *
-   * @param values ColumnVector
+   * @param values ColumnVector to be performed with range check
    * @param minValue Named parameter for function to create Scalar representing range minimum value
    * @param maxValue Named parameter for function to create Scalar representing range maximum value
    * @param replaceValue Named parameter for function to create scalar to substitute outlier value
@@ -529,11 +529,11 @@ case class GpuCast(
           case true => values.lessThan(minValue)
           case false => values.lessOrEqualTo(minValue)
         }
-        val maxPredicate = inclusiveMax match {
-          case true => values.greaterThan(maxValue)
-          case false => values.greaterOrEqualTo(maxValue)
-        }
         withResource(minPredicate) { minPredicate =>
+          val maxPredicate = inclusiveMax match {
+            case true => values.greaterThan(maxValue)
+            case false => values.greaterOrEqualTo(maxValue)
+          }
           withResource(maxPredicate) { maxPredicate =>
             withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
               withResource(replaceValue) { nullScalar =>
