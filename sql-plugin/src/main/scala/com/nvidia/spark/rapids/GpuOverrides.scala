@@ -1729,6 +1729,26 @@ object GpuOverrides {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    expr[BRound](
+      "Round an expression to d decimal places using HALF_EVEN rounding mode",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.numeric, TypeSig.numeric,
+        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
+      (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuBRound(lhs, rhs)
+      }),
+    expr[Round](
+      "Round an expression to d decimal places using HALF_UP rounding mode",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.numeric, TypeSig.numeric,
+        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
+      (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuRound(lhs, rhs)
+      }),
     expr[PythonUDF](
       "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated.",
