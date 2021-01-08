@@ -179,15 +179,15 @@ class Spark300Shims extends SparkShims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
