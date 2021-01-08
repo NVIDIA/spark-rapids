@@ -418,3 +418,10 @@ def test_arithmetic_reductions(data_gen):
                 'avg(a)'),
             conf = _no_nans_float_conf)
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
+def test_agg_count(data_gen, count_func):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
+                              length=1024).groupBy('a').agg(count_func("b")))
