@@ -16,11 +16,16 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, Scalar}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuMd5(child: Expression)
   extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
@@ -31,6 +36,35 @@ case class GpuMd5(child: Expression)
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     withResource(ColumnVector.md5Hash(input.getBase)) { fullResult =>
       fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
+    }
+  }
+}
+
+case class GpuMurmur3Hash(child: Seq[Expression]) extends GpuExpression {
+  override def dataType: DataType = IntegerType
+
+  override def toString: String = s"hash($child)"
+  def nullable: Boolean = children.exists(_.nullable)
+  def children: Seq[Expression] = child
+
+  def columnarEval(batch: ColumnarBatch): Any = {
+    val rows = batch.numRows()
+    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
+    try {
+      children.foreach { child => child.columnarEval(batch) match {
+          case vector: GpuColumnVector =>
+            columns += vector.getBase
+          case col => if (col != null) {
+            withResource(GpuScalar.from(col)) { scalarValue =>
+              columns += ai.rapids.cudf.ColumnVector.fromScalar(scalarValue, rows)
+            }
+          }
+        }
+      }
+      GpuColumnVector.from(
+        ColumnVector.spark32BitMurmurHash3(42, columns.toArray[ColumnView]), dataType)
+    } finally {
+      columns.safeClose()
     }
   }
 }

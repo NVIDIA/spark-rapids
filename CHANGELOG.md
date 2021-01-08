@@ -1,5 +1,5 @@
 # Change log
-Generated on 2020-12-14
+Generated on 2021-01-05
 
 ## Release 0.3
 
@@ -42,6 +42,7 @@ Generated on 2020-12-14
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#1423](https://github.com/NVIDIA/spark-rapids/issues/1423)|[BUG] Mortgage ETL sample failed with spark.sql.adaptive enabled on AWS EMR 6.2 |
 |[#1279](https://github.com/NVIDIA/spark-rapids/issues/1279)|[BUG] TPC-DS query 2 failing with NPE|
 |[#1280](https://github.com/NVIDIA/spark-rapids/issues/1280)|[BUG] TPC-DS query 93 failing with UnsupportedOperationException|
 |[#1308](https://github.com/NVIDIA/spark-rapids/issues/1308)|[BUG] TPC-DS query 14a runs much slower on 0.3|
@@ -102,6 +103,12 @@ Generated on 2020-12-14
 ### PRs
 |||
 |:---|:---|
+|[#1439](https://github.com/NVIDIA/spark-rapids/pull/1439)|when AQE enabled we fail to fix up exchanges properly and EMR|
+|[#1433](https://github.com/NVIDIA/spark-rapids/pull/1433)|fix pandas 1.2 compatible issue|
+|[#1424](https://github.com/NVIDIA/spark-rapids/pull/1424)|Make the multi-threaded parquet reader the default since coalescing doesn't handle partitioned files well|
+|[#1389](https://github.com/NVIDIA/spark-rapids/pull/1389)|Update project version to 0.3.0|
+|[#1387](https://github.com/NVIDIA/spark-rapids/pull/1387)|Update cudf version to 0.17|
+|[#1370](https://github.com/NVIDIA/spark-rapids/pull/1370)|[REVIEW] init changelog 0.3 [skip ci]|
 |[#1376](https://github.com/NVIDIA/spark-rapids/pull/1376)|MetaUtils.getBatchFromMeta should return batches with GpuColumnVectorFromBuffer|
 |[#1358](https://github.com/NVIDIA/spark-rapids/pull/1358)|auto-merge: instant merge after creation [skip ci]|
 |[#1359](https://github.com/NVIDIA/spark-rapids/pull/1359)|Use SortOrder from shims.|

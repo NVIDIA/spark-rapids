@@ -136,6 +136,9 @@
         </profile>
         <profile>
             <id>spark310tests</id>
+            <modules>
+                <module>tests-spark310+</module>
+            </modules>
         </profile>
     </profiles>
 
@@ -173,6 +176,7 @@
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
         <spark310.version>3.1.0-SNAPSHOT</spark310.version>
         <mockito.version>3.6.0</mockito.version>
+        <scala.plugin.version>4.3.0</scala.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -354,7 +358,7 @@
                 <plugin>
                     <groupId>net.alchim31.maven</groupId>
                     <artifactId>scala-maven-plugin</artifactId>
-                    <version>3.4.4</version>
+                    <version>${scala.plugin.version}</version>
                     <executions>
                         <execution>
                             <id>eclipse-add-source</id>
@@ -530,6 +534,9 @@
                         <exclude>docs/demo/**/*.ipynb</exclude>
                         <exclude>docs/demo/**/*.zpln</exclude>
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
+                        <!-- Apache Rat excludes target folder for projects that are included by
+                        default, but there are some projects that are conditionally included.  -->
+                        <exclude>**/target/**/*</exclude>
                     </excludes>
                 </configuration>
             </plugin>
