@@ -59,3 +59,7 @@ def test_read_round_trip_partitioned(std_input_path, csv):
     with_cpu_session(lambda spark : setupInMemoryTableWithPartitioning(spark, std_input_path + csv))
     assert_gpu_and_cpu_are_equal_collect(readTable)
 
+@pytest.mark.parametrize('csv', ['people.csv'])
+def test_read_round_trip_no_partitioned(std_input_path, csv):
+    with_cpu_session(lambda spark : setupInMemoryTableNoPartitioning(spark, std_input_path + csv))
+    assert_gpu_and_cpu_are_equal_collect(readTable)
