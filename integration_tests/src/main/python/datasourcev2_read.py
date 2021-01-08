@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect,
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from pyspark.sql.types import *
 from spark_session import with_cpu_session
 
@@ -24,8 +24,7 @@ def read_parquet_df(data_path):
 def read_parquet_sql(data_path):
     return lambda spark : spark.sql('select * from parquet.`{}`'.format(data_path))
 
-def createPeopleCSVDf(spark):
-    peopleCSVLocation = "people.csv"
+def createPeopleCSVDf(spark, peopleCSVLocation):
     return spark.read.format("csv")\
         .option("header", "false")\
         .option("inferSchema", "true")\
@@ -39,15 +38,15 @@ catalogName = "columnar"
 tableName = "people"
 columnarTableName = catalogName + "." + tableName
 
-def setupInMemoryTableWithPartitioning(spark):
+def setupInMemoryTableWithPartitioning(spark, csv):
     spark.sql("create database IF NOT EXISTS " + catalogName)
-    peopleCSVDf = createPeopleCSVDf(spark)
+    peopleCSVDf = createPeopleCSVDf(spark, csv)
     peopleCSVDf.createOrReplaceTempView("people_csv")
     spark.table("people_csv").write.partitionBy("job").saveAsTable(columnarTableName)
 
-def setupInMemoryTableNoPartitioning(spark):
+def setupInMemoryTableNoPartitioning(spark, csv):
     spark.sql("create database IF NOT EXISTS " + catalogName)
-    peopleCSVDf = createPeopleCSVDf(spark)
+    peopleCSVDf = createPeopleCSVDf(spark, csv)
     peopleCSVDf.createOrReplaceTempView("people_csv")
     spark.table("people_csv").write.saveAsTable(columnarTableName)
 
@@ -55,7 +54,8 @@ def readTable(spark):
     spark.table(columnarTableName)\
         .orderBy("name", "age")
 
-def test_read_round_trip_partitioned(spark_tmp_path):
-    with_cpu_session(lambda spark : setupInMemoryTableWithPartitioning(spark))
+@pytest.mark.parametrize('csv', ['people.csv'])
+def test_read_round_trip_partitioned(std_input_path, csv):
+    with_cpu_session(lambda spark : setupInMemoryTableWithPartitioning(spark, std_input_path + csv))
     assert_gpu_and_cpu_are_equal_collect(readTable)
 
