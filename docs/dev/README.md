@@ -246,6 +246,12 @@ added to the profile via NVTX ranges.  See
 [the NVTX profiling guide](nvtx_profiling.md) for additional information on
 setting up the build for profiling and adding NVTX ranges.
 
+> Note: The Nsight Systems GUI is installed as part of the CUDA Toolkit, but is
+> under a slightly different name depending on the CUDA version:
+> * `/usr/local/cuda-10.1/nsight-systems-2019.3.7.5/Host-x86_64/nsight-sys`
+> * `/usr/local/cuda-10.2/nsight-systems-2019.5.2/host-linux-x64/nsight-sys`
+> * `/usr/local/cuda-11.0/nsight-systems-2020.3.2/host-linux-x64/nsight-sys`
+
 ## Code Coverage
 
 We use [jacoco](https://www.jacoco.org/jacoco/trunk/doc/) for code coverage because it lets
