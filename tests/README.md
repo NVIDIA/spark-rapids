@@ -56,7 +56,7 @@ default version runs against Spark 3.0.0, to run against other versions use one 
  profiles:
    - `-Pspark301tests` (spark 3.0.1)
    - `-Pspark302tests` (spark 3.0.2)
-   - `-Pspark310tests` (spark 3.1.0)
+   - `-Pspark311tests` (spark 3.1.1)
 
 Please refer to the [tests project POM](pom.xml) to see the list of test profiles supported.
 Apache Spark specific configurations can be passed in by setting the `SPARK_CONF` environment
@@ -64,7 +64,7 @@ variable.
 
 Examples: 
 - To run tests against Apache Spark 3.1.0, 
- `mvn -P spark310tests test` 
+ `mvn -P spark311tests test` 
 - To pass Apache Spark configs `--conf spark.dynamicAllocation.enabled=false --conf spark.task.cpus=1` do something like.
  `SPARK_CONF="spark.dynamicAllocation.enabled=false,spark.task.cpus=1" mvn ...`
 - To run test ParquetWriterSuite in package com.nvidia.spark.rapids, issue `mvn test -DwildcardSuites="com.nvidia.spark.rapids.ParquetWriterSuite"`

@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
-import com.nvidia.spark.rapids.shims.spark310.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
+import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
