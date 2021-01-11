@@ -118,10 +118,10 @@ class Spark310Shims extends Spark301Shims {
         override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
         override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val integralChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+        override val integralChecks: TypeSig = numeric + STRING + STRING
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val fpChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
+        override val fpChecks: TypeSig = numeric + BOOLEAN + STRING
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
