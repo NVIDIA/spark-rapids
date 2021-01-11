@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
+from marks import rapids_udf_example_native
 from spark_session import with_spark_session
 from pyspark.sql.utils import AnalysisException
 
@@ -51,3 +52,15 @@ def test_hive_generic_udf():
         evalfn,
         "hive_generic_udf_test_table",
         "SELECT urlencode(s) FROM hive_generic_udf_test_table")
+
+@rapids_udf_example_native
+def test_hive_simple_udf_native(enable_rapids_udf_example_native):
+    with_spark_session(skip_if_no_hive)
+    data_gens = [["s", StringGen('.{0,30}')]]
+    def evalfn(spark):
+        load_udf_or_skip_test(spark, "wordcount", "com.nvidia.spark.rapids.udf.StringWordCount")
+        return gen_df(spark, data_gens)
+    assert_gpu_and_cpu_are_equal_sql(
+        evalfn,
+        "hive_native_udf_test_table",
+        "SELECT wordcount(s) FROM hive_native_udf_test_table")
