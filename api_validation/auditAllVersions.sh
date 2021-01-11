@@ -16,4 +16,4 @@ set -ex
 
 mvn scala:run -P spark300
 mvn scala:run -P spark301
-mvn scala:run -P spark310
+mvn scala:run -P spark311
