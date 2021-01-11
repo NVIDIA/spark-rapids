@@ -37,7 +37,7 @@ with most cloud service providers to set up testing and validation on their dist
 
 ### What is the right hardware setup to run GPU accelerated Spark?
 
-Reference architectures should be available around Q4 2020.
+Reference architectures should be available around Q1 2021.
 
 ### What CUDA versions are supported?
 
