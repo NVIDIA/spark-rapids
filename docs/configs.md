@@ -116,6 +116,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Atan"></a>spark.rapids.sql.expression.Atan|`atan`|Inverse tangent|true|None|
 <a name="sql.expression.Atanh"></a>spark.rapids.sql.expression.Atanh|`atanh`|Inverse hyperbolic tangent|true|None|
 <a name="sql.expression.AttributeReference"></a>spark.rapids.sql.expression.AttributeReference| |References an input column|true|None|
+<a name="sql.expression.BRound"></a>spark.rapids.sql.expression.BRound|`bround`|Round an expression to d decimal places using HALF_EVEN rounding mode|true|None|
 <a name="sql.expression.BitwiseAnd"></a>spark.rapids.sql.expression.BitwiseAnd|`&`|Returns the bitwise AND of the operands|true|None|
 <a name="sql.expression.BitwiseNot"></a>spark.rapids.sql.expression.BitwiseNot|`~`|Returns the bitwise NOT of the operands|true|None|
 <a name="sql.expression.BitwiseOr"></a>spark.rapids.sql.expression.BitwiseOr|`\|`|Returns the bitwise OR of the operands|true|None|
@@ -130,6 +131,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Cos"></a>spark.rapids.sql.expression.Cos|`cos`|Cosine|true|None|
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|`cosh`|Hyperbolic cosine|true|None|
 <a name="sql.expression.Cot"></a>spark.rapids.sql.expression.Cot|`cot`|Cotangent|true|None|
+<a name="sql.expression.CreateNamedStruct"></a>spark.rapids.sql.expression.CreateNamedStruct|`named_struct`, `struct`|Creates a struct with the given field names and values.|true|None|
 <a name="sql.expression.CurrentRow$"></a>spark.rapids.sql.expression.CurrentRow$| |Special boundary for a window frame, indicating stopping at the current row|true|None|
 <a name="sql.expression.DateAdd"></a>spark.rapids.sql.expression.DateAdd|`date_add`|Returns the date that is num_days after start_date|true|None|
 <a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|`datediff`|Returns the number of days from startDate to endDate|true|None|
@@ -185,6 +187,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|`monotonically_increasing_id`|Returns monotonically increasing 64-bit integers|true|None|
 <a name="sql.expression.Month"></a>spark.rapids.sql.expression.Month|`month`|Returns the month from a date or timestamp|true|None|
 <a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|`*`|Multiplication|true|None|
+<a name="sql.expression.Murmur3Hash"></a>spark.rapids.sql.expression.Murmur3Hash|`hash`|Murmur3 hash operator|true|None|
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|
 <a name="sql.expression.Not"></a>spark.rapids.sql.expression.Not|`!`, `not`|Boolean not operator|true|None|
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
@@ -196,6 +199,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|`regexp_replace`|RegExpReplace support for string literal input patterns|true|None|
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|`%`, `mod`|Remainder or modulo|true|None|
 <a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|`rint`|Rounds up a double value to the nearest double equal to an integer|true|None|
+<a name="sql.expression.Round"></a>spark.rapids.sql.expression.Round|`round`|Round an expression to d decimal places using HALF_UP rounding mode|true|None|
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|`row_number`|Window function that returns the index for the row within the aggregation window|true|None|
 <a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|`second`|Returns the second component of the string/timestamp|true|None|
 <a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|`shiftleft`|Bitwise shift left (<<)|true|None|

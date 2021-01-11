@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1648,7 +1648,7 @@ object GpuOverrides {
       ExprChecks.fullAgg(
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
-          "input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+          "input", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all))),
       (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (count.children.size > 1) {
@@ -1728,6 +1728,26 @@ object GpuOverrides {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
+      }),
+    expr[BRound](
+      "Round an expression to d decimal places using HALF_EVEN rounding mode",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.numeric, TypeSig.numeric,
+        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
+      (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuBRound(lhs, rhs)
+      }),
+    expr[Round](
+      "Round an expression to d decimal places using HALF_UP rounding mode",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.numeric, TypeSig.numeric,
+        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
+      (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuRound(lhs, rhs)
       }),
     expr[PythonUDF](
       "UDF run in an external python process. Does not actually run on the GPU, but " +
@@ -1891,6 +1911,13 @@ object GpuOverrides {
         ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
+    expr[CreateNamedStruct](
+      "Creates a struct with the given field names and values.",
+      CreateNamedStructCheck,
+      (in, conf, p, r) => new ExprMeta[CreateNamedStruct](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuCreateNamedStruct(childExprs.map(_.convertToGpu()))
+      }),
     expr[StringLocate](
       "Substring search operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
@@ -2002,6 +2029,19 @@ object GpuOverrides {
           (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
+      }),
+    expr[Murmur3Hash] (
+      "Murmur3 hash operator",
+      ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL,
+          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL))),
+      (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
+        override val childExprs: Seq[BaseExprMeta[_]] = a.children
+          .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+        def convertToGpu(): GpuExpression = GpuMurmur3Hash(childExprs.map(_.convertToGpu()))
       }),
     expr[Contains](
       "Contains",
@@ -2285,23 +2325,23 @@ object GpuOverrides {
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (union, conf, p, r) => new SparkPlanMeta[UnionExec](union, conf, p, r) {
         override def convertToGpu(): GpuExec =
           GpuUnionExec(childPlans.map(_.convertIfNeeded()))
       }),
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
         .disabledByDefault("large joins can cause out of memory errors"),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
         val condition: Option[BaseExprMeta[_]] =
           join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -2336,7 +2376,7 @@ object GpuOverrides {
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",

@@ -26,14 +26,14 @@ top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 
-The RAPIDS Accelerator for Apache Spark officially supports
-[Apache Spark](get-started/getting-started-on-prem.md),
-[Databricks Runtime 7.3](get-started/getting-started-databricks.md)
-and [Google Cloud Dataproc](get-started/getting-started-gcp.md).
-Most distributions based off of Apache Spark 3.0.0 should work, but because the plugin replaces
-parts of the physical plan that Apache Spark considers to be internal the code for those plans
-can change from one distribution to another. We are working with most cloud service providers to
-set up testing and validation on their distributions.
+The RAPIDS Accelerator for Apache Spark officially supports [Apache
+Spark](get-started/getting-started-on-prem.md), [AWS EMR
+6.2.0](get-started/getting-started-aws-emr.md), [Databricks Runtime
+7.3](get-started/getting-started-databricks.md) and [Google Cloud
+Dataproc](get-started/getting-started-gcp.md).  Most distributions based off of Apache Spark 3.0.0
+should work, but because the plugin replaces parts of the physical plan that Apache Spark considers
+to be internal the code for those plans can change from one distribution to another. We are working
+with most cloud service providers to set up testing and validation on their distributions.
 
 ### What is the right hardware setup to run GPU accelerated Spark?
 

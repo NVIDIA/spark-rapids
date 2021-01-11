@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,9 @@ from spark_session import with_spark_session, is_before_spark_310
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
-           pytest.param(DoubleGen(), marks=[incompat])]
+           pytest.param(DoubleGen(), marks=[incompat]),
+           decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
+           decimal_gen_neg_scale, decimal_gen_64bit]
 
 all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
@@ -35,8 +37,17 @@ double_gen = [pytest.param(DoubleGen(), marks=[incompat])]
 
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
                         'spark.sql.join.preferSortMergeJoin': 'True',
-                        'spark.sql.shuffle.partitions': '2'
+                        'spark.sql.shuffle.partitions': '2',
+                        'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
                        }
+
+_cartesean_join_conf = {'spark.rapids.sql.exec.CartesianProductExec': 'true',
+                        'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
+                       }
+
+_broadcastnestedloop_join_conf = {'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true',
+                                  'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
+                                 }
 
 def create_df(spark, data_gen, left_length, right_length):
     left = binary_op_df(spark, data_gen, length=left_length)
@@ -67,7 +78,7 @@ def test_broadcast_join_right_table(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right), left.a == right.r_a, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -77,7 +88,7 @@ def test_cartesean_join(data_gen):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(right)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.CartesianProductExec': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_cartesean_join_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -89,7 +100,7 @@ def test_cartesean_join_special_case(data_gen):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.crossJoin(right).selectExpr('COUNT(*)')
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.CartesianProductExec': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_cartesean_join_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -99,7 +110,7 @@ def test_broadcast_nested_loop_join(data_gen):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(broadcast(right))
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_broadcastnestedloop_join_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -109,7 +120,7 @@ def test_broadcast_nested_loop_join_special_case(data_gen):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(broadcast(right)).selectExpr('COUNT(*)')
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_broadcastnestedloop_join_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -125,7 +136,7 @@ def test_broadcast_nested_loop_join_with_conditionals(data_gen, join_type):
         # that do not expose the error
         return left.join(broadcast(right),
                 (left.b >= right.r_b), join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_broadcastnestedloop_join_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -138,7 +149,7 @@ def test_broadcast_join_left_table(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 250, 500)
         return broadcast(left).join(right, left.a == right.r_a, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -150,7 +161,7 @@ def test_broadcast_join_with_conditionals(data_gen, join_type):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right),
                    (left.a == right.r_a) & (left.b >= right.r_b), join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 
 _mixed_df1_with_nulls = [('a', RepeatSeqGen(LongGen(nullable=(True, 20.0)), length= 10)),
@@ -170,7 +181,7 @@ def test_broadcast_join_mixed(join_type):
         right = gen_df(spark, _mixed_df2_with_nulls, length=500).withColumnRenamed("a", "r_a")\
                 .withColumnRenamed("b", "r_b").withColumnRenamed("c", "r_c")
         return left.join(broadcast(right), left.a.eqNullSafe(right.r_a), join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec')
