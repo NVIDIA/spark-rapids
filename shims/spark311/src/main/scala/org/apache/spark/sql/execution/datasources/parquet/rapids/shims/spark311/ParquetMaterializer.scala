@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.datasources.parquet.rapids
+package org.apache.spark.sql.execution.datasources.parquet.rapids.shims.spark311
 
 import java.time.ZoneId
 
