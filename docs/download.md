@@ -1,24 +1,24 @@
 ---
 layout: page
 title: Download
-nav_order: 10
+nav_order: 3
 ---
 
 ## Release v0.3.0
-This release includes additional performance improvements, for example, use of per thread default
-stream to make more efficient use of the GPU.  There is also further support for adaptive query
-execution, with more rewritten query plans now able to run on the GPU.  There are performance
-improvements for reading small Parquet files.  RAPIDS Shuffle with UCX has been updated to UCX
-1.9.0.
+This release includes additional performance improvements, including
+* Use of per thread default stream to make more efficient use of the GPU
+* Further supporting Spark's adaptive query execution, with more rewritten query plans now able to
+run on the GPU 
+* Performance improvements for reading small Parquet files
+* RAPIDS Shuffle with UCX updated to UCX 1.9.0
 
-Additional functionality includes Parquet reading for lists and structs, lead/lag for windows, and
-greatest/least operators among others.
+New functionality for the release includes
+* Parquet reading for lists and structs, 
+* Lead/lag for windows, and
+* Greatest/least operators 
 
 The release is supported on Apache Spark 3.0.0, 3.0.1, Databricks 7.3 ML LTS and Google Cloud
 Platform Dataproc 2.0.
-
-GPU reading of cached dataframes is enabled but only effective for Spark 3.1, for those who
-wish to try out the latest version of Spark.
 
 The list of all supported operations is provided [here](supported_ops.md).
 
@@ -31,7 +31,7 @@ Hardware Requirements:
 	
 Software Requirements:
 
-	OS: Ubuntu 16.04 & gcc 5.4 OR Ubuntu 18.04/CentOS 7 & gcc 7.3
+	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
 	
 	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
@@ -77,7 +77,7 @@ Hardware Requirements:
 	
 Software Requirements:
 
-	OS: Ubuntu 16.04 & gcc 5.4 OR Ubuntu 18.04/CentOS 7 & gcc 7.3
+	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
 	
 	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
@@ -101,7 +101,7 @@ Hardware Requirements:
 
 Software Requirements: 
 
-    OS: Ubuntu 16.04 & gcc 5.4 OR Ubuntu 18.04/CentOS 7 & gcc 7.3
+	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
     (RHEL 7 support is provided through CentOS 7 builds/installs)
 
     CUDA & NVIDIA Drivers: 10.1.2 & v418.87+ or 10.2 & v440.33+
