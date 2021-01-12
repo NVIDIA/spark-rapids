@@ -238,6 +238,16 @@ To enable all formats on GPU, set
 
 In general, performing `cast` and `ansi_cast` operations on the GPU is compatible with the same operations on the CPU. However, there are some exceptions. For this reason, certain casts are disabled on the GPU by default and require configuration options to be specified to enable them. 
 
+### Float to Decimal
+
+The GPU will use a different strategy from Java's BigDecimal to handle/store decimal values, which leads to restrictions:
+* It is only available when `ansiMode` is on.
+* Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
+* The results produced by GPU slightly differ from the default results of Spark.
+
+To enable this operation on the GPU, set
+[`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `true` and set `spark.sql.ansi.enabled` to `true`.
+
 ### Float to Integral Types
 
 With both `cast` and `ansi_cast`, Spark uses the expression
