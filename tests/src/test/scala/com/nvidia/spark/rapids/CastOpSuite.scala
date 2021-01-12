@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.nio.file.Files
 import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
@@ -438,6 +440,220 @@ class CastOpSuite extends GpuExpressionTestSuite {
   //   frame => frame.select(
   //     col("c0").cast(BinaryType))
   // }
+
+  test("cast short to decimal") {
+    List(-4, -2, 0,  1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.ShortType, scale,
+        customRandGenerator = Some(new scala.util.Random(1234L)))
+    }
+  }
+
+  test("cast int to decimal") {
+    List(-9, -5, -2, 0, 1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.IntegerType, scale,
+        customRandGenerator = Some(new scala.util.Random(1234L)))
+    }
+  }
+
+  test("cast long to decimal") {
+    List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.LongType, scale,
+        customRandGenerator = Some(new scala.util.Random(1234L)))
+    }
+  }
+
+  test("cast float to decimal") {
+    List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.FloatType, scale,
+        customRandGenerator = Some(new scala.util.Random(1234L)))
+    }
+  }
+
+  test("cast double to decimal") {
+    List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.DoubleType, scale,
+        customRandGenerator = Some(new scala.util.Random(1234L)))
+    }
+  }
+
+  test("Detect overflow from numeric types to decimal") {
+    def intGenerator(column: Seq[Int])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    def longGenerator(column: Seq[Long])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    def floatGenerator(column: Seq[Float])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    def doubleGenerator(column: Seq[Double])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    def nonOverflowCase(dataType: DataType,
+      generator: SparkSession => DataFrame,
+      precision: Int,
+      scale: Int): Unit = {
+      testCastToDecimal(dataType,
+        customDataGenerator = Some(generator),
+        precision = precision, scale = scale,
+        ansiEnabled = true, gpuOnly = true)
+    }
+    def overflowCase(dataType: DataType,
+      generator: SparkSession => DataFrame,
+      precision: Int,
+      scale: Int): Unit = {
+      // Catch out of range exception when AnsiMode is on
+      assert(
+        exceptionContains(
+        intercept[org.apache.spark.SparkException] {
+          nonOverflowCase(dataType, generator, precision, scale)
+        },
+        GpuCast.INVALID_INPUT_MESSAGE)
+      )
+      // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
+      testCastToDecimal(dataType,
+        customDataGenerator = Some(generator),
+        precision = precision, scale = scale)
+    }
+
+    // Test 1: overflow caused by half-up rounding
+    nonOverflowCase(DataTypes.DoubleType, precision = 5, scale = 2,
+      generator = doubleGenerator(Seq(999.994)))
+    nonOverflowCase(DataTypes.DoubleType, precision = 4, scale = -2,
+      generator = doubleGenerator(Seq(-999940)))
+
+    overflowCase(DataTypes.DoubleType, precision = 5, scale = 2,
+      generator = doubleGenerator(Seq(999.995)))
+    overflowCase(DataTypes.DoubleType, precision = 5, scale = -3,
+      generator = doubleGenerator(Seq(99999500f)))
+
+    // Test 2: overflow caused by out of range integers
+    nonOverflowCase(DataTypes.IntegerType, precision = 9, scale = -1,
+      generator = intGenerator(Seq(Int.MinValue, Int.MaxValue)))
+    nonOverflowCase(DataTypes.LongType, precision = 18, scale = -1,
+      generator = longGenerator(Seq(Long.MinValue, Long.MaxValue)))
+
+    overflowCase(DataTypes.IntegerType, precision = 9, scale = 0,
+      generator = intGenerator(Seq(Int.MaxValue)))
+    overflowCase(DataTypes.IntegerType, precision = 9, scale = 0,
+      generator = intGenerator(Seq(Int.MinValue)))
+    overflowCase(DataTypes.LongType, precision = 18, scale = 0,
+      generator = longGenerator(Seq(Long.MaxValue)))
+    overflowCase(DataTypes.LongType, precision = 18, scale = 0,
+      generator = longGenerator(Seq(Long.MinValue)))
+
+    // Test 3: overflow caused by out of range floats
+    nonOverflowCase(DataTypes.FloatType, precision = 10, scale = 5,
+      generator = floatGenerator(Seq(12345.678f)))
+    nonOverflowCase(DataTypes.DoubleType, precision = 18, scale = 5,
+      generator = doubleGenerator(Seq(123450000000.123456)))
+
+    overflowCase(DataTypes.FloatType, precision = 10, scale = 6,
+      generator = floatGenerator(Seq(12345.678f)))
+    overflowCase(DataTypes.DoubleType, precision = 15, scale = -5,
+      generator = doubleGenerator(Seq(1.23e21)))
+  }
+
+  protected def testCastToDecimal(
+    dataType: DataType,
+    scale: Int,
+    precision: Int = ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION,
+    maxFloatDiff: Double = 1e-9,
+    customDataGenerator: Option[SparkSession => DataFrame] = None,
+    customRandGenerator: Option[scala.util.Random] = None,
+    ansiEnabled: Boolean = false,
+    gpuOnly: Boolean = false) {
+
+    val dir = Files.createTempDirectory("spark-rapids-test").toFile
+    val path = new File(dir,
+      s"GpuAnsiCast-${System.currentTimeMillis()}.parquet").getAbsolutePath
+
+    try {
+      val conf = new SparkConf()
+        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+        .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
+        .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+        .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+        .set("spark.sql.ansi.enabled", ansiEnabled.toString)
+
+      val defaultRandomGenerator: SparkSession => DataFrame = {
+        val rnd = customRandGenerator.getOrElse(new scala.util.Random(1234L))
+        generateCastNumericToDecimalDataFrame(dataType, precision - scale, rnd, 500)
+      }
+      val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
+      withCpuSparkSession(spark => generator(spark).write.parquet(path), conf)
+
+      val createDF = (ss: SparkSession) => ss.read.parquet(path)
+      val decType = DataTypes.createDecimalType(precision, scale)
+      val execFun = (df: DataFrame) => {
+        df.withColumn("col2", col("col").cast(decType))
+      }
+      if (!gpuOnly) {
+        val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
+        val (cpuResult, gpuResult) = dataType match {
+          case ShortType | IntegerType | LongType =>
+            fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
+          case FloatType | DoubleType =>
+            // There may be tiny difference between CPU and GPU result when casting from double
+            val fetchFromRow = (r: Row) => {
+              if (r.isNullAt(1)) Double.NaN
+              else r.getDecimal(1).unscaledValue().doubleValue()
+            }
+            fromCpu.map(r => Row(fetchFromRow(r))) -> fromGpu.map(r => Row(fetchFromRow(r)))
+        }
+        compareResults(sort = false, maxFloatDiff, cpuResult, gpuResult)
+      } else {
+        withGpuSparkSession((ss: SparkSession) => execFun(createDF(ss)).collect(), conf)
+      }
+    } finally {
+      dir.delete()
+    }
+  }
+
+  private def generateCastNumericToDecimalDataFrame(
+    dataType: DataType,
+    integralSize: Int,
+    rndGenerator: scala.util.Random,
+    rowCount: Int = 100)(ss: SparkSession): DataFrame = {
+
+    import ss.sqlContext.implicits._
+    val enhancedRnd = new EnhancedRandom(rndGenerator, FuzzerOptions()) {
+      override def nextLong(): Long = r.nextInt(11) match {
+        case 0 => -999999999999999999L
+        case 1 => 999999999999999999L
+        case 2 => 0
+        case x if x % 2 == 0 => (r.nextDouble() * -999999999999999999L).toLong
+        case _ => (r.nextDouble() * 999999999999999999L).toLong
+      }
+    }
+    val scaleRnd = new scala.util.Random(enhancedRnd.nextLong())
+    val rawColumn: Seq[AnyVal] = (0 until rowCount).map { _ =>
+      val scale = 18 - scaleRnd.nextInt(integralSize + 1)
+      dataType match {
+        case ShortType =>
+          enhancedRnd.nextLong() / math.pow(10, scale max 14).toLong
+        case IntegerType =>
+          enhancedRnd.nextLong() / math.pow(10, scale max 9).toLong
+        case LongType =>
+          enhancedRnd.nextLong() / math.pow(10, scale max 0).toLong
+        case FloatType | DoubleType =>
+          enhancedRnd.nextLong() / math.pow(10, scale + 2)
+        case _ =>
+          throw new IllegalArgumentException(s"unsupported dataType: $dataType")
+      }
+    }
+    dataType match {
+      case ShortType => rawColumn.map(_.asInstanceOf[Long].toShort).toDF("col")
+      case IntegerType => rawColumn.map(_.asInstanceOf[Long].toInt).toDF("col")
+      case LongType => rawColumn.map(_.asInstanceOf[Long]).toDF("col")
+      case FloatType => rawColumn.map(_.asInstanceOf[Double].toFloat).toDF("col")
+      case DoubleType => rawColumn.map(_.asInstanceOf[Double]).toDF("col")
+    }
+  }
 }
 
 /** Data shared between CastOpSuite and AnsiCastOpSuite. */
