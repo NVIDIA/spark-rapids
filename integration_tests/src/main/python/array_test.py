@@ -54,7 +54,7 @@ def test_make_array(data_gen):
                 'array(a, b)',
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
-# Decimals with negative scale
+
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
