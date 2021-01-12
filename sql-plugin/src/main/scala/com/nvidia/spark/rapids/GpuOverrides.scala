@@ -1648,7 +1648,7 @@ object GpuOverrides {
       ExprChecks.fullAgg(
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
-          "input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+          "input", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all))),
       (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (count.children.size > 1) {
@@ -1912,11 +1912,25 @@ object GpuOverrides {
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
     expr[CreateNamedStruct](
-      "Creates a struct with the given field names and values.",
+      "Creates a struct with the given field names and values",
       CreateNamedStructCheck,
       (in, conf, p, r) => new ExprMeta[CreateNamedStruct](in, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuCreateNamedStruct(childExprs.map(_.convertToGpu()))
+      }),
+    expr[CreateArray](
+      " Returns an array with the given elements",
+      ExprChecks.projectNotLambda(
+        TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
+            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        repeatingParamCheck = Some(RepeatingParamCheck("arg",
+          TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
+              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP,
+          TypeSig.all))),
+      (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
     expr[StringLocate](
       "Substring search operator",
@@ -2333,16 +2347,16 @@ object GpuOverrides {
       }),
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
         .disabledByDefault("large joins can cause out of memory errors"),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
         val condition: Option[BaseExprMeta[_]] =
           join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))

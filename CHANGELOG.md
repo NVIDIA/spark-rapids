@@ -1,11 +1,12 @@
 # Change log
-Generated on 2021-01-05
+Generated on 2021-01-12
 
 ## Release 0.3
 
 ### Features
 |||
 |:---|:---|
+|[#1002](https://github.com/NVIDIA/spark-rapids/issues/1002)|[FEA] RapidsHostColumnVectorCore should verify cudf data with respect to the expected spark type |
 |[#444](https://github.com/NVIDIA/spark-rapids/issues/444)|[FEA] Plugable Cache|
 |[#1158](https://github.com/NVIDIA/spark-rapids/issues/1158)|[FEA] Better documentation on type support|
 |[#57](https://github.com/NVIDIA/spark-rapids/issues/57)|[FEA] Support INT96 for parquet reads and writes|
@@ -43,6 +44,8 @@ Generated on 2021-01-05
 |||
 |:---|:---|
 |[#1423](https://github.com/NVIDIA/spark-rapids/issues/1423)|[BUG] Mortgage ETL sample failed with spark.sql.adaptive enabled on AWS EMR 6.2 |
+|[#1369](https://github.com/NVIDIA/spark-rapids/issues/1369)|[BUG] TPC-DS Query Failing on EMR 6.2 with AQE|
+|[#1344](https://github.com/NVIDIA/spark-rapids/issues/1344)|[BUG] Spark-rapids Pytests failed on On Databricks cluster spark standalone mode|
 |[#1279](https://github.com/NVIDIA/spark-rapids/issues/1279)|[BUG] TPC-DS query 2 failing with NPE|
 |[#1280](https://github.com/NVIDIA/spark-rapids/issues/1280)|[BUG] TPC-DS query 93 failing with UnsupportedOperationException|
 |[#1308](https://github.com/NVIDIA/spark-rapids/issues/1308)|[BUG] TPC-DS query 14a runs much slower on 0.3|
@@ -103,6 +106,8 @@ Generated on 2021-01-05
 ### PRs
 |||
 |:---|:---|
+|[#1473](https://github.com/NVIDIA/spark-rapids/pull/1473)|Update documentation for 0.3 release|
+|[#1446](https://github.com/NVIDIA/spark-rapids/pull/1446)|Update changelog for 0.3.0 release [skip ci]|
 |[#1439](https://github.com/NVIDIA/spark-rapids/pull/1439)|when AQE enabled we fail to fix up exchanges properly and EMR|
 |[#1433](https://github.com/NVIDIA/spark-rapids/pull/1433)|fix pandas 1.2 compatible issue|
 |[#1424](https://github.com/NVIDIA/spark-rapids/pull/1424)|Make the multi-threaded parquet reader the default since coalescing doesn't handle partitioned files well|
