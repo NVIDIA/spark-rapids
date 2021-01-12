@@ -14,11 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from marks import incompat
 from pyspark.sql.types import *
-import pyspark.sql.functions as f
 
 # Once we support arrays as literals then we can support a[null] and
 # negative indexes for all array gens. When that happens
@@ -55,3 +53,31 @@ def test_make_array(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'array(a, b)',
                 'array(b, a, null, {}, {})'.format(s1, s2)))
+
+
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+def test_orderby_array(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, data_gen),
+        'array_table',
+        'select array_table.a, array_table.a[0] as first_val from array_table order by first_val',
+        conf=allow_negative_scale_of_decimal_conf)
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+                                      ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
+def test_orderby_array_of_arrays(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+    lambda spark : unary_op_df(spark, data_gen),
+        'array_table',
+        'select array_table.a, array_table.a[0][0] as first_val from array_table order by first_val')
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
+                                                          ['child1', string_gen],
+                                                          ['child2', float_gen]]))], ids=idfn)
+def test_orderby_array_of_structs(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, data_gen),
+        'array_table',
+        'select array_table.a, array_table.a[0].child0 as first_val from array_table order by first_val')
