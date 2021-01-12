@@ -67,7 +67,6 @@ the reasons why this particular operator or expression is on the CPU or GPU.
 |UDT|User defined types and java Objects. These are not standard SQL types.|
 
 ## Support
-
 |Value|Description|
 |---------|----------------|
 |S| (Supported) Both Apache Spark and the RAPIDS Accelerator support this type.|
@@ -511,7 +510,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -557,7 +556,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -580,7 +579,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -603,7 +602,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -626,7 +625,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -649,7 +648,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -728,8 +727,8 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 </table>
-* as was stated previously Decimal is only supported up to a precision of 
-18 and Timestamp is only supported in the 
+* as was stated previously Decimal is only supported up to a precision of
+18 and Timestamp is only supported in the
 UTC time zone. Decimals are off by default due to performance impact in
 some cases.
 
