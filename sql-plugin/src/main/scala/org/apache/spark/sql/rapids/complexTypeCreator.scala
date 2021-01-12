@@ -18,13 +18,70 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableArray, ReallyAGpuExpression}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
+import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FUNC_ALIAS
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, NamedExpression}
-import org.apache.spark.sql.types.{Metadata, StringType, StructField, StructType}
+import org.apache.spark.sql.catalyst.util.TypeUtils
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.{ArrayType, DataType, Metadata, NullType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
+    extends GpuExpression {
+
+  def this(children: Seq[Expression]) = {
+    this(children, SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
+  }
+
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  override def stringArgs: Iterator[Any] = super.stringArgs.take(1)
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    TypeUtils.checkForSameTypeInputExpr(children.map(_.dataType), s"function $prettyName")
+  }
+
+  private val defaultElementType: DataType = {
+    if (useStringTypeWhenEmpty) {
+      StringType
+    } else {
+      NullType
+    }
+  }
+
+  override def dataType: ArrayType = {
+    ArrayType(
+      TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(children.map(_.dataType))
+          .getOrElse(defaultElementType),
+      containsNull = children.exists(_.nullable))
+  }
+
+  override def nullable: Boolean = false
+
+  override def prettyName: String = "array"
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(new Array[ColumnVector](children.size)) { columns =>
+      val numRows = batch.numRows()
+      children.indices.foreach { index =>
+        children(index).columnarEval(batch) match {
+          case cv: GpuColumnVector =>
+            columns(index) = cv.getBase
+          case other =>
+            val dt = dataType.elementType
+            withResource(GpuScalar.from(other, dt)) { scalar =>
+              columns(index) = ColumnVector.fromScalar(scalar, numRows)
+            }
+        }
+      }
+      GpuColumnVector.from(ColumnVector.makeList(numRows,
+        GpuColumnVector.getNonNestedRapidsType(dataType.elementType),
+        columns: _*), dataType)
+    }
+  }
+}
 
 case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression {
   lazy val (nameExprs, valExprs) = children.grouped(2).map {

@@ -1912,11 +1912,25 @@ object GpuOverrides {
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
     expr[CreateNamedStruct](
-      "Creates a struct with the given field names and values.",
+      "Creates a struct with the given field names and values",
       CreateNamedStructCheck,
       (in, conf, p, r) => new ExprMeta[CreateNamedStruct](in, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuCreateNamedStruct(childExprs.map(_.convertToGpu()))
+      }),
+    expr[CreateArray](
+      " Returns an array with the given elements",
+      ExprChecks.projectNotLambda(
+        TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
+            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        repeatingParamCheck = Some(RepeatingParamCheck("arg",
+          TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
+              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP,
+          TypeSig.all))),
+      (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
     expr[StringLocate](
       "Substring search operator",
