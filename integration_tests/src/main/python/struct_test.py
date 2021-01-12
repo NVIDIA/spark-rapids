@@ -47,4 +47,12 @@ def test_orderby_struct(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, data_gen),
         'struct_table',
-        'select struct_table.a, struct_table.a.first as first_val from struct_table order by first_val')
+        'select struct_table.a, struct_table.a.first as val from struct_table order by val')
+
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
+def test_orderby_struct_2(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, data_gen),
+        'struct_table',
+        'select struct_table.a, struct_table.a.second[0] as val from struct_table order by val')

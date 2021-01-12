@@ -45,9 +45,30 @@ def test_nested_array_index(data_gen):
                 'a[3]',
                 'a[50]'))
 
-@pytest.mark.parametrize('data_gen', single_level_array_gens_non_decimal, ids=idfn)
+# Decimals with negative scale
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, data_gen),
+        'array_table',
+        'select array_table.a, array_table.a[0] as first_val from array_table order by first_val',
+        conf=allow_negative_scale_of_decimal_conf)
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+                                      ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
+def test_orderby_array_of_arrays(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
     lambda spark : unary_op_df(spark, data_gen),
         'array_table',
-        'select array_table.a, array_table.a[0] as first_val from array_table order by first_val')
+        'select array_table.a, array_table.a[0][0] as first_val from array_table order by first_val')
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
+                                                          ['child1', string_gen],
+                                                          ['child2', float_gen]]))], ids=idfn)
+def test_orderby_array_of_structs(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, data_gen),
+        'array_table',
+        'select array_table.a, array_table.a[0].child0 as first_val from array_table order by first_val')
