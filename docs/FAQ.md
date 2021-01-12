@@ -168,9 +168,24 @@ can throw at it.
 
 ### How can I run custom expressions/UDFs on the GPU?
 
-UDFs can provide a RAPIDS-accelerated implementation which allows the
-RAPIDS Accelerator to perform the operation on the GPU.  See the
-[RAPIDS-accelerated UDF documentation](../docs/rapids-udfs.md) for details.
+The RAPIDS Accelerator provides the following solutions for running
+user-defined functions on the GPU:
+
+#### RAPIDS-Accelerated UDFs
+
+UDFs can provide a RAPIDS-accelerated implementation which allows the RAPIDS Accelerator to perform
+the operation on the GPU.  See the [RAPIDS-accelerated UDF documentation](../docs/rapids-udfs.md)
+for details.
+
+#### Automatic Translation of Scala UDFs to Apache Spark Operations
+
+The RAPIDS Accelerator has an experimental byte-code analyzer which can translate some simple
+Scala UDFs into equivalent Apache Spark operations in the query plan. The RAPIDS Accelerator then
+translates these operations into GPU operations just like other query plan operations.
+
+The Scala UDF byte-code analyzer is disabled by default and must be enabled by the user via the
+[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) configuration
+setting.
 
 ### Why am I getting an error when trying to use pinned memory?
 
