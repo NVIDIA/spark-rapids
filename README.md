@@ -37,6 +37,11 @@ The plugin has a set of Spark configs that control its behavior and are document
 We use github issues to track bugs, feature requests, and to try and answer questions. You
 may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
 
+## Download
+
+The jar files for the most recent release can be retrieved from the [download](docs/download.md)
+page. 
+
 ## Build
 
 There are two types of branches in this repository:
