@@ -38,13 +38,13 @@ to read the deployment method sections before doing any installations.
 ## Install Spark
 To install Apache Spark please follow the official 
 [instructions](https://spark.apache.org/docs/latest/#launching-on-a-cluster). Supported versions of
-Spark are listed on the [stable release](../version/stable-release.md) page.  Please note that only
+Spark are listed on the [download](../download.md) page.  Please note that only
 scala version 2.12 is currently supported by the accelerator. 
 
 ## Download the RAPIDS jars
 The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2.12) and 
 [cudf](https://mvnrepository.com/artifact/ai.rapids/cudf) jars are available in the 
-[download](../version/stable-release.md) section.
+[download](../download.md) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
@@ -433,7 +433,7 @@ that matches your Spark version. Currently we support
    - Spark 3.0.0 (com.nvidia.spark.rapids.spark300.RapidsShuffleManager) 
    - Spark 3.0.1 (com.nvidia.spark.rapids.spark301.RapidsShuffleManager) 
    - Spark 3.0.2 (com.nvidia.spark.rapids.spark302.RapidsShuffleManager) 
-   - Spark 3.1.0 (com.nvidia.spark.rapids.spark310.RapidsShuffleManager)
+   - Spark 3.1.1 (com.nvidia.spark.rapids.spark311.RapidsShuffleManager)
 
 ```shell
 ...

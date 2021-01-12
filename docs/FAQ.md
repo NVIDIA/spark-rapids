@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 8
+nav_order: 9
 ---
 # Frequently Asked Questions
 
@@ -37,13 +37,13 @@ with most cloud service providers to set up testing and validation on their dist
 
 ### What is the right hardware setup to run GPU accelerated Spark?
 
-Reference architectures should be available around Q4 2020.
+Reference architectures should be available around Q1 2021.
 
 ### What CUDA versions are supported?
 
 CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here][version/stable-release.md] for download 
-links for the stable release.
+corresponds to the version you are using. Please look [here][download.md] for download 
+links for the latest release.
 
 ### What parts of Apache Spark are accelerated?
 

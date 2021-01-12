@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION.
+  Copyright (c) 2020-2021, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -135,7 +135,7 @@
             <id>spark301tests</id>
         </profile>
         <profile>
-            <id>spark310tests</id>
+            <id>spark311tests</id>
             <modules>
                 <module>tests-spark310+</module>
             </modules>
@@ -174,7 +174,7 @@
          please update the snapshot-shims profile as well so it is accurate -->
         <spark301.version>3.0.1</spark301.version>
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
-        <spark310.version>3.1.0-SNAPSHOT</spark310.version>
+        <spark311.version>3.1.1-SNAPSHOT</spark311.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
     </properties>
