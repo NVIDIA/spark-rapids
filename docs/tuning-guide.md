@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Tuning
-nav_order: 5
+nav_order: 7
 ---
 # RAPIDS Accelerator for Apache Spark Tuning Guide
 Tuning a Spark job's configuration settings from the defaults can often improve job performance,
