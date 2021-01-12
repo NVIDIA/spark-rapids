@@ -38,6 +38,13 @@ class CastExprMeta[INPUT <: CastBase](
   val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
+    if (!conf.isCastFloatToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
+      (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
+      willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
+        "floating point data types to decimals and this can produce results that slightly " +
+        "differ from the default behavior in Spark.  To enable this operation on the GPU, set " +
+        s"${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
+    }
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
@@ -372,22 +379,106 @@ case class GpuCast(
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.getBase.asByteList(true)
 
+      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
+
+        // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
+        val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
+          case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
+          case bound => (-bound.toLong + 1, bound.toLong - 1)
+        }
+        val checkedInput = if (ansiMode) {
+          assertValuesInRange(input.getBase,
+            minValue = Scalar.fromLong(lowBound),
+            maxValue = Scalar.fromLong(upBound))
+          input.getBase.incRefCount()
+        } else {
+          replaceOutOfRangeValues(input.getBase,
+            minValue = Scalar.fromLong(lowBound),
+            maxValue = Scalar.fromLong(upBound),
+            replaceValue = Scalar.fromNull(input.getBase.getType))
+        }
+
+        withResource(checkedInput) { checked =>
+          if (dt.scale < 0) {
+            // Rounding is essential when scale is negative,
+            // so we apply HALF_UP rounding manually to keep align with CpuCast.
+            withResource(checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))) {
+              scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+            }
+          } else if (dt.scale > 0) {
+            // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
+            // before casting it to decimal in case of overflow.
+            withResource(checked.castTo(DType.INT64)) { long =>
+              long.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+            }
+          } else {
+            checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+          }
+        }
+
+      case (FloatType | DoubleType, dt: DecimalType) =>
+        // Approach to minimize difference between CPUCast and GPUCast:
+        // step 1. cast input to FLOAT64 (if necessary)
+        // step 2. cast FLOAT64 to container DECIMAL (who keeps one more digit for rounding)
+        // step 3. perform HALF_UP rounding on container DECIMAL
+        val checkedInput = withResource(input.getBase.castTo(DType.FLOAT64)) { double =>
+          val roundedDouble = double.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+          withResource(roundedDouble) { rounded =>
+            // We rely on containerDecimal to perform preciser rounding. So, we have to take extra
+            // space cost of container into consideration when we run bound check.
+            val containerScaleBound = DType.DECIMAL64_MAX_PRECISION - (dt.scale + 1)
+            val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
+            if (ansiMode) {
+              assertValuesInRange(rounded,
+                minValue = Scalar.fromDouble(-bound),
+                maxValue = Scalar.fromDouble(bound),
+                inclusiveMin = false,
+                inclusiveMax = false)
+              rounded.incRefCount()
+            } else {
+              replaceOutOfRangeValues(rounded,
+                minValue = Scalar.fromDouble(-bound),
+                maxValue = Scalar.fromDouble(bound),
+                inclusiveMin = false,
+                inclusiveMax = false,
+                replaceValue = Scalar.fromNull(DType.FLOAT64))
+            }
+          }
+        }
+
+        withResource(checkedInput) { checked =>
+          // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
+          // be created because of precision overflow. In this case, we perform casting op directly.
+          if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+            checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+          } else {
+            val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -(dt.scale + 1))
+            withResource(checked.castTo(containerType)) { container =>
+              container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+            }
+          }
+        }
+
       case _ =>
         input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
     }
   }
 
   /**
-   * Asserts that all values in a column are within the specfied range.
+   * Asserts that all values in a column are within the specific range.
    *
-   * @param values ColumnVector
+   * @param values ColumnVector to be performed with range check
    * @param minValue Named parameter for function to create Scalar representing range minimum value
    * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
   private def assertValuesInRange(values: ColumnVector,
     minValue: => Scalar,
-    maxValue: => Scalar): Unit = {
+    maxValue: => Scalar,
+    inclusiveMin: Boolean = true,
+    inclusiveMax: Boolean = true): Unit = {
 
     def throwIfAny(cv: ColumnVector): Unit = {
       withResource(cv) { cv =>
@@ -400,11 +491,58 @@ case class GpuCast(
     }
 
     withResource(minValue) { minValue =>
-      throwIfAny(values.lessThan(minValue))
+      throwIfAny(inclusiveMin match {
+        case true => values.lessThan(minValue)
+        case false => values.lessOrEqualTo(minValue)
+      })
     }
 
     withResource(maxValue) { maxValue =>
-      throwIfAny(values.greaterThan(maxValue))
+      throwIfAny(inclusiveMax match {
+        case true => values.greaterThan(maxValue)
+        case false => values.greaterOrEqualTo(maxValue)
+      })
+    }
+  }
+
+  /**
+   * Detects outlier values of a column given with specific range, and replaces them with
+   * a inputted substitution value.
+   *
+   * @param values ColumnVector to be performed with range check
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param replaceValue Named parameter for function to create scalar to substitute outlier value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
+   */
+  private def replaceOutOfRangeValues(values: ColumnVector,
+    minValue: => Scalar,
+    maxValue: => Scalar,
+    replaceValue: => Scalar,
+    inclusiveMin: Boolean = true,
+    inclusiveMax: Boolean = true): ColumnVector = {
+
+    withResource(minValue) { minValue =>
+      withResource(maxValue) { maxValue =>
+        val minPredicate = inclusiveMin match {
+          case true => values.lessThan(minValue)
+          case false => values.lessOrEqualTo(minValue)
+        }
+        withResource(minPredicate) { minPredicate =>
+          val maxPredicate = inclusiveMax match {
+            case true => values.greaterThan(maxValue)
+            case false => values.greaterOrEqualTo(maxValue)
+          }
+          withResource(maxPredicate) { maxPredicate =>
+            withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
+              withResource(replaceValue) { nullScalar =>
+                rangePredicate.ifElse(nullScalar, values)
+              }
+            }
+          }
+        }
+      }
     }
   }
 

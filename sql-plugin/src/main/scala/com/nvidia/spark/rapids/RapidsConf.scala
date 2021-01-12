@@ -484,9 +484,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CAST_FLOAT_TO_DECIMAL = conf("spark.rapids.sql.castFloatToDecimal.enabled")
+    .doc("Casting from floating point types to decimal on the GPU returns results that have " +
+      "tiny difference compared to results returned from CPU.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_CAST_FLOAT_TO_STRING = conf("spark.rapids.sql.castFloatToString.enabled")
     .doc("Casting from floating point types to string on the GPU returns results that have " +
-      "a different precision than the default Java toString behavior.")
+      "a different precision than the default results of Spark.")
     .booleanConf
     .createWithDefault(false)
 
@@ -1021,6 +1027,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
+
+  lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 

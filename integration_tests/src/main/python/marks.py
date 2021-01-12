@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,3 +21,4 @@ incompat = pytest.mark.incompat
 limit = pytest.mark.limit
 qarun = pytest.mark.qarun
 cudf_udf = pytest.mark.cudf_udf
+rapids_udf_example_native = pytest.mark.rapids_udf_example_native

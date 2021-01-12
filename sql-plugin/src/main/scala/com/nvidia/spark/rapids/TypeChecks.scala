@@ -22,6 +22,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
@@ -736,10 +737,10 @@ class CastChecks extends ExprChecks {
   val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
   val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
-  val integralChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + BINARY
+  val integralChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
-  val fpChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
+  val fpChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
