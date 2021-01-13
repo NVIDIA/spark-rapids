@@ -4744,19 +4744,21 @@ object ConvertFiles {
       case "parquet" =>
         csvToParquet(
           spark,
-          conf.input(),
-          conf.output(),
-          conf.coalesce,
-          conf.repartition,
-          conf.withPartitioning())
+          baseInput = conf.input(),
+          baseOutput = conf.output(),
+          coalesce = conf.coalesce,
+          repartition = conf.repartition,
+          writePartitioning = conf.withPartitioning(),
+          useDecimalType = conf.useDecimals())
       case "orc" =>
         csvToOrc(
           spark,
-          conf.input(),
-          conf.output(),
-          conf.coalesce,
-          conf.repartition,
-          conf.withPartitioning())
+          baseInput = conf.input(),
+          baseOutput = conf.output(),
+          coalesce = conf.coalesce,
+          repartition = conf.repartition,
+          writePartitioning = conf.withPartitioning(),
+          useDecimalType = conf.useDecimals())
     }
   }
 }
@@ -4768,6 +4770,7 @@ class FileConversionConf(arguments: Seq[String]) extends ScallopConf(arguments) 
   val coalesce = propsLong[Int]("coalesce")
   val repartition = propsLong[Int]("repartition")
   val withPartitioning = opt[Boolean](default = Some(false))
+  val useDecimals = opt[Boolean](default = Some(false))
   verify()
   BenchUtils.validateCoalesceRepartition(coalesce, repartition)
 }
