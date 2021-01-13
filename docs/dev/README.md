@@ -246,6 +246,10 @@ added to the profile via NVTX ranges.  See
 [the NVTX profiling guide](nvtx_profiling.md) for additional information on
 setting up the build for profiling and adding NVTX ranges.
 
+Note: Nsight Systems is installed as part of the CUDA Toolkit.
+However, it is recommended that you download the latest release from the
+[product page](https://developer.nvidia.com/nsight-systems) directly.
+
 ## Code Coverage
 
 We use [jacoco](https://www.jacoco.org/jacoco/trunk/doc/) for code coverage because it lets
