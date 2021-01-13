@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Compatibility
-nav_order: 4
+nav_order: 5
 ---
 
 # RAPIDS Accelerator for Apache Spark Compatibility with Apache Spark
