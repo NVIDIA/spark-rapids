@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.format.CodecType
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
-import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, LongType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, DecimalType, LongType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
@@ -356,8 +356,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val codec = TableCompressionCodec.getCodec(CodecType.NVCOMP_LZ4)
     withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
-      GpuCompressedColumnVector.from(compressor.finish().head,
-        Array[DataType](LongType, DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 3)))
+      GpuCompressedColumnVector.from(compressor.finish().head)
     }
   }
 }

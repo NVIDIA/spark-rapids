@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -235,7 +235,7 @@ abstract class AbstractGpuCoalesceIterator(
             i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize
           }.sum
         case g: GpuCompressedColumnVector =>
-          g.getBuffer.getLength
+          g.getTableBuffer.getLength
         case g =>
           throw new IllegalStateException(s"Unexpected column type: $g")
       }
@@ -420,7 +420,7 @@ class GpuCoalesceIteratorNoSpill(iter: Iterator[ColumnarBatch],
         compressedVecs.foreach { cv =>
           val bufferMeta = cv.getTableMeta.bufferMeta
           // don't currently support switching codecs when partitioning
-          val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
+          val buffer = cv.getTableBuffer.slice(0, cv.getTableBuffer.getLength)
           decompressor.addBufferToDecompress(buffer, bufferMeta)
         }
         withResource(decompressor.finishAsync()) { outputBuffers =>
@@ -514,7 +514,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
         withResource(codec.createBatchDecompressor(maxDecompressBatchMemory,
             Cuda.DEFAULT_STREAM)) { decompressor =>
           compressedVecs.foreach { cv =>
-            val buffer = cv.getBuffer
+            val buffer = cv.getTableBuffer
             val bufferMeta = cv.getTableMeta.bufferMeta
             // don't currently support switching codecs when partitioning
             buffer.incRefCount()

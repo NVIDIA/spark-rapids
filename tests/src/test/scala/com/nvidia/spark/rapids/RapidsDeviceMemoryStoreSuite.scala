@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       val bufferId = MockRapidsBufferId(7)
       closeOnExcept(buildContiguousTable()) { ct =>
         // store takes ownership of the table
-        store.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
+        store.addContiguousTable(bufferId, ct, spillPriority)
       }
       val captor: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
       verify(catalog).registerNewBuffer(captor.capture())
@@ -67,7 +67,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       val spillPriority = 3
       val bufferId = MockRapidsBufferId(7)
       val meta = withResource(buildContiguousTable()) { ct =>
-        val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
+        val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
         // store takes ownership of the buffer
         ct.getBuffer.incRefCount()
         store.addBuffer(bufferId, ct.getBuffer, meta, spillPriority)
@@ -89,7 +89,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       withResource(buildContiguousTable()) { ct =>
         withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedHostBuffer =>
           expectedHostBuffer.copyFromDeviceBuffer(ct.getBuffer)
-          val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
+          val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
           // store takes ownership of the buffer
           ct.getBuffer.incRefCount()
           store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
@@ -115,7 +115,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       withResource(buildContiguousTable()) { ct =>
         withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
           expectedBatch =>
-            val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct.getTable, ct.getBuffer)
+            val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
             // store takes ownership of the buffer
             ct.getBuffer.incRefCount()
             store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3)
@@ -145,7 +145,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         closeOnExcept(buildContiguousTable()) { ct =>
           bufferSizes(i) = ct.getBuffer.getLength
           // store takes ownership of the table
-          store.addTable(MockRapidsBufferId(i), ct.getTable, ct.getBuffer, initialSpillPriority = 0)
+          store.addContiguousTable(MockRapidsBufferId(i), ct, initialSpillPriority = 0)
         }
         assertResult(bufferSizes.take(i+1).sum)(store.currentSize)
       }
@@ -167,7 +167,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         closeOnExcept(buildContiguousTable()) { ct =>
           bufferSizes(i) = ct.getBuffer.getLength
           // store takes ownership of the table
-          store.addTable(MockRapidsBufferId(i), ct.getTable, ct.getBuffer, spillPriorities(i))
+          store.addContiguousTable(MockRapidsBufferId(i), ct, spillPriorities(i))
         }
       }
       assert(spillStore.spilledBuffers.isEmpty)
