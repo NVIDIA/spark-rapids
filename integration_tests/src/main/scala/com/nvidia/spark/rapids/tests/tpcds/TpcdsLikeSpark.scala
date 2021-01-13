@@ -4743,7 +4743,7 @@ object ConvertFiles {
     conf.outputFormat() match {
       case "parquet" =>
         csvToParquet(
-          spark,
+          spark = spark,
           baseInput = conf.input(),
           baseOutput = conf.output(),
           coalesce = conf.coalesce,
@@ -4752,7 +4752,7 @@ object ConvertFiles {
           useDecimalType = conf.useDecimals())
       case "orc" =>
         csvToOrc(
-          spark,
+          spark = spark,
           baseInput = conf.input(),
           baseOutput = conf.output(),
           coalesce = conf.coalesce,
