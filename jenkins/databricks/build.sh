@@ -96,7 +96,7 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-mvn -B -P${BUILD_PROFILES} clean package -DskipTests
+## mvn -B -P${BUILD_PROFILES} clean package -DskipTests
 
 # Copy so we pick up new built jar and latest CuDF jar. Note that the jar names have to be
 # exactly what is in the statically setup Databricks cluster we use.
@@ -127,6 +127,6 @@ if [ `ls $DB_JAR_LOC/cudf* | wc -l` -gt 1 ]; then
     ls $DB_JAR_LOC/cudf*
     exit 1
 fi
-$SPARK_HOME/bin/spark-submit ./runtests.py --runtime_env="databricks"
+## $SPARK_HOME/bin/spark-submit ./runtests.py --runtime_env="databricks"
 cd /home/ubuntu
-tar -zcvf spark-rapids-built.tgz spark-rapids
+## tar -zcvf spark-rapids-built.tgz spark-rapids
