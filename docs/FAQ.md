@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 8
+nav_order: 9
 ---
 # Frequently Asked Questions
 
@@ -26,24 +26,24 @@ top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 
-The RAPIDS Accelerator for Apache Spark officially supports
-[Apache Spark](get-started/getting-started-on-prem.md),
-[Databricks Runtime 7.0](get-started/getting-started-databricks.md)
-and [Google Cloud Dataproc](get-started/getting-started-gcp.md).
-Most distributions based off of Apache Spark 3.0.0 should work, but because the plugin replaces
-parts of the physical plan that Apache Spark considers to be internal the code for those plans
-can change from one distribution to another. We are working with most cloud service providers to
-set up testing and validation on their distributions.
+The RAPIDS Accelerator for Apache Spark officially supports [Apache
+Spark](get-started/getting-started-on-prem.md), [AWS EMR
+6.2.0](get-started/getting-started-aws-emr.md), [Databricks Runtime
+7.3](get-started/getting-started-databricks.md) and [Google Cloud
+Dataproc](get-started/getting-started-gcp.md).  Most distributions based off of Apache Spark 3.0.0
+should work, but because the plugin replaces parts of the physical plan that Apache Spark considers
+to be internal the code for those plans can change from one distribution to another. We are working
+with most cloud service providers to set up testing and validation on their distributions.
 
 ### What is the right hardware setup to run GPU accelerated Spark?
 
-Reference architectures should be available around Q4 2020.
+Reference architectures should be available around Q1 2021.
 
 ### What CUDA versions are supported?
 
 CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here][version/stable-release.md] for download 
-links for the stable release.
+corresponds to the version you are using. Please look [here][download.md] for download 
+links for the latest release.
 
 ### What parts of Apache Spark are accelerated?
 
@@ -115,7 +115,7 @@ Yes, DPP still works.  It might not be as efficient as it could be, and we are w
 ### Is Adaptive Query Execution (AQE) Supported?
 
 In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3 
-release, running on Spark 3.0.1 and higher any operation that is supported on GPU will stay on 
+release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
 the GPU when AQE is enabled. 
 
 ### Are cache and persist supported?
