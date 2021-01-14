@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ def test_eq(data_gen):
                 f.col('b') == f.lit(None).cast(data_type),
                 f.col('a') == f.col('b')), conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', eq_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_eq_ns(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -43,7 +43,7 @@ def test_eq_ns(data_gen):
                 s2.eqNullSafe(f.col('b')),
                 f.lit(None).cast(data_type).eqNullSafe(f.col('a')),
                 f.col('b').eqNullSafe(f.lit(None).cast(data_type)),
-                f.col('a').eqNullSafe(f.col('b'))))
+                f.col('a').eqNullSafe(f.col('b'))), conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
 def test_ne(data_gen):

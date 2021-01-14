@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Developer Overview
-nav_order: 10
+nav_order: 12
 has_children: true
 permalink: /developer-overview/
 ---
@@ -245,6 +245,10 @@ runtime calls, GPU memory transfers, and GPU kernels, custom markers can be
 added to the profile via NVTX ranges.  See
 [the NVTX profiling guide](nvtx_profiling.md) for additional information on
 setting up the build for profiling and adding NVTX ranges.
+
+Note: Nsight Systems is installed as part of the CUDA Toolkit.
+However, it is recommended that you download the latest release from the
+[product page](https://developer.nvidia.com/nsight-systems) directly.
 
 ## Code Coverage
 
