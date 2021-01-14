@@ -83,6 +83,7 @@ _grpkey_longs_with_nullable_decimals = [
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_decimals,
                                       _grpkey_longs_with_nullable_decimals], ids=idfn)
 def test_window_aggs_for_rows_on_decimal(data_gen):
+    # TODO: test sum aggregation when underlying cuDF implementation is ready
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=2048),
         "window_agg_table",
