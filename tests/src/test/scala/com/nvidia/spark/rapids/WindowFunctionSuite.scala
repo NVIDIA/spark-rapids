@@ -16,9 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.{Window, WindowSpec}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.DecimalType
 
 class WindowFunctionSuite extends SparkQueryCompareTestSuite {
 
@@ -39,6 +41,43 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       count("*").over(windowSpec)
     )
 
+  private def windowAggregationTesterForDecimal(
+    windowSpec: WindowSpec, scale: Int = 0): DataFrame => DataFrame =
+    (df: DataFrame) => {
+      val decimalType = DecimalType(precision = 18, scale = scale)
+      df.select(
+        col("uid").cast(decimalType),
+        col("dollars"),
+        col("dateLong").cast(decimalType)
+      ).withColumn("decimalDollars", col("dollars").cast(decimalType)
+      ).select(
+        // TODO: test sum on decimal columns when underlying cuDF implementation is ready
+        sum("dollars").over(windowSpec),
+        min("decimalDollars").over(windowSpec),
+        max("decimalDollars").over(windowSpec),
+        count("decimalDollars").over(windowSpec)
+      )
+    }
+
+  private def rowNumberAggregationTesterForDecimal(
+    windowSpec: WindowSpec, scale: Int = 0): DataFrame => DataFrame =
+    (df: DataFrame) => {
+      val decimalType = DecimalType(precision = 18, scale = scale)
+      df.select(
+        col("uid").cast(decimalType),
+        col("dollars"),
+        col("dateLong").cast(decimalType)
+      ).withColumn("decimalDollars", col("dollars").cast(decimalType)
+      ).select(
+        // TODO: test sum on decimal columns when underlying cuDF implementation is ready
+        sum("dollars").over(windowSpec),
+        min("decimalDollars").over(windowSpec),
+        max("decimalDollars").over(windowSpec),
+        row_number().over(windowSpec),
+        count("*").over(windowSpec)
+      )
+    }
+
   /* There is no easy way to make dateLong not nullable with how these test are written
   Very similar functionality is covered by the python integration tests.  When
   https://github.com/NVIDIA/spark-rapids/issues/1039 is fixed then we can enable these tests again
@@ -56,6 +95,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
                            .orderBy("dateLong")
                            .rowsBetween(-2, 3)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [-2, CURRENT ROW] ", windowTestDfOrc) {
@@ -63,6 +103,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       .orderBy("dateLong")
       .rowsBetween(-2, 0)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 1)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [-2, UNBOUNDED FOLLOWING] ", windowTestDfOrc) {
@@ -70,6 +111,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       .orderBy("dateLong")
       .rowsBetween(-2, Window.unboundedFollowing)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 2)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, 3] ", windowTestDfOrc) {
@@ -77,13 +119,14 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       .orderBy("dateLong")
       .rowsBetween(0, 3)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 3)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, CURRENT ROW] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("dateLong")
       .rowsBetween(0, 0)
-    windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 4)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [CURRENT ROW, UNBOUNDED FOLLOWING] ",
@@ -91,7 +134,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("dateLong")
       .rowsBetween(0, Window.unboundedFollowing)
-    windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 5)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, 3] ", windowTestDfOrc) {
@@ -99,14 +142,17 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       .orderBy("dateLong")
       .rowsBetween(Window.unboundedPreceding, 3)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 10)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] ",
-      windowTestDfOrc) {
+      windowTestDfOrc,
+      new SparkConf().set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("dateLong")
       .rowsBetween(Window.unboundedPreceding, 0)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow, scale = -1)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [ROW_NUMBER]",
@@ -115,6 +161,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       .orderBy("dateLong")
       .rowsBetween(Window.unboundedPreceding, 0)
     rowNumberAggregationTester(rowsWindow)
+    rowNumberAggregationTesterForDecimal(rowsWindow, scale = 2)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, UNBOUNDED FOLLOWING] ",
@@ -123,12 +170,14 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
                            .orderBy("dateLong")
                            .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [Unspecified ordering] ", windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
                            .rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
     windowAggregationTester(rowsWindow)
+    windowAggregationTesterForDecimal(rowsWindow)
   }
 
   def testAllWindowAggregations(windowClause : String): DataFrame => DataFrame =

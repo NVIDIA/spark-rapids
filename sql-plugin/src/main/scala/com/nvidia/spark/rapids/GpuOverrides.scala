@@ -722,13 +722,16 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
           TypeSig.all),
-          ParamCheck("windowSpec", TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral,
-            TypeSig.numericAndInterval))),
+          ParamCheck("windowSpec",
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
+            TypeSig.numericAndInterval + TypeSig.DECIMAL))),
       (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r)),
     expr[SpecifiedWindowFrame](
       "Specification of the width of the group (or \"frame\") of input rows " +
@@ -777,12 +780,12 @@ object GpuOverrides {
       }),
     expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly(TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN +
+      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
           TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN +
+        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
             TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN +
+          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
               TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
@@ -790,12 +793,12 @@ object GpuOverrides {
       }),
     expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly(TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN +
+      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
           TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN +
+        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
             TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.integral + TypeSig.fp + TypeSig.BOOLEAN +
+          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
               TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression =
@@ -1660,8 +1663,9 @@ object GpuOverrides {
     expr[Max](
       "Max aggregate operator",
       ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
-        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))),
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable,
+        Seq(ParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable))),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = max.child.dataType
@@ -1677,8 +1681,9 @@ object GpuOverrides {
     expr[Min](
       "Min aggregate operator",
       ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
-        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))),
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable,
+        Seq(ParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable))),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
@@ -2398,7 +2403,7 @@ object GpuOverrides {
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),
