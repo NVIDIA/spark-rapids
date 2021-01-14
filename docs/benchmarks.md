@@ -169,7 +169,7 @@ before sharing these JSON files. Environment variables with names containing the
 
 ## Automating Benchmarks
 
-For convenience, the [benchmark.py](../integration_tests/src/main/python/benchmark.py) script is
+For convenience, the [benchmark.py](https://github.com/NVIDIA/spark-rapids/blob/main/integration_tests/src/main/python/benchmark.py) script is
 provided, allowing benchmarks to be run in an automated way with multiple configurations. Example
 usage is provided in the documentation within the script.
 
