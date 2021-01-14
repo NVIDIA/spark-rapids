@@ -20,7 +20,7 @@ cd api_validation
 // To run validation script on all version of Spark(3.0.0, 3.0.1 and 3.1.0-SNAPSHOT)
 sh auditAllVersions.sh
 
-// To run script on particular version we can use profile(spark300, spark301 and spark310)
+// To run script on particular version we can use profile(spark300, spark301 and spark311)
 mvn scala:run -P spark300
 ```
 

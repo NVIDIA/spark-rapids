@@ -252,7 +252,7 @@ object FuzzerUtils {
 /**
  * Wrapper around Random that generates more useful data for unit testing.
  */
-class EnhancedRandom(r: Random, options: FuzzerOptions) {
+class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptions) {
 
   def nextInterval(): CalendarInterval = {
     new CalendarInterval(nextInt(), nextInt(), nextLong())

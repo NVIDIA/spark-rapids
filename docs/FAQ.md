@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 8
+nav_order: 10
 ---
 # Frequently Asked Questions
 
@@ -37,13 +37,13 @@ with most cloud service providers to set up testing and validation on their dist
 
 ### What is the right hardware setup to run GPU accelerated Spark?
 
-Reference architectures should be available around Q4 2020.
+Reference architectures should be available around Q1 2021.
 
 ### What CUDA versions are supported?
 
 CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here][version/stable-release.md] for download 
-links for the stable release.
+corresponds to the version you are using. Please look [here][download.md] for download 
+links for the latest release.
 
 ### What parts of Apache Spark are accelerated?
 
@@ -168,7 +168,24 @@ can throw at it.
 
 ### How can I run custom expressions/UDFs on the GPU?
 
-We do not currently support this, but we are working on ways to make it possible.
+The RAPIDS Accelerator provides the following solutions for running
+user-defined functions on the GPU:
+
+#### RAPIDS-Accelerated UDFs
+
+UDFs can provide a RAPIDS-accelerated implementation which allows the RAPIDS Accelerator to perform
+the operation on the GPU.  See the [RAPIDS-accelerated UDF documentation](../docs/rapids-udfs.md)
+for details.
+
+#### Automatic Translation of Scala UDFs to Apache Spark Operations
+
+The RAPIDS Accelerator has an experimental byte-code analyzer which can translate some simple
+Scala UDFs into equivalent Apache Spark operations in the query plan. The RAPIDS Accelerator then
+translates these operations into GPU operations just like other query plan operations.
+
+The Scala UDF byte-code analyzer is disabled by default and must be enabled by the user via the
+[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) configuration
+setting.
 
 ### Why am I getting an error when trying to use pinned memory?
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION.
+  Copyright (c) 2020-2021, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -41,9 +41,9 @@
             </properties>
         </profile>
         <profile>
-            <id>spark310</id>
+            <id>spark311</id>
             <properties>
-                <spark.version>${spark310.version}</spark.version>
+                <spark.version>${spark311.version}</spark.version>
             </properties>
         </profile>
     </profiles>
