@@ -1374,9 +1374,9 @@ object GpuOverrides {
     expr[Add](
       "Addition",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval)),
+        TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval),
+        ("rhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuAdd(lhs, rhs)
@@ -1384,18 +1384,18 @@ object GpuOverrides {
     expr[Subtract](
       "Subtraction",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval)),
+        TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval),
+        ("rhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryExprMeta[Subtract](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs)
       }),
     expr[Multiply](
       "Multiplication",
-      ExprChecks.binaryProjectNotLambda(TypeSig.integral + TypeSig.fp, TypeSig.numeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric)),
+      ExprChecks.binaryProjectNotLambda(TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numeric,
+        ("lhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numeric),
+        ("rhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numeric)),
       (a, conf, p, r) => new BinaryExprMeta[Multiply](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuMultiply(lhs, rhs)

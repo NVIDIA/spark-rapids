@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.rapids.{GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuLessThan, GpuLessThanOrEqual}
+import org.apache.spark.sql.rapids.{GpuAdd, GpuDivide, GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuIntegralDivide, GpuLessThan, GpuLessThanOrEqual, GpuMultiply, GpuSubtract}
 import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType}
 
 class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
@@ -113,5 +113,85 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
     val expectedFunSV = (x: Decimal) => Option(litValue <= x)
     checkEvaluateGpuUnaryExpression(GpuLessThanOrEqual(lit, leftExpr),
       schema.head.dataType, DataTypes.BooleanType, expectedFunSV, schema)
+  }
+
+  test("GpuAdd") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option (l + r)
+    val expectedFunVS = (x: Decimal) => Option(x + litValue)
+    val expectedFunSV = (x: Decimal) => Option(litValue + x)
+    checkEvaluateGpuBinaryExpression(GpuAdd(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, schema.head.dataType,
+      expectedFunVV, schema)
+
+    checkEvaluateGpuUnaryExpression(GpuAdd(leftExpr, lit),
+      schema.head.dataType, lit.dataType, expectedFunVS, schema)
+
+    checkEvaluateGpuUnaryExpression(GpuAdd(lit, leftExpr),
+      schema.head.dataType, lit.dataType, expectedFunSV, schema)
+  }
+
+  test("GpuSubtract") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option (l - r)
+    val expectedFunVS = (x: Decimal) => Option(x - litValue)
+    val expectedFunSV = (x: Decimal) => Option(litValue - x)
+    checkEvaluateGpuBinaryExpression(GpuSubtract(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, schema.head.dataType,
+      expectedFunVV, schema)
+
+    checkEvaluateGpuUnaryExpression(GpuSubtract(leftExpr, lit),
+      schema.head.dataType, lit.dataType, expectedFunVS, schema)
+
+    checkEvaluateGpuUnaryExpression(GpuSubtract(lit, leftExpr),
+      schema.head.dataType, lit.dataType, expectedFunSV, schema)
+  }
+
+  test("GpuMultiply") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option (l * r)
+    val expectedFunVS = (x: Decimal) => Option(x * litValue)
+    val expectedFunSV = (x: Decimal) => Option(litValue * x)
+    checkEvaluateGpuBinaryExpression(GpuMultiply(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 6),
+      expectedFunVV, schema)
+
+    checkEvaluateGpuUnaryExpression(GpuMultiply(leftExpr, lit),
+      schema.head.dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 9),
+      expectedFunVS, schema)
+
+    checkEvaluateGpuUnaryExpression(GpuMultiply(lit, leftExpr),
+      schema.head.dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 9), expectedFunSV, schema)
+  }
+
+  test("GpuDivide") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option (l / r)
+    val expectedFunVS = (x: Decimal) => Option(x / litValue)
+    val expectedFunSV = (x: Decimal) => Option(litValue / x)
+    checkEvaluateGpuBinaryExpression(GpuIntegralDivide(leftExpr, rightExpr),
+      schema.head.dataType, schema(1).dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 2),
+      expectedFunVV, schema)
+
+    // checkEvaluateGpuUnaryExpression(GpuDivide(leftExpr, lit),
+    //   schema(1).dataType, schema(1).dataType, expectedFunVS, schema)
+      // schema(1).dataType, schema(1).dataType, expectedFunSV, schema)
+      // schema.head.dataType, schema.head.dataType, expectedFunVS, schema)
+
+    // checkEvaluateGpuUnaryExpression(GpuDivide(lit, leftExpr),
+    //   schema.head.dataType, schema.head.dataType, expectedFunSV, schema)
+  }
+  test("GpuDivide2") {
+    val expectedFunVV = (l: Decimal, r: Decimal) => Option (l / r)
+    val expectedFunVS = (x: Decimal) => Option(x / litValue)
+    val expectedFunSV = (x: Decimal) => Option(litValue / x)
+    // checkEvaluateGpuBinaryExpression(GpuDivide(leftExpr, rightExpr),
+    //   schema.head.dataType, schema(1).dataType, schema.head.dataType,
+    //   expectedFunVV, schema)
+
+    // checkEvaluateGpuUnaryExpression(GpuDivide(leftExpr, lit),
+    //   schema(1).dataType, schema(1).dataType, expectedFunVS, schema)
+      // schema(1).dataType, schema(1).dataType, expectedFunSV, schema)
+      // schema.head.dataType, schema.head.dataType, expectedFunVS, schema)
+
+    checkEvaluateGpuUnaryExpression(GpuIntegralDivide(lit, leftExpr),
+      schema.head.dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 1), expectedFunSV, schema)
+      // schema.head.dataType, schema.head.dataType, expectedFunSV, schema)
   }
 }

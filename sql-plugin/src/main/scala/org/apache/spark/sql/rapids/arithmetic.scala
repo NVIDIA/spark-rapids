@@ -73,8 +73,42 @@ case class GpuAbs(child: Expression) extends CudfUnaryExpression
   override def unaryOp: UnaryOp = UnaryOp.ABS
 }
 
+// combinedDType
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
-  override def dataType: DataType = left.dataType
+
+  // def resultType 
+  override def dataType: DataType = left.dataType match {
+    case ldt: DecimalType =>
+        val lscale = ldt.scale
+        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
+        val fscale = right.dataType match {
+          case rdt: DecimalType =>
+            // val rscale = rdt.scale
+            lscale.max(rdt.scale)
+          case _ =>
+            lscale
+        }
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+    case _ =>
+      left.dataType
+      // }
+    // if(left.dataType isInstanceOf) {
+    //   // left.dataType
+    //   // val scale = left.dataType.scale
+    //   DecimalType(DType.DECIMAL64_MAX_PRECISION, 5)
+    //   // combinedDType(left.dataType, right.dataType)
+    // } else {
+    //   left.dataType
+    // }
+  }
+
+  // dataType match {
+  //     case dt: DecimalType =>
+  //       val scale = dt.scale
+  //       DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+  //     case _ =>
+  //       DType.INT64
+  //   }
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
@@ -85,6 +119,23 @@ case class GpuAdd(left: Expression, right: Expression) extends CudfBinaryArithme
   override def symbol: String = "+"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+
+
+  override def dataType: DataType = left.dataType match {
+    case ldt: DecimalType =>
+        val lscale = ldt.scale
+        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
+        val fscale = right.dataType match {
+          case rdt: DecimalType =>
+            // val rscale = rdt.scale
+            lscale.max(rdt.scale)
+          case _ =>
+            lscale
+        }
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+    case _ =>
+      left.dataType
+  }
 }
 
 case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
@@ -93,6 +144,22 @@ case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryAr
   override def symbol: String = "-"
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
+
+  override def dataType: DataType = left.dataType match {
+    case ldt: DecimalType =>
+        val lscale = ldt.scale
+        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
+        val fscale = right.dataType match {
+          case rdt: DecimalType =>
+            // val rscale = rdt.scale
+            lscale.max(rdt.scale)
+          case _ =>
+            lscale
+        }
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+    case _ =>
+      left.dataType
+  }
 }
 
 case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryArithmetic {
@@ -101,6 +168,23 @@ case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryAr
   override def symbol: String = "*"
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
+
+  override def dataType: DataType = left.dataType match {
+    case ldt: DecimalType =>
+        val lscale = ldt.scale
+        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
+        val fscale = right.dataType match {
+          case rdt: DecimalType =>
+            // val rscale = rdt.scale
+            // lscale.max(rdt.scale)
+            lscale + rdt.scale
+          case _ =>
+            lscale
+        }
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+    case _ =>
+      left.dataType
+  }
 }
 
 object GpuDivModLike {
@@ -111,8 +195,25 @@ object GpuDivModLike {
     var nullVec: ColumnVector = null
     try {
       val dtype = v.getBase.getType
-      zeroScalar = makeZeroScalar(dtype)
       nullScalar = Scalar.fromNull(dtype)
+      if (dtype.isDecimalType()) {
+        if(dtype.isDecimal64Type()) {
+          zeroScalar = Scalar.fromDecimal64(dtype.getScale(), 0)
+          
+        } else {
+          zeroScalar = Scalar.fromDecimal32(dtype.getScale(), 0)
+        }
+        // zeroScalar = dtype match {
+        //   case DType.DECIMAL32 => Scalar.fromDecimal32(dtype.getScale(), 0)
+          // case DType.DECIMAL64 => Scalar.fromDecimal64(dtype.getScale(), 0)
+        // }
+
+      } else {
+        zeroScalar = makeZeroScalar(dtype)
+      }
+      //   case _ => makeZeroScalar(dtype)
+      //   // nullScalar = Scalar.fromNull(dtype)
+      // }
       zeroVec = ColumnVector.fromScalar(zeroScalar, 1)
       nullVec = ColumnVector.fromScalar(nullScalar, 1)
       v.getBase.findAndReplaceAll(zeroVec, nullVec)
@@ -152,6 +253,11 @@ object GpuDivModLike {
       case DType.INT64 => Scalar.fromLong(0L)
       case DType.FLOAT32 => Scalar.fromFloat(0f)
       case DType.FLOAT64 => Scalar.fromDouble(0)
+      // case dt: DType.DECIMAL32 => Scalar.fromDecimal32(dt.getScale(), 0)
+      // case dt: DType.DECIMAL64 => Scalar.fromDecimal64(dt.getScale(), 0)
+        // makeDecimal64Scalar  
+    // long handle = makeDecimal64Scalar(unscaledValue, scale, true);
+    // return new Scalar(DType.create(DType.DTypeEnum.DECIMAL64, scale), handle);
       case t => throw new IllegalArgumentException(s"Unexpected type: $t")
     }
   }
@@ -192,12 +298,13 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def symbol: String = "/"
 
   override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
+
 }
 
 case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
-  override def dataType: DataType = LongType
+  // override def dataType: DataType = LongType
   override def outputTypeOverride: DType = DType.INT64
 
   override def symbol: String = "/"
@@ -205,6 +312,23 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def binaryOp: BinaryOp = BinaryOp.DIV
 
   override def sqlOperator: String = "div"
+
+  override def dataType: DataType = left.dataType match {
+    case ldt: DecimalType =>
+        val lscale = ldt.scale
+        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
+        val fscale = right.dataType match {
+          case rdt: DecimalType =>
+            // val rscale = rdt.scale
+            // lscale.max(rdt.scale)
+            lscale - rdt.scale
+          case _ =>
+            lscale
+        }
+        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+    case _ =>
+      left.dataType
+  }
 }
 
 case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLike {
