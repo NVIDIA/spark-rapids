@@ -28,7 +28,7 @@ The following is an example of a physical plan with operators running on the GPU
 
 ![ease-of-use](/docs/img/ease-of-use.png)
 
-Learn more on how to [get started](get-started/getting-started.md).
+Learn more on how to [get started](/docs/get-started/getting-started.md).
 
 ## A Unified AI framework for ETL + ML/DL 
 A single pipeline, from ingest to data preparation to model training
