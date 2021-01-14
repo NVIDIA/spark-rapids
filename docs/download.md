@@ -61,7 +61,7 @@ CPU threads v0.2 delivers up to 6x performance improvement over the previous rel
 Parquet file reads.
 
 The RAPIDS Accelerator introduces a beta feature that accelerates [Spark shuffle for
-GPUs](get-started/getting-started-on-prem.md#enabling-rapidsshufflemanager).  Accelerated
+GPUs](get-started/getting-started-on-prem.html#enabling-rapidsshufflemanager).  Accelerated
 shuffle makes use of high bandwidth transfers between GPUs (NVLink or p2p over PCIe) and leverages
 RDMA (RoCE or Infiniband) for remote transfers. 
 
