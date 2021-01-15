@@ -23,6 +23,9 @@ import org.apache.arrow.vector.holders.NullableVarCharHolder;
 
 import org.apache.spark.sql.util.ArrowUtils;
 import org.apache.spark.sql.types.*;
+import org.apache.spark.sql.vectorized.ColumnarArray;
+import org.apache.spark.sql.vectorized.ColumnarMap;
+import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.unsafe.types.UTF8String;
 
 /**
@@ -33,6 +36,10 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
 
   private final AccessibleArrowVectorAccessor accessor;
   private AccessibleArrowColumnVector[] childColumns;
+
+  public ValueVector getArrowValueVector() {
+    return accessor.vector;
+  }
 
   @Override
   public boolean hasNull() {
@@ -184,7 +191,7 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
     }
 
     ValueVector getVector() {
-      return vector
+      return vector;
     }
 
     // TODO: should be final after removing ArrayAccessor workaround

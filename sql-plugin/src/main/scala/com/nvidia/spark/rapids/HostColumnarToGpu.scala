@@ -27,25 +27,33 @@ import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
-    if (cv.isInstanceOf[ArrowColumnVector]) {
+    if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       logWarning("looking at arrow column vector")
       // TODO - how make sure off heap?
       // could create HostMemoryBuffer(addr, length)'
-      val arrowVec = cv.asInstanceOf[ArrowColumnVector]
+      val arrowVec = cv.asInstanceOf[AccessibleArrowColumnVector]
       // TODO - accessor is private to ArrowColumnVector!!!
       // ValueVector => ArrowBuf
 
+      val buffers = arrowVec.getArrowValueVector.getBuffers(false)
+      logWarning("buffer num is " + buffers.size)
 
-      val arrowDataAddr = arrowVec.accessor.vector.getDataBuffer.memoryAddress()
-      val arrowDataValidity = arrowVec.accessor.vector.getValidityBuffer.memoryAddress()
-      val arrowDataOffsetBuf = arrowVec.accessor.vector.getOffsetBuffer.memoryAddress()
+      val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.memoryAddress()
+      val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
+      val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer.memoryAddress()
 
       // ArrowBuf length instead? = capacity()
-      val arrowDataLen = arrowVec.accessor.vector.getBufferSize() // ?
+      val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
+      val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
+      val arrowDataOffsetLen = arrowVec.getArrowValueVector.getBufferSize() // ?
+
+      logWarning(s"lens data: ${arrowDataLen} validity: $arrowDataValidityLen " +
+        s"offset: $arrowDataOffsetLen")
 
       // need multiple for validity and offset???
       val hmb = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
