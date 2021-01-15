@@ -32,6 +32,7 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 object HostColumnarToGpu extends Logging {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
+    logWarning("host oclunnar to gpu cv is type: " + cv.getClass().toString())
     if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       logWarning("looking at arrow column vector")
       // TODO - how make sure off heap?
@@ -45,18 +46,18 @@ object HostColumnarToGpu extends Logging {
 
       val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.memoryAddress()
       val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
-      val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer.memoryAddress()
+      // val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer.memoryAddress()
 
       // ArrowBuf length instead? = capacity()
       val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
       val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      val arrowDataOffsetLen = arrowVec.getArrowValueVector.getBufferSize() // ?
+      // val arrowDataOffsetLen = arrowVec.getArrowValueVector.getBufferSize() // ?
 
-      logWarning(s"lens data: ${arrowDataLen} validity: $arrowDataValidityLen " +
-        s"offset: $arrowDataOffsetLen")
+      logWarning(s"lens data: ${arrowDataLen} validity: $arrowDataValidityLen ")
+        // s"offset: $arrowDataOffsetLen")
 
       // need multiple for validity and offset???
-      val hmb = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
+      // val hmb = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
 
 
     }
