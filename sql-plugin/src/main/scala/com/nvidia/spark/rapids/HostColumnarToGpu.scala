@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf._
+
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -31,6 +33,24 @@ object HostColumnarToGpu extends Logging {
       nullable: Boolean, rows: Int): Unit = {
     if (cv.isInstanceOf[ArrowColumnVector]) {
       logWarning("looking at arrow column vector")
+      // TODO - how make sure off heap?
+      // could create HostMemoryBuffer(addr, length)'
+      val arrowVec = cv.asInstanceOf[ArrowColumnVector]
+      // TODO - accessor is private to ArrowColumnVector!!!
+      // ValueVector => ArrowBuf
+
+
+      val arrowDataAddr = arrowVec.accessor.vector.getDataBuffer.memoryAddress()
+      val arrowDataValidity = arrowVec.accessor.vector.getValidityBuffer.memoryAddress()
+      val arrowDataOffsetBuf = arrowVec.accessor.vector.getOffsetBuffer.memoryAddress()
+
+      // ArrowBuf length instead? = capacity()
+      val arrowDataLen = arrowVec.accessor.vector.getBufferSize() // ?
+
+      // need multiple for validity and offset???
+      val hmb = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
+
+
     }
     (cv.dataType(), nullable) match {
       case (ByteType | BooleanType, true) =>
