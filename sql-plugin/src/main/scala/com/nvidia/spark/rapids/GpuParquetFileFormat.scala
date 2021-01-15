@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DataTypes, DateType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, MapType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -41,6 +41,11 @@ object GpuParquetFileFormat {
       spark: SparkSession,
       options: Map[String, String],
       schema: StructType): Option[GpuParquetFileFormat] = {
+
+    if(!schema.forall(field => GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))) {
+      meta.willNotWorkOnGpu("Not all datatypes are supported")
+    }
+
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
@@ -267,11 +272,21 @@ class GpuParquetWriter(
     super.write(newBatch, statsTrackers)
   }
   override val tableWriter: TableWriter = {
+    def precisionsList(t: DataType): List[Int] = {
+      t match {
+        case d: DecimalType => List(d.precision)
+        case s: StructType => s.flatMap(f => precisionsList(f.dataType)).toList
+        case ArrayType(elementType, _) => precisionsList(elementType)
+        case _ => List.empty
+      }
+    }
+
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = ParquetWriterOptions.builder()
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
       .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96)
+      .withPrecisionValues(dataSchema.flatMap(f => precisionsList(f.dataType)):_*)
     dataSchema.foreach(entry => {
       if (entry.nullable) {
         builder.withColumnNames(entry.name)

@@ -44,7 +44,13 @@ object GpuOrcFileFormat extends Logging {
 
   def tagGpuSupport(meta: RapidsMeta[_, _, _],
                     spark: SparkSession,
-                    options: Map[String, String]): Option[GpuOrcFileFormat] = {
+                    options: Map[String, String],
+                    schema: StructType): Option[GpuOrcFileFormat] = {
+
+
+    if(!schema.forall(field => GpuOverrides.isSupportedType(field.dataType))) {
+      meta.willNotWorkOnGpu("Not all datatypes are supported")
+    }
 
     if (!meta.conf.isOrcEnabled) {
       meta.willNotWorkOnGpu("ORC input and output has been disabled. To enable set" +

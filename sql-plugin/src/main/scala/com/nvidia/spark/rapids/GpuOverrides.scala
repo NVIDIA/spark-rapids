@@ -315,7 +315,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
         willNotWorkOnGpu("JSON output is not supported")
         None
       case f if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options)
+        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
       case _: ParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(this, spark, cmd.options, cmd.query.schema)
       case _: TextFileFormat =>
@@ -372,7 +372,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
     // If that changes then this will start failing because we don't have a mapping.
     gpuProvider = origProvider.getConstructor().newInstance() match {
       case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties)
+        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
       case _: ParquetFileFormat =>
         GpuParquetFileFormat.tagGpuSupport(this, spark,
           cmd.table.storage.properties, cmd.query.schema)
@@ -2270,7 +2270,8 @@ object GpuOverrides {
       }),
     exec[DataWritingCommandExec](
       "Writing data",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+        TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
           Seq(GpuOverrides.wrapDataWriteCmds(p.cmd, conf, Some(this)))
