@@ -120,19 +120,17 @@ case class GpuAdd(left: Expression, right: Expression) extends CudfBinaryArithme
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
 
-
   override def dataType: DataType = left.dataType match {
     case ldt: DecimalType =>
-        val lscale = ldt.scale
-        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
-        val fscale = right.dataType match {
-          case rdt: DecimalType =>
-            // val rscale = rdt.scale
-            lscale.max(rdt.scale)
-          case _ =>
-            lscale
-        }
-        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+      val lscale = ldt.scale
+      val lprecision = ldt.precision
+      right.dataType match {
+        case rdt: DecimalType =>
+          // DecimalType(lscale.max(rdt.scale) + (lprecision-lscale).max(rdt.precision-rdt.scale) + 1, lscale.max(rdt.scale))
+          DecimalType(DType.DECIMAL64_MAX_PRECISION, lscale.max(rdt.scale))
+        case _ =>
+          DecimalType(lprecision, lscale)
+      }
     case _ =>
       left.dataType
   }
@@ -147,16 +145,15 @@ case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryAr
 
   override def dataType: DataType = left.dataType match {
     case ldt: DecimalType =>
-        val lscale = ldt.scale
-        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
-        val fscale = right.dataType match {
-          case rdt: DecimalType =>
-            // val rscale = rdt.scale
-            lscale.max(rdt.scale)
-          case _ =>
-            lscale
-        }
-        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+      val lscale = ldt.scale
+      val lprecision = ldt.precision
+      right.dataType match {
+        case rdt: DecimalType =>
+          // DecimalType(lscale.max(rdt.scale) + (lprecision-lscale).max(rdt.precision-rdt.scale) + 1, lscale.max(rdt.scale))
+          DecimalType(DType.DECIMAL64_MAX_PRECISION, lscale.max(rdt.scale))
+        case _ =>
+          DecimalType(lprecision, lscale)
+      }
     case _ =>
       left.dataType
   }
@@ -171,17 +168,15 @@ case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryAr
 
   override def dataType: DataType = left.dataType match {
     case ldt: DecimalType =>
-        val lscale = ldt.scale
-        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
-        val fscale = right.dataType match {
-          case rdt: DecimalType =>
-            // val rscale = rdt.scale
-            // lscale.max(rdt.scale)
-            lscale + rdt.scale
-          case _ =>
-            lscale
-        }
-        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+      val lscale = ldt.scale
+      val lprecision = ldt.precision
+      right.dataType match {
+        case rdt: DecimalType =>
+          // DecimalType(lprecision + rdt.precision + 1, lscale + rdt.scale)
+          DecimalType(DType.DECIMAL64_MAX_PRECISION, lscale + rdt.scale)
+        case _ =>
+          DecimalType(lprecision, lscale)
+      }
     case _ =>
       left.dataType
   }
@@ -315,17 +310,16 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
 
   override def dataType: DataType = left.dataType match {
     case ldt: DecimalType =>
-        val lscale = ldt.scale
-        // DecimalType(DType.DECIMAL64_MAX_PRECISION, scale)
-        val fscale = right.dataType match {
-          case rdt: DecimalType =>
-            // val rscale = rdt.scale
-            // lscale.max(rdt.scale)
-            lscale - rdt.scale
-          case _ =>
-            lscale
-        }
-        DecimalType(DType.DECIMAL64_MAX_PRECISION, fscale)
+      val lscale = ldt.scale
+      val lprecision = ldt.precision
+      right.dataType match {
+        case rdt: DecimalType =>
+          // val fscale = (lscale + rdt.precision + 1)
+          // DecimalType(lprecision + lscale + rdt.scale + fscale, fscale)
+          DecimalType(DType.DECIMAL64_MAX_PRECISION, lscale - rdt.scale)
+        case _ =>
+          DecimalType(lprecision, lscale)
+      }
     case _ =>
       left.dataType
   }

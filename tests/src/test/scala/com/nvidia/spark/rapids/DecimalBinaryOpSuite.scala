@@ -160,38 +160,4 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
     checkEvaluateGpuUnaryExpression(GpuMultiply(lit, leftExpr),
       schema.head.dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 9), expectedFunSV, schema)
   }
-
-  test("GpuDivide") {
-    val expectedFunVV = (l: Decimal, r: Decimal) => Option (l / r)
-    val expectedFunVS = (x: Decimal) => Option(x / litValue)
-    val expectedFunSV = (x: Decimal) => Option(litValue / x)
-    checkEvaluateGpuBinaryExpression(GpuIntegralDivide(leftExpr, rightExpr),
-      schema.head.dataType, schema(1).dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 2),
-      expectedFunVV, schema)
-
-    // checkEvaluateGpuUnaryExpression(GpuDivide(leftExpr, lit),
-    //   schema(1).dataType, schema(1).dataType, expectedFunVS, schema)
-      // schema(1).dataType, schema(1).dataType, expectedFunSV, schema)
-      // schema.head.dataType, schema.head.dataType, expectedFunVS, schema)
-
-    // checkEvaluateGpuUnaryExpression(GpuDivide(lit, leftExpr),
-    //   schema.head.dataType, schema.head.dataType, expectedFunSV, schema)
-  }
-  test("GpuDivide2") {
-    val expectedFunVV = (l: Decimal, r: Decimal) => Option (l / r)
-    val expectedFunVS = (x: Decimal) => Option(x / litValue)
-    val expectedFunSV = (x: Decimal) => Option(litValue / x)
-    // checkEvaluateGpuBinaryExpression(GpuDivide(leftExpr, rightExpr),
-    //   schema.head.dataType, schema(1).dataType, schema.head.dataType,
-    //   expectedFunVV, schema)
-
-    // checkEvaluateGpuUnaryExpression(GpuDivide(leftExpr, lit),
-    //   schema(1).dataType, schema(1).dataType, expectedFunVS, schema)
-      // schema(1).dataType, schema(1).dataType, expectedFunSV, schema)
-      // schema.head.dataType, schema.head.dataType, expectedFunVS, schema)
-
-    checkEvaluateGpuUnaryExpression(GpuIntegralDivide(lit, leftExpr),
-      schema.head.dataType, DecimalType(DType.DECIMAL64_MAX_PRECISION, 1), expectedFunSV, schema)
-      // schema.head.dataType, schema.head.dataType, expectedFunSV, schema)
-  }
 }
