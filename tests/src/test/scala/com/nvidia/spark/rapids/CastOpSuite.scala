@@ -653,17 +653,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
             }
             fromCpu.map(r => Row(fetchFromRow(r))) -> fromGpu.map(r => Row(fetchFromRow(r)))
         }
-        var cc = 0
-        fromCpu.zip(fromGpu).foreach {
-          case (x, y) if x.isNullAt(1) || y.isNullAt(1) =>
-            println((x.isNullAt(1) && y.isNullAt(1), y.get(0), x.get(1), y.get(1)))
-            if (!(x.isNullAt(1) && y.isNullAt(1))) cc += 1
-          case (x, y) =>
-            val (xx, yy) = x.getDecimal(1).unscaledValue() -> y.getDecimal(1).unscaledValue()
-            if (xx != yy) cc += 1
-            println((xx == yy, y.get(0), xx, yy))
-        }
-        println(s"dataType: $dataType; scale: $scale, number of unEqual: $cc \n")
         compareResults(sort = false, maxFloatDiff, cpuResult, gpuResult)
       } else {
         withGpuSparkSession((ss: SparkSession) => execFun(createDF(ss)).collect(), conf)
