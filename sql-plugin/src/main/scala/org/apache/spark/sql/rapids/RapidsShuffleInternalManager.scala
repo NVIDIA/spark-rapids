@@ -233,14 +233,10 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   // Code that expects the shuffle catalog to be initialized gets it this way,
   // with error checking in case we are in a bad state.
-  private def getCatalogOrThrow: ShuffleBufferCatalog = {
-    val catalog = GpuShuffleEnv.getCatalog
-    if (catalog == null) {
+  private def getCatalogOrThrow: ShuffleBufferCatalog =
+    Option(GpuShuffleEnv.getCatalog).getOrElse(
       throw new IllegalStateException("The ShuffleBufferCatalog is not initialized but the " +
-        "RapidsShuffleManager is configured")
-    }
-    catalog
-  }
+        "RapidsShuffleManager is configured"))
 
   private lazy val resolver = if (shouldFallThroughOnEverything) {
     wrapped.shuffleBlockResolver
@@ -267,8 +263,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
         override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {
           (sbbId.startReduceId to sbbId.endReduceId).flatMap(rid => {
-            catalog.blockIdToMetas(
-              ShuffleBlockId(sbbId.shuffleId, sbbId.mapId, rid))
+            catalog.blockIdToMetas(ShuffleBlockId(sbbId.shuffleId, sbbId.mapId, rid))
           })
         }
       }
