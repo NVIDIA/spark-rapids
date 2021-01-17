@@ -106,8 +106,15 @@ class RapidsCachingReader[K, C](
           require(
             blockManagerId.topologyInfo.isDefined &&
               blockManagerId.topologyInfo.get
-                .startsWith(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}="),
-            s"Attempting to handle non-rapids enabled blocks from $blockManagerId")
+                .startsWith(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}="), {
+              val enabledHint = if (!rapidsConf.shuffleTransportEnabled) {
+                s"${RapidsConf.SHUFFLE_TRANSPORT_ENABLE.key} is set to false. This should be " +
+                 "enabled to allow remote blocks to be fetched. "
+              } else {
+                "This is unexpected behavior!"
+              }
+              s"Attempting to handle non-rapids enabled blocks from $blockManagerId. ${enabledHint}"
+            })
           blocksForRapidsTransport.append((blockManagerId, blockInfos))
         }
       })
