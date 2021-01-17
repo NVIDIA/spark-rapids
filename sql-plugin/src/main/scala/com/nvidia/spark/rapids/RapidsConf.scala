@@ -685,9 +685,13 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
-    .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
+    .doc("Enable the Rapids Shuffle Transport for accelerated shuffle. By default, this " +
+        "requires UCX to be installed in the system. Consider setting to false if running with " +
+        "a single executor and UCX is not available, for short-circuit cached shuffle " +
+        "(i.e. for testing purposes)")
+    .internal()
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")

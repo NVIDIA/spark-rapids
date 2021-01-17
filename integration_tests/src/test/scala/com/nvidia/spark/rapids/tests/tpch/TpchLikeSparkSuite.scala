@@ -48,7 +48,10 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
       println("RAPIDS SHUFFLE MANAGER ACTIVE")
-      builder = builder.config("spark.shuffle.manager", rapidsShuffle)
+      // configure the cache-only shuffle manager (disable transport)
+      builder = builder
+          .config("spark.shuffle.manager", rapidsShuffle)
+          .config("spark.rapids.shuffle.transport.enabled", false)
     } else {
       println("RAPIDS SHUFFLE MANAGER INACTIVE")
     }
