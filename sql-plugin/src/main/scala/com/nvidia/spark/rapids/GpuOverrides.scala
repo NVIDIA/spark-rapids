@@ -731,7 +731,7 @@ object GpuOverrides {
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
-            TypeSig.numericAndInterval + TypeSig.DECIMAL))),
+            TypeSig.numericAndInterval))),
       (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r)),
     expr[SpecifiedWindowFrame](
       "Specification of the width of the group (or \"frame\") of input rows " +
@@ -1662,10 +1662,19 @@ object GpuOverrides {
       }),
     expr[Max](
       "Max aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable,
-        Seq(ParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable))),
+      ExprChecksImpl(
+        ExprChecks.fullAgg(
+          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
+          Seq(ParamCheck("input",
+            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+        ).asInstanceOf[ExprChecksImpl].contexts
+          ++
+          ExprChecks.windowOnly(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable,
+            Seq(ParamCheck("input",
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable))
+          ).asInstanceOf[ExprChecksImpl].contexts
+      ),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = max.child.dataType
@@ -1680,10 +1689,19 @@ object GpuOverrides {
       }),
     expr[Min](
       "Min aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable,
-        Seq(ParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable))),
+      ExprChecksImpl(
+        ExprChecks.fullAgg(
+          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
+          Seq(ParamCheck("input",
+            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+        ).asInstanceOf[ExprChecksImpl].contexts
+          ++
+          ExprChecks.windowOnly(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable,
+            Seq(ParamCheck("input",
+              TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.orderable))
+          ).asInstanceOf[ExprChecksImpl].contexts
+      ),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
