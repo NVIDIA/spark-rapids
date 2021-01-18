@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
   private var worker: UcpWorker = _
   private val endpoints = new ConcurrentHashMap[Long, UcpEndpoint]()
-  private var initialized = false
+  @volatile private var initialized = false
 
   // a peer tag identifies an incoming connection uniquely
   private val peerTag = new AtomicLong(0) // peer tags
@@ -148,17 +148,15 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
       while(initialized) {
         try {
-          if (initialized) {
-            worker.progress()
-            // else worker.progress returned 0
-            if (usingWakeupFeature) {
-              drainWorker()
-              val sleepRange = new NvtxRange("UCX Sleeping", NvtxColor.PURPLE)
-              try {
-                worker.waitForEvents()
-              } finally {
-                sleepRange.close()
-              }
+          worker.progress()
+          // else worker.progress returned 0
+          if (usingWakeupFeature) {
+            drainWorker()
+            val sleepRange = new NvtxRange("UCX Sleeping", NvtxColor.PURPLE)
+            try {
+              worker.waitForEvents()
+            } finally {
+              sleepRange.close()
             }
           }
 
@@ -223,10 +221,15 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
               })
             } catch {
               case e: Throwable =>
-                if (!initialized) {
-                  logWarning(s"UCX management socket closing", e)
+                if (initialized) {
+                  // This will cause the `SparkUncaughtExceptionHandler` to get invoked
+                  // and it will shut down the executor (as it should).
+                  throw e
                 } else {
-                  logError(s"Got exception while waiting for a UCX management connection", e)
+                  // initialized = false means we are shutting down,
+                  // the socket will throw SocketException in this case
+                  // to unblock the accept, when close() is called.
+                  logWarning(s"UCX management socket closing")
                 }
             }
           }
@@ -474,22 +477,21 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
   def getNextTransactionId: Long = txId.incrementAndGet()
 
-  private[this] val shutdownMonitor = new Object
-
   override def close(): Unit = {
-    shutdownMonitor.synchronized {
-      onWorkerThreadAsync(() => {
-        logInfo(s"De-registering UCX ${registeredMemory.size} memory buffers.")
-        registeredMemory.foreach(_.deregister())
-        registeredMemory.clear()
-        shutdownMonitor.synchronized {
-          shutdownMonitor.notify()
-          initialized = false
-          // exit the loop
-        }
-      })
+    onWorkerThreadAsync(() => {
+      logInfo(s"De-registering UCX ${registeredMemory.size} memory buffers.")
+      registeredMemory.foreach(_.deregister())
+      registeredMemory.clear()
+      synchronized {
+        initialized = false
+        notifyAll()
+        // exit the loop
+      }
+    })
+
+    synchronized {
       while (initialized) {
-        shutdownMonitor.wait(100)
+        wait(100)
       }
     }
 
