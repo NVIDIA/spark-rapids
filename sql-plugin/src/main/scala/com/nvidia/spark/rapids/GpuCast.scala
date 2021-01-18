@@ -853,6 +853,8 @@ case class GpuCast(
       case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
       case bound => (-bound.toLong + 1, bound.toLong - 1)
     }
+    // At first, we conduct overflow check onto input column.
+    // Then, we cast checked input into target decimal type.
     val checkedInput = if (ansiMode) {
       assertValuesInRange(input,
         minValue = Scalar.fromLong(lowBound),
@@ -933,6 +935,8 @@ case class GpuCast(
       from: DecimalType,
       to: DecimalType): ColumnVector = {
 
+    // At first, we conduct overflow check onto input column.
+    // Then, we cast checked input into target decimal type.
     val checkedInput = if (to.scale <= from.scale) {
       // No need to promote precision unless target scale is larger than the source one,
       // which indicates the cast is always valid when to.scale <= from.scale.
