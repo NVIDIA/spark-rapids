@@ -53,6 +53,8 @@ object CompareResults {
         (spark.read.csv(conf.input1()), spark.read.csv(conf.input2()))
       case "parquet" =>
         (spark.read.parquet(conf.input1()), spark.read.parquet(conf.input2()))
+      case "orc" =>
+        (spark.read.orc(conf.input1()), spark.read.orc(conf.input2()))
     }
 
     BenchUtils.compareResults(

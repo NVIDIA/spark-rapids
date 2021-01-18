@@ -525,6 +525,8 @@ object BenchUtils {
         path: String => spark.read.csv(path)
       case "parquet" =>
         path: String => spark.read.parquet(path)
+      case "orc" =>
+        path: String => spark.read.orc(path)
     }
 
     val count1 = df1.count()
