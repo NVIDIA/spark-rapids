@@ -16,15 +16,13 @@
 
 package com.nvidia.spark.rapids.unit
 
-import org.scalatest.FunSuite
-import org.scalatest.Matchers.convertToAnyShouldWrapper
-
 import java.math.RoundingMode
 
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids._
+import org.scalatest.Matchers.convertToAnyShouldWrapper
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession

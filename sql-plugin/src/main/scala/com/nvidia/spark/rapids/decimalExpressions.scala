@@ -16,7 +16,6 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-
 import scala.math.{max, min}
 
 import org.apache.spark.sql.catalyst.expressions.{CheckOverflow, Expression, PromotePrecision}
@@ -28,7 +27,8 @@ import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
  * A GPU substitution of CheckOverflow, serves as a placeholder.
  */
 case class GpuCheckOverflow(child: Expression) extends GpuUnaryExpression {
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.incRefCount()
   override def dataType: DataType = child.dataType
 }
 
@@ -36,7 +36,8 @@ case class GpuCheckOverflow(child: Expression) extends GpuUnaryExpression {
  * A GPU substitution of PromotePrecision, serves as a placeholder.
  */
 case class GpuPromotePrecision(child: Expression) extends GpuUnaryExpression {
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.incRefCount()
   override def dataType: DataType = child.dataType
 }
 
@@ -46,39 +47,9 @@ class CheckOverflowExprMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    // rule: ConfKeysAndIncompat)
   extends UnaryExprMeta[CheckOverflow](expr, conf, parent, rule) {
-  override def convertToGpu(child: Expression): GpuExpression = {
-    child match {
-      // For Add | Subtract | Remainder | Pmod | IntegralDivide,
-      // resultTypes have less or same precision compared with inputTypes.
-      // Since inputTypes are checked in PromotePrecisionExprMeta, resultTypes are also safe.
-      case _: GpuAdd =>
-      case _: GpuSubtract =>
-      case _: GpuRemainder =>
-      case _: GpuPmod =>
-      case _: GpuIntegralDivide =>
-      // For Multiply, we need to infer result's precision from inputs' precision.
-      case GpuMultiply(GpuPromotePrecision(lhs: GpuCast), _) =>
-        val dt = lhs.dataType.asInstanceOf[DecimalType]
-        if (dt.precision * 2 + 1 > DecimalExpressions.GPU_MAX_PRECISION) {
-          throw new IllegalStateException("DecimalPrecision overflow may occur because " +
-            s"inferred result precision(${dt.precision * 2 + 1}) exceeds GPU_MAX_PRECISION.")
-        }
-      // For Divide, we need to infer result's precision from inputs' precision and scale.
-      case GpuDivide(GpuPromotePrecision(lhs: GpuCast), _) =>
-        val dt = lhs.dataType.asInstanceOf[DecimalType]
-        val scale = max(DecimalExpressions.GPU_MINIMUM_ADJUSTED_SCALE, dt.precision + dt.scale + 1)
-        if (dt.precision + scale > DecimalExpressions.GPU_MAX_PRECISION) {
-          throw new IllegalStateException("DecimalPrecision overflow may occur because " +
-            s"inferred result precision(${dt.precision + scale}) exceeds GPU_MAX_PRECISION.")
-        }
-      case c =>
-        throw new IllegalAccessException(
-          s"Unknown child expression of CheckOverflow ${c.prettyName}.")
-    }
+  override def convertToGpu(child: Expression): GpuExpression =
     GpuCheckOverflow(child)
-  }
 }
 
 /** Meta-data for promotePrecision */
@@ -87,23 +58,9 @@ class PromotePrecisionExprMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    // rule: ConfKeysAndIncompat)
   extends UnaryExprMeta[PromotePrecision](expr, conf, parent, rule) {
-  override def convertToGpu(child: Expression): GpuExpression = {
-    child match {
-      case GpuCast(cc: Expression, dt: DecimalType, a: Boolean, t: Option[String]) =>
-        // refine DecimalTypeMeta with GPU constraints according to same strategy as CPU runtime
-        val refinedDt = if (SQLConf.get.decimalOperationsAllowPrecisionLoss) {
-          DecimalExpressions.adjustPrecisionScale(dt)
-        } else {
-          DecimalExpressions.bounded(dt.precision, dt.scale)
-        }
-        GpuPromotePrecision(GpuCast(cc, refinedDt, a, t))
-      case c => throw new IllegalStateException(
-        s"Child expression of PromotePrecision should always be GpuCast with DecimalType, " +
-          s"but found ${c.prettyName}")
-    }
-  }
+  override def convertToGpu(child: Expression): GpuExpression =
+    GpuPromotePrecision(child)
 }
 
 object DecimalExpressions {
