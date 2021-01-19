@@ -22,6 +22,8 @@ import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
 
+import scala.collection.JavaConverters._
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
@@ -476,6 +478,38 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  test("cast decimal to decimal") {
+    // fromScale == toScale
+    testCastToDecimal(DataTypes.createDecimalType(18, 0),
+      scale = 0,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 2),
+      scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+
+    // fromScale > toScale
+    testCastToDecimal(DataTypes.createDecimalType(18, 1),
+      scale = -1,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 10),
+      scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 18),
+      scale = 15,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+
+    // fromScale < toScale
+    testCastToDecimal(DataTypes.createDecimalType(18, 0),
+      scale = 3,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 5),
+      scale = 10,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 10),
+      scale = 17,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+  }
+
   test("Detect overflow from numeric types to decimal") {
     def intGenerator(column: Seq[Int])(ss: SparkSession): DataFrame = {
       import ss.sqlContext.implicits._
@@ -492,6 +526,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     def doubleGenerator(column: Seq[Double])(ss: SparkSession): DataFrame = {
       import ss.sqlContext.implicits._
       column.toDF("col")
+    }
+    def decimalGenerator(column: Seq[Decimal], decType: DecimalType
+    )(ss: SparkSession): DataFrame = {
+      val field = StructField("col", decType)
+      ss.createDataFrame(column.map(Row(_)).asJava, StructType(Seq(field)))
     }
     def nonOverflowCase(dataType: DataType,
       generator: SparkSession => DataFrame,
@@ -556,6 +595,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
       generator = floatGenerator(Seq(12345.678f)))
     overflowCase(DataTypes.DoubleType, precision = 15, scale = -5,
       generator = doubleGenerator(Seq(1.23e21)))
+
+    // Test 4: overflow caused by decimal rescaling
+    val decType = DataTypes.createDecimalType(18, 0)
+    nonOverflowCase(decType,
+      precision = 18, scale = 10,
+      generator = decimalGenerator(Seq(Decimal(99999999L)), decType))
+    overflowCase(decType,
+      precision = 18, scale = 10,
+      generator = decimalGenerator(Seq(Decimal(100000000L)), decType))
   }
 
   protected def testCastToDecimal(
@@ -595,7 +643,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       if (!gpuOnly) {
         val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
         val (cpuResult, gpuResult) = dataType match {
-          case ShortType | IntegerType | LongType =>
+          case ShortType | IntegerType | LongType | _: DecimalType =>
             fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
           case FloatType | DoubleType =>
             // There may be tiny difference between CPU and GPU result when casting from double
@@ -631,7 +679,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       }
     }
     val scaleRnd = new scala.util.Random(enhancedRnd.nextLong())
-    val rawColumn: Seq[AnyVal] = (0 until rowCount).map { _ =>
+    val rawColumn: Seq[Any] = (0 until rowCount).map { _ =>
       val scale = 18 - scaleRnd.nextInt(integralSize + 1)
       dataType match {
         case ShortType =>
@@ -642,16 +690,27 @@ class CastOpSuite extends GpuExpressionTestSuite {
           enhancedRnd.nextLong() / math.pow(10, scale max 0).toLong
         case FloatType | DoubleType =>
           enhancedRnd.nextLong() / math.pow(10, scale + 2)
+        case dt: DecimalType =>
+          val unscaledValue = (enhancedRnd.nextLong() * math.pow(10, dt.precision - 18)).toLong
+          Decimal.createUnsafe(unscaledValue, dt.precision, dt.scale)
         case _ =>
           throw new IllegalArgumentException(s"unsupported dataType: $dataType")
       }
     }
     dataType match {
-      case ShortType => rawColumn.map(_.asInstanceOf[Long].toShort).toDF("col")
-      case IntegerType => rawColumn.map(_.asInstanceOf[Long].toInt).toDF("col")
-      case LongType => rawColumn.map(_.asInstanceOf[Long]).toDF("col")
-      case FloatType => rawColumn.map(_.asInstanceOf[Double].toFloat).toDF("col")
-      case DoubleType => rawColumn.map(_.asInstanceOf[Double]).toDF("col")
+      case ShortType =>
+        rawColumn.map(_.asInstanceOf[Long].toShort).toDF("col")
+      case IntegerType =>
+        rawColumn.map(_.asInstanceOf[Long].toInt).toDF("col")
+      case LongType =>
+        rawColumn.map(_.asInstanceOf[Long]).toDF("col")
+      case FloatType =>
+        rawColumn.map(_.asInstanceOf[Double].toFloat).toDF("col")
+      case DoubleType =>
+        rawColumn.map(_.asInstanceOf[Double]).toDF("col")
+      case dt: DecimalType =>
+        val row = rawColumn.map(e => Row(e.asInstanceOf[Decimal])).asJava
+        ss.createDataFrame(row, StructType(Seq(StructField("col", dt))))
     }
   }
 }
