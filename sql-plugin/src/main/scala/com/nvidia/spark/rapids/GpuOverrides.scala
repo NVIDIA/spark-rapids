@@ -2293,8 +2293,9 @@ object GpuOverrides {
       }),
     exec[DataWritingCommandExec](
       "Writing data",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-        TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes +
+        TypeSig.DECIMAL.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet")).nested(),
+        TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
           Seq(GpuOverrides.wrapDataWriteCmds(p.cmd, conf, Some(this)))

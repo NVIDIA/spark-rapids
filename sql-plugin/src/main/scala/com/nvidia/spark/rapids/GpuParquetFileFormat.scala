@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,8 +42,10 @@ object GpuParquetFileFormat {
       options: Map[String, String],
       schema: StructType): Option[GpuParquetFileFormat] = {
 
-    if(!schema.forall(field => GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))) {
-      meta.willNotWorkOnGpu("Not all datatypes are supported")
+    val unSupportedTypes =
+      schema.filter(field => !GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))
+    if (!unSupportedTypes.isEmpty) {
+      meta.willNotWorkOnGpu(s"These types aren't supported for parquet $unSupportedTypes")
     }
 
     val sqlConf = spark.sessionState.conf
@@ -252,22 +254,26 @@ class GpuParquetWriter(
    */
   override def write(batch: ColumnarBatch,
      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    val outputMillis = outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
     val newBatch =
-      if (outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString) {
-        new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-          cv => {
-            cv.dataType() match {
-              case DataTypes.TimestampType => new GpuColumnVector(DataTypes.TimestampType,
-                withResource(cv.getBase()) { v =>
-                  v.castTo(DType.TIMESTAMP_MILLISECONDS)
-                })
-              case _ => cv
-            }
+      new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
+        cv => {
+          cv.dataType() match {
+            case DataTypes.TimestampType if outputMillis =>
+              new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
+                v.castTo(DType.TIMESTAMP_MILLISECONDS)
+              })
+            case d: DecimalType if d.precision < 10 =>
+              // There is a bug in Spark that causes a problem if we write Decimals with
+              // precision < 10 as Decimal64.
+              // https://issues.apache.org/jira/browse/SPARK-34167
+              new GpuColumnVector(d, withResource(cv.getBase()) { v =>
+                v.castTo(DType.create(DType.DTypeEnum.DECIMAL32, -d.scale))
+              })
+            case _ => cv
           }
-        })
-      } else {
-        batch
-      }
+        }
+      })
 
     super.write(newBatch, statsTrackers)
   }

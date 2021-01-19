@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,22 +33,13 @@ reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_fil
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
-# https://github.com/rapidsai/cudf/issues/7152
-# The above bug in cudf causes problem writing Decimals with precision < 10
-random.seed(23423)
 parquet_write_gens_list = [
     [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-     string_gen, boolean_gen, date_gen, timestamp_gen,
-     DecimalGen(precision=10, scale=random.randint(1,10)),
-     DecimalGen(precision=11, scale=random.randint(1,11)),
-     DecimalGen(precision=12, scale=random.randint(1,12)),
-     DecimalGen(precision=13, scale=random.randint(1,13)),
-     DecimalGen(precision=14, scale=random.randint(1,14)),
-     DecimalGen(precision=15, scale=random.randint(1,15)),
-     DecimalGen(precision=16, scale=random.randint(1,16)),
-     DecimalGen(precision=17, scale=random.randint(1,17)),
-     DecimalGen(precision=18, scale=random.randint(1,18))]
-]
+     string_gen, boolean_gen, date_gen, timestamp_gen],
+    pytest.param([byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                  string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_default,
+                  decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit],
+                 marks=pytest.mark.allow_non_gpu("CoalesceExec"))]
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
@@ -56,8 +47,8 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-@allow_non_gpu("CoalesceExec")
-def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type, reader_confs):
+def test_parquet_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
+                                  reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = reader_confs.copy()
