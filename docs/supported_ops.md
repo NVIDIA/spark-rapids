@@ -16592,10 +16592,10 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S*</td>
-<td>S*</td>
-<td>S*</td>
-<td>S</td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td>result</td>
@@ -16613,10 +16613,10 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S*</td>
-<td>S*</td>
-<td>S*</td>
-<td>S</td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td rowSpan="2">lambda</td>
@@ -16682,10 +16682,10 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S*</td>
-<td>S*</td>
-<td>S*</td>
-<td>S</td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td>result</td>
@@ -16703,10 +16703,10 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S*</td>
-<td>S*</td>
-<td>S*</td>
-<td>S</td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td rowSpan="2">lambda</td>
