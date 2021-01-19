@@ -2170,6 +2170,20 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
+      }),
+    expr[CollectList](
+      "Collect a list of elements",
+      /* It should be 'fullAgg' eventually but now only support windowing, so 'windowOnly' */
+      ExprChecks.windowOnly(TypeSig.ARRAY.nested(TypeSig.integral +
+          TypeSig.STRUCT.nested(TypeSig.commonCudfTypes)),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("input",
+          TypeSig.integral + TypeSig.STRUCT.nested(
+            TypeSig.integral + TypeSig.STRING + TypeSig.TIMESTAMP),
+          TypeSig.all))),
+      (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCollectList(
+          childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 

@@ -985,7 +985,7 @@ object ExprChecks {
   }
 
   /**
-   * Window only operations. Spark does not support these operations as anythign but a window
+   * Window only operations. Spark does not support these operations as anything but a window
    * operation.
    */
   def windowOnly(

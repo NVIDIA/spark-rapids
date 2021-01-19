@@ -22,9 +22,9 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateMode, Complete, Final, Partial, PartialMerge}
+import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, LongType, NumericType, StructType}
+import org.apache.spark.sql.types._
 
 trait GpuAggregateFunction extends GpuExpression {
   // using the child reference, define the shape of the vectors sent to
@@ -528,4 +528,43 @@ abstract class GpuLastBase(child: Expression)
   // Last is not a deterministic function.
   override lazy val deterministic: Boolean = false
   override def toString: String = s"gpulast($child)${if (ignoreNulls) " ignore nulls"}"
+}
+
+/**
+ * Collects and returns a list of non-unique elements.
+ *
+ * FIXME Not sure whether GPU version requires the two offset parameters. Keep it here first.
+ */
+case class GpuCollectList(child: Expression,
+                          mutableAggBufferOffset: Int = 0,
+                          inputAggBufferOffset: Int = 0)
+  extends GpuDeclarativeAggregate with GpuAggregateWindowFunction {
+
+  def this(child: Expression) = this(child, 0, 0)
+
+  override lazy val deterministic: Boolean = false
+
+  override def nullable: Boolean = false
+
+  override def prettyName: String = "collect_list"
+
+  override def dataType: DataType = ArrayType(child.dataType, false)
+
+  override def children: Seq[Expression] = child :: Nil
+
+  // WINDOW FUNCTION
+  override val windowInputProjection: Seq[Expression] = Seq(child)
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.collect().onColumn(inputs.head._2)
+
+  // Declarative aggregate. But for now 'CollectList' does not support it.
+  // The members as below should NOT be used yet, ensured by the "TypeCheck.windowOnly"
+  // when overriding the expression.
+  private lazy val cudfList = AttributeReference("collect_list", dataType)()
+  override val initialValues: Seq[GpuExpression] = Seq.empty
+  override val updateExpressions: Seq[Expression] = Seq.empty
+  override val mergeExpressions: Seq[GpuExpression] = Seq.empty
+  override val evaluateExpression: Expression = null
+  override val inputProjection: Seq[Expression] = Seq(child)
+  override def aggBufferAttributes: Seq[AttributeReference] = cudfList :: Nil
 }
