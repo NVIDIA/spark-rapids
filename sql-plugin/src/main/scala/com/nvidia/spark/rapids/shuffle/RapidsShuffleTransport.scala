@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -250,20 +250,11 @@ trait Connection {
 
   /**
    * Function to receive a buffer
-   * @param header an [[AddressLengthTag]] to receive a metadata message
+   * @param alt an [[AddressLengthTag]] to receive the message
    * @param cb callback to trigger once this receive completes
    * @return a [[Transaction]] that can be used to block while this transaction is not done
    */
-  def receive(header: AddressLengthTag,
-              cb: TransactionCallback): Transaction
-
-  /**
-   * Function to receive a buffer
-   * @param bounceBuffers a sequence of [[AddressLengthTag]] where to receive data
-   * @param cb callback to trigger once this receive completes
-   * @return a [[Transaction]] that can be used to block while this transaction is not done
-   */
-  def receive(bounceBuffers: Seq[AddressLengthTag],
+  def receive(alt: AddressLengthTag,
               cb: TransactionCallback): Transaction
 }
 
