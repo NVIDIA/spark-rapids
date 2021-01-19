@@ -81,3 +81,20 @@ def test_orderby_array_of_structs(data_gen):
         lambda spark : unary_op_df(spark, data_gen),
         'array_table',
         'select array_table.a, array_table.a[0].child0 as first_val from array_table order by first_val')
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                                                                        string_gen, boolean_gen, date_gen, timestamp_gen]], ids=idfn)
+def test_array_contains(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : debug_df(unary_op_df(spark, data_gen)),
+        'array_table',
+        'SELECT a[0],array_contains(a, a[0]) from array_table')
+
+
+# @pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in decimal_gens], ids=idfn)
+# def test_array_contains_decimals(data_gen):
+#     assert_gpu_and_cpu_are_equal_sql(
+#         lambda spark : debug_df(unary_op_df(spark, data_gen)),
+#         'array_table',
+#         'SELECT a[0],array_contains(a, decimal(10)) from array_table', conf=allow_negative_scale_of_decimal_conf)

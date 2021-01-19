@@ -23,6 +23,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.analysis.TypeCoercion
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode

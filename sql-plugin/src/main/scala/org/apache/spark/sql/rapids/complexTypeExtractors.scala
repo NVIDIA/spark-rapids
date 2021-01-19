@@ -21,10 +21,12 @@ import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBina
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
-import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StructType}
+import org.apache.spark.sql.catalyst.analysis.{DecimalPrecision, TypeCheckResult}
+import org.apache.spark.sql.catalyst.analysis.TypeCoercion.{findTightestCommonType, findWiderTypeForTwo}
+import org.apache.spark.sql.catalyst.expressions.{Cast, ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
+import org.apache.spark.sql.catalyst.util.{quoteIdentifier, ArrayData, TypeUtils}
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, DecimalType, DoubleType, FractionalType, IntegralType, MapType, NullType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
@@ -184,4 +186,134 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def left: Expression = child
 
   override def right: Expression = key
+}
+
+case class GpuArrayContains(left: Expression, right: Expression)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  @transient private lazy val ordering: Ordering[Any] =
+    TypeUtils.getInterpretedOrdering(right.dataType)
+
+  override def inputTypes: Seq[AbstractDataType] = {
+    (left.dataType, right.dataType) match {
+      case (_, NullType) => Seq.empty
+      case (ArrayType(e1, hasNull), e2) =>
+        findWiderTypeWithoutStringPromotionForTwo(e1, e2) match {
+          case Some(dt) => Seq(ArrayType(dt, hasNull), dt)
+          case _ => Seq.empty
+        }
+      case _ => Seq.empty
+    }
+  }
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    (left.dataType, right.dataType) match {
+      case (_, NullType) =>
+        TypeCheckResult.TypeCheckFailure("Null typed values cannot be used as arguments")
+      case (ArrayType(e1, _), e2) if e1.sameType(e2) =>
+        TypeUtils.checkForOrderingExpr(e2, s"function $prettyName")
+      case _ => TypeCheckResult.TypeCheckFailure(s"Input to function $prettyName should have " +
+        s"been ${ArrayType.simpleString} followed by a value with same element type, but it's " +
+        s"[${left.dataType.catalogString}, ${right.dataType.catalogString}].")
+    }
+  }
+
+  override def nullable: Boolean = {
+    left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
+    lhs.getBase.listContains(rhs)
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    lhs.getBase.listContainsColumn(rhs.getBase)
+
+  override def nullSafeEval(arr: Any, value: Any): Any = {
+    var hasNull = false
+    arr.asInstanceOf[ArrayData].foreach(right.dataType, (i, v) =>
+      if (v == null) {
+        hasNull = true
+      } else if (ordering.equiv(v, value)) {
+        return true
+      }
+    )
+    if (hasNull) {
+      null
+    } else {
+      false
+    }
+  }
+
+  override def prettyName: String = "array_contains"
+
+  /**
+    * Similar to [[findWiderTypeForTwo]] that can handle decimal types, but can't promote to
+    * string. If the wider decimal type exceeds system limitation, this rule will truncate
+    * the decimal type before return it.
+    */
+  private def findWiderTypeWithoutStringPromotionForTwo(
+    t1: DataType,
+    t2: DataType): Option[DataType] = {
+    findTightestCommonType(t1, t2)
+      .orElse(findWiderTypeForDecimal(t1, t2))
+      .orElse(findTypeForComplex(t1, t2, findWiderTypeWithoutStringPromotionForTwo))
+  }
+
+  /**
+    * Finds a wider type when one or both types are decimals. If the wider decimal type exceeds
+    * system limitation, this rule will truncate the decimal type. If a decimal and other fractional
+    * types are compared, returns a double type.
+    */
+  private def findWiderTypeForDecimal(dt1: DataType, dt2: DataType): Option[DataType] = {
+    (dt1, dt2) match {
+      case (t1: DecimalType, t2: DecimalType) =>
+        Some(DecimalPrecision.widerDecimalType(t1, t2))
+      case (t: IntegralType, d: DecimalType) =>
+        Some(DecimalPrecision.widerDecimalType(DecimalType.forType(t), d))
+      case (d: DecimalType, t: IntegralType) =>
+        Some(DecimalPrecision.widerDecimalType(DecimalType.forType(t), d))
+      case (_: FractionalType, _: DecimalType) | (_: DecimalType, _: FractionalType) =>
+        Some(DoubleType)
+      case _ => None
+    }
+  }
+
+  private def findTypeForComplex(
+    t1: DataType,
+    t2: DataType,
+    findTypeFunc: (DataType, DataType) => Option[DataType]): Option[DataType] = (t1, t2) match {
+    case (ArrayType(et1, containsNull1), ArrayType(et2, containsNull2)) =>
+      findTypeFunc(et1, et2).map { et =>
+        ArrayType(et, containsNull1 || containsNull2 ||
+          Cast.forceNullable(et1, et) || Cast.forceNullable(et2, et))
+      }
+    case (MapType(kt1, vt1, valueContainsNull1), MapType(kt2, vt2, valueContainsNull2)) =>
+      findTypeFunc(kt1, kt2)
+        .filter { kt => !Cast.forceNullable(kt1, kt) && !Cast.forceNullable(kt2, kt) }
+        .flatMap { kt =>
+          findTypeFunc(vt1, vt2).map { vt =>
+            MapType(kt, vt, valueContainsNull1 || valueContainsNull2 ||
+              Cast.forceNullable(vt1, vt) || Cast.forceNullable(vt2, vt))
+          }
+        }
+    case (StructType(fields1), StructType(fields2)) if fields1.length == fields2.length =>
+      val resolver = SQLConf.get.resolver
+      fields1.zip(fields2).foldLeft(Option(new StructType())) {
+        case (Some(struct), (field1, field2)) if resolver(field1.name, field2.name) =>
+          findTypeFunc(field1.dataType, field2.dataType).map { dt =>
+            struct.add(field1.name, dt, field1.nullable || field2.nullable ||
+              Cast.forceNullable(field1.dataType, dt) || Cast.forceNullable(field2.dataType, dt))
+          }
+        case _ => None
+      }
+    case _ => None
+  }
 }
