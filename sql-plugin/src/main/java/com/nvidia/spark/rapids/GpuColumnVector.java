@@ -499,7 +499,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * but not both.
    */
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
-    assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " + cudfCv +
+    assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " + cudfCv.getType() +
         " to " + type;
     return new GpuColumnVector(type, cudfCv);
   }

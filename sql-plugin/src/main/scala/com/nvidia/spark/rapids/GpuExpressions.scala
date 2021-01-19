@@ -161,7 +161,9 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
     try {
       lhs = left.columnarEval(batch)
       rhs = right.columnarEval(batch)
-
+      // if(lhs.type == DecimalType || rhs.type == DecimalType) {
+        
+      // }
       (lhs, rhs) match {
         case (l: GpuColumnVector, r: GpuColumnVector) =>
           GpuColumnVector.from(doColumnar(l, r), dataType)

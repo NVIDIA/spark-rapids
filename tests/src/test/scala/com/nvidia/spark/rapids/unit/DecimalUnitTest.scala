@@ -16,21 +16,24 @@
 
 package com.nvidia.spark.rapids.unit
 
+import org.scalatest.FunSuite
+import org.scalatest.Matchers.convertToAnyShouldWrapper
+
 import java.math.RoundingMode
 
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExec, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
+import org.apache.spark.sql.catalyst.expressions.{Add, Alias, AttributeReference, Cast, CheckOverflow, Expression, Literal, Multiply, Pmod, PromotePrecision, Subtract}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.types.{Decimal, DecimalType, IntegerType, LongType, StructField, StructType}
+import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.types.{Decimal, DecimalType, DoubleType, IntegerType, LongType, StructField, StructType}
 
 class DecimalUnitTest extends GpuUnitTests {
   Random.setSeed(1234L)
@@ -39,6 +42,68 @@ class DecimalUnitTest extends GpuUnitTests {
     Decimal.fromDecimal(BigDecimal(Random.nextInt() / 1000, 3 + Random.nextInt(3))))
   private val dec64Data = Array.fill[Decimal](10)(
     Decimal.fromDecimal(BigDecimal(Random.nextLong() / 1000, 7 + Random.nextInt(3))))
+
+  test("GpuDecimalExpressionMeta") {
+    val rapidsConf = new RapidsConf(Map[String, String]())
+    val testWrapper = (input: Expression, expected: Expression) => {
+      val output = GpuOverrides.wrapExpr(input, rapidsConf, None).convertToGpu()
+      println(output.sql)
+      println(expected.sql)
+      expected.semanticEquals(output) shouldBe true
+    }
+    val sparkConf = new SparkConf().set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    TestUtils.withGpuSparkSession(sparkConf) { _ =>
+      // no need to adjust
+      testWrapper(
+        PromotePrecision(Cast(Literal(1.0), DecimalType(10, 3))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(10, 3))))
+      // GPU_MAX_PRECISION - intDigits = 19 - (22 - 10) = 7
+      // minScaleValue = min(10, GPU_MINIMUM_ADJUSTED_SCALE) = 6
+      // adjustedScale = max(7, 6) = 7
+      testWrapper(
+        PromotePrecision(Cast(Literal(1.0), DecimalType(22, 10))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 7))))
+      // GPU_MAX_PRECISION - intDigits = 19 - (20 - 5) = 4
+      // minScaleValue = min(5, GPU_MINIMUM_ADJUSTED_SCALE) = 5
+      // adjustedScale = max(4, 5) = 5
+      testWrapper(
+        PromotePrecision(Cast(Literal(1.0), DecimalType(20, 5))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 5))))
+
+      // GPU_MAX_PRECISION - intDigits = 19 - (30 - 15) = 4
+      // minScaleValue = min(15, GPU_MINIMUM_ADJUSTED_SCALE) = 6
+      // adjustedScale = max(4, 6) = 6
+      var cpuPP = PromotePrecision(Cast(Literal(1), DecimalType(30, 15)))
+      var gpuPP = GpuPromotePrecision(GpuCast(GpuLiteral(1, IntegerType), DecimalType(19, 6)))
+      testWrapper(
+        CheckOverflow(Add(cpuPP, cpuPP), DecimalType(20, 3), false),
+        GpuCheckOverflow(GpuAdd(gpuPP, gpuPP)))
+      testWrapper(
+        CheckOverflow(Subtract(cpuPP, cpuPP), DecimalType(20, 3), false),
+        GpuCheckOverflow(GpuSubtract(gpuPP, gpuPP)))
+      testWrapper(
+        CheckOverflow(Pmod(cpuPP, cpuPP), DecimalType(20, 3), false),
+        GpuCheckOverflow(GpuPmod(gpuPP, gpuPP)))
+
+      cpuPP = PromotePrecision(Cast(Literal(1), DecimalType(10, 3)))
+      gpuPP = GpuPromotePrecision(GpuCast(GpuLiteral(1, IntegerType), DecimalType(10, 3)))
+      assertThrows[IllegalStateException] {
+        testWrapper(
+          CheckOverflow(Multiply(cpuPP, cpuPP), DecimalType(20, 6), false),
+          GpuCheckOverflow(GpuMultiply(gpuPP, gpuPP)))
+      }
+    }
+
+    sparkConf.set("spark.sql.decimalOperations.allowPrecisionLoss", "false")
+    TestUtils.withGpuSparkSession(sparkConf) { _ =>
+      testWrapper(
+        PromotePrecision(Cast(Literal(1.0), DecimalType(22, 10))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 10))))
+      testWrapper(
+        PromotePrecision(Cast(Literal(1.0), DecimalType(30, 20))),
+        GpuPromotePrecision(GpuCast(GpuLiteral(1.0, DoubleType), DecimalType(19, 19))))
+    }
+  }
 
   test("test decimal as scalar") {
     Array(dec32Data, dec64Data).flatten.foreach { dec =>

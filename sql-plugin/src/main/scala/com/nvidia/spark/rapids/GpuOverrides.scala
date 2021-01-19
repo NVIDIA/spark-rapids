@@ -706,6 +706,18 @@ object GpuOverrides {
           }
         }
       }),
+    expr[PromotePrecision](
+      "PromotePrecision before arithmetic operations between DecimalType data",
+      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+        TypeSig.numeric + TypeSig.DECIMAL,
+        TypeSig.numericAndInterval + TypeSig.DECIMAL),
+      (a, conf, p, r) => new PromotePrecisionExprMeta(a, conf, p, r)),
+    expr[CheckOverflow](
+      "CheckOverflow after arithmetic operations between DecimalType data",
+      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+        TypeSig.numeric + TypeSig.DECIMAL,
+        TypeSig.numericAndInterval + TypeSig.DECIMAL),
+      (a, conf, p, r) => new CheckOverflowExprMeta(a, conf, p, r)),
     expr[ToDegrees](
       "Converts radians to degrees",
       ExprChecks.mathUnary,
@@ -1377,9 +1389,9 @@ object GpuOverrides {
     expr[Add](
       "Addition",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval)),
+        TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval),
+        ("rhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuAdd(lhs, rhs)
@@ -1387,18 +1399,18 @@ object GpuOverrides {
     expr[Subtract](
       "Subtraction",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval)),
+        TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval),
+        ("rhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryExprMeta[Subtract](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs)
       }),
     expr[Multiply](
       "Multiplication",
-      ExprChecks.binaryProjectNotLambda(TypeSig.integral + TypeSig.fp, TypeSig.numeric,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric)),
+      ExprChecks.binaryProjectNotLambda(TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numeric,
+        ("lhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numeric),
+        ("rhs", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numeric)),
       (a, conf, p, r) => new BinaryExprMeta[Multiply](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuMultiply(lhs, rhs)
@@ -1572,9 +1584,9 @@ object GpuOverrides {
     expr[Divide](
       "Division",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
-        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL),
-        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL)),
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE),
+        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE)),
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDivide(lhs, rhs)
@@ -1583,8 +1595,8 @@ object GpuOverrides {
       "Division with a integer result",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG, TypeSig.LONG + TypeSig.DECIMAL),
-        ("rhs", TypeSig.LONG, TypeSig.LONG + TypeSig.DECIMAL)),
+        ("lhs", TypeSig.LONG, TypeSig.LONG),
+        ("rhs", TypeSig.LONG, TypeSig.LONG)),
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)
