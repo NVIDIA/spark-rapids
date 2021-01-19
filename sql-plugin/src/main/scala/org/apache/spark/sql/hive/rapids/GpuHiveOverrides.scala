@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,12 +48,9 @@ object GpuHiveOverrides {
       GpuOverrides.expr[HiveSimpleUDF](
         "Hive UDF, support requires the UDF to implement a RAPIDS-accelerated interface",
         ExprChecks.projectNotLambda(
-          TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
           TypeSig.all,
-          repeatingParamCheck = Some(RepeatingParamCheck(
-            "param",
-            TypeSig.commonCudfTypes,
-            TypeSig.all))),
+          TypeSig.all,
+          repeatingParamCheck = Some(RepeatingParamCheck("param", TypeSig.all, TypeSig.all))),
         (a, conf, p, r) => new ExprMeta[HiveSimpleUDF](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
             a.function match {
@@ -79,12 +76,9 @@ object GpuHiveOverrides {
         "Hive Generic UDF, support requires the UDF to implement a " +
             "RAPIDS-accelerated interface",
         ExprChecks.projectNotLambda(
-          TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
           TypeSig.all,
-          repeatingParamCheck = Some(RepeatingParamCheck(
-            "param",
-            TypeSig.commonCudfTypes,
-            TypeSig.all))),
+          TypeSig.all,
+          repeatingParamCheck = Some(RepeatingParamCheck("param", TypeSig.all, TypeSig.all))),
         (a, conf, p, r) => new ExprMeta[HiveGenericUDF](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
             a.function match {
