@@ -439,7 +439,6 @@ that matches your Spark version. Currently we support
 ...
 --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark300.RapidsShuffleManager \
 --conf spark.shuffle.service.enabled=false \
---conf spark.rapids.shuffle.transport.enabled=true \
 --conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
 --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
