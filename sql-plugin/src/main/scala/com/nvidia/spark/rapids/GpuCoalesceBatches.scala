@@ -331,7 +331,7 @@ abstract class AbstractGpuCoalesceIterator(
 
   private def addBatch(batch: ColumnarBatch): Unit = {
     if (!batchInitialized) {
-      initNewBatch()
+      initNewBatch(batch)
       batchInitialized = true
     }
     addBatchToConcat(batch)

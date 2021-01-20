@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids;
 
 import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
+import ai.rapids.cudf.ArrowHostColumnVector;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
@@ -189,7 +190,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
-    public HostColumnVector[] buildHostColumns() {
+    public ArrowHostColumnVector[] buildHostColumns() {
       ArrowHostColumnVector[] vectors = new ArrowHostColumnVector[builders.length];
       try {
         for (int i = 0; i < builders.length; i++) {
