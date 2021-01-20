@@ -34,7 +34,7 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
 
-  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
+  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
     logWarning("host oclunnar to gpu cv is type: " + cv.getClass().toString())
     if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
@@ -58,7 +58,7 @@ object HostColumnarToGpu extends Logging {
           logWarning("arrow data offset buffer is null")
         }
         if (arrowDataOffsetBuf != null) {
-          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.capacity()// ?
+          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.capacity() // ?
           logWarning("arrow data offset buffer capcity is: " + arrowDataOffsetLen)
         }
       } catch {
@@ -72,13 +72,20 @@ object HostColumnarToGpu extends Logging {
       // val arrowDataOffsetLen = arrowVec.getArrowValueVector.getBufferSize() // ?
 
       logWarning(s"lens data: ${arrowDataLen} validity: $arrowDataValidityLen ")
-        // s"offset: $arrowDataOffsetLen")
+      // s"offset: $arrowDataOffsetLen")
 
       // need multiple for validity and offset???
       // val hmb = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
 
 
+    } else {
+      throw new Exception("not arrow data shouldn't be here!")
     }
+  }
+
+  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
+      nullable: Boolean, rows: Int): Unit = {
+
     (cv.dataType(), nullable) match {
       case (ByteType | BooleanType, true) =>
         for (i <- 0 until rows) {
@@ -226,6 +233,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   assert(goal != RequireSingleBatch)
 
   var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilder = _
+  var arrowBatchBuilder: GpuColumnVector.GpuArrowColumnarBatchBuilder = _
+  var useArrow: Boolean = false
   var totalRows = 0
   var maxDeviceMemory: Long = 0
 
@@ -233,25 +242,47 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
    * Initialize the builders using an estimated row count based on the schema and the desired
    * batch size defined by [[RapidsConf.GPU_BATCH_SIZE_BYTES]].
    */
-  override def initNewBatch(): Unit = {
+  override def initNewBatch(batch: ColumnarBatch): Unit = {
     if (batchBuilder != null) {
       batchBuilder.close()
       batchBuilder = null
     }
-    // when reading host batches it is essential to read the data immediately and pass to a
-    // builder and we need to determine how many rows to allocate in the builder based on the
-    // schema and desired batch size
-    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
-      GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
-    batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
+    if (arrowBatchBuilder != null) {
+      arrowBatchBuilder.close()
+      arrowBatchBuilder = null
+    }
+
+    if (batch.numCols() > 0) {
+      if (batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
+        batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
+          GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
+        useArrow = true
+        arrowBatchBuilder =
+          new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, null)
+      } else {
+        // when reading host batches it is essential to read the data immediately and pass to a
+        // builder and we need to determine how many rows to allocate in the builder based on the
+        // schema and desired batch size
+        batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
+          GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
+        batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
+
+      }
+    }
     totalRows = 0
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     val rows = batch.numRows()
     for (i <- 0 until batch.numCols()) {
-      HostColumnarToGpu.columnarCopy(batch.column(i), batchBuilder.builder(i),
-        schema.fields(i).nullable, rows)
+      if (useArrow) {
+        HostColumnarToGpu.columnarCopy(batch.column(i), arrowBatchBuilder.builder(i),
+          schema.fields(i).nullable, rows)
+      } else {
+        HostColumnarToGpu.columnarCopy(batch.column(i), batchBuilder.builder(i),
+          schema.fields(i).nullable, rows)
+      }
+
     }
     totalRows += rows
   }
@@ -351,6 +382,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
     val outputSchema = schema
 
     val batches = child.executeColumnar()
+
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
