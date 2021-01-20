@@ -17,10 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.sql.Timestamp
+import java.time.DateTimeException
 
 import scala.util.Random
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, CastBase}
 import org.apache.spark.sql.execution.ProjectExec
@@ -38,6 +39,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
+    .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
   def generateOutOfRangeTimestampsDF(
       lowerValue: Long,
@@ -418,6 +420,37 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   testSparkResultsAreEqual("ansi_cast longs to timestamp", testLongs, sparkConf,
     assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.TimestampType)(frame)
+  }
+
+  test("ANSI mode: cast string to timestamp with parse error") {
+    // Copied from Spark CastSuite
+
+    def checkCastWithParseError(str: String): Unit = {
+      val exception = intercept[SparkException] {
+        withGpuSparkSession(spark => {
+          import spark.implicits._
+
+          val df = Seq(str).toDF("c0")
+              .repartition(2)
+              .withColumn("c1", col("c0").cast(DataTypes.TimestampType))
+
+          val result = df.collect()
+          result.foreach(println)
+
+        }, sparkConf)
+      }
+      assert(exception.getCause.isInstanceOf[DateTimeException])
+    }
+
+    checkCastWithParseError("123")
+    checkCastWithParseError("2015-03-18 123142")
+    checkCastWithParseError("2015-03-18T123123")
+    checkCastWithParseError("2015-03-18X")
+    checkCastWithParseError("2015/03/18")
+    checkCastWithParseError("2015.03.18")
+    checkCastWithParseError("20150318")
+    checkCastWithParseError("2015-031-8")
+    checkCastWithParseError("2015-03-18T12:03:17-0:70")
   }
 
   ///////////////////////////////////////////////////////////////////////////
