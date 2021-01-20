@@ -18,6 +18,9 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 
+import org.apache.arrow.vector.ValueVector
+import org.apache.arrow.vector.types.pojo.ArrowType
+
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -30,6 +33,7 @@ import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, Column
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
+
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
     logWarning("host oclunnar to gpu cv is type: " + cv.getClass().toString())
@@ -46,7 +50,21 @@ object HostColumnarToGpu extends Logging {
 
       val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.memoryAddress()
       val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
-      // val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer.memoryAddress()
+      try {
+        val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
+        if (arrowDataOffsetBuf != null) {
+          logWarning("arrow data offset buffer addrs: " + arrowDataOffsetBuf.memoryAddress())
+        } else {
+          logWarning("arrow data offset buffer is null")
+        }
+        if (arrowDataOffsetBuf != null) {
+          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.capacity()// ?
+          logWarning("arrow data offset buffer capcity is: " + arrowDataOffsetLen)
+        }
+      } catch {
+        case e: UnsupportedOperationException =>
+          logWarning("unsupported op getOffsetBuffer")
+      }
 
       // ArrowBuf length instead? = capacity()
       val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
