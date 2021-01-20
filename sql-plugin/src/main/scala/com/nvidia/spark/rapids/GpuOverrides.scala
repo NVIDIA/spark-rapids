@@ -1923,9 +1923,8 @@ object GpuOverrides {
       ExprChecks.binaryProjectNotLambda(
         TypeSig.BOOLEAN,
         TypeSig.all,
-        ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
-          TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL)),
         ("key", TypeSig.commonCudfTypes, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
