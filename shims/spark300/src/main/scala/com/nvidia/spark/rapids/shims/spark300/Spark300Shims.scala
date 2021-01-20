@@ -17,11 +17,11 @@
 package com.nvidia.spark.rapids.shims.spark300
 
 import java.time.ZoneId
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
-
+import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkEnv
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, RapidsPartitioningUtils}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
@@ -50,7 +50,9 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-class Spark300Shims extends SparkShims {
+import scala.collection.mutable
+
+class Spark300Shims extends SparkShims with Logging {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
@@ -158,8 +160,15 @@ class Spark300Shims extends SparkShims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
+            val location = getLocationWithAlluxioReplace(
+              conf,
+              wrapped.relation,
+              wrapped.partitionFilters,
+              wrapped.dataFilters)
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
@@ -439,5 +448,69 @@ class Spark300Shims extends SparkShims {
 
   override def shouldIgnorePath(path: String): Boolean = {
     InMemoryFileIndex.shouldFilterOut(path)
+  }
+
+  override def getLocationWithAlluxioReplace(
+      conf: RapidsConf,
+      relation: HadoopFsRelation,
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]): FileIndex = {
+
+    val alluxioFilesReplace: Option[Seq[String]] = conf.getAlluxioFilesReplace
+
+    if (alluxioFilesReplace.isDefined) {
+      // alluxioFilesReplace: Seq("key->value", "key1->value1")
+      val replaceMap = new mutable.HashMap[String, String]()
+      alluxioFilesReplace.get.foreach(rule => {
+        val ruleSplit = rule.split("->")
+        if (ruleSplit.size == 2) {
+          replaceMap += ruleSplit(0).trim -> ruleSplit(1).trim
+        } else {
+          logWarning("Wrong set for spark.rapids.alluxio.pathsToReplace " + rule)
+        }
+      })
+
+      if (replaceMap.size > 0) {
+        val listFiles: Seq[PartitionDirectory] = relation.location.listFiles(
+          partitionFilters, dataFilters)
+
+        val replaceFunc = (f: Path) => {
+          val matchedSet = replaceMap.keySet.filter(reg => f.toString.startsWith(reg))
+          if (matchedSet.size > 0) {
+            new Path(
+              f.toString.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
+          } else {
+            f
+          }
+        }
+
+        val inputFiles: Seq[Path] = listFiles.flatMap(partitionDir => {
+          partitionDir.files.map(f => replaceFunc(f.getPath))
+        }).toSet.toSeq
+
+        // get the leaf dir of inputFiles
+        val leafDirs = inputFiles.map(_.getParent).toSet.toSeq
+
+        val finalRootPaths = relation.location.rootPaths.map(replaceFunc)
+
+        val partitionSpec = RapidsPartitioningUtils.inferPartitioning(
+          relation.sparkSession,
+          leafDirs,
+          finalRootPaths.toSet,
+          relation.options,
+          Option(relation.dataSchema))
+
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          inputFiles,
+          relation.options,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(partitionSpec))
+      } else {
+        relation.location
+      }
+    } else {
+      relation.location
+    }
   }
 }
