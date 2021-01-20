@@ -122,7 +122,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  public static final class GpuArrowColumnarBatchBuilder implements AutoCloseable {
+  // interface??? - then can't use autocloseable here
+  public abstract class GpuColumnarBatchBuilderBase implements AutoCloseable {
+    public abstract ColumnarBatch build(int rows);
+
+    public abstract void close();
+
+    public abstract void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows);
+  }
+
+
+  public static final class GpuArrowColumnarBatchBuilder implements GpuColumnarBatchBuilderBase {
     private static final Logger logger = LoggerFactory.getLogger(GpuArrowColumnarBatchBuilder.class);
     private final ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder[] builders;
     private final StructField[] fields;
@@ -159,6 +169,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           }
         }
       }
+    }
+
+    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
+      HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows);
     }
 
     public ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder builder(int i) {
@@ -221,7 +235,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  public static final class GpuColumnarBatchBuilder implements AutoCloseable {
+  public static final class GpuColumnarBatchBuilder implements GpuColumnarBatchBuilderBase {
     private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
     private final StructField[] fields;
 
@@ -254,6 +268,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           }
         }
       }
+    }
+
+    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
+      HostColumnarToGpu.columnarCopy(cv, builder(colNum), nullable, rows);
     }
 
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {

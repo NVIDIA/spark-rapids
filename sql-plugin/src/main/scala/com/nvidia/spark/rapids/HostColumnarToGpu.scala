@@ -34,8 +34,10 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
 
-  def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder,
-      nullable: Boolean, rows: Int): Unit = {
+  def arrowColumnarCopy(cv: ColumnVector,
+      b: ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder,
+      nullable: Boolean,
+      rows: Int): Unit = {
     logWarning("host oclunnar to gpu cv is type: " + cv.getClass().toString())
     if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       logWarning("looking at arrow column vector")
@@ -232,8 +234,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   // RequireSingleBatch goal is intentionally not supported in this iterator
   assert(goal != RequireSingleBatch)
 
-  var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilder = _
-  var arrowBatchBuilder: GpuColumnVector.GpuArrowColumnarBatchBuilder = _
+  var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilderBase = _
   var useArrow: Boolean = false
   var totalRows = 0
   var maxDeviceMemory: Long = 0
@@ -247,17 +248,13 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchBuilder.close()
       batchBuilder = null
     }
-    if (arrowBatchBuilder != null) {
-      arrowBatchBuilder.close()
-      arrowBatchBuilder = null
-    }
 
     if (batch.numCols() > 0) {
       if (batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
         batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
           GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
         useArrow = true
-        arrowBatchBuilder =
+        batchBuilder =
           new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, null)
       } else {
         // when reading host batches it is essential to read the data immediately and pass to a
@@ -275,14 +272,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     val rows = batch.numRows()
     for (i <- 0 until batch.numCols()) {
-      if (useArrow) {
-        HostColumnarToGpu.columnarCopy(batch.column(i), arrowBatchBuilder.builder(i),
-          schema.fields(i).nullable, rows)
-      } else {
-        HostColumnarToGpu.columnarCopy(batch.column(i), batchBuilder.builder(i),
-          schema.fields(i).nullable, rows)
-      }
-
+      batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
     }
     totalRows += rows
   }
