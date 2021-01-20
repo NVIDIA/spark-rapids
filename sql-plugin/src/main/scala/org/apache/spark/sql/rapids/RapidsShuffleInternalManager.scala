@@ -209,7 +209,14 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   protected val wrapped = new SortShuffleManager(conf)
   GpuShuffleEnv.setRapidsShuffleManagerInitialized(true, this.getClass.getCanonicalName)
-  logWarning("Rapids Shuffle Plugin Enabled")
+
+  private [this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
+    "Transport disabled (local cached blocks only)."
+  } else {
+    s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName})."
+  }
+
+  logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}")
 
   //Many of these values like blockManager are not initialized when the constructor is called,
   // so they all need to be lazy values that are executed when things are first called
