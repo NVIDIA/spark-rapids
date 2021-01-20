@@ -68,11 +68,45 @@ def test_window_aggs_for_rows(data_gen):
         'from window_agg_table ')
 
 
+_grpkey_longs_with_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
+    ('b', DecimalGen(precision=18, scale=3, nullable=False)),
+    ('c', IntegerGen())]
+
+_grpkey_longs_with_nullable_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DecimalGen(precision=18, scale=10, nullable=True)),
+    ('c', IntegerGen())]
+
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals], ids=idfn)
+def test_window_aggs_for_rows_on_decimal(data_gen):
+    # TODO: Test sum aggregation when underlying cuDF implementation is ready
+    # corresponding issue: https://github.com/rapidsai/cudf/issues/7117
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select '
+        ' max(c) over '
+        '   (partition by a order by b desc, c desc rows between 2 preceding and 1 following) as max_c_desc, '
+        ' min(c) over '
+        '   (partition by a order by b,c rows between 2 preceding and current row) as min_c_asc, '
+        ' count(1) over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_1, '
+        ' count(c) over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_c, '
+        ' row_number() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
+        'from window_agg_table ')
+
+
 part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, timestamp_gen]
+        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        boolean_gen, timestamp_gen]
+        boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
 
 def meta_idfn(meta):
     def tmp(something):

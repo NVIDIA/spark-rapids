@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,7 +94,7 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long, ucx: UCX)
       sendTx.close()
     })
 
-    receive(Seq(response), receiveTx => {
+    receive(response, receiveTx => {
       logDebug(s"UCX request receive callback $receiveTx")
       if (receiveTx.getStatus == TransactionStatus.Success) {
         tx.incrementReceiveSize(response.length)
@@ -230,13 +230,10 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
     tx
   }
 
-  override def receive(header: AddressLengthTag,
-    cb: TransactionCallback): Transaction = receive(Seq(header), cb)
-
-  override def receive(buffers: Seq[AddressLengthTag], cb: TransactionCallback): Transaction = {
+  override def receive(alt: AddressLengthTag, cb: TransactionCallback): Transaction =  {
     val tx = createTransaction
-    buffers.foreach(alt => tx.registerForReceive(alt))
-    tx.start(UCXTransactionType.Receive, buffers.size, cb)
+    tx.registerForReceive(alt)
+    tx.start(UCXTransactionType.Receive, 1, cb)
     val ucxCallback = new UCXTagCallback {
       override def onError(alt: AddressLengthTag, ucsStatus: Int, errorMsg: String): Unit = {
         logError(s"Got an error... for tag: ${TransportUtils.formatTag(alt.tag)}, tx $tx")
@@ -263,11 +260,9 @@ class UCXConnection(peerExecutorId: Int, ucx: UCX) extends Connection with Loggi
       }
     }
 
-    buffers.foreach(alt=> {
-      logDebug(s"Receiving [tag=${TransportUtils.formatTag(alt.tag)}, size=${alt.length}]")
-      ucx.receive(alt, ucxCallback)
-      tx.incrementReceiveSize(alt.length)
-    })
+    logDebug(s"Receiving [tag=${TransportUtils.formatTag(alt.tag)}, size=${alt.length}]")
+    ucx.receive(alt, ucxCallback)
+    tx.incrementReceiveSize(alt.length)
     tx
   }
 
