@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shuffle.ucx
 
 import java.io._
-import java.net.{InetSocketAddress, ServerSocket, Socket}
+import java.net.{InetSocketAddress, ServerSocket, Socket, SocketException}
 import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
@@ -220,17 +220,18 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
                 handleSocket(s)
               })
             } catch {
-              case e: Throwable =>
-                if (initialized) {
-                  // This will cause the `SparkUncaughtExceptionHandler` to get invoked
-                  // and it will shut down the executor (as it should).
-                  throw e
-                } else {
-                  // initialized = false means we are shutting down,
-                  // the socket will throw SocketException in this case
-                  // to unblock the accept, when close() is called.
-                  logWarning(s"UCX management socket closing")
-                }
+              case e: Throwable if initialized =>
+                // This will cause the `SparkUncaughtExceptionHandler` to get invoked
+                // and it will shut down the executor (as it should).
+                throw e
+              case _: SocketException if !initialized =>
+                // `initialized = false` means we are shutting down,
+                // the socket will throw `SocketException` in this case
+                // to unblock the accept, when `close()` is called.
+                logWarning(s"UCX management socket closing")
+              case ue: Throwable =>
+                // a catch-all in case we get a non `SocketException` while closing (!initialized)
+                logError(s"Unexpected exception while closing UCX management socket", ue)
             }
           }
         })
