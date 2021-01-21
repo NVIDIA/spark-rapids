@@ -1716,9 +1716,18 @@ object GpuOverrides {
       }),
     expr[Sum](
       "Sum aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL,
-        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
+      ExprChecksImpl(
+        ExprChecks.fullAgg(
+          TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL,
+          Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))
+        ).asInstanceOf[ExprChecksImpl].contexts
+          ++
+          ExprChecks.windowOnly(
+            TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL,
+            TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL,
+            Seq(ParamCheck("input", TypeSig.numeric, TypeSig.numeric))
+          ).asInstanceOf[ExprChecksImpl].contexts
+      ),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
