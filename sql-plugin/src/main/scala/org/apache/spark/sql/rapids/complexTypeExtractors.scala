@@ -193,9 +193,6 @@ case class GpuArrayContains(left: Expression, right: Expression)
 
   override def dataType: DataType = BooleanType
 
-  @transient private lazy val ordering: Ordering[Any] =
-    TypeUtils.getInterpretedOrdering(right.dataType)
-
   override def inputTypes: Seq[AbstractDataType] = {
     (left.dataType, right.dataType) match {
       case (ArrayType(e1, hasNull), e2) =>
