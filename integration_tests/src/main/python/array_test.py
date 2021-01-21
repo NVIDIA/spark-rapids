@@ -88,6 +88,14 @@ def test_orderby_array_of_structs(data_gen):
                                                                         string_gen, boolean_gen, date_gen, timestamp_gen]], ids=idfn)
 def test_array_contains(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark: unary_op_df(spark, data_gen),
         'array_table',
         'SELECT array_contains(a, a[0]) from array_table', no_nans_conf)
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in int_n_long_gens], ids=idfn)
+def test_array_contains_scalar(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: unary_op_df(spark, data_gen),
+        'array_table',
+        'SELECT array_contains(a, 0) from array_table', no_nans_conf)

@@ -660,7 +660,7 @@ def two_col_df(spark, a_gen, b_gen, length=2048, seed=0):
 def binary_op_df(spark, gen, length=2048, seed=0):
     return two_col_df(spark, gen, gen, length=length, seed=seed)
 
-def unary_op_df(spark, gen, length=50, seed=0):
+def unary_op_df(spark, gen, length=2048, seed=0):
     return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
 
 def to_cast_string(spark_type):
@@ -772,7 +772,6 @@ date_n_time_gens = [date_gen, timestamp_gen]
 boolean_gens = [boolean_gen]
 
 single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens + [null_gen]]
-single_level_array_gens_no_null_gen = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens]
 
 # Be careful to not make these too large of data generation takes for ever
 # This is only a few nested array gens, because nesting can be very deep
