@@ -95,12 +95,29 @@ case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryAr
   override def binaryOp: BinaryOp = BinaryOp.SUB
 }
 
-case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+object GpuMultiplyUtil {
+  def decimalDataType(l: DecimalType, r: DecimalType): DecimalType = {
+    val p = l.precision + r.precision + 1
+    val s = l.scale + r.scale
+    // TODO once we support 128-bit decimal support we should match the config for precision loss.
+    DecimalType(math.min(p, 38), math.min(s, 38))
+  }
+}
+
+case class GpuMultiply(
+    left: Expression,
+    right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "*"
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
+
+  // Override the output type as a special case for decimal
+  override def dataType: DataType = (left.dataType, right.dataType) match {
+    case (l: DecimalType, r: DecimalType) =>  GpuMultiplyUtil.decimalDataType(l, r)
+    case _ => super.dataType
+  }
 }
 
 object GpuDivModLike {
