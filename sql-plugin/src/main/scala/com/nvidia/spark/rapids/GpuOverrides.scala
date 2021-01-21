@@ -1927,6 +1927,15 @@ object GpuOverrides {
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL)),
         ("key", TypeSig.commonCudfTypes, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (conf.hasNans && (in.children.map(a => a.dataType).contains(DoubleType) ||
+            in.children.map(a => a.dataType).contains(FloatType))) {
+            willNotWorkOnGpu("Array Contains on floating point columns that can contain NaNs " +
+              "will compute incorrect results. If it is known that there are no NaNs or" +
+              " don't care for the returned values when NaN exists, set " +
+              s" ${RapidsConf.HAS_NANS} to false.")
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
