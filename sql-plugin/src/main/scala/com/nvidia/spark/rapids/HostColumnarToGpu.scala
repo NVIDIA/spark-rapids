@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
-
 import org.apache.arrow.vector.ValueVector
 import org.apache.arrow.vector.types.pojo.ArrowType
 
@@ -87,7 +86,6 @@ object HostColumnarToGpu extends Logging {
 
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
-
     (cv.dataType(), nullable) match {
       case (ByteType | BooleanType, true) =>
         for (i <- 0 until rows) {
@@ -235,7 +233,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   assert(goal != RequireSingleBatch)
 
   var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilderBase = _
-  var useArrow: Boolean = false
   var totalRows = 0
   var maxDeviceMemory: Long = 0
 
@@ -250,20 +247,18 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     }
 
     if (batch.numCols() > 0) {
+      // when reading host batches it is essential to read the data immediately and pass to a
+      // builder and we need to determine how many rows to allocate in the builder based on the
+      // schema and desired batch size
+
+      // TODO - batch row limit right for arrow?
+      batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
+        GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
       if (batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
-        batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
-          GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
-        useArrow = true
         batchBuilder =
           new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, null)
       } else {
-        // when reading host batches it is essential to read the data immediately and pass to a
-        // builder and we need to determine how many rows to allocate in the builder based on the
-        // schema and desired batch size
-        batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
-          GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
         batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
-
       }
     }
     totalRows = 0
