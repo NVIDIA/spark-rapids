@@ -93,6 +93,7 @@ jobs:
             --detect.maven.build.command="-pl='$PROJECTS -am'"
             --detect.maven.included.scopes=compile
             --detect.force.success=false
+            --detect.tools.excluded=SIGNATURE_SCAN
             --detect.parallel.processors=0
             --detect.project.name="${{ github.repository }}"
             --detect.project.version.name="${{ github.run_id }}"
