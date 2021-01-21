@@ -1431,8 +1431,6 @@ object GpuOverrides {
           // types were and cannot recover it. As such for now we are going to do what spark does
           // but we have to recompute/recheck the temporary precision to be sure it will fit
           // on the GPU.
-          //
-          // To do this we are going to try and undo what Spark did to get here.
           (childExprs.head.dataType, childExprs(1).dataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
@@ -1627,8 +1625,8 @@ object GpuOverrides {
       "Division with a integer result",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG, TypeSig.LONG + TypeSig.DECIMAL),
-        ("rhs", TypeSig.LONG, TypeSig.LONG + TypeSig.DECIMAL)),
+        ("lhs", TypeSig.LONG + TypeSig.DECIMAL, TypeSig.LONG + TypeSig.DECIMAL),
+        ("rhs", TypeSig.LONG + TypeSig.DECIMAL, TypeSig.LONG + TypeSig.DECIMAL)),
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)
