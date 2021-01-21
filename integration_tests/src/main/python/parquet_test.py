@@ -458,3 +458,7 @@ def test_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(rs).parquet(data_path),
             conf=all_confs)
 
+def test_
+
+
+
