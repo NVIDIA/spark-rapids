@@ -791,12 +791,14 @@ case class GpuCast(
       // When ANSI mode is enabled, we need to throw an exception if any values could not be
       // converted
       if (ansiMode) {
-        withResource(input.isNotNull) { wasNotNull =>
-          withResource(finalResult.isNull) { isNull =>
-            withResource(wasNotNull.and(isNull)) { notConverted =>
-              if (notConverted.any().getBoolean) {
-                throw new DateTimeException(
-                  "One or more values could not be converted to TimestampType")
+        closeOnExcept(finalResult) { finalResult =>
+          withResource(input.isNotNull) { wasNotNull =>
+            withResource(finalResult.isNull) { isNull =>
+              withResource(wasNotNull.and(isNull)) { notConverted =>
+                if (notConverted.any().getBoolean) {
+                  throw new DateTimeException(
+                    "One or more values could not be converted to TimestampType")
+                }
               }
             }
           }
