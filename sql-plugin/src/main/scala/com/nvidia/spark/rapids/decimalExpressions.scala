@@ -63,48 +63,6 @@ class PromotePrecisionExprMeta(
     GpuPromotePrecision(child)
 }
 
-object DecimalExpressions {
-  // Underlying storage type of decimal data in cuDF is int64_t, whose max capacity is 19.
-  val GPU_MAX_PRECISION: Int = 19
-  val GPU_MAX_SCALE: Int = 19
-  // Keep up with MINIMUM_ADJUSTED_SCALE, is this better to be configurable?
-  val GPU_MINIMUM_ADJUSTED_SCALE = 6
-
-  /**
-   * A forked version of [[org.apache.spark.sql.types.DecimalType]] with GPU constants replacement
-   */
-  private[rapids] def adjustPrecisionScale(dt: DecimalType): DecimalType = {
-    if (dt.precision <= GPU_MAX_PRECISION) {
-      // Adjustment only needed when we exceed max precision
-      dt
-    } else if (dt.scale < 0) {
-      // Decimal can have negative scale (SPARK-24468). In this case, we cannot allow a precision
-      // loss since we would cause a loss of digits in the integer part.
-      // In this case, we are likely to meet an overflow.
-      DecimalType(GPU_MAX_PRECISION, dt.scale)
-    } else {
-      // Precision/scale exceed maximum precision. Result must be adjusted to MAX_PRECISION.
-      val intDigits = dt.precision - dt.scale
-      // If original scale is less than MINIMUM_ADJUSTED_SCALE, use original scale value; otherwise
-      // preserve at least MINIMUM_ADJUSTED_SCALE fractional digits
-      val minScaleValue = Math.min(dt.scale, GPU_MINIMUM_ADJUSTED_SCALE)
-      // The resulting scale is the maximum between what is available without causing a loss of
-      // digits for the integer part of the decimal and the minimum guaranteed scale, which is
-      // computed above
-      val adjustedScale = Math.max(GPU_MAX_PRECISION - intDigits, minScaleValue)
-
-      DecimalType(GPU_MAX_PRECISION, adjustedScale)
-    }
-  }
-
-  /**
-   * A forked version of [[org.apache.spark.sql.types.DecimalType]] with GPU constants replacement
-   */
-  private[rapids] def bounded(precision: Int, scale: Int): DecimalType = {
-    DecimalType(min(precision, GPU_MAX_PRECISION), min(scale, GPU_MAX_SCALE))
-  }
-}
-
 case class GpuUnscaledValue(child: Expression) extends GpuUnaryExpression {
   override def dataType: DataType = LongType
   override def toString: String = s"UnscaledValue($child)"
