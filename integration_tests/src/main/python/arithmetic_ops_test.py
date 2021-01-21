@@ -48,7 +48,7 @@ def test_subtraction(data_gen):
                 f.col('a') - f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
