@@ -41,7 +41,6 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
@@ -706,6 +705,14 @@ object GpuOverrides {
           }
         }
       }),
+    expr[PromotePrecision](
+      "PromotePrecision before arithmetic operations between DecimalType data",
+      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.DECIMAL, TypeSig.DECIMAL),
+      (a, conf, p, r) => new PromotePrecisionExprMeta(a, conf, p, r)),
+    expr[CheckOverflow](
+      "CheckOverflow after arithmetic operations between DecimalType data",
+      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.DECIMAL, TypeSig.DECIMAL),
+      (a, conf, p, r) => new CheckOverflowExprMeta(a, conf, p, r)),
     expr[ToDegrees](
       "Converts radians to degrees",
       ExprChecks.mathUnary,
@@ -1377,9 +1384,9 @@ object GpuOverrides {
     expr[Add](
       "Addition",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval)),
+        TypeSig.numeric, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.numeric, TypeSig.numericAndInterval),
+        ("rhs", TypeSig.numeric, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuAdd(lhs, rhs)
@@ -1387,9 +1394,9 @@ object GpuOverrides {
     expr[Subtract](
       "Subtraction",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numericAndInterval)),
+        TypeSig.numeric, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.numeric, TypeSig.numericAndInterval),
+        ("rhs", TypeSig.numeric, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryExprMeta[Subtract](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs)

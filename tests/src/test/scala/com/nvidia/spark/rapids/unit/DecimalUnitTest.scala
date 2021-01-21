@@ -21,8 +21,9 @@ import java.math.RoundingMode
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExec, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
+import com.nvidia.spark.rapids._
 
+import org.scalatest.Matchers.convertToAnyShouldWrapper
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
