@@ -22,16 +22,17 @@ import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
 import com.nvidia.spark.rapids._
+
 import org.scalatest.Matchers.convertToAnyShouldWrapper
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Add, Alias, AttributeReference, Cast, CheckOverflow, Expression, Literal, Multiply, Pmod, PromotePrecision, Subtract}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.types.{Decimal, DecimalType, DoubleType, IntegerType, LongType, StructField, StructType}
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.types.{Decimal, DecimalType, IntegerType, LongType, StructField, StructType}
 
 class DecimalUnitTest extends GpuUnitTests {
   Random.setSeed(1234L)

@@ -1579,9 +1579,9 @@ object GpuOverrides {
     expr[Divide](
       "Division",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.DOUBLE, TypeSig.DOUBLE,
-        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE),
-        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE)),
+        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
+        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL),
+        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL)),
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDivide(lhs, rhs)
@@ -1590,8 +1590,8 @@ object GpuOverrides {
       "Division with a integer result",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG, TypeSig.LONG),
-        ("rhs", TypeSig.LONG, TypeSig.LONG)),
+        ("lhs", TypeSig.LONG, TypeSig.LONG + TypeSig.DECIMAL),
+        ("rhs", TypeSig.LONG, TypeSig.LONG + TypeSig.DECIMAL)),
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)

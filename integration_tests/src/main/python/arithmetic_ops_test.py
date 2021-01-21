@@ -57,8 +57,7 @@ def test_multiplication(data_gen):
                 f.lit(-12).cast(data_type) * f.col('b'),
                 f.lit(None).cast(data_type) * f.col('a'),
                 f.col('b') * f.lit(None).cast(data_type),
-                f.col('a') * f.col('b')),
-            conf=allow_negative_scale_of_decimal_conf)
+                f.col('a') * f.col('b')))
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_division(data_gen):

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.rapids.{GpuAdd, GpuDivide, GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuIntegralDivide, GpuLessThan, GpuLessThanOrEqual, GpuMultiply, GpuSubtract}
+import org.apache.spark.sql.rapids.{GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuLessThan, GpuLessThanOrEqual}
 import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType}
 
 class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
