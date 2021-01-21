@@ -124,6 +124,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Cast"></a>spark.rapids.sql.expression.Cast|`timestamp`, `tinyint`, `binary`, `float`, `smallint`, `string`, `decimal`, `double`, `boolean`, `cast`, `date`, `int`, `bigint`|Convert a column of one type of data into another type|true|None|
 <a name="sql.expression.Cbrt"></a>spark.rapids.sql.expression.Cbrt|`cbrt`|Cube root|true|None|
 <a name="sql.expression.Ceil"></a>spark.rapids.sql.expression.Ceil|`ceiling`, `ceil`|Ceiling of a number|true|None|
+<a name="sql.expression.CheckOverflow"></a>spark.rapids.sql.expression.CheckOverflow| |CheckOverflow after arithmetic operations between DecimalType data|true|None|
 <a name="sql.expression.Coalesce"></a>spark.rapids.sql.expression.Coalesce|`coalesce`|Returns the first non-null argument if exists. Otherwise, null|true|None|
 <a name="sql.expression.Concat"></a>spark.rapids.sql.expression.Concat|`concat`|String concatenate NO separator|true|None|
 <a name="sql.expression.Contains"></a>spark.rapids.sql.expression.Contains| |Contains|true|None|
@@ -193,6 +194,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|`pmod`|Pmod|true|None|
 <a name="sql.expression.Pow"></a>spark.rapids.sql.expression.Pow|`pow`, `power`|lhs ^ rhs|true|None|
+<a name="sql.expression.PromotePrecision"></a>spark.rapids.sql.expression.PromotePrecision| |PromotePrecision before arithmetic operations between DecimalType data|true|None|
 <a name="sql.expression.PythonUDF"></a>spark.rapids.sql.expression.PythonUDF| |UDF run in an external python process. Does not actually run on the GPU, but the transfer of data to/from it can be accelerated.|true|None|
 <a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|`quarter`|Returns the quarter of the year for date, in the range 1 to 4|true|None|
 <a name="sql.expression.Rand"></a>spark.rapids.sql.expression.Rand|`random`, `rand`|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
