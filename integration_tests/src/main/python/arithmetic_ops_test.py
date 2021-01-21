@@ -21,7 +21,10 @@ from pyspark.sql.types import *
 from spark_session import with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
+        decimal_gen_same_scale_precision, decimal_gen_64bit]
+
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
 def test_addition(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -30,9 +33,10 @@ def test_addition(data_gen):
                 f.lit(-12).cast(data_type) + f.col('b'),
                 f.lit(None).cast(data_type) + f.col('a'),
                 f.col('b') + f.lit(None).cast(data_type),
-                f.col('a') + f.col('b')))
+                f.col('a') + f.col('b')),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
 def test_subtraction(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -41,7 +45,8 @@ def test_subtraction(data_gen):
                 f.lit(-12).cast(data_type) - f.col('b'),
                 f.lit(None).cast(data_type) - f.col('a'),
                 f.col('b') - f.lit(None).cast(data_type),
-                f.col('a') - f.col('b')))
+                f.col('a') - f.col('b')),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_multiplication(data_gen):

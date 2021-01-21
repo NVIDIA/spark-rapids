@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,52 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import scala.math.{max, min}
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{CheckOverflow, Expression, PromotePrecision}
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
+
+/**
+ * A GPU substitution of CheckOverflow, serves as a placeholder.
+ */
+case class GpuCheckOverflow(child: Expression) extends GpuUnaryExpression {
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.incRefCount()
+  override def dataType: DataType = child.dataType
+}
+
+/**
+ * A GPU substitution of PromotePrecision, serves as a placeholder.
+ */
+case class GpuPromotePrecision(child: Expression) extends GpuUnaryExpression {
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.incRefCount()
+  override def dataType: DataType = child.dataType
+}
+
+/** Meta-data for checkOverflow */
+class CheckOverflowExprMeta(
+    expr: CheckOverflow,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends UnaryExprMeta[CheckOverflow](expr, conf, parent, rule) {
+  override def convertToGpu(child: Expression): GpuExpression =
+    GpuCheckOverflow(child)
+}
+
+/** Meta-data for promotePrecision */
+class PromotePrecisionExprMeta(
+    expr: PromotePrecision,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends UnaryExprMeta[PromotePrecision](expr, conf, parent, rule) {
+  override def convertToGpu(child: Expression): GpuExpression =
+    GpuPromotePrecision(child)
+}
 
 case class GpuUnscaledValue(child: Expression) extends GpuUnaryExpression {
   override def dataType: DataType = LongType
