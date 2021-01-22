@@ -188,14 +188,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     public ColumnarBatch build(int rows) {
       ColumnVector[] vectors = new ColumnVector[builders.length];
+      logger.warn(" in build column batch for arrow");
       boolean success = false;
       try {
         for (int i = 0; i < builders.length; i++) {
-
+          logger.warn(" calling build and put on device: " + i);
           ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
+          logger.warn(" createing gpu column vector");
           vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
           builders[i] = null;
         }
+        logger.warn(" createing columnar batch");
         ColumnarBatch ret = new ColumnarBatch(vectors, rows);
         success = true;
         return ret;

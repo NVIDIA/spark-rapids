@@ -48,7 +48,7 @@ object HostColumnarToGpu extends Logging {
       // ValueVector => ArrowBuf
 
       val buffers = arrowVec.getArrowValueVector.getBuffers(false)
-      logWarning("buffer num is " + buffers.size)
+      logWarning("num buffers is " + buffers.size)
 
       val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.memoryAddress()
       val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
@@ -57,8 +57,8 @@ object HostColumnarToGpu extends Logging {
       val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
       val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
       val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen)
-
       ab.setValidityBuf(hostValidBuf)
+      logWarning(s"buffer data is: $hostDataBuf validitiy buffer is: $hostValidBuf")
       try {
         val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
         if (arrowDataOffsetBuf != null) {
@@ -267,10 +267,12 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
+    logWarning("in add batch")
     val rows = batch.numRows()
     for (i <- 0 until batch.numCols()) {
       batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
     }
+    logWarning("done in add batch")
     totalRows += rows
   }
 
@@ -279,6 +281,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
+    logWarning("concatallandput on gpu")
     // About to place data back on the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
