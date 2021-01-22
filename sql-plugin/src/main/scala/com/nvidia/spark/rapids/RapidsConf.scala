@@ -930,6 +930,37 @@ object RapidsConf {
       |  --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH="/tmp/cudf-$USER"
       |  ```
       |""".stripMargin)
+
+      printSectionHeader("RAPIDS-Plugin Cache Serializer")
+      // scalastyle:off line.size.limit
+      println("""
+      |  Spark allows users to add their own cache serializer if they desire by setting
+      |  `spark.sql.cache.serializer` configuration. RAPIDS Accelerator for Apache Spark has a
+      |  serializer `com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer` that is
+      |  optimized to run on the GPU and uses parquet to compress data before caching it. One
+      |  important thing to note is that running on the GPU i.e. `spark.rapids.sql.enabled` doesn't
+      |  have to be set to `true` to use this. Also note that parquet doesn't support
+      |  `CalendarIntervalType` or `NullType` out of the box, but we do by decomposing intervals to
+      |  struct containing the months, days and microseconds and `NullType` to Int column containing
+      |  nulls.
+      |
+      |  As mentioned above `ParquetCachedBatchSerializer` uses parquet to
+      |  compress the incoming batch before caching it to the user defined `storageLevel`. We don't
+      |  modify the `storageLevel` so it behaves as it would with the DefaultCachedBatchSerializer.
+      |  There are four main methods to consider, two to deal with columnar data,
+      |  `convertColumnarBatchToCachedBatch` and `convertCachedBatchToColumnarBatch`, the other two
+      |  to deal with row-based data, `convertInternalRowToCachedBatch` and
+      |  `convertCachedBatchToInternalRow`. If the DataFrame being cached results in a plan that
+      |  supports columnar data, i.e. method `SparkPlan.supportsColumnar` returns true, the columnar
+      |  methods are called, otherwise the row-based methods are called and if the plugin is enabled
+      |  it will be processed on the GPU otherwise it will be processed on the CPU.
+      |
+      |  To use this serializer please run Spark
+      |  ```
+      |  spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
+      |  ```
+      |""".stripMargin)
+      // scalastyle:on line.size.limit
     }
   }
   def main(args: Array[String]): Unit = {
