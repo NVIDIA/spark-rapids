@@ -47,7 +47,7 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_parquet_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
+def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
                                   reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -118,7 +118,6 @@ def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, re
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-@allow_non_gpu("CoalesceExec")
 def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
