@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,10 @@ class TpchLikeSparkSuite extends FunSuite with BeforeAndAfterAll {
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
       println("RAPIDS SHUFFLE MANAGER ACTIVE")
-      builder = builder.config("spark.shuffle.manager", rapidsShuffle)
+      // configure the cache-only shuffle manager (disable transport)
+      builder = builder
+          .config("spark.shuffle.manager", rapidsShuffle)
+          .config("spark.rapids.shuffle.transport.enabled", false)
     } else {
       println("RAPIDS SHUFFLE MANAGER INACTIVE")
     }
