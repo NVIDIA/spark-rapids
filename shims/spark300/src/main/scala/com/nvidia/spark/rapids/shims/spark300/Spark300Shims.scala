@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
@@ -435,5 +435,9 @@ class Spark300Shims extends SparkShims {
       qualifier: Seq[String],
       explicitMetadata: Option[Metadata]): Alias = {
     Alias(child, name)(exprId, qualifier, explicitMetadata)
+  }
+
+  override def shouldIgnorePath(path: String): Boolean = {
+    InMemoryFileIndex.shouldFilterOut(path)
   }
 }
