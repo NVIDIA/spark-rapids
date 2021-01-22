@@ -1418,7 +1418,7 @@ object GpuOverrides {
         override def tagExprForGpu(): Unit = {
           // Multiplication of Decimal types is a little odd. Spark will cast the inputs
           // to a common wider value where scale is max of the two input scales, and precision is
-          // max of the two input non-scale portions + the new scale). Then it will do the multiply,
+          // max of the two input non-scale portions + the new scale. Then it will do the multiply,
           // which will produce a return scale that is 2x that of the wider scale, but lie about it
           // in the return type of the Multiply operator. Then in CheckOverflow it will reset the
           // scale and check the precision so that they know it fits in final desired result which
@@ -1428,7 +1428,7 @@ object GpuOverrides {
           // scale quite a bit larger than the final result reduces the maximum precision that
           // we could support, as we don't have unlimited precision. But sadly because of how
           // the logical plan is compiled down to the physical plan we have lost what the original
-          // types were and cannot recover it. As such for now we are going to do what spark does
+          // types were and cannot recover it. As such for now we are going to do what Spark does,
           // but we have to recompute/recheck the temporary precision to be sure it will fit
           // on the GPU.
           (childExprs.head.dataType, childExprs(1).dataType) match {

@@ -221,7 +221,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def dataType: DataType = LongType
   override def outputTypeOverride: DType = DType.INT64
   // CUDF does not support casting output implicitly for decimal binary ops, so we work around
-  // it here were we want to force the output to be a Long.
+  // it here where we want to force the output to be a Long.
   override def castOutputAtEnd: Boolean = true
 
   override def symbol: String = "/"
