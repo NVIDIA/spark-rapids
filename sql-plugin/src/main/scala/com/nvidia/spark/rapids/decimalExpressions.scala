@@ -15,18 +15,14 @@
  */
 package com.nvidia.spark.rapids
 
-import scala.math.min
-
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import scala.math.{max, min}
 
-import org.apache.spark.sql.catalyst.expressions.{CheckOverflow, Expression, PromotePrecision}
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
 
 /**
- * A GPU substitution of CheckOverflow, serves as a placeholder.
+ * A GPU substitution of CheckOverflow, does not actually check for overflow because
+ * the precision checks for 64-bit support prevent the need for that.
  */
 case class GpuCheckOverflow(child: Expression,
     dataType: DecimalType,
@@ -47,7 +43,7 @@ case class GpuCheckOverflow(child: Expression,
 }
 
 /**
- * A GPU substitution of PromotePrecision, serves as a placeholder.
+ * A GPU substitution of PromotePrecision, which is a NOOP in Spark too.
  */
 case class GpuPromotePrecision(child: Expression) extends GpuUnaryExpression {
   override protected def doColumnar(input: GpuColumnVector): ColumnVector =
