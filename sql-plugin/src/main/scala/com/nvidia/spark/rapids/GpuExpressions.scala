@@ -197,6 +197,7 @@ trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 trait CudfBinaryExpression extends GpuBinaryExpression {
   def binaryOp: BinaryOp
   def outputTypeOverride: DType = null
+  def castOutputAtEnd: Boolean = false
 
   def outputType(l: BinaryOperable, r: BinaryOperable) : DType = {
     val over = outputTypeOverride
@@ -211,19 +212,43 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
     val lBase = lhs.getBase
     val rBase = rhs.getBase
     val outType = outputType(lBase, rBase)
-    lBase.binaryOp(binaryOp, rBase, outType)
+    val tmp = lBase.binaryOp(binaryOp, rBase, outType)
+    // In some cases the output type is ignored
+    if (!outType.equals(tmp.getType) && castOutputAtEnd) {
+      withResource(tmp) { tmp =>
+        tmp.castTo(outType)
+      }
+    } else {
+      tmp
+    }
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val rBase = rhs.getBase
     val outType = outputType(lhs, rBase)
-    lhs.binaryOp(binaryOp, rBase, outType)
+    val tmp = lhs.binaryOp(binaryOp, rBase, outType)
+    // In some cases the output type is ignored
+    if (!outType.equals(tmp.getType) && castOutputAtEnd) {
+      withResource(tmp) { tmp =>
+        tmp.castTo(outType)
+      }
+    } else {
+      tmp
+    }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val lBase = lhs.getBase
     val outType = outputType(lBase, rhs)
-    lBase.binaryOp(binaryOp, rhs, outType)
+    val tmp = lBase.binaryOp(binaryOp, rhs, outType)
+    // In some cases the output type is ignored
+    if (!outType.equals(tmp.getType) && castOutputAtEnd) {
+      withResource(tmp) { tmp =>
+        tmp.castTo(outType)
+      }
+    } else {
+      tmp
+    }
   }
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
