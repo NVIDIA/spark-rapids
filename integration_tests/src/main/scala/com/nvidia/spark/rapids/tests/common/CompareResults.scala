@@ -51,8 +51,8 @@ object CompareResults {
     val dfReader = spark.read.format(conf.inputFormat())
 
     BenchUtils.compareResults(
-      dfReader.load(conf.input1())
-      dfReader.load(conf.input2())
+      dfReader.load(conf.input1()),
+      dfReader.load(conf.input2()),
       conf.inputFormat(),
       conf.ignoreOrdering(),
       conf.useIterator(),
