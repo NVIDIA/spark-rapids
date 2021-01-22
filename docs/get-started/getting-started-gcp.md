@@ -33,6 +33,9 @@ The script below will initialize with the following:
 * Component gateway enabled for accessing Web UIs hosted on the cluster
 * Configuration for [GPU scheduling and isolation](yarn-gpu.md)
 
+_Note that the 0.3 version of the RAPIDS Spark Accelerator works with Spark versions up to 3.0.x.
+Google Dataproc is at Spark 3.1.x as of January 15, 2021.  The command below specifies an earlier
+(Jan 12, 2021) version of Dataproc using Spark 3.0.1_
 
 ```bash
     export REGION=[Your Preferred GCP Region]
@@ -43,7 +46,7 @@ The script below will initialize with the following:
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region $REGION \
-    --image-version=preview-ubuntu18 \
+    --image-version=2.0.0-RC22-ubuntu18 \
     --master-machine-type n1-standard-16 \
     --num-workers $NUM_WORKERS \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
