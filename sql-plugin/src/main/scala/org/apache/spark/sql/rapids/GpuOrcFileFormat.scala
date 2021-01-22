@@ -47,8 +47,8 @@ object GpuOrcFileFormat extends Logging {
                     options: Map[String, String],
                     schema: StructType): Option[GpuOrcFileFormat] = {
 
-    val unSupportedTypes = schema.filter(field => !GpuOverrides.isSupportedType(field.dataType))
-    if (!unSupportedTypes.isEmpty) {
+    val unSupportedTypes = schema.filterNot(field => GpuOverrides.isSupportedType(field.dataType))
+    if (unSupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(s"These types aren't supported for orc $unSupportedTypes")
     }
 

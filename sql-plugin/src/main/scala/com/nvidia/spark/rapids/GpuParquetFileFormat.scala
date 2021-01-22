@@ -43,8 +43,8 @@ object GpuParquetFileFormat {
       schema: StructType): Option[GpuParquetFileFormat] = {
 
     val unSupportedTypes =
-      schema.filter(field => !GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))
-    if (!unSupportedTypes.isEmpty) {
+      schema.filterNot(field => GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))
+    if (unSupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(s"These types aren't supported for parquet $unSupportedTypes")
     }
 
@@ -278,10 +278,10 @@ class GpuParquetWriter(
     super.write(newBatch, statsTrackers)
   }
   override val tableWriter: TableWriter = {
-    def precisionsList(t: DataType): List[Int] = {
+    def precisionsList(t: DataType): Seq[Int] = {
       t match {
         case d: DecimalType => List(d.precision)
-        case s: StructType => s.flatMap(f => precisionsList(f.dataType)).toList
+        case s: StructType => s.flatMap(f => precisionsList(f.dataType))
         case ArrayType(elementType, _) => precisionsList(elementType)
         case _ => List.empty
       }
