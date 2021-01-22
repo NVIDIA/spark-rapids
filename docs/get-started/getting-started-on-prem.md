@@ -394,10 +394,10 @@ The _RapidsShuffleManager_ is a beta feature!
 ---
 
 The _RapidsShuffleManager_ is an implementation of the `ShuffleManager` interface in Apache Spark
-that allows custom mechanisms to exchange shuffle data. The _RapidsShuffleManager_ has two components:
-a spillable cache, and a transport that can utilize _Remote Direct Memory Access (RDMA)_ and high-bandwidth 
-transfers within a node that has multiple GPUs. This is possible because the plugin utilizes 
-[Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
+that allows custom mechanisms to exchange shuffle data. The _RapidsShuffleManager_ has two
+components: a spillable cache, and a transport that can utilize _Remote Direct Memory Access (RDMA)_
+and high-bandwidth transfers within a node that has multiple GPUs. This is possible because the
+plugin utilizes [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
 
 - **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
 but can spill in the following cases:
@@ -409,8 +409,9 @@ but can spill in the following cases:
     
   Tasks local to the producing executor will short-circuit read from the cache.
 
-- **Transport**: Handles block transfers between executors using various means like: _NVLink_, _PCIe_, _Infiniband (IB)_, 
-_RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in these scenarios:
+- **Transport**: Handles block transfers between executors using various means like: _NVLink_,
+_PCIe_, _Infiniband (IB)_, _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX,
+in these scenarios:
   - _GPU-to-GPU_: Shuffle blocks that were able to fit in GPU memory.
   - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk) but will be manifested 
   in the GPU in the downstream Spark task.
@@ -418,9 +419,9 @@ _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in the
 In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
 Mellanox hardware go to *step 2*:
 
-1. If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
-[MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
-and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
+1. If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the
+[MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), and the
+[`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
 
     With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
 
@@ -447,7 +448,7 @@ that matches your Spark version. Currently we support
 --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
-Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a 
+Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.
 
 ### UCX Environment Variables
@@ -468,10 +469,11 @@ Here are some settings that could be utilized to fine tune the _RapidsShuffleMan
 #### Bounce Buffers
 The following configs control the number of bounce buffers, and the size. Please note that for
 device buffers, two pools are created (for sending and receiving). Take this into account when
-sizing your pools. 
+sizing your pools.
 
-The GPU buffers should be smaller than the [`PCI BAR Size`](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#bar-sizes)
-for your GPU. Please verify the [defaults](../configs.md) work in your case.
+The GPU buffers should be smaller than the [`PCI BAR
+Size`](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#bar-sizes) for your GPU. Please verify
+the [defaults](../configs.md) work in your case.
 
 - `spark.rapids.shuffle.ucx.bounceBuffers.device.count`
 - `spark.rapids.shuffle.ucx.bounceBuffers.host.count`
@@ -490,9 +492,12 @@ The _GPU Scheduling for Pandas UDF_ is an experimental feature, and may change a
 
 ---
 
-_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs), and has two components: 
+_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined
+function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs),
+and has two components:
 
-- **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the same GPU with JVM.
+- **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the
+  same GPU with JVM.
 
 - **Increase Speed**: Make the data transport faster between JVM process and Python process.
 
@@ -500,7 +505,8 @@ _GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defi
 
 To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job with extra settings.
 
-1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive mode to assign GPUs under spark.
+1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive
+   mode to assign GPUs under spark.
 2. Currently the python files are packed into the spark rapids plugin jar. 
 
     On Yarn, you need to add
@@ -543,7 +549,8 @@ spark.rapids.python.memory.gpu.allocFraction
 spark.rapids.python.memory.gpu.maxAllocFraction
 ```
 
-To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md).
+To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
+Apache Spark Configuration Guide](../configs.md).
 
 
 

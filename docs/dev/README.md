@@ -201,8 +201,8 @@ i.e.: nodes that are transitioning the data to or from the GPU.  Most nodes
 expect their input to already be on the GPU and produce output on the GPU, so
 those nodes do not need to worry about using `GpuSemaphore`.  The general
 rules for using the semaphore are:
-* If the plan node has inputs not on the GPU but produces outputs on the GPU then the node must acquire the semaphore by calling
-`GpuSemaphore.acquireIfNecessary`.
+* If the plan node has inputs not on the GPU but produces outputs on the GPU then the node must
+acquire the semaphore by calling `GpuSemaphore.acquireIfNecessary`.
 * If the plan node has inputs on the GPU but produces outputs not on the GPU
 then the node must release the semaphore by calling
 `GpuSemaphore.releaseIfNecessary`.

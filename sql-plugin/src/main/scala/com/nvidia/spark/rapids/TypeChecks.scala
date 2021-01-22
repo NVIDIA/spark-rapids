@@ -1073,6 +1073,7 @@ object SupportedOpsDocs {
     println("|UDT|User defined types and java Objects. These are not standard SQL types.|")
     println()
     println("## Support")
+    println()
     println("|Value|Description|")
     println("|---------|----------------|")
     println("|S| (Supported) Both Apache Spark and the RAPIDS Accelerator support this type.|")
@@ -1117,7 +1118,7 @@ object SupportedOpsDocs {
       }
     }
     println("</table>")
-    println("* as was stated previously Decimal is only supported up to a precision of")
+    println("* As was stated previously Decimal is only supported up to a precision of")
     println(s"${DType.DECIMAL64_MAX_PRECISION} and Timestamp is only supported in the")
     println("UTC time zone. Decimals are off by default due to performance impact in")
     println("some cases.")
