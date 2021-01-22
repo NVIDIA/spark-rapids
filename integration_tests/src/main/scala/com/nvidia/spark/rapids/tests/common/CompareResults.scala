@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,16 +48,11 @@ object CompareResults {
         .config("spark.rapids.sql.enabled", "false")
         .getOrCreate()
 
-    val (df1, df2) = conf.inputFormat() match {
-      case "csv" =>
-        (spark.read.csv(conf.input1()), spark.read.csv(conf.input2()))
-      case "parquet" =>
-        (spark.read.parquet(conf.input1()), spark.read.parquet(conf.input2()))
-    }
+    val dfReader = spark.read.format(conf.inputFormat())
 
     BenchUtils.compareResults(
-      df1,
-      df2,
+      dfReader.load(conf.input1()),
+      dfReader.load(conf.input2()),
       conf.inputFormat(),
       conf.ignoreOrdering(),
       conf.useIterator(),
@@ -71,7 +66,7 @@ class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val input1 = opt[String](required = true)
   /** Path to second data set */
   val input2 = opt[String](required = true)
-  /** Input format (csv or parquet) */
+  /** Input format (csv, parquet or orc) */
   val inputFormat = opt[String](required = true)
   /** Sort the data collected from the DataFrames before comparing them. */
   val ignoreOrdering = opt[Boolean](required = false, default = Some(false))
