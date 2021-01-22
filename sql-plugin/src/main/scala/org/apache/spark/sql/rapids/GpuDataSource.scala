@@ -638,7 +638,7 @@ object GpuDataSource extends Logging {
     val allPaths = globbedPaths ++ nonGlobPaths
     if (checkFilesExist) {
       val (filteredOut, filteredIn) = allPaths.partition { path =>
-        InMemoryFileIndex.shouldFilterOut(path.getName)
+        ShimLoader.getSparkShims.shouldIgnorePath(path.getName)
       }
       if (filteredIn.isEmpty) {
         logWarning(
@@ -649,7 +649,7 @@ object GpuDataSource extends Logging {
       }
     }
 
-    allPaths.toSeq
+    allPaths
   }
 
 }

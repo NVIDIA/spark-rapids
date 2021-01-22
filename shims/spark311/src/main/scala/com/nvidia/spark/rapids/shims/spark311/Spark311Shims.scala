@@ -376,4 +376,8 @@ class Spark311Shims extends Spark301Shims {
       explicitMetadata: Option[Metadata]): Alias = {
     Alias(child, name)(exprId, qualifier, explicitMetadata)
   }
+
+  override def shouldIgnorePath(path: String): Boolean = {
+    HadoopFSUtilsShim.shouldIgnorePath(path)
+  }
 }

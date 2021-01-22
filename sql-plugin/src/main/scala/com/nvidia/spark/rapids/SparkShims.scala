@@ -163,4 +163,6 @@ trait SparkShims {
       exprId: ExprId,
       qualifier: Seq[String] = Seq.empty,
       explicitMetadata: Option[Metadata] = None): Alias
+
+  def shouldIgnorePath(path: String): Boolean
 }
