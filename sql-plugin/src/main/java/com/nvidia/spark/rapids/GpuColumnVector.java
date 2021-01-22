@@ -151,13 +151,20 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       int len = fields.length;
       builders = new ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder[len];
       boolean success = false;
+
+      if (batch.numRows() > rows) {
+        // todo - HOW DO WE SPLIT arrow batches here?  address + X
+        // esimated Rows below is not actually used right now in ArrowColumnBuilder
+      }
+
       try {
         logger.warn("schema contains: " + schema.toString());
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
-          logger.warn("field datatype: " + field.dataType() + " converted to: " + convertFrom(field.dataType(), field.nullable()));
+          logger.warn("field name: " + field.name() + " datatype: " + field.dataType() + " converted to: " + convertFrom(field.dataType(), field.nullable()));
 
-          builders[i] = new ArrowHostColumnVector.ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()), rows);
+          // TODO change batch.numRows() to rows if doing estimated and splitting
+          builders[i] = new ArrowHostColumnVector.ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()), batch.numRows(), field.name());
         }
         success = true;
       } finally {
@@ -184,11 +191,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       boolean success = false;
       try {
         for (int i = 0; i < builders.length; i++) {
-          /*
+
           ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
           vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
           builders[i] = null;
-          */
         }
         ColumnarBatch ret = new ColumnarBatch(vectors, rows);
         success = true;

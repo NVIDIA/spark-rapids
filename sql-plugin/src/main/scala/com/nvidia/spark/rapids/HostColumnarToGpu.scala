@@ -33,11 +33,12 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
 
-  def arrowColumnarCopy(cv: ColumnVector,
-      b: ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder,
+  def arrowColumnarCopy(
+      cv: ColumnVector,
+      ab: ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder,
       nullable: Boolean,
       rows: Int): Unit = {
-    logWarning("host oclunnar to gpu cv is type: " + cv.getClass().toString())
+    logWarning("host columnar to gpu cv is type: " + cv.getClass().toString())
     if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       logWarning("looking at arrow column vector")
       // TODO - how make sure off heap?
@@ -50,34 +51,31 @@ object HostColumnarToGpu extends Logging {
       logWarning("buffer num is " + buffers.size)
 
       val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.memoryAddress()
+      val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
+      val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
+      ab.setDataBuf(hostDataBuf)
       val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
+      val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
+      val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen)
+
+      ab.setValidityBuf(hostValidBuf)
       try {
         val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
         if (arrowDataOffsetBuf != null) {
           logWarning("arrow data offset buffer addrs: " + arrowDataOffsetBuf.memoryAddress())
+          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.capacity()
+          val hostValidBuf =
+            new HostMemoryBuffer(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
+          ab.setOffsetBuf(hostValidBuf)
         } else {
           logWarning("arrow data offset buffer is null")
-        }
-        if (arrowDataOffsetBuf != null) {
-          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.capacity() // ?
-          logWarning("arrow data offset buffer capcity is: " + arrowDataOffsetLen)
         }
       } catch {
         case e: UnsupportedOperationException =>
           logWarning("unsupported op getOffsetBuffer")
       }
 
-      // ArrowBuf length instead? = capacity()
-      val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      // val arrowDataOffsetLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-
       logWarning(s"lens data: ${arrowDataLen} validity: $arrowDataValidityLen ")
-      // s"offset: $arrowDataOffsetLen")
-
-      // need multiple for validity and offset???
-      // val hmb = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
-
 
     } else {
       throw new Exception("not arrow data shouldn't be here!")
@@ -251,12 +249,16 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       // builder and we need to determine how many rows to allocate in the builder based on the
       // schema and desired batch size
 
-      // TODO - batch row limit right for arrow?
+      // TODO - batch row limit right for arrow?  Do we want to allow splitting or just single?
       batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
         GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
+
       if (batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
+        if (batch.numRows() > batchRowLimit) {
+          logWarning(s"Arrow batch num rows: ${batch.numRows()} > then row limit: $batchRowLimit")
+        }
         batchBuilder =
-          new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, null)
+          new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
       } else {
         batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
       }
