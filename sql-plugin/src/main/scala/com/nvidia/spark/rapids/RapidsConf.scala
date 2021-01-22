@@ -780,9 +780,10 @@ object RapidsConf {
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
-    .doc("Comma separated list of rule to replace file paths. Eg, when the configure is set to" +
-      "s3:/foo->alluxio://0.1.2.3:19998/foo,gcs:/bar->alluxio://0.1.2.3:19998/bar" +
-      "Eg.  s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv while " +
+    .doc("List of paths to be replaced with corresponding alluxio scheme. Eg, when configure" +
+      "is set to \"s3:/foo->alluxio://0.1.2.3:19998/foo,gcs:/bar->alluxio://0.1.2.3:19998/bar\", " +
+      "which means:  " +
+      "     s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv and " +
       "     gcs:/bar/b.csv will be replaced to alluxio://0.1.2.3:19998/bar/b.csv")
     .internal()
     .stringConf
@@ -1129,7 +1130,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
-  lazy val getAlluxioFilesReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+  lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

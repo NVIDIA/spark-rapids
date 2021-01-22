@@ -16,12 +16,15 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, ExprId, Expression, NullOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -166,9 +169,39 @@ trait SparkShims {
 
   def shouldIgnorePath(path: String): Boolean
 
-  def getLocationWithAlluxioReplace(
+  def replaceWithAlluxioPathIfNeeded(
       conf: RapidsConf,
       relation: HadoopFsRelation,
       partitionFilters: Seq[Expression],
       dataFilters: Seq[Expression]): FileIndex
+
+  /**
+   * Contains a set of paths that are considered as the base dirs of the input datasets.
+   * The partitioning discovery logic will make sure it will stop when it reaches any
+   * base path.
+   *
+   * By default, the paths of the dataset provided by users will be base paths.
+   * Below are three typical examples,
+   * Case 1) `spark.read.parquet("/path/something=true/")`: the base path will be
+   * `/path/something=true/`, and the returned DataFrame will not contain a column of `something`.
+   * Case 2) `spark.read.parquet("/path/something=true/a.parquet")`: the base path will be
+   * still `/path/something=true/`, and the returned DataFrame will also not contain a column of
+   * `something`.
+   * Case 3) `spark.read.parquet("/path/")`: the base path will be `/path/`, and the returned
+   * DataFrame will have the column of `something`.
+   *
+   * Users also can override the basePath by setting `basePath` in the options to pass the new base
+   * path to the data source.
+   * For example, `spark.read.option("basePath", "/path/").parquet("/path/something=true/")`,
+   * and the returned DataFrame will have the column of `something`.
+   */
+  def getBasePaths(
+    hadoopConf: Configuration,
+    basePathOption: Option[Path],
+    rootPaths: Seq[Path],
+    leafFiles: Seq[Path]): Set[Path]
+
+  def replacePartitionDirectoryFiles(
+    partitionDir: PartitionDirectory,
+    replaceFunc: Path => Path): Seq[Path]
 }
