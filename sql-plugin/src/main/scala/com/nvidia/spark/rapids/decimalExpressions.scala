@@ -18,8 +18,11 @@ package com.nvidia.spark.rapids
 import scala.math.min
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import scala.math.{max, min}
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{CheckOverflow, Expression, PromotePrecision}
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
 
 /**
