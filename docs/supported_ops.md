@@ -67,6 +67,7 @@ the reasons why this particular operator or expression is on the CPU or GPU.
 |UDT|User defined types and java Objects. These are not standard SQL types.|
 
 ## Support
+
 |Value|Description|
 |---------|----------------|
 |S| (Supported) Both Apache Spark and the RAPIDS Accelerator support this type.|
@@ -727,7 +728,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 </table>
-* as was stated previously Decimal is only supported up to a precision of
+* As was stated previously Decimal is only supported up to a precision of
 18 and Timestamp is only supported in the
 UTC time zone. Decimals are off by default due to performance impact in
 some cases.
@@ -1068,7 +1069,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -1089,7 +1090,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -1110,7 +1111,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -2821,6 +2822,96 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td> </td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="4">CheckOverflow</td>
+<td rowSpan="4"> </td>
+<td rowSpan="4">CheckOverflow after arithmetic operations between DecimalType data</td>
+<td rowSpan="4">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S*</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S*</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="2">lambda</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -6704,7 +6795,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -6725,7 +6816,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -9035,7 +9126,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -9056,7 +9147,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -9077,7 +9168,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS* (Because of Spark's inner workings the full range of decimal precision (even for 64-bit value) is not supported.)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -9850,6 +9941,96 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="4">PromotePrecision</td>
+<td rowSpan="4"> </td>
+<td rowSpan="4">PromotePrecision before arithmetic operations between DecimalType data</td>
+<td rowSpan="4">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S*</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S*</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="2">lambda</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13540,7 +13721,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -13561,7 +13742,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -13582,7 +13763,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -16451,7 +16632,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16472,7 +16653,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
