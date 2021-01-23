@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DataTypes, DateType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, MapType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -41,6 +41,13 @@ object GpuParquetFileFormat {
       spark: SparkSession,
       options: Map[String, String],
       schema: StructType): Option[GpuParquetFileFormat] = {
+
+    val unSupportedTypes =
+      schema.filterNot(field => GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))
+    if (unSupportedTypes.nonEmpty) {
+      meta.willNotWorkOnGpu(s"These types aren't supported for parquet $unSupportedTypes")
+    }
+
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
@@ -247,31 +254,45 @@ class GpuParquetWriter(
    */
   override def write(batch: ColumnarBatch,
      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    val outputMillis = outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
     val newBatch =
-      if (outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString) {
-        new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-          cv => {
-            cv.dataType() match {
-              case DataTypes.TimestampType => new GpuColumnVector(DataTypes.TimestampType,
-                withResource(cv.getBase()) { v =>
-                  v.castTo(DType.TIMESTAMP_MILLISECONDS)
-                })
-              case _ => cv
-            }
+      new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
+        cv => {
+          cv.dataType() match {
+            case DataTypes.TimestampType if outputMillis =>
+              new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
+                v.castTo(DType.TIMESTAMP_MILLISECONDS)
+              })
+            case d: DecimalType if d.precision < 10 =>
+              // There is a bug in Spark that causes a problem if we write Decimals with
+              // precision < 10 as Decimal64.
+              // https://issues.apache.org/jira/browse/SPARK-34167
+              new GpuColumnVector(d, withResource(cv.getBase()) { v =>
+                v.castTo(DType.create(DType.DTypeEnum.DECIMAL32, -d.scale))
+              })
+            case _ => cv
           }
-        })
-      } else {
-        batch
-      }
+        }
+      })
 
     super.write(newBatch, statsTrackers)
   }
   override val tableWriter: TableWriter = {
+    def precisionsList(t: DataType): Seq[Int] = {
+      t match {
+        case d: DecimalType => List(d.precision)
+        case s: StructType => s.flatMap(f => precisionsList(f.dataType))
+        case ArrayType(elementType, _) => precisionsList(elementType)
+        case _ => List.empty
+      }
+    }
+
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = ParquetWriterOptions.builder()
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
       .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96)
+      .withPrecisionValues(dataSchema.flatMap(f => precisionsList(f.dataType)):_*)
     dataSchema.foreach(entry => {
       if (entry.nullable) {
         builder.withColumnNames(entry.name)
