@@ -1313,7 +1313,7 @@ object SupportedOpsDocs {
     println("<td>S</td>") // DATE
     println("<td>S</td>") // TIMESTAMP
     println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
+    println("<td>S</td>") // DECIMAL
     println("<td></td>") // NULL
     println("<td><b>NS</b></td>") // BINARY
     println("<td></td>") // CALENDAR
