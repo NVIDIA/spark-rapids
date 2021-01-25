@@ -57,22 +57,23 @@ object HostColumnarToGpu extends Logging {
       val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
       val arrowDataVals = arrowVec.getArrowValueVector.getValueCount() // 20
       logWarning(s"arrow data lenght is: $arrowDataLen capcity $arrowDataCap memory: $arrowDataMem num values $arrowDataVals")
-      val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem, null)
-      ab.setDataBuf(hostDataBuf)
+      // val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem, null)
+      ab.setDataBuf(arrowDataAddr, arrowDataMem)
       // TODO - need to check null count as validiting isn't required
       val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
-      val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen, null)
-      ab.setValidityBuf(hostValidBuf)
-      logWarning(s"buffer data is: $hostDataBuf validitiy buffer is: $hostValidBuf")
+
+      val arrowDataValidityLen = arrowVec.getArrowValueVector.getValidityBuffer.getActualMemoryConsumed()
+      // val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
+      // val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen, null)
+      ab.setValidityBuf(arrowDataValidity, arrowDataValidityLen)
+      // logWarning(s"buffer data is: $hostDataBuf validitiy buffer is: $hostValidBuf")
       try {
         val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
         if (arrowDataOffsetBuf != null) {
           logWarning("arrow data offset buffer addrs: " + arrowDataOffsetBuf.memoryAddress())
-          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.capacity()
-          val hostValidBuf =
-            new HostMemoryBuffer(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
-          ab.setOffsetBuf(hostValidBuf)
+          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.getActualMemoryConsumed()
+          // val hostValidBuf = new HostMemoryBuffer(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
+          ab.setOffsetBuf(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
         } else {
           logWarning("arrow data offset buffer is null")
         }
