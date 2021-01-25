@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,13 @@ object GpuOrcFileFormat extends Logging {
 
   def tagGpuSupport(meta: RapidsMeta[_, _, _],
                     spark: SparkSession,
-                    options: Map[String, String]): Option[GpuOrcFileFormat] = {
+                    options: Map[String, String],
+                    schema: StructType): Option[GpuOrcFileFormat] = {
+
+    val unSupportedTypes = schema.filterNot(field => GpuOverrides.isSupportedType(field.dataType))
+    if (unSupportedTypes.nonEmpty) {
+      meta.willNotWorkOnGpu(s"These types aren't supported for orc $unSupportedTypes")
+    }
 
     if (!meta.conf.isOrcEnabled) {
       meta.willNotWorkOnGpu("ORC input and output has been disabled. To enable set" +
