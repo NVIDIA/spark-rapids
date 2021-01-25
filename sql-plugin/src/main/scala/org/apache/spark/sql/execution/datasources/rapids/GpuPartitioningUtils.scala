@@ -23,7 +23,6 @@ import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.datasources.{PartitioningUtils, PartitionSpec}
 import org.apache.spark.sql.types.StructType
 
-
 object GpuPartitioningUtils {
 
   /**
@@ -36,7 +35,7 @@ object GpuPartitioningUtils {
    * @param parameters a set of options to control partition discovery
    * @param userSpecifiedSchema an optional user specified schema that will be use to provide
    *                            types for the discovered partitions
-   * @return
+   * @return the specification of the partitions inferred from the data
    */
   def inferPartitioning(
       sparkSession: SparkSession,

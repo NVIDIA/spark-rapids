@@ -479,27 +479,39 @@ class Spark300Shims extends SparkShims {
       })
 
       replaceMapOption.map(replaceMap => {
-        val partitionDirs = relation.location.listFiles(partitionFilters, dataFilters)
+
+        def isDynamicPruningFilter(e: Expression): Boolean =
+          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+
+        val partitionDirs = relation.location.listFiles(
+          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
 
         // replacement func to check if the file path is prefixed with the string user configured
         // if yes, replace it
         val replaceFunc = (f: Path) => {
           val pathStr = f.toString
           val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
-          if (matchedSet.size > 0) {
+          if (matchedSet.size > 1) {
+            throw new IllegalArgumentException(
+              "Found " + matchedSet.size + " same rules of spark.rapids.alluxio.pathsToReplace.")
+          } else if (matchedSet.size == 1) {
             new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
           } else {
             f
           }
         }
 
-        // replace all of input files and unique
+        // replace all of input files
         val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
           replacePartitionDirectoryFiles(partitionDir, replaceFunc)
-        }).toSet.toSeq
+        })
 
-        // get unique leaf dirs of inputFiles
-        val leafDirs = inputFiles.map(_.getParent).toSet.toSeq
+        def isDataPath(path: Path): Boolean = {
+          val name = path.getName
+          !((name.startsWith("_") && !name.contains("=")) || name.startsWith("."))
+        }
+        // filter out non-data path and get unique leaf dirs of inputFiles
+        val leafDirs = inputFiles.filter(isDataPath).map(_.getParent).toSet.toSeq
 
         // replace all of rootPaths which are already unique
         val rootPaths = relation.location.rootPaths.map(replaceFunc)
@@ -514,7 +526,7 @@ class Spark300Shims extends SparkShims {
           relation.sparkSession.sessionState.newHadoopConfWithOptions(parameters),
           basePathOption, rootPaths, inputFiles)
 
-        // infer to PartitionSpec
+        // infer PartitionSpec
         val partitionSpec = GpuPartitioningUtils.inferPartitioning(
           relation.sparkSession,
           leafDirs,
@@ -557,7 +569,7 @@ class Spark300Shims extends SparkShims {
    * and the returned DataFrame will have the column of `something`.
    */
   // mainly copied from PartitioningAwareFileIndex.basePaths
-  override def getBasePaths(
+  private def getBasePaths(
       hadoopConf: Configuration,
       basePathOption: Option[Path],
       rootPaths: Seq[Path],
