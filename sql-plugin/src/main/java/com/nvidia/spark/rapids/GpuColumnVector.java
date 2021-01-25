@@ -192,7 +192,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       boolean success = false;
       try {
         for (int i = 0; i < builders.length; i++) {
-          logger.warn(" calling build and put on device: " + i);
+          logger.warn(" calling build and put on device: " + i + " type is: " + fields[i].dataType());
           ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
           logger.warn(" createing gpu column vector");
           vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
@@ -245,6 +245,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
+    private static final Logger logger = LoggerFactory.getLogger(GpuColumnarBatchBuilder.class);
     private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
     private final StructField[] fields;
 
@@ -293,6 +294,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       try {
         for (int i = 0; i < builders.length; i++) {
           ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
+	  logger.warn("done building and put not arrow");
           vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
           builders[i] = null;
         }

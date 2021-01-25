@@ -52,8 +52,14 @@ object HostColumnarToGpu extends Logging {
 
       val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.memoryAddress()
       val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataLen)
+      val arrowDataMem = arrowVec.getArrowValueVector.getDataBuffer.getActualMemoryConsumed() // ?
+
+      val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
+      val arrowDataVals = arrowVec.getArrowValueVector.getValueCount() // 20
+      logWarning(s"arrow data lenght is: $arrowDataLen capcity $arrowDataCap memory: $arrowDataMem num values $arrowDataVals")
+      val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem)
       ab.setDataBuf(hostDataBuf)
+      // TODO - need to check null count as validiting isn't required
       val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
       val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
       val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen)
