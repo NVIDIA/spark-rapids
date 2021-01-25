@@ -20,6 +20,8 @@ package org.apache.spark.sql.vectorized.rapids;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.complex.*;
 import org.apache.arrow.vector.holders.NullableVarCharHolder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.spark.sql.util.ArrowUtils;
 import org.apache.spark.sql.types.*;
@@ -33,6 +35,7 @@ import org.apache.spark.unsafe.types.UTF8String;
  * supported.
  */
 public final class AccessibleArrowColumnVector extends ColumnVector {
+  private static final Logger logger = LoggerFactory.getLogger(AccessibleArrowColumnVector.class);
 
   private final AccessibleArrowVectorAccessor accessor;
   private AccessibleArrowColumnVector[] childColumns;
@@ -53,6 +56,7 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
 
   @Override
   public void close() {
+    logger.warn("closing AccessibleArrowColumnVector");
     if (childColumns != null) {
       for (int i = 0; i < childColumns.length; i++) {
         childColumns[i].close();
@@ -183,6 +187,7 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
   }
 
   private abstract static class AccessibleArrowVectorAccessor {
+     private static final Logger logger = LoggerFactory.getLogger(AccessibleArrowVectorAccessor.class);
 
     private final ValueVector vector;
 
@@ -204,6 +209,7 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
     }
 
     final void close() {
+      logger.warn("accessible arrow vector close()");
       vector.close();
     }
 

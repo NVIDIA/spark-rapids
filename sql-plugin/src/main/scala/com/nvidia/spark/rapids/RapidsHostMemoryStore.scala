@@ -45,7 +45,6 @@ class RapidsHostMemoryStore(
     }
 
     var buffer: HostMemoryBuffer = null
-    buffer.getLength
     while (buffer == null) {
       buffer = PinnedMemoryPool.tryAllocate(size)
       if (buffer != null) {

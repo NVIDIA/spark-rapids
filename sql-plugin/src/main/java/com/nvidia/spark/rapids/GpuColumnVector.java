@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids;
 
 import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
-import ai.rapids.cudf.ArrowHostColumnVector;
+import ai.rapids.cudf.ArrowColumnBuilder;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
@@ -134,7 +134,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static final class GpuArrowColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private static final Logger logger = LoggerFactory.getLogger(GpuArrowColumnarBatchBuilder.class);
-    private final ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder[] builders;
+    private final ai.rapids.cudf.ArrowColumnBuilder[] builders;
     private final StructField[] fields;
 
     /**
@@ -149,7 +149,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     public GpuArrowColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
       fields = schema.fields();
       int len = fields.length;
-      builders = new ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder[len];
+      builders = new ai.rapids.cudf.ArrowColumnBuilder[len];
       boolean success = false;
 
       if (batch.numRows() > rows) {
@@ -164,12 +164,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           logger.warn("field name: " + field.name() + " datatype: " + field.dataType() + " converted to: " + convertFrom(field.dataType(), field.nullable()));
 
           // TODO change batch.numRows() to rows if doing estimated and splitting
-          builders[i] = new ArrowHostColumnVector.ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()), batch.numRows(), field.name());
+          builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()), batch.numRows(), field.name());
         }
         success = true;
       } finally {
         if (!success) {
-          for (ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder b: builders) {
+          for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
             if (b != null) {
               b.close();
             }
@@ -182,7 +182,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows);
     }
 
-    public ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder builder(int i) {
+    public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
       return builders[i];
     }
 
@@ -213,31 +213,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
-    public ArrowHostColumnVector[] buildHostColumns() {
-      ArrowHostColumnVector[] vectors = new ArrowHostColumnVector[builders.length];
-      try {
-        for (int i = 0; i < builders.length; i++) {
-          vectors[i] = builders[i].build();
-          builders[i] = null;
-        }
-        ArrowHostColumnVector[] result = vectors;
-        vectors = null;
-        return result;
-      } finally {
-        if (vectors != null) {
-          for (ArrowHostColumnVector v : vectors) {
-            if (v != null) {
-              v.close();
-            }
-          }
-        }
-      }
-    }
-
     @Override
     public void close() {
-      for (ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder b: builders) {
+      logger.warn(" in close arrow host column vector");
+      for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
         if (b != null) {
+          logger.warn("closing builder");
           b.close();
         }
       }

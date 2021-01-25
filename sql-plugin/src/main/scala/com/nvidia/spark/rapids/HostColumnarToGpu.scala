@@ -35,7 +35,7 @@ object HostColumnarToGpu extends Logging {
 
   def arrowColumnarCopy(
       cv: ColumnVector,
-      ab: ai.rapids.cudf.ArrowHostColumnVector.ArrowColumnBuilder,
+      ab: ai.rapids.cudf.ArrowColumnBuilder,
       nullable: Boolean,
       rows: Int): Unit = {
     logWarning("host columnar to gpu cv is type: " + cv.getClass().toString())
@@ -57,12 +57,12 @@ object HostColumnarToGpu extends Logging {
       val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
       val arrowDataVals = arrowVec.getArrowValueVector.getValueCount() // 20
       logWarning(s"arrow data lenght is: $arrowDataLen capcity $arrowDataCap memory: $arrowDataMem num values $arrowDataVals")
-      val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem)
+      val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem, null)
       ab.setDataBuf(hostDataBuf)
       // TODO - need to check null count as validiting isn't required
       val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
       val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen)
+      val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen, null)
       ab.setValidityBuf(hostValidBuf)
       logWarning(s"buffer data is: $hostDataBuf validitiy buffer is: $hostValidBuf")
       try {
@@ -303,6 +303,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def cleanupConcatIsDone(): Unit = {
     if (batchBuilder != null) {
+      logWarning("cleanup concat done")
       batchBuilder.close()
       batchBuilder = null
     }
