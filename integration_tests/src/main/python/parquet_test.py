@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -458,7 +458,12 @@ def test_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(rs).parquet(data_path),
             conf=all_confs)
 
-def test_spark_32639():
-    print("############# GERA DEBUG ##############")
-    read_parquet_df("wtf")
+@pytest.mark.skipif(condition=True, reason='https://github.com/NVIDIA/spark-rapids/issues/1576,'
+                                           'using skip for xfail because pytest worker crash is not handled by xfail')
+def test_spark_32639(std_input_path):
+    data_path = "%s/SPARK-32639/000.snappy.parquet" % (std_input_path)
+    schema_str = 'value MAP<STRUCT<first:STRING, middle:STRING, last:STRING>, STRING>'
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema_str).parquet(data_path),
+        conf=original_parquet_file_reader_conf)
 
