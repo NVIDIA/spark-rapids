@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -202,22 +202,26 @@ object GpuTopN extends Arm {
     }
   }
 
-  private[this] def concatAndClose(a: SpillableColumnarBatch, b: ColumnarBatch): ColumnarBatch = {
-    val dataTypes = GpuColumnVector.extractTypes(b)
-    val aTable = withResource(a) { a =>
-      withResource(a.getColumnarBatch()) { aBatch =>
-        GpuColumnVector.from(aBatch)
-      }
-    }
-    val ret = withResource(aTable) { aTable =>
-      withResource(b) { b =>
-        withResource(GpuColumnVector.from(b)) { bTable =>
-          Table.concatenate(aTable, bTable)
+  private[this] def concatAndClose(a: SpillableColumnarBatch,
+      b: ColumnarBatch,
+      concatTime: SQLMetric): ColumnarBatch = {
+    withResource(new NvtxWithMetrics("readNConcat", NvtxColor.CYAN, concatTime)) { _ =>
+      val dataTypes = GpuColumnVector.extractTypes(b)
+      val aTable = withResource(a) { a =>
+        withResource(a.getColumnarBatch()) { aBatch =>
+          GpuColumnVector.from(aBatch)
         }
       }
-    }
-    withResource(ret) { ret =>
-      GpuColumnVector.from(ret, dataTypes)
+      val ret = withResource(aTable) { aTable =>
+        withResource(b) { b =>
+          withResource(GpuColumnVector.from(b)) { bTable =>
+            Table.concatenate(aTable, bTable)
+          }
+        }
+      }
+      withResource(ret) { ret =>
+        GpuColumnVector.from(ret, dataTypes)
+      }
     }
   }
 
@@ -247,6 +251,8 @@ object GpuTopN extends Arm {
       iter: Iterator[ColumnarBatch],
       totalTime: SQLMetric,
       sortTime: SQLMetric,
+      concatTime: SQLMetric,
+      batchTime: SQLMetric,
       inputBatches: SQLMetric,
       inputRows: SQLMetric,
       outputBatches: SQLMetric,
@@ -258,8 +264,8 @@ object GpuTopN extends Arm {
 
       override def next(): ColumnarBatch = {
         while (iter.hasNext) {
+          val input = iter.next()
           withResource(new NvtxWithMetrics("TOP N", NvtxColor.ORANGE, totalTime)) { _ =>
-            val input = iter.next()
             inputBatches += 1
             inputRows += input.numRows()
             lazy val totalSize = GpuColumnVector.getTotalDeviceMemoryUsed(input) +
@@ -275,18 +281,20 @@ object GpuTopN extends Arm {
               val tmp = withResource(input) { input =>
                 apply(limit, sortOrder, input, sortTime)
               }
-              withResource(concatAndClose(pending.get, tmp)) { concat =>
+              withResource(concatAndClose(pending.get, tmp, concatTime)) { concat =>
                 apply(limit, sortOrder, concat, sortTime)
               }
             } else {
               // The intermediate size looks like we could never overflow the indexes so
               // do it the more efficient way and concat first followed by the sort/slice
-              withResource(concatAndClose(pending.get, input)) { concat =>
+              withResource(concatAndClose(pending.get, input, concatTime)) { concat =>
                 apply(limit, sortOrder, concat, sortTime)
               }
             }
-            pending =
-                Some(SpillableColumnarBatch(runningResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+            pending = withResource(new NvtxWithMetrics("make batch",
+              NvtxColor.RED, batchTime)) { _ =>
+              Some(SpillableColumnarBatch(runningResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+            }
           }
         }
         val ret = pending.get.getColumnarBatch()
@@ -319,7 +327,9 @@ case class GpuTopN(
   override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
     NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES),
-    "sortTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "sort time")
+    "sortTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "sort time"),
+    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat time"),
+    "batchTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "batch time")
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -331,8 +341,10 @@ case class GpuTopN(
     val outputBatches = metrics(NUM_OUTPUT_BATCHES)
     val outputRows = metrics(NUM_OUTPUT_ROWS)
     val sortTime = metrics("sortTime")
+    val concatTime = metrics("concatTime")
+    val batchTime = metrics("batchTime")
     child.executeColumnar().mapPartitions { iter =>
-      val topN = GpuTopN(limit, boundSortExprs, iter, totalTime, sortTime,
+      val topN = GpuTopN(limit, boundSortExprs, iter, totalTime, sortTime, concatTime, batchTime,
         inputBatches, inputRows, outputBatches, outputRows)
       if (projectList != child.output) {
         topN.map { batch =>

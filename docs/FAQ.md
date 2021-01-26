@@ -22,27 +22,31 @@ stale results.
 Typically, there is a one to one mapping between CPU stages in a plan and GPU stages.  There are a
 few places where this is not the case.
 
-* `WholeStageCodeGen` - The GPU plan typically does not do code generation, and does not support generating code for an
-entire stage in the plan. Code generation is typically used to reduce the cost of processing data
-one row at a time. The GPU plan processes the data in a columnar format, so the costs are different.
+* `WholeStageCodeGen` - The GPU plan typically does not do code generation, and does not support 
+  generating code for an entire stage in the plan. Code generation reduces the cost of processing 
+  data one row at a time. The GPU plan processes the data in a columnar format, so the costs 
+  of processing a batch is amortized over the entire batch of data and code generation is not
+  needed.
 
-* ColumnarToRow and RowToColumnar Transitions - The CPU version of Spark plans typically process data in a row based format. The main exception to
-this is reading some kinds of columnar data, like parquet. When transitioning between the CPU and
-the GPU require transitions between row and columnar formatted data.
+* `ColumnarToRow` and `RowToColumnar` transitions - The CPU version of Spark plans typically process 
+  data in a row based format. The main exception to this is reading some kinds of columnar data, 
+  like Parquet. Transitioning between the CPU and the GPU also requires transitioning between row
+  and columnar formatted data.
 
-* `GpuCoalesceBatches` and `GpuShuffleCoalesce` - Processing data on the GPU often scales sublinerarly. That means doubling the data does takes less
-than half the time. Because of this we want to process larger batches of data when possible. These
-operators will try to build larger batches of data to process.
+* `GpuCoalesceBatches` and `GpuShuffleCoalesce` - Processing data on the GPU scales 
+  sublinearly. That means doubling the data does often takes less than half the time. Because of
+  this we want to process larger batches of data when possible. These operators will try to combine
+  smaller batches of data into fewer, larger batches to process more efficiently.
 
-* `SortMergeJoin` - The RAPIDS accelerator does not support sort merge joins yet. For now we
-translate sort merge joins into shuffled hash joins. Because of this there are times when
-Sorts may be removed or other sorts added to meet the ordering requirements of the query.
+* `SortMergeJoin` - The RAPIDS accelerator does not support sort merge joins yet. For now, we 
+  translate sort merge joins into shuffled hash joins. Because of this there are times when sorts 
+  may be removed or other sorts added to meet the ordering requirements of the query.
 
-* `TakeOrderedAndProject` - The `TakeOrderedAndProject` operator will take the top N entries in each task,
-shuffle the results to a single executor and then take the top N results from that. The GPU
-plan often has more metrics than the CPU versions do, and when we tried to combine all of these
-operations into a single stage the metrics where confusing to understand what was happening. Instead
-we split the single stage up into multiple smaller parts so the metrics are clearer.
+* `TakeOrderedAndProject` - The `TakeOrderedAndProject` operator will take the top N entries in 
+  each task, shuffle the results to a single executor and then take the top N results from that. 
+  The GPU plan often has more metrics than the CPU versions do, and when we tried to combine all of 
+  these operations into a single stage the metrics were confusing to understand. Instead, we split 
+  the single stage up into multiple smaller parts, so the metrics are clearer.
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
