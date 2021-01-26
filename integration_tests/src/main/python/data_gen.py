@@ -220,7 +220,6 @@ class DecimalGen(DataGen):
             scale = 0
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
-        special_cases = [Decimal('0'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self._scale = scale
         self._precision = precision

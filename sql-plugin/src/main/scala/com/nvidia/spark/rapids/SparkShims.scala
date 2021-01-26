@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,4 +163,6 @@ trait SparkShims {
       exprId: ExprId,
       qualifier: Seq[String] = Seq.empty,
       explicitMetadata: Option[Metadata] = None): Alias
+
+  def shouldIgnorePath(path: String): Boolean
 }

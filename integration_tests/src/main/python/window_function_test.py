@@ -42,12 +42,31 @@ _grpkey_longs_with_nullable_timestamps = [
     ('b', DateGen(nullable=(True, 5.0), start=date(year=2020, month=1, day=1), end=date(year=2020, month=12, day=31))),
     ('c', IntegerGen())]
 
+_grpkey_longs_with_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
+    ('b', DecimalGen(precision=18, scale=3, nullable=False)),
+    ('c', IntegerGen())]
+
+_grpkey_longs_with_nullable_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DecimalGen(precision=18, scale=10, nullable=True)),
+    ('c', IntegerGen())]
+
+_grpkey_decimals_with_nulls = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', IntegerGen()),
+    # the max decimal precision supported by sum operation is 8
+    ('c', DecimalGen(precision=8, scale=3, nullable=True))]
+
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
                                       _grpkey_longs_with_nulls,
                                       _grpkey_longs_with_timestamps,
-                                      _grpkey_longs_with_nullable_timestamps], ids=idfn)
+                                      _grpkey_longs_with_nullable_timestamps,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      _grpkey_decimals_with_nulls], ids=idfn)
 def test_window_aggs_for_rows(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=2048),
@@ -69,10 +88,10 @@ def test_window_aggs_for_rows(data_gen):
 
 
 part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, timestamp_gen]
+        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        boolean_gen, timestamp_gen]
+        boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
 
 def meta_idfn(meta):
     def tmp(something):

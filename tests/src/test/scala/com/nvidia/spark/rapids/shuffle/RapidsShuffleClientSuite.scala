@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -220,7 +220,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         // we would issue as many requests as required in order to get the full contiguous
         // buffer
         verify(mockConnection, times(expectedReceives))
-            .receive(any[Seq[AddressLengthTag]](), any[TransactionCallback]())
+            .receive(any[AddressLengthTag](), any[TransactionCallback]())
 
         // the mock connection keeps track of every receive length
         val totalReceived = mockConnection.receiveLengths.sum
@@ -279,7 +279,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       // we would issue as many requests as required in order to get the full contiguous
       // buffer
       verify(mockConnection, times(expectedReceives))
-          .receive(any[Seq[AddressLengthTag]](), any[TransactionCallback]())
+          .receive(any[AddressLengthTag](), any[TransactionCallback]())
 
       // the mock connection keeps track of every receive length
       val totalReceived = mockConnection.receiveLengths.sum
@@ -337,7 +337,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       // we would issue as many requests as required in order to get the full contiguous
       // buffer
       verify(mockConnection, times(expectedReceives))
-          .receive(any[Seq[AddressLengthTag]](), any[TransactionCallback]())
+          .receive(any[AddressLengthTag](), any[TransactionCallback]())
 
       // the mock connection keeps track of every receive length
       val totalReceived = mockConnection.receiveLengths.sum
@@ -399,7 +399,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       // we would issue as many requests as required in order to get the full contiguous
       // buffer
       verify(mockConnection, times(expectedReceives))
-          .receive(any[Seq[AddressLengthTag]](), any[TransactionCallback]())
+          .receive(any[AddressLengthTag](), any[TransactionCallback]())
 
       // the mock connection keeps track of every receive length
       val totalReceived = mockConnection.receiveLengths.sum
@@ -459,7 +459,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         verify(mockHandler, times(1)).transferError(any(), isNull())
 
         // there was 1 receive, and the chain stopped because it wasn't successful
-        verify(mockConnection, times(1)).receive(any[Seq[AddressLengthTag]](), any())
+        verify(mockConnection, times(1)).receive(any[AddressLengthTag](), any())
 
         // we would have issued 1 request to issue a `TransferRequest` for the server to start
         verify(mockConnection, times(1)).request(any(), any(), any())
@@ -497,7 +497,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       verify(mockHandler, times(1)).transferError(any(), any[RuntimeException]())
 
       // there was 1 receive, and the chain stopped because it wasn't successful
-      verify(mockConnection, times(1)).receive(any[Seq[AddressLengthTag]](), any())
+      verify(mockConnection, times(1)).receive(any[AddressLengthTag](), any())
 
       // we would have issued 1 request to issue a `TransferRequest` for the server to start
       verify(mockConnection, times(1)).request(any(), any(), any())
