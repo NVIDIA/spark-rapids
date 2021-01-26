@@ -731,7 +731,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def testSparkResultsAreEqual(
       testName: String,
       df: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf().set(RapidsConf.EXPLAIN.key, "ALL"),
+      conf: SparkConf = new SparkConf(),
       repart: Integer = 1,
       sort: Boolean = false,
       maxFloatDiff: Double = 0.0,

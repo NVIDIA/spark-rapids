@@ -327,7 +327,7 @@ def _assert_gpu_and_cpu_are_equal(func,
 
     assert_equal(from_cpu, from_gpu)
 
-def assert_gpu_and_cpu_are_equal_collect(func, conf={'spark.rapids.sql.explain' : 'ALL'}):
+def assert_gpu_and_cpu_are_equal_collect(func, conf={}):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be
@@ -354,11 +354,9 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
     :return: Assertion failure, if results from CPU and GPU do not match.
     """
     if conf is None:
-        conf = {'spark.rapids.sql.explain' : 'ALL'}
+        conf = {}
     def do_it_all(spark):
         df = df_fun(spark)
         df.createOrReplaceTempView(table_name)
-        print("KUHU PRINTS")
-        # print(spark.sql(sql).collect())
         return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf)

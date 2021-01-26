@@ -195,10 +195,8 @@ case class GpuArrayContains(left: Expression, right: Expression)
     left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
-    System.err.println("KUHU listcontain scalar")
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
     lhs.getBase.listContains(rhs)
-  }
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
@@ -206,10 +204,8 @@ case class GpuArrayContains(left: Expression, right: Expression)
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    System.err.println("KUHU listcontain vector")
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     lhs.getBase.listContainsColumn(rhs.getBase)
-  }
 
   override def prettyName: String = "array_contains"
 }
