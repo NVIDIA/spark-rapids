@@ -70,14 +70,17 @@ object HostColumnarToGpu extends Logging {
         ab.setValidityBuf(validity, validityLen)
      //  }
 
+      var offsets = 0L
+      var offsetsLen = 0L
       try {
         // TODO - should we chekc types first instead?
         val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
         if (arrowDataOffsetBuf != null) {
           logWarning("arrow data offset buffer addrs: " + arrowDataOffsetBuf.memoryAddress())
-          val arrowDataOffsetLen = arrowVec.getArrowValueVector.getOffsetBuffer.getActualMemoryConsumed()
           // val hostValidBuf = new HostMemoryBuffer(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
-          ab.setOffsetBuf(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
+          offsets = arrowDataOffsetBuf.memoryAddress()
+          offsetsLen = arrowVec.getArrowValueVector.getOffsetBuffer.getActualMemoryConsumed()
+          ab.setOffsetBuf(arrowDataOffsetBuf.memoryAddress(), offsetsLen)
         } else {
           logWarning("arrow data offset buffer is null")
         }
@@ -85,7 +88,7 @@ object HostColumnarToGpu extends Logging {
         case e: UnsupportedOperationException =>
           logWarning("unsupported op getOffsetBuffer")
       }
-
+      ab.addBatch(rows, nullCount, arrowDataAddr, arrowDataMem, validity, validityLen, offsets, offsetsLen)
 
     } else {
       throw new Exception("not arrow data shouldn't be here!")
