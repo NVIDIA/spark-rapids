@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
-import org.apache.hadoop.conf.Configuration
+
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
@@ -38,7 +38,6 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex.BASE_PATH_PARAM
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -472,8 +471,8 @@ class Spark300Shims extends SparkShims {
           if (split.size == 2) {
             split(0).trim -> split(1).trim
           } else {
-            throw new IllegalArgumentException(
-              "Wrong setting for spark.rapids.alluxio.pathsToReplace: " + rule)
+            throw new IllegalArgumentException(s"Invalid setting for " +
+              s"${RapidsConf.ALLUXIO_PATHS_REPLACE.key}")
           }
         }).toMap
       })
@@ -492,8 +491,9 @@ class Spark300Shims extends SparkShims {
           val pathStr = f.toString
           val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
           if (matchedSet.size > 1) {
-            throw new IllegalArgumentException(
-              "Found " + matchedSet.size + " same rules of spark.rapids.alluxio.pathsToReplace.")
+            throw new IllegalArgumentException(s"Found ${matchedSet.size} same replacing rules " +
+              s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule for each " +
+              s"file path")
           } else if (matchedSet.size == 1) {
             new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
           } else {
@@ -506,33 +506,19 @@ class Spark300Shims extends SparkShims {
           replacePartitionDirectoryFiles(partitionDir, replaceFunc)
         })
 
-        def isDataPath(path: Path): Boolean = {
-          val name = path.getName
-          !((name.startsWith("_") && !name.contains("=")) || name.startsWith("."))
-        }
-        // filter out non-data path and get unique leaf dirs of inputFiles
-        val leafDirs = inputFiles.filter(isDataPath).map(_.getParent).toSet.toSeq
-
         // replace all of rootPaths which are already unique
         val rootPaths = relation.location.rootPaths.map(replaceFunc)
 
         val parameters: Map[String, String] = relation.options
 
-        val basePathOption = parameters.get(BASE_PATH_PARAM).map(file => {
-          replaceFunc(new Path(file))
-        })
-
-        val basePaths = getBasePaths(
-          relation.sparkSession.sessionState.newHadoopConfWithOptions(parameters),
-          basePathOption, rootPaths, inputFiles)
-
         // infer PartitionSpec
         val partitionSpec = GpuPartitioningUtils.inferPartitioning(
           relation.sparkSession,
-          leafDirs,
-          basePaths,
+          rootPaths,
+          inputFiles,
           parameters,
-          Option(relation.dataSchema))
+          Option(relation.dataSchema),
+          replaceFunc)
 
         // generate a new InMemoryFileIndex holding paths with alluxio schema
         new InMemoryFileIndex(
@@ -545,57 +531,6 @@ class Spark300Shims extends SparkShims {
 
     } else {
       relation.location
-    }
-  }
-
-  /**
-   * Contains a set of paths that are considered as the base dirs of the input datasets.
-   * The partitioning discovery logic will make sure it will stop when it reaches any
-   * base path.
-   *
-   * By default, the paths of the dataset provided by users will be base paths.
-   * Below are three typical examples,
-   * Case 1) `spark.read.parquet("/path/something=true/")`: the base path will be
-   * `/path/something=true/`, and the returned DataFrame will not contain a column of `something`.
-   * Case 2) `spark.read.parquet("/path/something=true/a.parquet")`: the base path will be
-   * still `/path/something=true/`, and the returned DataFrame will also not contain a column of
-   * `something`.
-   * Case 3) `spark.read.parquet("/path/")`: the base path will be `/path/`, and the returned
-   * DataFrame will have the column of `something`.
-   *
-   * Users also can override the basePath by setting `basePath` in the options to pass the new base
-   * path to the data source.
-   * For example, `spark.read.option("basePath", "/path/").parquet("/path/something=true/")`,
-   * and the returned DataFrame will have the column of `something`.
-   */
-  // mainly copied from PartitioningAwareFileIndex.basePaths
-  private def getBasePaths(
-      hadoopConf: Configuration,
-      basePathOption: Option[Path],
-      rootPaths: Seq[Path],
-      leafFiles: Seq[Path]): Set[Path] = {
-
-    basePathOption match {
-      case Some(userDefinedBasePath) =>
-        val fs = userDefinedBasePath.getFileSystem(hadoopConf)
-        if (!fs.isDirectory(userDefinedBasePath)) {
-          throw new IllegalArgumentException(s"Option '$BASE_PATH_PARAM' must be a directory")
-        }
-        val qualifiedBasePath = fs.makeQualified(userDefinedBasePath)
-        val qualifiedBasePathStr = qualifiedBasePath.toString
-        rootPaths
-          .find(!fs.makeQualified(_).toString.startsWith(qualifiedBasePathStr))
-          .foreach { rp =>
-            throw new IllegalArgumentException(
-              s"Wrong basePath $userDefinedBasePath for the root path: $rp")
-          }
-        Set(qualifiedBasePath)
-
-      case None =>
-        rootPaths.map { path =>
-          // Make the path qualified (consistent with listLeafFiles and bulkListLeafFiles).
-          val qualifiedPath = path.getFileSystem(hadoopConf).makeQualified(path)
-          if (leafFiles.contains(qualifiedPath)) qualifiedPath.getParent else qualifiedPath }.toSet
     }
   }
 
