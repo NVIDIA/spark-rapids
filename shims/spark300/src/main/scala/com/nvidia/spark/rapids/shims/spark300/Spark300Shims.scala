@@ -491,6 +491,7 @@ class Spark300Shims extends SparkShims {
           val pathStr = f.toString
           val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
           if (matchedSet.size > 1) {
+            // never reach here since replaceMap is a Map
             throw new IllegalArgumentException(s"Found ${matchedSet.size} same replacing rules " +
               s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule for each " +
               s"file path")

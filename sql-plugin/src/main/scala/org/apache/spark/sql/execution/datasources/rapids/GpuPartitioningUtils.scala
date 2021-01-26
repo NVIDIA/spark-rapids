@@ -60,7 +60,6 @@ object GpuPartitioningUtils {
       // filter out non-data path and get unique leaf dirs of inputFiles
       val leafDirs: Seq[Path] = leafFiles.filter(isDataPath).map(_.getParent).toSet.toSeq
 
-
       val basePathOption = parameters.get(BASE_PATH_PARAM).map(file => {
         // need to replace the base path
         replaceFunc(new Path(file))
