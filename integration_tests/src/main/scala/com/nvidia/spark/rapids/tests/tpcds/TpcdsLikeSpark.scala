@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -4743,20 +4743,22 @@ object ConvertFiles {
     conf.outputFormat() match {
       case "parquet" =>
         csvToParquet(
-          spark,
-          conf.input(),
-          conf.output(),
-          conf.coalesce,
-          conf.repartition,
-          conf.withPartitioning())
+          spark = spark,
+          baseInput = conf.input(),
+          baseOutput = conf.output(),
+          coalesce = conf.coalesce,
+          repartition = conf.repartition,
+          writePartitioning = conf.withPartitioning(),
+          useDecimalType = conf.useDecimals())
       case "orc" =>
         csvToOrc(
-          spark,
-          conf.input(),
-          conf.output(),
-          conf.coalesce,
-          conf.repartition,
-          conf.withPartitioning())
+          spark = spark,
+          baseInput = conf.input(),
+          baseOutput = conf.output(),
+          coalesce = conf.coalesce,
+          repartition = conf.repartition,
+          writePartitioning = conf.withPartitioning(),
+          useDecimalType = conf.useDecimals())
     }
   }
 }
@@ -4768,6 +4770,7 @@ class FileConversionConf(arguments: Seq[String]) extends ScallopConf(arguments) 
   val coalesce = propsLong[Int]("coalesce")
   val repartition = propsLong[Int]("repartition")
   val withPartitioning = opt[Boolean](default = Some(false))
+  val useDecimals = opt[Boolean](default = Some(false))
   verify()
   BenchUtils.validateCoalesceRepartition(coalesce, repartition)
 }

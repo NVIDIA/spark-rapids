@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -395,3 +395,8 @@ def enable_cudf_udf(request):
     if not enable_udf_cudf:
         pytest.skip("cudf_udf not configured to run")
 
+@pytest.fixture(scope="session")
+def enable_rapids_udf_example_native(request):
+    native_enabled = request.config.getoption("rapids_udf_example_native")
+    if not native_enabled:
+        pytest.skip("rapids_udf_example_native not configured to run")

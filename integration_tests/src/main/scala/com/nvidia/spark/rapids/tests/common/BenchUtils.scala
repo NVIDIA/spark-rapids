@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -520,12 +520,7 @@ object BenchUtils {
 
     val spark = df1.sparkSession
 
-    val readPathAction = inputFormat match {
-      case "csv" =>
-        path: String => spark.read.csv(path)
-      case "parquet" =>
-        path: String => spark.read.parquet(path)
-    }
+    val readPathAction = (path: String) => spark.read.format(inputFormat).load(path)
 
     val count1 = df1.count()
     val count2 = df2.count()

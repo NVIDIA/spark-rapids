@@ -1,3 +1,8 @@
+---
+layout: page
+title: Benchmarks
+nav_exclude: true
+---
 # Benchmarks
 
 The `integration_test` module contains benchmarks derived from the 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -209,13 +209,19 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   protected val wrapped = new SortShuffleManager(conf)
   GpuShuffleEnv.setRapidsShuffleManagerInitialized(true, this.getClass.getCanonicalName)
-  logWarning("Rapids Shuffle Plugin Enabled")
+
+  private [this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
+    "Transport disabled (local cached blocks only)."
+  } else {
+    s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName})."
+  }
+
+  logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}")
 
   //Many of these values like blockManager are not initialized when the constructor is called,
   // so they all need to be lazy values that are executed when things are first called
 
   // NOTE: this can be null in the driver side.
-  private[this] lazy val catalog = GpuShuffleEnv.getCatalog
   private lazy val env = SparkEnv.get
   private lazy val blockManager = env.blockManager
   private lazy val shouldFallThroughOnEverything = {
@@ -232,10 +238,17 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   private lazy val localBlockManagerId = blockManager.blockManagerId
 
+  // Code that expects the shuffle catalog to be initialized gets it this way,
+  // with error checking in case we are in a bad state.
+  private def getCatalogOrThrow: ShuffleBufferCatalog =
+    Option(GpuShuffleEnv.getCatalog).getOrElse(
+      throw new IllegalStateException("The ShuffleBufferCatalog is not initialized but the " +
+        "RapidsShuffleManager is configured"))
+
   private lazy val resolver = if (shouldFallThroughOnEverything) {
     wrapped.shuffleBlockResolver
   } else {
-    new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, catalog)
+    new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, getCatalogOrThrow)
   }
 
   private[this] lazy val transport: Option[RapidsShuffleTransport] = {
@@ -248,6 +261,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   private[this] lazy val server: Option[RapidsShuffleServer] = {
     if (rapidsConf.shuffleTransportEnabled && !isDriver) {
+      val catalog = getCatalogOrThrow
       val requestHandler = new RapidsShuffleRequestHandler() {
         override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
           val shuffleBufferId = catalog.getShuffleBufferId(tableId)
@@ -295,7 +309,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           gpu.asInstanceOf[GpuShuffleHandle[K, V]],
           mapId,
           metricsReporter,
-          catalog,
+          getCatalogOrThrow,
           RapidsBufferCatalog.getDeviceStorage,
           server,
           gpu.dependency.metrics)
@@ -335,7 +349,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           context,
           metrics,
           transport,
-          catalog,
+          getCatalogOrThrow,
           gpu.dependency.sparkTypes)
       case other => {
         val shuffleHandle = RapidsShuffleInternalManagerBase.unwrapHandle(other)
@@ -345,6 +359,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   }
 
   def registerGpuShuffle(shuffleId: Int): Unit = {
+    val catalog = GpuShuffleEnv.getCatalog
     if (catalog != null) {
       // Note that in local mode this can be called multiple times.
       logInfo(s"Registering shuffle $shuffleId")
@@ -353,6 +368,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   }
 
   def unregisterGpuShuffle(shuffleId: Int): Unit = {
+    val catalog = GpuShuffleEnv.getCatalog
     if (catalog != null) {
       logInfo(s"Unregistering shuffle $shuffleId")
       catalog.unregisterShuffle(shuffleId)

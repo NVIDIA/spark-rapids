@@ -220,7 +220,6 @@ class DecimalGen(DataGen):
             scale = 0
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
-        special_cases = [Decimal('0'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self._scale = scale
         self._precision = precision
@@ -762,6 +761,9 @@ eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 
 # Include decimal type while testing equalTo and notEqualTo
 eq_gens_with_decimal_gen =  eq_gens + decimal_gens
+
+#gen for testing round operator
+round_gens = numeric_gens + decimal_gens
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]

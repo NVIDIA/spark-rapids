@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,10 @@ from pyspark.sql.types import *
 from spark_session import with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
+        decimal_gen_same_scale_precision, decimal_gen_64bit]
+
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
 def test_addition(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -30,9 +33,10 @@ def test_addition(data_gen):
                 f.lit(-12).cast(data_type) + f.col('b'),
                 f.lit(None).cast(data_type) + f.col('a'),
                 f.col('b') + f.lit(None).cast(data_type),
-                f.col('a') + f.col('b')))
+                f.col('a') + f.col('b')),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
 def test_subtraction(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -41,9 +45,11 @@ def test_subtraction(data_gen):
                 f.lit(-12).cast(data_type) - f.col('b'),
                 f.lit(None).cast(data_type) - f.col('a'),
                 f.col('b') - f.lit(None).cast(data_type),
-                f.col('a') - f.col('b')))
+                f.col('a') - f.col('b')),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + 
+        [decimal_gen_neg_scale, decimal_gen_scale_precision, decimal_gen_same_scale_precision, DecimalGen(8, 8)], ids=idfn)
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -52,7 +58,16 @@ def test_multiplication(data_gen):
                 f.lit(-12).cast(data_type) * f.col('b'),
                 f.lit(None).cast(data_type) * f.col('a'),
                 f.col('b') * f.lit(None).cast(data_type),
-                f.col('a') * f.col('b')))
+                f.col('a') * f.col('b')),
+            conf=allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2)], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3)], ids=idfn)
+def test_multiplication_mixed(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs).select(
+                f.col('a') * f.col('b')),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_division(data_gen):
@@ -65,7 +80,8 @@ def test_division(data_gen):
                 f.col('b') / f.lit(None).cast(data_type),
                 f.col('a') / f.col('b')))
 
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', integral_gens +  [decimal_gen_default, decimal_gen_scale_precision,
+        decimal_gen_same_scale_precision, decimal_gen_64bit], ids=idfn)
 def test_int_division(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -75,6 +91,14 @@ def test_int_division(data_gen):
                 'cast(null as {}) DIV a'.format(string_type),
                 'b DIV cast(null as {})'.format(string_type),
                 'a DIV b'))
+
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2)], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3)], ids=idfn)
+def test_int_division_mixed(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs).selectExpr(
+                'a DIV b'),
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_mod(data_gen):
@@ -187,6 +211,30 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(cast(null as {}), b)'.format(string_type),
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
+
+@incompat
+@approximate_float
+@pytest.mark.parametrize('data_gen', round_gens, ids=idfn)
+def test_decimal_bround(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'bround(a)',
+                'bround(a, -1)',
+                'bround(a, 1)',
+                'bround(a, 10)'),
+                conf=allow_negative_scale_of_decimal_conf)
+
+@incompat
+@approximate_float
+@pytest.mark.parametrize('data_gen', round_gens, ids=idfn)
+def test_decimal_round(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'round(a)',
+                'round(a, -1)',
+                'round(a, 1)',
+                'round(a, 10)'),
+               conf=allow_negative_scale_of_decimal_conf)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
@@ -421,7 +469,7 @@ def test_columnar_pow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr('pow(a, b)'))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
 def test_least(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -434,9 +482,9 @@ def test_least(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
-                f.least(*command_args)))
+                f.least(*command_args)), conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
 def test_greatest(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -448,5 +496,5 @@ def test_greatest(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
-                f.greatest(*command_args)))
+                f.greatest(*command_args)), conf=allow_negative_scale_of_decimal_conf)
 
