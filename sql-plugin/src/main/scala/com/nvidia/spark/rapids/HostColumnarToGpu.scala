@@ -38,7 +38,7 @@ object HostColumnarToGpu extends Logging {
       ab: ai.rapids.cudf.ArrowColumnBuilder,
       nullable: Boolean,
       rows: Int): Unit = {
-    logWarning("host columnar to gpu cv is type: " + cv.getClass().toString())
+    logWarning("Arrow host columnar to gpu cv is type: " + cv.getClass().toString())
     if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       logWarning("looking at arrow column vector")
       // TODO - how make sure off heap?
@@ -62,13 +62,16 @@ object HostColumnarToGpu extends Logging {
       ab.setDataBuf(arrowDataAddr, arrowDataMem)
       // TODO - need to check null count as validiting isn't required
       val nullCount = arrowVec.getArrowValueVector.getNullCount()
-      if (nullCount > 0) {
+      ab.setNullCount(nullCount)
+      logWarning("null count is " + nullCount)
+     //  if (nullCount > 0) {
         val validity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
         val validityLen = arrowVec.getArrowValueVector.getValidityBuffer.getActualMemoryConsumed()
         ab.setValidityBuf(validity, validityLen)
-      }
+     //  }
 
       try {
+        // TODO - should we chekc types first instead?
         val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
         if (arrowDataOffsetBuf != null) {
           logWarning("arrow data offset buffer addrs: " + arrowDataOffsetBuf.memoryAddress())
@@ -83,7 +86,6 @@ object HostColumnarToGpu extends Logging {
           logWarning("unsupported op getOffsetBuffer")
       }
 
-      logWarning(s"lens data: ${arrowDataLen} validity: $arrowDataValidityLen ")
 
     } else {
       throw new Exception("not arrow data shouldn't be here!")
@@ -92,6 +94,7 @@ object HostColumnarToGpu extends Logging {
 
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
+    logWarning("Not Arrow host columnar to gpu cv is type: " + cv.getClass().toString())
     (cv.dataType(), nullable) match {
       case (ByteType | BooleanType, true) =>
         for (i <- 0 until rows) {
@@ -252,7 +255,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchBuilder = null
     }
 
-    if (batch.numCols() > 0) {
+    logWarning(" in init new batch cols is:" + batch.numCols())
       // when reading host batches it is essential to read the data immediately and pass to a
       // builder and we need to determine how many rows to allocate in the builder based on the
       // schema and desired batch size
@@ -261,16 +264,23 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
         GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
 
-      if (batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
-        if (batch.numRows() > batchRowLimit) {
-          logWarning(s"Arrow batch num rows: ${batch.numRows()} > then row limit: $batchRowLimit")
-        }
+      // if no columns then probably a count operation so doesn't matter which builder we use
+      val isArrow = if (batch.numCols() > 0 && batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
+        true;
+      }  else {
+        false
+      }
+      if (batch.numRows() > batchRowLimit) {
+        logWarning(s"batch num rows: ${batch.numRows()} > then row limit: $batchRowLimit")
+      }
+      if (isArrow) {
+        logWarning("arrow batch builder")
         batchBuilder =
           new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
       } else {
+        logWarning("not an arrow batch builder")
         batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
-      }
-    }
+     }
     totalRows = 0
   }
 
@@ -293,6 +303,10 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // About to place data back on the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
+    logWarning("batch builder build total Rows: " + totalRows)
+    if (batchBuilder == null) {
+      logWarning("batch builder is null");
+    }
     val ret = batchBuilder.build(totalRows)
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
 

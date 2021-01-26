@@ -56,7 +56,6 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
 
   @Override
   public void close() {
-    logger.warn("closing AccessibleArrowColumnVector");
     if (childColumns != null) {
       for (int i = 0; i < childColumns.length; i++) {
         childColumns[i].close();
@@ -209,7 +208,6 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
     }
 
     final void close() {
-      logger.warn("accessible arrow vector close()");
       vector.close();
     }
 

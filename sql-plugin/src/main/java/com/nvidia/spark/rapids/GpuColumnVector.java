@@ -271,12 +271,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       ColumnVector[] vectors = new ColumnVector[builders.length];
       boolean success = false;
       try {
+	logger.warn(" column builders lenght: " + builders.length);
         for (int i = 0; i < builders.length; i++) {
           ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
 	  logger.warn("done building and put not arrow");
           vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
           builders[i] = null;
         }
+	logger.warn("making column batch with vectors: " + vectors + " rows:" + rows);
         ColumnarBatch ret = new ColumnarBatch(vectors, rows);
         success = true;
         return ret;
