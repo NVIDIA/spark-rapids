@@ -95,12 +95,29 @@ case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryAr
   override def binaryOp: BinaryOp = BinaryOp.SUB
 }
 
-case class GpuMultiply(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+object GpuMultiplyUtil {
+  def decimalDataType(l: DecimalType, r: DecimalType): DecimalType = {
+    val p = l.precision + r.precision + 1
+    val s = l.scale + r.scale
+    // TODO once we support 128-bit decimal support we should match the config for precision loss.
+    DecimalType(math.min(p, 38), math.min(s, 38))
+  }
+}
+
+case class GpuMultiply(
+    left: Expression,
+    right: Expression) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "*"
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
+
+  // Override the output type as a special case for decimal
+  override def dataType: DataType = (left.dataType, right.dataType) match {
+    case (l: DecimalType, r: DecimalType) =>  GpuMultiplyUtil.decimalDataType(l, r)
+    case _ => super.dataType
+  }
 }
 
 object GpuDivModLike {
@@ -140,6 +157,8 @@ object GpuDivModLike {
       case DType.INT64 => s.getLong == 0
       case DType.FLOAT32 => s.getFloat == 0f
       case DType.FLOAT64 => s.getDouble == 0
+      case d if d.getTypeId == DType.DTypeEnum.DECIMAL64 => s.getLong == 0
+      case d if d.getTypeId == DType.DTypeEnum.DECIMAL32 => s.getInt == 0
       case t => throw new IllegalArgumentException(s"Unexpected type: $t")
     }
   }
@@ -152,6 +171,8 @@ object GpuDivModLike {
       case DType.INT64 => Scalar.fromLong(0L)
       case DType.FLOAT32 => Scalar.fromFloat(0f)
       case DType.FLOAT64 => Scalar.fromDouble(0)
+      case d if d.getTypeId == DType.DTypeEnum.DECIMAL64 => Scalar.fromDecimal(d.getScale, 0L)
+      case d if d.getTypeId == DType.DTypeEnum.DECIMAL32 => Scalar.fromDecimal(d.getScale, 0)
       case t => throw new IllegalArgumentException(s"Unexpected type: $t")
     }
   }
@@ -199,6 +220,9 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
 
   override def dataType: DataType = LongType
   override def outputTypeOverride: DType = DType.INT64
+  // CUDF does not support casting output implicitly for decimal binary ops, so we work around
+  // it here where we want to force the output to be a Long.
+  override def castOutputAtEnd: Boolean = true
 
   override def symbol: String = "/"
 

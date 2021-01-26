@@ -42,32 +42,6 @@ _grpkey_longs_with_nullable_timestamps = [
     ('b', DateGen(nullable=(True, 5.0), start=date(year=2020, month=1, day=1), end=date(year=2020, month=12, day=31))),
     ('c', IntegerGen())]
 
-
-@ignore_order
-@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
-                                      _grpkey_longs_with_nulls,
-                                      _grpkey_longs_with_timestamps,
-                                      _grpkey_longs_with_nullable_timestamps], ids=idfn)
-def test_window_aggs_for_rows(data_gen):
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, data_gen, length=2048),
-        "window_agg_table",
-        'select '
-        ' sum(c) over '
-        '   (partition by a order by b,c asc rows between 1 preceding and 1 following) as sum_c_asc, '
-        ' max(c) over '
-        '   (partition by a order by b desc, c desc rows between 2 preceding and 1 following) as max_c_desc, '
-        ' min(c) over '
-        '   (partition by a order by b,c rows between 2 preceding and current row) as min_c_asc, '
-        ' count(1) over '
-        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_1, '
-        ' count(c) over '
-        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_c, '
-        ' row_number() over '
-        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
-        'from window_agg_table ')
-
-
 _grpkey_longs_with_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', DecimalGen(precision=18, scale=3, nullable=False)),
@@ -78,17 +52,28 @@ _grpkey_longs_with_nullable_decimals = [
     ('b', DecimalGen(precision=18, scale=10, nullable=True)),
     ('c', IntegerGen())]
 
+_grpkey_decimals_with_nulls = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', IntegerGen()),
+    # the max decimal precision supported by sum operation is 8
+    ('c', DecimalGen(precision=8, scale=3, nullable=True))]
+
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_decimals,
-                                      _grpkey_longs_with_nullable_decimals], ids=idfn)
-def test_window_aggs_for_rows_on_decimal(data_gen):
-    # TODO: Test sum aggregation when underlying cuDF implementation is ready
-    # corresponding issue: https://github.com/rapidsai/cudf/issues/7117
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_timestamps,
+                                      _grpkey_longs_with_nullable_timestamps,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      _grpkey_decimals_with_nulls], ids=idfn)
+def test_window_aggs_for_rows(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'select '
+        ' sum(c) over '
+        '   (partition by a order by b,c asc rows between 1 preceding and 1 following) as sum_c_asc, '
         ' max(c) over '
         '   (partition by a order by b desc, c desc rows between 2 preceding and 1 following) as max_c_desc, '
         ' min(c) over '

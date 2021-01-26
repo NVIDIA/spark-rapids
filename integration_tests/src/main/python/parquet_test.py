@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -457,4 +457,13 @@ def test_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_
     rs = StructGen(read_schema, nullable=False).data_type
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(rs).parquet(data_path),
             conf=all_confs)
+
+@pytest.mark.skipif(condition=True, reason='https://github.com/NVIDIA/spark-rapids/issues/1576,'
+                                           'using skip for xfail because pytest worker crash is not handled by xfail')
+def test_spark_32639(std_input_path):
+    data_path = "%s/SPARK-32639/000.snappy.parquet" % (std_input_path)
+    schema_str = 'value MAP<STRUCT<first:STRING, middle:STRING, last:STRING>, STRING>'
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema_str).parquet(data_path),
+        conf=original_parquet_file_reader_conf)
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_310
+import random
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
@@ -33,8 +34,12 @@ writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
 parquet_write_gens_list = [
-        [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-            string_gen, boolean_gen, date_gen, timestamp_gen]]
+    [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+     string_gen, boolean_gen, date_gen, timestamp_gen],
+    pytest.param([byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                  string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_default,
+                  decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit],
+                 marks=pytest.mark.allow_non_gpu("CoalesceExec"))]
 
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
@@ -42,7 +47,8 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type, reader_confs):
+def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
+                                  reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = reader_confs.copy()

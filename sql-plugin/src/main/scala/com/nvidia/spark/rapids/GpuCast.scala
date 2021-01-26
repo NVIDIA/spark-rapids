@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
+import java.time.DateTimeException
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
@@ -784,8 +785,27 @@ case class GpuCast(
               convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
-      specialDates.foldLeft(converted)((prev, specialDate) =>
+      val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
         specialTimestampOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+
+      // When ANSI mode is enabled, we need to throw an exception if any values could not be
+      // converted
+      if (ansiMode) {
+        closeOnExcept(finalResult) { finalResult =>
+          withResource(input.isNotNull) { wasNotNull =>
+            withResource(finalResult.isNull) { isNull =>
+              withResource(wasNotNull.and(isNull)) { notConverted =>
+                if (notConverted.any().getBoolean) {
+                  throw new DateTimeException(
+                    "One or more values could not be converted to TimestampType")
+                }
+              }
+            }
+          }
+        }
+      }
+
+      finalResult
     }
   }
 

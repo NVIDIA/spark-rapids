@@ -45,14 +45,15 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowSpec: WindowSpec, scale: Int = 0): DataFrame => DataFrame =
     (df: DataFrame) => {
       val decimalType = DecimalType(precision = 18, scale = scale)
+      val sumDecimalType = DecimalType(precision = 8, scale = 0)
       df.select(
         col("uid").cast(decimalType),
         col("dollars"),
         col("dateLong").cast(decimalType)
       ).withColumn("decimalDollars", col("dollars").cast(decimalType)
+      ).withColumn("sumDecimalDollars", col("dollars").cast(sumDecimalType)
       ).select(
-        // TODO: test sum on decimal columns when underlying cuDF implementation is ready
-        sum("dollars").over(windowSpec),
+        sum("sumDecimalDollars").over(windowSpec),
         min("decimalDollars").over(windowSpec),
         max("decimalDollars").over(windowSpec),
         count("decimalDollars").over(windowSpec)
@@ -63,14 +64,15 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     windowSpec: WindowSpec, scale: Int = 0): DataFrame => DataFrame =
     (df: DataFrame) => {
       val decimalType = DecimalType(precision = 18, scale = scale)
+      val sumDecimalType = DecimalType(precision = 8, scale = 0)
       df.select(
         col("uid").cast(decimalType),
         col("dollars"),
         col("dateLong").cast(decimalType)
       ).withColumn("decimalDollars", col("dollars").cast(decimalType)
+      ).withColumn("sumDecimalDollars", col("dollars").cast(sumDecimalType)
       ).select(
-        // TODO: test sum on decimal columns when underlying cuDF implementation is ready
-        sum("dollars").over(windowSpec),
+        sum("sumDecimalDollars").over(windowSpec),
         min("decimalDollars").over(windowSpec),
         max("decimalDollars").over(windowSpec),
         row_number().over(windowSpec),

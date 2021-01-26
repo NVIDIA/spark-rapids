@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,37 @@ import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
+
+/**
+ * A GPU substitution of CheckOverflow, does not actually check for overflow because
+ * the precision checks for 64-bit support prevent the need for that.
+ */
+case class GpuCheckOverflow(child: Expression,
+    dataType: DecimalType,
+    nullOnOverflow: Boolean) extends GpuUnaryExpression {
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val base = input.getBase
+    val foundCudfScale = base.getType.getScale
+    val expectedCudfScale = -dataType.scale
+    if (foundCudfScale == expectedCudfScale) {
+      base.incRefCount()
+    } else if (foundCudfScale < expectedCudfScale) {
+      base.castTo(DType.create(DType.DTypeEnum.DECIMAL64, expectedCudfScale))
+    } else {
+      // need to round off
+      base.round(-expectedCudfScale, ai.rapids.cudf.RoundMode.HALF_UP)
+    }
+  }
+}
+
+/**
+ * A GPU substitution of PromotePrecision, which is a NOOP in Spark too.
+ */
+case class GpuPromotePrecision(child: Expression) extends GpuUnaryExpression {
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.incRefCount()
+  override def dataType: DataType = child.dataType
+}
 
 case class GpuUnscaledValue(child: Expression) extends GpuUnaryExpression {
   override def dataType: DataType = LongType
