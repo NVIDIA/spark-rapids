@@ -275,6 +275,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       }
       if (isArrow) {
         logWarning("arrow batch builder")
+        // todo - REMOVE BATCH ROWLIMIT
         batchBuilder =
           new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
       } else {
