@@ -17,8 +17,9 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import incompat, approximate_float
+from py4j.protocol import Py4JJavaError
 from pyspark.sql.types import *
-from spark_session import with_spark_session, is_before_spark_310
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
 
 decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
@@ -48,7 +49,7 @@ def test_subtraction(data_gen):
                 f.col('a') - f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens + 
+@pytest.mark.parametrize('data_gen', numeric_gens +
         [decimal_gen_neg_scale, decimal_gen_scale_precision, decimal_gen_same_scale_precision, DecimalGen(8, 8)], ids=idfn)
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
@@ -474,7 +475,7 @@ def test_least(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of nulls
-    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0)) 
+    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0))
         for x in range(0, num_cols)], nullable=False)
 
     command_args = [f.col('_c' + str(x)) for x in range(0, num_cols)]
@@ -489,7 +490,7 @@ def test_greatest(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of nulls
-    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0)) 
+    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=100.0))
         for x in range(0, num_cols)], nullable=False)
     command_args = [f.col('_c' + str(x)) for x in range(0, num_cols)]
     command_args.append(s1)
@@ -497,4 +498,33 @@ def test_greatest(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
                 f.greatest(*command_args)), conf=allow_negative_scale_of_decimal_conf)
+
+def _assert_div_by_zero(session_func, test_div_func, conf):
+    with pytest.raises(Py4JJavaError) as py4jError:
+        session_func(test_div_func, conf)
+    assert 'java.lang.ArithmeticException: divide by zero' in str(py4jError.value.java_exception)
+
+@pytest.mark.parametrize('ansi_mode', ['nonAnsi', 'ansi'])
+@pytest.mark.parametrize('exp_type', ['bothLiterals', 'justZeroLiteral', 'noLiterals'])
+def test_div_by_zero(ansi_mode, exp_type):
+    if ansi_mode == 'ansi':
+        if is_before_spark_310() or exp_type != 'bothLiterals':
+            pytest.xfail('https://github.com/apache/spark/pull/29882')
+
+    ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
+    data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
+
+    if exp_type == 'bothLiterals':
+        div_by_zero_func = lambda spark: data_gen(spark).select(f.lit(1) / f.lit(0))
+    elif exp_type == 'justZeroLiteral':
+        div_by_zero_func = lambda spark: data_gen(spark).select(f.col('a') / f.lit(0))
+    else:
+        div_by_zero_func = lambda spark: data_gen(spark).select(f.col('a') / f.col('b'))
+
+    if ansi_mode == 'ansi':
+        div_by_zero_func_collect = lambda spark: div_by_zero_func(spark).collect()
+        _assert_div_by_zero(with_cpu_session, div_by_zero_func_collect, ansi_conf)
+        _assert_div_by_zero(with_gpu_session, div_by_zero_func_collect, ansi_conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
 
