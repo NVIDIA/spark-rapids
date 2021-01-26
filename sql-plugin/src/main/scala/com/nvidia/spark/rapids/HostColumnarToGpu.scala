@@ -44,6 +44,7 @@ object HostColumnarToGpu extends Logging {
       // TODO - how make sure off heap?
       // could create HostMemoryBuffer(addr, length)'
       val arrowVec = cv.asInstanceOf[AccessibleArrowColumnVector]
+
       // TODO - accessor is private to ArrowColumnVector!!!
       // ValueVector => ArrowBuf
 
@@ -60,13 +61,13 @@ object HostColumnarToGpu extends Logging {
       // val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem, null)
       ab.setDataBuf(arrowDataAddr, arrowDataMem)
       // TODO - need to check null count as validiting isn't required
-      val arrowDataValidity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
+      val nullCount = arrowVec.getArrowValueVector.getNullCount()
+      if (nullCount > 0) {
+        val validity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
+        val validityLen = arrowVec.getArrowValueVector.getValidityBuffer.getActualMemoryConsumed()
+        ab.setValidityBuf(validity, validityLen)
+      }
 
-      val arrowDataValidityLen = arrowVec.getArrowValueVector.getValidityBuffer.getActualMemoryConsumed()
-      // val arrowDataValidityLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      // val hostValidBuf = new HostMemoryBuffer(arrowDataValidity, arrowDataValidityLen, null)
-      ab.setValidityBuf(arrowDataValidity, arrowDataValidityLen)
-      // logWarning(s"buffer data is: $hostDataBuf validitiy buffer is: $hostValidBuf")
       try {
         val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
         if (arrowDataOffsetBuf != null) {

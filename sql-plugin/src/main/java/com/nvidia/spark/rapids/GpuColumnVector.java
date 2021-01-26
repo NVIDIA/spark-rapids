@@ -122,7 +122,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  // interface??? - then can't use autocloseable here
   public static abstract class GpuColumnarBatchBuilderBase implements AutoCloseable {
     public abstract ColumnarBatch build(int rows);
 
@@ -130,7 +129,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     public abstract void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows);
   }
-
 
   public static final class GpuArrowColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private static final Logger logger = LoggerFactory.getLogger(GpuArrowColumnarBatchBuilder.class);
