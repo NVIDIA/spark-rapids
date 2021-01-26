@@ -40,8 +40,7 @@ jobs:
         id: pull_request_data
         uses: octokit/request-action@v2.x
         with:
-          route: 'GET /repos/{repository}/pulls/{issue_id}'
-          repository: ${{ github.repository }}
+          route: GET /repos/${{ github.repository }}/pulls/{issue_id}
           issue_id: ${{ github.event.issue.number }}
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
@@ -55,8 +54,7 @@ jobs:
       - name: Update status
         uses: octokit/request-action@v2.x
         with:
-          route: 'POST /repos/:repository/statuses/:sha'
-          repository: ${{ github.repository }}
+          route: POST /repos/${{ github.repository }}/statuses/{sha}
           sha: ${{ fromJson(steps.pull_request_data.outputs.data).head.sha }}
           target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           description: "vulnerability scan running"
