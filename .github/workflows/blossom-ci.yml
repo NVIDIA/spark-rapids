@@ -40,7 +40,7 @@ jobs:
         id: pull_request_data
         uses: octokit/request-action@v2.x
         with:
-          route: 'GET /repos/:repository/pulls/:issue_id'
+          route: 'GET /repos/{repository}/pulls/{issue_id}'
           repository: ${{ github.repository }}
           issue_id: ${{ github.event.issue.number }}
         env:
