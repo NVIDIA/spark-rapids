@@ -1924,10 +1924,13 @@ object GpuOverrides {
         TypeSig.BOOLEAN,
         TypeSig.all,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL)),
-        ("key", TypeSig.commonCudfTypes, TypeSig.all)),
+          TypeSig.ARRAY.nested(TypeSig.all)),
+        ("key", TypeSig.commonCudfTypes, TypeSig.BOOLEAN)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
+          if (extractLit(in.left).isDefined) {
+            willNotWorkOnGpu("Literal arrays are not supported for array_contains")
+          }
           if (conf.hasNans && (in.children.map(a => a.dataType).contains(DoubleType) ||
             in.children.map(a => a.dataType).contains(FloatType))) {
             willNotWorkOnGpu("Array Contains on floating point columns that can contain NaNs " +

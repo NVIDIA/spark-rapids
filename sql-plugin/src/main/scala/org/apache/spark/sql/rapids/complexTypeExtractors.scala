@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.analysis.TypeCoercion.findTightestCommonType
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
@@ -188,26 +187,18 @@ case class GpuGetMapValue(child: Expression, key: Expression)
 }
 
 case class GpuArrayContains(left: Expression, right: Expression)
-  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuBinaryExpression with NullIntolerant {
 
   override def dataType: DataType = BooleanType
-
-  override def inputTypes: Seq[AbstractDataType] = {
-    (left.dataType, right.dataType) match {
-      case (ArrayType(e1, hasNull), e2) =>
-        findTightestCommonType(e1, e2) match {
-          case Some(dt) => Seq(ArrayType(dt, hasNull), dt)
-        }
-      case _ => Seq.empty
-    }
-  }
 
   override def nullable: Boolean = {
     left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+    System.err.println("KUHU listcontain scalar")
     lhs.getBase.listContains(rhs)
+  }
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
@@ -215,8 +206,10 @@ case class GpuArrayContains(left: Expression, right: Expression)
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    System.err.println("KUHU listcontain vector")
     lhs.getBase.listContainsColumn(rhs.getBase)
+  }
 
   override def prettyName: String = "array_contains"
 }

@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from pyspark.sql.types import *
+from pyspark.sql.functions import col, array_contains
 
 # Once we support arrays as literals then we can support a[null] and
 # negative indexes for all array gens. When that happens
@@ -83,19 +84,11 @@ def test_orderby_array_of_structs(data_gen):
         'select array_table.a, array_table.a[0].child0 as first_val from array_table order by first_val')
 
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in [byte_gen, short_gen, int_gen, long_gen,
-                                                                        FloatGen(no_nans=True), DoubleGen(no_nans=True),
-                                                                        string_gen, boolean_gen, date_gen, timestamp_gen]], ids=idfn)
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
+                                          FloatGen(no_nans=True), DoubleGen(no_nans=True),
+                                          string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
 def test_array_contains(data_gen):
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: unary_op_df(spark, data_gen),
-        'array_table',
-        'SELECT array_contains(a, a[0]) from array_table', no_nans_conf)
-
-
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in int_n_long_gens], ids=idfn)
-def test_array_contains_scalar(data_gen):
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: unary_op_df(spark, data_gen),
-        'array_table',
-        'SELECT array_contains(a, 0) from array_table', no_nans_conf)
+    arr_gen = ArrayGen(data_gen)
+    lit = gen_scalar_value(data_gen, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(
+        spark, arr_gen, data_gen).select(array_contains(col('a'), lit), array_contains(col('a'), col('b'))), no_nans_conf)
