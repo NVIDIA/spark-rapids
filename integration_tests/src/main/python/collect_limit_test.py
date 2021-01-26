@@ -21,6 +21,6 @@ allow_collect_conf={"spark.rapids.sql.exec.CollectLimitExec": "true"}
 
 @pytest.mark.parametrize('data_gen', all_gen)
 def test_collect_limit(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(spark, data_gen).limit(10),
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(spark, data_gen, length=2048).limit(2048),
                                          allow_collect_conf)
 
