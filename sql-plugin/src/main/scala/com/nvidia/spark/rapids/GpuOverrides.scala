@@ -1996,7 +1996,7 @@ object GpuOverrides {
       "Returns a boolean if the array contains the passed in key",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.BOOLEAN,
-        TypeSig.all,
+        TypeSig.BOOLEAN,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
           TypeSig.ARRAY.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes, TypeSig.BOOLEAN)),
