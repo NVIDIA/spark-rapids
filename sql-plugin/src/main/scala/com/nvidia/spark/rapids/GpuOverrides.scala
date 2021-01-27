@@ -1675,6 +1675,17 @@ object GpuOverrides {
           GpuAggregateExpression(childExprs(0).convertToGpu().asInstanceOf[GpuAggregateFunction],
             a.mode, a.isDistinct, filter.map(_.convertToGpu()), resultId)
         }
+
+        // NOTE: Will remove this once all aggregates support array type.
+        override def tagExprForGpu(): Unit = {
+          // Only allow Array type for function "CollectList", since other aggregate functions
+          // have not been verified.
+          wrapped.dataType match {
+            case _: ArrayType if !wrapped.aggregateFunction.isInstanceOf[CollectList] =>
+              willNotWorkOnGpu("Now only 'collect_list' supports type of array.")
+            case _ =>
+          }
+        }
       }),
     expr[SortOrder](
       "Sort order",
