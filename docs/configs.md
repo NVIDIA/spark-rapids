@@ -328,29 +328,37 @@ Name | Description | Default Value | Notes
 
 ### RAPIDS-Plugin Cache Serializer
 
-  Spark allows users to add their own cache serializer if they desire by setting
-  `spark.sql.cache.serializer` configuration. RAPIDS Accelerator for Apache Spark has a
-  serializer `com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer` that is
-  optimized to run on the GPU and uses parquet to compress data before caching it. One
-  important thing to note is that running on the GPU i.e. `spark.rapids.sql.enabled` doesn't
-  have to be set to `true` to use this. Also note that parquet doesn't support
-  `CalendarIntervalType` or `NullType` out of the box, but we do by decomposing intervals to
-  struct containing the months, days and microseconds and `NullType` to Int column containing
-  nulls.
+  Apache Spark provides an important feature to cache intermediate data and provide
+  significant performance improvement while running multiple queries on the same data. There
+  are two ways to cache a Dataframe or a DataSet i.e. call `persist(storageLevel)` or
+  `cache()`. Calling `cache()` is the same as calling `persist(MEMORY_AND_DISK)`. There are
+  many articles online that can be read about caching and its benefits as well as when to
+  cache but as a rule of thumb we should identify the Dataframe that is being reused in a
+  Spark Application and cache it. Even if the system memory isn't big enough, Spark will
+  utilize disk space to spill over. To read more about what storage levels are available look
+  at `StorageLevel.scala` in Spark.
 
-  As mentioned above `ParquetCachedBatchSerializer` uses parquet to
-  compress the incoming batch before caching it to the user defined `storageLevel`. We don't
-  modify the `storageLevel` so it behaves as it would with the DefaultCachedBatchSerializer.
-  There are four main methods to consider, two to deal with columnar data,
-  `convertColumnarBatchToCachedBatch` and `convertCachedBatchToColumnarBatch`, the other two
-  to deal with row-based data, `convertInternalRowToCachedBatch` and
-  `convertCachedBatchToInternalRow`. If the DataFrame being cached results in a plan that
-  supports columnar data, i.e. method `SparkPlan.supportsColumnar` returns true, the columnar
-  methods are called, otherwise the row-based methods are called and if the plugin is enabled
-  it will be processed on the GPU otherwise it will be processed on the CPU.
+  Starting in Spark 3.1.0 users can add their own cache serializer, if they desire, by
+  setting the `spark.sql.cache.serializer` configuration. This is a static configuration
+  that is set once for the duration of a Spark application which means that you can only set the conf
+  before starting a Spark application and cannot be changed for that application's Spark
+  session.
+
+  RAPIDS Accelerator for Apache Spark version 0.4+ has a serializer `com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer`
+  that is optimized to run on the GPU and uses parquet to compress data before caching it.
+  ParquetCachedBatchSerializer can be used independent of what the value of
+  `spark.rapids.sql.enabled` is. If it is set to true then the parquet compression will run
+  on GPU if possible, and importantly
+  `spark.sql.inMemoryColumnarStorage.enableVectorizedReader` will not be honored as the GPU
+  data is always read in as columnar. If `spark.rapids.sql.enabled` is set to false
+  the cached objects will still be compressed on the CPU as a part of the caching process.
+  Also note that parquet doesn't support CalendarIntervalType or NullType out of the box, but
+  ParquetCachedBatchSerializer does by decomposing intervals to struct containing the
+  months, days and microseconds and NullType to Int column containing nulls.
 
   To use this serializer please run Spark
   ```
   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
   ```
+  To use the default serializer don't set the `spark.sql.cache.serializer` conf
 
