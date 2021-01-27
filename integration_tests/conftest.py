@@ -57,3 +57,8 @@ def pytest_addoption(parser):
         "--rapids_udf_example_native", action='store_true', default=False,
         help="if true enable tests for RAPIDS UDF examples with native code"
     )
+    parser.addoption(
+        "--acceptance_tests", action='store_true', default=False,
+        help="if enabled some tests that would skip if not configured correctly will instead fail"
+    )
+

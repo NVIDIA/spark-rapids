@@ -62,6 +62,11 @@ def is_databricks_runtime():
 def is_emr_runtime():
     return runtime_env() == "emr"
 
+_is_acceptance = False
+
+def is_acceptance():
+    return _is_acceptance
+
 _limit = -1
 
 def get_limit():
@@ -129,6 +134,9 @@ def pytest_runtest_setup(item):
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
+    global _is_acceptance
+    _is_acceptance = config.getoption('acceptance_tests')
+
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
@@ -166,7 +174,10 @@ def pytest_collection_modifyitems(config, items):
 def std_input_path(request):
     path = request.config.getoption("std_input_path")
     if path is None:
-        pytest.skip("std_input_path is not configured")
+        if is_acceptance():
+            assert False, "std_input_path is not configured during acceptance tests"
+        else:
+            pytest.skip("std_input_path is not configured")
     else:
         yield path
 
@@ -273,7 +284,10 @@ def tpch(request):
     if tpch_path is None:
         std_path = request.config.getoption("std_input_path")
         if std_path is None:
-            pytest.skip("TPCH not configured to run")
+            if is_acceptance():
+                assert False, "TPCH is not configured to run during acceptance tests"
+            else:
+                pytest.skip("TPCH not configured to run")
         else:
             tpch_path = std_path + '/tpch/'
             tpch_format = 'parquet'
@@ -315,6 +329,7 @@ def tpcxbb(request):
   tpcxbb_format = request.config.getoption("tpcxbb_format")
   tpcxbb_path = request.config.getoption("tpcxbb_path")
   if tpcxbb_path is None:
+    # TPCxBB is not required for acceptance tests
     pytest.skip("TPCxBB not configured to run")
   else:
     yield TpcxbbRunner(tpcxbb_format, tpcxbb_path)
@@ -349,7 +364,10 @@ def mortgage(request):
     if mortgage_path is None:
         std_path = request.config.getoption("std_input_path")
         if std_path is None:
-            pytest.skip("Mortgage not configured to run")
+            if is_acceptance():
+                assert False, "Mortgage tests are not configured to run during acceptance tests"
+            else:
+                pytest.skip("Mortgage not configured to run")
         else:
             yield MortgageRunner('parquet', std_path + '/parquet_acq', std_path + '/parquet_perf')
     else:
@@ -385,6 +403,7 @@ def tpcds(request):
   tpcds_format = request.config.getoption("tpcds_format")
   tpcds_path = request.config.getoption("tpcds_path")
   if tpcds_path is None:
+    # TPC-DS is not required for acceptance
     pytest.skip("TPC-DS not configured to run")
   else:
     yield TpcdsRunner(tpcds_format, tpcds_path)
@@ -393,10 +412,14 @@ def tpcds(request):
 def enable_cudf_udf(request):
     enable_udf_cudf = request.config.getoption("cudf_udf")
     if not enable_udf_cudf:
+        # cudf_udf tests are not required for acceptance
         pytest.skip("cudf_udf not configured to run")
 
 @pytest.fixture(scope="session")
 def enable_rapids_udf_example_native(request):
     native_enabled = request.config.getoption("rapids_udf_example_native")
     if not native_enabled:
-        pytest.skip("rapids_udf_example_native not configured to run")
+        if is_acceptance():
+            assert False, "rapids_udf_example_native is not configured to run during acceptance tests"
+        else: 
+            pytest.skip("rapids_udf_example_native not configured to run")

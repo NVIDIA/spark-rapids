@@ -14,15 +14,21 @@
 
 import pytest
 
+from conftest import is_acceptance
+
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 try:
     require_minimum_pandas_version()
 except Exception as e:
+    if is_acceptance():
+        assert False, "incorrect pandas version during acceptance testing " + str(e)
     pytestmark = pytest.mark.skip(reason=str(e))
 
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
+    if is_acceptance():
+        assert False, "incorrect pyarrow version during acceptance testing " + str(e)
     pytestmark = pytest.mark.skip(reason=str(e))
 
 from asserts import assert_gpu_and_cpu_are_equal_collect

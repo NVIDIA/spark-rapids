@@ -66,6 +66,12 @@ else
         echo "xdist not installed cannot run tests in parallel"
     fi
 
+    ACCEPTANCE_PARAM=""
+    if [[ "${TEST_ACCEPTANCE}" != "" ]];
+    then
+        ACCEPTANCE_PARAM="--acceptance_tests"
+    fi
+
     if [[ ${TEST_PARALLEL} -lt 2 ]];
     then
         # With xdist 0 and 1 are the same parallelsm but
@@ -96,6 +102,7 @@ else
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           --color=yes \
+          $ACCEPTANCE_PARAM \
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"
@@ -110,6 +117,7 @@ else
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           --color=yes \
+          $ACCEPTANCE_PARAM \
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"

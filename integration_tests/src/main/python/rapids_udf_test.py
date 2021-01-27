@@ -19,10 +19,14 @@ from data_gen import *
 from marks import rapids_udf_example_native
 from spark_session import with_spark_session
 from pyspark.sql.utils import AnalysisException
+from conftest import is_acceptance
 
 def skip_if_no_hive(spark):
     if spark.conf.get("spark.sql.catalogImplementation") != "hive":
-        pytest.skip("The Spark session does not have Hive support")
+        if is_acceptance():
+            assert False, "The Spark session does not have Hive support during acceptance tests"
+        else:
+            pytest.skip("The Spark session does not have Hive support")
 
 def load_udf_or_skip_test(spark, udfname, udfclass):
     spark.sql("DROP TEMPORARY FUNCTION IF EXISTS {}".format(udfname))

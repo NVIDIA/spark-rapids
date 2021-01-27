@@ -211,6 +211,7 @@
                                 <COVERAGE_SUBMIT_FLAGS>${argLine}</COVERAGE_SUBMIT_FLAGS>
                                 <TEST_TAGS>${pytest.TEST_TAGS}</TEST_TAGS>
                                 <TEST_PARALLEL>${pytest.TEST_PARALLEL}</TEST_PARALLEL>
+                                <TEST_ACCEPTANCE>${pytest.ACCEPTANCE}</TEST_ACCEPTANCE>
                             </environmentVariables>
                         </configuration>
                     </execution>
