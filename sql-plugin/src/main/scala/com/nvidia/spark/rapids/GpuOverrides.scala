@@ -735,11 +735,11 @@ object GpuOverrides {
         "\"window\") of rows",
       ExprChecks.windowOnly(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
           TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -1644,11 +1644,13 @@ object GpuOverrides {
     expr[AggregateExpression](
       "Aggregate expression",
       ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck(
           "aggFunc",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
           TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
@@ -2174,12 +2176,11 @@ object GpuOverrides {
     expr[CollectList](
       "Collect a list of elements",
       /* It should be 'fullAgg' eventually but now only support windowing, so 'windowOnly' */
-      ExprChecks.windowOnly(TypeSig.ARRAY.nested(TypeSig.integral +
-          TypeSig.STRUCT.nested(TypeSig.commonCudfTypes)),
+      ExprChecks.windowOnly(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          TypeSig.integral + TypeSig.STRUCT.nested(
-            TypeSig.integral + TypeSig.STRING + TypeSig.TIMESTAMP),
+          TypeSig.commonCudfTypes + TypeSig.STRUCT.nested(TypeSig.commonCudfTypes),
           TypeSig.all))),
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
@@ -2513,7 +2514,9 @@ object GpuOverrides {
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.commonCudfTypes),
+        TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),
