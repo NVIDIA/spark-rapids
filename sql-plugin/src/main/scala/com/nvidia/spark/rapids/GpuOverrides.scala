@@ -1627,7 +1627,7 @@ object GpuOverrides {
           // max of the two input non-scale portions + the new scale. Then it will do the divide,
           // which the rules for it are a little complex, but lie about it
           // in the return type of the Divide operator. Then in CheckOverflow it will reset the
-          // scale and check the precision so that they know it fits in final desired result which
+          // scale and check the precision so that they know it fits in final desired result.
           // We would like to avoid all of this if possible because having a temporary intermediate
           // value that can have a scale quite a bit larger than the final result reduces the
           // maximum precision that we could support, as we don't have unlimited precision. But
