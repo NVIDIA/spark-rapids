@@ -1916,8 +1916,8 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td><em>PS (result may round slightly differently)</em></td>
+<td><em>PS (result may round slightly differently)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -10803,8 +10803,8 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td><em>PS (result may round slightly differently)</em></td>
+<td><em>PS (result may round slightly differently)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
