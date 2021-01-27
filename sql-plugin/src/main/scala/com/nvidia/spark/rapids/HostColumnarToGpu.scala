@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.ByteBuffer
+
 import ai.rapids.cudf._
 import org.apache.arrow.vector.ValueVector
 import org.apache.arrow.vector.types.pojo.ArrowType
@@ -81,13 +83,19 @@ object HostColumnarToGpu extends Logging {
       val buffers = arrowVec.getArrowValueVector.getBuffers(false)
       logWarning("num buffers is " + buffers.size)
 
-      val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.memoryAddress()
+      val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.nioBuffer()
       val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
       val arrowDataMem = arrowVec.getArrowValueVector.getDataBuffer.getActualMemoryConsumed() // ?
 
-      // val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
+      val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
       val arrowDataVals = arrowVec.getArrowValueVector.getValueCount() // 20
+      val arrowDataPos  = arrowVec.getArrowValueVector.getDataBuffer.getPossibleMemoryConsumed() // 20
+      val byteBuf = arrowVec.getArrowValueVector.getDataBuffer.nioBuffer()
+      logWarning(s" byte buffer position is: ${byteBuf.position()}")
+      logWarning(s"address of byte buffer is ${System.identityHashCode(byteBuf)}")
+
       logWarning(s"arrow data lenght is: $arrowDataLen memory: $arrowDataMem num values $arrowDataVals")
+      logWarning(s"arrow data lenght is: $arrowDataLen memory: $arrowDataMem num values $arrowDataVals capcity: $arrowDataCap possible: $arrowDataPos")
       // val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem, null)
       // ab.setDataBuf(arrowDataAddr, arrowDataMem)
       // TODO - need to check null count as validiting isn't required
@@ -95,21 +103,26 @@ object HostColumnarToGpu extends Logging {
       // ab.setNullCount(nullCount)
       logWarning("null count is " + nullCount)
      //  if (nullCount > 0) {
-        val validity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
+        val validity = arrowVec.getArrowValueVector.getValidityBuffer.nioBuffer()
         val validityLen = arrowVec.getArrowValueVector.getValidityBuffer.getActualMemoryConsumed()
+        val validityCap = arrowVec.getArrowValueVector.getValidityBuffer.capacity()
+      logWarning(s"arrow validity memory is: $validityLen length si ${arrowVec.getArrowValueVector.getValidityBuffer.capacity()}")
         // ab.setValidityBuf(validity, validityLen)
      //  }
 
-      var offsets = 0L
+      var offsets:ByteBuffer = null
       var offsetsLen = 0L
+      var offsetsCap = 0L
       try {
         // TODO - should we chekc types first instead?
         val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
         if (arrowDataOffsetBuf != null) {
           logWarning("arrow data offset buffer addrs: " + arrowDataOffsetBuf.memoryAddress())
           // val hostValidBuf = new HostMemoryBuffer(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
-          offsets = arrowDataOffsetBuf.memoryAddress()
+          offsets = arrowDataOffsetBuf.nioBuffer()
           offsetsLen = arrowVec.getArrowValueVector.getOffsetBuffer.getActualMemoryConsumed()
+          offsetsCap = arrowVec.getArrowValueVector.getOffsetBuffer.capacity()
+      logWarning(s"arrow offsets memory is: $offsetsLen length si ${arrowVec.getArrowValueVector.getOffsetBuffer.capacity()}")
           // ab.setOffsetBuf(arrowDataOffsetBuf.memoryAddress(), offsetsLen)
         } else {
           logWarning("arrow data offset buffer is null")
@@ -118,7 +131,7 @@ object HostColumnarToGpu extends Logging {
         case e: UnsupportedOperationException =>
           logWarning("unsupported op getOffsetBuffer")
       }
-      ab.addBatch(rows, nullCount, arrowDataAddr, arrowDataMem, validity, validityLen, offsets, offsetsLen)
+      ab.addBatch(rows, nullCount, arrowDataAddr, validity, offsets)
       logWarning("builder arrow is: " + ab.toString())
 
     } else {
@@ -260,7 +273,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     concatTime: SQLMetric,
     totalTime: SQLMetric,
     peakDevMemory: SQLMetric,
-    opName: String)
+    opName: String,
+    useArrowCopyOpt: Boolean)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
     numInputRows,
@@ -300,7 +314,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
       // if no columns then probably a count operation so doesn't matter which builder we use
       // val isArrow = if (batch.numCols() > 0 && batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
-      val isArrow = if (batch.numCols() > 0 && (batch.column(0).isInstanceOf[ArrowColumnVector] || batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
+      val isArrow = if (useArrowCopyOpt && batch.numCols() > 0 &&
+          (batch.column(0).isInstanceOf[ArrowColumnVector] ||
+          batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
         true;
       }  else {
         false
@@ -432,11 +448,12 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
 
     val batches = child.executeColumnar()
 
+    val confUseArrow = new RapidsConf(child.conf).useArrowCopyOptimization
     logWarning(" num partitions is: " + batches.getNumPartitions)
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
-        totalTime, peakDevMemory, "HostColumnarToGpu")
+        totalTime, peakDevMemory, "HostColumnarToGpu", confUseArrow)
     }
   }
 }

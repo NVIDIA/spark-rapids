@@ -154,7 +154,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           logger.warn("field name: " + field.name() + " datatype: " + field.dataType() + " converted to: " + convertFrom(field.dataType(), field.nullable()));
-          builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()), field.name());
+          builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()));
         }
         success = true;
       } finally {
