@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.shims.spark301db
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
-
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.sql.rapids.shims.spark301db._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession

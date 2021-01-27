@@ -20,7 +20,6 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
-
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
