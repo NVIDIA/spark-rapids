@@ -21,7 +21,7 @@ import java.util
 
 import ai.rapids.cudf.{ColumnView, ContiguousTable, DeviceMemoryBuffer, DType, HostColumnVector, Table}
 import ai.rapids.cudf.HostColumnVector.{BasicType, StructData}
-import com.nvidia.spark.rapids.format.{CodecType, ColumnMeta}
+import com.nvidia.spark.rapids.format.CodecType
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, DoubleType, IntegerType, StringType, StructField, StructType}
@@ -65,42 +65,6 @@ class MetaUtilsSuite extends FunSuite with Arm {
     withResource(GpuColumnVector.emptyBatch(schema)) { batch =>
       withResource(GpuColumnVector.from(batch)) { table =>
         table.contiguousSplit().head
-      }
-    }
-  }
-
-  def verifyColumnMeta(
-      buffer: DeviceMemoryBuffer,
-      col: ColumnView,
-      columnMeta: ColumnMeta): Unit = {
-    assertResult(col.getNullCount)(columnMeta.nullCount)
-    assertResult(col.getRowCount)(columnMeta.rowCount)
-    assertResult(col.getType.getTypeId.getNativeId)(columnMeta.dtypeId())
-    assertResult(col.getType.getScale)(columnMeta.dtypeScale())
-    val dataBuffer = col.getData
-    if (dataBuffer != null) {
-      assertResult(dataBuffer.getAddress - buffer.getAddress)(columnMeta.dataOffset())
-      assertResult(dataBuffer.getLength)(columnMeta.dataLength())
-    } else {
-      assertResult(0)(columnMeta.dataOffset())
-      assertResult(0)(columnMeta.dataLength())
-    }
-    val validBuffer = col.getValid
-    if (validBuffer != null) {
-      assertResult(validBuffer.getAddress - buffer.getAddress)(columnMeta.validityOffset())
-    } else {
-      assertResult(0)(columnMeta.validityOffset())
-    }
-    val offsetsBuffer = col.getOffsets
-    if (offsetsBuffer != null) {
-      assertResult(offsetsBuffer.getAddress - buffer.getAddress)(columnMeta.offsetsOffset())
-    } else {
-      assertResult(0)(columnMeta.offsetsOffset())
-    }
-
-    (0 until col.getNumChildren).foreach { i =>
-      withResource(col.getChildColumnView(i)) { childView =>
-        verifyColumnMeta(buffer, childView, columnMeta.children(i))
       }
     }
   }
