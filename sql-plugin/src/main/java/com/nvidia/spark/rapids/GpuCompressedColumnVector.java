@@ -24,9 +24,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 import static org.apache.spark.sql.types.DataTypes.NullType;
 
 /**
- * A GPU column vector that has been compressed. The columnar data within cannot
- * be accessed directly. This class primarily serves the role of tracking the
- * compressed data and table metadata so it can be decompressed later.
+ * A column vector that tracks a compressed table. Unlike a normal GPU column vector, the
+ * columnar data within cannot be accessed directly. This class primarily serves the role
+ * of tracking the compressed data and table metadata so it can be decompressed later.
  */
 public final class GpuCompressedColumnVector extends GpuColumnVectorBase
     implements WithTableBuffer {
@@ -44,11 +44,7 @@ public final class GpuCompressedColumnVector extends GpuColumnVectorBase
   }
 
   public static boolean isBatchCompressed(ColumnarBatch batch) {
-    if (batch.numCols() != 1) {
-      return false;
-    } else {
-      return batch.column(0) instanceof GpuCompressedColumnVector;
-    }
+    return batch.numCols() == 1 && batch.column(0) instanceof GpuCompressedColumnVector;
   }
 
   /**

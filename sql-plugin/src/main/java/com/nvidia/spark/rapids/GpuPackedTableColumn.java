@@ -46,10 +46,7 @@ public final class GpuPackedTableColumn extends GpuColumnVectorBase implements W
 
   /** Returns true if this columnar batch uses a packed table */
   public static boolean isBatchPacked(ColumnarBatch batch) {
-    if (batch.numCols() != 1) {
-      return false;
-    }
-    return batch.column(0) instanceof GpuPackedTableColumn;
+    return batch.numCols() == 1 && batch.column(0) instanceof GpuPackedTableColumn;
   }
 
   GpuPackedTableColumn(ContiguousTable contigTable) {

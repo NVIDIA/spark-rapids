@@ -42,10 +42,16 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     }
   }
 
+  /**
+   * Retrieves the underlying column vectors for a batch without incrementing
+   * the refcounts of those columns. Therefore the column vectors are only
+   * valid as long as the batch is valid.
+   */
   private def extractBases(batch: ColumnarBatch): Array[ColumnVector] = {
     if (GpuPackedTableColumn.isBatchPacked(batch)) {
       val packedColumn = batch.column(0).asInstanceOf[GpuPackedTableColumn]
       val table = packedColumn.getContiguousTable.getTable
+      // The contiguous table is still responsible for closing these columns.
       (0 until table.getNumberOfColumns).map(table.getColumn).toArray
     } else {
       GpuColumnVector.extractBases(batch)
