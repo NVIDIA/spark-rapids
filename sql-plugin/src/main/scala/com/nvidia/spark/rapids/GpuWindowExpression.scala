@@ -199,8 +199,16 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
         }
       }
     }
-    // Seems we should not cast the type explicitly here but let GpuColumnVector handle it.
-    GpuColumnVector.from(aggColumn, windowFunc.dataType)
+    // For nested type, do not cast
+    aggColumn.getType match {
+      case dType if dType.isNestedType =>
+        GpuColumnVector.from(aggColumn, windowFunc.dataType)
+      case _ =>
+        val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
+        withResource(aggColumn) { aggColumn =>
+          GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
+        }
+    }
   }
 
   private def evaluateRangeBasedWindowExpression(cb : ColumnarBatch) : GpuColumnVector = {
@@ -224,8 +232,16 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
         }
       }
     }
-    // Seems we should not cast the type explicitly here but let GpuColumnVector handle it.
-    GpuColumnVector.from(aggColumn, windowFunc.dataType)
+    // For nested type, do not cast
+    aggColumn.getType match {
+      case dType if dType.isNestedType =>
+        GpuColumnVector.from(aggColumn, windowFunc.dataType)
+      case _ =>
+        val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
+        withResource(aggColumn) { aggColumn =>
+          GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
+        }
+    }
   }
 }
 
