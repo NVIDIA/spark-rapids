@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,6 +43,11 @@ object BenchmarkRunner {
       System.exit(-1)
     }
 
+    if (conf.query.isEmpty) {
+      System.err.println("At least one query must be specified")
+      System.exit(-1)
+    }
+
     val benchmarks = Map(
       "tpcds" -> new TpcdsLikeBench(conf.appendDat()),
       "tpch" -> new TpchLikeBench(),
@@ -51,7 +56,7 @@ object BenchmarkRunner {
 
     benchmarks.get(conf.benchmark().toLowerCase) match {
       case Some(bench) =>
-        val appName = s"${bench.name()} Like Bench ${conf.query()}"
+        val appName = s"${bench.name()} Like Bench ${conf.query().mkString(",")}"
         val spark = SparkSession.builder.appName(appName).getOrCreate()
         spark.sparkContext.setJobDescription("Register input tables")
         conf.inputFormat().toLowerCase match {
@@ -64,61 +69,65 @@ object BenchmarkRunner {
         }
 
         val runner = new BenchmarkRunner(bench)
-        println(s"*** RUNNING ${bench.name()} QUERY ${conf.query()}")
-        val report = Try(conf.output.toOption match {
-          case Some(path) => conf.outputFormat().toLowerCase match {
-            case "parquet" =>
-              runner.writeParquet(
-                spark,
-                conf.query(),
-                path,
-                iterations = conf.iterations(),
-                summaryFilePrefix = conf.summaryFilePrefix.toOption,
-                gcBetweenRuns = conf.gcBetweenRuns())
-            case "csv" =>
-              runner.writeCsv(
-                spark,
-                conf.query(),
-                path,
-                iterations = conf.iterations(),
-                summaryFilePrefix = conf.summaryFilePrefix.toOption,
-                gcBetweenRuns = conf.gcBetweenRuns())
-            case "orc" =>
-              runner.writeOrc(
-                spark,
-                conf.query(),
-                path,
-                iterations = conf.iterations(),
-                summaryFilePrefix = conf.summaryFilePrefix.toOption,
-                gcBetweenRuns = conf.gcBetweenRuns())
-            case other =>
-              throw new IllegalArgumentException(s"Invalid or unspecified output format: $other")
-          }
-          case _ =>
-            runner.collect(
-              spark,
-              conf.query(),
-              conf.iterations(),
-              summaryFilePrefix = conf.summaryFilePrefix.toOption,
-              gcBetweenRuns = conf.gcBetweenRuns())
-        })
 
-        report match {
-          case Success(report) =>
-            if (conf.uploadUri.isSupplied) {
-              println(s"Uploading ${report.filename} to " +
-                  s"${conf.uploadUri()}/${report.filename}")
+        conf.query().foreach { query =>
 
-              val hadoopConf = spark.sparkContext.hadoopConfiguration
-              val fs = FileSystem.newInstance(new URI(conf.uploadUri()), hadoopConf)
-              fs.copyFromLocalFile(
-                new Path(report.filename),
-                new Path(conf.uploadUri(), report.filename))
+          println(s"*** RUNNING ${bench.name()} QUERY $query")
+          val report = Try(conf.output.toOption match {
+            case Some(path) => conf.outputFormat().toLowerCase match {
+              case "parquet" =>
+                runner.writeParquet(
+                  spark,
+                  query,
+                  path,
+                  iterations = conf.iterations(),
+                  summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                  gcBetweenRuns = conf.gcBetweenRuns())
+              case "csv" =>
+                runner.writeCsv(
+                  spark,
+                  query,
+                  path,
+                  iterations = conf.iterations(),
+                  summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                  gcBetweenRuns = conf.gcBetweenRuns())
+              case "orc" =>
+                runner.writeOrc(
+                  spark,
+                  query,
+                  path,
+                  iterations = conf.iterations(),
+                  summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                  gcBetweenRuns = conf.gcBetweenRuns())
+              case other =>
+                throw new IllegalArgumentException(s"Invalid or unspecified output format: $other")
             }
+            case _ =>
+              runner.collect(
+                spark,
+                query,
+                conf.iterations(),
+                summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                gcBetweenRuns = conf.gcBetweenRuns())
+          })
 
-          case Failure(e) =>
-            System.err.println(e.getMessage)
-            System.exit(-1)
+          report match {
+            case Success(report) =>
+              if (conf.uploadUri.isSupplied) {
+                println(s"Uploading ${report.filename} to " +
+                    s"${conf.uploadUri()}/${report.filename}")
+
+                val hadoopConf = spark.sparkContext.hadoopConfiguration
+                val fs = FileSystem.newInstance(new URI(conf.uploadUri()), hadoopConf)
+                fs.copyFromLocalFile(
+                  new Path(report.filename),
+                  new Path(conf.uploadUri(), report.filename))
+              }
+
+            case Failure(e) =>
+              System.err.println(e.getMessage)
+              System.exit(-1)
+          }
         }
       case _ =>
         System.err.println(s"Invalid benchmark name: ${conf.benchmark()}. Supported benchmarks " +
@@ -285,7 +294,7 @@ class BenchmarkConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val input = opt[String](required = true)
   val inputFormat = opt[String](required = true)
   val appendDat = opt[Boolean](required = false, default = Some(false))
-  val query = opt[String](required = true)
+  val query = opt[List[String]](required = true)
   val iterations = opt[Int](default = Some(3))
   val output = opt[String](required = false)
   val outputFormat = opt[String](required = false)
