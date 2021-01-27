@@ -33,12 +33,42 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
 
+  def getValueVector(cv: ColumnVector): ValueVector = {
+    val arrowCV = cv.asInstanceOf[ArrowColumnVector]
+    val fields = arrowCV.getClass.getDeclaredFields.toList
+
+    val field = fields.filter(x => {
+      println(x.getName)
+      x.getName.contains("accessor")
+    }).head
+
+    logWarning(" got accessor")
+    field.setAccessible(true)
+    val accessor = field.get(arrowCV)
+    val accessFields = accessor.getClass().getDeclaredFields().toList
+
+    val valVecField = accessFields.filter(x => {
+      println(x.getName)
+      x.getName.contains("vector")
+    }).head
+    logWarning(" got vector")
+
+    valVecField.setAccessible(true)
+    val res = valVecField.get(accessor).asInstanceOf[ValueVector]
+    logWarning(" got res " + res)
+    res
+  }
+
   def arrowColumnarCopy(
       cv: ColumnVector,
       ab: ai.rapids.cudf.ArrowColumnBuilder,
       nullable: Boolean,
       rows: Int): Unit = {
     logWarning("Arrow host columnar to gpu cv is type: " + cv.getClass().toString())
+    if (cv.isInstanceOf[ArrowColumnVector]) {
+       val res = getValueVector(cv)
+       logWarning("value vector is: " + res)       
+    }
     if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       logWarning("looking at arrow column vector")
       // TODO - how make sure off heap?
@@ -55,19 +85,19 @@ object HostColumnarToGpu extends Logging {
       val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
       val arrowDataMem = arrowVec.getArrowValueVector.getDataBuffer.getActualMemoryConsumed() // ?
 
-      val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
+      // val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
       val arrowDataVals = arrowVec.getArrowValueVector.getValueCount() // 20
-      logWarning(s"arrow data lenght is: $arrowDataLen capcity $arrowDataCap memory: $arrowDataMem num values $arrowDataVals")
+      logWarning(s"arrow data lenght is: $arrowDataLen memory: $arrowDataMem num values $arrowDataVals")
       // val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem, null)
-      ab.setDataBuf(arrowDataAddr, arrowDataMem)
+      // ab.setDataBuf(arrowDataAddr, arrowDataMem)
       // TODO - need to check null count as validiting isn't required
       val nullCount = arrowVec.getArrowValueVector.getNullCount()
-      ab.setNullCount(nullCount)
+      // ab.setNullCount(nullCount)
       logWarning("null count is " + nullCount)
      //  if (nullCount > 0) {
         val validity = arrowVec.getArrowValueVector.getValidityBuffer.memoryAddress()
         val validityLen = arrowVec.getArrowValueVector.getValidityBuffer.getActualMemoryConsumed()
-        ab.setValidityBuf(validity, validityLen)
+        // ab.setValidityBuf(validity, validityLen)
      //  }
 
       var offsets = 0L
@@ -80,7 +110,7 @@ object HostColumnarToGpu extends Logging {
           // val hostValidBuf = new HostMemoryBuffer(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
           offsets = arrowDataOffsetBuf.memoryAddress()
           offsetsLen = arrowVec.getArrowValueVector.getOffsetBuffer.getActualMemoryConsumed()
-          ab.setOffsetBuf(arrowDataOffsetBuf.memoryAddress(), offsetsLen)
+          // ab.setOffsetBuf(arrowDataOffsetBuf.memoryAddress(), offsetsLen)
         } else {
           logWarning("arrow data offset buffer is null")
         }
@@ -89,6 +119,7 @@ object HostColumnarToGpu extends Logging {
           logWarning("unsupported op getOffsetBuffer")
       }
       ab.addBatch(rows, nullCount, arrowDataAddr, arrowDataMem, validity, validityLen, offsets, offsetsLen)
+      logWarning("builder arrow is: " + ab.toString())
 
     } else {
       throw new Exception("not arrow data shouldn't be here!")
@@ -268,7 +299,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
         GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
 
       // if no columns then probably a count operation so doesn't matter which builder we use
-      val isArrow = if (batch.numCols() > 0 && batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
+      // val isArrow = if (batch.numCols() > 0 && batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
+      val isArrow = if (batch.numCols() > 0 && (batch.column(0).isInstanceOf[ArrowColumnVector] || batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
         true;
       }  else {
         false
@@ -400,6 +432,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
 
     val batches = child.executeColumnar()
 
+    logWarning(" num partitions is: " + batches.getNumPartitions)
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,

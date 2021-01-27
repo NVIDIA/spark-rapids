@@ -136,7 +136,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     private final StructField[] fields;
 
     /**
-     * A collection of builders for building up columnar data.
+     * A collection of builders for building up columnar data from Arrow data.
      * @param schema the schema of the batch.
      * @param rows the maximum number of rows in this batch.
      * @param batch if this is going to copy a ColumnarBatch in a non GPU format that batch
@@ -150,19 +150,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       builders = new ai.rapids.cudf.ArrowColumnBuilder[len];
       boolean success = false;
 
-      if (batch.numRows() > rows) {
-        // todo - HOW DO WE SPLIT arrow batches here?  address + X
-        // esimated Rows below is not actually used right now in ArrowColumnBuilder
-      }
-
       try {
-        logger.warn("schema contains: " + schema.toString());
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           logger.warn("field name: " + field.name() + " datatype: " + field.dataType() + " converted to: " + convertFrom(field.dataType(), field.nullable()));
-
-          // TODO change batch.numRows() to rows if doing estimated and splitting
-          builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()), batch.numRows(), field.name());
+          builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()), field.name());
         }
         success = true;
       } finally {

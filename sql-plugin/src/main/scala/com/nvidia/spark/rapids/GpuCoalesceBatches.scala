@@ -185,6 +185,7 @@ abstract class AbstractGpuCoalesceIterator(
       closeOnExcept(iterNext()) { cb =>
         val numRows = cb.numRows()
         numInputBatches += 1
+        logWarning("AbstractGpuCoalesceIterator num input batches " + numInputBatches)
         numInputRows += numRows
         if (numRows > 0) {
           saveOnDeck(cb)
@@ -268,11 +269,14 @@ abstract class AbstractGpuCoalesceIterator(
         val batch = popOnDeck()
         numRows += batch.numRows()
         numBytes += getBatchDataSize(batch)
+        logWarning("add batch since on deck")
         addBatch(batch)
       }
 
+      logWarning(s"add batch before while rows: $numRows on deck $hasOnDeck")
       // there is a hard limit of 2^31 rows
       while (numRows < Int.MaxValue && !hasOnDeck && iterHasNext) {
+        logWarning(s"add batch inside while rows: $numRows on deck $hasOnDeck")
         closeOnExcept(iterNext()) { cb =>
           val nextRows = cb.numRows()
           numInputBatches += 1
@@ -287,6 +291,7 @@ abstract class AbstractGpuCoalesceIterator(
             val wouldBeRows = numRows + nextRows
             val wouldBeBytes = numBytes + nextBytes
 
+              logWarning("add batch target: " + batchRowLimit + " would be is: " + wouldBeRows)
             if (wouldBeRows > Int.MaxValue) {
               if (goal == RequireSingleBatch) {
                 throw new IllegalStateException("A single batch is required for this operation," +
@@ -303,6 +308,7 @@ abstract class AbstractGpuCoalesceIterator(
               // 2GB data total to avoid hitting that error.
               saveOnDeck(cb)
             } else {
+              logWarning("add batch")
               addBatch(cb)
               numRows = wouldBeRows
               numBytes = wouldBeBytes
