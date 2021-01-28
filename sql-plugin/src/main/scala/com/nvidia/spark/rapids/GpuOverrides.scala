@@ -1807,9 +1807,20 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("value", TypeSig.numeric +
+            TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+            TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+            TypeSig.numeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.child.dataType match {
+            case FloatType | DoubleType if !conf.isIncompatEnabled =>
+              willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
+            case _ => // NOOP
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBRound(lhs, rhs)
       }),
@@ -1817,9 +1828,20 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("value", TypeSig.numeric +
+            TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+            TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+            TypeSig.numeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.child.dataType match {
+            case FloatType | DoubleType if !conf.isIncompatEnabled =>
+              willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
+            case _ => // NOOP
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRound(lhs, rhs)
       }),
