@@ -1786,7 +1786,7 @@ object GpuOverrides {
       }),
     expr[Average](
       "Average aggregate operator",
-      ExprChecks.aggNotWindow(
+      ExprChecks.fullAgg(
         TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
         Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
