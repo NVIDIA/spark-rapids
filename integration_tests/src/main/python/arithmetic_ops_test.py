@@ -221,6 +221,7 @@ def test_decimal_bround(data_gen):
                 'bround(a)',
                 'bround(a, -1)',
                 'bround(a, 1)',
+                'bround(a, 2)',
                 'bround(a, 10)'),
                 conf=allow_negative_scale_of_decimal_conf)
 
@@ -233,6 +234,7 @@ def test_decimal_round(data_gen):
                 'round(a)',
                 'round(a, -1)',
                 'round(a, 1)',
+                'round(a, 2)',
                 'round(a, 10)'),
                conf=allow_negative_scale_of_decimal_conf)
 
