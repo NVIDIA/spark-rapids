@@ -56,7 +56,12 @@ object BenchmarkRunner {
 
     benchmarks.get(conf.benchmark().toLowerCase) match {
       case Some(bench) =>
-        val appName = s"${bench.name()} Like Bench ${conf.query().mkString(",")}"
+        // only include the query name in the app name if a single query is being run
+        val appName = if (conf.query().size == 1) {
+          s"${bench.name()} Like Bench ${conf.query().head}"
+        } else {
+          s"${bench.name()} Like Bench"
+        }
         val spark = SparkSession.builder.appName(appName).getOrCreate()
         spark.sparkContext.setJobDescription("Register input tables")
         conf.inputFormat().toLowerCase match {
