@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -66,10 +66,10 @@ else
         echo "xdist not installed cannot run tests in parallel"
     fi
 
-    ACCEPTANCE_PARAM=""
-    if [[ "${TEST_ACCEPTANCE}" != "" ]];
+    TEST_TYPE_PARAM=""
+    if [[ "${TEST_TYPE}" != "" ]];
     then
-        ACCEPTANCE_PARAM="--acceptance_tests"
+        TEST_TYPE_PARAM="--test_type $TEST_TYPE"
     fi
 
     if [[ ${TEST_PARALLEL} -lt 2 ]];
@@ -102,7 +102,7 @@ else
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           --color=yes \
-          $ACCEPTANCE_PARAM \
+          $TEST_TYPE_PARAM \
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"
@@ -117,7 +117,7 @@ else
           -v -rfExXs "$TEST_TAGS" \
           --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           --color=yes \
-          $ACCEPTANCE_PARAM \
+          $TEST_TYPE_PARAM \
           "$TEST_ARGS" \
           $RUN_TEST_PARAMS \
           "$@"

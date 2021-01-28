@@ -62,10 +62,28 @@ def is_databricks_runtime():
 def is_emr_runtime():
     return runtime_env() == "emr"
 
-_is_acceptance = False
+_is_nightly_run = False
+_is_precommit_run = False
 
-def is_acceptance():
-    return _is_acceptance
+def is_nightly_run():
+    return _is_nightly_run
+
+def is_at_least_precommit_run():
+    return _is_ngihtly_run or _is_precommit_run
+
+def require_nightly_run_tests(description):
+    if (_is_nightly_run):
+        raise AssertionError(description + ' during nightly test run')
+    else: 
+        pytest.skip(description)
+
+def require_precommit_run_tests(description):
+    if (_is_nightly_run):
+        raise AssertionError(description + ' during nightly test run')
+    elif (_is_precommit_run):
+        raise AssertionError(description + ' during pre-commit test run')
+    else: 
+        pytest.skip(description)
 
 _limit = -1
 
@@ -134,9 +152,15 @@ def pytest_runtest_setup(item):
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
-    global _is_acceptance
-    _is_acceptance = config.getoption('acceptance_tests')
-
+    global _is_nightly_run
+    global _is_precommit_run
+    test_type = config.getoption('test_type').lower()
+    if "nightly" == test_type:
+        _is_nightly_run = True
+    elif "pre-commit" == test_type:
+        _is_precommit_run = True
+    elif "developer" != test_type:
+        raise Exception("not supported test type {}".format(test_type))
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
@@ -174,10 +198,7 @@ def pytest_collection_modifyitems(config, items):
 def std_input_path(request):
     path = request.config.getoption("std_input_path")
     if path is None:
-        if is_acceptance():
-            assert False, "std_input_path is not configured during acceptance tests"
-        else:
-            pytest.skip("std_input_path is not configured")
+        require_precommit_run_tests("std_input_path is not configured")
     else:
         yield path
 
@@ -284,10 +305,7 @@ def tpch(request):
     if tpch_path is None:
         std_path = request.config.getoption("std_input_path")
         if std_path is None:
-            if is_acceptance():
-                assert False, "TPCH is not configured to run during acceptance tests"
-            else:
-                pytest.skip("TPCH not configured to run")
+            require_precommit_run_tests("TPCH is not configured to run")
         else:
             tpch_path = std_path + '/tpch/'
             tpch_format = 'parquet'
@@ -329,7 +347,7 @@ def tpcxbb(request):
   tpcxbb_format = request.config.getoption("tpcxbb_format")
   tpcxbb_path = request.config.getoption("tpcxbb_path")
   if tpcxbb_path is None:
-    # TPCxBB is not required for acceptance tests
+    # TPCxBB is not required for any test runs
     pytest.skip("TPCxBB not configured to run")
   else:
     yield TpcxbbRunner(tpcxbb_format, tpcxbb_path)
@@ -364,10 +382,7 @@ def mortgage(request):
     if mortgage_path is None:
         std_path = request.config.getoption("std_input_path")
         if std_path is None:
-            if is_acceptance():
-                assert False, "Mortgage tests are not configured to run during acceptance tests"
-            else:
-                pytest.skip("Mortgage not configured to run")
+            require_precommit_run_tests("Mortgage tests are not configured to run")
         else:
             yield MortgageRunner('parquet', std_path + '/parquet_acq', std_path + '/parquet_perf')
     else:
@@ -403,7 +418,7 @@ def tpcds(request):
   tpcds_format = request.config.getoption("tpcds_format")
   tpcds_path = request.config.getoption("tpcds_path")
   if tpcds_path is None:
-    # TPC-DS is not required for acceptance
+    # TPC-DS is not required for any test runs
     pytest.skip("TPC-DS not configured to run")
   else:
     yield TpcdsRunner(tpcds_format, tpcds_path)
@@ -412,14 +427,11 @@ def tpcds(request):
 def enable_cudf_udf(request):
     enable_udf_cudf = request.config.getoption("cudf_udf")
     if not enable_udf_cudf:
-        # cudf_udf tests are not required for acceptance
+        # cudf_udf tests are not required for any test runs
         pytest.skip("cudf_udf not configured to run")
 
 @pytest.fixture(scope="session")
 def enable_rapids_udf_example_native(request):
     native_enabled = request.config.getoption("rapids_udf_example_native")
     if not native_enabled:
-        if is_acceptance():
-            assert False, "rapids_udf_example_native is not configured to run during acceptance tests"
-        else: 
-            pytest.skip("rapids_udf_example_native not configured to run")
+        require_nightly_run_tests("rapids_udf_example_native is not configured to run")

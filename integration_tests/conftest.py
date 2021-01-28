@@ -58,7 +58,7 @@ def pytest_addoption(parser):
         help="if true enable tests for RAPIDS UDF examples with native code"
     )
     parser.addoption(
-        "--acceptance_tests", action='store_true', default=False,
-        help="if enabled some tests that would skip if not configured correctly will instead fail"
+        "--test_type", action='store', default="developer",
+        help="the type of tests that are being run to help check all the correct tests are run - developer, pre-commit, or nightly"
     )
 
