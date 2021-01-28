@@ -19,17 +19,18 @@ from data_gen import *
 from marks import rapids_udf_example_native
 from spark_session import with_spark_session
 from pyspark.sql.utils import AnalysisException
+from conftest import skip_unless_precommit_tests
 
 def skip_if_no_hive(spark):
     if spark.conf.get("spark.sql.catalogImplementation") != "hive":
-        pytest.skip("The Spark session does not have Hive support")
+        skip_unless_precommit_tests('The Spark session does not have Hive support')
 
 def load_udf_or_skip_test(spark, udfname, udfclass):
     spark.sql("DROP TEMPORARY FUNCTION IF EXISTS {}".format(udfname))
     try:
         spark.sql("CREATE TEMPORARY FUNCTION {} AS '{}'".format(udfname, udfclass))
     except AnalysisException:
-        pytest.skip("UDF {} failed to load, udf-examples jar is probably missing".format(udfname))
+        skip_unless_precommit_tests("UDF {} failed to load, udf-examples jar is probably missing".format(udfname))
 
 def test_hive_simple_udf():
     with_spark_session(skip_if_no_hive)
