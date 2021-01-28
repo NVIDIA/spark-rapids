@@ -69,15 +69,15 @@ def is_nightly_run():
     return _is_nightly_run
 
 def is_at_least_precommit_run():
-    return _is_ngihtly_run or _is_precommit_run
+    return _is_nightly_run or _is_precommit_run
 
-def require_nightly_run_tests(description):
+def skip_unless_nightly_tests(description):
     if (_is_nightly_run):
         raise AssertionError(description + ' during nightly test run')
     else: 
         pytest.skip(description)
 
-def require_precommit_run_tests(description):
+def skip_unless_precommit_tests(description):
     if (_is_nightly_run):
         raise AssertionError(description + ' during nightly test run')
     elif (_is_precommit_run):
@@ -198,7 +198,7 @@ def pytest_collection_modifyitems(config, items):
 def std_input_path(request):
     path = request.config.getoption("std_input_path")
     if path is None:
-        require_precommit_run_tests("std_input_path is not configured")
+        skip_unless_precommit_tests("std_input_path is not configured")
     else:
         yield path
 
@@ -305,7 +305,7 @@ def tpch(request):
     if tpch_path is None:
         std_path = request.config.getoption("std_input_path")
         if std_path is None:
-            require_precommit_run_tests("TPCH is not configured to run")
+            skip_unless_precommit_tests("TPCH is not configured to run")
         else:
             tpch_path = std_path + '/tpch/'
             tpch_format = 'parquet'
@@ -382,7 +382,7 @@ def mortgage(request):
     if mortgage_path is None:
         std_path = request.config.getoption("std_input_path")
         if std_path is None:
-            require_precommit_run_tests("Mortgage tests are not configured to run")
+            skip_unless_precommit_tests("Mortgage tests are not configured to run")
         else:
             yield MortgageRunner('parquet', std_path + '/parquet_acq', std_path + '/parquet_perf')
     else:
@@ -434,4 +434,4 @@ def enable_cudf_udf(request):
 def enable_rapids_udf_example_native(request):
     native_enabled = request.config.getoption("rapids_udf_example_native")
     if not native_enabled:
-        require_nightly_run_tests("rapids_udf_example_native is not configured to run")
+        skip_unless_nightly_tests("rapids_udf_example_native is not configured to run")
