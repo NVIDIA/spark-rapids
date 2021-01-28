@@ -90,6 +90,7 @@ def test_orderby_array_of_structs(data_gen):
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
     lit = gen_scalar(data_gen, force_no_nulls=True)
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: debug_df(two_col_df(
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(
         spark, arr_gen, data_gen).select(array_contains(col('a'), lit.cast(data_gen.data_type)),
-                                         array_contains(col('a'), col('b')))), no_nans_conf)
+                                         array_contains(col('a'), col('b')),
+                                         array_contains(col('a'), col('a')[5])), no_nans_conf)
