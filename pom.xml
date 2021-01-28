@@ -164,6 +164,7 @@
         <project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
         <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
         <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
+        <pytest.TEST_TYPE>developer</pytest.TEST_TYPE>
         <rat.consoleOutput>false</rat.consoleOutput>
         <slf4j.version>1.7.30</slf4j.version>
         <spark300.version>3.0.0</spark300.version>

@@ -23,6 +23,7 @@ import random
 from spark_session import is_tz_utc
 import sre_yield
 import struct
+from conftest import skip_unless_precommit_tests
 
 class DataGen:
     """Base class for data generation"""
@@ -568,7 +569,7 @@ class NullGen(DataGen):
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
-        pytest.skip('The java system time zone is not set to UTC')
+        skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
