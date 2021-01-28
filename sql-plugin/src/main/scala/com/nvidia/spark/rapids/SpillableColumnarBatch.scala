@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,8 @@ trait SpillableColumnarBatch extends AutoCloseable {
    *       with decompressing the data if necessary.
    */
   def getColumnarBatch(): ColumnarBatch
+
+  def sizeInBytes: Long
 }
 
 /**
@@ -57,6 +59,7 @@ class JustRowsColumnarBatch(numRows: Int) extends SpillableColumnarBatch {
   override def getColumnarBatch(): ColumnarBatch =
     new ColumnarBatch(Array.empty, numRows)
   override def close(): Unit = () // NOOP nothing to close
+  override val sizeInBytes: Long = 0L
 }
 
 /**
@@ -81,6 +84,11 @@ class SpillableColumnarBatchImpl (id: TempSpillBufferId,
    * @note Use with caution because if this has been closed the id is no longer valid.
    */
   def spillId: TempSpillBufferId = id
+
+  override lazy val sizeInBytes: Long =
+    withResource(RapidsBufferCatalog.acquireBuffer(id)) { buff =>
+      buff.size
+    }
 
   /**
    * Set a new spill priority.
