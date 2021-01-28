@@ -89,9 +89,12 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
-    // make sure all scalars created are backed by DECIMAL64
     case dec: Decimal =>
-      Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+      if (dec.precision <= Decimal.MAX_INT_DIGITS) {
+        Scalar.fromDecimal(-dec.scale, dec.toInt)
+      } else {
+        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+      }
     case dec: BigDecimal =>
       Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
     case _ =>
@@ -116,8 +119,11 @@ object GpuScalar {
       if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
         throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision constraint of $t")
       }
-      // make sure all scalars created are backed by DECIMAL64
-      Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValueExact())
+      if (t.asInstanceOf[DecimalType].precision <= Decimal.MAX_INT_DIGITS) {
+        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().intValue())
+      } else {
+        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValue())
+      }
     case l: Long => t match {
       case LongType => Scalar.fromLong(l)
       case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)

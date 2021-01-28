@@ -86,9 +86,8 @@ case class GpuInSet(
       }
     case t: DecimalType =>
       val decs = values.asInstanceOf[Seq[Decimal]]
-      // When we support DECIMAL32 this will need to change to support that
-      withResource(HostColumnVector.builder(DType.create(DType.DTypeEnum.DECIMAL64, - t.scale),
-        decs.size)) { builder =>
+      withResource(HostColumnVector.builder(
+        GpuColumnVector.createCudfDecimal(t.precision, -t.scale), decs.size)) { builder =>
         decs.foreach(d => builder.appendUnscaledDecimal(d.toUnscaledLong))
         builder.buildAndPutOnDevice()
       }

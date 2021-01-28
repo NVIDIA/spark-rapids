@@ -78,7 +78,7 @@ case class GpuMakeDecimal(
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val base = input.getBase
-    val outputType = DType.create(DType.DTypeEnum.DECIMAL64, cudfScale)
+    val outputType = GpuColumnVector.createCudfDecimal(precision, sparkScale)
     if (nullOnOverflow) {
       val overflowed = withResource(Scalar.fromLong(maxValue)) { limit =>
         base.greaterThan(limit)

@@ -90,7 +90,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static synchronized void debug(String name, HostColumnVector hostCol) {
     DType type = hostCol.getType();
     System.err.println("COLUMN " + name + " " + type);
-    if (type.getTypeId() == DType.DTypeEnum.DECIMAL64) {
+    if (type.isDecimalType()) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
           System.err.println(i + " NULL");
@@ -382,11 +382,26 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
         return null;
       } else {
-        // Map all DecimalType to DECIMAL64, in case of underlying DType transaction.
-        return DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale());
+        return createCudfDecimal(dt.precision(), dt.scale());
       }
     }
     return null;
+  }
+
+  public static DType createCudfDecimal(int precision, int scale) {
+    if (precision < 10) {
+      return DType.create(DType.DTypeEnum.DECIMAL32, -scale);
+    } else {
+      return DType.create(DType.DTypeEnum.DECIMAL64, -scale);
+    }
+  }
+
+  public static int getDataTypeSize(DataType dt) {
+    if (dt instanceof DecimalType && ((DecimalType) dt).precision() <= Decimal.MAX_INT_DIGITS()) {
+      return 4;
+    } else {
+      return dt.defaultSize();
+    }
   }
 
   public static boolean isNonNestedSupportedType(DataType type) {

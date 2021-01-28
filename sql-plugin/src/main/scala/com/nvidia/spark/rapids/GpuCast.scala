@@ -993,17 +993,17 @@ case class GpuCast(
       if (dt.scale < 0) {
         // Rounding is essential when scale is negative,
         // so we apply HALF_UP rounding manually to keep align with CpuCast.
-        withResource(checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))) {
+        withResource(checked.castTo(GpuColumnVector.createCudfDecimal(dt.precision, 0))) {
           scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
       } else if (dt.scale > 0) {
         // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
         // before casting it to decimal in case of overflow.
         withResource(checked.castTo(DType.INT64)) { long =>
-          long.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+          long.castTo(GpuColumnVector.createCudfDecimal(dt.precision, -dt.scale))
         }
       } else {
-        checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+        checked.castTo(GpuColumnVector.createCudfDecimal(dt.precision, -dt.scale))
       }
     }
   }
@@ -1045,7 +1045,7 @@ case class GpuCast(
       if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
         checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
       } else {
-        val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -(dt.scale + 1))
+        val containerType = GpuColumnVector.createCudfDecimal(dt.precision, -(dt.scale + 1))
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }

@@ -156,8 +156,7 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        val scale = dt.scale
-        DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+        GpuColumnVector.createCudfDecimal(dt.precision, dt.scale)
       case _ =>
         DType.INT64
     }
@@ -216,8 +215,7 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        val scale = dt.scale
-        DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+        GpuColumnVector.createCudfDecimal(dt.precision, dt.scale)
       case _ =>
         DType.INT64
     }
