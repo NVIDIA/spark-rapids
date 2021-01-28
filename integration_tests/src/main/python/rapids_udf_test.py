@@ -30,7 +30,7 @@ def load_udf_or_skip_test(spark, udfname, udfclass):
     try:
         spark.sql("CREATE TEMPORARY FUNCTION {} AS '{}'".format(udfname, udfclass))
     except AnalysisException:
-        pytest.skip("UDF {} failed to load, udf-examples jar is probably missing".format(udfname))
+        require_precommit_run_tests("UDF {} failed to load, udf-examples jar is probably missing".format(udfname))
 
 def test_hive_simple_udf():
     with_spark_session(skip_if_no_hive)
