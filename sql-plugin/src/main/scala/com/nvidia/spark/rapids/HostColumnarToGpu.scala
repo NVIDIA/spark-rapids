@@ -20,7 +20,6 @@ import java.nio.ByteBuffer
 
 import ai.rapids.cudf._
 import org.apache.arrow.vector.ValueVector
-import org.apache.arrow.vector.types.pojo.ArrowType
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -36,10 +35,10 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 object HostColumnarToGpu extends Logging {
 
   // use reflection to get value vector from ArrowColumnVector
-  def getValueVector(cv: ColumnVector): ValueVector = {
+  private def getArrowValueVector(cv: ColumnVector): ValueVector = {
     val arrowCV = cv.asInstanceOf[ArrowColumnVector]
     val fields = arrowCV.getClass.getDeclaredFields.toList
-    val field = fields.filter(x => {
+    val field = fields.filter( x => {
       x.getName.contains("accessor")
     }).head
     field.setAccessible(true)
@@ -59,7 +58,7 @@ object HostColumnarToGpu extends Logging {
       rows: Int): Unit = {
     val valVector = if (cv.isInstanceOf[ArrowColumnVector]) {
       logWarning("looking at arrow column vector")
-      getValueVector(cv)
+      getArrowValueVector(cv)
     } else if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       logWarning("looking at accessible arrow column vector")
       val arrowVec = cv.asInstanceOf[AccessibleArrowColumnVector]
@@ -249,27 +248,26 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchBuilder = null
     }
 
-      // when reading host batches it is essential to read the data immediately and pass to a
-      // builder and we need to determine how many rows to allocate in the builder based on the
-      // schema and desired batch size
-      batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
-        GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
+    // when reading host batches it is essential to read the data immediately and pass to a
+    // builder and we need to determine how many rows to allocate in the builder based on the
+    // schema and desired batch size
+    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
+      GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
 
-      // if no columns then probably a count operation so doesn't matter which builder we use
-      // val isArrow = if (batch.numCols() > 0 && batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
-      val isArrow = if (useArrowCopyOpt && batch.numCols() > 0 &&
-          (batch.column(0).isInstanceOf[ArrowColumnVector] ||
-          batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
+    // if no columns then probably a count operation so doesn't matter which builder we use
+    // val isArrow = if (batch.numCols() > 0 && batch.column(0).isInstanceOf[AccessibleArrowColumnVector]) {
+    val isArrow = if (useArrowCopyOpt && batch.numCols() > 0 &&
+      (batch.column(0).isInstanceOf[ArrowColumnVector] ||
+      batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
         true;
-      }  else {
-        false
-      }
-      if (isArrow) {
-        batchBuilder =
-          new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
-      } else {
-        batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
-     }
+    }  else {
+      false
+    }
+    if (isArrow) {
+      batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
+    } else {
+      batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
+    }
     totalRows = 0
   }
 

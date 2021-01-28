@@ -1,12 +1,11 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,8 +19,6 @@ package org.apache.spark.sql.vectorized.rapids;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.complex.*;
 import org.apache.arrow.vector.holders.NullableVarCharHolder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.spark.sql.util.ArrowUtils;
 import org.apache.spark.sql.types.*;
@@ -31,12 +28,11 @@ import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.unsafe.types.UTF8String;
 
 /**
- * A column vector backed by Apache Arrow. Currently calendar interval type and map type are not
- * supported.
+ * A column vector backed by Apache Arrow that adds API to get to the Arrow ValueVector.
+ * Currently calendar interval type and map type are not supported.
+ * Original code copied from Spark ArrowColumnVector.
  */
 public final class AccessibleArrowColumnVector extends ColumnVector {
-  private static final Logger logger = LoggerFactory.getLogger(AccessibleArrowColumnVector.class);
-
   private final AccessibleArrowVectorAccessor accessor;
   private AccessibleArrowColumnVector[] childColumns;
 
@@ -186,16 +182,10 @@ public final class AccessibleArrowColumnVector extends ColumnVector {
   }
 
   private abstract static class AccessibleArrowVectorAccessor {
-     private static final Logger logger = LoggerFactory.getLogger(AccessibleArrowVectorAccessor.class);
-
     private final ValueVector vector;
 
     AccessibleArrowVectorAccessor(ValueVector vector) {
       this.vector = vector;
-    }
-
-    ValueVector getVector() {
-      return vector;
     }
 
     // TODO: should be final after removing ArrayAccessor workaround
