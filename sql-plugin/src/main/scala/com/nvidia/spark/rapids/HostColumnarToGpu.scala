@@ -255,6 +255,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
 
     // if no columns then probably a count operation so doesn't matter which builder we use
+    // as we won't actually copy any data and we can't tell what type of data it is without
+    // having a column
     if (useArrowCopyOpt && batch.numCols() > 0 &&
       (batch.column(0).isInstanceOf[ArrowColumnVector] ||
         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
