@@ -16,10 +16,12 @@
 
 package com.nvidia.spark.rapids.shims.spark300
 
+import java.nio.ByteBuffer
 import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
+import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
@@ -439,5 +441,18 @@ class Spark300Shims extends SparkShims {
 
   override def shouldIgnorePath(path: String): Boolean = {
     InMemoryFileIndex.shouldFilterOut(path)
+  }
+
+  // Arrow version changed between Spark versions
+  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
+    vec.getDataBuffer.nioBuffer()
+  }
+
+  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
+    vec.getValidityBuffer.nioBuffer()
+  }
+
+  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
+    vec.getOffsetBuffer.nioBuffer()
   }
 }

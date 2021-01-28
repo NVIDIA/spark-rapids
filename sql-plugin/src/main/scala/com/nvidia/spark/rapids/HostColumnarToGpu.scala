@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.nio.ByteBuffer
 
-import ai.rapids.cudf._
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.TaskContext
@@ -67,17 +66,14 @@ object HostColumnarToGpu extends Logging {
       throw new Exception("not arrow data shouldn't be here!")
     }
     val arrowDataAddr = valVector.getDataBuffer.nioBuffer()
-    val byteBuf = valVector.getDataBuffer.nioBuffer()
+    val byteBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
     val nullCount = valVector.getNullCount()
-    val validity = valVector.getValidityBuffer.nioBuffer()
+    val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
 
     var offsets:ByteBuffer = null
     try {
       // TODO - should we chekc types first instead?
-      val arrowDataOffsetBuf = valVector.getOffsetBuffer
-      if (arrowDataOffsetBuf != null) {
-        offsets = arrowDataOffsetBuf.nioBuffer()
-      }
+      val arrowDataOffsetBuf =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
     } catch {
       case e: UnsupportedOperationException =>
         logWarning("unsupported op getOffsetBuffer")
