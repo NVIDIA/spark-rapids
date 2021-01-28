@@ -255,14 +255,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
 
     // if no columns then probably a count operation so doesn't matter which builder we use
-    val isArrow = if (useArrowCopyOpt && batch.numCols() > 0 &&
-        (batch.column(0).isInstanceOf[ArrowColumnVector] ||
-         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
-      true
-    }  else {
-      false
-    }
-    if (isArrow) {
+    if (useArrowCopyOpt && batch.numCols() > 0 &&
+      (batch.column(0).isInstanceOf[ArrowColumnVector] ||
+        batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
       batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
     } else {
       batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
