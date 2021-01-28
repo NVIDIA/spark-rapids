@@ -734,12 +734,11 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested + TypeSig.ARRAY.nested(TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested +
+            TypeSig.ARRAY.nested(TypeSig.STRUCT),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -1644,13 +1643,13 @@ object GpuOverrides {
     expr[AggregateExpression](
       "Aggregate expression",
       ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested() + TypeSig.NULL +
+          TypeSig.ARRAY.nested(TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck(
           "aggFunc",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested() + TypeSig.NULL +
+            TypeSig.ARRAY.nested(TypeSig.STRUCT),
           TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
@@ -1674,17 +1673,6 @@ object GpuOverrides {
           }
           GpuAggregateExpression(childExprs(0).convertToGpu().asInstanceOf[GpuAggregateFunction],
             a.mode, a.isDistinct, filter.map(_.convertToGpu()), resultId)
-        }
-
-        // NOTE: Will remove this once all aggregates support array type.
-        override def tagExprForGpu(): Unit = {
-          // Only allow Array type for function "CollectList", since other aggregate functions
-          // have not been verified.
-          wrapped.dataType match {
-            case _: ArrayType if !wrapped.aggregateFunction.isInstanceOf[CollectList] =>
-              willNotWorkOnGpu("Now only 'collect_list' supports type of array.")
-            case _ =>
-          }
         }
       }),
     expr[SortOrder](
@@ -2185,13 +2173,13 @@ object GpuOverrides {
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       }),
     expr[CollectList](
-      "Collect a list of elements",
+      "Collect a list of elements, now only supported by windowing.",
       /* It should be 'fullAgg' eventually but now only support windowing, so 'windowOnly' */
       ExprChecks.windowOnly(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.STRUCT.nested(TypeSig.commonCudfTypes),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested() + TypeSig.STRUCT,
           TypeSig.all))),
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
@@ -2525,8 +2513,8 @@ object GpuOverrides {
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
-        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.commonCudfTypes),
+      ExecChecks(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested() + TypeSig.ARRAY,
         TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
