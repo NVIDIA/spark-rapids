@@ -45,7 +45,7 @@ object HostColumnarToGpu extends Logging {
     field.setAccessible(true)
     val accessor = field.get(arrowCV)
     val accessFields = accessor.getClass().getSuperclass().getDeclaredFields().toList
-    val valVecField = foosuper.filter( x => {
+    val valVecField = accessFields.filter( x => {
       x.getName.contains("vector")
     }).head
     valVecField.setAccessible(true)
@@ -57,7 +57,6 @@ object HostColumnarToGpu extends Logging {
       ab: ai.rapids.cudf.ArrowColumnBuilder,
       nullable: Boolean,
       rows: Int): Unit = {
-    logWarning("Arrow host columnar to gpu cv is type: " + cv.getClass().toString())
     val valVector = if (cv.isInstanceOf[ArrowColumnVector]) {
       logWarning("looking at arrow column vector")
       getValueVector(cv)
@@ -85,12 +84,10 @@ object HostColumnarToGpu extends Logging {
         logWarning("unsupported op getOffsetBuffer")
     }
     ab.addBatch(rows, nullCount, arrowDataAddr, validity, offsets)
-    logWarning("builder arrow is: " + ab.toString())
   }
 
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
-    logWarning("Not Arrow host columnar to gpu cv is type: " + cv.getClass().toString())
     (cv.dataType(), nullable) match {
       case (ByteType | BooleanType, true) =>
         for (i <- 0 until rows) {
@@ -252,12 +249,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       batchBuilder = null
     }
 
-    logWarning(" in init new batch cols is:" + batch.numCols())
       // when reading host batches it is essential to read the data immediately and pass to a
       // builder and we need to determine how many rows to allocate in the builder based on the
       // schema and desired batch size
-
-      // TODO - batch row limit right for arrow?  Do we want to allow splitting or just single?
       batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
         GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
 
@@ -270,28 +264,20 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       }  else {
         false
       }
-      if (batch.numRows() > batchRowLimit) {
-        logWarning(s"batch num rows: ${batch.numRows()} > then row limit: $batchRowLimit")
-      }
       if (isArrow) {
-        logWarning("arrow batch builder")
-        // todo - REMOVE BATCH ROWLIMIT
         batchBuilder =
           new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
       } else {
-        logWarning("not an arrow batch builder")
         batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
      }
     totalRows = 0
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
-    logWarning("in add batch")
     val rows = batch.numRows()
     for (i <- 0 until batch.numCols()) {
       batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
     }
-    logWarning("done in add batch")
     totalRows += rows
   }
 
@@ -300,14 +286,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
-    logWarning("concatallandput on gpu")
     // About to place data back on the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    logWarning("batch builder build total Rows: " + totalRows)
-    if (batchBuilder == null) {
-      logWarning("batch builder is null");
-    }
     val ret = batchBuilder.build(totalRows)
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
 
@@ -320,7 +301,6 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def cleanupConcatIsDone(): Unit = {
     if (batchBuilder != null) {
-      logWarning("cleanup concat done")
       batchBuilder.close()
       batchBuilder = null
     }
@@ -398,7 +378,6 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
     val batches = child.executeColumnar()
 
     val confUseArrow = new RapidsConf(child.conf).useArrowCopyOptimization
-    logWarning(" num partitions is: " + batches.getNumPartitions)
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,

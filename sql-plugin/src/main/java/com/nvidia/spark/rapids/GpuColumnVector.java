@@ -24,9 +24,6 @@ import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -123,17 +120,39 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   public static abstract class GpuColumnarBatchBuilderBase implements AutoCloseable {
-    public abstract ColumnarBatch build(int rows);
+    protected StructField[] fields;
 
     public abstract void close();
-
     public abstract void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows);
+
+    protected abstract ColumnVector buildAndPutOnDevice(int builderIndex);
+    protected abstract int buildersLength();
+
+    public ColumnarBatch build(int rows) {
+      int buildersLen = buildersLength();
+      ColumnVector[] vectors = new ColumnVector[buildersLen];
+      boolean success = false;
+      try {
+        for (int i = 0; i < buildersLen; i++) {
+          vectors[i] = buildAndPutOnDevice(i);
+        }
+        ColumnarBatch ret = new ColumnarBatch(vectors, rows);
+        success = true;
+        return ret;
+      } finally {
+        if (!success) {
+          for (ColumnVector vec: vectors) {
+            if (vec != null) {
+              vec.close();
+            }
+          }
+        }
+      }
+    }
   }
 
   public static final class GpuArrowColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
-    private static final Logger logger = LoggerFactory.getLogger(GpuArrowColumnarBatchBuilder.class);
     private final ai.rapids.cudf.ArrowColumnBuilder[] builders;
-    private final StructField[] fields;
 
     /**
      * A collection of builders for building up columnar data from Arrow data.
@@ -153,7 +172,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       try {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
-          logger.warn("field name: " + field.name() + " datatype: " + field.dataType() + " converted to: " + convertFrom(field.dataType(), field.nullable()));
           builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()));
         }
         success = true;
@@ -168,6 +186,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
+    protected int buildersLength() {
+      return builders.length;
+    }
+
+    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+      ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      builders[builderIndex] = null;
+      return gcv;
+    }
+
     public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
       HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows);
     }
@@ -176,39 +205,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return builders[i];
     }
 
-    public ColumnarBatch build(int rows) {
-      ColumnVector[] vectors = new ColumnVector[builders.length];
-      logger.warn(" in build column batch for arrow");
-      boolean success = false;
-      try {
-        for (int i = 0; i < builders.length; i++) {
-          logger.warn(" calling build and put on device: " + i + " type is: " + fields[i].dataType());
-          ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
-          logger.warn(" createing gpu column vector");
-          vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
-          builders[i] = null;
-        }
-        logger.warn(" createing columnar batch");
-        ColumnarBatch ret = new ColumnarBatch(vectors, rows);
-        success = true;
-        return ret;
-      } finally {
-        if (!success) {
-          for (ColumnVector vec: vectors) {
-            if (vec != null) {
-              vec.close();
-            }
-          }
-        }
-      }
-    }
-
     @Override
     public void close() {
-      logger.warn(" in close arrow host column vector");
       for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
         if (b != null) {
-          logger.warn("closing builder");
           b.close();
         }
       }
@@ -216,9 +216,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
-    private static final Logger logger = LoggerFactory.getLogger(GpuColumnarBatchBuilder.class);
     private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
-    private final StructField[] fields;
 
     /**
      * A collection of builders for building up columnar data.
@@ -259,30 +257,15 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return builders[i];
     }
 
-    public ColumnarBatch build(int rows) {
-      ColumnVector[] vectors = new ColumnVector[builders.length];
-      boolean success = false;
-      try {
-	logger.warn(" column builders lenght: " + builders.length);
-        for (int i = 0; i < builders.length; i++) {
-          ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
-	  logger.warn("done building and put not arrow");
-          vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
-          builders[i] = null;
-        }
-	logger.warn("making column batch with vectors: " + vectors + " rows:" + rows);
-        ColumnarBatch ret = new ColumnarBatch(vectors, rows);
-        success = true;
-        return ret;
-      } finally {
-        if (!success) {
-          for (ColumnVector vec: vectors) {
-            if (vec != null) {
-              vec.close();
-            }
-          }
-        }
-      }
+    protected int buildersLength() {
+      return builders.length;
+    }
+
+    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+      ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      builders[builderIndex] = null;
+      return gcv;
     }
 
     public HostColumnVector[] buildHostColumns() {
@@ -315,7 +298,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
   }
-
 
   private static DType toRapidsOrNull(DataType type) {
     if (type instanceof LongType) {
