@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.nio.ByteBuffer
 
-import ai.rapids.cudf._
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.TaskContext
@@ -66,23 +65,22 @@ object HostColumnarToGpu extends Logging {
     } else {
       throw new Exception("not arrow data shouldn't be here!")
     }
-    val arrowDataAddr = valVector.getDataBuffer.nioBuffer()
-    val byteBuf = valVector.getDataBuffer.nioBuffer()
+    // val dataBuf = valVector.getDataBuffer.nioBuffer()
     val nullCount = valVector.getNullCount()
-    val validity = valVector.getValidityBuffer.nioBuffer()
+    // val validity = valVector.getValidityBuffer.nioBuffer()
+    val dataBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
+    val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
 
     var offsets:ByteBuffer = null
     try {
       // TODO - should we chekc types first instead?
-      val arrowDataOffsetBuf = valVector.getOffsetBuffer
-      if (arrowDataOffsetBuf != null) {
-        offsets = arrowDataOffsetBuf.nioBuffer()
-      }
+      offsets =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
     } catch {
       case e: UnsupportedOperationException =>
         logWarning("unsupported op getOffsetBuffer")
     }
-    ab.addBatch(rows, nullCount, arrowDataAddr, validity, offsets)
+    logWarning(s"data is $dataBuf valid: $validity offsets: $offsets")
+    ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
   }
 
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,

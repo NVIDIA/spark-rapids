@@ -16,6 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.ByteBuffer
+
+import org.apache.arrow.vector.ValueVector
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -165,4 +169,8 @@ trait SparkShims {
       explicitMetadata: Option[Metadata] = None): Alias
 
   def shouldIgnorePath(path: String): Boolean
+
+  def getArrowDataBuf(vec: ValueVector): ByteBuffer
+  def getArrowValidityBuf(vec: ValueVector): ByteBuffer
+  def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer
 }
