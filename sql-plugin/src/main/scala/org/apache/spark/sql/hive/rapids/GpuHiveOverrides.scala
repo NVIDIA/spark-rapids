@@ -18,15 +18,12 @@ package org.apache.spark.sql.hive.rapids
 
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 
 object GpuHiveOverrides {
-  // UDFs can support all types except UDT which does not have a clear columnar representation.
-  private val udfTypeSig = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-      TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
-
   def isSparkHiveAvailable: Boolean = {
     // Using the same approach as SparkSession.hiveClassesArePresent
     val loader = Thread.currentThread().getContextClassLoader
@@ -50,7 +47,7 @@ object GpuHiveOverrides {
 
     Seq(
       GpuOverrides.expr[HiveSimpleUDF](
-        "Hive UDF, support requires the UDF to implement a RAPIDS-accelerated interface",
+        "Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface",
         ExprChecks.projectNotLambda(
           udfTypeSig,
           TypeSig.all,
@@ -78,7 +75,7 @@ object GpuHiveOverrides {
         }),
       GpuOverrides.expr[HiveGenericUDF](
         "Hive Generic UDF, support requires the UDF to implement a " +
-            "RAPIDS-accelerated interface",
+            "RAPIDS accelerated interface",
         ExprChecks.projectNotLambda(
           udfTypeSig,
           TypeSig.all,
