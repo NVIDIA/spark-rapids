@@ -35,30 +35,21 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
 
+  // use reflection to get value vector from ArrowColumnVector
   def getValueVector(cv: ColumnVector): ValueVector = {
     val arrowCV = cv.asInstanceOf[ArrowColumnVector]
     val fields = arrowCV.getClass.getDeclaredFields.toList
-
     val field = fields.filter(x => {
-      println(x.getName)
       x.getName.contains("accessor")
     }).head
-
-    logWarning(" got accessor")
     field.setAccessible(true)
     val accessor = field.get(arrowCV)
-    val accessFields = accessor.getClass().getDeclaredFields().toList
-
-    val valVecField = accessFields.filter(x => {
-      println(x.getName)
+    val accessFields = accessor.getClass().getSuperclass().getDeclaredFields().toList
+    val valVecField = foosuper.filter( x => {
       x.getName.contains("vector")
     }).head
-    logWarning(" got vector")
-
     valVecField.setAccessible(true)
-    val res = valVecField.get(accessor).asInstanceOf[ValueVector]
-    logWarning(" got res " + res)
-    res
+    valVecField.get(accessor).asInstanceOf[ValueVector]
   }
 
   def arrowColumnarCopy(
@@ -67,76 +58,34 @@ object HostColumnarToGpu extends Logging {
       nullable: Boolean,
       rows: Int): Unit = {
     logWarning("Arrow host columnar to gpu cv is type: " + cv.getClass().toString())
-    if (cv.isInstanceOf[ArrowColumnVector]) {
-       val res = getValueVector(cv)
-       logWarning("value vector is: " + res)       
-    }
-    if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
+    val valVector = if (cv.isInstanceOf[ArrowColumnVector]) {
       logWarning("looking at arrow column vector")
-      // TODO - how make sure off heap?
-      // could create HostMemoryBuffer(addr, length)'
+      getValueVector(cv)
+    } else if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
+      logWarning("looking at accessible arrow column vector")
       val arrowVec = cv.asInstanceOf[AccessibleArrowColumnVector]
-
-      // TODO - accessor is private to ArrowColumnVector!!!
-      // ValueVector => ArrowBuf
-
-      val buffers = arrowVec.getArrowValueVector.getBuffers(false)
-      logWarning("num buffers is " + buffers.size)
-
-      val arrowDataAddr = arrowVec.getArrowValueVector.getDataBuffer.nioBuffer()
-      val arrowDataLen = arrowVec.getArrowValueVector.getBufferSize() // ?
-      val arrowDataMem = arrowVec.getArrowValueVector.getDataBuffer.getActualMemoryConsumed() // ?
-
-      val arrowDataCap = arrowVec.getArrowValueVector.getDataBuffer.capacity() // ? 80
-      val arrowDataVals = arrowVec.getArrowValueVector.getValueCount() // 20
-      val arrowDataPos  = arrowVec.getArrowValueVector.getDataBuffer.getPossibleMemoryConsumed() // 20
-      val byteBuf = arrowVec.getArrowValueVector.getDataBuffer.nioBuffer()
-      logWarning(s" byte buffer position is: ${byteBuf.position()}")
-      logWarning(s"address of byte buffer is ${System.identityHashCode(byteBuf)}")
-
-      logWarning(s"arrow data lenght is: $arrowDataLen memory: $arrowDataMem num values $arrowDataVals")
-      logWarning(s"arrow data lenght is: $arrowDataLen memory: $arrowDataMem num values $arrowDataVals capcity: $arrowDataCap possible: $arrowDataPos")
-      // val hostDataBuf = new HostMemoryBuffer(arrowDataAddr, arrowDataMem, null)
-      // ab.setDataBuf(arrowDataAddr, arrowDataMem)
-      // TODO - need to check null count as validiting isn't required
-      val nullCount = arrowVec.getArrowValueVector.getNullCount()
-      // ab.setNullCount(nullCount)
-      logWarning("null count is " + nullCount)
-     //  if (nullCount > 0) {
-        val validity = arrowVec.getArrowValueVector.getValidityBuffer.nioBuffer()
-        val validityLen = arrowVec.getArrowValueVector.getValidityBuffer.getActualMemoryConsumed()
-        val validityCap = arrowVec.getArrowValueVector.getValidityBuffer.capacity()
-      logWarning(s"arrow validity memory is: $validityLen length si ${arrowVec.getArrowValueVector.getValidityBuffer.capacity()}")
-        // ab.setValidityBuf(validity, validityLen)
-     //  }
-
-      var offsets:ByteBuffer = null
-      var offsetsLen = 0L
-      var offsetsCap = 0L
-      try {
-        // TODO - should we chekc types first instead?
-        val arrowDataOffsetBuf = arrowVec.getArrowValueVector.getOffsetBuffer
-        if (arrowDataOffsetBuf != null) {
-          logWarning("arrow data offset buffer addrs: " + arrowDataOffsetBuf.memoryAddress())
-          // val hostValidBuf = new HostMemoryBuffer(arrowDataOffsetBuf.memoryAddress(), arrowDataOffsetLen)
-          offsets = arrowDataOffsetBuf.nioBuffer()
-          offsetsLen = arrowVec.getArrowValueVector.getOffsetBuffer.getActualMemoryConsumed()
-          offsetsCap = arrowVec.getArrowValueVector.getOffsetBuffer.capacity()
-      logWarning(s"arrow offsets memory is: $offsetsLen length si ${arrowVec.getArrowValueVector.getOffsetBuffer.capacity()}")
-          // ab.setOffsetBuf(arrowDataOffsetBuf.memoryAddress(), offsetsLen)
-        } else {
-          logWarning("arrow data offset buffer is null")
-        }
-      } catch {
-        case e: UnsupportedOperationException =>
-          logWarning("unsupported op getOffsetBuffer")
-      }
-      ab.addBatch(rows, nullCount, arrowDataAddr, validity, offsets)
-      logWarning("builder arrow is: " + ab.toString())
-
+      arrowVec.getArrowValueVector()
     } else {
       throw new Exception("not arrow data shouldn't be here!")
     }
+    val arrowDataAddr = valVector.getDataBuffer.nioBuffer()
+    val byteBuf = valVector.getDataBuffer.nioBuffer()
+    val nullCount = valVector.getNullCount()
+    val validity = valVector.getValidityBuffer.nioBuffer()
+
+    var offsets:ByteBuffer = null
+    try {
+      // TODO - should we chekc types first instead?
+      val arrowDataOffsetBuf = valVector.getOffsetBuffer
+      if (arrowDataOffsetBuf != null) {
+        offsets = arrowDataOffsetBuf.nioBuffer()
+      }
+    } catch {
+      case e: UnsupportedOperationException =>
+        logWarning("unsupported op getOffsetBuffer")
+    }
+    ab.addBatch(rows, nullCount, arrowDataAddr, validity, offsets)
+    logWarning("builder arrow is: " + ab.toString())
   }
 
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
