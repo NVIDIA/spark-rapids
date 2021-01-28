@@ -1817,7 +1817,7 @@ object GpuOverrides {
           a.child.dataType match {
             case FloatType | DoubleType if !conf.isIncompatEnabled =>
               willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
-                  "compared to Spark's result")
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
             case _ => // NOOP
           }
         }
@@ -1838,7 +1838,7 @@ object GpuOverrides {
           a.child.dataType match {
             case FloatType | DoubleType if !conf.isIncompatEnabled =>
               willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
-                  "compared to Spark's result")
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
             case _ => // NOOP
           }
         }
