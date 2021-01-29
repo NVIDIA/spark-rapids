@@ -75,7 +75,6 @@ object HostColumnarToGpu extends Logging {
               "access its Arrow ValueVector", e)
         }
       case av: AccessibleArrowColumnVector =>
-        // val arrowVec = av.asInstanceOf[AccessibleArrowColumnVector]
         av.getArrowValueVector()
       case _ =>
         throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
