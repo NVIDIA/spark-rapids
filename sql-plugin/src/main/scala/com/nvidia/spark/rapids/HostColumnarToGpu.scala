@@ -55,19 +55,20 @@ object HostColumnarToGpu extends Logging {
       ab: ai.rapids.cudf.ArrowColumnBuilder,
       nullable: Boolean,
       rows: Int): Unit = {
-    val valVector = if (cv.isInstanceOf[ArrowColumnVector]) {
-      try {
-        getArrowValueVector(cv)
-      } catch {
-        case e: Exception =>
-          throw new IllegalStateException("Trying to read from a ArrowColumnVector but can't " +
-            "access its Arrow ValueVector", e)
-      }
-    } else if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
-      val arrowVec = cv.asInstanceOf[AccessibleArrowColumnVector]
-      arrowVec.getArrowValueVector()
-    } else {
-      throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
+    val valVector = cv match {
+      case v: ArrowColumnVector =>
+        try {
+          getArrowValueVector(v)
+        } catch {
+          case e: Exception =>
+            throw new IllegalStateException("Trying to read from a ArrowColumnVector but can't " +
+              "access its Arrow ValueVector", e)
+        }
+      case av: AccessibleArrowColumnVector =>
+        // val arrowVec = av.asInstanceOf[AccessibleArrowColumnVector]
+        av.getArrowValueVector()
+      case _ =>
+        throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
     }
     val nullCount = valVector.getNullCount()
     val dataBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
@@ -266,10 +267,10 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       arrowTypesSupported(schema) &&
       (batch.column(0).isInstanceOf[ArrowColumnVector] ||
         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
-      logInfo("Using GpuArrowColumnarBatchBuilder")
+      logDebug("Using GpuArrowColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
     } else {
-      logInfo("Using GpuColumnarBatchBuilder")
+      logDebug("Using GpuColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
     }
     totalRows = 0

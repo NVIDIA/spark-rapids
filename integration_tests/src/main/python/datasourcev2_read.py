@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session
 
@@ -24,10 +25,6 @@ from spark_session import with_cpu_session
 # If that class is not present it skips the tests.
 
 catalogName = "columnar"
-tableName = "people"
-tableNameNoPart = "peoplenopart"
-columnarTableName = catalogName + "." + tableName
-columnarTableNameNoPart = catalogName + "." + tableNameNoPart
 columnarClass = 'org.apache.spark.sql.connector.InMemoryTableCatalog'
 
 def createPeopleCSVDf(spark, peopleCSVLocation):
@@ -39,15 +36,15 @@ def createPeopleCSVDf(spark, peopleCSVLocation):
         .withColumnRenamed("_c1", "age")\
         .withColumnRenamed("_c2", "job")
 
-def setupInMemoryTableWithPartitioning(spark, csv):
+def setupInMemoryTableWithPartitioning(spark, csv, tname, column_and_table):
     peopleCSVDf = createPeopleCSVDf(spark, csv)
-    peopleCSVDf.createOrReplaceTempView("people_csv")
-    spark.table("people_csv").write.partitionBy("job").saveAsTable(columnarTableName)
+    peopleCSVDf.createOrReplaceTempView(tname)
+    spark.table(tname).write.partitionBy("job").saveAsTable(column_and_table)
 
-def setupInMemoryTableNoPartitioning(spark, csv):
+def setupInMemoryTableNoPartitioning(spark, csv, tname, column_and_table):
     peopleCSVDf = createPeopleCSVDf(spark, csv)
-    peopleCSVDf.createOrReplaceTempView("people_csv")
-    spark.table("people_csv").write.saveAsTable(columnarTableNameNoPart)
+    peopleCSVDf.createOrReplaceTempView(tname)
+    spark.table(tname).write.saveAsTable(column_and_table)
 
 def readTable(csvPath, tableToRead):
     return lambda spark: spark.table(tableToRead)\
@@ -61,8 +58,6 @@ def createDatabase(spark):
         pytest.skip("Failed to load catalog for datasource v2 {}, jar is probably missing".format(columnarClass))
 
 def cleanupDatabase(spark):
-    spark.sql("drop table IF EXISTS " + tableName)
-    spark.sql("drop table IF EXISTS " + tableNameNoPart)
     spark.sql("drop database IF EXISTS " + catalogName)
 
 @pytest.fixture(autouse=True)
@@ -73,26 +68,35 @@ def setupAndCleanUp():
     with_cpu_session(lambda spark : cleanupDatabase(spark),
             conf={'spark.sql.catalog.columnar': columnarClass})
 
+@allow_non_gpu('ShowTablesExec', 'DropTableExec')
 @pytest.mark.parametrize('csv', ['people.csv'])
-def test_read_round_trip_partitioned(std_input_path, csv):
+def test_read_round_trip_partitioned(std_input_path, csv, spark_tmp_table_factory):
     csvPath = std_input_path + "/" + csv
-    with_cpu_session(lambda spark : setupInMemoryTableWithPartitioning(spark, csvPath),
+    tableName = spark_tmp_table_factory.get()
+    columnarTableName = catalogName + "." + tableName
+    with_cpu_session(lambda spark : setupInMemoryTableWithPartitioning(spark, csvPath, tableName, columnarTableName),
             conf={'spark.sql.catalog.columnar': columnarClass})
     assert_gpu_and_cpu_are_equal_collect(readTable(csvPath, columnarTableName),
             conf={'spark.sql.catalog.columnar': columnarClass})
 
+@allow_non_gpu('ShowTablesExec', 'DropTableExec')
 @pytest.mark.parametrize('csv', ['people.csv'])
-def test_read_round_trip_no_partitioned(std_input_path, csv):
+def test_read_round_trip_no_partitioned(std_input_path, csv, spark_tmp_table_factory):
     csvPath = std_input_path + "/" + csv
-    with_cpu_session(lambda spark : setupInMemoryTableNoPartitioning(spark, csvPath),
+    tableNameNoPart = spark_tmp_table_factory.get()
+    columnarTableNameNoPart = catalogName + "." + tableNameNoPart
+    with_cpu_session(lambda spark : setupInMemoryTableNoPartitioning(spark, csvPath, tableNameNoPart, columnarTableNameNoPart),
             conf={'spark.sql.catalog.columnar': columnarClass})
     assert_gpu_and_cpu_are_equal_collect(readTable(csvPath, columnarTableNameNoPart),
             conf={'spark.sql.catalog.columnar': columnarClass})
 
+@allow_non_gpu('ShowTablesExec', 'DropTableExec')
 @pytest.mark.parametrize('csv', ['people.csv'])
-def test_read_round_trip_no_partitioned_arrow_off(std_input_path, csv):
+def test_read_round_trip_no_partitioned_arrow_off(std_input_path, csv, spark_tmp_table_factory):
     csvPath = std_input_path + "/" + csv
-    with_cpu_session(lambda spark : setupInMemoryTableNoPartitioning(spark, csvPath),
+    tableNameNoPart = spark_tmp_table_factory.get()
+    columnarTableNameNoPart = catalogName + "." + tableNameNoPart
+    with_cpu_session(lambda spark : setupInMemoryTableNoPartitioning(spark, csvPath, tableNameNoPart, columnarTableNameNoPart),
             conf={'spark.sql.catalog.columnar': columnarClass,
                   'spark.rapids.arrowCopyOptmizationEnabled': 'false'})
     assert_gpu_and_cpu_are_equal_collect(readTable(csvPath, columnarTableNameNoPart),
