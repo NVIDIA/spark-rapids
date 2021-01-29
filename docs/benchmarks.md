@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Benchmarks
-nav_exclude: true
+nav_order: 8
 ---
 # Benchmarks
 

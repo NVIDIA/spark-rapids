@@ -1,7 +1,8 @@
 ---
 layout: page
 title: RAPIDS-Accelerated User-Defined Functions
-nav_order: 9
+parent: Additional Functionality
+nav_order: 3
 ---
 # RAPIDS-Accelerated User-Defined Functions
 
