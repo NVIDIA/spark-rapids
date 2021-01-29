@@ -6,18 +6,23 @@ parent: Getting-Started
 ---
 # Get Started with RAPIDS with Alluxio
 
-Alluxio is a data orchestration platform that brings your data closer to compute across
-clusters, regions, clouds, and countries. This guide will go through how to set up the
-RAPIDS Accelerator for Apache Spark with Alluxio with a on premise cluster.
+RAPIDS plugin can remarkably accelerate the computing part of the whole SQL query by
+leveraging GPUs, but it’s hard to accelerate the data reading process when the data
+is in the cloud file system because of network overhead. Alluxio is an open source
+data orchestration platform that brings your data closer to compute across clusters,
+regions, clouds, and countries for reducing the network overhead. This guide will
+go through how to set up the RAPIDS Accelerator for Apache Spark with Alluxio with
+a on premise cluster.
 
 ## Prerequisites
 
 Assuming that user has successfully setup and ran the RAPIDS Accelerator with on premise
 cluster according to [this doc](getting-started-on-prem.md)
 
-This guide takes Swiftstack as Alluxio’s under storage system and Yarn cluster with 2
-NodeManagers and 1 ResourceManager as an example. The hostnames of Yarn cluster are
-respectively
+This guide will deploy Alluxio on Yarn cluster with 2 NodeManagers and 1 ResourceManager,
+and describe the instructions to configure Swiftstack as Alluxio’s under storage system.
+
+Let's assuem the hostnames of Yarn cluster are respectively
 
 ``` json
 RM_hostname
