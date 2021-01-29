@@ -1,7 +1,8 @@
 ---
 layout: page
 title: RAPIDS Cache Serializer
-nav_order: 12
+parent: Additional Functionality
+nav_order: 2
 ---
 # RAPIDS Cache Serializer  
   Apache Spark provides an important feature to cache intermediate data and provide

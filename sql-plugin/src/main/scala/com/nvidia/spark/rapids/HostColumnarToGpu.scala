@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,83 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.ByteBuffer
+
+import org.apache.arrow.vector.ValueVector
+
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
-object HostColumnarToGpu {
+object HostColumnarToGpu extends Logging {
+
+  // use reflection to get access to a private field in a class
+  private def getClassFieldAccessible(className: String, fieldName: String) = {
+    val classObj = Class.forName(className)
+    val fields = classObj.getDeclaredFields.toList
+    val field = fields.filter( x => {
+      x.getName.contains(fieldName)
+    }).head
+    field.setAccessible(true)
+    field
+  }
+
+  private lazy val accessorField = {
+    getClassFieldAccessible("org.apache.spark.sql.vectorized.ArrowColumnVector", "accessor")
+  }
+
+  private lazy val vecField = {
+    getClassFieldAccessible("org.apache.spark.sql.vectorized.ArrowColumnVector$ArrowVectorAccessor",
+      "vector")
+  }
+
+  // use reflection to get value vector from ArrowColumnVector
+  private def getArrowValueVector(cv: ColumnVector): ValueVector = {
+    val arrowCV = cv.asInstanceOf[ArrowColumnVector]
+    val accessor = accessorField.get(arrowCV)
+    vecField.get(accessor).asInstanceOf[ValueVector]
+  }
+
+  def arrowColumnarCopy(
+      cv: ColumnVector,
+      ab: ai.rapids.cudf.ArrowColumnBuilder,
+      nullable: Boolean,
+      rows: Int): Unit = {
+    val valVector = cv match {
+      case v: ArrowColumnVector =>
+        try {
+          getArrowValueVector(v)
+        } catch {
+          case e: Exception =>
+            throw new IllegalStateException("Trying to read from a ArrowColumnVector but can't " +
+              "access its Arrow ValueVector", e)
+        }
+      case av: AccessibleArrowColumnVector =>
+        av.getArrowValueVector()
+      case _ =>
+        throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
+    }
+    val nullCount = valVector.getNullCount()
+    val dataBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
+    val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
+    // this is a bit ugly, not all Arrow types have the offsets buffer
+    var offsets: ByteBuffer = null
+    try {
+      offsets =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
+    } catch {
+      case e: UnsupportedOperationException =>
+        // swallow the exception and assume no offsets buffer
+    }
+    ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
+  }
+
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
     (cv.dataType(), nullable) match {
@@ -159,7 +226,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     concatTime: SQLMetric,
     totalTime: SQLMetric,
     peakDevMemory: SQLMetric,
-    opName: String)
+    opName: String,
+    useArrowCopyOpt: Boolean)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
     numInputRows,
@@ -174,33 +242,53 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   // RequireSingleBatch goal is intentionally not supported in this iterator
   assert(goal != RequireSingleBatch)
 
-  var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilder = _
+  var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilderBase = _
   var totalRows = 0
   var maxDeviceMemory: Long = 0
+
+  // the arrow cudf converter only supports primitive types and strings
+  // decimals and nested types aren't supported yet
+  private def arrowTypesSupported(schema: StructType): Boolean = {
+    val dataTypes = schema.fields.map(_.dataType)
+    dataTypes.forall(GpuOverrides.isSupportedType(_))
+  }
 
   /**
    * Initialize the builders using an estimated row count based on the schema and the desired
    * batch size defined by [[RapidsConf.GPU_BATCH_SIZE_BYTES]].
    */
-  override def initNewBatch(): Unit = {
+  override def initNewBatch(batch: ColumnarBatch): Unit = {
     if (batchBuilder != null) {
       batchBuilder.close()
       batchBuilder = null
     }
+
     // when reading host batches it is essential to read the data immediately and pass to a
     // builder and we need to determine how many rows to allocate in the builder based on the
     // schema and desired batch size
     batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
       GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
-    batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
+
+    // if no columns then probably a count operation so doesn't matter which builder we use
+    // as we won't actually copy any data and we can't tell what type of data it is without
+    // having a column
+    if (useArrowCopyOpt && batch.numCols() > 0 &&
+      arrowTypesSupported(schema) &&
+      (batch.column(0).isInstanceOf[ArrowColumnVector] ||
+        batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
+      logDebug("Using GpuArrowColumnarBatchBuilder")
+      batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
+    } else {
+      logDebug("Using GpuColumnarBatchBuilder")
+      batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
+    }
     totalRows = 0
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     val rows = batch.numRows()
     for (i <- 0 until batch.numCols()) {
-      HostColumnarToGpu.columnarCopy(batch.column(i), batchBuilder.builder(i),
-        schema.fields(i).nullable, rows)
+      batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
     }
     totalRows += rows
   }
@@ -300,10 +388,12 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
     val outputSchema = schema
 
     val batches = child.executeColumnar()
+
+    val confUseArrow = new RapidsConf(child.conf).useArrowCopyOptimization
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
-        totalTime, peakDevMemory, "HostColumnarToGpu")
+        totalTime, peakDevMemory, "HostColumnarToGpu", confUseArrow)
     }
   }
 }
