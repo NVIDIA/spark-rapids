@@ -15765,7 +15765,7 @@ Accelerator support is described below.
 <td rowSpan="2">CollectList</td>
 <td rowSpan="2">`collect_list`</td>
 <td rowSpan="2">Collect a list of elements, now only supported by windowing.</td>
-<td rowSpan="2">None</td>
+<td rowSpan="2">This is disabled by default because for now the GPU collects null values to a list, but Spark does not. This will be fixed in future releases.</td>
 <td rowSpan="2">window</td>
 <td>input</td>
 <td>S</td>

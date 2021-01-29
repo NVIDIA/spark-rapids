@@ -2174,8 +2174,9 @@ object GpuOverrides {
       }),
     expr[CollectList](
       "Collect a list of elements, now only supported by windowing.",
-      /* It should be 'fullAgg' eventually but now only support windowing, so 'windowOnly' */
-      ExprChecks.windowOnly(
+      /* It should be 'fullAgg' eventually but now only support windowing,
+         so 'aggNotGroupByOrReduction' */
+      ExprChecks.aggNotGroupByOrReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
@@ -2184,7 +2185,8 @@ object GpuOverrides {
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
-      })
+      }).disabledByDefault("for now the GPU collects null values to a list, but Spark does not." +
+      " This will be fixed in future releases.")
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =

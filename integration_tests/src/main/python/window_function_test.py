@@ -262,4 +262,5 @@ def test_window_aggs_for_rows_collect_list(data_gen):
         '    (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_decimal, '
         '  collect_list(c_struct) over '
         '    (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_struct '
-        'from window_collect_table ')
+        'from window_collect_table ',
+        {'spark.rapids.sql.expression.CollectList': 'true'})
