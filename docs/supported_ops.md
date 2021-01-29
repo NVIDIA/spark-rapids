@@ -143,7 +143,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -258,8 +258,8 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S*</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -281,8 +281,8 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S*</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -357,6 +357,29 @@ Accelerator supports are described below.
 <td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 <td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>TakeOrderedAndProjectExec</td>
+<td>Take the first limit elements as defined by the sortOrder, and do projection if needed.</td>
+<td>None</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -1916,8 +1939,8 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td><em>PS (result may round slightly differently)</em></td>
+<td><em>PS (result may round slightly differently)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -10803,8 +10826,8 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td><em>PS (result may round slightly differently)</em></td>
+<td><em>PS (result may round slightly differently)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15699,12 +15722,12 @@ Accelerator support is described below.
 <td rowSpan="2">window</td>
 <td>input</td>
 <td> </td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15725,7 +15748,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>

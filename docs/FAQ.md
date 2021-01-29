@@ -17,6 +17,37 @@ with `collect`, `show` or `write` a new `DataFrame` is constructed causing Spark
 query. This is why `spark.rapids.sql.enabled` is still respected when running, even if explain shows
 stale results.
 
+### Why does the plan for the GPU query look different from the CPU query?
+
+Typically, there is a one to one mapping between CPU stages in a plan and GPU stages.  There are a
+few places where this is not the case.
+
+* `WholeStageCodeGen` - The GPU plan typically does not do code generation, and does not support 
+  generating code for an entire stage in the plan. Code generation reduces the cost of processing 
+  data one row at a time. The GPU plan processes the data in a columnar format, so the costs 
+  of processing a batch is amortized over the entire batch of data and code generation is not
+  needed.
+
+* `ColumnarToRow` and `RowToColumnar` transitions - The CPU version of Spark plans typically process 
+  data in a row based format. The main exception to this is reading some kinds of columnar data, 
+  like Parquet. Transitioning between the CPU and the GPU also requires transitioning between row
+  and columnar formatted data.
+
+* `GpuCoalesceBatches` and `GpuShuffleCoalesce` - Processing data on the GPU scales 
+  sublinearly. That means doubling the data does often takes less than half the time. Because of
+  this we want to process larger batches of data when possible. These operators will try to combine
+  smaller batches of data into fewer, larger batches to process more efficiently.
+
+* `SortMergeJoin` - The RAPIDS accelerator does not support sort merge joins yet. For now, we 
+  translate sort merge joins into shuffled hash joins. Because of this there are times when sorts 
+  may be removed or other sorts added to meet the ordering requirements of the query.
+
+* `TakeOrderedAndProject` - The `TakeOrderedAndProject` operator will take the top N entries in 
+  each task, shuffle the results to a single executor and then take the top N results from that. 
+  The GPU plan often has more metrics than the CPU versions do, and when we tried to combine all of 
+  these operations into a single stage the metrics were confusing to understand. Instead, we split 
+  the single stage up into multiple smaller parts, so the metrics are clearer.
+
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
 The RAPIDS Accelerator for Apache Spark requires version 3.0.0 or 3.0.1 of Apache Spark. Because the

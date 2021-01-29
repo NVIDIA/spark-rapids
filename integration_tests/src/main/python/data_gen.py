@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import random
 from spark_session import is_tz_utc
 import sre_yield
 import struct
+from conftest import skip_unless_precommit_tests
 
 class DataGen:
     """Base class for data generation"""
@@ -221,13 +222,13 @@ class DecimalGen(DataGen):
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
-        self._scale = scale
-        self._precision = precision
+        self.scale = scale
+        self.precision = precision
         pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
         self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._precision) + ',' + str(self._scale) + ')'
+        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def start(self, rand):
         strs = self.base_strs
@@ -568,7 +569,7 @@ class NullGen(DataGen):
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
-        pytest.skip('The java system time zone is not set to UTC')
+        skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""

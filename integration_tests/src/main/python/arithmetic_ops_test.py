@@ -221,6 +221,7 @@ def test_decimal_bround(data_gen):
                 'bround(a)',
                 'bround(a, -1)',
                 'bround(a, 1)',
+                'bround(a, 2)',
                 'bround(a, 10)'),
                 conf=allow_negative_scale_of_decimal_conf)
 
@@ -233,6 +234,7 @@ def test_decimal_round(data_gen):
                 'round(a)',
                 'round(a, -1)',
                 'round(a, 1)',
+                'round(a, 2)',
                 'round(a, 10)'),
                conf=allow_negative_scale_of_decimal_conf)
 
@@ -288,7 +290,7 @@ def test_radians(data_gen):
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
-@pytest.mark.xfail(rason='https://github.com/NVIDIA/spark-rapids/issues/109')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/109')
 def test_degrees(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('degrees(a)'))

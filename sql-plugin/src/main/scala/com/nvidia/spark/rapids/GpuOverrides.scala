@@ -1786,7 +1786,7 @@ object GpuOverrides {
       }),
     expr[Average](
       "Average aggregate operator",
-      ExprChecks.aggNotWindow(
+      ExprChecks.fullAgg(
         TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
         Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
@@ -1807,9 +1807,20 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("value", TypeSig.numeric +
+            TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+            TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+            TypeSig.numeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.child.dataType match {
+            case FloatType | DoubleType if !conf.isIncompatEnabled =>
+              willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
+            case _ => // NOOP
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBRound(lhs, rhs)
       }),
@@ -1817,9 +1828,20 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("value", TypeSig.numeric +
+            TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+            TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+            TypeSig.numeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.child.dataType match {
+            case FloatType | DoubleType if !conf.isIncompatEnabled =>
+              willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
+            case _ => // NOOP
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRound(lhs, rhs)
       }),
@@ -2355,13 +2377,38 @@ object GpuOverrides {
           GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
             childPlans.head.convertIfNeeded())
       }),
+    exec[TakeOrderedAndProjectExec](
+      "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.all),
+      (takeExec, conf, p, r) =>
+        new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
+          val sortOrder: Seq[BaseExprMeta[SortOrder]] =
+            takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val projectList: Seq[BaseExprMeta[NamedExpression]] =
+            takeExec.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
+
+          override def convertToGpu(): GpuExec = {
+            // To avoid metrics confusion we split a single stage up into multiple parts
+            val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
+            GpuTopN(takeExec.limit,
+              so,
+              projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+                GpuTopN(takeExec.limit,
+                  so,
+                  takeExec.child.output,
+                  childPlans.head.convertIfNeeded())))
+          }
+        }),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL,
+        TypeSig.all),
       (localLimitExec, conf, p, r) =>
         new SparkPlanMeta[LocalLimitExec](localLimitExec, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuLocalLimitExec(localLimitExec.limit, childPlans(0).convertIfNeeded())
+            GpuLocalLimitExec(localLimitExec.limit, childPlans.head.convertIfNeeded())
         }),
     exec[ArrowEvalPythonExec](
       "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
@@ -2388,15 +2435,15 @@ object GpuOverrides {
         }),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (globalLimitExec, conf, p, r) =>
         new SparkPlanMeta[GlobalLimitExec](globalLimitExec, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuGlobalLimitExec(globalLimitExec.limit, childPlans(0).convertIfNeeded())
+            GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded())
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
           "of rows in a batch it could help by limiting the number of rows transferred from " +

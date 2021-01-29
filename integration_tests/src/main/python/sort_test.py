@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,6 +34,14 @@ def test_single_orderby(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             conf = allow_negative_scale_of_decimal_conf)
 
+# SPARK CPU itself has issue with negative scale for take ordered and project
+orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
+@pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
+@pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
+def test_single_orderby_with_limit(data_gen, order):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
+
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_sort_in_part(data_gen, order):
@@ -52,3 +60,10 @@ def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()),
             conf = allow_negative_scale_of_decimal_conf)
+
+# SPARK CPU itself has issue with negative scale for take ordered and project
+orderable_gens_sort_without_neg_decimal = [n for n in orderable_gens_sort if not (isinstance(n, DecimalGen) and n.scale < 0)]
+@pytest.mark.parametrize('data_gen', orderable_gens_sort_without_neg_decimal, ids=idfn)
+def test_multi_orderby_with_limit(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()).limit(100))
