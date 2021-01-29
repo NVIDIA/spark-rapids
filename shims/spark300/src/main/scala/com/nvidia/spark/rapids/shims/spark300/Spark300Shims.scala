@@ -21,11 +21,8 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
-<<<<<<< HEAD
 import org.apache.arrow.vector.ValueVector
-=======
 import org.apache.hadoop.fs.Path
->>>>>>> origin/branch-0.4
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
@@ -466,6 +463,7 @@ class Spark300Shims extends SparkShims {
 
   override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
     vec.getOffsetBuffer().nioBuffer()
+  }
 
   override def replaceWithAlluxioPathIfNeeded(
       conf: RapidsConf,
