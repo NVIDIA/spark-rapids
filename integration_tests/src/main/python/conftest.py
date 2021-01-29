@@ -62,6 +62,9 @@ def is_databricks_runtime():
 def is_emr_runtime():
     return runtime_env() == "emr"
 
+def is_dataproc_runtime():
+    return runtime_env() == "dataproc"
+
 _limit = -1
 
 def get_limit():
