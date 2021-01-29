@@ -558,8 +558,8 @@ case class GpuCollectList(child: Expression,
     Aggregation.collect().onColumn(inputs.head._2)
 
   // Declarative aggregate. But for now 'CollectList' does not support it.
-  // The members as below should NOT be used yet, ensured by the "TypeCheck.windowOnly"
-  // when overriding the expression.
+  // The members as below should NOT be used yet, ensured by the
+  // "TypeCheck.aggNotGroupByOrReduction" when trying to override the expression.
   private lazy val cudfList = AttributeReference("collect_list", dataType)()
   override val initialValues: Seq[GpuExpression] = Seq.empty
   override val updateExpressions: Seq[Expression] = Seq.empty
