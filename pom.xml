@@ -178,6 +178,7 @@
         <spark311.version>3.1.1-SNAPSHOT</spark311.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
+        <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -494,6 +495,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven.jar.plugin.version}</version>
                     <executions>
                         <execution>
                             <goals>
