@@ -63,15 +63,11 @@ object HostColumnarToGpu extends Logging {
     } else {
       throw new Exception("not arrow data shouldn't be here!")
     }
-    // val dataBuf = valVector.getDataBuffer.nioBuffer()
     val nullCount = valVector.getNullCount()
-    // val validity = valVector.getValidityBuffer.nioBuffer()
     val dataBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
     val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
-
     var offsets:ByteBuffer = null
-    // this is a bit ugly, not all Arrow types need this so try and
-    // just catch it
+    // this is a bit ugly, not all Arrow types need this so try and just catch it
     try {
       offsets =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
     } catch {
@@ -264,10 +260,10 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       arrowTypesSupported(schema) &&
       (batch.column(0).isInstanceOf[ArrowColumnVector] ||
         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
-      logWarning("Using GpuArrowColumnarBatchBuilder")
+      logInfo("Using GpuArrowColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
     } else {
-      logWarning("Using GpuColumnarBatchBuilder")
+      logInfo("Using GpuColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
     }
     totalRows = 0
