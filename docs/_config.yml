@@ -15,7 +15,7 @@
 #
 
 
-theme: just-the-docs
+remote_theme: pmarsceill/just-the-docs
 
 aux_links:
   "Spark Rapids Plugin on Github":
