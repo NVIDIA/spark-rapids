@@ -785,7 +785,6 @@ object RapidsConf {
       "which means:  " +
       "     s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv and " +
       "     gcs:/bar/b.csv will be replaced to alluxio://0.1.2.3:19998/bar/b.csv")
-    .internal()
     .stringConf
     .toSequence
     .createOptional
