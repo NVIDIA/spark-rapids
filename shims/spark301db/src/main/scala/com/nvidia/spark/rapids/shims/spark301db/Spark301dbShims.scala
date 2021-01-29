@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims.spark301db
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.rapids.shims.spark301db._
 import org.apache.spark.rdd.RDD
@@ -117,8 +118,15 @@ class Spark301dbShims extends Spark301Shims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
+            val location = replaceWithAlluxioPathIfNeeded(
+              conf,
+              wrapped.relation,
+              wrapped.partitionFilters,
+              wrapped.dataFilters)
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
@@ -230,5 +238,11 @@ class Spark301dbShims extends Spark301Shims {
   override def getGpuShuffleExchangeExec(
       queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
+  }
+
+  // Databricks has changed files of PartitionDirectory to SerializableFileStatus
+  override def replacePartitionDirectoryFiles(partitionDir: PartitionDirectory,
+      replaceFunc: Path => Path): Seq[Path] = {
+    partitionDir.files.map(f => replaceFunc(f.getPath))
   }
 }

@@ -777,6 +777,18 @@ object RapidsConf {
       .stringConf
       .createWithDefault("none")
 
+  // ALLUXIO CONFIGS
+
+  val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
+    .doc("List of paths to be replaced with corresponding alluxio scheme. Eg, when configure" +
+      "is set to \"s3:/foo->alluxio://0.1.2.3:19998/foo,gcs:/bar->alluxio://0.1.2.3:19998/bar\", " +
+      "which means:  " +
+      "     s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv and " +
+      "     gcs:/bar/b.csv will be replaced to alluxio://0.1.2.3:19998/bar/b.csv")
+    .stringConf
+    .toSequence
+    .createOptional
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -1116,6 +1128,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
+
+  lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
