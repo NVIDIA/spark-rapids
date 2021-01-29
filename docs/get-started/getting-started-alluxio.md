@@ -22,7 +22,7 @@ cluster according to [this doc](getting-started-on-prem.md)
 This guide will deploy Alluxio on Yarn cluster with 2 NodeManagers and 1 ResourceManager,
 and describe the instructions to configure Swiftstack as Alluxio’s under storage system.
 
-Let's assuem the hostnames of Yarn cluster are respectively
+Let's assume the hostnames of Yarn cluster are respectively
 
 ``` json
 RM_hostname
@@ -107,6 +107,11 @@ ResourceManager.
    alluxio.worker.hostname=NM_hostname_X
    alluxio.user.hostname=NM_hostname_X
    ```
+
+   Note that Alluxio can manage other storage media (e.g. MEM, HDD) in addition to ssd,
+   so local data access speed may vary depending on the local storage media. To learn
+   more about this topic, please refer to the [tiered storage document](https://docs.alluxio.io/os/user/stable/en/core-services/Caching.html#multiple-tier-storage).
+
 5. Mount an existing S3 bucket to Alluxio.
 
    ``` bash
@@ -116,7 +121,7 @@ ResourceManager.
       alluxio://RM_hostname:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
    ```
 
-   for other filesystem, please refer to [this site](https://www.alluxio.io/)
+   For other filesystem, please refer to [this site](https://www.alluxio.io/)
 
 6. Start Alluxio cluster.
 
@@ -192,3 +197,4 @@ This section will give some links about how to configure, tune Alluxio and some 
 - [Alluxio configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
 - [Running Spark on Alluxio](https://docs.alluxio.io/os/user/stable/en/compute/Spark.html)
 - [Performance Tuning](https://docs.alluxio.io/ee/user/stable/en/operation/Performance-Tuning.html)
+- [Alluxio troublesshooting](https://docs.alluxio.io/os/user/stable/en/operation/Troubleshooting.html)
