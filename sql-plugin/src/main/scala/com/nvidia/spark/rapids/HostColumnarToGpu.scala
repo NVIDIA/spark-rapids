@@ -33,21 +33,30 @@ import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
 object HostColumnarToGpu extends Logging {
 
+  // use reflection to get access to a private field in a class
+  private def getClassFieldAccessible(className: String, fieldName: String) = {
+    val classObj = Class.forName(className)
+    val fields = classObj.getDeclaredFields.toList
+    val field = fields.filter( x => {
+      x.getName.contains(fieldName)
+    }).head
+    field.setAccessible(true)
+    field
+  }
+
+  private lazy val accessorField = {
+    getClassFieldAccessible("org.apache.spark.sql.vectorized.ArrowColumnVector", "accessor")
+  }
+
+  private lazy val vecField = {
+    getClassFieldAccessible("org.apache.spark.sql.vectorized.ArrowColumnVector$ArrowVectorAccessor", "vector")
+  }
+
   // use reflection to get value vector from ArrowColumnVector
   private def getArrowValueVector(cv: ColumnVector): ValueVector = {
     val arrowCV = cv.asInstanceOf[ArrowColumnVector]
-    val fields = arrowCV.getClass.getDeclaredFields.toList
-    val field = fields.filter( x => {
-      x.getName.contains("accessor")
-    }).head
-    field.setAccessible(true)
-    val accessor = field.get(arrowCV)
-    val accessFields = accessor.getClass().getSuperclass().getDeclaredFields().toList
-    val valVecField = accessFields.filter( x => {
-      x.getName.contains("vector")
-    }).head
-    valVecField.setAccessible(true)
-    valVecField.get(accessor).asInstanceOf[ValueVector]
+    val accessor = accessorField.get(arrowCV)
+    vecField.get(accessor).asInstanceOf[ValueVector]
   }
 
   def arrowColumnarCopy(
