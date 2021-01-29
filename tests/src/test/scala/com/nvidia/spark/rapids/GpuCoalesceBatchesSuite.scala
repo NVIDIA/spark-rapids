@@ -16,10 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.JavaConverters._
-
 import java.io.File
 import java.nio.file.Files
+
+import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
 import com.nvidia.spark.rapids.format.CodecType
