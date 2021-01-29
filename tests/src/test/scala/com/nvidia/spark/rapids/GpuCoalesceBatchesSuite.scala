@@ -21,11 +21,15 @@ import java.nio.file.Files
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, Table}
 import com.nvidia.spark.rapids.format.CodecType
+import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.vector.IntVector
+import org.apache.arrow.vector.complex.MapVector
+import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
 
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
-import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, LongType, StructField, StructType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
@@ -92,6 +96,79 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       assert(coalesce.longMetric(GpuMetricNames.NUM_OUTPUT_BATCHES).value == 1)
 
     }, conf)
+  }
+
+  /** Maps field from Spark to Arrow. NOTE: timeZoneId required for TimestampType */
+  private def toArrowField(
+      name: String, dt: DataType, nullable: Boolean, timeZoneId: String): Field = {
+    dt match {
+      case ArrayType(elementType, containsNull) =>
+        val fieldType = new FieldType(nullable, ArrowType.List.INSTANCE, null)
+        new Field(name, fieldType,
+          Seq(toArrowField("element", elementType, containsNull, timeZoneId)).asJava)
+      case StructType(fields) =>
+        val fieldType = new FieldType(nullable, ArrowType.Struct.INSTANCE, null)
+        new Field(name, fieldType,
+          fields.map { field =>
+            toArrowField(field.name, field.dataType, field.nullable, timeZoneId)
+          }.toSeq.asJava)
+      case MapType(keyType, valueType, valueContainsNull) =>
+        val mapType = new FieldType(nullable, new ArrowType.Map(false), null)
+        // Note: Map Type struct can not be null, Struct Type key field can not be null
+        new Field(name, mapType,
+          Seq(toArrowField(MapVector.DATA_VECTOR_NAME,
+            new StructType()
+              .add(MapVector.KEY_NAME, keyType, nullable = false)
+              .add(MapVector.VALUE_NAME, valueType, nullable = valueContainsNull),
+            nullable = false,
+            timeZoneId)).asJava)
+      case dataType =>
+        val fieldType = new FieldType(nullable, toArrowType(dataType, timeZoneId), null)
+        new Field(name, fieldType, Seq.empty[Field].asJava)
+    }
+  }
+
+  test("test HostToGpuCoalesceIterator with arrow") {
+    val rootAllocator = new RootAllocator(Long.MaxValue)
+    val allocator = rootAllocator.newChildAllocator("int", 0, Long.MaxValue)
+    val vector1 = toArrowField("int1", IntegerType, nullable = true, null)
+      .createVector(allocator).asInstanceOf[IntVector]
+    vector1.allocateNew()
+    val vector2 = toArrowField("int2", IntegerType, nullable = true, null)
+      .createVector(allocator).asInstanceOf[IntVector]
+    vector2.allocateNew()
+
+    (0 until 10).foreach { i =>
+      vector1.setSafe(i, i)
+      vector2.setSafe(i + 1, i)
+    }
+    vector1.setNull(10)
+    vector1.setValueCount(11)
+    vector2.setNull(0)
+    vector2.setValueCount(11)
+
+    val columnVectors = Seq(new ArrowColumnVector(vector1), new ArrowColumnVector(vector2))
+    val schema = StructType(Seq(StructField("int1", IntegerType), StructField("int2", IntegerType)))
+    val batch = new ColumnarBatch(columnVectors.toArray)
+    val iter = Iterator.single(batch)
+
+    val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(iter,
+      TargetSize(1024),
+      schema: StructType,
+      new SQLMetric("t1", 0),
+      new SQLMetric("t2", 0),
+      new SQLMetric("t3", 0),
+      new SQLMetric("t4", 0),
+      new SQLMetric("t5", 0),
+      new SQLMetric("t6", 0),
+      new SQLMetric("t7", 0),
+      new SQLMetric("t8", 0),
+      "testcoalesce",
+      useArrowCopyOpt = true)
+
+    hostToGpuCoalesceIterator.initNewBatch(batch)
+    assert(hostToGpuCoalesceIterator.batchBuilder.
+      isInstanceOf[GpuColumnVector.GpuColumnarBatchBuilder])
   }
 
   test("coalesce HostColumnarToGpu") {
