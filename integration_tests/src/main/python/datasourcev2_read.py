@@ -18,6 +18,18 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from pyspark.sql.types import *
 from spark_session import with_cpu_session
 
+# This test requires a datasource v2 jar containing the class
+# org.apache.spark.sql.connector.InMemoryTableCatalog
+# which returns ArrowColumnVectors be specified in order for it to run.
+# If that class is not present it skips the tests.
+
+catalogName = "columnar"
+tableName = "people"
+tableNameNoPart = "peoplenopart"
+columnarTableName = catalogName + "." + tableName
+columnarTableNameNoPart = catalogName + "." + tableNameNoPart
+columnarClass = 'org.apache.spark.sql.connector.InMemoryTableCatalog'
+
 def createPeopleCSVDf(spark, peopleCSVLocation):
     return spark.read.format("csv")\
         .option("header", "false")\
@@ -26,13 +38,6 @@ def createPeopleCSVDf(spark, peopleCSVLocation):
         .withColumnRenamed("_c0", "name")\
         .withColumnRenamed("_c1", "age")\
         .withColumnRenamed("_c2", "job")
-
-catalogName = "columnar"
-tableName = "people"
-tableNameNoPart = "peoplenopart"
-columnarTableName = catalogName + "." + tableName
-columnarTableNameNoPart = catalogName + "." + tableNameNoPart
-columnarClass = 'org.apache.spark.sql.connector.InMemoryTableCatalog'
 
 def setupInMemoryTableWithPartitioning(spark, csv):
     peopleCSVDf = createPeopleCSVDf(spark, csv)
