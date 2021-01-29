@@ -16,6 +16,9 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.ByteBuffer
+
+import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -168,6 +171,10 @@ trait SparkShims {
       explicitMetadata: Option[Metadata] = None): Alias
 
   def shouldIgnorePath(path: String): Boolean
+
+  def getArrowDataBuf(vec: ValueVector): ByteBuffer
+  def getArrowValidityBuf(vec: ValueVector): ByteBuffer
+  def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer
 
   def replaceWithAlluxioPathIfNeeded(
       conf: RapidsConf,

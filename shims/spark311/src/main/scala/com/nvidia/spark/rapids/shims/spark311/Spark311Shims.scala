@@ -16,9 +16,12 @@
 
 package com.nvidia.spark.rapids.shims.spark311
 
+import java.nio.ByteBuffer
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
+import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
@@ -386,5 +389,18 @@ class Spark311Shims extends Spark301Shims {
 
   override def shouldIgnorePath(path: String): Boolean = {
     HadoopFSUtilsShim.shouldIgnorePath(path)
+  }
+
+  // Arrow version changed between Spark versions
+  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
+    vec.getDataBuffer.nioBuffer()
+  }
+
+  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
+    vec.getValidityBuffer.nioBuffer()
+  }
+
+  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
+    vec.getOffsetBuffer.nioBuffer()
   }
 }
