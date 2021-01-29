@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,18 +56,24 @@ object HostColumnarToGpu extends Logging {
       nullable: Boolean,
       rows: Int): Unit = {
     val valVector = if (cv.isInstanceOf[ArrowColumnVector]) {
-      getArrowValueVector(cv)
+      try {
+        getArrowValueVector(cv)
+      } catch {
+        case e: Exception =>
+          throw new IllegalStateException("Trying to read from a ArrowColumnVector but can't " +
+            "have access to its ValueVector", e)
+      }
     } else if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
       val arrowVec = cv.asInstanceOf[AccessibleArrowColumnVector]
       arrowVec.getArrowValueVector()
     } else {
-      throw new Exception("not arrow data shouldn't be here!")
+      throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
     }
     val nullCount = valVector.getNullCount()
     val dataBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
     val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
-    var offsets:ByteBuffer = null
-    // this is a bit ugly, not all Arrow types need this so try and just catch it
+    // this is a bit ugly, not all Arrow types have the offsets buffer
+    var offsets: ByteBuffer = null
     try {
       offsets =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
     } catch {
