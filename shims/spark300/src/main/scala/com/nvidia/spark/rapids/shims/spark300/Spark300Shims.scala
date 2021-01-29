@@ -20,6 +20,7 @@ import java.time.ZoneId
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
@@ -35,7 +36,8 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
@@ -158,8 +160,15 @@ class Spark300Shims extends SparkShims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
+            val location = replaceWithAlluxioPathIfNeeded(
+              conf,
+              wrapped.relation,
+              wrapped.partitionFilters,
+              wrapped.dataFilters)
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
@@ -439,5 +448,94 @@ class Spark300Shims extends SparkShims {
 
   override def shouldIgnorePath(path: String): Boolean = {
     InMemoryFileIndex.shouldFilterOut(path)
+  }
+
+  override def replaceWithAlluxioPathIfNeeded(
+      conf: RapidsConf,
+      relation: HadoopFsRelation,
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]): FileIndex = {
+
+    val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
+
+    if (alluxioPathsReplace.isDefined) {
+      // alluxioPathsReplace: Seq("key->value", "key1->value1")
+      // turn the rules to the Map with eg
+      // { s3:/foo -> alluxio://0.1.2.3:19998/foo,
+      //   gs:/bar -> alluxio://0.1.2.3:19998/bar,
+      //   /baz -> alluxio://0.1.2.3:19998/baz }
+      val replaceMapOption = alluxioPathsReplace.map(rules => {
+        rules.map(rule => {
+          val split = rule.split("->")
+          if (split.size == 2) {
+            split(0).trim -> split(1).trim
+          } else {
+            throw new IllegalArgumentException(s"Invalid setting for " +
+              s"${RapidsConf.ALLUXIO_PATHS_REPLACE.key}")
+          }
+        }).toMap
+      })
+
+      replaceMapOption.map(replaceMap => {
+
+        def isDynamicPruningFilter(e: Expression): Boolean =
+          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+
+        val partitionDirs = relation.location.listFiles(
+          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+
+        // replacement func to check if the file path is prefixed with the string user configured
+        // if yes, replace it
+        val replaceFunc = (f: Path) => {
+          val pathStr = f.toString
+          val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
+          if (matchedSet.size > 1) {
+            // never reach here since replaceMap is a Map
+            throw new IllegalArgumentException(s"Found ${matchedSet.size} same replacing rules " +
+              s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule for each " +
+              s"file path")
+          } else if (matchedSet.size == 1) {
+            new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
+          } else {
+            f
+          }
+        }
+
+        // replace all of input files
+        val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
+          replacePartitionDirectoryFiles(partitionDir, replaceFunc)
+        })
+
+        // replace all of rootPaths which are already unique
+        val rootPaths = relation.location.rootPaths.map(replaceFunc)
+
+        val parameters: Map[String, String] = relation.options
+
+        // infer PartitionSpec
+        val partitionSpec = GpuPartitioningUtils.inferPartitioning(
+          relation.sparkSession,
+          rootPaths,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          replaceFunc)
+
+        // generate a new InMemoryFileIndex holding paths with alluxio schema
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(partitionSpec))
+      }).getOrElse(relation.location)
+
+    } else {
+      relation.location
+    }
+  }
+
+  override def replacePartitionDirectoryFiles(partitionDir: PartitionDirectory,
+      replaceFunc: Path => Path): Seq[Path] = {
+    partitionDir.files.map(f => replaceFunc(f.getPath))
   }
 }

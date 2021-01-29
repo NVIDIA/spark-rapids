@@ -212,8 +212,15 @@ class Spark311Shims extends Spark301Shims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
+            val location = replaceWithAlluxioPathIfNeeded(
+              conf,
+              wrapped.relation,
+              wrapped.partitionFilters,
+              wrapped.dataFilters)
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
