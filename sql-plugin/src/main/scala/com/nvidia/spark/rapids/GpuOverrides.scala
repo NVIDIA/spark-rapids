@@ -668,7 +668,7 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out, unless it
         // will not work on the GPU
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
-          if (!this.canThisBeReplaced) {
+          if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
             super.print(append, depth, all)
           }
         }
@@ -700,7 +700,7 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out, unless it
         // will not work on the GPU
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
-          if (!this.canThisBeReplaced) {
+          if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
             super.print(append, depth, all)
           }
         }
@@ -1856,7 +1856,7 @@ object GpuOverrides {
           TypeSig.commonCudfTypes,
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
-        override def couldReplaceMessage: String = "does not block GPU acceleration"
+        override def replaceMessage: String = "not block GPU acceleration"
         override def noReplacementPossibleMessage(reasons: String): String =
           s"blocks running on GPU because $reasons"
 
@@ -2423,7 +2423,7 @@ object GpuOverrides {
             e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
           override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
 
-          override def couldReplaceMessage: String = "could partially run on GPU"
+          override def replaceMessage: String = "partially run on GPU"
           override def noReplacementPossibleMessage(reasons: String): String =
             s"cannot run even partially on the GPU because $reasons"
 
@@ -2630,6 +2630,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       } else {
         wrap.runAfterTagRules()
         if (!exp.equalsIgnoreCase("NONE")) {
+          wrap.tagForExplain()
           val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
           if (!explain.isEmpty) {
             logWarning(s"\n$explain")
