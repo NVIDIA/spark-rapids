@@ -17,6 +17,56 @@ with `collect`, `show` or `write` a new `DataFrame` is constructed causing Spark
 query. This is why `spark.rapids.sql.enabled` is still respected when running, even if explain shows
 stale results.
 
+### How can I tell what will run on the GPU and what will not run on it?
+<a name="explain"></a>
+
+An Apache Spark plan is transformed and optimized into a set of operators called a physical plan.
+This plan is then run through a set of rules to translate it to a version that runs on the GPU.
+If you want to know what will run on the GPU and what will not along with an explanation why you
+can set [spark.rapids.sql.explain](configs.md#sql.explain) to `ALL`. If you just want to see the
+operators not on the GPU you may set it to `NOT_ON_GPU`. Be aware that some queries end up being
+broken down into multiple jobs, and in those cases a separate log message might be output for each
+job. These are logged each time a query is compiled into an `RDD`, not just when the job runs.
+Because of this calling `explain` on a DataFrame will also trigger this to be logged.
+
+The format of each line follows the pattern
+```
+indicator operation<NAME> operator? explanation
+```
+
+In this `indicator` is one of the following
+  * `*` for operations that will run on the GPU
+  * `@` for operations that could run on the GPU but will not because they are a part of a larger
+    section of the plan that will not run on the GPU
+  * `#` for operations that have been removed from the plan. The reason they are removed will be
+    in the explanation.
+  * `!` for operations that cannot run on the GPU
+
+`operation` indicates the type of the operator.
+  * `Expression` These are typically functions that operate on columns of data and produce a column
+    of data.
+  * `Exec` These are higher level operations that operate on an entire table at a time.
+  * `Partitioning` These are different types of partitioning used when reorganizing data to move to
+    different tasks.
+  * `Input` These are different input formats used with a few input statements, but not all.
+  * `Output` These are different output formats used with a few output statements, but not all.
+  * `NOT_FOUND` These are for anything that the plugin has no replacement rule for.
+
+`NAME` is the name of the operator given by Spark.
+
+`operator?` is an optional string representation of the operator given by Spark.
+
+`explanation` is a text explanation saying if this will
+  * run on the GPU
+  * could run on the GPU but will not because of something outside this operator and an
+    explanation why
+  * will not run on the GPU with an explanation why
+  * will be removed from the plan with a reason why
+
+Generally if an operator is not compatible with Spark for some reason and is off the explanation
+will include information about how it is incompatible and what configs to set to enable the
+operator if you can accept the incompatibility.
+
 ### Why does the plan for the GPU query look different from the CPU query?
 
 Typically, there is a one to one mapping between CPU stages in a plan and GPU stages.  There are a
