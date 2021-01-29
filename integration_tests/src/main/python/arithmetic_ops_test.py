@@ -14,10 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import *
 from marks import incompat, approximate_float
-from py4j.protocol import Py4JJavaError
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_310
 import pyspark.sql.functions as f
@@ -501,17 +500,14 @@ def test_greatest(data_gen):
             lambda spark : gen_df(spark, gen).select(
                 f.greatest(*command_args)), conf=allow_negative_scale_of_decimal_conf)
 
-def _assert_div_by_zero(session_func, test_div_func, conf):
-    with pytest.raises(Py4JJavaError) as py4jError:
-        session_func(test_div_func, conf)
-    assert 'java.lang.ArithmeticException: divide by zero' in str(py4jError.value.java_exception)
-
 @pytest.mark.parametrize('ansi_mode', ['nonAnsi', 'ansi'])
 @pytest.mark.parametrize('exp_type', ['bothLiterals', 'justZeroLiteral', 'noLiterals'])
 def test_div_by_zero(ansi_mode, exp_type):
     if ansi_mode == 'ansi':
-        if is_before_spark_310() or exp_type != 'bothLiterals':
+        if is_before_spark_310():
             pytest.xfail('https://github.com/apache/spark/pull/29882')
+        elif exp_type != 'bothLiterals':
+            pytest.xfail('https://github.com/NVIDIA/spark-rapids/issues/1464')
 
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
     data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
@@ -524,9 +520,9 @@ def test_div_by_zero(ansi_mode, exp_type):
         div_by_zero_func = lambda spark: data_gen(spark).select(f.col('a') / f.col('b'))
 
     if ansi_mode == 'ansi':
-        div_by_zero_func_collect = lambda spark: div_by_zero_func(spark).collect()
-        _assert_div_by_zero(with_cpu_session, div_by_zero_func_collect, ansi_conf)
-        _assert_div_by_zero(with_gpu_session, div_by_zero_func_collect, ansi_conf)
+        assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
+                                 conf=ansi_conf,
+                                 error_message='java.lang.ArithmeticException: divide by zero')
     else:
         assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
 
