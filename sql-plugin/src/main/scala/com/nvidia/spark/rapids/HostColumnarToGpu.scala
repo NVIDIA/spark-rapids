@@ -49,7 +49,8 @@ object HostColumnarToGpu extends Logging {
   }
 
   private lazy val vecField = {
-    getClassFieldAccessible("org.apache.spark.sql.vectorized.ArrowColumnVector$ArrowVectorAccessor", "vector")
+    getClassFieldAccessible("org.apache.spark.sql.vectorized.ArrowColumnVector$ArrowVectorAccessor",
+      "vector")
   }
 
   // use reflection to get value vector from ArrowColumnVector
