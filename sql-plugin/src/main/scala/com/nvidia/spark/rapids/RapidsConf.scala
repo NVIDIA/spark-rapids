@@ -832,6 +832,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptmizationEnabled")
+    .doc("Option to turn off using the optimized Arrow copy code when reading from " +
+      "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
+      "have to turn it off, but its convenient for testing.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1126,6 +1134,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
+
+  lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 

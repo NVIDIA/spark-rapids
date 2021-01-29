@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids;
 
 import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
+import ai.rapids.cudf.ArrowColumnBuilder;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
@@ -118,9 +119,104 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  public static final class GpuColumnarBatchBuilder implements AutoCloseable {
+  public static abstract class GpuColumnarBatchBuilderBase implements AutoCloseable {
+    protected StructField[] fields;
+
+    public abstract void close();
+    public abstract void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows);
+
+    protected abstract ColumnVector buildAndPutOnDevice(int builderIndex);
+    protected abstract int buildersLength();
+
+    public ColumnarBatch build(int rows) {
+      int buildersLen = buildersLength();
+      ColumnVector[] vectors = new ColumnVector[buildersLen];
+      boolean success = false;
+      try {
+        for (int i = 0; i < buildersLen; i++) {
+          vectors[i] = buildAndPutOnDevice(i);
+        }
+        ColumnarBatch ret = new ColumnarBatch(vectors, rows);
+        success = true;
+        return ret;
+      } finally {
+        if (!success) {
+          for (ColumnVector vec: vectors) {
+            if (vec != null) {
+              vec.close();
+            }
+          }
+        }
+      }
+    }
+  }
+
+  public static final class GpuArrowColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
+    private final ai.rapids.cudf.ArrowColumnBuilder[] builders;
+
+    /**
+     * A collection of builders for building up columnar data from Arrow data.
+     * @param schema the schema of the batch.
+     * @param rows the maximum number of rows in this batch.
+     * @param batch if this is going to copy a ColumnarBatch in a non GPU format that batch
+     *              we are going to copy. If not this may be null. This is used to get an idea
+     *              of how big to allocate buffers that do not necessarily correspond to the
+     *              number of rows.
+     */
+    public GpuArrowColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
+      fields = schema.fields();
+      int len = fields.length;
+      builders = new ai.rapids.cudf.ArrowColumnBuilder[len];
+      boolean success = false;
+
+      try {
+        for (int i = 0; i < len; i++) {
+          StructField field = fields[i];
+          builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()));
+        }
+        success = true;
+      } finally {
+        if (!success) {
+          for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
+            if (b != null) {
+              b.close();
+            }
+          }
+        }
+      }
+    }
+
+    protected int buildersLength() {
+      return builders.length;
+    }
+
+    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+      ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      builders[builderIndex] = null;
+      return gcv;
+    }
+
+    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
+      HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows);
+    }
+
+    public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
+      return builders[i];
+    }
+
+    @Override
+    public void close() {
+      for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
+        if (b != null) {
+          b.close();
+        }
+      }
+    }
+  }
+
+  public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
-    private final StructField[] fields;
 
     /**
      * A collection of builders for building up columnar data.
@@ -153,31 +249,23 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
+    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
+      HostColumnarToGpu.columnarCopy(cv, builder(colNum), nullable, rows);
+    }
+
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
       return builders[i];
     }
 
-    public ColumnarBatch build(int rows) {
-      ColumnVector[] vectors = new ColumnVector[builders.length];
-      boolean success = false;
-      try {
-        for (int i = 0; i < builders.length; i++) {
-          ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
-          vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
-          builders[i] = null;
-        }
-        ColumnarBatch ret = new ColumnarBatch(vectors, rows);
-        success = true;
-        return ret;
-      } finally {
-        if (!success) {
-          for (ColumnVector vec: vectors) {
-            if (vec != null) {
-              vec.close();
-            }
-          }
-        }
-      }
+    protected int buildersLength() {
+      return builders.length;
+    }
+
+    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+      ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      builders[builderIndex] = null;
+      return gcv;
     }
 
     public HostColumnVector[] buildHostColumns() {
