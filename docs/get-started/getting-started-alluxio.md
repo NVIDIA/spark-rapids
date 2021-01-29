@@ -6,39 +6,48 @@ parent: Getting-Started
 ---
 # Get Started with RAPIDS with Alluxio
 
-Alluxio is a data orchestration platform brings your data closer to compute across clusters,
-regions, clouds, and countries. This guide will go through how to set up the RAPIDS Accelerator
-for Apache Spark 3.0 with Alluxio and on premise cluster.
+Alluxio is a data orchestration platform that brings your data closer to compute across
+clusters, regions, clouds, and countries. This guide will go through how to set up the
+RAPIDS Accelerator for Apache Spark with Alluxio with a on premise cluster.
 
 ## Prerequisites
 
-Assuming that user has successfully run the RAPIDS Accelerator with on premise cluster according
-to [this doc](getting-started-on-prem.md)
+Assuming that user has successfully setup and ran the RAPIDS Accelerator with on premise
+cluster according to [this doc](getting-started-on-prem.md)
 
-This guide takes Yarn cluster as an example and assumes that there are 2 datanodes and 1 namenode in Yarn cluster, and their hostnames are respectively
+This guide takes Swiftstack as Alluxio’s under storage system and Yarn cluster with 2
+NodeManagers and 1 ResourceManager as an example. The hostnames of Yarn cluster are
+respectively
 
 ``` json
-namenode_hostname
-datanode1_hostname
-datanode2_hostname
+RM_hostname
+NM_hostname_1
+NM_hostname_2
 ```
 
 ## Alluxio setup
 
-It is recommending to deploy Alluxio workers in each datanode and Alluxio master in namenode.
+It is recommending to deploy Alluxio workers in each NodeManager and Alluxio master in
+ResourceManager.
 
 1. download the latest Alluxio version alluxio-${LATEST}-bin.tar.gz from [alluxio website](https://www.alluxio.io/download/)
-2. copy `alluxio-${LATEST}-bin.tar.gz` to all the datanodes and namenode
-3. extract `alluxio-${LATEST}-bin.tar.gz` to `/opt/alluxio-${LATEST}` in datanode and namenode
-   ``` shell
-   tar xvf alluxio-${LATEST}-bin.tar.gz -C /opt
-   ```
-4. configure alluxio
-    - Alluxio master configuration
+2. copy `alluxio-${LATEST}-bin.tar.gz` to all the NodeManagers and ResourceManager
+3. extract `alluxio-${LATEST}-bin.tar.gz` to the directory specified by **ALLUXIO_HOME**
+   in NodeManager and ResourceManager
 
-   add below recommending configuration in `/opt/alluxio-${LATEST}/conf/alluxio-site.properties`
+   ``` shell
+   # Let's assume to extract alluxio to /opt
+   mkdir -p /opt
+   tar xvf alluxio-${LATEST}-bin.tar.gz -C /opt
+   export ALLUXIO_HOME=/opt/alluxio-${LATEST}
+   ```
+
+4. configure alluxio
+   - Alluxio master configuration
+
+   add below recommending configuration in `${ALLUXIO_HOME}/conf/alluxio-site.properties`
    ``` xml
-   alluxio.master.hostname=namenode_hostname
+   alluxio.master.hostname=RM_hostname
 
    ######### worker properties #########
    ## configure async cache manager
@@ -63,42 +72,47 @@ It is recommending to deploy Alluxio workers in each datanode and Alluxio master
    alluxio.user.ufs.block.read.location.policy=alluxio.client.block.policy.LocalFirstPolicy
    ####################################
 
-   # configure s3
+   # Running Alluxio Locally with S3
    alluxio.underfs.s3.endpoint=/S3_ENDPOINT
    alluxio.underfs.s3.inherit.acl=false
    alluxio.underfs.s3.default.mode=0755
    alluxio.underfs.s3.disable.dns.buckets=true
    ```
 
-   add Alluxio worker hostnames into `/opt/alluxio-${LATEST}/conf/workers`
+   For the explanation of each configuration, please refer to [Alluxio Configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html) and [Amazon AWS S3](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html)
+
+   add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`
 
    ``` json
-   datanode1_hostname
-   datanode2_hostname
+   NM_hostname_1
+   NM_hostname_2
    ```
 
    - copy configuration from Alluxio master to Alluxio workers
    ``` shell
-   /opt/alluxio-${LATEST}/bin/alluxio copyDir /opt/alluxio-${LATEST}/conf
+   ${ALLUXIO_HOME}/bin/alluxio copyDir ${ALLUXIO_HOME}/conf
    ```
    - Alluxio worker configuration
    add worker and user hostname respectively in the Alluxio configuration of each Alluxio worker
    ``` xml
-   alluxio.worker.hostname=datanodeX_hostname
-   alluxio.user.hostname=datanodeX_hostname
+   alluxio.worker.hostname=NM_hostname_X
+   alluxio.user.hostname=NM_hostname_X
    ```
-5. mount ufs
+5. mount an existing S3 bucket to Alluxio
    
    ``` bash
-   /opt/alluxio-${LATEST}/bin/alluxio fs mount \
+   ${ALLUXIO_HOME}/bin/alluxio fs mount \
       --option aws.accessKeyId=<AWS_ACCESS_KEY_ID> \
       --option aws.secretKey=<AWS_SECRET_KEY_ID> \
-      alluxio://namenode:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
-   ``` 
+      alluxio://RM_hostname:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
+   ```
+
+   for other filesystem, please refer to [this site](https://www.alluxio.io/)
+
 6. start Alluxio cluster
    login to Alluxio master node, and run
    ``` bash
-   /opt/alluxio-${LATEST}/bin/alluxio-start.sh all
+   ${ALLUXIO_HOME}/bin/alluxio-start.sh all
    ```
 
 ## RAPIDS Configuration
@@ -118,29 +132,51 @@ val df = spark.read.parquet("s3a://<S3_BUCKET>/<S3_DIRECTORY>/foo.parquet")
 to
 
 ``` scala
-val df = spark.read.parquet("alluxio://namenode_hostname:19998/s3/foo.parquet")
+val df = spark.read.parquet("alluxio://RM_hostname:19998/s3/foo.parquet")
 ```
 
 2. transparently replace in RAPIDS
 
-RAPIDS has added a configuration `spark.rapids.alluxio.pathsToReplace` which can allow RAPIDS to replace the input file paths to alluxio paths transparently at runtime. So there is no any code change for users.
+RAPIDS has added a configuration `spark.rapids.alluxio.pathsToReplace` which can allow RAPIDS
+to replace the input file paths to alluxio paths transparently at runtime. So there is no any
+code change for users.
 
 eg, at startup
 ``` shell
---conf spark.rapids.alluxio.pathsToReplace="s3:/foo->alluxio://datanode_hostname:19998/foo,gs:/bar->alluxio://datanode_hostname:19998/bar"
+--conf spark.rapids.alluxio.pathsToReplace="s3:/foo->alluxio://RM_hostname:19998/foo,gs:/bar->alluxio://RM_hostname:19998/bar"
 ```
 
-this configuration allows RAPIDS to replace any file paths prefixed `s3:/foo` to `alluxio://datanode_hostname:19998/foo` and `gs:/bar` to `alluxio://datanode_hostname:19998/bar`
+this configuration allows RAPIDS to replace any file paths prefixed `s3:/foo` to
+`alluxio://RM_hostname:19998/foo` and `gs:/bar` to `alluxio://RM_hostname:19998/bar`
 
 3. submit an application
-   First, user needs to copy alluxio client jar to spark jars
+   Spark driver and tasks will parse `alluxio://` schema and access Alluxio cluster by
+   `alluxio-${LATEST}-client.jar` which must be distributed across the all nodes where Spark drivers
+   or executors are running.
+
+   The Alluxio client jar must be in the classpath of all Spark drivers and executors in order for
+   Spark applications to access Alluxio.
+
+   We can specify it in the configuration of `spark.driver.extraClassPath` and
+   `spark.executor.extraClassPath`, but the simplest way is copy `alluxio-${LATEST}-client.jar`
+   into spark jars directory.
+
    ``` shell
-   cp /opt/alluxio-${LATEST}/client/alluxio-${LATEST}-client.jar ${SPARK_HOME}/jars
+   cp ${ALLUXIO_HOME}/client/alluxio-${LATEST}-client.jar ${SPARK_HOME}/jars/
    ```
    
    ``` shell
    ${SPARK_HOME}/bin/spark-submit \
       ...                          \
       --conf spark.rapids.alluxio.pathsToReplace="REPLACEMENT_RULES" \
-      --conf spark.executor.extraJavaOptions="-Dalluxio.conf.dir=/opt/alluxio-2.4.1/conf" \
+      --conf spark.executor.extraJavaOptions="-Dalluxio.conf.dir=${ALLUXIO_HOME}/conf" \
    ```
+
+## Alluxio troubleshoot
+This section will give some links about how to configure, tune Alluxio and some troubleshooting.
+- [Quick Start Guide](https://docs.alluxio.io/os/user/stable/en/overview/Getting-Started.html)
+- [Amazon S3 as Alluxio’s under storage system](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html)
+- [Alluxio metrics](https://docs.alluxio.io/os/user/stable/en/reference/Metrics-List.html)
+- [Alluxio configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
+- [Running Spark on Alluxio](https://docs.alluxio.io/os/user/stable/en/compute/Spark.html)
+- [Performance Tuning](https://docs.alluxio.io/ee/user/stable/en/operation/Performance-Tuning.html)
