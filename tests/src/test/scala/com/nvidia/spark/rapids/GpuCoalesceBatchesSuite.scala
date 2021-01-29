@@ -102,6 +102,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
+  // this was copied from Spark ArrowUtils
   /** Maps data type from Spark to Arrow. NOTE: timeZoneId required for TimestampTypes */
   private def toArrowType(dt: DataType, timeZoneId: String): ArrowType = dt match {
     case BooleanType => ArrowType.Bool.INSTANCE
@@ -126,6 +127,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       throw new UnsupportedOperationException(s"Unsupported data type: ${dt.catalogString}")
   }
 
+  // this was copied from Spark ArrowUtils
   /** Maps field from Spark to Arrow. NOTE: timeZoneId required for TimestampType */
   private def toArrowField(
       name: String, dt: DataType, nullable: Boolean, timeZoneId: String): Field = {
