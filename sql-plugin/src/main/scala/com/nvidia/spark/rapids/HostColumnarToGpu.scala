@@ -56,10 +56,8 @@ object HostColumnarToGpu extends Logging {
       nullable: Boolean,
       rows: Int): Unit = {
     val valVector = if (cv.isInstanceOf[ArrowColumnVector]) {
-      logWarning("looking at arrow column vector")
       getArrowValueVector(cv)
     } else if (cv.isInstanceOf[AccessibleArrowColumnVector]) {
-      logWarning("looking at accessible arrow column vector")
       val arrowVec = cv.asInstanceOf[AccessibleArrowColumnVector]
       arrowVec.getArrowValueVector()
     } else {
@@ -72,14 +70,14 @@ object HostColumnarToGpu extends Logging {
     val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
 
     var offsets:ByteBuffer = null
+    // this is a bit ugly, not all Arrow types need this so try and
+    // just catch it
     try {
-      // TODO - should we chekc types first instead?
       offsets =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
     } catch {
       case e: UnsupportedOperationException =>
-        logWarning("unsupported op getOffsetBuffer")
+        // swallow the exception and assume no offsets buffer
     }
-    logWarning(s"data is $dataBuf valid: $validity offsets: $offsets")
     ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
   }
 
@@ -236,6 +234,13 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   var totalRows = 0
   var maxDeviceMemory: Long = 0
 
+  // the arrow cudf converter only supports primitive types and strings
+  // decimals and nested types aren't supported yet
+  private def arrowTypesSupported(schema: StructType): Boolean = {
+    val dataTypes = schema.fields.map(_.dataType)
+    dataTypes.forall(GpuOverrides.isSupportedType(_))
+  }
+
   /**
    * Initialize the builders using an estimated row count based on the schema and the desired
    * batch size defined by [[RapidsConf.GPU_BATCH_SIZE_BYTES]].
@@ -256,10 +261,13 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // as we won't actually copy any data and we can't tell what type of data it is without
     // having a column
     if (useArrowCopyOpt && batch.numCols() > 0 &&
+      arrowTypesSupported(schema) &&
       (batch.column(0).isInstanceOf[ArrowColumnVector] ||
         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
+      logWarning("Using GpuArrowColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
     } else {
+      logWarning("Using GpuColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
     }
     totalRows = 0

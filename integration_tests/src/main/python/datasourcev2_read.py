@@ -49,8 +49,11 @@ def readTable(csvPath, tableToRead):
         .orderBy("name", "age")
 
 def createDatabase(spark):
-    spark.sql("create database IF NOT EXISTS " + catalogName)
-    spark.sql("use " + catalogName)
+    try:
+        spark.sql("create database IF NOT EXISTS " + catalogName)
+        spark.sql("use " + catalogName)
+    except Exception:
+        pytest.skip("Failed to load catalog for datasource v2 {}, jar is probably missing".format(columnarClass))
 
 def cleanupDatabase(spark):
     spark.sql("drop table IF EXISTS " + tableName)
@@ -80,3 +83,13 @@ def test_read_round_trip_no_partitioned(std_input_path, csv):
             conf={'spark.sql.catalog.columnar': columnarClass})
     assert_gpu_and_cpu_are_equal_collect(readTable(csvPath, columnarTableNameNoPart),
             conf={'spark.sql.catalog.columnar': columnarClass})
+
+@pytest.mark.parametrize('csv', ['people.csv'])
+def test_read_round_trip_no_partitioned_arrow_off(std_input_path, csv):
+    csvPath = std_input_path + "/" + csv
+    with_cpu_session(lambda spark : setupInMemoryTableNoPartitioning(spark, csvPath),
+            conf={'spark.sql.catalog.columnar': columnarClass,
+                  'spark.rapids.arrowCopyOptmizationEnabled': 'false'})
+    assert_gpu_and_cpu_are_equal_collect(readTable(csvPath, columnarTableNameNoPart),
+            conf={'spark.sql.catalog.columnar': columnarClass,
+                  'spark.rapids.arrowCopyOptmizationEnabled': 'false'})
