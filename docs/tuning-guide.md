@@ -42,7 +42,7 @@ called [RMM](https://github.com/rapidsai/rmm) to mitigate this overhead. By defa
 the plugin will allocate `90%` (`0.9`) of the memory on the GPU and keep it as a pool that can
 be allocated from. If the pool is exhausted more memory will be allocated and added to the pool.
 Most of the time this is a huge win, but if you need to share the GPU with other 
-[libraries](ml-integration.md) that are not aware of RMM this can lead to memory issues, and you
+[libraries](additional-functionality/ml-integration.md) that are not aware of RMM this can lead to memory issues, and you
 may need to disable pooling.
 
 ## Pinned Memory
