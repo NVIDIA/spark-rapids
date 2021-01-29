@@ -30,10 +30,10 @@ NM_hostname_2
 It is recommending to deploy Alluxio workers in each NodeManager and Alluxio master in
 ResourceManager.
 
-1. download the latest Alluxio version alluxio-${LATEST}-bin.tar.gz from [alluxio website](https://www.alluxio.io/download/)
-2. copy `alluxio-${LATEST}-bin.tar.gz` to all the NodeManagers and ResourceManager
-3. extract `alluxio-${LATEST}-bin.tar.gz` to the directory specified by **ALLUXIO_HOME**
-   in NodeManager and ResourceManager
+1. Download the latest Alluxio version (2.4.1) **alluxio-${LATEST}-bin.tar.gz** from [alluxio website](https://www.alluxio.io/download/).
+2. Copy `alluxio-${LATEST}-bin.tar.gz` to all the NodeManagers and ResourceManager.
+3. Extract `alluxio-${LATEST}-bin.tar.gz` to the directory specified by **ALLUXIO_HOME**
+   in NodeManager and ResourceManager.
 
    ``` shell
    # Let's assume to extract alluxio to /opt
@@ -42,10 +42,11 @@ ResourceManager.
    export ALLUXIO_HOME=/opt/alluxio-${LATEST}
    ```
 
-4. configure alluxio
+4. Configure alluxio.
    - Alluxio master configuration
 
-   add below recommending configuration in `${ALLUXIO_HOME}/conf/alluxio-site.properties`
+   Add below recommending configuration in `${ALLUXIO_HOME}/conf/alluxio-site.properties`.
+
    ``` xml
    alluxio.master.hostname=RM_hostname
 
@@ -79,27 +80,30 @@ ResourceManager.
    alluxio.underfs.s3.disable.dns.buckets=true
    ```
 
-   For the explanation of each configuration, please refer to [Alluxio Configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html) and [Amazon AWS S3](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html)
+   For the explanation of each configuration, please refer to [Alluxio Configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html) and [Amazon AWS S3](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html).
 
-   add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`
+   Add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`.
 
    ``` json
    NM_hostname_1
    NM_hostname_2
    ```
 
-   - copy configuration from Alluxio master to Alluxio workers
+   - Copy configuration from Alluxio master to Alluxio workers.
+
    ``` shell
    ${ALLUXIO_HOME}/bin/alluxio copyDir ${ALLUXIO_HOME}/conf
    ```
-   - Alluxio worker configuration
-   add worker and user hostname respectively in the Alluxio configuration of each Alluxio worker
+   - Alluxio worker configuration.
+
+   Add worker and user hostname respectively in the Alluxio configuration of each Alluxio worker.
+
    ``` xml
    alluxio.worker.hostname=NM_hostname_X
    alluxio.user.hostname=NM_hostname_X
    ```
-5. mount an existing S3 bucket to Alluxio
-   
+5. Mount an existing S3 bucket to Alluxio.
+
    ``` bash
    ${ALLUXIO_HOME}/bin/alluxio fs mount \
       --option aws.accessKeyId=<AWS_ACCESS_KEY_ID> \
@@ -109,8 +113,10 @@ ResourceManager.
 
    for other filesystem, please refer to [this site](https://www.alluxio.io/)
 
-6. start Alluxio cluster
-   login to Alluxio master node, and run
+6. Start Alluxio cluster.
+
+   Login Alluxio master node, and run
+
    ``` bash
    ${ALLUXIO_HOME}/bin/alluxio-start.sh all
    ```
@@ -119,37 +125,38 @@ ResourceManager.
 
 There are two ways to leverage Alluxio in RAPIDS.
 
-1. explicitly specify alluxio path
+1. Explicitly specify alluxio path.
 
-This may require user to change code.
+   This may require user to change code.
 
-eg. change below code
+   Eg. Change below code
 
-``` scala
-val df = spark.read.parquet("s3a://<S3_BUCKET>/<S3_DIRECTORY>/foo.parquet")
-```
+   ``` scala
+   val df = spark.read.parquet("s3a://<S3_BUCKET>/<S3_DIRECTORY>/foo.parquet")
+   ```
 
-to
+   to
 
-``` scala
-val df = spark.read.parquet("alluxio://RM_hostname:19998/s3/foo.parquet")
-```
+   ``` scala
+   val df = spark.read.parquet("alluxio://RM_hostname:19998/s3/foo.parquet")
+   ```
 
-2. transparently replace in RAPIDS
+2. Transparently replace in RAPIDS.
 
-RAPIDS has added a configuration `spark.rapids.alluxio.pathsToReplace` which can allow RAPIDS
-to replace the input file paths to alluxio paths transparently at runtime. So there is no any
-code change for users.
+   RAPIDS has added a configuration `spark.rapids.alluxio.pathsToReplace` which can allow RAPIDS
+   to replace the input file paths to alluxio paths transparently at runtime. So there is no any
+   code change for users.
 
-eg, at startup
-``` shell
---conf spark.rapids.alluxio.pathsToReplace="s3:/foo->alluxio://RM_hostname:19998/foo,gs:/bar->alluxio://RM_hostname:19998/bar"
-```
+   Eg, at startup
+   ``` shell
+   --conf spark.rapids.alluxio.pathsToReplace="s3:/foo->alluxio://RM_hostname:19998/foo,gs:/bar->alluxio://RM_hostname:19998/bar"
+   ```
 
-this configuration allows RAPIDS to replace any file paths prefixed `s3:/foo` to
-`alluxio://RM_hostname:19998/foo` and `gs:/bar` to `alluxio://RM_hostname:19998/bar`
+   This configuration allows RAPIDS to replace any file paths prefixed `s3:/foo` to
+   `alluxio://RM_hostname:19998/foo` and `gs:/bar` to `alluxio://RM_hostname:19998/bar`
 
-3. submit an application
+3. Submit an application.
+
    Spark driver and tasks will parse `alluxio://` schema and access Alluxio cluster by
    `alluxio-${LATEST}-client.jar` which must be distributed across the all nodes where Spark drivers
    or executors are running.
@@ -164,7 +171,7 @@ this configuration allows RAPIDS to replace any file paths prefixed `s3:/foo` to
    ``` shell
    cp ${ALLUXIO_HOME}/client/alluxio-${LATEST}-client.jar ${SPARK_HOME}/jars/
    ```
-   
+
    ``` shell
    ${SPARK_HOME}/bin/spark-submit \
       ...                          \
