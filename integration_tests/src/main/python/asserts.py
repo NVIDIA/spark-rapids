@@ -17,6 +17,8 @@ from datetime import date, datetime
 from decimal import Decimal
 import math
 from pyspark.sql import Row
+from py4j.protocol import Py4JJavaError
+
 import pytest
 from spark_session import with_cpu_session, with_gpu_session
 import time
@@ -360,3 +362,26 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
         df.createOrReplaceTempView(table_name)
         return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf)
+
+def assert_py4j_exception(func, error_message):
+    """
+    Assert that a specific Java exception is thrown
+    :param func: a function to be verified
+    :param error_message: a string such as the one produce by java.lang.Exception.toString
+    :return: Assertion failure if no exception matching error_message has occurred.
+    """
+    with pytest.raises(Py4JJavaError) as py4jError:
+        func()
+    assert error_message in str(py4jError.value.java_exception)
+
+def assert_gpu_and_cpu_error(df_fun, conf, error_message):
+    """
+    Assert that GPU and CPU execution results in a specific Java exception thrown
+    :param df_fun: a function to be verified
+    :param conf: Spark config
+    :param error_message: a string such as the one produce by java.lang.Exception.toString
+    :return: Assertion failure if either GPU or CPU versions has not generated error messages
+             expected
+    """
+    assert_py4j_exception(lambda: with_cpu_session(df_fun, conf), error_message)
+    assert_py4j_exception(lambda: with_gpu_session(df_fun, conf), error_message)
