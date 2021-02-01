@@ -434,4 +434,5 @@ def enable_cudf_udf(request):
 def enable_rapids_udf_example_native(request):
     native_enabled = request.config.getoption("rapids_udf_example_native")
     if not native_enabled:
-        skip_unless_nightly_tests("rapids_udf_example_native is not configured to run")
+        # udf_example_native tests are not required for any test runs
+        pytest.skip("rapids_udf_example_native is not configured to run")
