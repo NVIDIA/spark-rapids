@@ -40,8 +40,14 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
     dataType match {
       case dt: DecimalType =>
         val scale = dt.scale
-        withResource(Scalar.fromDecimal(-scale, 0L)) { scalar =>
-          scalar.sub(input.getBase)
+        if (dt.precision <= Decimal.MAX_INT_DIGITS) {
+          withResource(Scalar.fromDecimal(-scale, 0)) { scalar =>
+            scalar.sub(input.getBase)
+          }
+        } else {
+          withResource(Scalar.fromDecimal(-scale, 0L)) { scalar =>
+            scalar.sub(input.getBase)
+          }
         }
       case _ =>
         withResource(Scalar.fromByte(0.toByte)) { scalar =>
