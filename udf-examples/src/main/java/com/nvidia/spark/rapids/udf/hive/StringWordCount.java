@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.udf;
+package com.nvidia.spark.rapids.udf.hive;
 
 import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.DType;

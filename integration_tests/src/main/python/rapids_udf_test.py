@@ -36,7 +36,7 @@ def test_hive_simple_udf():
     with_spark_session(skip_if_no_hive)
     data_gens = [["i", int_gen], ["s", StringGen('([^%]{0,1}(%[0-9A-F][0-9A-F]){0,1}){0,30}')]]
     def evalfn(spark):
-        load_udf_or_skip_test(spark, "urldecode", "com.nvidia.spark.rapids.udf.URLDecode")
+        load_udf_or_skip_test(spark, "urldecode", "com.nvidia.spark.rapids.udf.hive.URLDecode")
         return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
@@ -47,7 +47,7 @@ def test_hive_generic_udf():
     with_spark_session(skip_if_no_hive)
     data_gens = [["s", StringGen('.{0,30}')]]
     def evalfn(spark):
-        load_udf_or_skip_test(spark, "urlencode", "com.nvidia.spark.rapids.udf.URLEncode")
+        load_udf_or_skip_test(spark, "urlencode", "com.nvidia.spark.rapids.udf.hive.URLEncode")
         return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
@@ -59,7 +59,7 @@ def test_hive_simple_udf_native(enable_rapids_udf_example_native):
     with_spark_session(skip_if_no_hive)
     data_gens = [["s", StringGen('.{0,30}')]]
     def evalfn(spark):
-        load_udf_or_skip_test(spark, "wordcount", "com.nvidia.spark.rapids.udf.StringWordCount")
+        load_udf_or_skip_test(spark, "wordcount", "com.nvidia.spark.rapids.udf.hive.StringWordCount")
         return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
