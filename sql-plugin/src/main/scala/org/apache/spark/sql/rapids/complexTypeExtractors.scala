@@ -186,9 +186,8 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def right: Expression = key
 }
 
-/**
-  * Checks if the array (left) has the element (right)
-  */
+/** Checks if the array (left) has the element (right)
+*/
 case class GpuArrayContains(left: Expression, right: Expression)
   extends GpuBinaryExpression with NullIntolerant {
 
