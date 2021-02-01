@@ -500,18 +500,6 @@ def test_greatest(data_gen):
             lambda spark : gen_df(spark, gen).select(
                 f.greatest(*command_args)), conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('ansi_mode, expr', [
-    pytest.param('ansi', '1/0', marks=pytest.mark.xfail(condition=is_before_spark_310(),
-                                                        reason='https://github.com/apache/spark/pull/29882')),
-    pytest.param('ansi', 'a/0', marks=pytest.mark.xfail(condition=is_before_spark_310(),
-                                                        reason='https://github.com/apache/spark/pull/29882')),
-    pytest.param('ansi', 'a/b', marks=pytest.mark.xfail(condition=is_before_spark_310(),
-                                                        reason='https://github.com/apache/spark/pull/29882')),
-    ('nonAnsi', '1/0'),
-    ('nonAnsi', 'a/0'),
-    ('nonAnsi', 'a/b')
-])
-
 
 def _test_div_by_zero(ansi_mode, expr):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
