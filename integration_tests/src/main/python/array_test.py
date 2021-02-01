@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from pyspark.sql.types import *
+from pyspark.sql.functions import array_contains, col, first, isnan, lit
 
 # Once we support arrays as literals then we can support a[null] and
 # negative indexes for all array gens. When that happens
@@ -81,3 +82,29 @@ def test_orderby_array_of_structs(data_gen):
         lambda spark : unary_op_df(spark, data_gen),
         'array_table',
         'select array_table.a, array_table.a[0].child0 as first_val from array_table order by first_val')
+
+
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
+                                      FloatGen(no_nans=True), DoubleGen(no_nans=True),
+                                      string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+def test_array_contains(data_gen):
+    arr_gen = ArrayGen(data_gen)
+    lit = gen_scalar(data_gen, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: two_col_df(
+        spark, arr_gen, data_gen).select(array_contains(col('a'), lit.cast(data_gen.data_type)),
+                                         array_contains(col('a'), col('b')),
+                                         array_contains(col('a'), col('a')[5])), no_nans_conf)
+
+
+# Test array_contains() with a literal key that is extracted from the input array of doubles
+# that does contain NaNs. Note that the config is still set to indicate that the input has NaNs
+# but we verify that the plan is on the GPU despite that if the value being looked up is not a NaN.
+@pytest.mark.parametrize('data_gen', [double_gen], ids=idfn)
+def test_array_contains_for_nans(data_gen):
+    arr_gen = ArrayGen(data_gen)
+
+    def main_df(spark):
+        df = three_col_df(spark, arr_gen, data_gen, arr_gen)
+        chk_val = df.select(col('a')[0].alias('t')).filter(~isnan(col('t'))).collect()[0][0]
+        return df.select(array_contains(col('a'), chk_val))
+    assert_gpu_and_cpu_are_equal_collect(main_df)
