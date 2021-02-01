@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_databricks_runtime
-from marks import approximate_float, incompat, ignore_order, allow_non_gpu
+from marks import approximate_float, incompat, ignore_order, allow_non_gpu, allow_non_gpu_databricks
 from spark_session import with_spark_session, is_before_spark_310
 
 _base_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
@@ -25,8 +25,6 @@ _base_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
 
 _adaptive_conf = _base_conf.copy()
 _adaptive_conf.update({'spark.sql.adaptive.enabled': 'true'})
-
-    #pytest.param(_adaptive_conf, marks=pytest.mark.xfail(is_databricks_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/1059'))
 
 _test_confs = [_base_conf]
 
@@ -157,6 +155,7 @@ def test_tpch_q19(tpch, conf):
           lambda spark : tpch.do_test_query("q19"), conf=conf)
 
 @pytest.mark.parametrize('conf', _test_confs)
+@allow_non_gpu_databricks('BroadcastHashJoinExec', 'BroadcastExchangeExec', 'GreaterThan', 'Cast')
 def test_tpch_q20(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
           lambda spark : tpch.do_test_query("q20"), conf=conf)
@@ -172,6 +171,7 @@ def test_tpch_q21(tpch, conf):
 @approximate_float
 #Once ScalarSubqery if fixed the rest should just work
 @allow_non_gpu('FilterExec', 'And', 'AttributeReference', 'IsNotNull', 'In', 'Substring', 'Literal', 'GreaterThan', 'ScalarSubquery')
+@allow_non_gpu_databricks('EphemeralSubstring')
 @pytest.mark.parametrize('conf', _test_confs)
 def test_tpch_q22(tpch, conf):
   assert_gpu_and_cpu_are_equal_collect(
