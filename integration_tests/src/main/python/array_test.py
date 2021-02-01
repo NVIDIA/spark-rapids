@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from pyspark.sql.types import *
-from pyspark.sql.functions import col, array_contains
+from pyspark.sql.functions import array_contains, col, first, isnan, lit
 
 # Once we support arrays as literals then we can support a[null] and
 # negative indexes for all array gens. When that happens
@@ -94,3 +94,14 @@ def test_array_contains(data_gen):
         spark, arr_gen, data_gen).select(array_contains(col('a'), lit.cast(data_gen.data_type)),
                                          array_contains(col('a'), col('b')),
                                          array_contains(col('a'), col('a')[5])), no_nans_conf)
+
+
+@pytest.mark.parametrize('data_gen', [double_gen], ids=idfn)
+def test_array_contains_for_nans(data_gen):
+    arr_gen = ArrayGen(data_gen)
+
+    def main_df(spark):
+        df = three_col_df(spark, arr_gen, data_gen, arr_gen)
+        chk_val = df.select(col('a')[0].alias('t2')).filter(~isnan(col('t2'))).collect()[0][0]
+        return debug_df(df.select(array_contains(col('a'), chk_val)))
+    assert_gpu_and_cpu_are_equal_collect(main_df)

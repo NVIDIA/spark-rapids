@@ -2002,15 +2002,34 @@ object GpuOverrides {
         ("key", TypeSig.commonCudfTypes, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
+          // do not support literal arrays as lhs
           if (extractLit(in.left).isDefined) {
             willNotWorkOnGpu("Literal arrays are not supported for array_contains")
           }
-          if (conf.hasNans && (in.children.map(a => a.dataType).contains(DoubleType) ||
-            in.children.map(a => a.dataType).contains(FloatType))) {
-            willNotWorkOnGpu("Array Contains on floating point columns that can contain NaNs " +
-              "will compute incorrect results. If it is known that there are no NaNs or" +
-              " don't care for the returned values when NaN exists, set " +
-              s" ${RapidsConf.HAS_NANS} to false.")
+
+          val rhsVal = extractLit(in.right)
+          in.children.map(a => a.dataType).foreach {
+            case dataType@(DoubleType | FloatType) => if (rhsVal.isDefined) {
+              val isNanVal = dataType match {
+                case _: FloatType =>
+                  rhsVal.get.value.asInstanceOf[Float].isNaN
+                case _: DoubleType =>
+                  rhsVal.get.value.asInstanceOf[Double].isNaN
+                case _ => false
+              }
+              // lookup key is a NaN literal
+              if (isNanVal) {
+                willNotWorkOnGpu(
+                  "Array Contains with lookup keys as NaN literal is not supported")
+              }
+            } else if (conf.hasNans) {
+              // lookup key is a column and NaNs can be present
+              willNotWorkOnGpu("Array Contains on floating point columns that can contain NaNs " +
+                "will compute incorrect results. If it is known that there are no NaNs or" +
+                " don't care for the returned values when NaN exists, set " +
+                s" ${RapidsConf.HAS_NANS} to false.")
+            }
+            case _ =>
           }
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -2499,8 +2518,8 @@ object GpuOverrides {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP)
-            .nested(TypeSig.STRING) + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP + TypeSig.ARRAY)
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
