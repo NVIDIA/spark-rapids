@@ -62,6 +62,9 @@ def is_databricks_runtime():
 def is_emr_runtime():
     return runtime_env() == "emr"
 
+def is_dataproc_runtime():
+    return runtime_env() == "dataproc"
+
 _is_nightly_run = False
 _is_precommit_run = False
 
@@ -74,7 +77,7 @@ def is_at_least_precommit_run():
 def skip_unless_nightly_tests(description):
     if (_is_nightly_run):
         raise AssertionError(description + ' during nightly test run')
-    else: 
+    else:
         pytest.skip(description)
 
 def skip_unless_precommit_tests(description):
@@ -82,7 +85,7 @@ def skip_unless_precommit_tests(description):
         raise AssertionError(description + ' during nightly test run')
     elif (_is_precommit_run):
         raise AssertionError(description + ' during pre-commit test run')
-    else: 
+    else:
         pytest.skip(description)
 
 _limit = -1
