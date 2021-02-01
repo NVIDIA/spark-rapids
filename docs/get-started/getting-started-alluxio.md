@@ -4,25 +4,33 @@ title: Alluxio
 nav_order: 5
 parent: Getting-Started
 ---
-# Get Started with RAPIDS with Alluxio
+# Getting Started with RAPIDS and Alluxio
 
-RAPIDS plugin can remarkably accelerate the computing part of the whole SQL query by
-leveraging GPUs, but it’s hard to accelerate the data reading process when the data
-is in the cloud file system because of network overhead. Alluxio is an open source
-data orchestration platform that brings your data closer to compute across clusters,
-regions, clouds, and countries for reducing the network overhead. This guide will
-go through how to set up the RAPIDS Accelerator for Apache Spark with Alluxio with
-a on premise cluster.
+Th RAPIDS plugin can remarkably accelerate the computing part of a SQL query by leveraging
+GPUs, but it’s hard to accelerate the data reading process when the data is in a cloud
+filesystem because of network overhead.
+
+[Alluxio](https://www.alluxio.io/) is an open source data orchestration platform that
+brings your data closer to compute across clusters, regions, clouds, and countries for
+reducing the network overhead. Compute applications talking to Alluxio can transparently
+cache frequently accessed data from multiple sources, especially from remote locations.
+
+This guide will go through how to set up the RAPIDS Accelerator for Apache Spark with Alluxio in an on-premise cluster.
 
 ## Prerequisites
 
-Assuming that user has successfully setup and ran the RAPIDS Accelerator with on premise
-cluster according to [this doc](getting-started-on-prem.md)
+This guide assumes the user has successfully setup and run the RAPIDS Accelerator in an
+on-premise cluster according to [this doc](getting-started-on-prem.md).
 
-This guide will deploy Alluxio on Yarn cluster with 2 NodeManagers and 1 ResourceManager,
-and describe the instructions to configure Swiftstack as Alluxio’s under storage system.
+This guide will go through deployment of Alluxio in a Yarn cluster with 2 NodeManagers and
+1 ResourceManager, It will describe how to configure an S3 compatible filesystem as
+Alluxio’s underlying storage system.
 
-Let's assume the hostnames of Yarn cluster are respectively
+We may want to put the Alluxio workers on the NodeManagers so they are on the same nodes as
+the Spark tasks will run, the Alluxio master can go anywhere, we pick ResourceManager for
+convenience.
+
+Let's assume the hostnames of them are respectively
 
 ``` json
 RM_hostname
@@ -32,13 +40,10 @@ NM_hostname_2
 
 ## Alluxio setup
 
-It is recommending to deploy Alluxio workers in each NodeManager and Alluxio master in
-ResourceManager.
-
-1. Download the latest Alluxio version (2.4.1) **alluxio-${LATEST}-bin.tar.gz** from [alluxio website](https://www.alluxio.io/download/).
+1. Download the latest Alluxio version (2.4.1-1) **alluxio-${LATEST}-bin.tar.gz** from [alluxio website](https://www.alluxio.io/download/).
 2. Copy `alluxio-${LATEST}-bin.tar.gz` to all the NodeManagers and ResourceManager.
 3. Extract `alluxio-${LATEST}-bin.tar.gz` to the directory specified by **ALLUXIO_HOME**
-   in NodeManager and ResourceManager.
+   in the NodeManagers and ResourceManager.
 
    ``` shell
    # Let's assume to extract alluxio to /opt
@@ -50,67 +55,112 @@ ResourceManager.
 4. Configure alluxio.
    - Alluxio master configuration
 
-   Add below recommending configuration in `${ALLUXIO_HOME}/conf/alluxio-site.properties`.
+      On the master node, create `${ALLUXIO_HOME}/conf/alluxio-site.properties` configuration file from the template.
 
-   ``` xml
-   alluxio.master.hostname=RM_hostname
+      ```console
+      cp ${ALLUXIO_HOME}/conf/alluxio-site.properties.template ${ALLUXIO_HOME}/conf/alluxio-site.properties
+      ```
 
-   ######### worker properties #########
-   ## configure async cache manager
-   alluxio.worker.network.async.cache.manager.threads.max=64
-   alluxio.worker.network.async.cache.manager.queue.max=51200
-   alluxio.worker.tieredstore.levels=1
-   alluxio.worker.tieredstore.level0.alias=SSD
-   alluxio.worker.tieredstore.level0.dirs.mediumtype=SSD
-   alluxio.worker.tieredstore.level0.dirs.path=/YOUR_CACHE_DIR
-   alluxio.worker.tieredstore.level0.dirs.quota=/YOUR_CACHE_QUOTA
+      Add the recommended configuration below to `${ALLUXIO_HOME}/conf/alluxio-site.properties` .
 
-   # enable domain socket
-   alluxio.worker.data.server.domain.socket.address=/YOUR_DOMAIN_SOCKET_PATH
-   alluxio.worker.data.server.domain.socket.as.uuid=true
-   ####################################
+      ``` xml
+      # set the hostname of the single master node
+      alluxio.master.hostname=RM_hostname
 
-   ######### User properties #########
-   ## enable circuit
-   alluxio.user.short.circuit.preferred=true
-   alluxio.user.short.circuit.enabled=true
-   ## use LocalFirstPolicy
-   alluxio.user.ufs.block.read.location.policy=alluxio.client.block.policy.LocalFirstPolicy
-   ####################################
+      ########################### worker properties  ##############################
+      # The maximum number of storage tiers in Alluxio. Currently, Alluxio supports 1,
+      # 2, or 3 tiers.
+      alluxio.worker.tieredstore.levels=1
 
-   # Running Alluxio Locally with S3
-   alluxio.underfs.s3.endpoint=/S3_ENDPOINT
-   alluxio.underfs.s3.inherit.acl=false
-   alluxio.underfs.s3.default.mode=0755
-   alluxio.underfs.s3.disable.dns.buckets=true
-   ```
+      # The alias of top storage tier 0. Currently, there are 3 aliases, MEM, SSD, and HDD.
+      alluxio.worker.tieredstore.level0.alias=SSD
 
-   For the explanation of each configuration, please refer to [Alluxio Configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html) and [Amazon AWS S3](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html).
+      # The paths of storage directories in top storage tier 0, delimited by comma.
+      # It is suggested to have one storage directory per hardware device for the
+      # SSD and HDD tiers. You need to create YOUR_CACHE_DIR first,
+      # For example,
+      #       export YOUR_CACHE_DIR=/opt/alluxio/cache
+      #       mkdir -p $YOUR_CACHE_DIR
+      alluxio.worker.tieredstore.level0.dirs.path=/YOUR_CACHE_DIR
 
-   Add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`.
+      # The quotas for all storage directories in top storage tier 0
+      # For example, set the quota to 100G.
+      alluxio.worker.tieredstore.level0.dirs.quota=100G
 
-   ``` json
-   NM_hostname_1
-   NM_hostname_2
-   ```
+      # The path to the domain socket. Short-circuit reads make use of a UNIX domain
+      # socket when this is set (non-empty). This is a special path in the file system
+      # that allows the client and the AlluxioWorker to communicate. You will need to
+      # set a path to this socket. The AlluxioWorker needs to be able to create the
+      # path. If alluxio.worker.data.server.domain.socket.as.uuid is set, the path
+      # should be the home directory for the domain socket. The full path for the domain
+      # socket with be {path}/{uuid}.
+      # For example,
+      #      export YOUR_DOMAIN_SOCKET_PATH=/opt/alluxio/domain_socket
+      #      mkdir -p YOUR_DOMAIN_SOCKET_PATH
+      alluxio.worker.data.server.domain.socket.address=/YOUR_DOMAIN_SOCKET_PATH
+      alluxio.worker.data.server.domain.socket.as.uuid=true
 
-   - Copy configuration from Alluxio master to Alluxio workers.
+      # Configure async cache manager
+      # When large amounts of data are expected to be asynchronously cached concurrently,
+      # it may be helpful to increase below async cache configuration to handle a higher
+      # workload.
 
-   ``` shell
-   ${ALLUXIO_HOME}/bin/alluxio copyDir ${ALLUXIO_HOME}/conf
-   ```
+      # The number of asynchronous threads used to finish reading partial blocks.
+      alluxio.worker.network.async.cache.manager.threads.max=64
+
+      # The maximum number of outstanding async caching requests to cache blocks in each
+      # data server.
+      alluxio.worker.network.async.cache.manager.queue.max=2000
+      ############################################################################
+
+      ########################### Client properties ##############################
+      # When short circuit and domain socket both enabled, prefer to use short circuit.
+      alluxio.user.short.circuit.preferred=true
+      ############################################################################
+
+      # Running Alluxio locally with S3
+      # Optionally, to reduce data latency or visit resources which are separated in
+      # different AWS regions, specify a regional endpoint to make aws requests.
+      # An endpoint is a URL that is the entry point for a web service.
+      #
+      # For example, s3.cn-north-1.amazonaws.com.cn is an entry point for the Amazon S3
+      # service in beijing region.
+      alluxio.underfs.s3.endpoint=<endpoint_url>
+
+      # Optionally, specify to make all S3 requests path style
+      alluxio.underfs.s3.disable.dns.buckets=true
+      ```
+
+      For more explanations of each configuration, please refer to [Alluxio Configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html) and [Amazon AWS S3](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html).
+
+      - Add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`.
+
+         ``` json
+         NM_hostname_1
+         NM_hostname_2
+         ```
+
+      - Copy configuration from Alluxio master to Alluxio workers.
+
+         ``` shell
+         ${ALLUXIO_HOME}/bin/alluxio copyDir ${ALLUXIO_HOME}/conf
+         ```
+
+         This command will copy the `conf/` directory to all the workers specified in the `conf/workers` file.
+         Once this command succeeds, all the Alluxio nodes will be correctly configured.
+
    - Alluxio worker configuration.
 
-   Add worker and user hostname respectively in the Alluxio configuration of each Alluxio worker.
+      After copying configuration to every Alluxio worker from Alluxio master, User needs to add below extra configuration for each Alluxio worker.
 
-   ``` xml
-   alluxio.worker.hostname=NM_hostname_X
-   alluxio.user.hostname=NM_hostname_X
-   ```
+      ``` xml
+      # the hostname of Alluxio worker
+      alluxio.worker.hostname=NM_hostname_X
+      # The hostname to use for an Alluxio client
+      alluxio.user.hostname=NM_hostname_X
+      ```
 
-   Note that Alluxio can manage other storage media (e.g. MEM, HDD) in addition to ssd,
-   so local data access speed may vary depending on the local storage media. To learn
-   more about this topic, please refer to the [tiered storage document](https://docs.alluxio.io/os/user/stable/en/core-services/Caching.html#multiple-tier-storage).
+      Note that Alluxio can manage other storage media (e.g. MEM, HDD) in addition to SSD, so local data access speed may vary depending on the local storage media. To learn more about this topic, please refer to the [tiered storage document](https://docs.alluxio.io/os/user/stable/en/core-services/Caching.html#multiple-tier-storage).
 
 5. Mount an existing S3 bucket to Alluxio.
 
@@ -121,25 +171,25 @@ ResourceManager.
       alluxio://RM_hostname:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
    ```
 
-   For other filesystem, please refer to [this site](https://www.alluxio.io/)
+   For other filesystems, please refer to [this site](https://www.alluxio.io/).
 
 6. Start Alluxio cluster.
 
-   Login Alluxio master node, and run
+   Login to Alluxio master node, and run
 
    ``` bash
    ${ALLUXIO_HOME}/bin/alluxio-start.sh all
    ```
 
+   To verify that Alluxio is running, visit [http://RM_hostname:19999](http://RM_hostname:19999) to see the status page of the Alluxio master.
+
 ## RAPIDS Configuration
 
 There are two ways to leverage Alluxio in RAPIDS.
 
-1. Explicitly specify alluxio path.
+1. Explicitly specify the Alluxio path.
 
-   This may require user to change code.
-
-   Eg. Change below code
+   This may require user to change code. For example, Change
 
    ``` scala
    val df = spark.read.parquet("s3a://<S3_BUCKET>/<S3_DIRECTORY>/foo.parquet")
@@ -154,22 +204,30 @@ There are two ways to leverage Alluxio in RAPIDS.
 2. Transparently replace in RAPIDS.
 
    RAPIDS has added a configuration `spark.rapids.alluxio.pathsToReplace` which can allow RAPIDS
-   to replace the input file paths to alluxio paths transparently at runtime. So there is no any
+   to replace the input file paths to the Alluxio paths transparently at runtime. So there is no
    code change for users.
 
    Eg, at startup
+
    ``` shell
    --conf spark.rapids.alluxio.pathsToReplace="s3:/foo->alluxio://RM_hostname:19998/foo,gs:/bar->alluxio://RM_hostname:19998/bar"
    ```
 
-   This configuration allows RAPIDS to replace any file paths prefixed `s3:/foo` to
-   `alluxio://RM_hostname:19998/foo` and `gs:/bar` to `alluxio://RM_hostname:19998/bar`
+   This configuration allows RAPIDS to replace any file paths prefixed`s3:/foo` to
+   `alluxio://RM_hostname:19998/foo` and `gs:/bar` to `alluxio://RM_hostname:19998/bar`.
+
+   After introducing Alluxio, **`input_file_name`** is going to print the `alluxio://` path rather than the original. below is an example fo input_file_name.
+
+   ``` python
+   spark.read.parquet(data_path)
+     .filter(f.col('a') > 0)
+     .selectExpr('a', 'input_file_name()', 'input_file_block_start()', 'input_file_block_length()')
+   ```
 
 3. Submit an application.
 
-   Spark driver and tasks will parse `alluxio://` schema and access Alluxio cluster by
-   `alluxio-${LATEST}-client.jar` which must be distributed across the all nodes where Spark drivers
-   or executors are running.
+   Spark driver and tasks will parse `alluxio://` schema and access Alluxio cluster using
+   `alluxio-${LATEST}-client.jar`. The distribution shoule be described as below.
 
    The Alluxio client jar must be in the classpath of all Spark drivers and executors in order for
    Spark applications to access Alluxio.
@@ -189,12 +247,14 @@ There are two ways to leverage Alluxio in RAPIDS.
       --conf spark.executor.extraJavaOptions="-Dalluxio.conf.dir=${ALLUXIO_HOME}/conf" \
    ```
 
-## Alluxio troubleshoot
+## Alluxio Troubleshooting
+
 This section will give some links about how to configure, tune Alluxio and some troubleshooting.
+
 - [Quick Start Guide](https://docs.alluxio.io/os/user/stable/en/overview/Getting-Started.html)
 - [Amazon S3 as Alluxio’s under storage system](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html)
 - [Alluxio metrics](https://docs.alluxio.io/os/user/stable/en/reference/Metrics-List.html)
 - [Alluxio configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
 - [Running Spark on Alluxio](https://docs.alluxio.io/os/user/stable/en/compute/Spark.html)
-- [Performance Tuning](https://docs.alluxio.io/ee/user/stable/en/operation/Performance-Tuning.html)
-- [Alluxio troublesshooting](https://docs.alluxio.io/os/user/stable/en/operation/Troubleshooting.html)
+- [Performance Tuning](https://docs.alluxio.io/os/user/stable/en/operation/Performance-Tuning.html )
+- [Alluxio troubleshooting](https://docs.alluxio.io/os/user/stable/en/operation/Troubleshooting.html)
