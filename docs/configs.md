@@ -204,6 +204,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|`rint`|Rounds up a double value to the nearest double equal to an integer|true|None|
 <a name="sql.expression.Round"></a>spark.rapids.sql.expression.Round|`round`|Round an expression to d decimal places using HALF_UP rounding mode|true|None|
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|`row_number`|Window function that returns the index for the row within the aggregation window|true|None|
+<a name="sql.expression.ScalaUDF"></a>spark.rapids.sql.expression.ScalaUDF| |User Defined Function, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
 <a name="sql.expression.Second"></a>spark.rapids.sql.expression.Second|`second`|Returns the second component of the string/timestamp|true|None|
 <a name="sql.expression.ShiftLeft"></a>spark.rapids.sql.expression.ShiftLeft|`shiftleft`|Bitwise shift left (<<)|true|None|
 <a name="sql.expression.ShiftRight"></a>spark.rapids.sql.expression.ShiftRight|`shiftright`|Bitwise shift right (>>)|true|None|
@@ -254,8 +255,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|`min`|Min aggregate operator|true|None|
 <a name="sql.expression.Sum"></a>spark.rapids.sql.expression.Sum|`sum`|Sum aggregate operator|true|None|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero| |Normalize NaN and zero|true|None|
-<a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, support requires the UDF to implement a RAPIDS-accelerated interface|true|None|
-<a name="sql.expression.HiveSimpleUDF"></a>spark.rapids.sql.expression.HiveSimpleUDF| |Hive UDF, support requires the UDF to implement a RAPIDS-accelerated interface|true|None|
+<a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
+<a name="sql.expression.HiveSimpleUDF"></a>spark.rapids.sql.expression.HiveSimpleUDF| |Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
 
 ### Execution
 

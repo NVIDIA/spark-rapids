@@ -252,10 +252,10 @@ can throw at it.
 The RAPIDS Accelerator provides the following solutions for running
 user-defined functions on the GPU:
 
-#### RAPIDS-Accelerated UDFs
+#### RAPIDS Accelerated UDFs
 
-UDFs can provide a RAPIDS-accelerated implementation which allows the RAPIDS Accelerator to perform
-the operation on the GPU.  See the [RAPIDS-accelerated UDF documentation](additional-functionality/rapids-udfs.md)
+UDFs can provide a RAPIDS accelerated implementation which allows the RAPIDS Accelerator to perform
+the operation on the GPU.  See the [RAPIDS accelerated UDF documentation](additional-functionality/rapids-udfs.md)
 for details.
 
 #### Automatic Translation of Scala UDFs to Apache Spark Operations

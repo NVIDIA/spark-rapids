@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.udf;
+package com.nvidia.spark.rapids.udf.hive;
 
 import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.DType;
@@ -26,7 +26,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 
 /**
- * A user-defined function (UDF) that decodes URL-encoded strings.
+ * A Hive user-defined function (UDF) that decodes URL-encoded strings.
  * This class demonstrates how to implement a simple Hive UDF that also
  * provides a RAPIDS implementation that can run on the GPU when the query
  * is executed with the RAPIDS Accelerator for Apache Spark.
