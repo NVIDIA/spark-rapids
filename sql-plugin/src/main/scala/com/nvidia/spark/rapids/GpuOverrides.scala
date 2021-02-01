@@ -2014,6 +2014,37 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression =
           GpuCreateNamedStruct(childExprs.map(_.convertToGpu()))
       }),
+    expr[ArrayContains](
+      "Returns a boolean if the array contains the passed in key",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.BOOLEAN,
+        TypeSig.BOOLEAN,
+        ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
+          TypeSig.ARRAY.nested(TypeSig.all)),
+        ("key", TypeSig.commonCudfTypes, TypeSig.all)),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // do not support literal arrays as LHS
+          if (extractLit(in.left).isDefined) {
+            willNotWorkOnGpu("Literal arrays are not supported for array_contains")
+          }
+
+          val rhsVal = extractLit(in.right)
+          val mightHaveNans = (in.right.dataType, rhsVal) match {
+            case (FloatType, Some(f: Literal)) => f.value.asInstanceOf[Float].isNaN
+            case (DoubleType, Some(d: Literal)) => d.value.asInstanceOf[Double].isNaN
+            case (FloatType | DoubleType, None) => conf.hasNans // RHS is a column
+            case _ => false
+          }
+          if (mightHaveNans) {
+            willNotWorkOnGpu("Comparisons with NaN values are not supported and" +
+              "will compute incorrect results. If it is known that there are no NaNs, set " +
+              s" ${RapidsConf.HAS_NANS} to false.")
+          }
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuArrayContains(lhs, rhs)
+      }),
     expr[CreateArray](
       " Returns an array with the given elements",
       ExprChecks.projectNotLambda(
@@ -2499,8 +2530,8 @@ object GpuOverrides {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP)
-            .nested(TypeSig.STRING),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP + TypeSig.ARRAY)
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
