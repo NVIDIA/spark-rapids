@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from conftest import is_dataproc_runtime
 from data_gen import *
 from pyspark.sql.types import *
 from pyspark.sql.functions import array_contains, col, first, isnan, lit
@@ -55,7 +56,8 @@ def test_make_array(data_gen):
                 'array(a, b)',
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
-
+@pytest.mark.xfail(condition=is_dataproc_runtime(),
+                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
@@ -65,6 +67,8 @@ def test_orderby_array(data_gen):
         conf=allow_negative_scale_of_decimal_conf)
 
 
+@pytest.mark.xfail(condition=is_dataproc_runtime(),
+                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
 def test_orderby_array_of_arrays(data_gen):
@@ -74,6 +78,8 @@ def test_orderby_array_of_arrays(data_gen):
         'select array_table.a, array_table.a[0][0] as first_val from array_table order by first_val')
 
 
+@pytest.mark.xfail(condition=is_dataproc_runtime(),
+                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
                                                           ['child1', string_gen],
                                                           ['child2', float_gen]]))], ids=idfn)
