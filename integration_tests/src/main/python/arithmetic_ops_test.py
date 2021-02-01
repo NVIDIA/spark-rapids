@@ -511,7 +511,9 @@ def test_greatest(data_gen):
     ('nonAnsi', 'a/0'),
     ('nonAnsi', 'a/b')
 ])
-def test_div_by_zero(ansi_mode, expr):
+
+
+def _test_div_by_zero(ansi_mode, expr):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
     data_gen = lambda spark: two_col_df(spark, IntegerGen(), IntegerGen(min_val=0, max_val=0), length=1)
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
@@ -522,3 +524,13 @@ def test_div_by_zero(ansi_mode, expr):
                                  error_message='java.lang.ArithmeticException: divide by zero')
     else:
         assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
+
+
+@pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
+@pytest.mark.xfail(condition=is_before_spark_310(), reason='https://github.com/apache/spark/pull/29882')
+def test_div_by_zero_ansi(expr):
+    _test_div_by_zero(ansi_mode='ansi', expr=expr)
+
+@pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
+def test_div_by_zero_nonansi(expr):
+    _test_div_by_zero(ansi_mode='nonAnsi', expr=expr)
