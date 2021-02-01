@@ -668,7 +668,7 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out, unless it
         // will not work on the GPU
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
-          if (!this.canThisBeReplaced) {
+          if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
             super.print(append, depth, all)
           }
         }
@@ -700,7 +700,7 @@ object GpuOverrides {
         // There are so many of these that we don't need to print them out, unless it
         // will not work on the GPU
         override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
-          if (!this.canThisBeReplaced) {
+          if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
             super.print(append, depth, all)
           }
         }
@@ -1786,7 +1786,7 @@ object GpuOverrides {
       }),
     expr[Average](
       "Average aggregate operator",
-      ExprChecks.aggNotWindow(
+      ExprChecks.fullAgg(
         TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
         Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
@@ -1807,9 +1807,20 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("value", TypeSig.numeric +
+            TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+            TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+            TypeSig.numeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[BRound](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.child.dataType match {
+            case FloatType | DoubleType if !conf.isIncompatEnabled =>
+              willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
+            case _ => // NOOP
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBRound(lhs, rhs)
       }),
@@ -1817,9 +1828,20 @@ object GpuOverrides {
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProjectNotLambda(
         TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric, TypeSig.numeric),
+        ("value", TypeSig.numeric +
+            TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
+            TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
+            TypeSig.numeric),
         ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
       (a, conf, p, r) => new BinaryExprMeta[Round](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.child.dataType match {
+            case FloatType | DoubleType if !conf.isIncompatEnabled =>
+              willNotWorkOnGpu("rounding floating point numbers may be slightly off " +
+                  s"compared to Spark's result, to enable set ${RapidsConf.INCOMPATIBLE_OPS}")
+            case _ => // NOOP
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuRound(lhs, rhs)
       }),
@@ -1834,7 +1856,7 @@ object GpuOverrides {
           TypeSig.commonCudfTypes,
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
-        override def couldReplaceMessage: String = "does not block GPU acceleration"
+        override def replaceMessage: String = "not block GPU acceleration"
         override def noReplacementPossibleMessage(reasons: String): String =
           s"blocks running on GPU because $reasons"
 
@@ -2170,11 +2192,13 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
-      })
+      }),
+    GpuScalaUDF.exprMeta
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
+  // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    commonExpressions ++ ShimLoader.getSparkShims.getExprs ++ GpuHiveOverrides.exprs
+    commonExpressions ++ GpuHiveOverrides.exprs ++ ShimLoader.getSparkShims.getExprs
 
 
   def wrapScan[INPUT <: Scan](
@@ -2401,7 +2425,7 @@ object GpuOverrides {
             e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
           override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
 
-          override def couldReplaceMessage: String = "could partially run on GPU"
+          override def replaceMessage: String = "partially run on GPU"
           override def noReplacementPossibleMessage(reasons: String): String =
             s"cannot run even partially on the GPU because $reasons"
 
@@ -2608,6 +2632,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       } else {
         wrap.runAfterTagRules()
         if (!exp.equalsIgnoreCase("NONE")) {
+          wrap.tagForExplain()
           val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
           if (!explain.isEmpty) {
             logWarning(s"\n$explain")

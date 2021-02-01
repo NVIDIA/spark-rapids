@@ -29,12 +29,21 @@ not true for sorting. For all versions of the plugin `-0.0` == `0.0` for sorting
 
 ## Floating Point
 
-For most basic floating point operations like addition, subtraction, multiplication, and division
+For most basic floating-point operations like addition, subtraction, multiplication, and division
 the plugin will produce a bit for bit identical result as Spark does. For other functions like
-`sin`, `cos`, etc. the output may be different, but within the rounding error inherent in floating
-point calculations. The ordering of operations to calculate the value may differ between the
+`sin`, `cos`, etc. the output may be different, but within the rounding error inherent in 
+floating-point calculations. The ordering of operations to calculate the value may differ between the
 underlying JVM implementation used by the CPU and the C++ standard library implementation used by
 the GPU.
+
+In the case of `round` and `bround` the results can be off by more because they can enlarge the
+difference. This happens in cases where a binary floating-point representation cannot exactly
+capture a decimal value. For example `1.025` cannot exactly be represented and ends up being closer
+to `1.02499`. The Spark implementation of `round` converts it first to a decimal value with complex
+logic to make it `1.025` and then does the rounding.  This results in `round(1.025, 2)` under pure
+Spark getting a value of `1.03` but under the RAPIDS accelerator it produces `1.02`. As a side note
+Python will produce `1.02`, Java does not have the ability to do a round like this built in, but if
+you do the simple operation of `Math.round(1.025 * 100.0)/100.0` you also get `1.02`.
 
 For aggregations the underlying implementation is doing the aggregations in parallel and due to race
 conditions within the computation itself the result may not be the same each time the query is

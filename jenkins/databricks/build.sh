@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ CUDA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStd
 # the version of spark used when we install the databricks jars in .m2
 SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION-databricks
 RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
-RAPIDS_UDF_JAR=rapids-4-spark-udf-examples-$SPARK_PLUGIN_JAR_VERSION.jar
+RAPIDS_UDF_JAR=rapids-4-spark-udf-examples_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
 mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
