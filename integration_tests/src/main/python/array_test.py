@@ -96,12 +96,15 @@ def test_array_contains(data_gen):
                                          array_contains(col('a'), col('a')[5])), no_nans_conf)
 
 
+# Test array_contains() with a literal key that is extracted from the input array of doubles
+# that does contain NaNs. Note that the config is still set to indicate that the input has NaNs
+# but we verify that the plan is on the GPU despite that if the value being looked up is not a NaN.
 @pytest.mark.parametrize('data_gen', [double_gen], ids=idfn)
 def test_array_contains_for_nans(data_gen):
     arr_gen = ArrayGen(data_gen)
 
     def main_df(spark):
         df = three_col_df(spark, arr_gen, data_gen, arr_gen)
-        chk_val = df.select(col('a')[0].alias('t2')).filter(~isnan(col('t2'))).collect()[0][0]
+        chk_val = df.select(col('a')[0].alias('t')).filter(~isnan(col('t'))).collect()[0][0]
         return df.select(array_contains(col('a'), chk_val))
     assert_gpu_and_cpu_are_equal_collect(main_df)
