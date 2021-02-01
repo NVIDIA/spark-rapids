@@ -533,7 +533,8 @@ abstract class GpuLastBase(child: Expression)
 /**
  * Collects and returns a list of non-unique elements.
  *
- * FIXME Not sure whether GPU version requires the two offset parameters. Keep it here first.
+ * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
+ * with the CPU version and automated checks.
  */
 case class GpuCollectList(child: Expression,
                           mutableAggBufferOffset: Int = 0,
@@ -561,10 +562,11 @@ case class GpuCollectList(child: Expression,
   // The members as below should NOT be used yet, ensured by the
   // "TypeCheck.aggNotGroupByOrReduction" when trying to override the expression.
   private lazy val cudfList = AttributeReference("collect_list", dataType)()
-  override val initialValues: Seq[GpuExpression] = Seq.empty
-  override val updateExpressions: Seq[Expression] = Seq.empty
-  override val mergeExpressions: Seq[GpuExpression] = Seq.empty
-  override val evaluateExpression: Expression = null
+  // Make them lazy to avoid being initialized when creating a GpuCollectList.
+  override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException
+  override lazy val updateExpressions: Seq[Expression] = throw new UnsupportedOperationException
+  override lazy val mergeExpressions: Seq[GpuExpression] = throw new UnsupportedOperationException
+  override lazy val evaluateExpression: Expression = throw new UnsupportedOperationException
   override val inputProjection: Seq[Expression] = Seq(child)
   override def aggBufferAttributes: Seq[AttributeReference] = cudfList :: Nil
 }

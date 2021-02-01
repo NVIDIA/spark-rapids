@@ -1006,8 +1006,21 @@ object ExprChecks {
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
-      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    windowOnly(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)
+      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
+    val notWindowParamCheck = paramCheck.map { pc =>
+      ParamCheck(pc.name, TypeSig.none, pc.spark)
+    }
+    val notWindowRepeat = repeatingParamCheck.map { pc =>
+      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
+    }
+    ExprChecksImpl(Map(
+      (GroupByAggExprContext,
+        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
+      (ReductionAggExprContext,
+        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
+      (WindowAggExprContext,
+        ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+  }
 }
 
 /**
