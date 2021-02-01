@@ -103,5 +103,5 @@ def test_array_contains_for_nans(data_gen):
     def main_df(spark):
         df = three_col_df(spark, arr_gen, data_gen, arr_gen)
         chk_val = df.select(col('a')[0].alias('t2')).filter(~isnan(col('t2'))).collect()[0][0]
-        return debug_df(df.select(array_contains(col('a'), chk_val)))
+        return df.select(array_contains(col('a'), chk_val))
     assert_gpu_and_cpu_are_equal_collect(main_df)
