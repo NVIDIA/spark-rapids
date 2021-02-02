@@ -553,4 +553,6 @@ class Spark300Shims extends SparkShims {
       replaceFunc: Path => Path): Seq[Path] = {
     partitionDir.files.map(f => replaceFunc(f.getPath))
   }
+
+  override def shouldFailDivByZero(): Boolean = false
 }
