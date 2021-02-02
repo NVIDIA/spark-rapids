@@ -23,6 +23,7 @@ import random
 from spark_session import is_tz_utc
 import sre_yield
 import struct
+from conftest import skip_unless_precommit_tests
 
 class DataGen:
     """Base class for data generation"""
@@ -568,7 +569,7 @@ class NullGen(DataGen):
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
-        pytest.skip('The java system time zone is not set to UTC')
+        skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
@@ -800,6 +801,8 @@ map_gens_sample = [simple_string_to_string_map_gen,
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
 allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
+
+no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
