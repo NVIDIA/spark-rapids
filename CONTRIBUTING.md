@@ -17,6 +17,29 @@ Contributions to RAPIDS Accelerator for Apache Spark fall into the following thr
     follow the [code contributions](#code-contributions) guide below. If you
     need more context on a particular issue, please ask in a comment.
 
+## Branching Convention
+
+There are two types of branches in this repository:
+
+* `branch-[version]`: are development branches which can change often. Note that we merge into
+  the branch with the greatest version number, as that is our default branch.
+
+* `main`: is the branch with the latest released code, and the version tag (i.e. `v0.1.0`)
+  is held here. `main` will change with new releases, but otherwise it should not change with
+  every pull request merged, making it a more stable branch.
+
+## Building From Source
+
+We use [Maven](https://maven.apache.org) for most aspects of the build. Some important parts
+of the build execute in the `verify` phase of the Maven build lifecycle.  We recommend when
+building at least running to the `verify` phase, e.g.:
+
+```shell script
+mvn verify
+```
+
+After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
+
 ## Code contributions
 
 ### Your first issue
