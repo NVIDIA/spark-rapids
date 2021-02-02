@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
+from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.functions import array_contains, col, first, isnan, lit
 
@@ -56,24 +57,31 @@ def test_make_array(data_gen):
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
 
+@ignore_order
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, data_gen),
         'array_table',
-        'select array_table.a, array_table.a[0] as first_val from array_table order by first_val',
+        'select arr[0], first_val from'
+        '(select array_table.a as arr, array_table.a[0] as first_val'
+        'from array_table order by first_val)',
         conf=allow_negative_scale_of_decimal_conf)
 
 
+@ignore_order
 @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
 def test_orderby_array_of_arrays(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
     lambda spark : unary_op_df(spark, data_gen),
         'array_table',
-        'select array_table.a, array_table.a[0][0] as first_val from array_table order by first_val')
+        'select arr[0][0], first_val from'
+        '(select array_table.a as arr, array_table.a[0][0] as first_val'
+        'from array_table order by first_val)')
 
 
+@ignore_order
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
                                                           ['child1', string_gen],
                                                           ['child2', float_gen]]))], ids=idfn)
@@ -81,7 +89,10 @@ def test_orderby_array_of_structs(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, data_gen),
         'array_table',
-        'select array_table.a, array_table.a[0].child0 as first_val from array_table order by first_val')
+        'select struct_tbl.struct_val.child0  from '
+        '(select tbl.arr[0] as struct_val, first_val from ('
+        'select array_table.a as arr, array_table.a[0].child0 as first_val from'
+        'array_table order by first_val) as tbl) as struct_tbl')
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
