@@ -2179,9 +2179,7 @@ object GpuOverrides {
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
         Nil, None),
       (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = {
-          GpuScalarSubquery(GpuSubqueryExec(a.plan.name, a.plan.child), a.exprId)
-        }
+        override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
       }
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap

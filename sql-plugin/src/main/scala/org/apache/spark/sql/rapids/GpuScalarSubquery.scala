@@ -16,16 +16,19 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuExec, GpuExpression}
+import com.nvidia.spark.rapids.GpuExpression
 
-import org.apache.spark.TaskContext
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
-import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * GPU placeholder of ScalarSubquery, which returns the scalar result with columnarEval method.
+ * This placeholder is to make ScalarSubquery working as a GPUExpression to cooperate
+ * other GPU overrides.
+ */
 case class GpuScalarSubquery(
     plan: BaseSubqueryExec,
     exprId: ExprId)
@@ -34,55 +37,36 @@ case class GpuScalarSubquery(
   override def dataType: DataType = plan.schema.fields.head.dataType
   override def children: Seq[Expression] = Nil
   override def nullable: Boolean = true
+  override def toString: String = plan.simpleString(SQLConf.get.maxToStringFields)
   override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
 
   override def semanticEquals(other: Expression): Boolean = other match {
     case s: GpuScalarSubquery => plan.sameResult(s.plan)
     case _ => false
   }
-  private var result: Any = _
+
+  // the first column in first row from `query`.
+  @volatile private var result: Any = _
+  @volatile private var updated: Boolean = false
 
   override def updateResult(): Unit = {
-    val subPlanRDD = plan.child.execute()
-    val sc = plan.sqlContext.sparkContext
-
-    // As ScalarSubquery, we expect a single row and column result from the child plan.
-    def fetchScalar(iter: Iterator[InternalRow]): Any = {
-      if (!iter.hasNext) {
-        null
-      } else {
-        val firstRow = iter.next()
-        assert(!iter.hasNext,
-          "Found multiple rows output from the child plan of SubqueryExec")
-        assert(firstRow.numFields == 1,
-          "Found multiple columns output from the child plan of SubqueryExec")
-        firstRow.get(0, dataType)
-      }
+    val rows = plan.executeCollect()
+    if (rows.length > 1) {
+      sys.error(s"more than one row returned by a subquery used as an expression:\n$plan")
     }
-
-    def resultHandler(taskResult: Any): Unit = {
-      if (taskResult != null) {
-        assert(result == null,
-          "Found multiple records from the results of different partitions")
-        result = taskResult
-      }
+    if (rows.length == 1) {
+      assert(rows(0).numFields == 1,
+        s"Expects 1 field, but got ${rows(0).numFields}; something went wrong in analysis")
+      result = rows(0).get(0, dataType)
+    } else {
+      // If there is no rows returned, the result should be null.
+      result = null
     }
-
-    sc.runJob(
-      rdd = subPlanRDD,
-      func = (_: TaskContext, iter: Iterator[InternalRow]) => fetchScalar(iter),
-      partitions = 0 until subPlanRDD.getNumPartitions,
-      resultHandler = (_: Int, ret: Any) => resultHandler(ret)
-    )
+    updated = true
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = result
-}
-
-// A GPU placeholder for SubqueryExec, which should NOT be executed
-case class GpuSubqueryExec(name: String, child: SparkPlan)
-  extends BaseSubqueryExec with UnaryExecNode with GpuExec {
-  override protected def doExecute(): RDD[InternalRow] = {
-    throw new UnsupportedOperationException(s"Cannot execute plan: $this")
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    require(updated, s"$this has not finished")
+    result
   }
 }

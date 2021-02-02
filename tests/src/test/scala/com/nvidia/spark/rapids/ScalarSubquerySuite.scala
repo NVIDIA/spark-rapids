@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.{GpuScalarSubquery, GpuSubqueryExec}
+import org.apache.spark.sql.rapids.GpuScalarSubquery
 
 class ScalarSubquerySuite extends SparkQueryCompareTestSuite {
 
@@ -29,8 +29,6 @@ class ScalarSubquerySuite extends SparkQueryCompareTestSuite {
           case e if e.find(_.isInstanceOf[GpuScalarSubquery]).nonEmpty =>
             e.find(_.isInstanceOf[GpuScalarSubquery]).get
         }.get.asInstanceOf[GpuScalarSubquery].plan
-        assert(subqueryExec.isInstanceOf[GpuSubqueryExec],
-          "Expect GpuSubqueryExec as the wrapped plan of GpuScalarSubquery")
       case None =>
         throw new AssertionError("Could not find GpuScalarSubquery expression among plans")
     }
