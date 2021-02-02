@@ -63,8 +63,8 @@ def test_orderby_array(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, data_gen),
         'array_table',
-        'select arr[0], first_val from'
-        '(select array_table.a as arr, array_table.a[0] as first_val'
+        'select arr[0], first_val from '
+        '(select array_table.a as arr, array_table.a[0] as first_val '
         'from array_table order by first_val)',
         conf=allow_negative_scale_of_decimal_conf)
 
@@ -76,8 +76,8 @@ def test_orderby_array_of_arrays(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
     lambda spark : unary_op_df(spark, data_gen),
         'array_table',
-        'select arr[0][0], first_val from'
-        '(select array_table.a as arr, array_table.a[0][0] as first_val'
+        'select arr[0][0], first_val from '
+        '(select array_table.a as arr, array_table.a[0][0] as first_val '
         'from array_table order by first_val)')
 
 
@@ -91,7 +91,7 @@ def test_orderby_array_of_structs(data_gen):
         'array_table',
         'select struct_tbl.struct_val.child0  from '
         '(select tbl.arr[0] as struct_val, first_val from ('
-        'select array_table.a as arr, array_table.a[0].child0 as first_val from'
+        'select array_table.a as arr, array_table.a[0].child0 as first_val from '
         'array_table order by first_val) as tbl) as struct_tbl')
 
 
