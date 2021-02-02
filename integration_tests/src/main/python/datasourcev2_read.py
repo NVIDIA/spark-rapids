@@ -98,7 +98,7 @@ def test_read_round_trip_no_partitioned_arrow_off(std_input_path, csv, spark_tmp
     columnarTableNameNoPart = catalogName + "." + tableNameNoPart
     with_cpu_session(lambda spark : setupInMemoryTableNoPartitioning(spark, csvPath, tableNameNoPart, columnarTableNameNoPart),
             conf={'spark.sql.catalog.columnar': columnarClass,
-                  'spark.rapids.arrowCopyOptmizationEnabled': 'false'})
+                  'spark.rapids.arrowCopyOptimizationEnabled': 'false'})
     assert_gpu_and_cpu_are_equal_collect(readTable(csvPath, columnarTableNameNoPart),
             conf={'spark.sql.catalog.columnar': columnarClass,
-                  'spark.rapids.arrowCopyOptmizationEnabled': 'false'})
+                  'spark.rapids.arrowCopyOptimizationEnabled': 'false'})
