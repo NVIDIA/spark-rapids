@@ -42,23 +42,9 @@ may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
 The jar files for the most recent release can be retrieved from the [download](docs/download.md)
 page. 
 
-## Build
+## Building From Source
 
-There are two types of branches in this repository:
-
-* `branch-[version]`: are development branches which can change often. Note that we merge into 
-  the branch with the greatest version number, as that is our default branch.
-
-* `main`: is the branch with the latest released code, and the version tag (i.e. `v0.1.0`)
-  is held here. `main` will change with new releases, but otherwise it should not change with
-  every pull request merged, making it a more stable branch.
-
-We use maven for most aspects of the build. Some important parts of the build execute in
-the "verify" phase of maven.  We recommend when building at least running to the "verify" phase.   
-
-```shell script
-mvn verify
-```
+See the [build instructions in the contributing guide](CONTRIBUTING.md#building-from-source).
 
 ## Testing 
 

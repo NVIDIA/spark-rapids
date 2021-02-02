@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -179,13 +179,29 @@ object GpuDivModLike {
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
+  lazy val failOnError: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero()
+
   override def nullable: Boolean = true
 
   import GpuDivModLike._
 
+  private def divByZeroError(): Nothing = {
+    throw new ArithmeticException("divide by zero")
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    withResource(replaceZeroWithNull(rhs)) { replaced =>
-      super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
+    if (failOnError) {
+      withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
+        if (rhs.getBase.contains(zeroScalar)) {
+          divByZeroError()
+        } else {
+          super.doColumnar(lhs, rhs)
+        }
+      }
+    } else {
+      withResource(replaceZeroWithNull(rhs)) { replaced =>
+        super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
+      }
     }
   }
 
@@ -197,8 +213,12 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     if (isScalarZero(rhs)) {
-      withResource(Scalar.fromNull(lhs.getBase.getType)) { nullScalar =>
-        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+      if (failOnError) {
+        divByZeroError()
+      } else {
+        withResource(Scalar.fromNull(lhs.getBase.getType)) { nullScalar =>
+          ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+        }
       }
     } else {
       super.doColumnar(lhs, rhs)

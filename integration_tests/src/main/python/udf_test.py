@@ -14,7 +14,7 @@
 
 import pytest
 
-from conftest import is_at_least_precommit_run
+from conftest import is_at_least_precommit_run, is_databricks_runtime
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 try:
@@ -170,6 +170,8 @@ def test_window_aggregate_udf(data_gen, window):
         conf=arrow_udf_conf)
 
 
+@pytest.mark.xfail(condition=is_databricks_runtime(),
+        reason='https://github.com/NVIDIA/spark-rapids/issues/1644')
 @ignore_order
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)

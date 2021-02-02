@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.nio.ByteBuffer
 
 import org.apache.arrow.vector.ValueVector
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -185,4 +184,6 @@ trait SparkShims {
   def replacePartitionDirectoryFiles(
     partitionDir: PartitionDirectory,
     replaceFunc: Path => Path): Seq[Path]
+
+  def shouldFailDivByZero(): Boolean
 }

@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.internal.StaticSQLConf
+import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark311._
@@ -403,4 +403,7 @@ class Spark311Shims extends Spark301Shims {
   override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
     vec.getOffsetBuffer.nioBuffer()
   }
+
+  /** matches SPARK-33008 fix in 3.1.1 */
+  override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
 }
