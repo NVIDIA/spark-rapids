@@ -129,7 +129,18 @@ def pytest_runtest_setup(item):
 
     global _allow_any_non_gpu
     global _non_gpu_allowed
+    _non_gpu_allowed_databricks = []
+    _allow_any_non_gpu_databricks = False
+    non_gpu_databricks = item.get_closest_marker('allow_non_gpu_databricks')
     non_gpu = item.get_closest_marker('allow_non_gpu')
+    if non_gpu_databricks:
+        if is_databricks_runtime():
+            if non_gpu_databricks.kwargs and non_gpu_databricks.kwargs['any']:
+                _allow_any_non_gpu_databricks = True
+            elif non_gpu_databricks.args:
+                _non_gpu_allowed_databricks = non_gpu_databricks.args
+            else:
+                pytest.warn('allow_non_gpu_databricks marker without anything allowed')
     if non_gpu:
         if non_gpu.kwargs and non_gpu.kwargs['any']:
             _allow_any_non_gpu = True
@@ -144,6 +155,12 @@ def pytest_runtest_setup(item):
     else:
         _allow_any_non_gpu = False
         _non_gpu_allowed = []
+
+    _allow_any_non_gpu = _allow_any_non_gpu | _allow_any_non_gpu_databricks
+    if _non_gpu_allowed and _non_gpu_allowed_databricks:
+        _non_gpu_allowed = _non_gpu_allowed + _non_gpu_allowed_databricks
+    elif _non_gpu_allowed_databricks:
+        _non_gpu_allowed = _non_gpu_allowed_databricks
 
     global _limit
     limit_mrk = item.get_closest_marker('limit')
