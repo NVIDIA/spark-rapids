@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,5 +107,10 @@ object TrampolineUtil {
   /** Set the bytes read task input metric */
   def incBytesRead(inputMetrics: InputMetrics, bytesRead: Long): Unit = {
     inputMetrics.incBytesRead(bytesRead)
+  }
+
+  /** Get the simple name of a class with fixup for any Scala internal errors */
+  def getSimpleName(cls: Class[_]): String = {
+    Utils.getSimpleName(cls)
   }
 }

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -82,9 +82,12 @@ def test_window_aggs_for_rows(data_gen):
         '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_1, '
         ' count(c) over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_c, '
+        ' avg(c) over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as avg_c, '
         ' row_number() over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
-        'from window_agg_table ')
+        'from window_agg_table ',
+        conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
 
 part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
@@ -179,6 +182,9 @@ def test_window_aggs_for_ranges(data_gen):
         ' sum(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between interval 1 day preceding and interval 1 day following) as sum_c_asc, '
+        ' avg(c) over '
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between interval 1 day preceding and interval 1 day following) as avg_c_asc, '
         ' max(c) over '
         '   (partition by a order by cast(b as timestamp) desc '
         '       range between interval 2 days preceding and interval 1 days following) as max_c_desc, '
@@ -191,13 +197,17 @@ def test_window_aggs_for_ranges(data_gen):
         ' count(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between  CURRENT ROW and UNBOUNDED following) as count_c_asc, '
+        ' avg(c) over '
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between UNBOUNDED preceding and CURRENT ROW) as avg_c_unbounded, '
         ' sum(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between UNBOUNDED preceding and CURRENT ROW) as sum_c_unbounded, '
         ' max(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between UNBOUNDED preceding and UNBOUNDED following) as max_c_unbounded '
-        'from window_agg_table')
+        'from window_agg_table',
+        conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over non-timestamp columns "
                           "(https://github.com/NVIDIA/spark-rapids/issues/216)")

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -387,7 +387,8 @@ case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate
     Aggregation.count(false).onColumn(inputs.head._2)
 }
 
-case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
+case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate
+    with GpuAggregateWindowFunction {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = AttributeReference("sum", DoubleType)()
   private lazy val cudfCount = AttributeReference("count", LongType)()
@@ -444,6 +445,10 @@ case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
   override def children: Seq[Expression] = child :: Nil
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForNumericExpr(child.dataType, "function gpu average")
+
+  override val windowInputProjection: Seq[Expression] = Seq(children.head)
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.mean().onColumn(inputs.head._2)
 }
 
 /*
