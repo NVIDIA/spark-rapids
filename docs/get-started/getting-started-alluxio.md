@@ -6,7 +6,7 @@ parent: Getting-Started
 ---
 # Getting Started with RAPIDS and Alluxio
 
-Th RAPIDS plugin can remarkably accelerate the computing part of a SQL query by leveraging
+The RAPIDS plugin can remarkably accelerate the computing part of a SQL query by leveraging
 GPUs, but it’s hard to accelerate the data reading process when the data is in a cloud
 filesystem because of network overhead.
 
@@ -28,7 +28,7 @@ This guide will go through deployment of Alluxio in a Yarn cluster with 2 NodeMa
 Alluxio’s underlying storage system.
 
 We may want to put the Alluxio workers on the NodeManagers so they are on the same nodes as
-the Spark tasks will run, the Alluxio master can go anywhere, we pick ResourceManager for
+the Spark tasks will run. The Alluxio master can go anywhere, we pick ResourceManager for
 convenience.
 
 Let's assume the hostnames are:
@@ -48,7 +48,7 @@ NM_hostname_2
    in the NodeManagers and ResourceManager.
 
    ``` shell
-   # Let's assume to extract alluxio to /opt
+   # Let's assume we extract alluxio to /opt
    mkdir -p /opt
    tar xvf alluxio-${LATEST}-bin.tar.gz -C /opt
    export ALLUXIO_HOME=/opt/alluxio-${LATEST}
@@ -123,7 +123,7 @@ NM_hostname_2
 
       # Running Alluxio locally with S3
       # Optionally, to reduce data latency or visit resources which are separated in
-      # different AWS regions, specify a regional endpoint to make aws requests.
+      # different AWS regions, specify a regional endpoint to make AWS requests.
       # An endpoint is a URL that is the entry point for a web service.
       #
       # For example, s3.cn-north-1.amazonaws.com.cn is an entry point for the Amazon S3
@@ -138,8 +138,8 @@ NM_hostname_2
       [Alluxio Configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
       and [Amazon AWS S3](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html).
 
-      Note, If preparing to mount S3 compatible file system to the root of Alluxio namespace, the user
-      needs to add below aws credentials configuration to `${ALLUXIO_HOME}/conf/alluxio-site.properties`
+      Note, when preparing to mount S3 compatible file system to the root of Alluxio namespace, the user
+      needs to add below AWS credentials configuration to `${ALLUXIO_HOME}/conf/alluxio-site.properties`
       in Alluxio master node.
 
       ``` xml
@@ -148,9 +148,9 @@ NM_hostname_2
       alluxio.master.mount.table.root.option.aws.secretKey=<AWS_SECRET_ACCESS_KEY>
       ```
 
-      Instead, this guide demonstrates how to mount the S3 compatible file system with aws credentials
+      Instead, this guide demonstrates how to mount the S3 compatible file system with AWS credentials
       to any path of Alluxio namespace, and please refer to [RAPIDS Configuration](#rapids-configuration).
-      For more explanations of aws S3 credentials, please refer to
+      For more explanations of AWS S3 credentials, please refer to
       [Amazon AWS S3 Credentials setup](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html#advanced-setup).
 
       Note, this guide demonstrates how to deploy Alluxio cluster in a insecure way, for the Alluxio security,
@@ -217,7 +217,7 @@ There are two ways to leverage Alluxio in RAPIDS.
 
 1. Explicitly specify the Alluxio path.
 
-   This may require user to change code. For example, Change
+   This may require user to change code. For example, change
 
    ``` scala
    val df = spark.read.parquet("s3a://<S3_BUCKET>/<S3_DIRECTORY>/foo.parquet")
