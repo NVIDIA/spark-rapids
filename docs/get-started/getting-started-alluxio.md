@@ -31,7 +31,7 @@ We may want to put the Alluxio workers on the NodeManagers so they are on the sa
 the Spark tasks will run, the Alluxio master can go anywhere, we pick ResourceManager for
 convenience.
 
-Let's assume the hostnames of them are respectively
+Let's assume the hostnames are:
 
 ``` console
 RM_hostname
@@ -138,6 +138,20 @@ NM_hostname_2
       [Alluxio Configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
       and [Amazon AWS S3](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html).
 
+      Note, If preparing to mount S3 compatible file system to the root of Alluxio namespace, the user
+      needs to add below aws credentials configuration to `${ALLUXIO_HOME}/conf/alluxio-site.properties`
+      in Alluxio master node.
+
+      ``` xml
+      alluxio.master.mount.table.root.ufs=s3a://<S3_BUCKET>/<S3_DIRECTORY>
+      alluxio.master.mount.table.root.option.aws.accessKeyId=<AWS_ACCESS_KEY_ID>
+      alluxio.master.mount.table.root.option.aws.secretKey=<AWS_SECRET_ACCESS_KEY>
+      ```
+
+      Instead, this guide demonstrates how to mount the S3 compatible file system with aws credentials
+      to any path of Alluxio namespace, and please refer to [RAPIDS Configuration](#rapids-configuration).
+      For more explanations of aws S3 credentials, please refer to [Amazon AWS S3 Credentials setup](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html#advanced-setup).
+
       - Add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`.
 
          ``` json
@@ -223,11 +237,12 @@ There are two ways to leverage Alluxio in RAPIDS.
    --conf spark.rapids.alluxio.pathsToReplace="s3:/foo->alluxio://RM_hostname:19998/foo,gs:/bar->alluxio://RM_hostname:19998/bar"
    ```
 
-   This configuration allows RAPIDS to replace any file paths prefixed`s3:/foo` to
-   `alluxio://RM_hostname:19998/foo` and `gs:/bar` to `alluxio://RM_hostname:19998/bar`.
+   This configuration allows RAPIDS to replace any file paths prefixed `s3:/foo` with
+   `alluxio://RM_hostname:19998/foo` and `gs:/bar` with `alluxio://RM_hostname:19998/bar`.
 
-   After introducing Alluxio, **`input_file_name`** is going to print the `alluxio://` path
-   rather than the original. below is an example fo input_file_name.
+   Note, one side affect of using Alluxio in this way results in the sql function
+   **`input_file_name`** printing the `alluxio://` path rather than the original path.
+   Below is an example of using input_file_name.
 
    ``` python
    spark.read.parquet(data_path)
@@ -238,7 +253,7 @@ There are two ways to leverage Alluxio in RAPIDS.
 3. Submit an application.
 
    Spark driver and tasks will parse `alluxio://` schema and access Alluxio cluster using
-   `alluxio-${LATEST}-client.jar`. The distribution shoule be described as below.
+   `alluxio-${LATEST}-client.jar`.
 
    The Alluxio client jar must be in the classpath of all Spark drivers and executors in order
    for Spark applications to access Alluxio.
