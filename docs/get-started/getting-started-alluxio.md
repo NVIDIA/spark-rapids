@@ -150,7 +150,11 @@ NM_hostname_2
 
       Instead, this guide demonstrates how to mount the S3 compatible file system with aws credentials
       to any path of Alluxio namespace, and please refer to [RAPIDS Configuration](#rapids-configuration).
-      For more explanations of aws S3 credentials, please refer to [Amazon AWS S3 Credentials setup](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html#advanced-setup).
+      For more explanations of aws S3 credentials, please refer to
+      [Amazon AWS S3 Credentials setup](https://docs.alluxio.io/os/user/stable/en/ufs/S3.html#advanced-setup).
+
+      Note, this guide demonstrates how to deploy Alluxio cluster in a insecure way, for the Alluxio security,
+      please refer to [this site](https://docs.alluxio.io/os/user/stable/en/operation/Security.html)
 
       - Add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`.
 
@@ -259,8 +263,9 @@ There are two ways to leverage Alluxio in RAPIDS.
    for Spark applications to access Alluxio.
 
    We can specify it in the configuration of `spark.driver.extraClassPath` and
-   `spark.executor.extraClassPath`, but the simplest way is copy `alluxio-${LATEST}-client.jar`
-   into spark jars directory.
+   `spark.executor.extraClassPath`, but the alluxio client jar should be present on the Yarn nodes.
+
+   The other simplest way is copy `alluxio-${LATEST}-client.jar` into spark jars directory.
 
    ``` shell
    cp ${ALLUXIO_HOME}/client/alluxio-${LATEST}-client.jar ${SPARK_HOME}/jars/
