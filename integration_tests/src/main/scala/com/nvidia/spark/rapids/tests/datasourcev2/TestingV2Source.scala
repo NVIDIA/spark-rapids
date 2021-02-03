@@ -26,7 +26,6 @@ import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
 import org.apache.arrow.vector.util.Text;
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.catalog._
 import org.apache.spark.sql.connector.catalog.TableCapability.BATCH_READ
@@ -36,13 +35,13 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
 
-
+// Contains a bunch of classes for testing DataSourceV2 inputs
 object TestingV2Source {
   var schema = new StructType(Array(StructField("col1", IntegerType)))
   var dataTypesToUse: Seq[DataType] = Seq(IntegerType)
 }
 
-trait TestingV2Source extends TableProvider with Logging {
+trait TestingV2Source extends TableProvider {
   override def inferSchema(options: CaseInsensitiveStringMap): StructType = {
     var colNum = 0
     Option(options.get("arrowTypes")).foreach { typesStr =>
@@ -74,7 +73,6 @@ trait TestingV2Source extends TableProvider with Logging {
         }
       }
       TestingV2Source.dataTypesToUse = fields.map(_.dataType).toSeq
-      logWarning("schema filds are: " + fields)
       TestingV2Source.schema = new StructType(fields)
     }
     TestingV2Source.schema
@@ -113,8 +111,11 @@ abstract class SimpleBatchTable extends Table with SupportsRead  {
 
 case class ArrowInputPartition(dt: Seq[DataType], numRows: Int, startNum: Int) extends InputPartition
 
-
-class ColumnarDataSourceV2 extends TestingV2Source {
+// DatasourceV2 that generates ArrowColumnVectors
+// Default is to generate 2 partitions with 100 rows each.
+// user can specify the datatypes with the .option() argument to the DataFrameReader
+// via key "arrowTypes"
+class ArrowColumnarDataSourceV2 extends TestingV2Source {
 
   class MyScanBuilder(options: CaseInsensitiveStringMap) extends SimpleScanBuilder {
 
@@ -136,7 +137,7 @@ class ColumnarDataSourceV2 extends TestingV2Source {
 }
 
 class ColumnarReaderFactory(options: CaseInsensitiveStringMap)
-    extends PartitionReaderFactory with Logging {
+    extends PartitionReaderFactory {
   private final val BATCH_SIZE = 20
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
