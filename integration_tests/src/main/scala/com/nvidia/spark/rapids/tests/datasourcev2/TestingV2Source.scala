@@ -109,7 +109,8 @@ abstract class SimpleBatchTable extends Table with SupportsRead  {
   override def capabilities(): util.Set[TableCapability] = Set(BATCH_READ).asJava
 }
 
-case class ArrowInputPartition(dt: Seq[DataType], numRows: Int, startNum: Int) extends InputPartition
+case class ArrowInputPartition(dt: Seq[DataType], numRows: Int, startNum: Int)
+  extends InputPartition
 
 // DatasourceV2 that generates ArrowColumnVectors
 // Default is to generate 2 partitions with 100 rows each.
