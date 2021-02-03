@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -38,9 +37,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class AcceleratedColumnarToRowIterator(
     schema: Seq[Attribute],
     batches: Iterator[ColumnarBatch],
-    numInputBatches: SQLMetric = null,
-    numOutputRows: SQLMetric = null,
-    totalTime: SQLMetric = null) extends Iterator[InternalRow] with Arm with Serializable {
+    numInputBatches: GpuMetric = null,
+    numOutputRows: GpuMetric = null,
+    totalTime: GpuMetric = null) extends Iterator[InternalRow] with Arm with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -168,8 +167,8 @@ class AcceleratedColumnarToRowIterator(
   }
 }
 
-class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: SQLMetric = null,
-   numOutputRows: SQLMetric = null, totalTime: SQLMetric = null) extends Iterator[InternalRow] {
+class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: GpuMetric = null,
+   numOutputRows: GpuMetric = null, totalTime: GpuMetric = null) extends Iterator[InternalRow] {
   // GPU batches read in must be closed by the receiver (us)
   @transient var cb: ColumnarBatch = null
   var it: java.util.Iterator[InternalRow] = null
@@ -264,15 +263,15 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
-    TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES))
+  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
+    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def doExecute(): RDD[InternalRow] = {
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numInputBatches = longMetric(NUM_INPUT_BATCHES)
-    val totalTime = longMetric(TOTAL_TIME)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
 
     // This avoids calling `output` in the RDD closure, so that we don't need to include the entire
     // plan (this) in the closure.
