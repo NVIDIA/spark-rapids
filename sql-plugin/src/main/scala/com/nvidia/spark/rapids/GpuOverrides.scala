@@ -498,11 +498,11 @@ object GpuOverrides {
                 if (converted == gpuShuffle.outputPartitioning) {
                   sqse
                 } else {
-                  plan
+                  cpuShuffle
                 }
-              case _ => plan
+              case _ => cpuShuffle
             }
-          case _ => plan
+          case _ => cpuShuffle
         }
     }
   }
