@@ -35,7 +35,7 @@ case class GpuScalarSubquery(
   extends ExecSubqueryExpression with GpuExpression {
 
   override def dataType: DataType = plan.schema.fields.head.dataType
-  override def children: Seq[Expression] = Nil
+  override def children: Seq[Expression] = Seq.empty
   override def nullable: Boolean = true
   override def toString: String = plan.simpleString(SQLConf.get.maxToStringFields)
   override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
@@ -53,11 +53,10 @@ case class GpuScalarSubquery(
     val rows = plan.executeCollect()
     if (rows.length > 1) {
       sys.error(s"more than one row returned by a subquery used as an expression:\n$plan")
-    }
-    if (rows.length == 1) {
-      assert(rows(0).numFields == 1,
-        s"Expects 1 field, but got ${rows(0).numFields}; something went wrong in analysis")
-      result = rows(0).get(0, dataType)
+    } else if (rows.length == 1) {
+      assert(rows.head.numFields == 1,
+        s"Expects 1 field, but got ${rows.head.numFields}; something went wrong in analysis")
+      result = rows.head.get(0, dataType)
     } else {
       // If there is no rows returned, the result should be null.
       result = null

@@ -16,21 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.GpuScalarSubquery
+import org.apache.spark.sql.execution.{ScalarSubquery, SparkPlan}
 
 class ScalarSubquerySuite extends SparkQueryCompareTestSuite {
 
   private def checkExecPlan(plan: SparkPlan): Unit = {
     if (!plan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) return
-    plan.find(_.expressions.exists(e => e.find(_.isInstanceOf[GpuScalarSubquery]).nonEmpty)) match {
+    plan.find(_.expressions.exists(e => e.find(_.isInstanceOf[ScalarSubquery]).nonEmpty)) match {
       case Some(plan) =>
-        val subqueryExec = plan.expressions.collectFirst {
-          case e if e.find(_.isInstanceOf[GpuScalarSubquery]).nonEmpty =>
-            e.find(_.isInstanceOf[GpuScalarSubquery]).get
-        }.get.asInstanceOf[GpuScalarSubquery].plan
+        throw new AssertionError(s"Assume no (cpu)ScalarSubquery, but found in $plan")
       case None =>
-        throw new AssertionError("Could not find GpuScalarSubquery expression among plans")
     }
   }
 
