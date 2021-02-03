@@ -25,6 +25,7 @@ import org.apache.arrow.vector.complex.{ListVector, MapVector}
 import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.catalog._
 import org.apache.spark.sql.connector.catalog.TableCapability.BATCH_READ
@@ -100,7 +101,7 @@ class ColumnarDataSourceV2 extends TestingV2Source {
   }
 }
 
-object ColumnarReaderFactory extends PartitionReaderFactory {
+object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
   private final val BATCH_SIZE = 20
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
@@ -111,13 +112,14 @@ object ColumnarReaderFactory extends PartitionReaderFactory {
 
   override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
     val ArrowInputPartition(dataTypes, numRows) = partition
+    logWarning(s"create column reader num rows $numRows types: $dataTypes")
+
     new PartitionReader[ColumnarBatch] {
       private var batch: ColumnarBatch = _
 
       private var current = 0
 
       override def next(): Boolean = {
-        var count = 0
         val batchSize = if (current < numRows) {
           if (current + BATCH_SIZE > numRows) {
             numRows - current
@@ -131,6 +133,7 @@ object ColumnarReaderFactory extends PartitionReaderFactory {
         if (batchSize == 0) {
           false
         } else {
+          logWarning("create vectors")
           var dtypeNum = 0
           val vecs = dataTypes.map { dtype =>
             val vector = setupArrowVector(s"v$current$dtypeNum", dtype)
@@ -139,7 +142,9 @@ object ColumnarReaderFactory extends PartitionReaderFactory {
             new ArrowColumnVector(vector)
           }
           batch = new ColumnarBatch(vecs.toArray)
-          batch.setNumRows(count)
+          logWarning(s"set batch num rows to $batchSize")
+
+          batch.setNumRows(batchSize)
           current += batchSize
           true
         }
