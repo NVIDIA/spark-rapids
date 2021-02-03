@@ -56,6 +56,12 @@
                 <spark.test.version>3.1.1-SNAPSHOT</spark.test.version>
             </properties>
         </profile>
+        <profile>
+            <id>spark320tests</id>
+            <properties>
+                <spark.test.version>3.2.0-SNAPSHOT</spark.test.version>
+            </properties>
+        </profile>
     </profiles>
 
     <dependencies>
