@@ -20,10 +20,11 @@ import java.util
 import scala.collection.JavaConverters._
 
 import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.{IntVector, ValueVector}
+import org.apache.arrow.vector._
 import org.apache.arrow.vector.complex.{ListVector, MapVector}
 import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
+import org.apache.arrow.vector.util.Text;
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -37,12 +38,45 @@ import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
 
 
 object TestingV2Source {
-  val schema =
-    new StructType(Array(StructField("int1", IntegerType), StructField("int2", IntegerType)))
+  var schema = new StructType(Array(StructField("col1", IntegerType)))
+  var dataTypesToUse: Seq[DataType] = Seq(IntegerType)
 }
 
-trait TestingV2Source extends TableProvider {
+trait TestingV2Source extends TableProvider with Logging {
   override def inferSchema(options: CaseInsensitiveStringMap): StructType = {
+    var colNum = 0
+    Option(options.get("arrowTypes")).foreach { typesStr =>
+      val types = typesStr.split(",").map(_.trim()).filter(_.nonEmpty)
+      val fields = types.map { t =>
+        colNum += 1
+        val colStr = s"col$colNum"
+        t match {
+          case "bool" =>
+            StructField(colStr, BooleanType)
+          case "byte" =>
+            StructField(colStr, ByteType)
+          case "short" =>
+            StructField(colStr, ShortType)
+          case "int" =>
+            StructField(colStr, IntegerType)
+          case "long" =>
+            StructField(colStr, LongType)
+          case "float" =>
+            StructField(colStr, FloatType)
+          case "double" =>
+            StructField(colStr, DoubleType)
+          case "string" =>
+            StructField(colStr, StringType)
+          case "timestamp" =>
+            StructField(colStr, TimestampType)
+          case "date" =>
+            StructField(colStr, DateType)
+        }
+      }
+      TestingV2Source.dataTypesToUse = fields.map(_.dataType).toSeq
+      logWarning("schema filds are: " + fields)
+      TestingV2Source.schema = new StructType(fields)
+    }
     TestingV2Source.schema
   }
 
@@ -77,31 +111,32 @@ abstract class SimpleBatchTable extends Table with SupportsRead  {
   override def capabilities(): util.Set[TableCapability] = Set(BATCH_READ).asJava
 }
 
-case class ArrowInputPartition(dt: Seq[DataType], numRows: Int) extends InputPartition
+case class ArrowInputPartition(dt: Seq[DataType], numRows: Int, startNum: Int) extends InputPartition
 
 
 class ColumnarDataSourceV2 extends TestingV2Source {
 
-  class MyScanBuilder extends SimpleScanBuilder {
+  class MyScanBuilder(options: CaseInsensitiveStringMap) extends SimpleScanBuilder {
 
     override def planInputPartitions(): Array[InputPartition] = {
-      Array(ArrowInputPartition(Seq(IntegerType, IntegerType), 100),
-        ArrowInputPartition(Seq(IntegerType, IntegerType), 100))
+      Array(ArrowInputPartition(TestingV2Source.dataTypesToUse, 100, 1),
+        ArrowInputPartition(TestingV2Source.dataTypesToUse, 100, 101))
     }
 
     override def createReaderFactory(): PartitionReaderFactory = {
-      ColumnarReaderFactory
+      new ColumnarReaderFactory(options)
     }
   }
 
   override def getTable(options: CaseInsensitiveStringMap): Table = new SimpleBatchTable {
     override def newScanBuilder(options: CaseInsensitiveStringMap): ScanBuilder = {
-      new MyScanBuilder()
+      new MyScanBuilder(options)
     }
   }
 }
 
-object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
+class ColumnarReaderFactory(options: CaseInsensitiveStringMap)
+    extends PartitionReaderFactory with Logging {
   private final val BATCH_SIZE = 20
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
@@ -111,9 +146,7 @@ object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
   }
 
   override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
-    val ArrowInputPartition(dataTypes, numRows) = partition
-    logWarning(s"create column reader num rows $numRows types: $dataTypes")
-
+    val ArrowInputPartition(dataTypes, numRows, startNum) = partition
     new PartitionReader[ColumnarBatch] {
       private var batch: ColumnarBatch = _
 
@@ -133,17 +166,15 @@ object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
         if (batchSize == 0) {
           false
         } else {
-          logWarning("create vectors")
           var dtypeNum = 0
           val vecs = dataTypes.map { dtype =>
             val vector = setupArrowVector(s"v$current$dtypeNum", dtype)
+            val startVal = current + startNum * (dtypeNum + 2)
+            fillArrowVec(dtype, vector, startVal, numRows)
             dtypeNum += 1
-            fillArrowVec(dtype, vector, numRows, current)
             new ArrowColumnVector(vector)
           }
           batch = new ColumnarBatch(vecs.toArray)
-          logWarning(s"set batch num rows to $batchSize")
-
           batch.setNumRows(batchSize)
           current += batchSize
           true
@@ -214,14 +245,81 @@ object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
 
   private def fillArrowVec(dt: DataType, vec: ValueVector, start: Int,
       numRows: Int): Unit = dt match {
-    case IntegerType => {
+    case BooleanType =>
+      val vector = vec.asInstanceOf[BitVector]
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, start + i & 1)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
+    case ByteType =>
+      val vector = vec.asInstanceOf[TinyIntVector]
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, start + i)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
+    case ShortType =>
+      val vector = vec.asInstanceOf[SmallIntVector]
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, start + i)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
+    case IntegerType =>
       val vector = vec.asInstanceOf[IntVector]
       (0 until numRows).foreach { i =>
         vector.setSafe(i, start + i)
       }
       vector.setNull(numRows)
       vector.setValueCount(numRows + 1)
+    case LongType => {
+      val vector = vec.asInstanceOf[BigIntVector]
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, start + i)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
     }
+    case StringType => {
+      val vector = vec.asInstanceOf[VarCharVector]
+      (0 until numRows).foreach { i =>
+        val num = start + i
+        val toAdd = s"${num}testString"
+        vector.setSafe(i, new Text(toAdd))
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
+    }
+    case FloatType =>
+      val vector = vec.asInstanceOf[Float4Vector]
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, start + i)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
+    case DoubleType =>
+      val vector = vec.asInstanceOf[Float8Vector]
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, start + i)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
+    case DateType =>
+      val vector = vec.asInstanceOf[DateDayVector]
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, start + i)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
+    case TimestampType =>
+      val vector = vec.asInstanceOf[TimeStampMicroTZVector]
+      val startms = 20145678912L;
+      (0 until numRows).foreach { i =>
+        vector.setSafe(i, startms + start + i)
+      }
+      vector.setNull(numRows)
+      vector.setValueCount(numRows + 1)
     case _ =>
       throw new UnsupportedOperationException(s"Unsupported data type: ${dt.catalogString}")
   }
@@ -229,8 +327,8 @@ object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
   private def setupArrowVector(name: String, dataType: DataType): ValueVector = {
     val rootAllocator = new RootAllocator(Long.MaxValue)
     val allocator = rootAllocator.newChildAllocator(s"$name", 0, Long.MaxValue)
-    val vector = toArrowField(s"field$name", dataType, nullable = true, null)
-      .createVector(allocator).asInstanceOf[IntVector]
+    val vector = toArrowField(s"field$name", dataType, nullable = true, "Utc")
+      .createVector(allocator)
     vector
   }
 }
