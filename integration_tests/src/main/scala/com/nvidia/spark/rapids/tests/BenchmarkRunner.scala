@@ -78,10 +78,7 @@ object BenchmarkRunner {
         conf.query().foreach { query =>
 
           println(s"*** RUNNING ${bench.name()} QUERY $query")
-          val summaryFilePrefixWithQuery = conf.summaryFilePrefix.toOption match {
-            case Some(t) => Some(t + s"-$query")
-            case _ => None
-          }
+          val summaryFilePrefixWithQuery = conf.summaryFilePrefix.map(prefix => s"$prefix-$query")
           val report = Try(conf.output.toOption match {
             case Some(path) => conf.outputFormat().toLowerCase match {
               case "parquet" =>
@@ -90,7 +87,7 @@ object BenchmarkRunner {
                   query,
                   path,
                   iterations = conf.iterations(),
-                  summaryFilePrefix = summaryFilePrefixWithQuery,
+                  summaryFilePrefix = summaryFilePrefixWithQuery.toOption,
                   gcBetweenRuns = conf.gcBetweenRuns())
               case "csv" =>
                 runner.writeCsv(
@@ -98,7 +95,7 @@ object BenchmarkRunner {
                   query,
                   path,
                   iterations = conf.iterations(),
-                  summaryFilePrefix = summaryFilePrefixWithQuery,
+                  summaryFilePrefix = summaryFilePrefixWithQuery.toOption,
                   gcBetweenRuns = conf.gcBetweenRuns())
               case "orc" =>
                 runner.writeOrc(
@@ -106,7 +103,7 @@ object BenchmarkRunner {
                   query,
                   path,
                   iterations = conf.iterations(),
-                  summaryFilePrefix = summaryFilePrefixWithQuery,
+                  summaryFilePrefix = summaryFilePrefixWithQuery.toOption,
                   gcBetweenRuns = conf.gcBetweenRuns())
               case other =>
                 throw new IllegalArgumentException(s"Invalid or unspecified output format: $other")
