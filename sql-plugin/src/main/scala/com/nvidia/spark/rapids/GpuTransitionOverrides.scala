@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -430,20 +432,20 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   // this is not optimal because we recurse the plan multiple times, one for each
   // exec specified in the config. This is intended for testing only.
+  // Note this only supports looking for an exec once
   private def validateExecRanOnGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
-    val execsNotFound = conf.validateExecRanOnGpu.flatMap { exec =>
-      def planHasInstanceOf(plan: SparkPlan): Boolean = {
-        plan.getClass.getSimpleName == exec
+    val validateExecs = conf.validateExecRanOnGpu.toSet
+    if (validateExecs.nonEmpty) {
+      def planContainsInstanceOf(plan: SparkPlan): Boolean = {
+        validateExecs.contains(plan.getClass.getSimpleName)
       }
-      val found = GpuTransitionOverrides.findOperator(plan, planHasInstanceOf)
-      found match {
-        case Some(e) => None
-        case None => Some(exec)
+      // to set to make uniq execs
+      val execsFound = GpuTransitionOverrides.findOperators(plan, planContainsInstanceOf).toSet
+      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
+      if (execsNotFound.nonEmpty) {
+        throw new IllegalArgumentException(
+          s"Plan ${plan.toString()} does not contain the following execs: $execsNotFound")
       }
-    }
-    if (execsNotFound.nonEmpty) {
-      throw new IllegalArgumentException(
-        s"Plan ${plan.toString()} does not contain the following execs: $execsNotFound")
     }
   }
 
@@ -510,4 +512,26 @@ object GpuTransitionOverrides {
       case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
     }
   }
+
+  /** Return list of matching predicates present in the plan */
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
+
 }
