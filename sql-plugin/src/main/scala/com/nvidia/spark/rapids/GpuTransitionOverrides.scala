@@ -428,11 +428,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
 
+  // this is not optimal because we recurse the plan multiple times, one for each
+  // exec specified in the config. This is intended for testing only.
   private def validateExecRanOnGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
-
     val execsNotFound = conf.validateExecRanOnGpu.flatMap { exec =>
       def planHasInstanceOf(plan: SparkPlan): Boolean = {
-        plan.getClass.toString == exec
+        plan.getClass.getSimpleName == exec
       }
       val found = GpuTransitionOverrides.findOperator(plan, planHasInstanceOf)
       found match {
@@ -440,9 +441,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         case None => Some(exec)
       }
     }
-    if (execsNotFound.isEmpty) {
+    if (execsNotFound.nonEmpty) {
       throw new IllegalArgumentException(
-        s"Plan does not contain the following execs: $execsNotFound")
+        s"Plan ${plan.toString()} does not contain the following execs: $execsNotFound")
     }
   }
 

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.TestUtils.{findOperator, getFinalPlan}
+import com.nvidia.spark.rapids.TestUtils.getFinalPlan
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf

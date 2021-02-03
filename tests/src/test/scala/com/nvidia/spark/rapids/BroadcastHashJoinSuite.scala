@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.TestUtils.{findOperator, findOperators}
+import com.nvidia.spark.rapids.TestUtils.findOperators
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.broadcast

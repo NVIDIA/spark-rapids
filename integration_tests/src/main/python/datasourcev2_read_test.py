@@ -25,7 +25,8 @@ def readTable(types, classToUse):
         .orderBy("col1")
 
 def test_read_int():
-    assert_gpu_and_cpu_are_equal_collect(readTable("int", columnarClass))
+    assert_gpu_and_cpu_are_equal_collect(readTable("int", columnarClass),
+            conf={'spark.rapids.sql.test.validateExecRanOnGpu': 'HostColumnarToGpu'})
 
 def test_read_strings():
     assert_gpu_and_cpu_are_equal_collect(readTable("string", columnarClass))
