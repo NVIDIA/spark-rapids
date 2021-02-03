@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -268,6 +268,9 @@ trait GpuHashJoin extends GpuExec {
     }
   }
 
+  // This is a work around added in response to https://github.com/NVIDIA/spark-rapids/issues/1643.
+  // to deal with slowness arising from many nulls in the build-side of the join. The work around
+  // should be removed when https://github.com/rapidsai/cudf/issues/7300 is addressed.
   private[this] def filterNulls(table: Table, joinKeyIndices: Range, closeTable: Boolean): Table = {
     var mask: ai.rapids.cudf.ColumnVector = null
     try {
