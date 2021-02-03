@@ -112,6 +112,7 @@ else
           --conf 'spark.executor.extraJavaOptions=-ea -Duser.timezone=UTC' \
           --conf 'spark.sql.session.timeZone=UTC' \
           --conf 'spark.sql.shuffle.partitions=12' \
+          --conf "spark.executor.extraClassPath=${ALL_JARS// /:}" \
           $SPARK_SUBMIT_FLAGS \
           "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
