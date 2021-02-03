@@ -113,7 +113,7 @@ object BenchmarkRunner {
                 spark,
                 query,
                 conf.iterations(),
-                summaryFilePrefix = summaryFilePrefixWithQuery,
+                summaryFilePrefix = summaryFilePrefixWithQuery.toOption,
                 gcBetweenRuns = conf.gcBetweenRuns())
           })
 
