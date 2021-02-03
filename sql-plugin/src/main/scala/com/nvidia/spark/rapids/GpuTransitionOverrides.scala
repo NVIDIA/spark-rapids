@@ -428,6 +428,24 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
 
+  private def validateExecRanOnGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
+
+    val execsNotFound = conf.validateExecRanOnGpu.flatMap { exec =>
+      def planHasInstanceOf(plan: SparkPlan): Boolean = {
+        plan.getClass.toString == exec
+      }
+      val found = GpuTransitionOverrides.findOperator(plan, planHasInstanceOf)
+      found match {
+        case Some(e) => None
+        case None => Some(exec)
+      }
+    }
+    if (execsNotFound.isEmpty) {
+      throw new IllegalArgumentException(
+        s"Plan does not contain the following execs: $execsNotFound")
+    }
+  }
+
   def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
     case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExecParent] =>
       val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExecParent]
@@ -457,6 +475,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       if (conf.isTestEnabled) {
         assertIsOnTheGpu(updatedPlan, conf)
+        validateExecRanOnGpu(updatedPlan, conf)
       }
       updatedPlan
     } else {
@@ -478,6 +497,16 @@ object GpuTransitionOverrides {
       case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
       case ShuffleQueryStageExec(_, plan) => plan
       case _ => plan
+    }
+  }
+
+  def findOperator(plan: SparkPlan, predicate: SparkPlan => Boolean): Option[SparkPlan] = {
+    plan match {
+      case _ if predicate(plan) => Some(plan)
+      case a: AdaptiveSparkPlanExec => findOperator(a.executedPlan, predicate)
+      case qs: BroadcastQueryStageExec => findOperator(qs.broadcast, predicate)
+      case qs: ShuffleQueryStageExec => findOperator(qs.shuffle, predicate)
+      case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
     }
   }
 }

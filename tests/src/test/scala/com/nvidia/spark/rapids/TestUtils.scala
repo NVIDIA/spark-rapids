@@ -61,18 +61,7 @@ object TestUtils extends Assertions with Arm {
         actual.column(i).asInstanceOf[GpuColumnVector].getBase)
     }
   }
-
-  /** Recursively check if the predicate matches in the given plan */
-  def findOperator(plan: SparkPlan, predicate: SparkPlan => Boolean): Option[SparkPlan] = {
-    plan match {
-      case _ if predicate(plan) => Some(plan)
-      case a: AdaptiveSparkPlanExec => findOperator(a.executedPlan, predicate)
-      case qs: BroadcastQueryStageExec => findOperator(qs.broadcast, predicate)
-      case qs: ShuffleQueryStageExec => findOperator(qs.shuffle, predicate)
-      case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
-    }
-  }
-
+  
   /** Return list of  matching predicates present in the plan */
   def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
     def recurse(

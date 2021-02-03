@@ -73,7 +73,7 @@ class HashSortOptimizeSuite extends FunSuite {
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
 
-      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+      val joinNode = GpuTransitionOverrides.findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })
@@ -88,7 +88,7 @@ class HashSortOptimizeSuite extends FunSuite {
       val plan = rdf.queryExecution.executedPlan
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
-      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
+      val joinNode = GpuTransitionOverrides.findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })

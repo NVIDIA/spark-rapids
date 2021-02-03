@@ -59,13 +59,13 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
 
         // execute the plan so that the final adaptive plan is available when AQE is on
         plan1.collect()
-        val finalPlan1 = findOperator(plan1.queryExecution.executedPlan,
+        val finalPlan1 = GpuTransitionOverrides.findOperator(plan1.queryExecution.executedPlan,
           ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
         assert(finalPlan1.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildLeft)
 
         // execute the plan so that the final adaptive plan is available when AQE is on
         plan2.collect()
-        val finalPlan2 = findOperator(plan2.queryExecution.executedPlan,
+        val finalPlan2 = GpuTransitionOverrides.findOperator(plan2.queryExecution.executedPlan,
           ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
         assert(finalPlan2.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildRight)
       }

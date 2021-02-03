@@ -170,7 +170,7 @@ class AdaptiveQueryExecSuite
       assert(!df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec])
 
       // assert that both inputs to the SHJ are coalesced
-      val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
+      val shj = GpuTransitionOverrides.findOperator(df.queryExecution.executedPlan,
         _.isInstanceOf[GpuShuffledHashJoinBase]).get
       assert(shj.children.length == 2)
       assert(shj.children.forall {
