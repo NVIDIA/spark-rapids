@@ -49,7 +49,7 @@ import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, GpuShuffleMeta}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -465,6 +465,45 @@ object GpuOverrides {
       ordering2.zip(ordering1).forall {
         case (o2, o1) => orderingSatisfies(o1, o2, conf)
       }
+    }
+  }
+
+  private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
+    part match {
+      case _: GpuPartitioning => part
+      case _ =>
+        val wrapped = wrapPart(part, conf, None)
+        wrapped.tagForGpu()
+        if (wrapped.canThisBeReplaced) {
+          wrapped.convertToGpu()
+        } else {
+          part
+        }
+    }
+  }
+
+  /**
+   * Removes unnecessary CPU shuffles that Spark can add to the plan when it does not realize
+   * a GPU partitioning satisfies a CPU distribution because CPU and GPU expressions are not
+   * semantically equal.
+   */
+  def removeExtraneousShuffles(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    plan.transformUp {
+      case cpuShuffle: ShuffleExchangeExec =>
+        cpuShuffle.child match {
+          case sqse: ShuffleQueryStageExec =>
+            GpuTransitionOverrides.getNonQueryStagePlan(sqse) match {
+              case gpuShuffle: GpuShuffleExchangeExecBase =>
+                val converted = convertPartToGpuIfPossible(cpuShuffle.outputPartitioning, conf)
+                if (converted == gpuShuffle.outputPartitioning) {
+                  sqse
+                } else {
+                  cpuShuffle
+                }
+              case _ => cpuShuffle
+            }
+          case _ => cpuShuffle
+        }
     }
   }
 
@@ -2647,33 +2686,44 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      val wrap = GpuOverrides.wrapPlan(plan, conf, None)
-      wrap.tagForGpu()
-      val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
-      val exp = conf.explain
-      if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
-        if (!exp.equalsIgnoreCase("NONE")) {
-          logWarning("Can't replace any part of this plan due to: " +
-            s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
-        }
-        plan
+      val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
+        // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
+        // distribution expressions are not semantically equal.
+        GpuOverrides.removeExtraneousShuffles(plan, conf)
       } else {
-        wrap.runAfterTagRules()
-        if (!exp.equalsIgnoreCase("NONE")) {
-          wrap.tagForExplain()
-          val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
-          if (!explain.isEmpty) {
-            logWarning(s"\n$explain")
-          }
-        }
-        val convertedPlan = wrap.convertIfNeeded()
-        addSortsIfNeeded(convertedPlan, conf)
+        plan
       }
+      applyOverrides(updatedPlan, conf)
     } else {
       plan
+    }
+  }
+
+  private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    val wrap = GpuOverrides.wrapPlan(plan, conf, None)
+    wrap.tagForGpu()
+    val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
+    val exp = conf.explain
+    if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
+      if (!exp.equalsIgnoreCase("NONE")) {
+        logWarning("Can't replace any part of this plan due to: " +
+            s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
+      }
+      plan
+    } else {
+      wrap.runAfterTagRules()
+      if (!exp.equalsIgnoreCase("NONE")) {
+        wrap.tagForExplain()
+        val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
+        if (!explain.isEmpty) {
+          logWarning(s"\n$explain")
+        }
+      }
+      val convertedPlan = wrap.convertIfNeeded()
+      addSortsIfNeeded(convertedPlan, conf)
     }
   }
 
