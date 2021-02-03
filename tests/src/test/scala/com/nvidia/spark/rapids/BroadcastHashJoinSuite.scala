@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.TestUtils.findOperators
-
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
@@ -40,10 +38,12 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       df5.collect()
       val plan = df5.queryExecution.executedPlan
 
-      val bhjCount = findOperators(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+      val bhjCount =
+        GpuTransitionOverrides.findOperators(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
       assert(bhjCount.size === 1)
 
-      val shjCount = findOperators(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin)
+      val shjCount =
+        GpuTransitionOverrides.findOperators(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin)
       assert(shjCount.size === 1)
     }, conf)
   }
