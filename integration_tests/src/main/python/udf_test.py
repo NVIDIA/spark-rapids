@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,15 +14,21 @@
 
 import pytest
 
+from conftest import is_at_least_precommit_run, is_databricks_runtime
+
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 try:
     require_minimum_pandas_version()
 except Exception as e:
+    if is_at_least_precommit_run():
+        raise AssertionError("incorrect pandas version during required testing " + str(e))
     pytestmark = pytest.mark.skip(reason=str(e))
 
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
+    if is_at_least_precommit_run():
+        raise AssertionError("incorrect pyarrow version during required testing " + str(e))
     pytestmark = pytest.mark.skip(reason=str(e))
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
@@ -164,6 +170,8 @@ def test_window_aggregate_udf(data_gen, window):
         conf=arrow_udf_conf)
 
 
+@pytest.mark.xfail(condition=is_databricks_runtime(),
+        reason='https://github.com/NVIDIA/spark-rapids/issues/1644')
 @ignore_order
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)

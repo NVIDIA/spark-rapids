@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -114,8 +114,25 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
+  protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
 
   val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+
+  final def recursiveSparkPlanPreventsRunningOnGpu(): Unit = {
+    cannotRunOnGpuBecauseOfSparkPlan = true
+    childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+  }
+
+  final def recursiveSparkPlanRemoved(): Unit = {
+    shouldBeRemoved("parent plan is removed")
+    childExprs.foreach(_.recursiveSparkPlanRemoved())
+    childParts.foreach(_.recursiveSparkPlanRemoved())
+    childScans.foreach(_.recursiveSparkPlanRemoved())
+    childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
+  }
 
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
@@ -242,13 +259,15 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private def indent(append: StringBuilder, depth: Int): Unit =
     append.append("  " * depth)
 
-  def couldReplaceMessage: String = "could run on GPU"
+  def replaceMessage: String = "run on GPU"
   def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
   def suppressWillWorkOnGpuInfo: Boolean = false
 
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
-    case Some(v) if v.isEmpty => couldReplaceMessage
+    case Some(v) if v.isEmpty &&
+        (cannotRunOnGpuBecauseOfSparkPlan || shouldThisBeRemoved) => "could " + replaceMessage
+    case Some(v) if v.isEmpty => "will " + replaceMessage
     case Some(v) =>
       noReplacementPossibleMessage(v mkString "; ")
   }
@@ -267,6 +286,20 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   protected val printWrapped = false
 
+  final private def getIndicatorChar: String = {
+    if (shouldThisBeRemoved) {
+      "#"
+    } else if (canThisBeReplaced) {
+      if (cannotRunOnGpuBecauseOfSparkPlan) {
+        "@"
+      } else {
+        "*"
+      }
+    } else {
+      "!"
+    }
+  }
+
   /**
    * Create a string representation of this in append.
    * @param strBuilder where to place the string representation.
@@ -274,9 +307,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param all should all the data be printed or just what does not work on the GPU?
    */
   protected def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
-    if ((all || !canThisBeReplaced) && !suppressWillWorkOnGpuInfo) {
+    if ((all || !canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) &&
+        !suppressWillWorkOnGpuInfo) {
       indent(strBuilder, depth)
-      strBuilder.append(if (canThisBeReplaced) "*" else "!")
+      strBuilder.append(getIndicatorChar)
 
       strBuilder.append(operationName)
         .append(" <")
@@ -435,6 +469,22 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
+
+  def tagForExplain(): Unit = {
+    if (!canThisBeReplaced) {
+      childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu)
+      childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+      childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+      childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    }
+    if (shouldThisBeRemoved) {
+      childExprs.foreach(_.recursiveSparkPlanRemoved())
+      childParts.foreach(_.recursiveSparkPlanRemoved())
+      childScans.foreach(_.recursiveSparkPlanRemoved())
+      childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
+    }
+    childPlans.foreach(_.tagForExplain())
+  }
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))

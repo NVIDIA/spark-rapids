@@ -148,6 +148,7 @@ object BenchUtils {
     assert(iterations > 0)
 
     val queryStartTime = Instant.now()
+    val logPrefix = s"[BENCHMARK RUNNER] [$queryDescription]"
 
     val queryPlansWithMetrics = new ListBuffer[SparkPlanNode]()
     val exceptions = new ListBuffer[String]()
@@ -171,7 +172,7 @@ object BenchUtils {
         spark.listenerManager.register(new BenchmarkListener(queryPlansWithMetrics, exceptions))
       }
 
-      println(s"*** Start iteration $i:")
+      println(s"$logPrefix Start iteration $i:")
       val start = System.nanoTime()
       try {
         df = createDataFrame(spark)
@@ -189,13 +190,13 @@ object BenchUtils {
         val end = System.nanoTime()
         val elapsed = NANOSECONDS.toMillis(end - start)
         queryTimes.append(elapsed)
-        println(s"*** Iteration $i took $elapsed msec.")
+        println(s"$logPrefix Iteration $i took $elapsed msec.")
 
       } catch {
         case e: Exception =>
           val end = System.nanoTime()
           val elapsed = NANOSECONDS.toMillis(end - start)
-          println(s"*** Iteration $i failed after $elapsed msec.")
+          println(s"$logPrefix Iteration $i failed after $elapsed msec.")
           queryTimes.append(-1)
           exceptions.append(BenchUtils.stackTraceAsString(e))
           e.printStackTrace()
@@ -207,17 +208,17 @@ object BenchUtils {
 
       // summarize all query times
       for (i <- 0 until iterations) {
-        println(s"Iteration $i took ${queryTimes(i)} msec.")
+        println(s"$logPrefix Iteration $i took ${queryTimes(i)} msec.")
       }
 
       // for multiple runs, summarize cold/hot timings
       if (iterations > 1) {
-        println(s"Cold run: ${queryTimes(0)} msec.")
+        println(s"$logPrefix Cold run: ${queryTimes(0)} msec.")
         val hotRuns = queryTimes.drop(1)
         val numHotRuns = hotRuns.length
-        println(s"Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
-        println(s"Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
-        println(s"Average of $numHotRuns hot run(s): " +
+        println(s"$logPrefix Best of $numHotRuns hot run(s): ${hotRuns.min} msec.")
+        println(s"$logPrefix Worst of $numHotRuns hot run(s): ${hotRuns.max} msec.")
+        println(s"$logPrefix Average of $numHotRuns hot run(s): " +
             s"${hotRuns.sum.toDouble / numHotRuns} msec.")
       }
     }
@@ -225,7 +226,7 @@ object BenchUtils {
     // write results to file
     val suffix = if (exceptions.isEmpty) "" else "-failed"
     val filename = s"$filenameStub-${queryStartTime.toEpochMilli}$suffix.json"
-    println(s"Saving benchmark report to $filename")
+    println(s"$logPrefix Saving benchmark report to $filename")
 
     // try not to leak secrets
     val redacted = Seq("TOKEN", "SECRET", "PASSWORD")

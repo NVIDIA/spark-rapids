@@ -143,7 +143,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -258,8 +258,8 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S*</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -281,8 +281,8 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S*</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -360,6 +360,29 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
+<td>TakeOrderedAndProjectExec</td>
+<td>Take the first limit elements as defined by the sortOrder, and do projection if needed.</td>
+<td>None</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
 <td>UnionExec</td>
 <td>The backend for the union operator</td>
 <td>None</td>
@@ -423,8 +446,8 @@ Accelerator supports are described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS (missing nested BOOLEAN, BYTE, SHORT, INT, LONG, FLOAT, DOUBLE, DATE, TIMESTAMP, DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested DECIMAL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested DECIMAL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 </tr>
@@ -1407,6 +1430,138 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="6">ArrayContains</td>
+<td rowSpan="6">`array_contains`</td>
+<td rowSpan="6">Returns a boolean if the array contains the passed in key</td>
+<td rowSpan="6">None</td>
+<td rowSpan="3">project</td>
+<td>array</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>key</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="3">lambda</td>
+<td>array</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>key</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="4">Asin</td>
 <td rowSpan="4">`asin`</td>
 <td rowSpan="4">Inverse sine</td>
@@ -1916,8 +2071,8 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td><em>PS (result may round slightly differently)</em></td>
+<td><em>PS (result may round slightly differently)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -10803,8 +10958,8 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
+<td><em>PS (result may round slightly differently)</em></td>
+<td><em>PS (result may round slightly differently)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -10948,6 +11103,96 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
+<tr>
+<td rowSpan="4">ScalaUDF</td>
+<td rowSpan="4"> </td>
+<td rowSpan="4">User Defined Function, support requires the UDF to implement a RAPIDS accelerated interface</td>
+<td rowSpan="4">None</td>
+<td rowSpan="2">project</td>
+<td>param</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><em>PS* (missing nested UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td rowSpan="2">lambda</td>
+<td>param</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td rowSpan="4">Second</td>
@@ -15699,12 +15944,12 @@ Accelerator support is described below.
 <td rowSpan="2">window</td>
 <td>input</td>
 <td> </td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15725,7 +15970,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16755,7 +17000,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="4">HiveGenericUDF</td>
 <td rowSpan="4"> </td>
-<td rowSpan="4">Hive Generic UDF, support requires the UDF to implement a RAPIDS-accelerated interface</td>
+<td rowSpan="4">Hive Generic UDF, support requires the UDF to implement a RAPIDS accelerated interface</td>
 <td rowSpan="4">None</td>
 <td rowSpan="2">project</td>
 <td>param</td>
@@ -16845,7 +17090,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="4">HiveSimpleUDF</td>
 <td rowSpan="4"> </td>
-<td rowSpan="4">Hive UDF, support requires the UDF to implement a RAPIDS-accelerated interface</td>
+<td rowSpan="4">Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface</td>
 <td rowSpan="4">None</td>
 <td rowSpan="2">project</td>
 <td>param</td>

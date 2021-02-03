@@ -199,7 +199,7 @@ abstract class AbstractGpuCoalesceIterator(
   /**
    * Called first to initialize any state needed for a new batch to be created.
    */
-  def initNewBatch(): Unit
+  def initNewBatch(batch: ColumnarBatch): Unit
 
   /**
    * Called to add a new batch to the final output batch. The batch passed in will
@@ -331,7 +331,7 @@ abstract class AbstractGpuCoalesceIterator(
 
   private def addBatch(batch: ColumnarBatch): Unit = {
     if (!batchInitialized) {
-      initNewBatch()
+      initNewBatch(batch)
       batchInitialized = true
     }
     addBatchToConcat(batch)
@@ -372,7 +372,7 @@ class GpuCoalesceIteratorNoSpill(iter: Iterator[ColumnarBatch],
 
   private[this] var codec: TableCompressionCodec = _
 
-  override def initNewBatch(): Unit = {
+  override def initNewBatch(batch: ColumnarBatch): Unit = {
     batches.clear()
     compressedBatchIndices.clear()
   }
@@ -485,7 +485,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   private val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
-  override def initNewBatch(): Unit = {
+  override def initNewBatch(batch: ColumnarBatch): Unit = {
     batches.safeClose()
     batches.clear()
   }

@@ -14,6 +14,7 @@
 
 import pytest
 
+allow_non_gpu_databricks = pytest.mark.allow_non_gpu_databricks
 allow_non_gpu = pytest.mark.allow_non_gpu
 approximate_float = pytest.mark.approximate_float
 ignore_order = pytest.mark.ignore_order

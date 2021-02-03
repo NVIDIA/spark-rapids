@@ -1,7 +1,8 @@
 ---
 layout: page
 title: ML Integration
-nav_order: 8
+parent: Additional Functionality
+nav_order: 1
 ---
 # RAPIDS Accelerator for Apache Spark ML Library Integration
 

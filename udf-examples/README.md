@@ -1,9 +1,9 @@
-# RAPIDS-Accelerated UDF Examples
+# RAPIDS Accelerated UDF Examples
 
-This project contains sample implementations of RAPIDS-accelerated
+This project contains sample implementations of RAPIDS accelerated
 user-defined functions. See the
-[RAPIDS-accelerated UDF documentation](../docs/rapids-udfs.md) for details
-on how RAPIDS-accelerated UDFs work and guidelines for creating them.
+[RAPIDS accelerated UDF documentation](../docs/additional-functionality/rapids-udfs.md) for details
+on how RAPIDS accelerated UDFs work and guidelines for creating them.
 
 ## Building the Native Code Examples
 

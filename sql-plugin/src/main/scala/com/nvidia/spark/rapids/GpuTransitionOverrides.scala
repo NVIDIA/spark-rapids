@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -93,7 +93,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // When reading a materialized shuffle query stage in AQE mode, we need to insert an
       // operator to coalesce batches. We either insert it directly around the shuffle query
       // stage, or around the custom shuffle reader, if one exists.
-      val plan = getNonQueryStagePlan(s)
+      val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
         parent match {
           case Some(_: GpuCustomShuffleReaderExec) =>
@@ -321,26 +321,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * Inserts a transition to be running on the GPU from CPU columnar
    */
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
-    val nonQueryStagePlan = getNonQueryStagePlan(plan)
+    val nonQueryStagePlan = GpuTransitionOverrides.getNonQueryStagePlan(plan)
     if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec]) {
       HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(conf.gpuTargetBatchSizeBytes))
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
-    }
-  }
-
-  /**
-   * Returning the underlying plan of a query stage, or the plan itself if it is not a
-   * query stage. This method is typically used when we want to determine if a plan is
-   * a GpuExec or not, and this gets hidden by the query stage wrapper.
-   */
-  def getNonQueryStagePlan(plan: SparkPlan): SparkPlan = {
-    plan match {
-      case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case BroadcastQueryStageExec(_, plan) => plan
-      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case ShuffleQueryStageExec(_, plan) => plan
-      case _ => plan
     }
   }
 
@@ -476,6 +461,23 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       updatedPlan
     } else {
       plan
+    }
+  }
+}
+
+object GpuTransitionOverrides {
+  /**
+   * Returning the underlying plan of a query stage, or the plan itself if it is not a
+   * query stage. This method is typically used when we want to determine if a plan is
+   * a GpuExec or not, and this gets hidden by the query stage wrapper.
+   */
+  def getNonQueryStagePlan(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
+      case BroadcastQueryStageExec(_, plan) => plan
+      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
+      case ShuffleQueryStageExec(_, plan) => plan
+      case _ => plan
     }
   }
 }

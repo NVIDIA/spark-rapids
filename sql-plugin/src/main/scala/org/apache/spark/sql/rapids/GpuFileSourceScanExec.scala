@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,9 +99,6 @@ case class GpuFileSourceScanExec(
     val ret =
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    if (relation.partitionSchemaOption.isDefined) {
-      driverMetrics("numPartitions") = ret.length
-    }
     setFilesNumAndSizeMetric(ret, true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
@@ -340,15 +337,16 @@ case class GpuFileSourceScanExec(
       driverMetrics("staticFilesNum") = filesNum
       driverMetrics("staticFilesSize") = filesSize
     }
+    if (relation.partitionSchemaOption.isDefined) {
+      driverMetrics("numPartitions") = partitions.length
+    }
   }
 
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
     "numFiles" -> SQLMetrics.createMetric(sparkContext, "number of files read"),
     "metadataTime" -> SQLMetrics.createTimingMetric(sparkContext, "metadata time"),
-    "filesSize" -> SQLMetrics.createSizeMetric(sparkContext, "size of files read"),
-    "pruningTime" ->
-      SQLMetrics.createTimingMetric(sparkContext, "dynamic partition pruning time")
+    "filesSize" -> SQLMetrics.createSizeMetric(sparkContext, "size of files read")
   ) ++ {
     // Tracking scan time has overhead, we can't afford to do it for each row, and can only do
     // it for each batch.
@@ -359,9 +357,12 @@ case class GpuFileSourceScanExec(
     }
   } ++ {
     if (relation.partitionSchemaOption.isDefined) {
-      Some("numPartitions" -> SQLMetrics.createMetric(sparkContext, "number of partitions read"))
+      Map(
+        "numPartitions" -> SQLMetrics.createMetric(sparkContext, "number of partitions read"),
+        "pruningTime" ->
+          SQLMetrics.createTimingMetric(sparkContext, "dynamic partition pruning time"))
     } else {
-      None
+      Map.empty[String, SQLMetric]
     }
   } ++ staticMetrics ++ GpuMetricNames.buildGpuScanMetrics(sparkContext)
 
