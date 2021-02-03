@@ -382,26 +382,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
         return null;
       } else {
-        return createCudfDecimal(dt.precision(), dt.scale());
+        return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
       }
     }
     return null;
-  }
-
-  public static DType createCudfDecimal(int precision, int scale) {
-    if (precision < 10) {
-      return DType.create(DType.DTypeEnum.DECIMAL32, -scale);
-    } else {
-      return DType.create(DType.DTypeEnum.DECIMAL64, -scale);
-    }
-  }
-
-  public static int getDataTypeSize(DataType dt) {
-    if (dt instanceof DecimalType && ((DecimalType) dt).precision() <= Decimal.MAX_INT_DIGITS()) {
-      return 4;
-    } else {
-      return dt.defaultSize();
-    }
   }
 
   public static boolean isNonNestedSupportedType(DataType type) {

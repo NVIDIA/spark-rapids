@@ -86,11 +86,17 @@ case class GpuInSet(
       }
     case t: DecimalType =>
       val decs = values.asInstanceOf[Seq[Decimal]]
+      val isIntDecimal = t.precision <= Decimal.MAX_INT_DIGITS
       withResource(HostColumnVector.builder(
-        GpuColumnVector.createCudfDecimal(t.precision, -t.scale), decs.size)) { builder =>
-        decs.foreach(d => builder.appendUnscaledDecimal(d.toUnscaledLong))
+        DecimalUtil.createCudfDecimal(t.precision, t.scale), decs.size)) { builder =>
+        if (isIntDecimal) {
+          decs.foreach(d => builder.appendUnscaledDecimal(d.toUnscaledLong.toInt))
+        } else {
+          decs.foreach(d => builder.appendUnscaledDecimal(d.toUnscaledLong))
+        }
         builder.buildAndPutOnDevice()
       }
+
     case _ =>
       throw new UnsupportedOperationException(s"Unsupported list type: ${child.dataType}")
     }

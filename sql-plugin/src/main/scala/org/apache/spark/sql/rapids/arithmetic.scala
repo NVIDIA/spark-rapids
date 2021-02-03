@@ -119,6 +119,104 @@ case class GpuMultiply(
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
 
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    import DecimalUtil._
+    (left.dataType, right.dataType) match {
+      case (l: DecimalType, r: DecimalType) => {
+        val outputType = dataType.asInstanceOf[DecimalType]
+        if (DecimalType.is64BitDecimalType(outputType) && DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r)) {
+          val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+          val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+          // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
+          // cudf https://github.com/rapidsai/cudf/issues/7291
+          val int32Lhs = lhs.getBase.logicalCastTo(DType.INT32)
+          withResource(int32Lhs.castTo(DType.INT64)) { int64Lhs =>
+            val int32Rhs = rhs.getBase.logicalCastTo(DType.INT32)
+            withResource(int32Rhs.castTo(DType.INT64)) { int64Rhs =>
+              val tmp = int64Lhs.logicalCastTo(decimalType)
+                .mul(int64Rhs.logicalCastTo(decimalType),cudfOutputType)
+              if (tmp.getType != cudfOutputType) {
+                withResource(tmp){ tmp =>
+                  tmp.castTo(cudfOutputType)
+                }
+              } else {
+                tmp
+              }
+            }
+          }
+        } else {
+          super.doColumnar(lhs, rhs)
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+    import DecimalUtil._
+    (left.dataType, right.dataType) match {
+      case (l: DecimalType, r: DecimalType) => {
+        val outputType = dataType.asInstanceOf[DecimalType]
+        if (DecimalType.is64BitDecimalType(outputType) && DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r)) {
+          val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+          val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+          withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { castedLhs =>
+            // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
+            // cudf https://github.com/rapidsai/cudf/issues/7291
+            val int32Rhs = rhs.getBase.logicalCastTo(DType.INT32)
+            withResource(int32Rhs.castTo(DType.INT64)) { int64Rhs =>
+              val tmp = castedLhs.mul(int64Rhs.logicalCastTo(decimalType), cudfOutputType)
+              if (tmp.getType != cudfOutputType) {
+                withResource(tmp) { tmp =>
+                  tmp.castTo(cudfOutputType)
+                }
+              } else {
+                tmp
+              }
+            }
+          }
+        } else {
+          super.doColumnar(lhs, rhs)
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+    import DecimalUtil._
+    (left.dataType, right.dataType) match {
+      case (l: DecimalType, r: DecimalType) => {
+        val outputType = dataType.asInstanceOf[DecimalType]
+        if (DecimalType.is64BitDecimalType(outputType) && DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r)) {
+          val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+          val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+          withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), outputType)) { castedRhs =>
+            // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
+            // cudf https://github.com/rapidsai/cudf/issues/7291
+            val int32Lhs = lhs.getBase.logicalCastTo(DType.INT32)
+            withResource(int32Lhs.castTo(DType.INT64)) { int64Lhs =>
+              val tmp = int64Lhs.logicalCastTo(decimalType).mul(castedRhs, cudfOutputType)
+              if (tmp.getType != cudfOutputType) {
+                withResource(tmp) { tmp =>
+                  tmp.castTo(cudfOutputType)
+                }
+              } else {
+                tmp
+              }
+            }
+          }
+        } else {
+          super.doColumnar(lhs, rhs)
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
   // Override the output type as a special case for decimal
   override def dataType: DataType = (left.dataType, right.dataType) match {
     case (l: DecimalType, r: DecimalType) =>  GpuMultiplyUtil.decimalDataType(l, r)

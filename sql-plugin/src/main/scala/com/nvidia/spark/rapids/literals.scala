@@ -91,7 +91,7 @@ object GpuScalar {
     case s: UTF8String => Scalar.fromString(s.toString)
     case dec: Decimal =>
       if (dec.precision <= Decimal.MAX_INT_DIGITS) {
-        Scalar.fromDecimal(-dec.scale, dec.toInt)
+        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong.toInt)
       } else {
         Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
       }

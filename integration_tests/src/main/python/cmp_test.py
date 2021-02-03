@@ -152,14 +152,16 @@ def test_filter_with_lit(expr):
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries under that value.
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
-def test_in(data_gen):
+def test_just_in(data_gen):
     # nulls are not supported for in on the GPU yet
     num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) - 1
     # we have to make the scalars in a session so negative scales in decimals are supported
     scalars = with_cpu_session(lambda spark: list(gen_scalars(data_gen, num_entries, force_no_nulls=not isinstance(data_gen, NullGen))),
             conf=allow_negative_scale_of_decimal_conf)
+    print(scalars)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').isin(scalars)),
+            lambda spark : debug_df(unary_op_df(spark, data_gen, length=10)).select(f.col('a').isin(
+                scalars)),
             conf=allow_negative_scale_of_decimal_conf)
 
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf

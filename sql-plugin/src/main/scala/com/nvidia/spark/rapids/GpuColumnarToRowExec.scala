@@ -53,8 +53,7 @@ class AcceleratedColumnarToRowIterator(
     .zipWithIndex
     .sortWith {
       (x, y) =>
-        GpuColumnVector.getDataTypeSize(x._1.dataType) > GpuColumnVector
-          .getDataTypeSize(y._1.dataType)
+        DecimalUtil.getDataTypeSize(x._1.dataType) > DecimalUtil.getDataTypeSize(y._1.dataType)
     }.map(_._2)
     .toArray
   // For unpackMap the nth entry is the index in the row that came back for the original

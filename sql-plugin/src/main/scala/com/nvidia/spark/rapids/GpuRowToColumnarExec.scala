@@ -649,7 +649,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
       val attr = pair._1
       val colIndex = pair._2
       // This only works on fixed width types
-      val length = GpuColumnVector.getDataTypeSize(attr.dataType)
+      val length = DecimalUtil.getDataTypeSize(attr.dataType)
       cudfOffset = CudfUnsafeRow.alignOffset(cudfOffset, length)
       val ret = length match {
         case 1 => s"Platform.putByte(null, startAddress + $cudfOffset, Platform.getByte($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"

@@ -993,17 +993,17 @@ case class GpuCast(
       if (dt.scale < 0) {
         // Rounding is essential when scale is negative,
         // so we apply HALF_UP rounding manually to keep align with CpuCast.
-        withResource(checked.castTo(GpuColumnVector.createCudfDecimal(dt.precision, 0))) {
+        withResource(checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
           scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
       } else if (dt.scale > 0) {
         // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
         // before casting it to decimal in case of overflow.
         withResource(checked.castTo(DType.INT64)) { long =>
-          long.castTo(GpuColumnVector.createCudfDecimal(dt.precision, -dt.scale))
+          long.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
         }
       } else {
-        checked.castTo(GpuColumnVector.createCudfDecimal(dt.precision, -dt.scale))
+        checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
       }
     }
   }
@@ -1045,7 +1045,7 @@ case class GpuCast(
       if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
         checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
       } else {
-        val containerType = GpuColumnVector.createCudfDecimal(dt.precision, -(dt.scale + 1))
+        val containerType = DecimalUtil.createCudfDecimal(dt.precision, (dt.scale + 1))
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
@@ -1059,28 +1059,66 @@ case class GpuCast(
 
     // At first, we conduct overflow check onto input column.
     // Then, we cast checked input into target decimal type.
-    val checkedInput = if (to.scale <= from.scale) {
+    val checkedInput = if (to.scale <= from.scale && to.precision <= from.precision) {
       // No need to promote precision unless target scale is larger than the source one,
       // which indicates the cast is always valid when to.scale <= from.scale.
       input.incRefCount()
     } else {
-      // Check whether there exists overflow during promoting precision or not.
-      // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
-      // cuDF binaryOperation on decimal will rescale right input to fit the left one.
-      // The rescaling may lead to overflow.
-      val absBound = math.pow(10, DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong
-      if (ansiMode) {
-        assertValuesInRange(input,
-          minValue = Scalar.fromDecimal(-from.scale, -absBound),
-          maxValue = Scalar.fromDecimal(-from.scale, absBound),
-          inclusiveMin = false, inclusiveMax = false)
-        input.incRefCount()
+      var isFrom32Bit = DecimalType.is32BitDecimalType(from)
+      val isTo32Bit = DecimalType.is32BitDecimalType(to)
+      // check if we have to promote precision and the bit-representation i.e. 32-bit to 64-bit
+      val newInput = if (isFrom32Bit && !isTo32Bit) {
+        // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
+        // cudf https://github.com/rapidsai/cudf/issues/7291
+        withResource(input.logicalCastTo(DType.INT32)) { int32 =>
+          withResource(int32.castTo(DType.INT64)) { int64 =>
+            isFrom32Bit = false
+            int64.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))
+          }
+        }
       } else {
-        replaceOutOfRangeValues(input,
-          minValue = Scalar.fromDecimal(-from.scale, -absBound),
-          maxValue = Scalar.fromDecimal(-from.scale, absBound),
-          replaceValue = Scalar.fromNull(input.getType),
-          inclusiveMin = false, inclusiveMax = false)
+        input
+      }
+      if ((isFrom32Bit && isTo32Bit) || (!isFrom32Bit && !isTo32Bit)) {
+        // Check whether there exists overflow during promoting precision or not.
+        // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
+        // cuDF binaryOperation on decimal will rescale right input to fit the left one.
+        // The rescaling may lead to overflow.
+        val (upperBound, lowerBound) = if (!isFrom32Bit) {
+          // The maximum value held by Decimal 64
+          val absBound = math.pow(10,
+            DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong - 1
+          (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+        } else {
+          // The maximum value held by Decimal 32
+          val absBound = math.pow(10,
+            DType.DECIMAL32_MAX_PRECISION + from.scale - to.scale).toInt - 1
+          (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+        }
+        if (ansiMode) {
+          assertValuesInRange(newInput,
+            minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
+            maxValue = Scalar.fromDecimal(upperBound.bigDecimal))
+          if (input == newInput) {
+            newInput.incRefCount()
+          } else {
+            newInput
+          }
+        } else {
+          try {
+            replaceOutOfRangeValues(newInput,
+              minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
+              maxValue = Scalar.fromDecimal(upperBound.bigDecimal),
+              replaceValue = Scalar.fromNull(newInput.getType))
+          } finally {
+            if (input != newInput) {
+              newInput.close()
+            }
+          }
+        }
+      } else {
+        throw new IllegalStateException("Casting from 64-bit to 32-bit Decimal should be " +
+          "allowed, we shouldn't be coming here")
       }
     }
 
