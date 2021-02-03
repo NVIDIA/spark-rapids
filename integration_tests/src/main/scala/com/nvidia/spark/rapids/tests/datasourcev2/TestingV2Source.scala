@@ -138,7 +138,7 @@ object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
           val vecs = dataTypes.map { dtype =>
             val vector = setupArrowVector(s"v$current$dtypeNum", dtype)
             dtypeNum += 1
-            fillArrowVec(dtype, vector, numRows)
+            fillArrowVec(dtype, vector, numRows, current)
             new ArrowColumnVector(vector)
           }
           batch = new ColumnarBatch(vecs.toArray)
@@ -212,11 +212,12 @@ object ColumnarReaderFactory extends PartitionReaderFactory with Logging {
     }
   }
 
-  private def fillArrowVec(dt: DataType, vec: ValueVector, numRows: Int): Unit = dt match {
+  private def fillArrowVec(dt: DataType, vec: ValueVector, start: Int,
+      numRows: Int): Unit = dt match {
     case IntegerType => {
       val vector = vec.asInstanceOf[IntVector]
       (0 until numRows).foreach { i =>
-        vector.setSafe(i, i)
+        vector.setSafe(i, start + i)
       }
       vector.setNull(numRows)
       vector.setValueCount(numRows + 1)
