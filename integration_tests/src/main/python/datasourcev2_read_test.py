@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
-from marks import validate_execs_in_plan
+from marks import validate_execs_in_gpu_plan
 
 columnarClass = 'com.nvidia.spark.rapids.tests.datasourcev2.parquet.ArrowColumnarDataSourceV2'
 
