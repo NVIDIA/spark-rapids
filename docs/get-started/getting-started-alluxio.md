@@ -238,11 +238,11 @@ There are two ways to leverage Alluxio in RAPIDS.
    Eg, at startup
 
    ``` shell
-   --conf spark.rapids.alluxio.pathsToReplace="s3://foo->alluxio://RM_hostname:19998/foo,gs:/bar->alluxio://RM_hostname:19998/bar"
+   --conf spark.rapids.alluxio.pathsToReplace="s3://foo->alluxio://RM_hostname:19998/foo,gs://bar->alluxio://RM_hostname:19998/bar"
    ```
 
    This configuration allows RAPIDS to replace any file paths prefixed `s3://foo` with
-   `alluxio://RM_hostname:19998/foo` and `gs:/bar` with `alluxio://RM_hostname:19998/bar`.
+   `alluxio://RM_hostname:19998/foo` and `gs://bar` with `alluxio://RM_hostname:19998/bar`.
 
    Note, one side affect of using Alluxio in this way results in the sql function
    **`input_file_name`** printing the `alluxio://` path rather than the original path.
