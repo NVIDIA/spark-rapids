@@ -181,8 +181,8 @@ class GpuColumnarBatchSorter(
             } else if (inputBatch.numCols() > 0) {
               inputTbl = GpuColumnVector.from(inputBatch)
               outputTypes = GpuColumnVector.extractTypes(inputBatch)
-              printCvs(GpuColumnVector.extractColumns(
-                GpuColumnVector.from(inputBatch), outputTypes.toArray))
+              // printCvs(GpuColumnVector.extractColumns(
+               //  GpuColumnVector.from(inputBatch), outputTypes.toArray))
             }
             val orderByArgs = getOrderArgs(inputTbl)
             val startTimestamp = System.nanoTime()
@@ -266,8 +266,8 @@ class GpuColumnarBatchSorter(
       resultTbl = tbl.orderBy(orderByArgs: _*)
       val res = GpuColumnVector.from(
         resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
-      printCvs(GpuColumnVector.extractColumns(
-        GpuColumnVector.from(res), GpuColumnVector.extractTypes(res)))
+      // printCvs(GpuColumnVector.extractColumns(
+       //  GpuColumnVector.from(res), GpuColumnVector.extractTypes(res)))
       res
     } finally {
       if (resultTbl != null) {

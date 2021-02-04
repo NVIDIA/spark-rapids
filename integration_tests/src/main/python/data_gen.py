@@ -638,8 +638,9 @@ def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
 
 def debug_df(df):
     """print out the contents of a dataframe for debugging."""
-    print('COLLECTED\n{}'.format(df.collect()))
+    #print('COLLECTED\n{}'.format(df.collect()))
     df.explain()
+    df.printSchema()
     return df
 
 def print_params(data_gen):
