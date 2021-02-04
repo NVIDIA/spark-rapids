@@ -96,6 +96,18 @@ object HostColumnarToGpu extends Logging {
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
       nullable: Boolean, rows: Int): Unit = {
     (cv.dataType(), nullable) match {
+      case (BooleanType, true) if cv.isInstanceOf[ArrowColumnVector] =>
+        for (i <- 0 until rows) {
+          if (cv.isNullAt(i)) {
+            b.appendNull()
+          } else {
+            b.append(cv.getBoolean(i))
+          }
+        }
+      case (BooleanType, false) if cv.isInstanceOf[ArrowColumnVector] =>
+        for (i <- 0 until rows) {
+          b.append(cv.getBoolean(i))
+        }
       case (ByteType | BooleanType, true) =>
         for (i <- 0 until rows) {
           if (cv.isNullAt(i)) {
