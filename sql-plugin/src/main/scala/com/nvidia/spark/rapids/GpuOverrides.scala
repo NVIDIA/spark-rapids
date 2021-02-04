@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.ScalarSubquery
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
@@ -2256,13 +2257,23 @@ object GpuOverrides {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnscaledValue(child)
       }),
     expr[MakeDecimal](
-      "Create a Decimal from an unscaled long value form some aggregation optimizations",
+      "Create a Decimal from an unscaled long value for some aggregation optimizations",
       ExprChecks.unaryProject(TypeSig.DECIMAL, TypeSig.DECIMAL,
         TypeSig.LONG, TypeSig.LONG),
       (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       }),
+    expr[ScalarSubquery](
+      "Subquery that will return only one row and one column",
+      ExprChecks.projectOnly(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        Nil, None),
+      (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
+      }
+    ),
     GpuScalaUDF.exprMeta
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
