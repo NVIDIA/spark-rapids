@@ -48,7 +48,7 @@ Other forms of Spark UDFs are not supported, such as:
 
 For supported UDFs, the RAPIDS Accelerator will detect a GPU implementation
 if the UDF class implements the
-[RapidsUDF](../sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java)
+[RapidsUDF](../../sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java)
 interface. This interface requires implementing the following method:
 
 ```java
@@ -95,27 +95,27 @@ type `FLOAT64`.
 ## RAPIDS Accelerated UDF Examples
 
 Source code for examples of RAPIDS accelerated Hive UDFs is provided
-in the [udf-examples](../udf-examples) project.
+in the [udf-examples](../../udf-examples) project.
 
 ### Spark Scala UDF Examples
 
-- [URLDecode](../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLDecode.scala)
+- [URLDecode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLDecode.scala)
 decodes URL-encoded strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-- [URLEncode](../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
+- [URLEncode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
 URL-encodes strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 
 ### Hive UDF Examples
 
-- [URLDecode](../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLDecode.java)
+- [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLDecode.java)
 implements a Hive simple UDF using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 to decode URL-encoded strings
-- [URLEncode](../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLEncode.java)
+- [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLEncode.java)
 implements a Hive generic UDF using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 to URL-encode strings
-- [StringWordCount](../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
+- [StringWordCount](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
 implements a Hive simple UDF using
-[native code](../udf-examples/src/main/cpp/src) to count words in strings
+[native code](../../udf-examples/src/main/cpp/src) to count words in strings
