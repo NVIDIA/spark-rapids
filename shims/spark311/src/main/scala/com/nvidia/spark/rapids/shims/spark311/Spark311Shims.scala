@@ -16,9 +16,12 @@
 
 package com.nvidia.spark.rapids.shims.spark311
 
+import java.nio.ByteBuffer
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
+import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
@@ -35,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
-import org.apache.spark.sql.internal.StaticSQLConf
+import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark311._
@@ -212,8 +215,15 @@ class Spark311Shims extends Spark301Shims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
+            val location = replaceWithAlluxioPathIfNeeded(
+              conf,
+              wrapped.relation,
+              wrapped.partitionFilters,
+              wrapped.dataFilters)
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
@@ -380,4 +390,20 @@ class Spark311Shims extends Spark301Shims {
   override def shouldIgnorePath(path: String): Boolean = {
     HadoopFSUtilsShim.shouldIgnorePath(path)
   }
+
+  // Arrow version changed between Spark versions
+  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
+    vec.getDataBuffer.nioBuffer()
+  }
+
+  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
+    vec.getValidityBuffer.nioBuffer()
+  }
+
+  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
+    vec.getOffsetBuffer.nioBuffer()
+  }
+
+  /** matches SPARK-33008 fix in 3.1.1 */
+  override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
 }

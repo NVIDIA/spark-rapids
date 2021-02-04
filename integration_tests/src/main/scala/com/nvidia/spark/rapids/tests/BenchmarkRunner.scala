@@ -56,7 +56,12 @@ object BenchmarkRunner {
 
     benchmarks.get(conf.benchmark().toLowerCase) match {
       case Some(bench) =>
-        val appName = s"${bench.name()} Like Bench ${conf.query().mkString(",")}"
+        // only include the query name in the app name if a single query is being run
+        val appName = if (conf.query().size == 1) {
+          s"${bench.name()} Like Bench ${conf.query().head}"
+        } else {
+          s"${bench.name()} Like Bench"
+        }
         val spark = SparkSession.builder.appName(appName).getOrCreate()
         spark.sparkContext.setJobDescription("Register input tables")
         conf.inputFormat().toLowerCase match {
@@ -73,6 +78,8 @@ object BenchmarkRunner {
         conf.query().foreach { query =>
 
           println(s"*** RUNNING ${bench.name()} QUERY $query")
+          val summaryFilePrefixWithQuery = conf.summaryFilePrefix.toOption
+              .map(prefix => s"$prefix-$query")
           val report = Try(conf.output.toOption match {
             case Some(path) => conf.outputFormat().toLowerCase match {
               case "parquet" =>
@@ -81,7 +88,7 @@ object BenchmarkRunner {
                   query,
                   path,
                   iterations = conf.iterations(),
-                  summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                  summaryFilePrefix = summaryFilePrefixWithQuery,
                   gcBetweenRuns = conf.gcBetweenRuns())
               case "csv" =>
                 runner.writeCsv(
@@ -89,7 +96,7 @@ object BenchmarkRunner {
                   query,
                   path,
                   iterations = conf.iterations(),
-                  summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                  summaryFilePrefix = summaryFilePrefixWithQuery,
                   gcBetweenRuns = conf.gcBetweenRuns())
               case "orc" =>
                 runner.writeOrc(
@@ -97,7 +104,7 @@ object BenchmarkRunner {
                   query,
                   path,
                   iterations = conf.iterations(),
-                  summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                  summaryFilePrefix = summaryFilePrefixWithQuery,
                   gcBetweenRuns = conf.gcBetweenRuns())
               case other =>
                 throw new IllegalArgumentException(s"Invalid or unspecified output format: $other")
@@ -107,7 +114,7 @@ object BenchmarkRunner {
                 spark,
                 query,
                 conf.iterations(),
-                summaryFilePrefix = conf.summaryFilePrefix.toOption,
+                summaryFilePrefix = summaryFilePrefixWithQuery,
                 gcBetweenRuns = conf.gcBetweenRuns())
           })
 

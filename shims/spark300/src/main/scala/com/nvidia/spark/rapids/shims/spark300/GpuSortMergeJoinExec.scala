@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,8 +62,7 @@ class GpuSortMergeJoinMeta(
             willNotWorkOnGpu(s"can't replace sortMergeJoin because one of the SortExec's before " +
               s"can't be replaced.")
           } else {
-            plan.shouldBeRemoved("removing SortExec as part replacing sortMergeJoin with " +
-              s"shuffleHashJoin")
+            plan.shouldBeRemoved("replacing sortMergeJoin with shuffleHashJoin")
           }
         }
       }

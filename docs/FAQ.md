@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 10
+nav_order: 11
 ---
 # Frequently Asked Questions
 
@@ -16,6 +16,87 @@ config might have changed to be a `BroadcastHashJoin` instead. When actually run
 with `collect`, `show` or `write` a new `DataFrame` is constructed causing Spark to re-plan the
 query. This is why `spark.rapids.sql.enabled` is still respected when running, even if explain shows
 stale results.
+
+### How can I tell what will run on the GPU and what will not run on it?
+<a name="explain"></a>
+
+An Apache Spark plan is transformed and optimized into a set of operators called a physical plan.
+This plan is then run through a set of rules to translate it to a version that runs on the GPU.
+If you want to know what will run on the GPU and what will not along with an explanation why you
+can set [spark.rapids.sql.explain](configs.md#sql.explain) to `ALL`. If you just want to see the
+operators not on the GPU you may set it to `NOT_ON_GPU`. Be aware that some queries end up being
+broken down into multiple jobs, and in those cases a separate log message might be output for each
+job. These are logged each time a query is compiled into an `RDD`, not just when the job runs.
+Because of this calling `explain` on a DataFrame will also trigger this to be logged.
+
+The format of each line follows the pattern
+```
+indicator operation<NAME> operator? explanation
+```
+
+In this `indicator` is one of the following
+  * `*` for operations that will run on the GPU
+  * `@` for operations that could run on the GPU but will not because they are a part of a larger
+    section of the plan that will not run on the GPU
+  * `#` for operations that have been removed from the plan. The reason they are removed will be
+    in the explanation.
+  * `!` for operations that cannot run on the GPU
+
+`operation` indicates the type of the operator.
+  * `Expression` These are typically functions that operate on columns of data and produce a column
+    of data.
+  * `Exec` These are higher level operations that operate on an entire table at a time.
+  * `Partitioning` These are different types of partitioning used when reorganizing data to move to
+    different tasks.
+  * `Input` These are different input formats used with a few input statements, but not all.
+  * `Output` These are different output formats used with a few output statements, but not all.
+  * `NOT_FOUND` These are for anything that the plugin has no replacement rule for.
+
+`NAME` is the name of the operator given by Spark.
+
+`operator?` is an optional string representation of the operator given by Spark.
+
+`explanation` is a text explanation saying if this will
+  * run on the GPU
+  * could run on the GPU but will not because of something outside this operator and an
+    explanation why
+  * will not run on the GPU with an explanation why
+  * will be removed from the plan with a reason why
+
+Generally if an operator is not compatible with Spark for some reason and is off the explanation
+will include information about how it is incompatible and what configs to set to enable the
+operator if you can accept the incompatibility.
+
+### Why does the plan for the GPU query look different from the CPU query?
+
+Typically, there is a one to one mapping between CPU stages in a plan and GPU stages.  There are a
+few places where this is not the case.
+
+* `WholeStageCodeGen` - The GPU plan typically does not do code generation, and does not support 
+  generating code for an entire stage in the plan. Code generation reduces the cost of processing 
+  data one row at a time. The GPU plan processes the data in a columnar format, so the costs 
+  of processing a batch is amortized over the entire batch of data and code generation is not
+  needed.
+
+* `ColumnarToRow` and `RowToColumnar` transitions - The CPU version of Spark plans typically process 
+  data in a row based format. The main exception to this is reading some kinds of columnar data, 
+  like Parquet. Transitioning between the CPU and the GPU also requires transitioning between row
+  and columnar formatted data.
+
+* `GpuCoalesceBatches` and `GpuShuffleCoalesce` - Processing data on the GPU scales 
+  sublinearly. That means doubling the data does often takes less than half the time. Because of
+  this we want to process larger batches of data when possible. These operators will try to combine
+  smaller batches of data into fewer, larger batches to process more efficiently.
+
+* `SortMergeJoin` - The RAPIDS accelerator does not support sort merge joins yet. For now, we 
+  translate sort merge joins into shuffled hash joins. Because of this there are times when sorts 
+  may be removed or other sorts added to meet the ordering requirements of the query.
+
+* `TakeOrderedAndProject` - The `TakeOrderedAndProject` operator will take the top N entries in 
+  each task, shuffle the results to a single executor and then take the top N results from that. 
+  The GPU plan often has more metrics than the CPU versions do, and when we tried to combine all of 
+  these operations into a single stage the metrics were confusing to understand. Instead, we split 
+  the single stage up into multiple smaller parts, so the metrics are clearer.
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
@@ -166,15 +247,46 @@ the I/O and starting the initial processing can suffer.  But if you have a lot o
 cannot be done on the GPU, like complex UDFs, the more tasks you have the more CPU processing you
 can throw at it.
 
+### Why are multiple GPUs per executor not supported?
+
+The RAPIDS Accelerator only supports a single GPU per executor because that was a limitation of
+[RAPIDS cudf](https://github.com/rapidsai/cudf), the foundation of the Accelerator. Basic support
+for working with multiple GPUs has only recently been added to RAPIDS cudf, and there are no plans
+for its individual operations to leverage multiple GPUs (e.g.: a single task's join operation
+processed by multiple GPUs).
+
+Many Spark setups avoid allocating too many concurrent tasks to the same executor, and often
+multiple executors are run per node on the cluster. Therefore this feature has not been
+prioritized, as there has not been a compelling use-case that requires it.
+
+### Why are multiple executors per GPU not supported?
+
+There are multiple reasons why this a problematic configuration:
+- Apache Spark does not support scheduling a fractional number of GPUs to an executor
+- CUDA context switches between processes sharing a single GPU can be expensive
+- Each executor would have a fraction of the GPU memory available for processing
+
+### Is [Multi Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
+
+Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
+for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES` or other means).
+
+Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
+reduces the amount of GPU memory that can be used by the Accelerator for each executor instance.
+If the cluster is purpose-built to run Spark with the RAPIDS Accelerator then we recommend running
+without MIG. Also note that the UCX-based shuffle plugin will not work as well in this
+configuration because
+[MIG does not support direct GPU to GPU transfers](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#app-considerations).
+
 ### How can I run custom expressions/UDFs on the GPU?
 
 The RAPIDS Accelerator provides the following solutions for running
 user-defined functions on the GPU:
 
-#### RAPIDS-Accelerated UDFs
+#### RAPIDS Accelerated UDFs
 
-UDFs can provide a RAPIDS-accelerated implementation which allows the RAPIDS Accelerator to perform
-the operation on the GPU.  See the [RAPIDS-accelerated UDF documentation](../docs/rapids-udfs.md)
+UDFs can provide a RAPIDS accelerated implementation which allows the RAPIDS Accelerator to perform
+the operation on the GPU.  See the [RAPIDS accelerated UDF documentation](additional-functionality/rapids-udfs.md)
 for details.
 
 #### Automatic Translation of Scala UDFs to Apache Spark Operations
