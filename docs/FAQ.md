@@ -266,6 +266,16 @@ There are multiple reasons why this a problematic configuration:
 - CUDA context switches between processes sharing a single GPU can be expensive
 - Each executor would have a fraction of the GPU memory available for processing
 
+### Is [Multi Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
+
+Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
+for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES` or other means).
+
+Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
+reduces the amount of GPU memory that can be used by the Accelerator for each executor instance.
+If the cluster is purpose-built to run Spark with the RAPIDS Accelerator then we recommend running
+without MIG.
+
 ### How can I run custom expressions/UDFs on the GPU?
 
 The RAPIDS Accelerator provides the following solutions for running
