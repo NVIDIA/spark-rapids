@@ -430,7 +430,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
 
-  // This is intended for testing only and this only supports looking for an exec once.
+  /**
+   * This is intended for testing only and this only supports looking for an exec once.
+   */
   private def validateExecsInGpuPlan(plan: SparkPlan, conf: RapidsConf): Unit = {
     val validateExecs = conf.validateExecsInGpuPlan.toSet
     if (validateExecs.nonEmpty) {
