@@ -184,7 +184,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Log2"></a>spark.rapids.sql.expression.Log2|`log2`|Log base 2|true|None|
 <a name="sql.expression.Logarithm"></a>spark.rapids.sql.expression.Logarithm|`log`|Log variable base|true|None|
 <a name="sql.expression.Lower"></a>spark.rapids.sql.expression.Lower|`lower`, `lcase`|String lowercase operator|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132|
-<a name="sql.expression.MakeDecimal"></a>spark.rapids.sql.expression.MakeDecimal| |Create a Decimal from an unscaled long value form some aggregation optimizations|true|None|
+<a name="sql.expression.MakeDecimal"></a>spark.rapids.sql.expression.MakeDecimal| |Create a Decimal from an unscaled long value for some aggregation optimizations|true|None|
 <a name="sql.expression.Md5"></a>spark.rapids.sql.expression.Md5|`md5`|MD5 hash operator|true|None|
 <a name="sql.expression.Minute"></a>spark.rapids.sql.expression.Minute|`minute`|Returns the minute component of the string/timestamp|true|None|
 <a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|`monotonically_increasing_id`|Returns monotonically increasing 64-bit integers|true|None|
@@ -256,6 +256,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Min"></a>spark.rapids.sql.expression.Min|`min`|Min aggregate operator|true|None|
 <a name="sql.expression.Sum"></a>spark.rapids.sql.expression.Sum|`sum`|Sum aggregate operator|true|None|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero| |Normalize NaN and zero|true|None|
+<a name="sql.expression.ScalarSubquery"></a>spark.rapids.sql.expression.ScalarSubquery| |Subquery that will return only one row and one column|true|None|
 <a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
 <a name="sql.expression.HiveSimpleUDF"></a>spark.rapids.sql.expression.HiveSimpleUDF| |Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
 
