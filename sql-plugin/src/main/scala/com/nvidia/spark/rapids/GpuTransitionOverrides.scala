@@ -440,10 +440,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // to set to make uniq execs
       val execsFound = ShimLoader.getSparkShims.findOperators(plan, planContainsInstanceOf).toSet
       val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
-      if (execsNotFound.nonEmpty) {
-        throw new IllegalArgumentException(
-          s"Plan ${plan.toString()} does not contain the following execs: $execsNotFound")
-      }
+      require(execsNotFound.isEmpty,
+        s"Plan ${plan.toString()} does not contain the following execs: " +
+        execsNotFound.mkString(","))
     }
   }
 

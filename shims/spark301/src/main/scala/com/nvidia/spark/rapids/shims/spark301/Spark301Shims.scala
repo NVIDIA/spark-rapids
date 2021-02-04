@@ -132,7 +132,10 @@ class Spark301Shims extends Spark300Shims {
     extensions.injectQueryStagePrepRule(ruleBuilder)
   }
 
-  /** Return list of matching predicates present in the plan */
+  /**
+   * Return list of matching predicates present in the plan
+   * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
+   */
   override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
     def recurse(
         plan: SparkPlan,
