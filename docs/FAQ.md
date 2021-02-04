@@ -250,13 +250,13 @@ can throw at it.
 ### Why are multiple GPUs per executor not supported?
 
 The RAPIDS Accelerator only supports a single GPU per executor because that was a limitation of
-[RAPIDS cudf](https://github.com/rapidsai/cudf), the foundation of the Accelerator.  Basic support
+[RAPIDS cudf](https://github.com/rapidsai/cudf), the foundation of the Accelerator. Basic support
 for working with multiple GPUs has only recently been added to RAPIDS cudf, and there are no plans
 for its individual operations to leverage multiple GPUs (e.g.: a single task's join operation
 processed by multiple GPUs).
 
 Many Spark setups avoid allocating too many concurrent tasks to the same executor, and often
-multiple executors are run per node on the cluster.  Therefore this feature has not been
+multiple executors are run per node on the cluster. Therefore this feature has not been
 prioritized, as there has not been a compelling use-case that requires it.
 
 ### Why are multiple executors per GPU not supported?
@@ -274,7 +274,9 @@ for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES` or other means).
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
 reduces the amount of GPU memory that can be used by the Accelerator for each executor instance.
 If the cluster is purpose-built to run Spark with the RAPIDS Accelerator then we recommend running
-without MIG.
+without MIG. Also note that the UCX-based shuffle plugin will not work as well in this
+configuration because
+[MIG does not support direct GPU to GPU transfers](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#app-considerations).
 
 ### How can I run custom expressions/UDFs on the GPU?
 
