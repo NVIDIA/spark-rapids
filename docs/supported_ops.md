@@ -8902,7 +8902,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="2">MakeDecimal</td>
 <td rowSpan="2"> </td>
-<td rowSpan="2">Create a Decimal from an unscaled long value form some aggregation optimizations</td>
+<td rowSpan="2">Create a Decimal from an unscaled long value for some aggregation optimizations</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
@@ -16990,6 +16990,32 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="1">ScalarSubquery</td>
+<td rowSpan="1"> </td>
+<td rowSpan="1">Subquery that will return only one row and one column</td>
+<td rowSpan="1">None</td>
+<td rowSpan="1">project</td>
+<td>result</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
