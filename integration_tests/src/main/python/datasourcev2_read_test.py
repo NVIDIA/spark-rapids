@@ -29,15 +29,18 @@ def test_read_int():
             conf={'spark.rapids.sql.test.validateExecRanOnGpu': 'HostColumnarToGpu'})
 
 def test_read_strings():
-    assert_gpu_and_cpu_are_equal_collect(readTable("string", columnarClass))
+    assert_gpu_and_cpu_are_equal_collect(readTable("string", columnarClass),
+            conf={'spark.rapids.sql.test.validateExecRanOnGpu': 'HostColumnarToGpu'})
 
 def test_read_all_types():
     assert_gpu_and_cpu_are_equal_collect(
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
-            conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
+            conf={'spark.rapids.sql.castFloatToString.enabled': 'true',
+                  'spark.rapids.sql.test.validateExecRanOnGpu': 'HostColumnarToGpu'})
 
 def test_read_arrow_off():
     assert_gpu_and_cpu_are_equal_collect(
         readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
             conf={'spark.rapids.arrowCopyOptmizationEnabled': 'false',
-                  'spark.rapids.sql.castFloatToString.enabled': 'true'})
+                  'spark.rapids.sql.castFloatToString.enabled': 'true',
+                  'spark.rapids.sql.test.validateExecRanOnGpu': 'HostColumnarToGpu'})
