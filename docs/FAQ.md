@@ -247,6 +247,25 @@ the I/O and starting the initial processing can suffer.  But if you have a lot o
 cannot be done on the GPU, like complex UDFs, the more tasks you have the more CPU processing you
 can throw at it.
 
+### Why are multiple GPUs per executor not supported?
+
+The RAPIDS Accelerator only supports a single GPU per executor because that was a limitation of
+[RAPIDS cudf](https://github.com/rapidsai/cudf), the foundation of the Accelerator.  Basic support
+for working with multiple GPUs has only recently been added to RAPIDS cudf, and there are no plans
+for its individual operations to leverage multiple GPUs (e.g.: a single task's join operation
+processed by multiple GPUs).
+
+Many Spark setups avoid allocating too many concurrent tasks to the same executor, and often
+multiple executors are run per node on the cluster.  Therefore this feature has not been
+prioritized, as there has not been a compelling use-case that requires it.
+
+### Why are multiple executors per GPU not supported?
+
+There are multiple reasons why this a problematic configuration:
+- Apache Spark does not support scheduling a fractional number of GPUs to an executor
+- CUDA context switches between processes sharing a single GPU can be expensive
+- Each executor would have a fraction of the GPU memory available for processing
+
 ### How can I run custom expressions/UDFs on the GPU?
 
 The RAPIDS Accelerator provides the following solutions for running
