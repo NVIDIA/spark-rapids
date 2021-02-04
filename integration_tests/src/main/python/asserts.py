@@ -18,6 +18,7 @@ from decimal import Decimal
 import math
 from pyspark.sql import Row
 from py4j.protocol import Py4JJavaError
+from data_gen import *
 
 import pytest
 from spark_session import with_cpu_session, with_gpu_session
@@ -141,13 +142,13 @@ class _RowCmp(object):
 
     def __gt__(self, other):
         return self.cmp(other) > 0
-           
+
     def __eq__(self, other):
         return self.cmp(other) == 0
 
     def __le__(self, other):
         return self.cmp(other) <= 0
- 
+
     def __ge__(self, other):
         return self.cmp(other) >= 0
 
@@ -210,7 +211,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
     gpu_path = base_path + '/GPU'
     with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
-    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format( 
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
     (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
@@ -298,7 +299,7 @@ def assert_gpu_fallback_collect(func,
             conf=conf)
     gpu_end = time.time()
     jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
-    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
         from_cpu.sort(key=_RowCmp)
@@ -312,16 +313,18 @@ def _assert_gpu_and_cpu_are_equal(func,
     (bring_back, collect_type) = _prep_func_for_compare(func, should_collect)
     conf = _prep_incompat_conf(conf)
 
-    print('### CPU RUN ###')
+    print('### CPU RUN kuhus ###')
     cpu_start = time.time()
     from_cpu = with_cpu_session(bring_back, conf=conf)
     cpu_end = time.time()
-    print('### GPU RUN ###')
+    print('### GPU RUN kuhus ###')
     gpu_start = time.time()
     from_gpu = with_gpu_session(bring_back,
             conf=conf)
     gpu_end = time.time()
-    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
+    # print('KUHU collect cpu=' + str(from_cpu))
+    # print('KUHU collect gpu=' + str(from_gpu))
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
         from_cpu.sort(key=_RowCmp)
@@ -346,7 +349,7 @@ def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     _assert_gpu_and_cpu_are_equal(func, False, conf=conf)
 
 
-def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
+def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf={'spark.rapids.sql.explain': 'ALL'}):
     """
     Assert that the specified SQL query produces equal results on CPU and GPU.
     :param df_fun: a function that will create the dataframe
@@ -356,10 +359,12 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
     :return: Assertion failure, if results from CPU and GPU do not match.
     """
     if conf is None:
-        conf = {}
+        conf = {'spark.rapids.sql.explain': 'ALL'}
     def do_it_all(spark):
         df = df_fun(spark)
         df.createOrReplaceTempView(table_name)
+        print ("KUHU" + str(spark.sql(sql).collect()))
+        print ("KUHU" + str(spark.sql(sql).explain()))
         return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf)
 

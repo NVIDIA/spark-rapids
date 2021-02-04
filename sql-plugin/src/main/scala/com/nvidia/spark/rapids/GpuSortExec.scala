@@ -17,9 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{DType, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetricNames._
-
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -27,7 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLa
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{AbstractDataType, ArrayType, DataType, IntegerType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
@@ -44,6 +43,14 @@ class GpuSortMeta(
   override def tagPlanForGpu(): Unit = {
     if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
       willNotWorkOnGpu("string literal values are not supported in a sort")
+    }
+    val sortOrderDataTypes = sort.sortOrder.map(_.dataType)
+    println("KUHU datatypes" + sortOrderDataTypes.mkString(","))
+    System.err.println("KUHU datatypes" + sortOrderDataTypes.mkString(","))
+    if (sortOrderDataTypes.exists(dtype =>
+      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
+        || dtype.isInstanceOf[MapType])) {
+      willNotWorkOnGpu("Nested types in Sort Order are not supported")
     }
   }
 }
@@ -174,6 +181,8 @@ class GpuColumnarBatchSorter(
             } else if (inputBatch.numCols() > 0) {
               inputTbl = GpuColumnVector.from(inputBatch)
               outputTypes = GpuColumnVector.extractTypes(inputBatch)
+              printCvs(GpuColumnVector.extractColumns(
+                GpuColumnVector.from(inputBatch), outputTypes.toArray))
             }
             val orderByArgs = getOrderArgs(inputTbl)
             val startTimestamp = System.nanoTime()
@@ -255,11 +264,46 @@ class GpuColumnarBatchSorter(
     var resultTbl: cudf.Table = null
     try {
       resultTbl = tbl.orderBy(orderByArgs: _*)
-      GpuColumnVector.from(resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
+      val res = GpuColumnVector.from(
+        resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
+      printCvs(GpuColumnVector.extractColumns(
+        GpuColumnVector.from(res), GpuColumnVector.extractTypes(res)))
+      res
     } finally {
       if (resultTbl != null) {
         resultTbl.close()
       }
     }
   }
+
+  private def printCvs(childCvs: Seq[GpuColumnVector]) = {
+    (0 until childCvs(0).getRowCount.toInt).foreach { i =>
+      for (j <- 0 until childCvs.length) {
+        val cv: RapidsHostColumnVector = childCvs(j).copyToHost()
+        val (rowVal,rowNull) = cv.getBase.getType match {
+          case DType.FLOAT64 => (cv.getDouble(i),cv.isNullAt(i))
+          case DType.FLOAT32 => (cv.getFloat(i),cv.isNullAt(i))
+          case DType.INT64 => (cv.getLong(i),cv.isNullAt(i))
+          case DType.INT32 => if (!cv.isNullAt(i)) {
+            (cv.getInt(i),cv.isNullAt(i))
+          } else {
+            (null, true)
+          }
+          case DType.INT16 => (cv.getShort(i),cv.isNullAt(i))
+          case DType.BOOL8 => (cv.getBoolean(i),cv.isNullAt(i))
+          case DType.STRING => (cv.getUTF8String(i),cv.isNullAt(i))
+          case DType.LIST => (cv.getArray(i).array().mkString(","),cv.isNullAt(i))
+          case DType.TIMESTAMP_DAYS => "N/A"
+          case DType.TIMESTAMP_MICROSECONDS => "N/A"
+        }
+        System.err.print("("+rowVal+")")
+        System.err.flush()
+      }
+      System.err.println()
+      System.err.flush()
+    }
+    System.err.println()
+    System.err.flush()
+  }
+
 }

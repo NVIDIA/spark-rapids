@@ -771,7 +771,7 @@ date_n_time_gens = [date_gen, timestamp_gen]
 
 boolean_gens = [boolean_gen]
 
-single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens + [null_gen]]
+single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in [IntegerGen(nullable=False)]]
 
 # Be careful to not make these too large of data generation takes for ever
 # This is only a few nested array gens, because nesting can be very deep
@@ -800,7 +800,8 @@ map_gens_sample = [simple_string_to_string_map_gen,
         MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
-allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
+allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                                        'spark.rapids.sql.explain': 'ALL'}
 
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 
