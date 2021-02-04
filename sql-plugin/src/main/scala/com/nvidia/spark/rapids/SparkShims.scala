@@ -186,4 +186,6 @@ trait SparkShims {
     replaceFunc: Path => Path): Seq[Path]
 
   def shouldFailDivByZero(): Boolean
+
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
 }

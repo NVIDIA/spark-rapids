@@ -40,12 +40,12 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       df5.collect()
       val plan = df5.queryExecution.executedPlan
 
-      val bhjCount =
-        GpuTransitionOverrides.findOperators(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
+      val bhjCount = ShimLoader.getSparkShims
+        .findOperators(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin)
       assert(bhjCount.size === 1)
 
-      val shjCount =
-        GpuTransitionOverrides.findOperators(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin)
+      val shjCount = ShimLoader.getSparkShims
+        .findOperators(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin)
       assert(shjCount.size === 1)
     }, conf)
   }

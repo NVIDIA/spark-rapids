@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ListBuffer
-
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -440,7 +438,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         validateExecs.contains(plan.getClass.getSimpleName)
       }
       // to set to make uniq execs
-      val execsFound = GpuTransitionOverrides.findOperators(plan, planContainsInstanceOf).toSet
+      val execsFound = ShimLoader.getSparkShims.findOperators(plan, planContainsInstanceOf).toSet
       val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
       if (execsNotFound.nonEmpty) {
         throw new IllegalArgumentException(
@@ -501,26 +499,5 @@ object GpuTransitionOverrides {
       case ShuffleQueryStageExec(_, plan) => plan
       case _ => plan
     }
-  }
-
-  /** Return list of matching predicates present in the plan */
-  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
-    def recurse(
-        plan: SparkPlan,
-        predicate: SparkPlan => Boolean,
-        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
-      plan match {
-        case _ if predicate(plan) =>
-          accum += plan
-          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
-        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
-        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
-        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
-        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
-      }
-      accum
-    }
-
-    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 }
