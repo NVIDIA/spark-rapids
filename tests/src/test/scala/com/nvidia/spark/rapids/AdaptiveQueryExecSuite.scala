@@ -170,7 +170,7 @@ class AdaptiveQueryExecSuite
       assert(!df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec])
 
       // assert that both inputs to the SHJ are coalesced
-      val shj = GpuTransitionOverrides.findOperator(df.queryExecution.executedPlan,
+      val shj = TestUtils.findOperator(df.queryExecution.executedPlan,
         _.isInstanceOf[GpuShuffledHashJoinBase]).get
       assert(shj.children.length == 2)
       assert(shj.children.forall {
@@ -206,17 +206,17 @@ class AdaptiveQueryExecSuite
       df.collect()
 
       // write should be on GPU
-      val writeCommand = GpuTransitionOverrides.findOperator(df.queryExecution.executedPlan,
+      val writeCommand = TestUtils.findOperator(df.queryExecution.executedPlan,
         _.isInstanceOf[GpuDataWritingCommandExec])
       assert(writeCommand.isDefined)
 
       // the read should be an adaptive plan
-      val adaptiveSparkPlanExec = GpuTransitionOverrides.findOperator(writeCommand.get,
+      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
         _.isInstanceOf[AdaptiveSparkPlanExec])
         .get.asInstanceOf[AdaptiveSparkPlanExec]
 
       // assert that at least part of the adaptive plan ran on GPU
-      assert(GpuTransitionOverrides.findOperator(adaptiveSparkPlanExec, _.isInstanceOf[GpuExec]).isDefined)
+      assert(TestUtils.findOperator(adaptiveSparkPlanExec, _.isInstanceOf[GpuExec]).isDefined)
     }, conf)
   }
 
@@ -249,17 +249,17 @@ class AdaptiveQueryExecSuite
         df.collect()
 
         // write should be on CPU
-        val writeCommand = GpuTransitionOverrides.findOperator(df.queryExecution.executedPlan,
+        val writeCommand = TestUtils.findOperator(df.queryExecution.executedPlan,
           _.isInstanceOf[DataWritingCommandExec])
         assert(writeCommand.isDefined)
 
         // the read should be an adaptive plan
-        val adaptiveSparkPlanExec = GpuTransitionOverrides.findOperator(writeCommand.get,
+        val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
           _.isInstanceOf[AdaptiveSparkPlanExec])
             .get.asInstanceOf[AdaptiveSparkPlanExec]
 
         // even though the write couldn't run on GPU, the read should have done
-        assert(GpuTransitionOverrides.findOperator(adaptiveSparkPlanExec.executedPlan,
+        assert(TestUtils.findOperator(adaptiveSparkPlanExec.executedPlan,
           _.isInstanceOf[GpuExec]).isDefined)
 
     }, conf)

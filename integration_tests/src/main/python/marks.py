@@ -16,6 +16,7 @@ import pytest
 
 allow_non_gpu_databricks = pytest.mark.allow_non_gpu_databricks
 allow_non_gpu = pytest.mark.allow_non_gpu
+validate_execs_in_gpu_plan = pytest.mark.validate_execs_in_gpu_plan
 approximate_float = pytest.mark.approximate_float
 ignore_order = pytest.mark.ignore_order
 incompat = pytest.mark.incompat

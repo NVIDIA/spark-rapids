@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.TestUtils.getFinalPlan
+import com.nvidia.spark.rapids.TestUtils.{findOperator, getFinalPlan}
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -73,7 +73,7 @@ class HashSortOptimizeSuite extends FunSuite {
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
 
-      val joinNode = GpuTransitionOverrides.findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })
@@ -88,7 +88,7 @@ class HashSortOptimizeSuite extends FunSuite {
       val plan = rdf.queryExecution.executedPlan
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
-      val joinNode = GpuTransitionOverrides.findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
+      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       validateOptimizeSort(plan, joinNode.get)
     })

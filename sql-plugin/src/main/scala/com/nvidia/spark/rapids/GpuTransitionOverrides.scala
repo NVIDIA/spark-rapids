@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -34,7 +35,7 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuC
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
  * These rules insert transitions to and from the GPU, and then optimize various transitions.
  */
-class GpuTransitionOverrides extends Rule[SparkPlan] {
+class GpuTransitionOverrides extends Rule[SparkPlan] with Logging {
   var conf: RapidsConf = null
 
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
@@ -433,8 +434,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   // this is not optimal because we recurse the plan multiple times, one for each
   // exec specified in the config. This is intended for testing only.
   // Note this only supports looking for an exec once
-  private def validateExecRanOnGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
-    val validateExecs = conf.validateExecRanOnGpu.toSet
+  private def validateExecsInGpuPlan(plan: SparkPlan, conf: RapidsConf): Unit = {
+    val validateExecs = conf.validateExecsInGpuPlan.toSet
+    logWarning("validate exec configs is: " + validateExecs)
     if (validateExecs.nonEmpty) {
       def planContainsInstanceOf(plan: SparkPlan): Boolean = {
         validateExecs.contains(plan.getClass.getSimpleName)
@@ -478,7 +480,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       if (conf.isTestEnabled) {
         assertIsOnTheGpu(updatedPlan, conf)
-        validateExecRanOnGpu(updatedPlan, conf)
+        validateExecsInGpuPlan(updatedPlan, conf)
       }
       updatedPlan
     } else {
@@ -500,16 +502,6 @@ object GpuTransitionOverrides {
       case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
       case ShuffleQueryStageExec(_, plan) => plan
       case _ => plan
-    }
-  }
-
-  def findOperator(plan: SparkPlan, predicate: SparkPlan => Boolean): Option[SparkPlan] = {
-    plan match {
-      case _ if predicate(plan) => Some(plan)
-      case a: AdaptiveSparkPlanExec => findOperator(a.executedPlan, predicate)
-      case qs: BroadcastQueryStageExec => findOperator(qs.broadcast, predicate)
-      case qs: ShuffleQueryStageExec => findOperator(qs.shuffle, predicate)
-      case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
     }
   }
 

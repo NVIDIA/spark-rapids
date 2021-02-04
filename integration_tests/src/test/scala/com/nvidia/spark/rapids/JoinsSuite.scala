@@ -148,7 +148,7 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
       // call collect so that we get the final executed plan when AQE is on
       join.collect()
 
-      val shuffleExec = GpuTransitionOverrides
+      val shuffleExec = TestUtils
           .findOperator(join.queryExecution.executedPlan, _.isInstanceOf[ShuffleExchangeExec])
           .get
 

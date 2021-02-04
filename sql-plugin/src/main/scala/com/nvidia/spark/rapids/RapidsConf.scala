@@ -656,7 +656,7 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
-  val TEST_VALIDATE_EXEC_ONGPU = conf("spark.rapids.sql.test.validateExecRanOnGpu")
+  val TEST_VALIDATE_EXECS_ONGPU = conf("spark.rapids.sql.test.validateExecsInGpuPlan")
     .doc("Comma separate string of exec class names to validate they " +
       "are GPU accelerated. Used for testing.")
     .internal()
@@ -1012,7 +1012,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
-  lazy val validateExecRanOnGpu: Seq[String] = get(TEST_VALIDATE_EXEC_ONGPU)
+  lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
