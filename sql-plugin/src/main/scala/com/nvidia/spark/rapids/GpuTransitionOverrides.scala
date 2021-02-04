@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -35,7 +34,7 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuC
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
  * These rules insert transitions to and from the GPU, and then optimize various transitions.
  */
-class GpuTransitionOverrides extends Rule[SparkPlan] with Logging {
+class GpuTransitionOverrides extends Rule[SparkPlan] {
   var conf: RapidsConf = null
 
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
@@ -431,12 +430,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] with Logging {
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
 
-  // this is not optimal because we recurse the plan multiple times, one for each
-  // exec specified in the config. This is intended for testing only.
-  // Note this only supports looking for an exec once
+  // This is intended for testing only and this only supports looking for an exec once.
   private def validateExecsInGpuPlan(plan: SparkPlan, conf: RapidsConf): Unit = {
     val validateExecs = conf.validateExecsInGpuPlan.toSet
-    logWarning("validate exec configs is: " + validateExecs)
     if (validateExecs.nonEmpty) {
       def planContainsInstanceOf(plan: SparkPlan): Boolean = {
         validateExecs.contains(plan.getClass.getSimpleName)
@@ -525,5 +521,4 @@ object GpuTransitionOverrides {
 
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
-
 }
