@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,27 +71,6 @@ object TestUtils extends Assertions with Arm {
       case qs: ShuffleQueryStageExec => findOperator(qs.shuffle, predicate)
       case other => other.children.flatMap(p => findOperator(p, predicate)).headOption
     }
-  }
-
-  /** Return list of  matching predicates present in the plan */
-  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
-    def recurse(
-      plan: SparkPlan,
-      predicate: SparkPlan => Boolean,
-      accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
-      plan match {
-        case _ if predicate(plan) =>
-          accum += plan
-          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
-        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
-        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
-        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
-        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
-      }
-      accum
-    }
-
-    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 
   /** Return final executed plan */
