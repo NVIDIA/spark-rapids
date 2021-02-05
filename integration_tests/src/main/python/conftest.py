@@ -48,6 +48,9 @@ def is_allowing_any_non_gpu():
 def get_non_gpu_allowed():
     return _non_gpu_allowed
 
+def get_validate_execs_in_gpu_plan():
+    return _validate_execs_in_gpu_plan
+
 _runtime_env = "apache"
 
 def runtime_env():
@@ -161,6 +164,13 @@ def pytest_runtest_setup(item):
         _non_gpu_allowed = _non_gpu_allowed + _non_gpu_allowed_databricks
     elif _non_gpu_allowed_databricks:
         _non_gpu_allowed = _non_gpu_allowed_databricks
+
+    global _validate_execs_in_gpu_plan
+    validate_execs = item.get_closest_marker('validate_execs_in_gpu_plan')
+    if validate_execs and validate_execs.args:
+        _validate_execs_in_gpu_plan = validate_execs.args
+    else:
+        _validate_execs_in_gpu_plan = []
 
     global _limit
     limit_mrk = item.get_closest_marker('limit')

@@ -1450,7 +1450,7 @@ object GpuOverrides {
       "Multiplication",
       ExprChecks.binaryProjectNotLambda(TypeSig.numeric +
           TypeSig.psNote(TypeEnum.DECIMAL, "Because of Spark's inner workings the full range " +
-              "of decimal precision (even for 64-bit value) is not supported."),
+              "of decimal precision (even for 64-bit values) is not supported."),
         TypeSig.numeric,
         ("lhs", TypeSig.numeric, TypeSig.numeric),
         ("rhs", TypeSig.numeric, TypeSig.numeric)),
@@ -1654,10 +1654,42 @@ object GpuOverrides {
     expr[Divide](
       "Division",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
-        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL),
-        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL)),
+        TypeSig.DOUBLE +
+            TypeSig.psNote(TypeEnum.DECIMAL, "Because of Spark's inner workings the full range " +
+                "of decimal precision (even for 64-bit values) is not supported."),
+        TypeSig.DOUBLE + TypeSig.DECIMAL,
+        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL, TypeSig.DOUBLE + TypeSig.DECIMAL),
+        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL, TypeSig.DOUBLE + TypeSig.DECIMAL)),
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // Division of Decimal types is a little odd. Spark will cast the inputs
+          // to a common wider value where scale is max of the two input scales, and precision is
+          // max of the two input non-scale portions + the new scale. Then it will do the divide,
+          // which the rules for it are a little complex, but lie about it
+          // in the return type of the Divide operator. Then in CheckOverflow it will reset the
+          // scale and check the precision so that they know it fits in final desired result.
+          // We would like to avoid all of this if possible because having a temporary intermediate
+          // value that can have a scale quite a bit larger than the final result reduces the
+          // maximum precision that we could support, as we don't have unlimited precision. But
+          // sadly because of how the logical plan is compiled down to the physical plan we have
+          // lost what the original types were and cannot recover it. As such for now we are going
+          // to do what Spark does, but we have to recompute/recheck the temporary precision to be
+          // sure it will fit on the GPU. In addition to this we have it a little harder because
+          // the decimal divide itself will do rounding on the result before it is returned,
+          // effectively calculating an extra digit of precision. Because cudf does not support this
+          // right now we actually increase the scale (and corresponding precision) to get an extra
+          // decimal place so we can round it in GpuCheckOverflow
+          (childExprs.head.dataType, childExprs(1).dataType) match {
+            case (l: DecimalType, r: DecimalType) =>
+              val intermediateResult = GpuDivideUtil.decimalDataType(l, r)
+              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+                willNotWorkOnGpu("The actual output precision of the divide is too large" +
+                    s" to fit on the GPU $intermediateResult")
+              }
+            case _ => // NOOP
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDivide(lhs, rhs)
       }),

@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.spark301
 
+import scala.collection.mutable.ListBuffer
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark300.{GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, Spark300Shims}
 import com.nvidia.spark.rapids.spark301.RapidsShuffleManager
@@ -27,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ShuffleExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuShuffleExchangeExecBase}
@@ -128,5 +130,28 @@ class Spark301Shims extends Spark300Shims {
       extensions: SparkSessionExtensions,
       ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
     extensions.injectQueryStagePrepRule(ruleBuilder)
+  }
+
+  /**
+   * Return list of matching predicates present in the plan
+   * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
+   */
+  override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 }
