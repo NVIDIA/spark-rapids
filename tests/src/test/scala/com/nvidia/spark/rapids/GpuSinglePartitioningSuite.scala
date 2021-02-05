@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,21 +46,28 @@ class GpuSinglePartitioningSuite extends FunSuite with Arm {
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf))
       val partitioner = GpuSinglePartitioning(Nil)
-      withResource(buildBatch()) { expected =>
-        // partition will consume batch, so make a new batch with incremented refcounts
-        val columns = GpuColumnVector.extractColumns(expected)
-        columns.foreach(_.incRefCount())
-        val batch = new ColumnarBatch(columns.toArray, expected.numRows)
-        val result = partitioner.columnarEval(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-        try {
-          assertResult(1)(result.length)
-          assertResult(0)(result.head._2)
-          val resultBatch = result.head._1
-          // verify this is a contiguous split table
-          assert(resultBatch.column(0).isInstanceOf[GpuColumnVectorFromBuffer])
-          TestUtils.compareBatches(expected, resultBatch)
-        } finally {
-          result.foreach(_._1.close())
+      withResource(buildBatch()) { batch =>
+        withResource(GpuColumnVector.from(batch)) { table =>
+          withResource(table.contiguousSplit()) { contigTables =>
+            val expected = contigTables.head
+            // partition will consume batch, so increment refcounts enabling withResource to close
+            GpuColumnVector.extractBases(batch).foreach(_.incRefCount())
+            val result = partitioner.columnarEval(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+            try {
+              assertResult(1)(result.length)
+              assertResult(0)(result.head._2)
+              val resultBatch = result.head._1
+              // verify this is a contiguous split table
+              assert(GpuPackedTableColumn.isBatchPacked(resultBatch))
+              val packedColumn = resultBatch.column(0).asInstanceOf[GpuPackedTableColumn]
+              val actual = packedColumn.getContiguousTable
+              assertResult(expected.getBuffer.getLength)(actual.getBuffer.getLength)
+              assertResult(expected.getMetadataDirectBuffer)(actual.getMetadataDirectBuffer)
+              TestUtils.compareTables(expected.getTable, actual.getTable)
+            } finally {
+              result.foreach(_._1.close())
+            }
+          }
         }
       }
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,7 +66,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         val bufferSize = closeOnExcept(buildContiguousTable()) { ct =>
           val len = ct.getBuffer.getLength
           // store takes ownership of the table
-          devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
+          devStore.addContiguousTable(bufferId, ct, spillPriority)
           len
         }
 
@@ -98,7 +98,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedBuffer =>
             expectedBuffer.copyFromDeviceBuffer(ct.getBuffer)
             // store takes ownership of the table
-            devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
+            devStore.addContiguousTable(bufferId, ct, spillPriority)
             ct = null
 
             devStore.synchronousSpill(0)
@@ -135,7 +135,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
             expectedBatch =>
               // store takes ownership of the table
-              devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
+              devStore.addContiguousTable(bufferId, ct, spillPriority)
               ct = null
 
               devStore.synchronousSpill(0)
@@ -174,7 +174,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           smallTable = buildContiguousTable(1)
           withResource(GpuColumnVector.from(bigTable.getTable, sparkTypes)) { expectedBatch =>
             // store takes ownership of the table
-            devStore.addTable(bigBufferId, bigTable.getTable, bigTable.getBuffer, spillPriority)
+            devStore.addContiguousTable(bigBufferId, bigTable, spillPriority)
             bigTable = null
 
             devStore.synchronousSpill(0)
@@ -187,8 +187,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               }
             }
 
-            devStore.addTable(smallBufferId, smallTable.getTable, smallTable.getBuffer,
-              spillPriority)
+            devStore.addContiguousTable(smallBufferId, smallTable, spillPriority)
             smallTable = null
             devStore.synchronousSpill(0)
             val ac: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])

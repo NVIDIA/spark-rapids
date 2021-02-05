@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableArray
-
 import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -146,31 +144,30 @@ object SpillableColumnarBatch extends Arm {
       id: RapidsBufferId,
       batch: ColumnarBatch,
       initialSpillPriority: Long): Unit = {
-    val numColumns = batch.numCols()
-    if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
-      withResource(batch) { batch =>
+    withResource(batch) { batch =>
+      val numColumns = batch.numCols()
+      if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
         val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
-        val buff = cv.getBuffer
+        val buff = cv.getTableBuffer
         buff.incRefCount()
         RapidsBufferCatalog.addBuffer(id, buff, cv.getTableMeta, initialSpillPriority)
-      }
-    } else if (numColumns > 0 &&
-        (0 until numColumns)
-            .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
-      val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-      withResource(batch) { batch =>
+      } else if (GpuPackedTableColumn.isBatchPacked(batch)) {
+        val cv = batch.column(0).asInstanceOf[GpuPackedTableColumn]
+        RapidsBufferCatalog.addContiguousTable(id, cv.getContiguousTable, initialSpillPriority)
+      } else if (numColumns > 0 &&
+          (0 until numColumns)
+              .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
+        val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
         val table = GpuColumnVector.from(batch)
         val buff = cv.getBuffer
         buff.incRefCount()
-        RapidsBufferCatalog.addTable(id, table, buff, initialSpillPriority)
-      }
-    } else {
-      withResource(batch) { batch =>
+        RapidsBufferCatalog.addTable(id, table, buff, cv.getTableMeta, initialSpillPriority)
+      } else {
         withResource(GpuColumnVector.from(batch)) { tmpTable =>
-          val contigTables = tmpTable.contiguousSplit(batch.numRows())
-          val tab = contigTables.head
-          contigTables.tail.safeClose()
-          RapidsBufferCatalog.addTable(id, tab.getTable, tab.getBuffer, initialSpillPriority)
+          withResource(tmpTable.contiguousSplit()) { contigTables =>
+            require(contigTables.length == 1, "Unexpected number of contiguous spit tables")
+            RapidsBufferCatalog.addContiguousTable(id, contigTables.head, initialSpillPriority)
+          }
         }
       }
     }
