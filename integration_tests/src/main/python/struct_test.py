@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from conftest import is_dataproc_runtime
 from data_gen import *
+from pyspark.sql import Row
 from pyspark.sql.types import *
 
 def generate_with_unique_col(spark, dataframe):
