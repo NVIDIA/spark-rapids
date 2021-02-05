@@ -480,12 +480,12 @@ object BenchUtils {
 
           (isGpuPlan(a), isGpuPlan(a.children(i))) match {
             case (true, true) =>
-              w.println(s"""node$id -> node$childId [color="$nvGreen"];""")
+              w.println(s"""node$childId -> node$id [color="$nvGreen"];""")
             case (false, false) =>
-              w.println(s"""node$id -> node$childId [color="$blue"];""")
+              w.println(s"""node$childId -> node$id [color="$blue"];""")
             case _ =>
               // show emphasis on transitions between CPU and GPU
-              w.println(s"node$id -> node$childId [color=red, style=bold];")
+              w.println(s"node$childId -> node$id [color=red, style=bold];")
           }
         })
       } else {
