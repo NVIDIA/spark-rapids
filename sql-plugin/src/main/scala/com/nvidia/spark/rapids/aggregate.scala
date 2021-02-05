@@ -17,10 +17,12 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

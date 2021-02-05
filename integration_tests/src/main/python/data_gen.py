@@ -95,7 +95,23 @@ class DataGen:
         raise TypeError('Children should implement this method and call _start')
 
     def _start_no_rand(self, gen_func):
-        self._gen_func = gen_func
+        if not self._special_cases:
+            self._gen_func = gen_func
+        else:
+            weighted_choices = [(100.0, lambda rand: gen_func())]
+            weighted_choices.extend(self._special_cases)
+            total = float(sum(weight for weight,gen in weighted_choices))
+            normalized_choices = [(weight/total, gen) for weight,gen in weighted_choices]
+
+            def choose_one():
+                pick = rand.random()
+                total = 0
+                for (weight, gen) in normalized_choices:
+                    total += weight
+                    if total >= pick:
+                        return gen(rand)
+                raise RuntimeError('Random did not pick something we expected')
+            self._gen_func = choose_one
 
     def _start(self, rand, gen_func):
         """Start internally, but use the given gen_func as the base"""
@@ -779,7 +795,7 @@ date_n_time_gens = [date_gen, timestamp_gen]
 
 boolean_gens = [boolean_gen]
 
-single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in [IntegerGen(nullable=False)]]
+single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens + [null_gen]]
 
 # Be careful to not make these too large of data generation takes for ever
 # This is only a few nested array gens, because nesting can be very deep
@@ -808,8 +824,7 @@ map_gens_sample = [simple_string_to_string_map_gen,
         MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
-allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-                                        'spark.rapids.sql.explain': 'ALL'}
+allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
 
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 

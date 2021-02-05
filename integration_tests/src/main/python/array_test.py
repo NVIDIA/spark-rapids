@@ -59,8 +59,8 @@ def test_make_array(data_gen):
 
 def test_orderby_array():
     # use a unique int column to sort on
-    data_gens = [int_uniq_gen] + single_level_array_gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gen)]
+    with_uniq_data_gens = [int_uniq_gen] + single_level_array_gens
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, gen_list),
         'array_table',
@@ -75,7 +75,7 @@ def test_orderby_array_of_arrays(data_gen):
     with_uniq_data_gens = [int_uniq_gen, data_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
-    lambda spark : gen_df(spark, gen_list),
+    lambda spark : debug_df(gen_df(spark, gen_list)),
         'array_table',
         'select * from array_table order by _c0')
 
@@ -90,7 +90,7 @@ def test_orderby_array_of_structs(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, gen_list),
         'array_table',
-        'select _c1.a, _c0 from array_table order by _c0')
+        'select * from array_table order by _c0')
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
