@@ -19,6 +19,21 @@ from conftest import is_dataproc_runtime
 from data_gen import *
 from pyspark.sql.types import *
 
+def generate_with_unique_col(spark, dataframe):
+    collected = dataframe.collect()
+    new_rows = append_unique_to_df(collected)
+    existing_schema = dataframe.schema
+    new_schema = StructType([StructField("uniq_int", IntegerType(), False)] + existing_schema.fields)
+    return spark.createDataFrame(new_rows, new_schema)
+
+
+def append_unique_to_df(x):
+    new = []
+    for item in range(len(x)):
+        new.append(Row(item, x[item].a))
+    return new
+
+
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
     StructGen([["first", short_gen], ["second", int_gen], ["third", long_gen]]),
     StructGen([["first", double_gen], ["second", date_gen], ["third", timestamp_gen]]),
@@ -45,20 +60,15 @@ def test_make_struct(data_gen):
                                       StructGen([["first", long_gen], ["second", long_gen], ["third", long_gen]]),
                                       StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct(data_gen):
-    with_uniq_data_gens = [int_uniq_gen, data_gen]
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, gen_list),
+        lambda spark : generate_with_unique_col(spark, gen_df(spark, gen_list)),
         'struct_table',
-        'select * from struct_table order by _c0')
-
+        'select * from struct_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct_2(data_gen):
-    with_uniq_data_gens = [int_uniq_gen, data_gen]
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, gen_list),
+        lambda spark : generate_with_unique_col(spark, gen_df(spark, gen_list)),
         'struct_table',
-        'select * from struct_table order by _c0')
+        'select * from struct_table order by uniq_int')
