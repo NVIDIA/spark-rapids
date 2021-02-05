@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, Scalar}
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ExpandExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -59,24 +58,24 @@ class GpuExpandExecMeta(
 /**
  * Apply all of the GroupExpressions to every input row, hence we will get
  * multiple output rows for an input row.
+ *
  * @param projections The group of expressions, all of the group expressions should
  *                    output the same schema specified bye the parameter `output`
- * @param output Attribute references to Output
+ * @param output      Attribute references to Output
  * @param child       Child operator
  */
 case class GpuExpandExec(
     projections: Seq[Seq[Expression]],
     output: Seq[Attribute],
     child: SparkPlan)
-  extends UnaryExecNode with GpuExec {
+    extends UnaryExecNode with GpuExec {
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext,
-      DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext,
-      DESCRIPTION_NUM_INPUT_BATCHES),
-    PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext,
-      DESCRIPTION_PEAK_DEVICE_MEMORY))
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
 
   // The GroupExpressions can output data with arbitrary partitioning, so set it
   // as UNKNOWN partitioning
@@ -91,7 +90,7 @@ case class GpuExpandExec(
       projections.map(GpuBindReferences.bindGpuReferences(_, child.output))
 
     // cache in a local to avoid serializing the plan
-    val metricsMap = metrics
+    val metricsMap = allMetrics
 
     child.executeColumnar().mapPartitions { it =>
       new GpuExpandIterator(boundProjections, metricsMap, it)
@@ -106,7 +105,7 @@ case class GpuExpandExec(
 
 class GpuExpandIterator(
     boundProjections: Seq[Seq[GpuExpression]],
-    metrics: Map[String, SQLMetric],
+    metrics: Map[String, GpuMetric],
     it: Iterator[ColumnarBatch])
   extends Iterator[ColumnarBatch]
   with Arm {

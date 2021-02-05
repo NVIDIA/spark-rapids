@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -32,7 +32,6 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.types.{DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -338,30 +337,11 @@ case class GpuHashAggregateExec(
   //       aggregation, because it detected a spill
   //    d) sort based aggregation is then the mode forward, and not covered in this.
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = longMetric(TOTAL_TIME)
-    val computeAggTime = longMetric("computeAggTime")
-    val concatTime = longMetric("concatTime")
-    // These metrics are supported by the cpu hash aggregate
-    //
-    // We should eventually have gpu versions of:
-    //
-    //   This is the peak memory used max of what the hash map has used
-    //   and what the external sorter has used
-    //    val peakMemory = longMetric("peakMemory")
-    //
-    //   Byte amount spilled.
-    //    val spillSize = longMetric("spillSize")
-    //
-    // These don't make a lot of sense for the gpu case:
-    //
-    //   This the time that has passed while setting up the iterators for tungsten
-    //    val aggTime = longMetric("aggTime")
-    //
-    //   Avg number of bucket list iterations per lookup in the underlying map
-    //    val avgHashProbe = longMetric("avgHashProbe")
-    //
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val computeAggTime = gpuLongMetric(AGG_TIME)
+    val concatTime = gpuLongMetric(CONCAT_TIME)
     val rdd = child.executeColumnar()
 
     // cache in a local variable to avoid serializing the full child plan
@@ -620,7 +600,7 @@ case class GpuHashAggregateExec(
    */
   private def concatenateBatches(aggregatedInputCb: ColumnarBatch,
       aggregatedCb: ColumnarBatch,
-      concatTime: SQLMetric): Seq[GpuColumnVector] = {
+      concatTime: GpuMetric): Seq[GpuColumnVector] = {
     withResource(new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)) { _ =>
       // get tuples of columns to concatenate
 
@@ -806,7 +786,7 @@ case class GpuHashAggregateExec(
                        groupingExpressions: Seq[Expression],
                        aggModeCudfAggregates : Seq[(AggregateMode, Seq[CudfAggregate])],
                        merge : Boolean,
-                       computeAggTime: SQLMetric): ColumnarBatch  = {
+                       computeAggTime: GpuMetric): ColumnarBatch  = {
     val nvtxRange = new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)
     try {
       if (groupingExpressions.nonEmpty) {
@@ -890,15 +870,11 @@ case class GpuHashAggregateExec(
     }
   }
 
+  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics = Map(
-    // not supported in GPU
-    "peakMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak memory"),
-    "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"),
-    "avgHashProbe" ->
-      SQLMetrics.createAverageMetric(sparkContext, "avg hash probe bucket list iters"),
-    "computeAggTime"->
-      SQLMetrics.createNanoTimingMetric(sparkContext, "time in compute agg"),
-    "concatTime"-> SQLMetrics.createNanoTimingMetric(sparkContext, "time in batch concat")
+    AGG_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_AGG_TIME),
+    CONCAT_TIME-> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME)
   )
 
   protected def outputExpressions: Seq[NamedExpression] = resultExpressions

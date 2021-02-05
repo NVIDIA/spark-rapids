@@ -117,6 +117,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
     val doc: String, val isInternal: Boolean) {
 
   def get(conf: Map[String, String]): T
+  def get(conf: SQLConf): T
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -128,6 +129,15 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
+  }
+
+  override def get(conf: SQLConf): T = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      defaultValue
+    } else {
+      converter(tmp)
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -151,6 +161,15 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
+  }
+
+  override def get(conf: SQLConf): Option[T] = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      None
+    } else {
+      Some(rawConverter(tmp))
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -409,6 +428,23 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  // METRICS
+
+  val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
+      .doc("GPU plans can produce a lot more metrics than CPU plans do. In very large " +
+          "queries this can sometimes result in going over the max result size limit for the " +
+          "driver. Supported values include " +
+          "DEBUG which will enable all metrics supported and typically only needs to be enabled " +
+          "when debugging the plugin. " +
+          "MODERATE which should output enough metrics to understand how long each part of the " +
+          "query is taking and how much data is going to each part of the query. " +
+          "ESSENTIAL which disables most metrics except those Apache Spark CPU plans will also " +
+          "report or their equivalents.")
+      .stringConf
+      .transform(_.toUpperCase(java.util.Locale.ROOT))
+      .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
+      .createWithDefault("MODERATE")
 
   // ENABLE/DISABLE PROCESSING
 
@@ -991,6 +1027,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).asJava
+
+  lazy val metricsLevel: String = get(METRICS_LEVEL)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 

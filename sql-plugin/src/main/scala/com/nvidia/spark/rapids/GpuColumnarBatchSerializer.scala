@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.serializer.{DeserializationStream, SerializationStream, Serializer, SerializerInstance}
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.types.NullType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -48,14 +47,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *
  * @note The RAPIDS shuffle does not use this code.
  */
-class GpuColumnarBatchSerializer(dataSize: SQLMetric = null) extends Serializer with Serializable {
+class GpuColumnarBatchSerializer(dataSize: GpuMetric)
+    extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
     new GpuColumnarBatchSerializerInstance(dataSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-private class GpuColumnarBatchSerializerInstance(
-    dataSize: SQLMetric) extends SerializerInstance {
+private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends SerializerInstance {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut: DataOutputStream =
@@ -91,9 +90,7 @@ private class GpuColumnarBatchSerializerInstance(
             }
           }
 
-          if (dataSize != null) {
-            dataSize.add(JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows))
-          }
+          dataSize += JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows)
           val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
           try {
             JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)

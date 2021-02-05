@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuSemaphore}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
@@ -27,7 +27,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -111,12 +110,12 @@ class GpuCartesianRDD(
     sc: SparkContext,
     boundCondition: Option[GpuExpression],
     outputSchema: Array[DataType],
-    joinTime: SQLMetric,
-    joinOutputRows: SQLMetric,
-    numOutputRows: SQLMetric,
-    numOutputBatches: SQLMetric,
-    filterTime: SQLMetric,
-    totalTime: SQLMetric,
+    joinTime: GpuMetric,
+    joinOutputRows: GpuMetric,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    filterTime: GpuMetric,
+    totalTime: GpuMetric,
     var rdd1 : RDD[GpuSerializableBatch],
     var rdd2 : RDD[GpuSerializableBatch])
     extends RDD[ColumnarBatch](sc, Nil)
@@ -186,8 +185,8 @@ object GpuNoColumnCrossJoin extends Arm {
   def divideIntoBatches(
       rowCounts: RDD[Long],
       targetSizeBytes: Long,
-      numOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric): RDD[ColumnarBatch] = {
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
     // Hash aggregate explodes the rows out, so if we go too large
     // it can blow up. The size of a Long is 8 bytes so we just go with
     // that as our estimate, no nulls.
@@ -215,8 +214,8 @@ object GpuNoColumnCrossJoin extends Arm {
       table: Table,
       numTimes: Long,
       outputSchema: Array[DataType],
-      numOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric): Iterator[ColumnarBatch] = {
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric): Iterator[ColumnarBatch] = {
     // TODO if we hit a point where we need to we can divide the data up into batches
     //  The current use case is likely to be small enough that we are OK without this.
     assert(numTimes < Int.MaxValue)
@@ -233,6 +232,8 @@ case class GpuCartesianProductExec(
     right: SparkPlan,
     condition: Option[Expression],
     targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+  import GpuMetric._
+
   override def output: Seq[Attribute]= left.output ++ right.output
 
   override def verboseStringWithOperatorId(): String = {
@@ -243,23 +244,23 @@ case class GpuCartesianProductExec(
      """.stripMargin
   }
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
-    "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
-    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"),
-    "dataSize" -> SQLMetrics.createMetric(sparkContext, "size of shuffled data"))
+  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
+    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
 
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    import com.nvidia.spark.rapids.GpuMetricNames._
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val joinTime = longMetric("joinTime")
-    val joinOutputRows = longMetric("joinOutputRows")
-    val filterTime = longMetric("filterTime")
-    val totalTime = longMetric(TOTAL_TIME)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val joinTime = gpuLongMetric(JOIN_TIME)
+    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
+    val filterTime = gpuLongMetric(FILTER_TIME)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
     val outputSchema = output.map(_.dataType).toArray
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))

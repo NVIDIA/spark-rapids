@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import scala.collection.AbstractIterator
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_OUTPUT_BATCHES, DESCRIPTION_NUM_OUTPUT_ROWS, DESCRIPTION_NUM_PARTITIONS, DESCRIPTION_PARTITION_SIZE, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, NUM_PARTITIONS, PARTITION_SIZE}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -70,6 +69,7 @@ class GpuShuffleMeta(
 abstract class GpuShuffleExchangeExecBase(
     override val outputPartitioning: Partitioning,
     child: SparkPlan) extends Exchange with GpuExec {
+  import GpuMetric._
 
   // Shuffle produces a lot of small output batches that should be coalesced together.
   // This coalesce occurs on the GPU and should always be done when using RAPIDS shuffle.
@@ -80,18 +80,16 @@ abstract class GpuShuffleExchangeExecBase(
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
   lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
-  override lazy val additionalMetrics : Map[String, SQLMetric] = Map(
-    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size")
-  ) ++ readMetrics ++ writeMetrics
+  override lazy val additionalMetrics : Map[String, GpuMetric] = Map(
+    "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL,"data size")
+  ) ++ GpuMetric.wrap(readMetrics) ++ GpuMetric.wrap(writeMetrics)
 
   // Spark doesn't report totalTime for this operator so we override metrics
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    PARTITION_SIZE ->
-        SQLMetrics.createMetric(sparkContext, DESCRIPTION_PARTITION_SIZE),
-    NUM_PARTITIONS ->
-        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_PARTITIONS),
-    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES)
+  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
+    NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
+    NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES)
   ) ++ additionalMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
@@ -114,7 +112,7 @@ abstract class GpuShuffleExchangeExecBase(
   // This value must be lazy because the child's output may not have been resolved
   // yet in all cases.
   private lazy val serializer: Serializer = new GpuColumnarBatchSerializer(
-    longMetric("dataSize"))
+    gpuLongMetric("dataSize"))
 
   @transient lazy val inputBatchRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -131,7 +129,7 @@ abstract class GpuShuffleExchangeExecBase(
       outputPartitioning,
       sparkTypes,
       serializer,
-      metrics,
+      allMetrics,
       writeMetrics,
       additionalMetrics)
   }
@@ -160,9 +158,9 @@ object GpuShuffleExchangeExec {
       newPartitioning: Partitioning,
       sparkTypes: Array[DataType],
       serializer: Serializer,
-      metrics: Map[String, SQLMetric],
+      metrics: Map[String, GpuMetric],
       writeMetrics: Map[String, SQLMetric],
-      additionalMetrics: Map[String, SQLMetric])
+      additionalMetrics: Map[String, GpuMetric])
   : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val isRoundRobin = newPartitioning match {
       case _: GpuRoundRobinPartitioning => true
@@ -212,9 +210,9 @@ object GpuShuffleExchangeExec {
               }
               partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
               partitioned.foreach(batches => {
-                metrics(GpuMetricNames.NUM_OUTPUT_ROWS) += batches._1.numRows()
+                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
               })
-              metrics(GpuMetricNames.NUM_OUTPUT_BATCHES) += partitioned.length
+              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
               at = 0
             }
           }
@@ -255,7 +253,7 @@ object GpuShuffleExchangeExec {
       sparkTypes,
       serializer,
       shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics),
-      metrics = additionalMetrics)
+      metrics = GpuMetric.unwrap(additionalMetrics))
 
     dependency
   }

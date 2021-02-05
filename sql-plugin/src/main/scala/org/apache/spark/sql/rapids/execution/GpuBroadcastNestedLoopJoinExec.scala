@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -96,12 +96,12 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       buildSide: GpuBuildSide,
       boundCondition: Option[GpuExpression],
       outputSchema: Array[DataType],
-      joinTime: SQLMetric,
-      joinOutputRows: SQLMetric,
-      numOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric,
-      filterTime: SQLMetric,
-      totalTime: SQLMetric): Iterator[ColumnarBatch] = {
+      joinTime: GpuMetric,
+      joinOutputRows: GpuMetric,
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      filterTime: GpuMetric,
+      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
     streamedIter.map { cb =>
       val startTime = System.nanoTime()
       val streamTable = withResource(cb) { cb =>
@@ -141,6 +141,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     condition: Option[Expression],
     targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
 
+  import GpuMetric._
+
   // Spark BuildSide, BuildRight, BuildLeft changed packages between Spark versions
   // so return a GPU version that is agnostic to the Spark version.
   def getGpuBuildSide: GpuBuildSide
@@ -148,12 +150,14 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
-    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time"),
-    "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
-    "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
-    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
+    BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
+    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 
   /** BuildRight means the right relation <=> the broadcast relation. */
   private val (streamed, broadcast) = getGpuBuildSide match {
@@ -198,8 +202,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
   private[this] def makeBuiltTable(
       broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch],
-      buildTime: SQLMetric,
-      buildDataSize: SQLMetric): Table = {
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): Table = {
     withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
       val ret = GpuColumnVector.from(broadcastRelation.value.batch)
       // Don't warn for a leak, because we cannot control when we are done with this
@@ -214,8 +218,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
   private[this] def computeBuildRowCount(
       broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch],
-      buildTime: SQLMetric,
-      buildDataSize: SQLMetric): Int = {
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): Int = {
     withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
       buildDataSize += 0
       broadcastRelation.value.batch.numRows()
@@ -223,17 +227,17 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = longMetric(TOTAL_TIME)
-    val joinTime = longMetric("joinTime")
-    val filterTime = longMetric("filterTime")
-    val joinOutputRows = longMetric("joinOutputRows")
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val joinTime = gpuLongMetric(JOIN_TIME)
+    val filterTime = gpuLongMetric(FILTER_TIME)
+    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
 
-    val buildTime = longMetric("buildTime")
-    val buildDataSize = longMetric("buildDataSize")
+    val buildTime = gpuLongMetric(BUILD_TIME)
+    val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
 
     val outputSchema = output.map(_.dataType).toArray
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,11 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.{broadcast, SparkException}
+import org.apache.spark.SparkException
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -238,11 +239,13 @@ abstract class GpuBroadcastExchangeExecBase(
     mode: BroadcastMode,
     child: SparkPlan) extends Exchange with GpuExec {
 
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics = Map(
-    "dataSize" -> SQLMetrics.createSizeMetric(sparkContext, "data size"),
-    "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to collect"),
-    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to build"),
-    "broadcastTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "time to broadcast"))
+    "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
+    COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME),
+    BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
+    "broadcastTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time to broadcast"))
 
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
 
@@ -250,14 +253,14 @@ abstract class GpuBroadcastExchangeExecBase(
   override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   @transient
-  private lazy val promise = Promise[broadcast.Broadcast[Any]]()
+  private lazy val promise = Promise[Broadcast[Any]]()
 
   /**
    * For registering callbacks on `relationFuture`.
    * Note that calling this field will not start the execution of broadcast job.
    */
   @transient
-  lazy val completionFuture: scala.concurrent.Future[broadcast.Broadcast[Any]] = promise.future
+  lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
 
   @transient
   private val timeout: Long = SQLConf.get.broadcastTimeout
@@ -265,18 +268,18 @@ abstract class GpuBroadcastExchangeExecBase(
   val _runId: UUID = UUID.randomUUID()
 
   @transient
-  lazy val relationFuture: Future[broadcast.Broadcast[Any]] = {
+  lazy val relationFuture: Future[Broadcast[Any]] = {
     // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val totalTime = longMetric(TOTAL_TIME)
-    val collectTime = longMetric("collectTime")
-    val buildTime = longMetric("buildTime")
-    val broadcastTime = longMetric("broadcastTime")
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val collectTime = gpuLongMetric(COLLECT_TIME)
+    val buildTime = gpuLongMetric(BUILD_TIME)
+    val broadcastTime = gpuLongMetric("broadcastTime")
 
-    val task = new Callable[broadcast.Broadcast[Any]]() {
-      override def call(): broadcast.Broadcast[Any] = {
+    val task = new Callable[Broadcast[Any]]() {
+      override def call(): Broadcast[Any] = {
         // This will run in another thread. Set the execution id so that we can connect these jobs
         // with the correct execution.
         SQLExecution.withExecutionId(sqlContext.sparkSession, executionId) {
@@ -313,7 +316,7 @@ abstract class GpuBroadcastExchangeExecBase(
               // val relation = mode.transform(input, Some(numRows))
               val dataSize = batch.dataSize
 
-              longMetric("dataSize") += dataSize
+              gpuLongMetric("dataSize") += dataSize
               if (dataSize >= (8L << 30)) {
                 throw new SparkException(
                   s"Cannot broadcast the table that is larger than 8GB: ${dataSize >> 30} GB")
@@ -339,10 +342,10 @@ abstract class GpuBroadcastExchangeExecBase(
             case oe: OutOfMemoryError =>
               val ex = new Exception(
                 new OutOfMemoryError("Not enough memory to build and broadcast the table to all " +
-                  "worker nodes. As a workaround, you can either disable broadcast by setting " +
-                  s"${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1 or increase the spark " +
-                  s"driver memory by setting ${SparkLauncher.DRIVER_MEMORY} to a higher value.")
-                  .initCause(oe.getCause))
+                    "worker nodes. As a workaround, you can either disable broadcast by setting " +
+                    s"${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1 or increase the spark " +
+                    s"driver memory by setting ${SparkLauncher.DRIVER_MEMORY} to a higher value.")
+                    .initCause(oe.getCause))
               promise.failure(ex)
               throw ex
             case e if !NonFatal(e) =>
@@ -358,7 +361,7 @@ abstract class GpuBroadcastExchangeExecBase(
         }
       }
     }
-    GpuBroadcastExchangeExec.executionContext.submit[broadcast.Broadcast[Any]](task)
+    GpuBroadcastExchangeExec.executionContext.submit[Broadcast[Any]](task)
   }
 
   override protected def doPrepare(): Unit = {
@@ -371,9 +374,9 @@ abstract class GpuBroadcastExchangeExecBase(
       "GpuBroadcastExchange does not support the execute() code path.")
   }
 
-  override protected[sql] def doExecuteBroadcast[T](): broadcast.Broadcast[T] = {
+  override protected[sql] def doExecuteBroadcast[T](): Broadcast[T] = {
     try {
-      relationFuture.get(timeout, TimeUnit.SECONDS).asInstanceOf[broadcast.Broadcast[T]]
+      relationFuture.get(timeout, TimeUnit.SECONDS).asInstanceOf[Broadcast[T]]
     } catch {
       case ex: TimeoutException =>
         logError(s"Could not execute broadcast in $timeout secs.", ex)
@@ -388,12 +391,12 @@ abstract class GpuBroadcastExchangeExecBase(
     }
   }
 
-  final def executeColumnarBroadcast[T](): broadcast.Broadcast[T] = {
+  final def executeColumnarBroadcast[T](): Broadcast[T] = {
     if (isCanonicalizedPlan) {
       throw new IllegalStateException("A canonicalized plan is not supposed to be executed.")
     }
     try {
-      relationFuture.get(timeout, TimeUnit.SECONDS).asInstanceOf[broadcast.Broadcast[T]]
+      relationFuture.get(timeout, TimeUnit.SECONDS).asInstanceOf[Broadcast[T]]
     } catch {
       case ex: TimeoutException =>
         logError(s"Could not execute broadcast in $timeout secs.", ex)
