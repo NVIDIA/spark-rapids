@@ -94,7 +94,7 @@ class DataGen:
         """Start data generation using the given rand"""
         raise TypeError('Children should implement this method and call _start')
 
-    def _start_no_rand(self, gen_func):
+    def _start(self, rand, gen_func):
         if not self._special_cases:
             self._gen_func = gen_func
         else:
@@ -112,10 +112,6 @@ class DataGen:
                         return gen(rand)
                 raise RuntimeError('Random did not pick something we expected')
             self._gen_func = choose_one
-
-    def _start(self, rand, gen_func):
-        """Start internally, but use the given gen_func as the base"""
-        self._gen_func = gen_func
 
     def gen(self, force_no_nulls=False):
         """generate the next line"""
@@ -216,7 +212,7 @@ class IntegerGen(DataGen):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
 class IntegerUniqGen(DataGen):
-    """Generate Ints, which some built in corner cases."""
+    """Generate Unique Ints just incrementing from min value up to max value."""
     def __init__(self, nullable=True, min_val = INT_MIN, max_val = INT_MAX,
             special_cases = []):
         super().__init__(IntegerType(), nullable=nullable, special_cases=special_cases)
