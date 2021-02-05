@@ -121,27 +121,26 @@ case class GpuMultiply(
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     import DecimalUtil._
+    val outputType = dataType.asInstanceOf[DecimalType]
     (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType) => {
-        val outputType = dataType.asInstanceOf[DecimalType]
-        if (DecimalType.is64BitDecimalType(outputType) && DecimalType.is32BitDecimalType(l) &&
-          DecimalType.is32BitDecimalType(r)) {
-          val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
-          val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-          withResource(lhs.getBase().castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
-            withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
-                val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
-              if (tmp.getType != cudfOutputType) {
-                withResource(tmp){ tmp =>
-                  tmp.castTo(cudfOutputType)
-                }
-              } else {
-                tmp
+      case (l: DecimalType, r: DecimalType)
+        if DecimalType.is64BitDecimalType(outputType) &&
+          DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r) => {
+        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+        withResource(lhs.getBase().castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
+          withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+            val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
+            if (tmp.getType != cudfOutputType) {
+              withResource(tmp) { tmp =>
+                tmp.castTo(cudfOutputType)
               }
+            } else {
+              tmp
             }
           }
-        } else {
-          super.doColumnar(lhs, rhs)
         }
       }
       case _ => super.doColumnar(lhs, rhs)
@@ -150,27 +149,26 @@ case class GpuMultiply(
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     import DecimalUtil._
+    val outputType = dataType.asInstanceOf[DecimalType]
     (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType) => {
-        val outputType = dataType.asInstanceOf[DecimalType]
-        if (DecimalType.is64BitDecimalType(outputType) && DecimalType.is32BitDecimalType(l) &&
-          DecimalType.is32BitDecimalType(r)) {
-          val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
-          val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-          withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { decimalLhs =>
-            withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
-              val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
-              if (tmp.getType != cudfOutputType) {
-                withResource(tmp) { tmp =>
-                  tmp.castTo(cudfOutputType)
-                }
-              } else {
-                tmp
+      case (l: DecimalType, r: DecimalType)
+        if DecimalType.is64BitDecimalType(outputType) &&
+          DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r) => {
+        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+        withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { decimalLhs =>
+          withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+            val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
+            if (tmp.getType != cudfOutputType) {
+              withResource(tmp) { tmp =>
+                tmp.castTo(cudfOutputType)
               }
+            } else {
+              tmp
             }
           }
-        } else {
-          super.doColumnar(lhs, rhs)
         }
       }
       case _ => super.doColumnar(lhs, rhs)
@@ -179,27 +177,26 @@ case class GpuMultiply(
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     import DecimalUtil._
+    val outputType = dataType.asInstanceOf[DecimalType]
     (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType) => {
-        val outputType = dataType.asInstanceOf[DecimalType]
-        if (DecimalType.is64BitDecimalType(outputType) && DecimalType.is32BitDecimalType(l) &&
-          DecimalType.is32BitDecimalType(r)) {
-          val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
-          val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-          withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), outputType)) { decimalRhs =>
-            withResource(lhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
-              val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
-              if (tmp.getType != cudfOutputType) {
-                withResource(tmp) { tmp =>
-                  tmp.castTo(cudfOutputType)
-                }
-              } else {
-                tmp
+      case (l: DecimalType, r: DecimalType)
+        if DecimalType.is64BitDecimalType(outputType) &&
+          DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r) => {
+        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+        withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), outputType)) { decimalRhs =>
+          withResource(lhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
+            val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
+            if (tmp.getType != cudfOutputType) {
+              withResource(tmp) { tmp =>
+                tmp.castTo(cudfOutputType)
               }
+            } else {
+              tmp
             }
           }
-        } else {
-          super.doColumnar(lhs, rhs)
         }
       }
       case _ => super.doColumnar(lhs, rhs)
