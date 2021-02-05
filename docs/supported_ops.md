@@ -4592,7 +4592,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -4613,7 +4613,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -4634,7 +4634,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS* (Because of Spark's inner workings the full range of decimal precision (even for 64-bit values) is not supported.)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -9323,7 +9323,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS* (Because of Spark's inner workings the full range of decimal precision (even for 64-bit value) is not supported.)</em></td>
+<td><em>PS* (Because of Spark's inner workings the full range of decimal precision (even for 64-bit values) is not supported.)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
