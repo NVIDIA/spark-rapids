@@ -57,45 +57,27 @@ def test_make_array(data_gen):
                 'array(a, b)',
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
-@allow_non_gpu('SortExec', 'HashAggregateExec', 'SortAggregateExec', 'AggregateExpression', 'First', 'Alias', 'GetArrayItem', 'Literal')
-#@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-#@pytest.mark.parametrize('data_gen', single_level_array_gens + [int_uniq_gen], ids=idfn)
-#@ignore_order(local=True)
 def test_orderby_array():
     # use a unique int column to sort on
     data_gens = [int_uniq_gen] + single_level_array_gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    #assert_gpu_and_cpu_are_equal_collect(
-    #    lambda spark : debug_df(gen_df(spark, gen_list).selectExpr('*')),
-    #    conf=allow_negative_scale_of_decimal_conf)
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gen)]
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, gen_list),
         'array_table',
         'select * from array_table order by _c0',
         conf=allow_negative_scale_of_decimal_conf)
 
-                                # .orderBy('t')),
-        # 'array_table',
-        # 'select a, t '
-        # 'from array_table order by t',
 
+@pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+                                      ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
+def test_orderby_array_of_arrays(data_gen):
+    with_uniq_data_gens = [int_uniq_gen, data_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
+    assert_gpu_and_cpu_are_equal_sql(
+    lambda spark : gen_df(spark, gen_list),
+        'array_table',
+        'select * from array_table order by _c0')
 
-# @pytest.mark.xfail(condition=is_dataproc_runtime(),
-#                    reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
-# @ignore_order
-# @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
-#                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
-# def test_orderby_array_of_arrays(data_gen):
-#     assert_gpu_and_cpu_are_equal_sql(
-#     lambda spark : unary_op_df(spark, data_gen),
-#         'array_table',
-#         'select arr[0][0], first_val from '
-#         '(select array_table.a as arr, array_table.a[0][0] as first_val '
-#         'from array_table order by first_val)')
-#
-#
 # @pytest.mark.xfail(condition=is_dataproc_runtime(),
 #                    reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 # @ignore_order
