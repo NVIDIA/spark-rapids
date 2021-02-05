@@ -94,25 +94,12 @@ class DataGen:
         """Start data generation using the given rand"""
         raise TypeError('Children should implement this method and call _start')
 
+    def _start_no_rand(self, gen_func):
+        self._gen_func = gen_func
+
     def _start(self, rand, gen_func):
         """Start internally, but use the given gen_func as the base"""
-        if not self._special_cases:
-            self._gen_func = gen_func
-        else:
-            weighted_choices = [(100.0, lambda rand: gen_func())]
-            weighted_choices.extend(self._special_cases)
-            total = float(sum(weight for weight,gen in weighted_choices))
-            normalized_choices = [(weight/total, gen) for weight,gen in weighted_choices]
-
-            def choose_one():
-                pick = rand.random()
-                total = 0
-                for (weight, gen) in normalized_choices:
-                    total += weight
-                    if total >= pick:
-                        return gen(rand)
-                raise RuntimeError('Random did not pick something we expected')
-            self._gen_func = choose_one
+        self._gen_func = gen_func
 
     def gen(self, force_no_nulls=False):
         """generate the next line"""
@@ -211,6 +198,25 @@ class IntegerGen(DataGen):
 
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
+
+class IntegerUniqGen(DataGen):
+    """Generate Ints, which some built in corner cases."""
+    def __init__(self, nullable=True, min_val = INT_MIN, max_val = INT_MAX,
+            special_cases = []):
+        super().__init__(IntegerType(), nullable=nullable, special_cases=special_cases)
+        self._min_val = min_val
+        self._current_val = min_val
+        self._max_val = max_val
+
+    def start(self, rand):
+        self._current_val = self._min_val
+        def inc():
+            ret = self._current_val
+            if (ret >= self._max_val):
+                raise RuntimeError('Number of rows requested from IntegerUniqGen is to large to create that many unique')
+            self._current_val = ret + 1
+            return ret
+        self._start(rand, inc)
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
@@ -638,7 +644,7 @@ def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
 
 def debug_df(df):
     """print out the contents of a dataframe for debugging."""
-    #print('COLLECTED\n{}'.format(df.collect()))
+    print('COLLECTED\n{}'.format(df.collect()))
     df.explain()
     df.printSchema()
     return df
@@ -721,6 +727,7 @@ def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
 byte_gen = ByteGen()
 short_gen = ShortGen()
 int_gen = IntegerGen()
+int_uniq_gen = IntegerUniqGen()
 long_gen = LongGen()
 float_gen = FloatGen()
 double_gen = DoubleGen()
