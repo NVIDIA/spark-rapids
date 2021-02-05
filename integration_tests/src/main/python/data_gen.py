@@ -812,23 +812,26 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            decimal_gen_64bit]
 
 
-# This function adds a new column where each row
+# This function adds a new column named uniq_int where each row
 # has a new unique integer value. It just starts at 0 and
 # increments by 1 for each row.
 # This can be used to add a column to a dataframe if you need to
 # sort on a column with unique values.
 # This collects the data to driver though so can be expensive.
 def append_unique_int_col_to_df(spark, dataframe):
-    def append_unique_to_rows(x):
+    def append_unique_to_rows(rows):
         new = []
-        for item in range(len(x)):
-            new.append(Row(item, x[item].a))
+        for item in range(len(rows)):
+            row_dict = rows[item].asDict()
+            row_dict['uniq_int'] = item
+            new_row = Row(**row_dict)
+            new.append(new_row)
         return new
 
     collected = dataframe.collect()
     if (len(collected) > INT_MAX):
         raise RuntimeError('To many rows to add unique integer values starting from 0 to')
-    new_rows = append_unique_to_rows(collected)
     existing_schema = dataframe.schema
-    new_schema = StructType([StructField("uniq_int", IntegerType(), False)] + existing_schema.fields)
+    new_rows = append_unique_to_rows(collected)
+    new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
     return spark.createDataFrame(new_rows, new_schema)
