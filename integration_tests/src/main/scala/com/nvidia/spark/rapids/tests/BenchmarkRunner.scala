@@ -89,7 +89,8 @@ object BenchmarkRunner {
                   path,
                   iterations = conf.iterations(),
                   summaryFilePrefix = summaryFilePrefixWithQuery,
-                  gcBetweenRuns = conf.gcBetweenRuns())
+                  gcBetweenRuns = conf.gcBetweenRuns(),
+                  generateDotGraph = conf.generateDot())
               case "csv" =>
                 runner.writeCsv(
                   spark,
@@ -97,7 +98,8 @@ object BenchmarkRunner {
                   path,
                   iterations = conf.iterations(),
                   summaryFilePrefix = summaryFilePrefixWithQuery,
-                  gcBetweenRuns = conf.gcBetweenRuns())
+                  gcBetweenRuns = conf.gcBetweenRuns(),
+                  generateDotGraph = conf.generateDot())
               case "orc" =>
                 runner.writeOrc(
                   spark,
@@ -105,7 +107,8 @@ object BenchmarkRunner {
                   path,
                   iterations = conf.iterations(),
                   summaryFilePrefix = summaryFilePrefixWithQuery,
-                  gcBetweenRuns = conf.gcBetweenRuns())
+                  gcBetweenRuns = conf.gcBetweenRuns(),
+                  generateDotGraph = conf.generateDot())
               case other =>
                 throw new IllegalArgumentException(s"Invalid or unspecified output format: $other")
             }
@@ -115,7 +118,8 @@ object BenchmarkRunner {
                 query,
                 conf.iterations(),
                 summaryFilePrefix = summaryFilePrefixWithQuery,
-                gcBetweenRuns = conf.gcBetweenRuns())
+                gcBetweenRuns = conf.gcBetweenRuns(),
+                generateDotGraph = conf.generateDot())
           })
 
           report match {
@@ -165,20 +169,25 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
    * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
+   * @param generateDotGraph Boolean specifying whether to generate a query plan diagram in
+   *                         DOT format
    */
   def collect(
       spark: SparkSession,
       query: String,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): BenchmarkReport = {
+      gcBetweenRuns: Boolean = false,
+      generateDotGraph: Boolean = false
+  ): BenchmarkReport = {
     BenchUtils.collect(
       spark,
       spark => bench.createDataFrame(spark, query),
       query,
       summaryFilePrefix.getOrElse(s"${bench.shortName()}-$query-collect"),
       iterations,
-      gcBetweenRuns)
+      gcBetweenRuns,
+      generateDotGraph)
   }
 
   /**
@@ -197,6 +206,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
    * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
+   * @param generateDotGraph Boolean specifying whether to generate a query plan diagram in
+   *                         DOT format
    */
   def writeCsv(
       spark: SparkSession,
@@ -206,7 +217,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): BenchmarkReport = {
+      gcBetweenRuns: Boolean = false,
+      generateDotGraph: Boolean = false): BenchmarkReport = {
     BenchUtils.writeCsv(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -216,7 +228,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       gcBetweenRuns,
       path,
       mode,
-      writeOptions)
+      writeOptions,
+      generateDotGraph)
   }
 
   /**
@@ -235,6 +248,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
    * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
+   * @param generateDotGraph Boolean specifying whether to generate a query plan diagram in
+   *                         DOT format
    */
   def writeOrc(
       spark: SparkSession,
@@ -244,7 +259,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): BenchmarkReport = {
+      gcBetweenRuns: Boolean = false,
+      generateDotGraph: Boolean = false): BenchmarkReport = {
     BenchUtils.writeOrc(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -254,7 +270,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       gcBetweenRuns,
       path,
       mode,
-      writeOptions)
+      writeOptions,
+      generateDotGraph)
   }
 
   /**
@@ -273,6 +290,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
    * @param summaryFilePrefix Optional prefix for the generated JSON summary file.
    * @param gcBetweenRuns Whether to call `System.gc` between iterations to cause Spark to
    *                      call `unregisterShuffle`
+   * @param generateDotGraph Boolean specifying whether to generate a query plan diagram in
+   *                         DOT format
    */
   def writeParquet(
       spark: SparkSession,
@@ -282,7 +301,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       writeOptions: Map[String, String] = Map.empty,
       iterations: Int = 3,
       summaryFilePrefix: Option[String] = None,
-      gcBetweenRuns: Boolean = false): BenchmarkReport = {
+      gcBetweenRuns: Boolean = false,
+      generateDotGraph: Boolean = false): BenchmarkReport = {
     BenchUtils.writeParquet(
       spark,
       spark => bench.createDataFrame(spark, query),
@@ -292,7 +312,8 @@ class BenchmarkRunner(val bench: BenchmarkSuite) {
       gcBetweenRuns,
       path,
       mode,
-      writeOptions)
+      writeOptions,
+      generateDotGraph)
   }
 }
 
@@ -308,5 +329,6 @@ class BenchmarkConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   val summaryFilePrefix = opt[String](required = false)
   val gcBetweenRuns = opt[Boolean](required = false, default = Some(false))
   val uploadUri = opt[String](required = false)
+  val generateDot = opt[Boolean](required = false, default = Some(false))
   verify()
 }
