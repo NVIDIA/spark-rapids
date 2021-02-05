@@ -62,7 +62,7 @@ def test_make_struct(data_gen):
                                       StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : generate_with_unique_col(spark, gen_df(spark, data_gen)),
+        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
         'struct_table',
         'select * from struct_table order by uniq_int')
 
@@ -70,6 +70,6 @@ def test_orderby_struct(data_gen):
 @pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct_2(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : generate_with_unique_col(spark, gen_df(spark, data_gen)),
+        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
         'struct_table',
         'select * from struct_table order by uniq_int')
