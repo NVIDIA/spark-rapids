@@ -128,14 +128,9 @@ case class GpuMultiply(
           DecimalType.is32BitDecimalType(r)) {
           val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
           val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-          // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
-          // cudf https://github.com/rapidsai/cudf/issues/7291
-          val int32Lhs = lhs.getBase.logicalCastTo(DType.INT32)
-          withResource(int32Lhs.castTo(DType.INT64)) { int64Lhs =>
-            val int32Rhs = rhs.getBase.logicalCastTo(DType.INT32)
-            withResource(int32Rhs.castTo(DType.INT64)) { int64Rhs =>
-              val tmp = int64Lhs.logicalCastTo(decimalType)
-                .mul(int64Rhs.logicalCastTo(decimalType),cudfOutputType)
+          withResource(lhs.getBase().castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
+            withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+                val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
               if (tmp.getType != cudfOutputType) {
                 withResource(tmp){ tmp =>
                   tmp.castTo(cudfOutputType)
@@ -162,12 +157,9 @@ case class GpuMultiply(
           DecimalType.is32BitDecimalType(r)) {
           val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
           val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-          withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { castedLhs =>
-            // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
-            // cudf https://github.com/rapidsai/cudf/issues/7291
-            val int32Rhs = rhs.getBase.logicalCastTo(DType.INT32)
-            withResource(int32Rhs.castTo(DType.INT64)) { int64Rhs =>
-              val tmp = castedLhs.mul(int64Rhs.logicalCastTo(decimalType), cudfOutputType)
+          withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { decimalLhs =>
+            withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+              val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
               if (tmp.getType != cudfOutputType) {
                 withResource(tmp) { tmp =>
                   tmp.castTo(cudfOutputType)
@@ -194,12 +186,9 @@ case class GpuMultiply(
           DecimalType.is32BitDecimalType(r)) {
           val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
           val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-          withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), outputType)) { castedRhs =>
-            // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
-            // cudf https://github.com/rapidsai/cudf/issues/7291
-            val int32Lhs = lhs.getBase.logicalCastTo(DType.INT32)
-            withResource(int32Lhs.castTo(DType.INT64)) { int64Lhs =>
-              val tmp = int64Lhs.logicalCastTo(decimalType).mul(castedRhs, cudfOutputType)
+          withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), outputType)) { decimalRhs =>
+            withResource(lhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
+              val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
               if (tmp.getType != cudfOutputType) {
                 withResource(tmp) { tmp =>
                   tmp.castTo(cudfOutputType)

@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 import scala.collection.{mutable, SeqLike}
 import scala.collection.generic.CanBuildFrom
 import scala.reflect.ClassTag
@@ -225,6 +226,25 @@ object RapidsPluginImplicits {
     def safeMap[B <: AutoCloseable](fn: GpuColumnVector => B): Seq[B] = {
       val colIds: Seq[Int] = 0 until in.numCols
       super.safeMap(colIds, (i: Int) => fn(in.column(i).asInstanceOf[GpuColumnVector]))
+    }
+  }
+
+  implicit class DecimalCastUtil(v: ColumnVector) extends Arm {
+
+    // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
+    // cudf https://github.com/rapidsai/cudf/issues/7291.
+    // This implicit method should be removed and cudf called directly after the bug is fixed
+    def castDecimal32ToDecimal64(dt: DType): ColumnView = {
+      assert(v.getType.getTypeId == DType.DTypeEnum.DECIMAL32, "from should be 32-bit")
+      assert(dt.getTypeId == DType.DTypeEnum.DECIMAL64, "to should be 64-bit")
+
+      withResource(v.logicalCastTo(DType.INT32)) { int32 =>
+        withResource(int32.castTo(DType.INT64)) { int64 =>
+          withResource(int64.logicalCastTo(dt)) { dtCv =>
+            dtCv.copyToColumnVector()
+          }
+        }
+      }
     }
   }
 }

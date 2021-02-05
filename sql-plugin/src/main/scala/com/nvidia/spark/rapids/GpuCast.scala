@@ -16,10 +16,10 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
-
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -1068,13 +1068,10 @@ case class GpuCast(
       val isTo32Bit = DecimalType.is32BitDecimalType(to)
       // check if we have to promote precision and the bit-representation i.e. 32-bit to 64-bit
       val newInput = if (isFrom32Bit && !isTo32Bit) {
-        // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
-        // cudf https://github.com/rapidsai/cudf/issues/7291
-        withResource(input.logicalCastTo(DType.INT32)) { int32 =>
-          withResource(int32.castTo(DType.INT64)) { int64 =>
-            isFrom32Bit = false
-            int64.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))
-          }
+        val dt = DecimalUtil.createCudfDecimal(to.precision, to.scale)
+        withResource(input.castDecimal32ToDecimal64(dt)) { decimalInput =>
+          isFrom32Bit = false
+          decimalInput.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))
         }
       } else {
         input
