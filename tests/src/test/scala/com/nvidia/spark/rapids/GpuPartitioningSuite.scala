@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{DType, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Table}
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -42,8 +42,24 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     }
   }
 
+  /**
+   * Retrieves the underlying column vectors for a batch without incrementing
+   * the refcounts of those columns. Therefore the column vectors are only
+   * valid as long as the batch is valid.
+   */
+  private def extractBases(batch: ColumnarBatch): Array[ColumnVector] = {
+    if (GpuPackedTableColumn.isBatchPacked(batch)) {
+      val packedColumn = batch.column(0).asInstanceOf[GpuPackedTableColumn]
+      val table = packedColumn.getContiguousTable.getTable
+      // The contiguous table is still responsible for closing these columns.
+      (0 until table.getNumberOfColumns).map(table.getColumn).toArray
+    } else {
+      GpuColumnVector.extractBases(batch)
+    }
+  }
+
   private def buildSubBatch(batch: ColumnarBatch, startRow: Int, endRow: Int): ColumnarBatch = {
-    val columns = GpuColumnVector.extractBases(batch)
+    val columns = extractBases(batch)
     val types = GpuColumnVector.extractTypes(batch)
     val sliced = columns.zip(types).map { case (c, t) =>
       GpuColumnVector.from(c.subVector(startRow, endRow), t)
@@ -53,9 +69,9 @@ class GpuPartitioningSuite extends FunSuite with Arm {
 
   private def compareBatches(expected: ColumnarBatch, actual: ColumnarBatch): Unit = {
     assertResult(expected.numRows)(actual.numRows)
-    assertResult(expected.numCols)(actual.numCols)
-    val expectedColumns = GpuColumnVector.extractBases(expected)
-    val actualColumns = GpuColumnVector.extractBases(expected)
+    val expectedColumns = extractBases(expected)
+    val actualColumns = extractBases(expected)
+    assertResult(expectedColumns.length)(actualColumns.length)
     expectedColumns.zip(actualColumns).foreach { case (expected, actual) =>
       // FIXME: For decimal types, NULL_EQUALS has not been supported in cuDF yet
       val cpVec = if (expected.getType.isDecimalType) {
@@ -93,11 +109,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
             }
             val expectedRows = endRow - startRow
             assertResult(expectedRows)(partBatch.numRows)
-            val columns = (0 until partBatch.numCols).map(i => partBatch.column(i))
-            columns.foreach { column =>
-              assert(column.isInstanceOf[GpuColumnVectorFromBuffer])
-              assertResult(expectedRows)(column.asInstanceOf[GpuColumnVector].getRowCount)
-            }
+            assert(GpuPackedTableColumn.isBatchPacked(partBatch))
             withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
               compareBatches(expectedBatch, partBatch)
             }
@@ -142,17 +154,19 @@ class GpuPartitioningSuite extends FunSuite with Arm {
                     val rows = c.getTableMeta.rowCount
                     assert(rows != 0)
                     rows
-                  case c: GpuColumnVector =>
-                    val rows = c.getRowCount
+                  case c: GpuPackedTableColumn =>
+                    val rows = c.getContiguousTable.getRowCount
                     assert(rows == 0)
                     rows
+                  case _ =>
+                    throw new IllegalStateException("column should either be compressed or packed")
                 }
                 assertResult(expectedRows)(actualRows)
               }
               if (GpuCompressedColumnVector.isBatchCompressed(partBatch)) {
                 val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
                 val bufferId = MockRapidsBufferId(partIndex)
-                val devBuffer = gccv.getBuffer
+                val devBuffer = gccv.getTableBuffer
                 // device store takes ownership of the buffer
                 devBuffer.incRefCount()
                 deviceStore.addBuffer(bufferId, devBuffer, gccv.getTableMeta, spillPriority)

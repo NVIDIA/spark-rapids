@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020, NVIDIA CORPORATION.
+// Copyright (c) 2019-2021, NVIDIA CORPORATION.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,46 +16,16 @@ include "ShuffleCommon.fbs";
 
 namespace com.nvidia.spark.rapids.format;
 
-/// Metadata about cuDF Columns
-table ColumnMeta {
-  /// number of nulls in the column or -1 if unknown
-  null_count: long;
-
-  /// number of rows in the column
-  row_count: long;
-
-  /// offset of the column's data buffer
-  data_offset: long;
-
-  /// length of the column's data buffer
-  data_length: long;
-
-  /// offset of the column's validity buffer
-  validity_offset: long;
-
-  /// offset of the column's offsets buffer
-  offsets_offset: long;
-
-  /// child column metadata
-  children: [ColumnMeta];
-
-  /// ordinal of DType enum
-  dtype_id: int;
-
-  /// DType scale for decimal types
-  dtype_scale: int;
-}
-
 /// Metadata about cuDF tables
 table TableMeta {
-  /// metadata about the table buffer
+  /// metadata about the data encoding
   buffer_meta: BufferMeta;
-
-  /// metadata for each column in the table buffer
-  column_metas: [ColumnMeta];
 
   /// number of rows in the table
   row_count: long;
+
+  /// opaque metadata describing the packed table schema and data layout
+  packed_meta: [byte];
 }
 
 /// Flat buffer for Rapids UCX Shuffle Metadata Response

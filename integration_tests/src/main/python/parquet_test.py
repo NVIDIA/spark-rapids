@@ -458,8 +458,6 @@ def test_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(rs).parquet(data_path),
             conf=all_confs)
 
-@pytest.mark.skipif(condition=True, reason='https://github.com/NVIDIA/spark-rapids/issues/1576,'
-                                           'using skip for xfail because pytest worker crash is not handled by xfail')
 def test_spark_32639(std_input_path):
     data_path = "%s/SPARK-32639/000.snappy.parquet" % (std_input_path)
     schema_str = 'value MAP<STRUCT<first:STRING, middle:STRING, last:STRING>, STRING>'

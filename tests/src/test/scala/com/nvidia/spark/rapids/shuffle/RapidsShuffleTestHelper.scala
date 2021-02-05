@@ -156,9 +156,7 @@ class RapidsShuffleTestHelper extends FunSuite
 
 object RapidsShuffleTestHelper extends MockitoSugar with Arm {
   def buildMockTableMeta(tableId: Int, contigTable: ContiguousTable): TableMeta = {
-    val tbl = contigTable.getTable
-    val cols = (0 until tbl.getNumberOfColumns).map(tbl.getColumn)
-    MetaUtils.buildTableMeta(tableId, cols, tbl.getRowCount, contigTable.getBuffer)
+    MetaUtils.buildTableMeta(tableId, contigTable)
   }
 
   def buildDegenerateMockTableMeta(): TableMeta = {

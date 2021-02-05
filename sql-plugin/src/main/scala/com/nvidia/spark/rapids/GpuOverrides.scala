@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.ScalarSubquery
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
@@ -49,7 +50,7 @@ import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleMeta}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, GpuShuffleMeta}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -468,6 +469,45 @@ object GpuOverrides {
     }
   }
 
+  private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
+    part match {
+      case _: GpuPartitioning => part
+      case _ =>
+        val wrapped = wrapPart(part, conf, None)
+        wrapped.tagForGpu()
+        if (wrapped.canThisBeReplaced) {
+          wrapped.convertToGpu()
+        } else {
+          part
+        }
+    }
+  }
+
+  /**
+   * Removes unnecessary CPU shuffles that Spark can add to the plan when it does not realize
+   * a GPU partitioning satisfies a CPU distribution because CPU and GPU expressions are not
+   * semantically equal.
+   */
+  def removeExtraneousShuffles(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    plan.transformUp {
+      case cpuShuffle: ShuffleExchangeExec =>
+        cpuShuffle.child match {
+          case sqse: ShuffleQueryStageExec =>
+            GpuTransitionOverrides.getNonQueryStagePlan(sqse) match {
+              case gpuShuffle: GpuShuffleExchangeExecBase =>
+                val converted = convertPartToGpuIfPossible(cpuShuffle.outputPartitioning, conf)
+                if (converted == gpuShuffle.outputPartitioning) {
+                  sqse
+                } else {
+                  cpuShuffle
+                }
+              case _ => cpuShuffle
+            }
+          case _ => cpuShuffle
+        }
+    }
+  }
+
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
     case l: Literal => Some(l)
@@ -735,11 +775,11 @@ object GpuOverrides {
         "\"window\") of rows",
       ExprChecks.windowOnly(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
           TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -1410,7 +1450,7 @@ object GpuOverrides {
       "Multiplication",
       ExprChecks.binaryProjectNotLambda(TypeSig.numeric +
           TypeSig.psNote(TypeEnum.DECIMAL, "Because of Spark's inner workings the full range " +
-              "of decimal precision (even for 64-bit value) is not supported."),
+              "of decimal precision (even for 64-bit values) is not supported."),
         TypeSig.numeric,
         ("lhs", TypeSig.numeric, TypeSig.numeric),
         ("rhs", TypeSig.numeric, TypeSig.numeric)),
@@ -1614,10 +1654,42 @@ object GpuOverrides {
     expr[Divide](
       "Division",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
-        ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL),
-        ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL)),
+        TypeSig.DOUBLE +
+            TypeSig.psNote(TypeEnum.DECIMAL, "Because of Spark's inner workings the full range " +
+                "of decimal precision (even for 64-bit values) is not supported."),
+        TypeSig.DOUBLE + TypeSig.DECIMAL,
+        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL, TypeSig.DOUBLE + TypeSig.DECIMAL),
+        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL, TypeSig.DOUBLE + TypeSig.DECIMAL)),
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // Division of Decimal types is a little odd. Spark will cast the inputs
+          // to a common wider value where scale is max of the two input scales, and precision is
+          // max of the two input non-scale portions + the new scale. Then it will do the divide,
+          // which the rules for it are a little complex, but lie about it
+          // in the return type of the Divide operator. Then in CheckOverflow it will reset the
+          // scale and check the precision so that they know it fits in final desired result.
+          // We would like to avoid all of this if possible because having a temporary intermediate
+          // value that can have a scale quite a bit larger than the final result reduces the
+          // maximum precision that we could support, as we don't have unlimited precision. But
+          // sadly because of how the logical plan is compiled down to the physical plan we have
+          // lost what the original types were and cannot recover it. As such for now we are going
+          // to do what Spark does, but we have to recompute/recheck the temporary precision to be
+          // sure it will fit on the GPU. In addition to this we have it a little harder because
+          // the decimal divide itself will do rounding on the result before it is returned,
+          // effectively calculating an extra digit of precision. Because cudf does not support this
+          // right now we actually increase the scale (and corresponding precision) to get an extra
+          // decimal place so we can round it in GpuCheckOverflow
+          (childExprs.head.dataType, childExprs(1).dataType) match {
+            case (l: DecimalType, r: DecimalType) =>
+              val intermediateResult = GpuDivideUtil.decimalDataType(l, r)
+              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+                willNotWorkOnGpu("The actual output precision of the divide is too large" +
+                    s" to fit on the GPU $intermediateResult")
+              }
+            case _ => // NOOP
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDivide(lhs, rhs)
       }),
@@ -1644,11 +1716,13 @@ object GpuOverrides {
     expr[AggregateExpression](
       "Aggregate expression",
       ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck(
           "aggFunc",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
           TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
@@ -2217,13 +2291,39 @@ object GpuOverrides {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnscaledValue(child)
       }),
     expr[MakeDecimal](
-      "Create a Decimal from an unscaled long value form some aggregation optimizations",
+      "Create a Decimal from an unscaled long value for some aggregation optimizations",
       ExprChecks.unaryProject(TypeSig.DECIMAL, TypeSig.DECIMAL,
         TypeSig.LONG, TypeSig.LONG),
       (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       }),
+    expr[CollectList](
+      "Collect a list of elements, now only supported by windowing.",
+      // It should be 'fullAgg' eventually but now only support windowing,
+      // so 'aggNotGroupByOrReduction'
+      ExprChecks.aggNotGroupByOrReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("input",
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+            TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+          TypeSig.all))),
+      (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCollectList(
+          childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
+      }).disabledByDefault("for now the GPU collects null values to a list, but Spark does not." +
+      " This will be fixed in future releases."),
+    expr[ScalarSubquery](
+      "Subquery that will return only one row and one column",
+      ExprChecks.projectOnly(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        Nil, None),
+      (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
+      }
+    ),
     GpuScalaUDF.exprMeta
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
@@ -2554,7 +2654,11 @@ object GpuOverrides {
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+          TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+        TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),
@@ -2647,33 +2751,44 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      val wrap = GpuOverrides.wrapPlan(plan, conf, None)
-      wrap.tagForGpu()
-      val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
-      val exp = conf.explain
-      if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
-        if (!exp.equalsIgnoreCase("NONE")) {
-          logWarning("Can't replace any part of this plan due to: " +
-            s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
-        }
-        plan
+      val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
+        // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
+        // distribution expressions are not semantically equal.
+        GpuOverrides.removeExtraneousShuffles(plan, conf)
       } else {
-        wrap.runAfterTagRules()
-        if (!exp.equalsIgnoreCase("NONE")) {
-          wrap.tagForExplain()
-          val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
-          if (!explain.isEmpty) {
-            logWarning(s"\n$explain")
-          }
-        }
-        val convertedPlan = wrap.convertIfNeeded()
-        addSortsIfNeeded(convertedPlan, conf)
+        plan
       }
+      applyOverrides(updatedPlan, conf)
     } else {
       plan
+    }
+  }
+
+  private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    val wrap = GpuOverrides.wrapPlan(plan, conf, None)
+    wrap.tagForGpu()
+    val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
+    val exp = conf.explain
+    if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
+      if (!exp.equalsIgnoreCase("NONE")) {
+        logWarning("Can't replace any part of this plan due to: " +
+            s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
+      }
+      plan
+    } else {
+      wrap.runAfterTagRules()
+      if (!exp.equalsIgnoreCase("NONE")) {
+        wrap.tagForExplain()
+        val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
+        if (!explain.isEmpty) {
+          logWarning(s"\n$explain")
+        }
+      }
+      val convertedPlan = wrap.convertIfNeeded()
+      addSortsIfNeeded(convertedPlan, conf)
     }
   }
 
