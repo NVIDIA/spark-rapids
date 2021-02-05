@@ -374,7 +374,7 @@ case class GpuFileSourceScanExec(
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric("numOutputRows")
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val scanTime = gpuLongMetric("scanTime")
     inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {

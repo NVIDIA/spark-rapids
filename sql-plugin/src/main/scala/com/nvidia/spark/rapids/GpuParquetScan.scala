@@ -921,7 +921,7 @@ class MultiFileParquetPartitionReader(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
-        metrics("peakDevMemory") += maxDeviceMemory
+        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batch = readBatch()
       }
@@ -1483,7 +1483,7 @@ class MultiFileCloudParquetPartitionReader(
           }
         } else {
           isDone = true
-          metrics("peakDevMemory") += maxDeviceMemory
+          metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
         }
       }
     }
@@ -1637,7 +1637,7 @@ class ParquetPartitionReader(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
-        metrics("peakDevMemory") += maxDeviceMemory
+        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batch = readBatch()
       }

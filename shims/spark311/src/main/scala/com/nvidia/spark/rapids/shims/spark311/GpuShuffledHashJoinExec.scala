@@ -99,8 +99,8 @@ case class GpuShuffledHashJoinExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
-    STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, JOIN_TIME),
+    STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 

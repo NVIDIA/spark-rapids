@@ -244,7 +244,7 @@ abstract class GpuBroadcastExchangeExecBase(
   override lazy val additionalMetrics = Map(
     "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
     COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME),
-    "buildTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time to build"),
+    BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     "broadcastTime" -> createNanoTimingMetric(ESSENTIAL_LEVEL, "time to broadcast"))
 
   override def outputPartitioning: Partitioning = BroadcastPartitioning(mode)
@@ -275,7 +275,7 @@ abstract class GpuBroadcastExchangeExecBase(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val totalTime = gpuLongMetric(TOTAL_TIME)
     val collectTime = gpuLongMetric(COLLECT_TIME)
-    val buildTime = gpuLongMetric("buildTime")
+    val buildTime = gpuLongMetric(BUILD_TIME)
     val broadcastTime = gpuLongMetric("broadcastTime")
 
     val task = new Callable[Broadcast[Any]]() {
