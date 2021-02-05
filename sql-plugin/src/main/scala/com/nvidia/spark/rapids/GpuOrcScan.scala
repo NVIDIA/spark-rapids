@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import scala.math.max
 
 import ai.rapids.cudf._
 import com.google.protobuf.CodedOutputStream
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.GpuOrcPartitionReader.{OrcOutputStripe, OrcPartitionReaderContext}
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -54,7 +54,6 @@ import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils
 import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, FilePartitionReaderFactory}
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
@@ -130,7 +129,7 @@ case class GpuOrcPartitionReaderFactory(
     partitionSchema: StructType,
     pushedFilters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics : Map[String, SQLMetric]) extends FilePartitionReaderFactory with Arm {
+    metrics : Map[String, GpuMetric]) extends FilePartitionReaderFactory with Arm {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
@@ -388,7 +387,7 @@ class GpuOrcPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics : Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+    execMetrics : Map[String, GpuMetric]) extends PartitionReader[ColumnarBatch] with Logging
     with ScanWithMetrics with Arm {
   private var batch: Option[ColumnarBatch] = None
   private var maxDeviceMemory: Long = 0
@@ -415,7 +414,7 @@ class GpuOrcPartitionReader(
     if (ctx.blockIterator.hasNext) {
       batch = readBatch()
     } else {
-      metrics("peakDevMemory") += maxDeviceMemory
+      metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
     // This is odd, but some operators return data even when there is no input so we need to
     // be sure that we grab the GPU

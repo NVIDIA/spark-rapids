@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -29,7 +28,6 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, Speciali
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -529,10 +527,10 @@ class RowToColumnarIterator(
     localSchema: StructType,
     localGoal: CoalesceGoal,
     converters: GpuRowToColumnConverter,
-    totalTime: SQLMetric = null,
-    numInputRows: SQLMetric = null,
-    numOutputRows: SQLMetric = null,
-    numOutputBatches: SQLMetric = null) extends Iterator[ColumnarBatch] {
+    totalTime: GpuMetric = NoopMetric,
+    numInputRows: GpuMetric = NoopMetric,
+    numOutputRows: GpuMetric = NoopMetric,
+    numOutputBatches: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
@@ -587,26 +585,12 @@ class RowToColumnarIterator(
       // option here
       Option(TaskContext.get()).foreach(GpuSemaphore.acquireIfNecessary)
 
-      var buildRange: NvtxRange = null
-      if (totalTime != null) {
-        buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
-      } else {
-        buildRange = new NvtxRange("RowToColumnar", NvtxColor.GREEN)
-      }
-      val ret = try {
+      val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)) { _=>
         builders.build(rowCount)
-      } finally {
-        buildRange.close()
       }
-      if (numInputRows != null) {
-        numInputRows += rowCount
-      }
-      if (numOutputRows != null) {
-        numOutputRows += rowCount
-      }
-      if (numOutputBatches != null) {
-        numOutputBatches += 1
-      }
+      numInputRows += rowCount
+      numOutputRows += rowCount
+      numOutputBatches += 1
 
       // refine the targetRows estimate based on the average of all batches processed so far
       totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
@@ -628,19 +612,19 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
   def apply(input: Iterator[UnsafeRow],
       schema: Array[Attribute],
       goal: CoalesceGoal,
-      totalTime: SQLMetric,
-      numInputRows: SQLMetric,
-      numOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric): UnsafeRowToColumnarBatchIterator = {
+      totalTime: GpuMetric,
+      numInputRows: GpuMetric,
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric): UnsafeRowToColumnarBatchIterator = {
     val ctx = new CodegenContext
 
     ctx.addReferenceObj("iter", input, classOf[Iterator[UnsafeRow]].getName)
     ctx.addReferenceObj("schema", schema, classOf[Array[Attribute]].getName)
     ctx.addReferenceObj("goal", goal, classOf[CoalesceGoal].getName)
-    ctx.addReferenceObj("totalTime", totalTime, classOf[SQLMetric].getName)
-    ctx.addReferenceObj("numInputRows", numInputRows, classOf[SQLMetric].getName)
-    ctx.addReferenceObj("numOutputRows", numOutputRows, classOf[SQLMetric].getName)
-    ctx.addReferenceObj("numOutputBatches", numOutputBatches, classOf[SQLMetric].getName)
+    ctx.addReferenceObj("totalTime", totalTime, classOf[GpuMetric].getName)
+    ctx.addReferenceObj("numInputRows", numInputRows, classOf[GpuMetric].getName)
+    ctx.addReferenceObj("numOutputRows", numOutputRows, classOf[GpuMetric].getName)
+    ctx.addReferenceObj("numOutputBatches", numOutputBatches, classOf[GpuMetric].getName)
 
     val rowBaseObj = ctx.freshName("rowBaseObj")
     val rowBaseOffset = ctx.freshName("rowBaseOffset")
@@ -705,10 +689,10 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |    super((scala.collection.Iterator<UnsafeRow>)references[0],
          |      (org.apache.spark.sql.catalyst.expressions.Attribute[])references[1],
          |      (com.nvidia.spark.rapids.CoalesceGoal)references[2],
-         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[3],
-         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[4],
-         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[5],
-         |      (org.apache.spark.sql.execution.metric.SQLMetric)references[6]);
+         |      (com.nvidia.spark.rapids.GpuMetric)references[3],
+         |      (com.nvidia.spark.rapids.GpuMetric)references[4],
+         |      (com.nvidia.spark.rapids.GpuMetric)references[5],
+         |      (com.nvidia.spark.rapids.GpuMetric)references[6]);
          |    ${ctx.initMutableStates()}
          |  }
          |
@@ -780,6 +764,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
  */
 case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
   extends UnaryExecNode with GpuExec {
+  import GpuMetric._
 
   override def output: Seq[Attribute] = child.output
 
@@ -797,17 +782,17 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     TrampolineUtil.doExecuteBroadcast(child)
   }
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS)
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS)
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     // use local variables instead of class global variables to prevent the entire
     // object from having to be serialized
-    val numInputRows = longMetric(NUM_INPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val totalTime = longMetric(TOTAL_TIME)
+    val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
     val localGoal = goal
     val rowBased = child.execute()
 
