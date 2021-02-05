@@ -264,7 +264,7 @@ _collect_sql_string =\
 
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/1638")
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1638")
 def test_window_aggs_for_rows_collect_list():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, _gen_data_for_collect(), length=2048),

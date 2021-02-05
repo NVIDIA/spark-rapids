@@ -548,6 +548,8 @@ case class GpuCollectList(child: Expression,
 
   def this(child: Expression) = this(child, 0, 0)
 
+  // Both `CollectList` and `CollectSet` are non-deterministic since their results depend on the
+  // actual order of input rows.
   override lazy val deterministic: Boolean = false
 
   override def nullable: Boolean = false

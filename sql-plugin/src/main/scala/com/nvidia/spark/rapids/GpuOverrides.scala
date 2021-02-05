@@ -774,11 +774,12 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested + TypeSig.ARRAY.nested(TypeSig.STRUCT),
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested +
-            TypeSig.ARRAY.nested(TypeSig.STRUCT),
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -1683,13 +1684,13 @@ object GpuOverrides {
     expr[AggregateExpression](
       "Aggregate expression",
       ExprChecks.fullAgg(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested() + TypeSig.NULL +
-          TypeSig.ARRAY.nested(TypeSig.STRUCT),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.all,
         Seq(ParamCheck(
           "aggFunc",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested() + TypeSig.NULL +
-            TypeSig.ARRAY.nested(TypeSig.STRUCT),
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
           TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
       (a, conf, p, r) => new ExprMeta[AggregateExpression](a, conf, p, r) {
@@ -2267,13 +2268,14 @@ object GpuOverrides {
       }),
     expr[CollectList](
       "Collect a list of elements, now only supported by windowing.",
-      /* It should be 'fullAgg' eventually but now only support windowing,
-         so 'aggNotGroupByOrReduction' */
+      // It should be 'fullAgg' eventually but now only support windowing,
+      // so 'aggNotGroupByOrReduction'
       ExprChecks.aggNotGroupByOrReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL).nested() + TypeSig.STRUCT,
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+            TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
           TypeSig.all))),
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
@@ -2621,7 +2623,9 @@ object GpuOverrides {
     exec[WindowExec](
       "Window-operator backend",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested() + TypeSig.ARRAY,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+          TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
