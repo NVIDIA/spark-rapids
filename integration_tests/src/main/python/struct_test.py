@@ -45,16 +45,20 @@ def test_make_struct(data_gen):
                                       StructGen([["first", long_gen], ["second", long_gen], ["third", long_gen]]),
                                       StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct(data_gen):
+    with_uniq_data_gens = [int_uniq_gen, data_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : gen_df(spark, gen_list),
         'struct_table',
-        'select struct_val.first from (select struct_table.a as struct_val, struct_table.a.first as val from struct_table order by val)')
+        'select * from struct_table order by _c0')
 
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct_2(data_gen):
+    with_uniq_data_gens = [int_uniq_gen, data_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : gen_df(spark, gen_list),
         'struct_table',
-        'select struct_val.first from (select struct_table.a as struct_val, struct_table.a.second[0] as val from struct_table order by val)')
+        'select * from struct_table order by _c0')
