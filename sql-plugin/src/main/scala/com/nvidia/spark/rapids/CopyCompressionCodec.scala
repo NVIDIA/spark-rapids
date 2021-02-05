@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,8 +34,7 @@ class CopyCompressionCodec extends TableCompressionCodec with Arm {
       outputBuffer.copyFromDeviceBufferAsync(0, buffer, 0, buffer.getLength, stream)
       val meta = MetaUtils.buildTableMeta(
         Some(tableId),
-        contigTable.getTable,
-        buffer,
+        contigTable,
         codecId,
         outputBuffer.getLength)
       stream.sync()
@@ -76,20 +75,20 @@ class BatchedCopyCompressor(maxBatchMemory: Long, stream: Cuda.Stream)
   override protected def compress(
       tables: Array[ContiguousTable],
       stream: Cuda.Stream): Array[CompressedTable] = {
-    tables.safeMap { ct =>
+    val result = tables.safeMap { ct =>
       val inBuffer = ct.getBuffer
       closeOnExcept(DeviceMemoryBuffer.allocate(inBuffer.getLength)) { outBuffer =>
         outBuffer.copyFromDeviceBufferAsync(0, inBuffer, 0, inBuffer.getLength, stream)
         val meta = MetaUtils.buildTableMeta(
           None,
-          ct.getTable,
-          inBuffer,
+          ct,
           CodecType.COPY,
           outBuffer.getLength)
-        stream.sync()
         CompressedTable(outBuffer.getLength, meta, outBuffer)
       }
     }
+    closeOnExcept(result) { _ => stream.sync() }
+    result
   }
 }
 
