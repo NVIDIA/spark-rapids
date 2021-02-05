@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{DType, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 
 import org.apache.spark.TaskContext
@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.{AbstractDataType, ArrayType, DataType, IntegerType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
@@ -259,9 +259,7 @@ class GpuColumnarBatchSorter(
     var resultTbl: cudf.Table = null
     try {
       resultTbl = tbl.orderBy(orderByArgs: _*)
-      val res = GpuColumnVector.from(
-        resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
-      res
+      GpuColumnVector.from(resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
     } finally {
       if (resultTbl != null) {
         resultTbl.close()
