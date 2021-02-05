@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -295,7 +295,7 @@ abstract class RapidsBufferStore(
       if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
         MetaUtils.getBatchFromMeta(devBuffer, meta, sparkTypes)
       } else {
-        GpuCompressedColumnVector.from(devBuffer, meta, sparkTypes)
+        GpuCompressedColumnVector.from(devBuffer, meta)
       }
     }
 
