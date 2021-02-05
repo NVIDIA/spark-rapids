@@ -656,6 +656,14 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
+  val TEST_VALIDATE_EXECS_ONGPU = conf("spark.rapids.sql.test.validateExecsInGpuPlan")
+    .doc("Comma separate string of exec class names to validate they " +
+      "are GPU accelerated. Used for testing.")
+    .internal()
+    .stringConf
+    .toSequence
+    .createWithDefault(Nil)
+
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
@@ -1003,6 +1011,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
+
+  lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
