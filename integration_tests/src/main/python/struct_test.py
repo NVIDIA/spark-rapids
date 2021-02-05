@@ -17,7 +17,6 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from conftest import is_dataproc_runtime
 from data_gen import *
-from marks import *
 from pyspark.sql.types import *
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
@@ -41,9 +40,6 @@ def test_make_struct(data_gen):
                 'named_struct("foo", b, "bar", 5, "end", a)'))
 
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
-@ignore_order
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
                                       StructGen([["first", short_gen], ["second", int_gen], ["third", long_gen]]),
                                       StructGen([["first", long_gen], ["second", long_gen], ["third", long_gen]]),
@@ -56,9 +52,6 @@ def test_orderby_struct(data_gen):
 
 
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
-@ignore_order
 @pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct_2(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
