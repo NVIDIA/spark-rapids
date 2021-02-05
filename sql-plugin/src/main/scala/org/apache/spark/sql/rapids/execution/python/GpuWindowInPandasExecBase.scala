@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.execution.python
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import scala.collection.mutable
@@ -32,10 +32,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.UnaryExecNode
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.types.{DataType, IntegerType, StructField, StructType}
+import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -88,8 +87,8 @@ abstract class GpuWindowInPandasExecMetaBase(
 class GroupingIterator(
     wrapped: Iterator[ColumnarBatch],
     partitionSpec: Seq[Expression],
-    inputRows: SQLMetric,
-    inputBatches: SQLMetric) extends Iterator[ColumnarBatch] with Arm {
+    inputRows: GpuMetric,
+    inputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
 
   // Currently do it in a somewhat ugly way. In the future cuDF will provide a dedicated API.
   // Current solution assumes one group data exists in only one batch, so just split the
@@ -388,21 +387,21 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     new ColumnarBatch(boundsCVs ++ dataCVs.map(_.incRefCount()), numRows)
   }
 
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    NUM_OUTPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES)
+  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
   )
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numInputRows = longMetric(NUM_INPUT_ROWS)
-    val numInputBatches = longMetric(NUM_INPUT_BATCHES)
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
+    val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
+    val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
 
     // 1) Unwrap the expressions and build some info data:
