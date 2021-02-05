@@ -56,40 +56,48 @@ def test_make_array(data_gen):
                 'array(a, b)',
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
-def test_orderby_array():
-    # use a unique int column to sort on
-    with_uniq_data_gens = [int_uniq_gen] + single_level_array_gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
+
+def generate_with_unique_col(spark, dataframe):
+    collected = dataframe.collect()
+    new_rows = append_unique_to_df(collected)
+    existing_schema = dataframe.schema
+    new_schema = StructType([StructField("uniq_int", IntegerType(), False)] + existing_schema.fields)
+    return spark.createDataFrame(new_rows, new_schema)
+
+
+def append_unique_to_df(x):
+    new = []
+    for item in range(len(x)):
+        new.append(Row(item, x[item].a))
+    return new
+
+
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+def test_orderby_array_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, gen_list),
+        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select * from array_table order by _c0',
+        'select * from array_table order by uniq_int',
         conf=allow_negative_scale_of_decimal_conf)
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
 def test_orderby_array_of_arrays(data_gen):
-    # use a unique int column to sort on
-    with_uniq_data_gens = [int_uniq_gen, data_gen]
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
-    lambda spark : gen_df(spark, gen_list),
+    lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select * from array_table order by _c0')
+        'select * from array_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
                                                           ['child1', string_gen],
                                                           ['child2', float_gen]]))], ids=idfn)
 def test_orderby_array_of_structs(data_gen):
-    # use a unique int column to sort on
-    with_uniq_data_gens = [int_uniq_gen, data_gen]
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(with_uniq_data_gens)]
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, gen_list),
+        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select * from array_table order by _c0')
+        'select * from array_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
