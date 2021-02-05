@@ -64,10 +64,16 @@ def test_make_array(data_gen):
 #@pytest.mark.parametrize('data_gen', single_level_array_gens + [int_uniq_gen], ids=idfn)
 #@ignore_order(local=True)
 def test_orderby_array():
+    # use a unique int column to sort on
     data_gens = [int_uniq_gen] + single_level_array_gens
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : debug_df(gen_df(spark, gen_list).selectExpr('*')),
+    #assert_gpu_and_cpu_are_equal_collect(
+    #    lambda spark : debug_df(gen_df(spark, gen_list).selectExpr('*')),
+    #    conf=allow_negative_scale_of_decimal_conf)
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, gen_list),
+        'array_table',
+        'select * from array_table order by _c0',
         conf=allow_negative_scale_of_decimal_conf)
 
                                 # .orderBy('t')),
