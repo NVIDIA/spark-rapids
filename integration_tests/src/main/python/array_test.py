@@ -17,7 +17,6 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from conftest import is_dataproc_runtime
 from data_gen import *
-from pyspark.sql import Row
 from pyspark.sql.types import *
 from pyspark.sql.functions import array_contains, col, first, isnan, lit
 
@@ -58,25 +57,10 @@ def test_make_array(data_gen):
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
 
-def generate_with_unique_col(spark, dataframe):
-    collected = dataframe.collect()
-    new_rows = append_unique_to_df(collected)
-    existing_schema = dataframe.schema
-    new_schema = StructType([StructField("uniq_int", IntegerType(), False)] + existing_schema.fields)
-    return spark.createDataFrame(new_rows, new_schema)
-
-
-def append_unique_to_df(x):
-    new = []
-    for item in range(len(x)):
-        new.append(Row(item, x[item].a))
-    return new
-
-
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
         'select * from array_table order by uniq_int',
         conf=allow_negative_scale_of_decimal_conf)
@@ -86,7 +70,7 @@ def test_orderby_array_unique(data_gen):
                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
 def test_orderby_array_of_arrays(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-    lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
+    lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
         'select * from array_table order by uniq_int')
 
@@ -96,7 +80,7 @@ def test_orderby_array_of_arrays(data_gen):
                                                           ['child2', float_gen]]))], ids=idfn)
 def test_orderby_array_of_structs(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
         'select * from array_table order by uniq_int')
 

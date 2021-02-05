@@ -17,23 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from conftest import is_dataproc_runtime
 from data_gen import *
-from pyspark.sql import Row
 from pyspark.sql.types import *
-
-def generate_with_unique_col(spark, dataframe):
-    collected = dataframe.collect()
-    new_rows = append_unique_to_df(collected)
-    existing_schema = dataframe.schema
-    new_schema = StructType([StructField("uniq_int", IntegerType(), False)] + existing_schema.fields)
-    return spark.createDataFrame(new_rows, new_schema)
-
-
-def append_unique_to_df(x):
-    new = []
-    for item in range(len(x)):
-        new.append(Row(item, x[item].a))
-    return new
-
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
     StructGen([["first", short_gen], ["second", int_gen], ["third", long_gen]]),
@@ -62,7 +46,7 @@ def test_make_struct(data_gen):
                                       StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'struct_table',
         'select * from struct_table order by uniq_int')
 
@@ -70,6 +54,6 @@ def test_orderby_struct(data_gen):
 @pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct_2(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : generate_with_unique_col(spark, unary_op_df(spark, data_gen)),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'struct_table',
         'select * from struct_table order by uniq_int')
