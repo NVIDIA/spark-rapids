@@ -239,8 +239,8 @@ abstract class GpuBroadcastExchangeExecBase(
     mode: BroadcastMode,
     child: SparkPlan) extends Exchange with GpuExec {
 
-  override lazy val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  override lazy val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics = Map(
     "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
     COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME),

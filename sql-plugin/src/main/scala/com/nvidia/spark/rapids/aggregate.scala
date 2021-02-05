@@ -870,8 +870,8 @@ case class GpuHashAggregateExec(
     }
   }
 
-  protected override lazy val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  protected override lazy val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics = Map(
     AGG_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_AGG_TIME),
     CONCAT_TIME-> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME)

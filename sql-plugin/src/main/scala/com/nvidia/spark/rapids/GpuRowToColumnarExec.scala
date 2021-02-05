@@ -16,9 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.GpuMetric._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -528,10 +527,10 @@ class RowToColumnarIterator(
     localSchema: StructType,
     localGoal: CoalesceGoal,
     converters: GpuRowToColumnConverter,
-    totalTime: GpuMetric = null,
-    numInputRows: GpuMetric = null,
-    numOutputRows: GpuMetric = null,
-    numOutputBatches: GpuMetric = null) extends Iterator[ColumnarBatch] {
+    totalTime: GpuMetric = NoopMetric,
+    numInputRows: GpuMetric = NoopMetric,
+    numOutputRows: GpuMetric = NoopMetric,
+    numOutputBatches: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
@@ -586,26 +585,12 @@ class RowToColumnarIterator(
       // option here
       Option(TaskContext.get()).foreach(GpuSemaphore.acquireIfNecessary)
 
-      var buildRange: NvtxRange = null
-      if (totalTime != null) {
-        buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)
-      } else {
-        buildRange = new NvtxRange("RowToColumnar", NvtxColor.GREEN)
-      }
-      val ret = try {
+      val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)) { _=>
         builders.build(rowCount)
-      } finally {
-        buildRange.close()
       }
-      if (numInputRows != null) {
-        numInputRows += rowCount
-      }
-      if (numOutputRows != null) {
-        numOutputRows += rowCount
-      }
-      if (numOutputBatches != null) {
-        numOutputBatches += 1
-      }
+      numInputRows += rowCount
+      numOutputRows += rowCount
+      numOutputBatches += 1
 
       // refine the targetRows estimate based on the average of all batches processed so far
       totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
@@ -779,6 +764,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
  */
 case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
   extends UnaryExecNode with GpuExec {
+  import GpuMetric._
 
   override def output: Seq[Attribute] = child.output
 

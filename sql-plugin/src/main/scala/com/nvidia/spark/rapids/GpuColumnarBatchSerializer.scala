@@ -47,14 +47,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *
  * @note The RAPIDS shuffle does not use this code.
  */
-class GpuColumnarBatchSerializer(dataSize: GpuMetric = null) extends Serializer with Serializable {
+class GpuColumnarBatchSerializer(dataSize: GpuMetric)
+    extends Serializer with Serializable {
   override def newInstance(): SerializerInstance =
     new GpuColumnarBatchSerializerInstance(dataSize)
   override def supportsRelocationOfSerializedObjects: Boolean = true
 }
 
-private class GpuColumnarBatchSerializerInstance(
-    dataSize: GpuMetric) extends SerializerInstance {
+private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends SerializerInstance {
 
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
     private[this] val dOut: DataOutputStream =
@@ -90,9 +90,7 @@ private class GpuColumnarBatchSerializerInstance(
             }
           }
 
-          if (dataSize != null) {
-            dataSize += JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows)
-          }
+          dataSize += JCudfSerialization.getSerializedSizeInBytes(columns, startRow, numRows)
           val range = new NvtxRange("Serialize Batch", NvtxColor.YELLOW)
           try {
             JCudfSerialization.writeToStream(columns, dOut, startRow, numRows)

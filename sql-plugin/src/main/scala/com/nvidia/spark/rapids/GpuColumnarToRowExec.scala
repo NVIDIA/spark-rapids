@@ -18,8 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetric._
+import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -37,9 +36,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class AcceleratedColumnarToRowIterator(
     schema: Seq[Attribute],
     batches: Iterator[ColumnarBatch],
-    numInputBatches: GpuMetric = null,
-    numOutputRows: GpuMetric = null,
-    totalTime: GpuMetric = null) extends Iterator[InternalRow] with Arm with Serializable {
+    numInputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    totalTime: GpuMetric) extends Iterator[InternalRow] with Arm with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -96,23 +95,14 @@ class AcceleratedColumnarToRowIterator(
   }
 
   private[this] def setupBatch(cb: ColumnarBatch): Boolean = {
-    if (numInputBatches != null) {
-      numInputBatches += 1
-    }
+    numInputBatches += 1
     // In order to match the numOutputRows metric in the generated code we update
     // numOutputRows for each batch. This is less accurate than doing it at output
     // because it will over count the number of rows output in the case of a limit,
     // but it is more efficient.
-    if (numOutputRows != null) {
-      numOutputRows += cb.numRows()
-    }
+    numOutputRows += cb.numRows()
     if (cb.numRows() > 0) {
-      val nvtxRange = if (totalTime != null) {
-        new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
-      } else {
-        new NvtxRange("ColumnarToRow: batch", NvtxColor.RED)
-      }
-      withResource(nvtxRange) { _ =>
+      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)) { _ =>
         withResource(rearrangeRows(cb)) { table =>
           withResource(table.convertToRows()) { rowsCvList =>
             rowsCvList.foreach { rowsCv =>
@@ -167,8 +157,10 @@ class AcceleratedColumnarToRowIterator(
   }
 }
 
-class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: GpuMetric = null,
-   numOutputRows: GpuMetric = null, totalTime: GpuMetric = null) extends Iterator[InternalRow] {
+class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
+    numInputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    totalTime: GpuMetric) extends Iterator[InternalRow] {
   // GPU batches read in must be closed by the receiver (us)
   @transient var cb: ColumnarBatch = null
   var it: java.util.Iterator[InternalRow] = null
@@ -189,26 +181,17 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch], numInputBatches: G
     }
     if (batches.hasNext) {
       val devCb = batches.next()
-      val nvtxRange = if (totalTime != null) {
-        new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
-      } else {
-        new NvtxRange("ColumnarToRow: batch", NvtxColor.RED)
-      }
-
+      val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
       try {
         cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
           devCb.numRows())
         it = cb.rowIterator()
-        if (numInputBatches != null) {
-          numInputBatches += 1
-        }
+        numInputBatches += 1
         // In order to match the numOutputRows metric in the generated code we update
         // numOutputRows for each batch. This is less accurate than doing it at output
         // because it will over count the number of rows output in the case of a limit,
         // but it is more efficient.
-        if (numOutputRows != null) {
-          numOutputRows += cb.numRows()
-        }
+        numOutputRows += cb.numRows()
       } finally {
         devCb.close()
         // Leaving the GPU for a while
@@ -253,6 +236,7 @@ object CudfRowTransitions {
 
 abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRdd: Boolean)
     extends UnaryExecNode with GpuExec {
+  import GpuMetric._
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 

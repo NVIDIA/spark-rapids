@@ -70,8 +70,8 @@ case class GpuExpandExec(
     child: SparkPlan)
     extends UnaryExecNode with GpuExec {
 
-  override lazy val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  override lazy val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),

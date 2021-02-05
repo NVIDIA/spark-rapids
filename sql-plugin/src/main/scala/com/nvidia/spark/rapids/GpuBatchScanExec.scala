@@ -23,7 +23,6 @@ import scala.math.max
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetric._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -53,14 +52,17 @@ import org.apache.spark.util.SerializableConfiguration
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
     @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuExec {
-
+  import GpuMetric._
   @transient lazy val batch: Batch = scan.toBatch
 
   override def supportsColumnar = true
 
-  override lazy val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  override lazy val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics = GpuMetric.buildGpuScanMetrics(sparkContext)
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics = Map(
+    GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
+    BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
 
   scan match {
     case s: ScanWithMetrics => s.metrics = allMetrics ++ additionalMetrics
@@ -331,6 +333,7 @@ class CSVPartitionReader(
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric])
   extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
+  import GpuMetric._
 
   private var batch: Option[ColumnarBatch] = None
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead,

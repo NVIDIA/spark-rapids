@@ -59,12 +59,14 @@ object GpuMetric {
   val STREAM_TIME = "streamTime"
 
   // Metric Descriptions.
-  val DESCRIPTION_NUM_INPUT_ROWS = "number of input rows"
-  val DESCRIPTION_NUM_INPUT_BATCHES = "number of input columnar batches"
-  val DESCRIPTION_NUM_OUTPUT_ROWS = "number of output rows"
-  val DESCRIPTION_NUM_OUTPUT_BATCHES = "number of output columnar batches"
+  val DESCRIPTION_BUFFER_TIME = "buffer time"
+  val DESCRIPTION_GPU_DECODE_TIME = "GPU decode time"
+  val DESCRIPTION_NUM_INPUT_ROWS = "input rows"
+  val DESCRIPTION_NUM_INPUT_BATCHES = "input columnar batches"
+  val DESCRIPTION_NUM_OUTPUT_ROWS = "output rows"
+  val DESCRIPTION_NUM_OUTPUT_BATCHES = "output columnar batches"
   val DESCRIPTION_PARTITION_SIZE = "partition data size"
-  val DESCRIPTION_NUM_PARTITIONS = "number of partitions"
+  val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_TOTAL_TIME = "total time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
@@ -77,20 +79,6 @@ object GpuMetric {
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
-
-  // TODO these end up being ESSENTIAL_LEVEL do we really want that?
-  def buildGpuScanMetrics(sparkContext: SparkContext): Map[String, GpuMetric] = {
-    Map(
-      NUM_OUTPUT_BATCHES ->
-          WrappedGpuMetric(SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_OUTPUT_BATCHES)),
-      GPU_DECODE_TIME ->
-          WrappedGpuMetric(SQLMetrics.createNanoTimingMetric(sparkContext, "GPU decode time")),
-      BUFFER_TIME ->
-          WrappedGpuMetric(SQLMetrics.createNanoTimingMetric(sparkContext, "buffer time")),
-      PEAK_DEVICE_MEMORY ->
-          WrappedGpuMetric(SQLMetrics.createSizeMetric(sparkContext,
-            DESCRIPTION_PEAK_DEVICE_MEMORY)))
-  }
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -196,8 +184,8 @@ trait GpuExec extends SparkPlan with Arm {
 
   override def supportsColumnar = true
 
-  protected lazy val outputRowsLevel: MetricsLevel = DEBUG_LEVEL
-  protected lazy val outputBatchesLevel: MetricsLevel = DEBUG_LEVEL
+  protected val outputRowsLevel: MetricsLevel = DEBUG_LEVEL
+  protected val outputBatchesLevel: MetricsLevel = DEBUG_LEVEL
 
   lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),

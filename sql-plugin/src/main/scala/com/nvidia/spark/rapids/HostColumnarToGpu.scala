@@ -353,8 +353,8 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
   extends UnaryExecNode
   with GpuExec {
   import GpuMetric._
-  protected override lazy val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  protected override lazy val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),

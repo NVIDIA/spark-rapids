@@ -434,11 +434,13 @@ object RapidsConf {
   val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
       .doc("GPU plans can produce a lot more metrics than CPU plans do. In very large " +
           "queries this can sometimes result in going over the max result size limit for the " +
-          "driver. Supported values include DEBUG: which will enable all metrics supported and " +
-          "typically only needs to be enabled when debugging the plugin. MODERATE: which is the " +
-          "default value and should output enough metrics to understand how long each part of " +
-          "the query is taking and how much data is going to each part of the query. ESSENTIAL: " +
-          "which disables most metrics except those Apache Spark CPU plans will also report.")
+          "driver. Supported values include " +
+          "DEBUG which will enable all metrics supported and typically only needs to be enabled " +
+          "when debugging the plugin. " +
+          "MODERATE which should output enough metrics to understand how long each part of the " +
+          "query is taking and how much data is going to each part of the query. " +
+          "ESSENTIAL which disables most metrics except those Apache Spark CPU plans will also " +
+          "report or their equivalents.")
       .stringConf
       .transform(_.toUpperCase(java.util.Locale.ROOT))
       .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
