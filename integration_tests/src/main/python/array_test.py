@@ -62,7 +62,7 @@ def test_orderby_array_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select * from array_table order by uniq_int',
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int',
         conf=allow_negative_scale_of_decimal_conf)
 
 
@@ -72,7 +72,7 @@ def test_orderby_array_of_arrays(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
     lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select * from array_table order by uniq_int')
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
@@ -82,7 +82,7 @@ def test_orderby_array_of_structs(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select * from array_table order by uniq_int')
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
