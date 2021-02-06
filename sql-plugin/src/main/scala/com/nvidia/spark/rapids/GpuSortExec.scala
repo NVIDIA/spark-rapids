@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
@@ -43,6 +43,12 @@ class GpuSortMeta(
   override def tagPlanForGpu(): Unit = {
     if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
       willNotWorkOnGpu("string literal values are not supported in a sort")
+    }
+    val sortOrderDataTypes = sort.sortOrder.map(_.dataType)
+    if (sortOrderDataTypes.exists(dtype =>
+      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
+        || dtype.isInstanceOf[MapType])) {
+      willNotWorkOnGpu("Nested types in Sort Order are not supported")
     }
   }
 }
