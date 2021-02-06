@@ -1057,76 +1057,72 @@ case class GpuCast(
       from: DecimalType,
       to: DecimalType): ColumnVector = {
 
-    // At first, we conduct overflow check onto input column.
-    // Then, we cast checked input into target decimal type.
-    val checkedInput = if (to.scale <= from.scale && to.precision <= from.precision) {
-      // No need to promote precision unless target scale is larger than the source one,
-      // which indicates the cast is always valid when to.scale <= from.scale.
-      input.incRefCount()
-    } else {
-      var isFrom32Bit = DecimalType.is32BitDecimalType(from)
-      val isTo32Bit = DecimalType.is32BitDecimalType(to)
-      // check if we have to promote precision and the bit-representation i.e. 32-bit to 64-bit
-      val newInput = if (isFrom32Bit && !isTo32Bit) {
-        val dt = DecimalUtil.createCudfDecimal(to.precision, to.scale)
-        withResource(input.castDecimal32ToDecimal64(dt)) { decimalInput =>
-          isFrom32Bit = false
-          decimalInput.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))
-        }
-      } else {
-        input
-      }
-      if ((isFrom32Bit && isTo32Bit) || (!isFrom32Bit && !isTo32Bit)) {
-        // Check whether there exists overflow during promoting precision or not.
-        // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
-        // cuDF binaryOperation on decimal will rescale right input to fit the left one.
-        // The rescaling may lead to overflow.
-        val (upperBound, lowerBound) = if (!isFrom32Bit) {
-          // The maximum value held by Decimal 64
-          val absBound = math.pow(10,
-            DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong - 1
-          (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
-        } else {
-          // The maximum value held by Decimal 32
-          val absBound = math.pow(10,
-            DType.DECIMAL32_MAX_PRECISION + from.scale - to.scale).toInt - 1
-          (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
-        }
-        if (ansiMode) {
-          assertValuesInRange(newInput,
-            minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
-            maxValue = Scalar.fromDecimal(upperBound.bigDecimal))
-          if (input == newInput) {
-            newInput.incRefCount()
-          } else {
-            newInput
-          }
-        } else {
-          try {
-            replaceOutOfRangeValues(newInput,
-              minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
-              maxValue = Scalar.fromDecimal(upperBound.bigDecimal),
-              replaceValue = Scalar.fromNull(newInput.getType))
-          } finally {
-            if (input != newInput) {
-              newInput.close()
-            }
-          }
-        }
-      } else {
-        throw new IllegalStateException("Casting from 64-bit to 32-bit Decimal should be " +
-          "allowed, we shouldn't be coming here")
+    def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
+      to.scale - from.scale match {
+        case 0 =>
+          checkedInput.incRefCount()
+        case diff if diff > 0 =>
+          checkedInput.castTo(GpuColumnVector.getNonNestedRapidsType(to))
+        case _ =>
+          checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)
       }
     }
 
-    withResource(checkedInput) { checked =>
-      to.scale - from.scale match {
-        case 0 =>
-          checked.incRefCount()
-        case diff if diff > 0 =>
-          checked.castTo(GpuColumnVector.getNonNestedRapidsType(to))
-        case _ =>
-          checked.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+    def castSamePrecisionDecimal(isFrom32Bit: Boolean, input: ColumnVector): ColumnVector = {
+      // Check whether there exists overflow during promoting precision or not.
+      // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
+      // cuDF binaryOperation on decimal will rescale right input to fit the left one.
+      // The rescaling may lead to overflow.
+      val (upperBound, lowerBound) = if (!isFrom32Bit) {
+        // The maximum value held by 64-bit Decimal
+        val absBound = math.pow(10,
+          DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong - 1
+        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+      } else {
+        // The maximum value held by 32-bit Decimal
+        val absBound = math.pow(10,
+          DType.DECIMAL32_MAX_PRECISION + from.scale - to.scale).toInt - 1
+        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+      }
+      val checkedInput = if (ansiMode) {
+        assertValuesInRange(input,
+          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
+          maxValue = Scalar.fromDecimal(upperBound.bigDecimal))
+        input.incRefCount()
+      } else {
+        replaceOutOfRangeValues(input,
+          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
+          maxValue = Scalar.fromDecimal(upperBound.bigDecimal),
+          replaceValue = Scalar.fromNull(input.getType))
+      }
+
+      withResource(checkedInput) { in =>
+        castCheckedDecimal(in)
+      }
+    }
+
+    // At first, we conduct overflow check onto input column.
+    // Then, we cast checked input into target decimal type.
+    if (to.scale <= from.scale && to.precision <= from.precision) {
+      // No need to promote precision unless target scale is larger than the source one,
+      // which indicates the cast is always valid when to.scale <= from.scale.
+      castCheckedDecimal(input)
+    } else {
+      val isFrom32Bit = DecimalType.is32BitDecimalType(from)
+      val isTo32Bit = DecimalType.is32BitDecimalType(to)
+      // check if we have to promote precision and the bit-representation i.e. 32-bit to 64-bit
+      if (isFrom32Bit && !isTo32Bit) {
+        val dt = DecimalUtil.createCudfDecimal(to.precision, to.scale)
+        withResource(input.castDecimal32ToDecimal64(dt)) { decimalInput =>
+          withResource(decimalInput.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))) {
+            newInput => castSamePrecisionDecimal(false, newInput)
+          }
+        }
+      } else if ((isFrom32Bit && isTo32Bit) || (!isFrom32Bit && !isTo32Bit)) {
+        castSamePrecisionDecimal(isFrom32Bit, input)
+      } else {
+        throw new IllegalStateException("Casting from 64-bit to 32-bit Decimal should be " +
+          "allowed, we shouldn't be coming here")
       }
     }
   }
