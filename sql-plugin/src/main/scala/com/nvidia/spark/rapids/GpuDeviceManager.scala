@@ -206,7 +206,7 @@ object GpuDeviceManager extends Logging {
           case c if "default".equalsIgnoreCase(c) =>
             if (Cuda.isPtdsEnabled) {
               logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
-                  "Per-thread Default Stream (PTDS). This is known to be unstable! " +
+                  "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
                   "We recommend you use the ARENA allocator when PTDS is enabled.")
             }
             features += "POOLED"
