@@ -478,15 +478,14 @@ object BenchUtils {
             nextId += 1
             writeGraph(w, a.children(i), b.children(i), childId);
 
-          (isGpuPlan(a), isGpuPlan(a.children(i))) match {
-            case (true, true) =>
-              w.println(s"""node$childId -> node$id [color="$nvGreen"];""")
-            case (false, false) =>
-              w.println(s"""node$childId -> node$id [color="$blue"];""")
+          val style = (isGpuPlan(a), isGpuPlan(a.children(i))) match {
+            case (true, true) => s"color=\"$nvGreen\""
+            case (false, false) => s"color=\"$blue\""
             case _ =>
               // show emphasis on transitions between CPU and GPU
-              w.println(s"node$childId -> node$id [color=red, style=bold];")
-          }
+              "color=red, style=bold"
+           }
+           w.println(s"node$childId -> node$id [$style];")
         })
       } else {
         // plans have diverged - cannot recurse further
