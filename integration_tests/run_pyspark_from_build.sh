@@ -85,14 +85,20 @@ else
     RUN_DIR="$SCRIPTPATH"/target/run_dir
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
+
+    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
+    export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
+
+    export PYSP_TEST_spark_executor_extraJavaOptions="${PYSP_TEST_spark_driver_extraJavaOptions}"
+    export PYSP_TEST_spark_executor_extraClassPath="${PYSP_TEST_spark_driver_extraClassPath}"
+
+    export PYSP_TEST_spark_ui_showConsoleProgress='false'
+
+    export PYSP_TEST_spark_sql_session_timeZone='UTC'
+    export PYSP_TEST_spark_sql_shuffle_partitions='12'
+
     if [[ "${TEST_PARALLEL_OPTS}" != "" ]];
     then
-        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
-        export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
-        export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
-        export PYSP_TEST_spark_ui_showConsoleProgress='false'
-        export PYSP_TEST_spark_sql_session_timeZone='UTC'
-        export PYSP_TEST_spark_sql_shuffle_partitions='12'
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
         export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
 
@@ -108,11 +114,7 @@ else
           "$@"
     else
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-          --conf "spark.driver.extraJavaOptions=-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS" \
-          --conf 'spark.executor.extraJavaOptions=-ea -Duser.timezone=UTC' \
-          --conf 'spark.sql.session.timeZone=UTC' \
-          --conf 'spark.sql.shuffle.partitions=12' \
-          --conf "spark.executor.extraClassPath=${ALL_JARS// /:}" \
+          --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
           $SPARK_SUBMIT_FLAGS \
           "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
