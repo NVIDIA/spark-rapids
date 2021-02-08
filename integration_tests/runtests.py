@@ -24,8 +24,7 @@ if __name__ == '__main__':
     # arguments are the same as for pytest https://docs.pytest.org/en/latest/usage.html
     # or run pytest -h
     iteration = 0
-    maxIterEnvName = 'IT_MAX_ITERATIONS'
-    maxIterations = int(os.environ[maxIterEnvName]) if maxIterEnvName in os.environ else 1
+    maxIterations = int(os.environ.get('IT_MAX_ITERATIONS', 1))
     itForever = maxIterations < 0
 
     testArgs = sys.argv[1:]
