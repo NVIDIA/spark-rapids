@@ -51,5 +51,9 @@
                 <include>*.py</include>
             </includes>
         </fileSet>
+        <fileSet>
+            <directory>src/test/resources/</directory>
+            <outputDirectory>integration_tests/src/test/resources</outputDirectory>
+        </fileSet>
     </fileSets>
 </assembly>
