@@ -2610,7 +2610,7 @@ object GpuOverrides {
     ),
     exec[CustomShuffleReaderExec](
       "A wrapper of shuffle query stage",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
       (exec, conf, p, r) =>
       new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
         override def tagPlanForGpu(): Unit = {

@@ -31,6 +31,7 @@ import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffledHashJoinBase}
+import org.apache.spark.sql.types.{DecimalType, IntegerType, LongType, StructField, StructType}
 
 object AdaptiveQueryExecSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
@@ -272,6 +273,7 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -309,6 +311,7 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
+      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -340,6 +343,7 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
+      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -468,10 +472,16 @@ class AdaptiveQueryExecSuite
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */
   private def testData2(spark: SparkSession) {
-    import spark.implicits._
-    val df = Seq[(Int, Int)]((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))
-      .toDF("a", "b")
-      .repartition(col("a"))
+    import scala.collection.JavaConverters._
+    val df = spark.createDataFrame(
+      List(
+        Row(1, BigDecimal(1)), Row(1, BigDecimal(2)), Row(2, BigDecimal(1)),
+        Row(2, BigDecimal(2)), Row(3, BigDecimal(1)), Row(3, BigDecimal(2))
+      ).asJava,
+      StructType(Array(
+        StructField("a", IntegerType),
+        StructField("b", DecimalType(18, 0))))
+    ).repartition(col("a"))
     registerAsParquetTable(spark, df, "testData2")
   }
 
