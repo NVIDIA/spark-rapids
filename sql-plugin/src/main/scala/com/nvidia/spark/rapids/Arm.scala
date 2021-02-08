@@ -49,6 +49,16 @@ trait Arm {
     }
   }
 
+
+  /** Executes the provided code block and then closes the array buffer of resources */
+  def withResource[T <: AutoCloseable, V](r: ArrayBuffer[T])(block: ArrayBuffer[T] => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
+    }
+  }
+
   /** Executes the provided code block and then closes the value if it is AutoCloseable */
   def withResourceIfAllowed[T, V](r: T)(block: T => V): V = {
     try {

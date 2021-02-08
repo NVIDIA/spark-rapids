@@ -16,18 +16,29 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
+import java.util.{Comparator, LinkedList, PriorityQueue}
+
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
+import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetric._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLast, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+sealed trait SortExecType extends Serializable
+
+object OutOfCoreSort extends SortExecType
+object FullSortSingleBatch extends SortExecType
+object SortEachBatch extends SortExecType
 
 class GpuSortMeta(
     sort: SortExec,
@@ -35,21 +46,11 @@ class GpuSortMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[SortExec](sort, conf, parent, rule) {
-  override def convertToGpu(): GpuExec =
+  override def convertToGpu(): GpuExec = {
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
-      childPlans(0).convertIfNeeded())
-
-  override def tagPlanForGpu(): Unit = {
-    if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
-      willNotWorkOnGpu("string literal values are not supported in a sort")
-    }
-    val sortOrderDataTypes = sort.sortOrder.map(_.dataType)
-    if (sortOrderDataTypes.exists(dtype =>
-      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
-        || dtype.isInstanceOf[MapType])) {
-      willNotWorkOnGpu("Nested types in Sort Order are not supported")
-    }
+      childPlans.head.convertIfNeeded(),
+      if (conf.outOfCoreSort) OutOfCoreSort else FullSortSingleBatch)
   }
 }
 
@@ -57,28 +58,32 @@ case class GpuSortExec(
     sortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan,
-    coalesceGoal: CoalesceGoal = RequireSingleBatch,
-    testSpillFrequency: Int = 0)
+    sortType: SortExecType)
   extends UnaryExecNode with GpuExec {
 
-  private val sparkSortOrder = sortOrder
-
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(coalesceGoal)
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
+    case FullSortSingleBatch => Seq(RequireSingleBatch)
+    case OutOfCoreSort | SortEachBatch => Seq(null)
+    case t => throw new IllegalArgumentException(s"Unexpected Sort Type $t")
+  }
 
   override def output: Seq[Attribute] = child.output
 
-  override def outputOrdering: Seq[SortOrder] = sparkSortOrder
+  override def outputOrdering: Seq[SortOrder] = sortOrder
 
   // sort performed is local within a given partition so will retain
   // child operator's partitioning
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
-    if (global) OrderedDistribution(sparkSortOrder) :: Nil else UnspecifiedDistribution :: Nil
+    if (global) OrderedDistribution(sortOrder) :: Nil else UnspecifiedDistribution :: Nil
 
   // Eventually this might change, but for now we will produce a single batch, which is the same
   // as what we require from our input.
-  override def outputBatching: CoalesceGoal = RequireSingleBatch
+  override def outputBatching: CoalesceGoal = sortType match {
+    case FullSortSingleBatch => RequireSingleBatch
+    case _ => null
+  }
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -87,183 +92,311 @@ case class GpuSortExec(
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
 
+  private [this] lazy val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val sorter = new GpuSorter(sortOrder, output)
+
     val sortTime = gpuLongMetric(SORT_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
-
-    val crdd = child.executeColumnar()
-    crdd.mapPartitions { cbIter =>
-      val sorter = createBatchGpuSorter()
-      val sortedIterator = sorter.sort(cbIter)
-      sortTime += sorter.getSortTimeNanos
-      peakDevMemory += sorter.getPeakMemoryUsage
-      sortedIterator
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val outputBatch = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val outOfCore = sortType == OutOfCoreSort
+    child.executeColumnar().mapPartitions { cbIter =>
+      if (outOfCore) {
+        val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
+        val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
+          // bad things can happen if the target size is really small
+          math.max(16 * 1024, targetSize), totalTime, sortTime, outputBatch, outputRows)
+        TaskContext.get().addTaskCompletionListener(_ -> iter.close())
+        iter
+      } else {
+        GpuSortEachBatchIterator(cbIter, sorter, totalTime, sortTime, outputBatch, outputRows,
+          peakDevMemory)
+      }
     }
-  }
-
-  private def createBatchGpuSorter(): GpuColumnarBatchSorter = {
-    val boundSortExprs = GpuBindReferences.bindReferences(sortOrder, output)
-    new GpuColumnarBatchSorter(boundSortExprs, this, coalesceGoal == RequireSingleBatch)
   }
 }
 
-class GpuColumnarBatchSorter(
-    sortOrder: Seq[SortOrder],
-    exec: GpuExec,
-    singleBatchOnly: Boolean,
-    shouldUpdateMetrics: Boolean = true) extends Serializable {
+case class GpuSortEachBatchIterator(
+    iter: Iterator[ColumnarBatch],
+    sorter: GpuSorter,
+    totalTime: GpuMetric = NoopMetric,
+    sortTime: GpuMetric = NoopMetric,
+    outputBatches: GpuMetric = NoopMetric,
+    outputRows: GpuMetric = NoopMetric,
+    peakDevMemory: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
+  override def hasNext: Boolean = iter.hasNext
 
-  private var totalSortTimeNanos = 0L
-  private var maxDeviceMemory = 0L
-  private var haveSortedBatch = false
-  private val numSortCols = sortOrder.length
-  private val totalTimeMetric : Option[GpuMetric] = initMetric(TOTAL_TIME)
-  private val outputBatchesMetric : Option[GpuMetric] = initMetric(NUM_OUTPUT_BATCHES)
-  private val outputRowsMetric : Option[GpuMetric] = initMetric(NUM_OUTPUT_ROWS)
+  override def next(): ColumnarBatch = {
+    withResource(iter.next()) { cb =>
+        withResource(new NvtxWithMetrics("sort total", NvtxColor.WHITE, totalTime)) { _ =>
+          val ret = sorter.fullySortBatch(cb, sortTime, peakDevMemory)
+          outputBatches += 1
+          outputRows += ret.numRows()
+          ret
+        }
+    }
+  }
+}
 
-  private def initMetric(metricName: String): Option[GpuMetric] = if (shouldUpdateMetrics) {
-    Some(exec.gpuLongMetric(metricName))
-  } else {
-    None
+case class OutOfCoreBatch(buffer: SpillableColumnarBatch, row: UnsafeRow) extends AutoCloseable {
+  override def close(): Unit = buffer.close()
+}
+
+class Pending(cpuOrd: LazilyGeneratedOrdering) extends AutoCloseable {
+  private val pending = new PriorityQueue[OutOfCoreBatch](new Comparator[OutOfCoreBatch]() {
+    override def compare(a: OutOfCoreBatch, b: OutOfCoreBatch): Int =
+      cpuOrd.compare(a.row, b.row)
+  })
+  private var pendingSize = 0L
+  def add(buffer: SpillableColumnarBatch, row: UnsafeRow): Unit = {
+    pending.add(OutOfCoreBatch(buffer, row))
+    pendingSize += buffer.sizeInBytes
   }
 
-  def getSortTimeNanos: Long = totalSortTimeNanos
+  def storedSize: Long = pendingSize
 
-  def getPeakMemoryUsage: Long = maxDeviceMemory
+  def size(): Int = pending.size()
 
-  def sort(batchIter: Iterator[ColumnarBatch]): Iterator[ColumnarBatch]  = {
+  def poll(): OutOfCoreBatch = {
+    val ret = pending.poll()
+    if (ret != null) {
+      pendingSize -= ret.buffer.sizeInBytes
+    }
+    ret
+  }
 
-    // Sort order shouldn't be empty for Sort exec, in any other case empty sort order
-    // translates to an ascending sort on all columns with nulls as smallest
-    new Iterator[ColumnarBatch] {
-      var resultBatch: Option[ColumnarBatch] = None
+  def peek(): OutOfCoreBatch = pending.peek()
 
-      TaskContext.get().addTaskCompletionListener[Unit](_ => closeBatch())
+  def isEmpty: Boolean = pending.isEmpty
 
-      private def closeBatch(): Unit = resultBatch.foreach(_.close())
+  override def close(): Unit = pending.forEach(_.close())
+}
 
-      private def loadNextBatch(): Option[ColumnarBatch] = {
-        if (batchIter.hasNext) {
-          if (singleBatchOnly && haveSortedBatch) {
-            throw new UnsupportedOperationException("Expected single batch to sort")
+case class GpuOutOfCoreSortIterator(
+    iter: Iterator[ColumnarBatch],
+    sorter: GpuSorter,
+    cpuOrd: LazilyGeneratedOrdering,
+    targetSize: Long,
+    totalTime: GpuMetric = NoopMetric,
+    sortTime: GpuMetric = NoopMetric,
+    outputBatches: GpuMetric = NoopMetric,
+    outputRows: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch]
+    with Arm with AutoCloseable {
+
+
+  private val pending = new Pending(cpuOrd)
+
+  private val sorted = new LinkedList[SpillableColumnarBatch]()
+  private var sortedSize = 0L
+
+  override def hasNext: Boolean = !sorted.isEmpty || !pending.isEmpty || iter.hasNext
+
+  // Use types for the UnsafeProjection otherwise we need to have CPU BoundAttributeReferences
+  private lazy val unsafeProjection = UnsafeProjection.create(sorter.projectedBatchTypes)
+  private lazy val converters = new GpuRowToColumnConverter(
+    TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))
+
+  private def convertBoundaries(tab: Table): Array[UnsafeRow] = {
+    import scala.collection.JavaConverters._
+    val cb = new ColumnarBatch(
+      GpuColumnVector.extractColumns(tab, sorter.projectedBatchTypes).map(_.copyToHost()),
+      tab.getRowCount.toInt)
+    withResource(cb) { cb =>
+      cb.rowIterator().asScala.map(unsafeProjection).map(_.copy().asInstanceOf[UnsafeRow]).toArray
+    }
+  }
+
+  private final def splitAfterSortAndSave(sortedTbl: Table, sortedOffset: Int = -1): Unit = {
+    // We need to figure out how to split up the data into reasonable batches. We could try and do
+    // something really complicated and figure out how much data get per batch, but in practice
+    // we really only expect to see one or two batches worth of data come in, so lets optimize
+    // for that case and set the targetBatchSize to always be 1/8th the targetSize.
+    val targetBatchSize = targetSize / 8
+    val rows = sortedTbl.getRowCount.toInt
+    val memSize = GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
+    val averageRowSize = memSize.toDouble/rows
+    // Protect ourselves from large rows when there are small targetSizes
+    val targetRowCount = Math.max((targetBatchSize/averageRowSize).toInt, 1024)
+
+    if (sortedOffset == rows - 1) {
+      // The entire thing is sorted
+      withResource(sortedTbl.contiguousSplit()) { split =>
+        assert(split.length == 1)
+        closeOnExcept(
+          GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
+          val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          sortedSize += sp.sizeInBytes
+          sorted.add(sp)
+        }
+      }
+    } else {
+      val splitIndexes = if (sortedOffset >= 0) {
+        sortedOffset until rows by targetRowCount
+      } else {
+        targetRowCount until rows by targetRowCount
+      }
+      // Get back the first row so we can sort the batches
+      val gatherIndexes = if (sortedOffset >= 0) {
+        // The first batch is sorted so don't gather a row for it
+        splitIndexes
+      } else {
+        Seq(0) ++ splitIndexes
+      }
+
+      val boundaries = withResource(ColumnVector.fromInts(gatherIndexes: _*)) { gatherMap =>
+        withResource(sortedTbl.gather(gatherMap)) { boundariesTab =>
+          convertBoundaries(boundariesTab)
+        }
+      }
+
+      withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { split =>
+        val stillPending = if (sortedOffset >= 0) {
+          closeOnExcept(
+            GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
+            val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            sortedSize += sp.sizeInBytes
+            sorted.add(sp)
           }
-          haveSortedBatch = true
-          val inputBatch = batchIter.next()
-          try {
-            if (inputBatch.numCols() > 0) {
-              Some(sortBatch(inputBatch))
+          split.slice(1, split.length)
+        } else {
+          split
+        }
+
+        assert(boundaries.length == stillPending.length)
+        stillPending.zip(boundaries).foreach {
+          case (ct: ContiguousTable, lower: UnsafeRow) =>
+            if (ct.getRowCount > 0) {
+              closeOnExcept(
+                GpuColumnVectorFromBuffer.from(ct, sorter.projectedBatchTypes)) { cb =>
+                pending.add(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+                  lower)
+              }
             } else {
-              Some(new ColumnarBatch(Array.empty, inputBatch.numRows()))
+              ct.close()
             }
-          } finally {
-            inputBatch.close()
+        }
+      }
+    }
+  }
+
+  private final def firstPassReadBatches(): Unit = {
+    while(iter.hasNext) {
+      val sortedTbl = withResource(iter.next()) { batch =>
+        withResource(new NvtxWithMetrics("initial sort", NvtxColor.CYAN, totalTime)) { _ =>
+          sorter.appendProjectedAndSort(batch, sortTime)
+        }
+      }
+      withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, totalTime)) { _ =>
+        withResource(sortedTbl) { sortedTbl =>
+          val rows = sortedTbl.getRowCount.toInt
+          // filter out empty batches
+          if (rows > 0) {
+            splitAfterSortAndSave(sortedTbl)
           }
-        } else {
-          None
         }
       }
+    }
+  }
 
-      private def sortBatch(inputBatch: ColumnarBatch): ColumnarBatch = {
-        val nvtxRange = initNvtxRange
-        try {
-          var outputTypes: Seq[DataType] = Nil
-          var inputTbl: Table = null
-          var inputCvs: Seq[GpuColumnVector] = Nil
-          try {
-            if (sortOrder.nonEmpty) {
-              inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
-              inputTbl = new cudf.Table(inputCvs.map(_.getBase): _*)
-              outputTypes = sortOrder.map(_.child.dataType) ++
-                  GpuColumnVector.extractTypes(inputBatch)
-            } else if (inputBatch.numCols() > 0) {
-              inputTbl = GpuColumnVector.from(inputBatch)
-              outputTypes = GpuColumnVector.extractTypes(inputBatch)
-            }
-            val orderByArgs = getOrderArgs(inputTbl)
-            val startTimestamp = System.nanoTime()
-            val batch = doGpuSort(inputTbl, orderByArgs, outputTypes)
-            updateMetricValues(inputTbl, startTimestamp, batch)
-            batch
-          } finally {
-            inputCvs.foreach(_.close())
-            if (inputTbl != null) {
-              inputTbl.close()
+  private final def mergeSortEnoughToOutput(): Unit = {
+    // Now get enough sorted data to return
+    while (!pending.isEmpty && sortedSize < targetSize) {
+      // Keep going until we have enough data to return
+      var bytesLeftToFetch = targetSize
+      val mergedBatch = withResource(ArrayBuffer[SpillableColumnarBatch]()) { pendingSort =>
+        while (!pending.isEmpty &&
+            (bytesLeftToFetch - pending.peek().buffer.sizeInBytes >= 0 || pendingSort.isEmpty)) {
+          val buffer = pending.poll().buffer
+          pendingSort += buffer
+          bytesLeftToFetch -= buffer.sizeInBytes
+        }
+        withResource(ArrayBuffer[ColumnarBatch]()) { batches =>
+          pendingSort.foreach { tmp =>
+            batches += tmp.getColumnarBatch()
+          }
+          if (batches.size == 1) {
+            // Single batch no need for a merge sort
+            GpuColumnVector.incRefCounts(batches.head)
+          } else {
+            sorter.mergeSort(batches.toArray, sortTime)
+          }
+        }
+      }
+      withResource(mergedBatch) { mergedBatch =>
+        // First we want figure out what is fully sorted from what is not
+        val sortSplitOffset = if (pending.isEmpty) {
+          // No need to split it
+          mergedBatch.numRows() - 1
+        } else {
+          // The data is only fully sorted if there is nothing pending that is smaller than it
+          // so get the nest smallest row that is pending
+          val cutoff = pending.peek().row
+          val builders = new GpuColumnarBatchBuilder(
+            TrampolineUtil.fromAttributes(sorter.projectedBatchSchema), 1, null)
+          converters.convert(cutoff, builders)
+          withResource(builders.build(1)) { cutoffCb =>
+            withResource(sorter.upperBound(mergedBatch, cutoffCb)) { result =>
+              withResource(result.copyToHost()) { hostResult =>
+                assert(hostResult.getRowCount == 1)
+                hostResult.getInt(0)
+              }
             }
           }
-        } finally {
-          nvtxRange.close()
         }
-      }
-
-      override def hasNext: Boolean = {
-        if (resultBatch.isDefined) {
-          true
-        } else {
-          resultBatch = loadNextBatch()
-          resultBatch.isDefined
+        withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
+          splitAfterSortAndSave(mergedTbl, sortSplitOffset)
         }
-      }
-
-      override def next(): ColumnarBatch = {
-        if (!hasNext) {
-          throw new NoSuchElementException
-        }
-        val ret = resultBatch.get
-        resultBatch = None
-        ret
       }
     }
   }
 
-  private def getOrderArgs(inputTbl: Table): Seq[Table.OrderByArg] = {
-    val orderByArgs = if (sortOrder.nonEmpty) {
-      sortOrder.zipWithIndex.map { case (order, index) =>
-        if (order.isAscending) {
-          Table.asc(index, order.nullOrdering == NullsFirst)
-        } else {
-          Table.desc(index, order.nullOrdering == NullsLast)
+  private final def concatOutput(): ColumnarBatch = {
+    // combine all the sorted data into a single batch
+    withResource(ArrayBuffer[Table]()) { tables =>
+      var totalBytes = 0L
+      while(!sorted.isEmpty &&
+          (totalBytes + sorted.peek().sizeInBytes) < targetSize) {
+        withResource(sorted.pop()) { tmp =>
+          sortedSize -= tmp.sizeInBytes
+          totalBytes += tmp.sizeInBytes
+          withResource(tmp.getColumnarBatch()) { batch =>
+            tables += GpuColumnVector.from(batch)
+          }
         }
       }
-    } else {
-      (0 until inputTbl.getNumberOfColumns).map { index =>
-        Table.asc(index, true)
+      val ret = if (tables.length == 1) {
+        // We cannot concat a single table
+        sorter.removeProjectedColumns(tables.head)
+      } else {
+        withResource(Table.concatenate(tables: _*)) { combined =>
+          sorter.removeProjectedColumns(combined)
+        }
       }
-    }
-    orderByArgs
-  }
-
-  private def updateMetricValues(inputTbl: Table, startTimestamp: Long,
-    batch: ColumnarBatch): Unit = {
-    if (shouldUpdateMetrics) {
-      totalSortTimeNanos += System.nanoTime - startTimestamp
-      outputBatchesMetric.get += 1
-      outputRowsMetric.get += batch.numRows
-      val devMemUsed = GpuColumnVector.getTotalDeviceMemoryUsed(inputTbl) +
-        GpuColumnVector.getTotalDeviceMemoryUsed(batch)
-      maxDeviceMemory = scala.math.max(maxDeviceMemory, devMemUsed)
+      outputBatches += 1
+      outputRows += ret.numRows()
+      ret
     }
   }
 
-  private def initNvtxRange = {
-    if (shouldUpdateMetrics) {
-      new NvtxWithMetrics("sort batch", NvtxColor.WHITE, totalTimeMetric.get)
-    } else {
-      new NvtxRange("sort batch", NvtxColor.WHITE)
+  override def next(): ColumnarBatch = {
+    if (sorter.projectedBatchSchema.isEmpty) {
+      // special case, no columns just rows
+      iter.next()
+    }
+    if (pending.isEmpty && sorted.isEmpty) {
+      firstPassReadBatches()
+    }
+    withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, totalTime)) { _ =>
+      mergeSortEnoughToOutput()
+      concatOutput()
     }
   }
 
-  private def doGpuSort(
-      tbl: Table,
-      orderByArgs: Seq[Table.OrderByArg],
-      types: Seq[DataType]): ColumnarBatch = {
-    var resultTbl: cudf.Table = null
-    try {
-      resultTbl = tbl.orderBy(orderByArgs: _*)
-      GpuColumnVector.from(resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
-    } finally {
-      if (resultTbl != null) {
-        resultTbl.close()
-      }
-    }
+  override def close(): Unit = {
+    sorted.forEach(_.close())
+    pending.close()
   }
 }

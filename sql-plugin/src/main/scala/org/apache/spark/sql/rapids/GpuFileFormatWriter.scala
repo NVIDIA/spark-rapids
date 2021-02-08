@@ -203,7 +203,9 @@ object GpuFileFormatWriter extends Logging {
         GpuSortExec(
           orderingExpr,
           global = false,
-          child = empty2NullPlan).executeColumnar()
+          child = empty2NullPlan,
+          // TODO this should change to be based on the config or just always be out of core sort
+          sortType = FullSortSingleBatch).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single

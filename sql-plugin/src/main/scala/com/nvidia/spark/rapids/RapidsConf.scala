@@ -431,6 +431,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val OUT_OF_CORE_SORT = conf("spark.rapids.sql.outOfCoreSort.enabled")
+      .doc("enable or disable out of core sorting for performance testing purposes")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   // METRICS
 
   val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
@@ -1037,6 +1043,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
+
+  lazy val outOfCoreSort: Boolean = get(OUT_OF_CORE_SORT)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
