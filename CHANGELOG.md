@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-01-12
+Generated on 2021-02-08
 
 ## Release 0.3
 
@@ -106,6 +106,7 @@ Generated on 2021-01-12
 ### PRs
 |||
 |:---|:---|
+|[#1496](https://github.com/NVIDIA/spark-rapids/pull/1496)|Update changelog for v0.3.0 release [skip ci]|
 |[#1473](https://github.com/NVIDIA/spark-rapids/pull/1473)|Update documentation for 0.3 release|
 |[#1446](https://github.com/NVIDIA/spark-rapids/pull/1446)|Update changelog for 0.3.0 release [skip ci]|
 |[#1439](https://github.com/NVIDIA/spark-rapids/pull/1439)|when AQE enabled we fail to fix up exchanges properly and EMR|
