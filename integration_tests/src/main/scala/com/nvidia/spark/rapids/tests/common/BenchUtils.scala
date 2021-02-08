@@ -479,8 +479,8 @@ object BenchUtils {
             writeGraph(w, a.children(i), b.children(i), childId);
 
           val style = (isGpuPlan(a), isGpuPlan(a.children(i))) match {
-            case (true, true) => s"color=\"$nvGreen\""
-            case (false, false) => s"color=\"$blue\""
+            case (true, true) => s"""color="$nvGreen""""
+            case (false, false) => s"""color="$blue""""
             case _ =>
               // show emphasis on transitions between CPU and GPU
               "color=red, style=bold"
