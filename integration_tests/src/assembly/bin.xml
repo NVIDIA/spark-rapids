@@ -54,9 +54,6 @@
         <fileSet>
             <directory>src/test/resources/</directory>
             <outputDirectory>integration_tests/src/test/resources</outputDirectory>
-            <includes>
-                <include>*</include>
-            </includes>
         </fileSet>
     </fileSets>
 </assembly>
