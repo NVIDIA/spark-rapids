@@ -21,6 +21,7 @@ from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
+from conftest import is_databricks_runtime
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
@@ -279,6 +280,8 @@ def test_window_aggs_for_rows_collect_list():
   Once native supports dropping nulls, will enable the tests above and remove this one.
 '''
 # SortExec does not support array type, so sort the result locally.
+@pytest.mark.xfail(condition=is_databricks_runtime(),
+        reason='https://github.com/NVIDIA/spark-rapids/issues/1680')
 @ignore_order(local=True)
 def test_window_aggs_for_rows_collect_list_no_nulls():
     assert_gpu_and_cpu_are_equal_sql(
