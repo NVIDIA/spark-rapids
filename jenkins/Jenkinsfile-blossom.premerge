@@ -129,7 +129,7 @@ pipeline {
                         docker.build(IMAGE_PREMERGE, "-f jenkins/Dockerfile-blossom.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $CACHE_IMAGE_NAME -t $IMAGE_PREMERGE .")
                         uploadDocker(IMAGE_PREMERGE)
 
-                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '12', '24Gi') // cpu: 12, memory: 24Gi
+                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     }
                 }
             }
