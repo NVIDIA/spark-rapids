@@ -508,11 +508,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
     if (!dt.isNestedType()) {
-//      if (dt.isDecimalType()) {
-//
-//      } else {
-        return getNonNestedRapidsType(colType).equals(dt);
-//      }
+      return getNonNestedRapidsType(colType).equals(dt);
     }
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;
@@ -777,7 +773,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   GpuColumnVector(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
     super(type);
-    // TODO need some checks to be sure everything matches
     this.cudfCv = cudfCv;
   }
 

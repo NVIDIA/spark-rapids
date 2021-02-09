@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.{File, OutputStream}
 import java.net.{URI, URISyntaxException}
 import java.nio.charset.StandardCharsets
-import java.util.{Collections, Locale}
+import java.util.{Collections, Locale, Optional}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
@@ -29,6 +29,7 @@ import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.math.max
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.DType.DTypeEnum
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
@@ -44,7 +45,12 @@ import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
-import org.apache.parquet.schema.{GroupType, MessageType, Types}
+import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, Type, Types}
+import scala.annotation.tailrec
+import scala.collection.JavaConverters._
+import scala.collection.immutable.HashSet
+import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, ListBuffer, Queue}
+import scala.math.max
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -61,7 +67,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DateType, Decimal, DecimalType, MapType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -653,23 +659,44 @@ abstract class FileParquetPartitionReaderBase(
     }
   }
 
+  def getList(fields: Seq[Type]): Seq[Int] = {
+    fields.filter(field => field.getOriginalType == OriginalType.DECIMAL || !field.isPrimitive())
+      .flatMap { field =>
+        if (!field.isPrimitive) {
+          getList(field.asGroupType().getFields.asScala)
+        } else {
+          Seq(field.asPrimitiveType().getDecimalMetadata.getPrecision)
+        }
+      }
+  }
+
   protected def evolveSchemaIfNeededAndClose(
       inputTable: Table,
       filePath: String,
       clippedSchema: MessageType): Table = {
 
-    if (readDataSchema.length > inputTable.getNumberOfColumns) {
+    if (readDataSchema.length > inputTable.getNumberOfColumns ||
+      !GpuColumnVector
+        .typeConversionAllowed(inputTable, readDataSchema.fields.map(f => f.dataType))) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
+      val precisionList =
+        scala.collection.mutable.Queue(getList(clippedGroups.getFields.asScala): _*)
       try {
         withResource(inputTable) { table =>
           var readAt = 0
           (0 until readDataSchema.length).foreach(writeAt => {
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
-              newColumns(writeAt) = table.getColumn(readAt).incRefCount()
+              val origCol = table.getColumn(readAt)
+              val col = convertDecimal32AsDecimal64(origCol, precisionList)
+                  .asInstanceOf[ColumnVector]
+              if (origCol == col) {
+                col.incRefCount()
+              }
+              newColumns(writeAt) = col
               readAt += 1
             } else {
               withResource(GpuScalar.from(null, readField.dataType)) { n =>
@@ -689,6 +716,81 @@ abstract class FileParquetPartitionReaderBase(
     } else {
       inputTable
     }
+  }
+
+  private def convertDecimal32AsDecimal64(cv: ColumnView, precisionList: Queue[Int]): ColumnView = {
+    val dt = cv.getType
+    if (!dt.isNestedType) {
+      val prec = precisionList.dequeue()
+      if (dt.getTypeId == DTypeEnum.DECIMAL64 &&
+        prec <= DType.DECIMAL32_MAX_PRECISION) {
+        // we want to handle the legacy case where Decimals are written as an array of bytes
+        // cudf reads them back as a 64-bit Decimal
+        cv.castTo(DecimalUtil.createCudfDecimal(prec, -dt.getScale()))
+      } else {
+        cv
+      }
+    } else if (dt == DType.LIST) {
+      // list column can only have upto 2 children
+      val viewHandles: Array[Long] = new Array[Long](cv.getNumChildren())
+      val buffers = new ListBuffer[DeviceMemoryBuffer]()
+      var hasNew = false
+      (0 until cv.getNumChildren()).foreach { i =>
+        val child = cv.getChildColumnView(i)
+        val newChild = convertDecimal32AsDecimal64(child, precisionList)
+        if (newChild != child) {
+          if (!hasNew) {
+            hasNew = true
+          }
+        }
+        viewHandles(i) = newChild.getNativeView()
+        buffers.appendAll(getBuffersToClose(newChild))
+      }
+      if (hasNew) {
+        // create a new list
+        val copy = cv.copyToColumnVector()
+        new ColumnVector(DType.LIST, copy.getRowCount,
+          Optional.of[java.lang.Long](copy.getNullCount),
+          copy.getData.asInstanceOf[DeviceMemoryBuffer],
+          copy.getValid.asInstanceOf[DeviceMemoryBuffer],
+          copy.getOffsets.asInstanceOf[DeviceMemoryBuffer],
+          buffers.asJava, viewHandles)
+      } else {
+        cv
+      }
+    } else if (dt == DType.STRUCT) {
+      var hasNew = false
+      val newColumns = new Array[ColumnView](cv.getNumChildren)
+      (0 until cv.getNumChildren).foreach { i =>
+        val child = cv.getChildColumnView(i)
+        val newChild = convertDecimal32AsDecimal64(child, precisionList)
+        if (newChild != child && !hasNew) {
+          hasNew = true
+        }
+        newColumns(i) = newChild
+      }
+      if (hasNew) {
+        // create a new struct column with the new ones
+        withResource(newColumns) { cols =>
+          ColumnVector.makeStruct(cols: _*)
+        }
+      } else {
+        cv
+      }
+    } else {
+      throw new IllegalArgumentException("Unknown data type")
+    }
+  }
+
+  private def getBuffersToClose(cv: ColumnView): Seq[DeviceMemoryBuffer] = {
+    val toClose = new ListBuffer[DeviceMemoryBuffer]
+    (0 until cv.getNumChildren).foreach { i =>
+      toClose.appendAll(getBuffersToClose(cv.getChildColumnView(i)))
+    }
+    toClose.append(cv.getData().asInstanceOf[DeviceMemoryBuffer])
+    toClose.append(cv.getOffsets().asInstanceOf[DeviceMemoryBuffer])
+    toClose.append(cv.getValid().asInstanceOf[DeviceMemoryBuffer])
+    toClose
   }
 
   protected def dumpParquetData(

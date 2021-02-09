@@ -88,7 +88,7 @@ class CastExprMeta[INPUT <: CastBase](
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
 }
 
-object GpuCast {
+object GpuCast extends Arm {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
 
@@ -125,6 +125,167 @@ object GpuCast {
     "required range"
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
+
+  /**
+   * Asserts that all values in a column are within the specific range.
+   *
+   * @param values ColumnVector to be performed with range check
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
+   * @throws IllegalStateException if any values in the column are not within the specified range
+   */
+  private def assertValuesInRange(values: ColumnVector,
+                                  minValue: => Scalar,
+                                  maxValue: => Scalar,
+                                  inclusiveMin: Boolean = true,
+                                  inclusiveMax: Boolean = true): Unit = {
+
+    def throwIfAny(cv: ColumnVector): Unit = {
+      withResource(cv) { cv =>
+        withResource(cv.any()) { isAny =>
+          if (isAny.getBoolean) {
+            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+      }
+    }
+
+    withResource(minValue) { minValue =>
+      throwIfAny(if (inclusiveMin) {
+        values.lessThan(minValue)
+      } else {
+        values.lessOrEqualTo(minValue)
+      })
+    }
+
+    withResource(maxValue) { maxValue =>
+      throwIfAny(if (inclusiveMax) {
+        values.greaterThan(maxValue)
+      } else {
+        values.greaterOrEqualTo(maxValue)
+      })
+    }
+  }
+
+  /**
+   * Detects outlier values of a column given with specific range, and replaces them with
+   * a inputted substitution value.
+   *
+   * @param values ColumnVector to be performed with range check
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param replaceValue Named parameter for function to create scalar to substitute outlier value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
+   */
+  private def replaceOutOfRangeValues(values: ColumnVector,
+                                      minValue: => Scalar,
+                                      maxValue: => Scalar,
+                                      replaceValue: => Scalar,
+                                      inclusiveMin: Boolean = true,
+                                      inclusiveMax: Boolean = true): ColumnVector = {
+
+    withResource(minValue) { minValue =>
+      withResource(maxValue) { maxValue =>
+        val minPredicate = if (inclusiveMin) {
+          values.lessThan(minValue)
+        } else {
+          values.lessOrEqualTo(minValue)
+        }
+        withResource(minPredicate) { minPredicate =>
+          val maxPredicate = if (inclusiveMax) {
+            values.greaterThan(maxValue)
+          } else {
+            values.greaterOrEqualTo(maxValue)
+          }
+          withResource(maxPredicate) { maxPredicate =>
+            withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
+              withResource(replaceValue) { nullScalar =>
+                rangePredicate.ifElse(nullScalar, values)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private[rapids] def castDecimalToDecimal(input: ColumnVector,
+     from: DecimalType,
+     to: DecimalType,
+     ansiMode: Boolean): ColumnVector = {
+
+    def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
+      to.scale - from.scale match {
+        case 0 =>
+          checkedInput.incRefCount()
+        case diff if diff > 0 =>
+          checkedInput.castTo(GpuColumnVector.getNonNestedRapidsType(to))
+        case _ =>
+          checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+      }
+    }
+
+    def castSamePrecisionDecimal(isFrom32Bit: Boolean, input: ColumnVector): ColumnVector = {
+      // Check whether there exists overflow during promoting precision or not.
+      // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
+      // cuDF binaryOperation on decimal will rescale right input to fit the left one.
+      // The rescaling may lead to overflow.
+      val (upperBound, lowerBound) = if (!isFrom32Bit) {
+        // The maximum value held by 64-bit Decimal
+        val absBound = math.pow(10,
+          DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong - 1
+        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+      } else {
+        // The maximum value held by 32-bit Decimal
+        val absBound = math.pow(10,
+          DType.DECIMAL32_MAX_PRECISION + from.scale - to.scale).toInt - 1
+        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+      }
+      val checkedInput = if (ansiMode) {
+        assertValuesInRange(input,
+          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
+          maxValue = Scalar.fromDecimal(upperBound.bigDecimal))
+        input.incRefCount()
+      } else {
+        replaceOutOfRangeValues(input,
+          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
+          maxValue = Scalar.fromDecimal(upperBound.bigDecimal),
+          replaceValue = Scalar.fromNull(input.getType))
+      }
+
+      withResource(checkedInput) { in =>
+        castCheckedDecimal(in)
+      }
+    }
+
+    // At first, we conduct overflow check onto input column.
+    // Then, we cast checked input into target decimal type.
+    if (to.scale <= from.scale && to.precision <= from.precision) {
+      // No need to promote precision unless target scale is larger than the source one,
+      // which indicates the cast is always valid when to.scale <= from.scale.
+      castCheckedDecimal(input)
+    } else {
+      val isFrom32Bit = DecimalType.is32BitDecimalType(from)
+      val isTo32Bit = DecimalType.is32BitDecimalType(to)
+      // check if we have to promote precision and the bit-representation i.e. 32-bit to 64-bit
+      if (isFrom32Bit && !isTo32Bit) {
+        val dt = DecimalUtil.createCudfDecimal(to.precision, to.scale)
+        withResource(input.castDecimal32ToDecimal64(dt)) { decimalInput =>
+          withResource(decimalInput.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))) {
+            newInput => castSamePrecisionDecimal(isFrom32Bit = false, newInput)
+          }
+        }
+      } else if ((isFrom32Bit && isTo32Bit) || (!isFrom32Bit && !isTo32Bit)) {
+        castSamePrecisionDecimal(isFrom32Bit, input)
+      } else {
+        throw new IllegalStateException("Casting from 64-bit to 32-bit Decimal should be " +
+          "allowed, we shouldn't be coming here")
+      }
+    }
+  }
 }
 
 /**
@@ -388,94 +549,13 @@ case class GpuCast(
         castFloatsToDecimal(input.getBase, dt)
 
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.getBase, from, to)
+        castDecimalToDecimal(input.getBase, from, to, ansiMode)
 
       case _ =>
         input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
     }
   }
 
-  /**
-   * Asserts that all values in a column are within the specific range.
-   *
-   * @param values ColumnVector to be performed with range check
-   * @param minValue Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue Named parameter for function to create Scalar representing range maximum value
-   * @param inclusiveMin Whether the min value is included in the valid range or not
-   * @param inclusiveMax Whether the max value is included in the valid range or not
-   * @throws IllegalStateException if any values in the column are not within the specified range
-   */
-  private def assertValuesInRange(values: ColumnVector,
-    minValue: => Scalar,
-    maxValue: => Scalar,
-    inclusiveMin: Boolean = true,
-    inclusiveMax: Boolean = true): Unit = {
-
-    def throwIfAny(cv: ColumnVector): Unit = {
-      withResource(cv) { cv =>
-        withResource(cv.any()) { isAny =>
-          if (isAny.getBoolean) {
-            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-          }
-        }
-      }
-    }
-
-    withResource(minValue) { minValue =>
-      throwIfAny(inclusiveMin match {
-        case true => values.lessThan(minValue)
-        case false => values.lessOrEqualTo(minValue)
-      })
-    }
-
-    withResource(maxValue) { maxValue =>
-      throwIfAny(inclusiveMax match {
-        case true => values.greaterThan(maxValue)
-        case false => values.greaterOrEqualTo(maxValue)
-      })
-    }
-  }
-
-  /**
-   * Detects outlier values of a column given with specific range, and replaces them with
-   * a inputted substitution value.
-   *
-   * @param values ColumnVector to be performed with range check
-   * @param minValue Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue Named parameter for function to create Scalar representing range maximum value
-   * @param replaceValue Named parameter for function to create scalar to substitute outlier value
-   * @param inclusiveMin Whether the min value is included in the valid range or not
-   * @param inclusiveMax Whether the max value is included in the valid range or not
-   */
-  private def replaceOutOfRangeValues(values: ColumnVector,
-    minValue: => Scalar,
-    maxValue: => Scalar,
-    replaceValue: => Scalar,
-    inclusiveMin: Boolean = true,
-    inclusiveMax: Boolean = true): ColumnVector = {
-
-    withResource(minValue) { minValue =>
-      withResource(maxValue) { maxValue =>
-        val minPredicate = inclusiveMin match {
-          case true => values.lessThan(minValue)
-          case false => values.lessOrEqualTo(minValue)
-        }
-        withResource(minPredicate) { minPredicate =>
-          val maxPredicate = inclusiveMax match {
-            case true => values.greaterThan(maxValue)
-            case false => values.greaterOrEqualTo(maxValue)
-          }
-          withResource(maxPredicate) { maxPredicate =>
-            withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
-              withResource(replaceValue) { nullScalar =>
-                rangePredicate.ifElse(nullScalar, values)
-              }
-            }
-          }
-        }
-      }
-    }
-  }
 
   private def castTimestampToString(input: GpuColumnVector): ColumnVector = {
     withResource(input.getBase.castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
@@ -1049,80 +1129,6 @@ case class GpuCast(
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
-      }
-    }
-  }
-
-  private def castDecimalToDecimal(input: ColumnVector,
-      from: DecimalType,
-      to: DecimalType): ColumnVector = {
-
-    def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
-      to.scale - from.scale match {
-        case 0 =>
-          checkedInput.incRefCount()
-        case diff if diff > 0 =>
-          checkedInput.castTo(GpuColumnVector.getNonNestedRapidsType(to))
-        case _ =>
-          checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)
-      }
-    }
-
-    def castSamePrecisionDecimal(isFrom32Bit: Boolean, input: ColumnVector): ColumnVector = {
-      // Check whether there exists overflow during promoting precision or not.
-      // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
-      // cuDF binaryOperation on decimal will rescale right input to fit the left one.
-      // The rescaling may lead to overflow.
-      val (upperBound, lowerBound) = if (!isFrom32Bit) {
-        // The maximum value held by 64-bit Decimal
-        val absBound = math.pow(10,
-          DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong - 1
-        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
-      } else {
-        // The maximum value held by 32-bit Decimal
-        val absBound = math.pow(10,
-          DType.DECIMAL32_MAX_PRECISION + from.scale - to.scale).toInt - 1
-        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
-      }
-      val checkedInput = if (ansiMode) {
-        assertValuesInRange(input,
-          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
-          maxValue = Scalar.fromDecimal(upperBound.bigDecimal))
-        input.incRefCount()
-      } else {
-        replaceOutOfRangeValues(input,
-          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
-          maxValue = Scalar.fromDecimal(upperBound.bigDecimal),
-          replaceValue = Scalar.fromNull(input.getType))
-      }
-
-      withResource(checkedInput) { in =>
-        castCheckedDecimal(in)
-      }
-    }
-
-    // At first, we conduct overflow check onto input column.
-    // Then, we cast checked input into target decimal type.
-    if (to.scale <= from.scale && to.precision <= from.precision) {
-      // No need to promote precision unless target scale is larger than the source one,
-      // which indicates the cast is always valid when to.scale <= from.scale.
-      castCheckedDecimal(input)
-    } else {
-      val isFrom32Bit = DecimalType.is32BitDecimalType(from)
-      val isTo32Bit = DecimalType.is32BitDecimalType(to)
-      // check if we have to promote precision and the bit-representation i.e. 32-bit to 64-bit
-      if (isFrom32Bit && !isTo32Bit) {
-        val dt = DecimalUtil.createCudfDecimal(to.precision, to.scale)
-        withResource(input.castDecimal32ToDecimal64(dt)) { decimalInput =>
-          withResource(decimalInput.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))) {
-            newInput => castSamePrecisionDecimal(false, newInput)
-          }
-        }
-      } else if ((isFrom32Bit && isTo32Bit) || (!isFrom32Bit && !isTo32Bit)) {
-        castSamePrecisionDecimal(isFrom32Bit, input)
-      } else {
-        throw new IllegalStateException("Casting from 64-bit to 32-bit Decimal should be " +
-          "allowed, we shouldn't be coming here")
       }
     }
   }

@@ -229,14 +229,18 @@ object RapidsPluginImplicits {
     }
   }
 
-  implicit class DecimalCastUtil(v: ColumnVector) extends Arm {
+  implicit class DecimalCastUtil(v: ColumnView) extends Arm {
 
     // cast 32-bit decimal to 64-bit decimal has to be done in 3 stages because of a bug in
     // cudf https://github.com/rapidsai/cudf/issues/7291.
     // This implicit method should be removed and cudf called directly after the bug is fixed
     def castDecimal32ToDecimal64(dt: DType): ColumnView = {
-      assert(v.getType.getTypeId == DType.DTypeEnum.DECIMAL32, "from should be 32-bit")
-      assert(dt.getTypeId == DType.DTypeEnum.DECIMAL64, "to should be 64-bit")
+      if (v.getType.getTypeId != DType.DTypeEnum.DECIMAL32) {
+        throw new IllegalArgumentException("from type should be 32-bit")
+      }
+      if (dt.getTypeId != DType.DTypeEnum.DECIMAL64) {
+        throw new IllegalArgumentException("to type should be 64-bit")
+      }
 
       withResource(v.logicalCastTo(DType.INT32)) { int32 =>
         withResource(int32.castTo(DType.INT64)) { int64 =>
