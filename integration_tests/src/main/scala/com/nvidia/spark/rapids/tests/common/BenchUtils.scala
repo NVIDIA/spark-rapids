@@ -154,7 +154,7 @@ object BenchUtils {
       filenameStub: String,
       iterations: Int,
       gcBetweenRuns: Boolean,
-      generateDotGraph: Boolean,
+      generateDotGraph: Boolean
   ): BenchmarkReport = {
 
     assert(iterations > 0)
