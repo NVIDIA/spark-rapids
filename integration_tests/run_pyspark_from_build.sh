@@ -89,7 +89,7 @@ else
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
 
-    export PYSP_TEST_spark_executor_extraJavaOptions="${PYSP_TEST_spark_driver_extraJavaOptions}"
+    export PYSP_TEST_spark_executor_extraJavaOptions="${PYSP_TEST_spark_driver_extraJavaOptions} ${JDBSTR}"
     export PYSP_TEST_spark_executor_extraClassPath="${PYSP_TEST_spark_driver_extraClassPath}"
 
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
@@ -115,6 +115,7 @@ else
     else
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
           --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
+          --conf spark.network.timeout=1h \
           $SPARK_SUBMIT_FLAGS \
           "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
