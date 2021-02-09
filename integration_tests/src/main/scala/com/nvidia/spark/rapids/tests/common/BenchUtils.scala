@@ -45,7 +45,8 @@ object BenchUtils {
       queryDescription: String,
       filenameStub: String,
       iterations: Int,
-      gcBetweenRuns: Boolean
+      gcBetweenRuns: Boolean,
+      generateDotGraph: Boolean = false
   ): BenchmarkReport = {
     runBench(
       spark,
@@ -54,7 +55,8 @@ object BenchUtils {
       queryDescription,
       filenameStub,
       iterations,
-      gcBetweenRuns)
+      gcBetweenRuns,
+      generateDotGraph)
   }
 
   /** Perform benchmark of writing results to CSV */
@@ -67,7 +69,8 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
+      writeOptions: Map[String, String] = Map.empty,
+      generateDotGraph: Boolean = false): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -75,7 +78,8 @@ object BenchUtils {
       queryDescription,
       filenameStub,
       iterations,
-      gcBetweenRuns)
+      gcBetweenRuns,
+      generateDotGraph)
   }
 
   /** Perform benchmark of writing results to ORC */
@@ -88,7 +92,8 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
+      writeOptions: Map[String, String] = Map.empty,
+      generateDotGraph: Boolean = false): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -96,7 +101,8 @@ object BenchUtils {
       queryDescription,
       filenameStub,
       iterations,
-      gcBetweenRuns)
+      gcBetweenRuns,
+      generateDotGraph)
   }
 
   /** Perform benchmark of writing results to Parquet */
@@ -109,7 +115,8 @@ object BenchUtils {
       gcBetweenRuns: Boolean,
       path: String,
       mode: SaveMode = SaveMode.Overwrite,
-      writeOptions: Map[String, String] = Map.empty): BenchmarkReport = {
+      writeOptions: Map[String, String] = Map.empty,
+      generateDotGraph: Boolean = false): BenchmarkReport = {
     runBench(
       spark,
       createDataFrame,
@@ -117,7 +124,8 @@ object BenchUtils {
       queryDescription,
       filenameStub,
       iterations,
-      gcBetweenRuns)
+      gcBetweenRuns,
+      generateDotGraph: Boolean)
   }
 
   /**
@@ -134,6 +142,9 @@ object BenchUtils {
    *                        to ensure that filenames are unique and that results are not
    *                        inadvertently overwritten.
    * @param iterations      The number of times to run the query.
+   * @param gcBetweenRuns   Boolean specifying whether to run System.gc() between runs
+   * @param generateDotGraph Boolean specifying whether to generate a query plan diagram in
+   *                         DOT format
    */
   def runBench(
       spark: SparkSession,
@@ -142,7 +153,8 @@ object BenchUtils {
       queryDescription: String,
       filenameStub: String,
       iterations: Int,
-      gcBetweenRuns: Boolean
+      gcBetweenRuns: Boolean,
+      generateDotGraph: Boolean
   ): BenchmarkReport = {
 
     assert(iterations > 0)
@@ -313,6 +325,17 @@ object BenchUtils {
 
     writeReport(report, filename)
 
+    if (generateDotGraph) {
+      queryPlansWithMetrics.headOption match {
+        case Some(plan) =>
+          val filename = s"$filenameStub-${queryStartTime.toEpochMilli}$suffix.dot"
+          println(s"$logPrefix Saving query plan diagram to $filename")
+          BenchUtils.generateDotGraph(plan, None, filename)
+        case _ =>
+          println(s"$logPrefix Cannot generate query plan diagram because there are no query plans")
+      }
+    }
+
     report
   }
 
@@ -402,6 +425,8 @@ object BenchUtils {
 
     var nextId = 1
 
+    def isGpuPlan(plan: SparkPlanNode): Boolean = plan.name.startsWith("Gpu")
+
     /** Recursively graph the operator nodes in the spark plan */
     def writeGraph(
         w: PrintWriter,
@@ -438,8 +463,12 @@ object BenchUtils {
           }
         }).mkString("\n")
 
+        val nvGreen = "#76b900"
+        val blue = "#0071c5"
+        val color = if (isGpuPlan(a)) { nvGreen } else { blue }
+
         w.println(
-          s"""node$id [shape=box,
+          s"""node$id [shape=box,color="$color",
              |label = "${a.name} #${a.id}\n
              |$metrics"];
              | /* ${a.description} */
@@ -448,8 +477,16 @@ object BenchUtils {
             val childId = nextId
             nextId += 1
             writeGraph(w, a.children(i), b.children(i), childId);
-            w.println(s"node$id -> node$childId;")
-          })
+
+          val style = (isGpuPlan(a), isGpuPlan(a.children(i))) match {
+            case (true, true) => s"""color="$nvGreen""""
+            case (false, false) => s"""color="$blue""""
+            case _ =>
+              // show emphasis on transitions between CPU and GPU
+              "color=red, style=bold"
+           }
+           w.println(s"node$childId -> node$id [$style];")
+        })
       } else {
         // plans have diverged - cannot recurse further
         w.println(
