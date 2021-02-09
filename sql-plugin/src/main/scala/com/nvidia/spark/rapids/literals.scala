@@ -65,7 +65,7 @@ object GpuScalar {
     case DType.TIMESTAMP_DAYS => v.getInt
     case DType.TIMESTAMP_MICROSECONDS => v.getLong
     case DType.STRING => v.getJavaString
-    case dt: DType if dt.isDecimalType && dt.isBackedByLong => Decimal(v.getBigDecimal)
+    case dt: DType if dt.isDecimalType => Decimal(v.getBigDecimal)
     case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
   }
 

@@ -21,8 +21,10 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
+import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -217,72 +219,84 @@ object GpuCast extends Arm {
      to: DecimalType,
      ansiMode: Boolean): ColumnVector = {
 
+    val isFrom32Bit = DecimalType.is32BitDecimalType(from)
+    val isTo32Bit = DecimalType.is32BitDecimalType(to)
+    val cudfDecimal = DecimalUtil.createCudfDecimal(to.precision, to.scale)
+
     def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
       to.scale - from.scale match {
         case 0 =>
-          checkedInput.incRefCount()
+          if (isFrom32Bit == isTo32Bit) {
+            checkedInput.incRefCount()
+          } else {
+            // the input is already checked, just cast it
+            checkedInput.castTo(cudfDecimal)
+          }
         case diff if diff > 0 =>
-          checkedInput.castTo(GpuColumnVector.getNonNestedRapidsType(to))
+          checkedInput.castTo(cudfDecimal)
         case _ =>
-          checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+          withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
+            rounded => rounded.castTo(cudfDecimal)
+          }
       }
     }
 
-    def castSamePrecisionDecimal(isFrom32Bit: Boolean, input: ColumnVector): ColumnVector = {
+    def checkForOverflow: ColumnVector = {
       // Check whether there exists overflow during promoting precision or not.
       // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
       // cuDF binaryOperation on decimal will rescale right input to fit the left one.
       // The rescaling may lead to overflow.
-      val (upperBound, lowerBound) = if (!isFrom32Bit) {
-        // The maximum value held by 64-bit Decimal
-        val absBound = math.pow(10,
-          DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong - 1
-        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+      // absBound is the maximum value that the input column can have before being casted
+      val prec = to.precision + from.scale - to.scale
+
+      // if target precision is greater than and smaller than the max/min precision that can
+      // be held in the input, go ahead with the cast without further checking
+      if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
+        !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS) {
+        return input.incRefCount()
+      }
+      val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
+        val absBound = math.pow(10, prec).toLong
+        (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
       } else {
-        // The maximum value held by 32-bit Decimal
-        val absBound = math.pow(10,
-          DType.DECIMAL32_MAX_PRECISION + from.scale - to.scale).toInt - 1
-        (BigDecimal(absBound, from.scale), BigDecimal(-absBound, from.scale))
+        val absBound = math.pow(10, prec).toInt
+        (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
       }
       val checkedInput = if (ansiMode) {
         assertValuesInRange(input,
-          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
-          maxValue = Scalar.fromDecimal(upperBound.bigDecimal))
+          minValue = minValueScalar,
+          maxValue = maxValueScalar,
+          inclusiveMin = false, inclusiveMax = false)
         input.incRefCount()
       } else {
         replaceOutOfRangeValues(input,
-          minValue = Scalar.fromDecimal(lowerBound.bigDecimal),
-          maxValue = Scalar.fromDecimal(upperBound.bigDecimal),
-          replaceValue = Scalar.fromNull(input.getType))
+          minValue = minValueScalar,
+          maxValue = maxValueScalar,
+          replaceValue = Scalar.fromNull(input.getType),
+        inclusiveMin = false, inclusiveMax = false)
       }
 
-      withResource(checkedInput) { in =>
-        castCheckedDecimal(in)
-      }
+      checkedInput
     }
 
-    // At first, we conduct overflow check onto input column.
-    // Then, we cast checked input into target decimal type.
-    if (to.scale <= from.scale && to.precision <= from.precision) {
-      // No need to promote precision unless target scale is larger than the source one,
-      // which indicates the cast is always valid when to.scale <= from.scale.
-      castCheckedDecimal(input)
-    } else {
-      val isFrom32Bit = DecimalType.is32BitDecimalType(from)
-      val isTo32Bit = DecimalType.is32BitDecimalType(to)
-      // check if we have to promote precision and the bit-representation i.e. 32-bit to 64-bit
-      if (isFrom32Bit && !isTo32Bit) {
-        val dt = DecimalUtil.createCudfDecimal(to.precision, to.scale)
-        withResource(input.castDecimal32ToDecimal64(dt)) { decimalInput =>
-          withResource(decimalInput.castTo(DecimalUtil.createCudfDecimal(to.precision, to.scale))) {
-            newInput => castSamePrecisionDecimal(isFrom32Bit = false, newInput)
-          }
+    if (to.scale <= from.scale) {
+      if (!isFrom32Bit && isTo32Bit) {
+        // check for overflow when 64bit => 32bit
+        withResource(checkForOverflow) { checkedInput =>
+          castCheckedDecimal(checkedInput)
         }
-      } else if ((isFrom32Bit && isTo32Bit) || (!isFrom32Bit && !isTo32Bit)) {
-        castSamePrecisionDecimal(isFrom32Bit, input)
       } else {
-        throw new IllegalStateException("Casting from 64-bit to 32-bit Decimal should be " +
-          "allowed, we shouldn't be coming here")
+        if (to.scale < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
+          throw new IllegalStateException(s"Negative scale is not allowed: ${to.scale}. " +
+            s"You can use spark.sql.legacy.allowNegativeScaleOfDecimal=true " +
+            s"to enable legacy mode to allow it.")
+        }
+        castCheckedDecimal(input)
+      }
+    } else {
+      //  from.scale > to.scale
+      withResource(checkForOverflow) { checkedInput =>
+        castCheckedDecimal(checkedInput)
       }
     }
   }

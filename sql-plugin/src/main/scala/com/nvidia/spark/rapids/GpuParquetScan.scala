@@ -675,9 +675,9 @@ abstract class FileParquetPartitionReaderBase(
       filePath: String,
       clippedSchema: MessageType): Table = {
 
-    if (readDataSchema.length > inputTable.getNumberOfColumns ||
-      !GpuColumnVector
-        .typeConversionAllowed(inputTable, readDataSchema.fields.map(f => f.dataType))) {
+    val typeCastingNeeded =
+      !GpuColumnVector.typeConversionAllowed(inputTable, readDataSchema.fields.map(f => f.dataType))
+    if (readDataSchema.length > inputTable.getNumberOfColumns || typeCastingNeeded) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
@@ -691,8 +691,11 @@ abstract class FileParquetPartitionReaderBase(
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
-              val col = convertDecimal32AsDecimal64(origCol, precisionList)
-                  .asInstanceOf[ColumnVector]
+              val col = if (typeCastingNeeded && precisionList.nonEmpty) {
+                convertDecimal64ToDecimal32(origCol, precisionList).asInstanceOf[ColumnVector]
+              } else {
+                origCol
+              }
               if (origCol == col) {
                 col.incRefCount()
               }
@@ -718,12 +721,11 @@ abstract class FileParquetPartitionReaderBase(
     }
   }
 
-  private def convertDecimal32AsDecimal64(cv: ColumnView, precisionList: Queue[Int]): ColumnView = {
+  private def convertDecimal64ToDecimal32(cv: ColumnView, precisionList: Queue[Int]): ColumnView = {
     val dt = cv.getType
     if (!dt.isNestedType) {
       val prec = precisionList.dequeue()
-      if (dt.getTypeId == DTypeEnum.DECIMAL64 &&
-        prec <= DType.DECIMAL32_MAX_PRECISION) {
+      if (dt.getTypeId == DTypeEnum.DECIMAL64 && prec <= DType.DECIMAL32_MAX_PRECISION) {
         // we want to handle the legacy case where Decimals are written as an array of bytes
         // cudf reads them back as a 64-bit Decimal
         cv.castTo(DecimalUtil.createCudfDecimal(prec, -dt.getScale()))
@@ -737,7 +739,7 @@ abstract class FileParquetPartitionReaderBase(
       var hasNew = false
       (0 until cv.getNumChildren()).foreach { i =>
         val child = cv.getChildColumnView(i)
-        val newChild = convertDecimal32AsDecimal64(child, precisionList)
+        val newChild = convertDecimal64ToDecimal32(child, precisionList)
         if (newChild != child) {
           if (!hasNew) {
             hasNew = true
@@ -763,7 +765,7 @@ abstract class FileParquetPartitionReaderBase(
       val newColumns = new Array[ColumnView](cv.getNumChildren)
       (0 until cv.getNumChildren).foreach { i =>
         val child = cv.getChildColumnView(i)
-        val newChild = convertDecimal32AsDecimal64(child, precisionList)
+        val newChild = convertDecimal64ToDecimal32(child, precisionList)
         if (newChild != child && !hasNew) {
           hasNew = true
         }
