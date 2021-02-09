@@ -114,6 +114,7 @@ machine or multiple machines for distributed setup.
 The first step is to [Install Spark](#install-spark), the 
 [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the 
 [GPU discovery script](#install-the-gpu-discovery-script) on all the nodes you want to use.
+See the note at the end of this section if using Spark 3.1.1 or above.
 After that choose one of the nodes to be your master node and start the master.  Note that the
 master process does **not** need a GPU to function properly.
 
@@ -175,6 +176,11 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.sql.shuffle.partitions=10 \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin
 ```
+
+Please note that if you are using Spark 3.1.1 or higher, the Rapids and CUDF jars do not need to be
+installed on all the nodes and the configs `spark.executor.extraClassPath` and `spark.driver.extraClassPath`
+can be replaced in the above command with `--jars ${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}`.
+This will automatically distribute the jars to the nodes for you.
 
 ## Running on YARN
 
