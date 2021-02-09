@@ -1,7 +1,7 @@
 ---
 layout: page
-title: Demos
-nav_order: 11
+title: Examples
+nav_order: 12
 ---
 # Demos
 

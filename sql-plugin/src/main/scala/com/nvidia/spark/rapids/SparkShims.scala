@@ -16,6 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.ByteBuffer
+
+import org.apache.arrow.vector.ValueVector
+import org.apache.hadoop.fs.Path
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -28,7 +33,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
@@ -165,4 +170,22 @@ trait SparkShims {
       explicitMetadata: Option[Metadata] = None): Alias
 
   def shouldIgnorePath(path: String): Boolean
+
+  def getArrowDataBuf(vec: ValueVector): ByteBuffer
+  def getArrowValidityBuf(vec: ValueVector): ByteBuffer
+  def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer
+
+  def replaceWithAlluxioPathIfNeeded(
+      conf: RapidsConf,
+      relation: HadoopFsRelation,
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]): FileIndex
+
+  def replacePartitionDirectoryFiles(
+    partitionDir: PartitionDirectory,
+    replaceFunc: Path => Path): Seq[Path]
+
+  def shouldFailDivByZero(): Boolean
+
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
 }

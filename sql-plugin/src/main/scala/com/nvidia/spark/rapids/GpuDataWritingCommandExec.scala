@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019,2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ trait GpuDataWritingCommand extends DataWritingCommand {
 
 case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPlan)
     extends UnaryExecNode with GpuExec {
-  override lazy val metrics: Map[String, SQLMetric] = cmd.metrics
+  override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
   private lazy val sideEffectResult: Seq[ColumnarBatch] =
     cmd.runColumnar(sqlContext.sparkSession, child)

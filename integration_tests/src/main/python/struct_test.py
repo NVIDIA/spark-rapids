@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from conftest import is_dataproc_runtime
 from data_gen import *
 from pyspark.sql.types import *
 
@@ -45,14 +46,14 @@ def test_make_struct(data_gen):
                                       StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'struct_table',
-        'select struct_table.a, struct_table.a.first as val from struct_table order by val')
+        'select struct_table.a, struct_table.uniq_int from struct_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct_2(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'struct_table',
-        'select struct_table.a, struct_table.a.second[0] as val from struct_table order by val')
+        'select struct_table.a, struct_table.uniq_int from struct_table order by uniq_int')

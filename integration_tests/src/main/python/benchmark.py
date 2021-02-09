@@ -100,7 +100,7 @@ def main():
     for config_name in args.configs:
         config = load_properties(config_name + ".properties")
         for query in args.query:
-            summary_file_prefix = "{}-{}-{}".format(args.benchmark, query, config_name)
+            summary_file_prefix = "{}-{}".format(args.benchmark, config_name)
 
             cmd = ['--conf spark.app.name="' + summary_file_prefix + '"']
             for k, v in config.items():

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -179,13 +179,29 @@ object GpuDivModLike {
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
+  lazy val failOnError: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero()
+
   override def nullable: Boolean = true
 
   import GpuDivModLike._
 
+  private def divByZeroError(): Nothing = {
+    throw new ArithmeticException("divide by zero")
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    withResource(replaceZeroWithNull(rhs)) { replaced =>
-      super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
+    if (failOnError) {
+      withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
+        if (rhs.getBase.contains(zeroScalar)) {
+          divByZeroError()
+        } else {
+          super.doColumnar(lhs, rhs)
+        }
+      }
+    } else {
+      withResource(replaceZeroWithNull(rhs)) { replaced =>
+        super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
+      }
     }
   }
 
@@ -197,12 +213,29 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     if (isScalarZero(rhs)) {
-      withResource(Scalar.fromNull(lhs.getBase.getType)) { nullScalar =>
-        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+      if (failOnError) {
+        divByZeroError()
+      } else {
+        withResource(Scalar.fromNull(outputType(lhs.getBase, rhs))) { nullScalar =>
+          ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+        }
       }
     } else {
       super.doColumnar(lhs, rhs)
     }
+  }
+}
+
+object GpuDivideUtil {
+  def decimalDataType(l: DecimalType, r: DecimalType): DecimalType = {
+    // Spark does
+    // Precision: p1 - s1 + s2 + max(6, s1 + p2 + 1)
+    // Scale: max(6, s1 + p2 + 1)
+    // But ... We need to do rounding at the end so we need one more than that.
+    val s = math.max(6, l.scale + r.precision + 1) + 1
+    val p = l.precision - l.scale + r.scale + s
+    // TODO once we have 128-bit decimal support we should match the config for precision loss.
+    DecimalType(math.min(p, 38), math.min(s, 38))
   }
 }
 
@@ -213,6 +246,15 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def symbol: String = "/"
 
   override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
+
+  override def outputTypeOverride: DType =
+    GpuColumnVector.getNonNestedRapidsType(dataType)
+
+  // Override the output type as a special case for decimal
+  override def dataType: DataType = (left.dataType, right.dataType) match {
+    case (l: DecimalType, r: DecimalType) =>  GpuDivideUtil.decimalDataType(l, r)
+    case _ => super.dataType
+  }
 }
 
 case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {

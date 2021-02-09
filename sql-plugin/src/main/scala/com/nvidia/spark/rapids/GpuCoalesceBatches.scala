@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -134,13 +133,13 @@ case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal {
 abstract class AbstractGpuCoalesceIterator(
     iter: Iterator[ColumnarBatch],
     goal: CoalesceGoal,
-    numInputRows: SQLMetric,
-    numInputBatches: SQLMetric,
-    numOutputRows: SQLMetric,
-    numOutputBatches: SQLMetric,
-    collectTime: SQLMetric,
-    concatTime: SQLMetric,
-    totalTime: SQLMetric,
+    numInputRows: GpuMetric,
+    numInputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    collectTime: GpuMetric,
+    concatTime: GpuMetric,
+    totalTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Arm with Logging {
   private var batchInitialized: Boolean = false
 
@@ -199,7 +198,7 @@ abstract class AbstractGpuCoalesceIterator(
   /**
    * Called first to initialize any state needed for a new batch to be created.
    */
-  def initNewBatch(): Unit
+  def initNewBatch(batch: ColumnarBatch): Unit
 
   /**
    * Called to add a new batch to the final output batch. The batch passed in will
@@ -235,7 +234,7 @@ abstract class AbstractGpuCoalesceIterator(
             i => cb.column(i).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize
           }.sum
         case g: GpuCompressedColumnVector =>
-          g.getBuffer.getLength
+          g.getTableBuffer.getLength
         case g =>
           throw new IllegalStateException(s"Unexpected column type: $g")
       }
@@ -331,7 +330,7 @@ abstract class AbstractGpuCoalesceIterator(
 
   private def addBatch(batch: ColumnarBatch): Unit = {
     if (!batchInitialized) {
-      initNewBatch()
+      initNewBatch(batch)
       batchInitialized = true
     }
     addBatchToConcat(batch)
@@ -343,14 +342,14 @@ class GpuCoalesceIteratorNoSpill(iter: Iterator[ColumnarBatch],
   schema: StructType,
   goal: CoalesceGoal,
   maxDecompressBatchMemory: Long,
-  numInputRows: SQLMetric,
-  numInputBatches: SQLMetric,
-  numOutputRows: SQLMetric,
-  numOutputBatches: SQLMetric,
-  collectTime: SQLMetric,
-  concatTime: SQLMetric,
-  totalTime: SQLMetric,
-  peakDevMemory: SQLMetric,
+  numInputRows: GpuMetric,
+  numInputBatches: GpuMetric,
+  numOutputRows: GpuMetric,
+  numOutputBatches: GpuMetric,
+  collectTime: GpuMetric,
+  concatTime: GpuMetric,
+  totalTime: GpuMetric,
+  peakDevMemory: GpuMetric,
   opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -372,7 +371,7 @@ class GpuCoalesceIteratorNoSpill(iter: Iterator[ColumnarBatch],
 
   private[this] var codec: TableCompressionCodec = _
 
-  override def initNewBatch(): Unit = {
+  override def initNewBatch(batch: ColumnarBatch): Unit = {
     batches.clear()
     compressedBatchIndices.clear()
   }
@@ -420,7 +419,7 @@ class GpuCoalesceIteratorNoSpill(iter: Iterator[ColumnarBatch],
         compressedVecs.foreach { cv =>
           val bufferMeta = cv.getTableMeta.bufferMeta
           // don't currently support switching codecs when partitioning
-          val buffer = cv.getBuffer.slice(0, cv.getBuffer.getLength)
+          val buffer = cv.getTableBuffer.slice(0, cv.getTableBuffer.getLength)
           decompressor.addBufferToDecompress(buffer, bufferMeta)
         }
         withResource(decompressor.finishAsync()) { outputBuffers =>
@@ -461,14 +460,14 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     schema: StructType,
     goal: CoalesceGoal,
     maxDecompressBatchMemory: Long,
-    numInputRows: SQLMetric,
-    numInputBatches: SQLMetric,
-    numOutputRows: SQLMetric,
-    numOutputBatches: SQLMetric,
-    collectTime: SQLMetric,
-    concatTime: SQLMetric,
-    totalTime: SQLMetric,
-    peakDevMemory: SQLMetric,
+    numInputRows: GpuMetric,
+    numInputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    collectTime: GpuMetric,
+    concatTime: GpuMetric,
+    totalTime: GpuMetric,
+    peakDevMemory: GpuMetric,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -485,7 +484,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   private val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
   private var maxDeviceMemory: Long = 0
 
-  override def initNewBatch(): Unit = {
+  override def initNewBatch(batch: ColumnarBatch): Unit = {
     batches.safeClose()
     batches.clear()
   }
@@ -514,7 +513,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
         withResource(codec.createBatchDecompressor(maxDecompressBatchMemory,
             Cuda.DEFAULT_STREAM)) { decompressor =>
           compressedVecs.foreach { cv =>
-            val buffer = cv.getBuffer
+            val buffer = cv.getTableBuffer
             val bufferMeta = cv.getTableMeta.bufferMeta
             // don't currently support switching codecs when partitioning
             buffer.incRefCount()
@@ -571,17 +570,19 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
 case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   extends UnaryExecNode with GpuExec {
+  import GpuMetric._
 
   private[this] val maxDecompressBatchMemory =
     new RapidsConf(child.conf).shuffleCompressionMaxBatchMemory
 
-  import GpuMetricNames._
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES),
-    "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
-    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
-    PEAK_DEVICE_MEMORY -> SQLMetrics.createSizeMetric(sparkContext, DESCRIPTION_PEAK_DEVICE_MEMORY)
+  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
+    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
   )
 
   override protected def doExecute(): RDD[InternalRow] = {
@@ -595,14 +596,14 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   override def outputBatching: CoalesceGoal = goal
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numInputRows = longMetric(NUM_INPUT_ROWS)
-    val numInputBatches = longMetric(NUM_INPUT_BATCHES)
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val collectTime = longMetric("collectTime")
-    val concatTime = longMetric("concatTime")
-    val totalTime = longMetric(TOTAL_TIME)
-    val peakDevMemory = longMetric("peakDevMemory")
+    val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
+    val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val collectTime = gpuLongMetric(COLLECT_TIME)
+    val concatTime = gpuLongMetric(CONCAT_TIME)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema

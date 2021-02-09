@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateMode, Complete, Final, Partial, PartialMerge}
+import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.util.TypeUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, LongType, NumericType, StructType}
+import org.apache.spark.sql.types._
 
 trait GpuAggregateFunction extends GpuExpression {
   // using the child reference, define the shape of the vectors sent to
@@ -387,7 +387,8 @@ case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate
     Aggregation.count(false).onColumn(inputs.head._2)
 }
 
-case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
+case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate
+    with GpuAggregateWindowFunction {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = AttributeReference("sum", DoubleType)()
   private lazy val cudfCount = AttributeReference("count", LongType)()
@@ -444,6 +445,10 @@ case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate {
   override def children: Seq[Expression] = child :: Nil
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForNumericExpr(child.dataType, "function gpu average")
+
+  override val windowInputProjection: Seq[Expression] = Seq(children.head)
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.mean().onColumn(inputs.head._2)
 }
 
 /*
@@ -528,4 +533,47 @@ abstract class GpuLastBase(child: Expression)
   // Last is not a deterministic function.
   override lazy val deterministic: Boolean = false
   override def toString: String = s"gpulast($child)${if (ignoreNulls) " ignore nulls"}"
+}
+
+/**
+ * Collects and returns a list of non-unique elements.
+ *
+ * The two 'offset' parameters are not used by GPU version, but are here for the compatibility
+ * with the CPU version and automated checks.
+ */
+case class GpuCollectList(child: Expression,
+                          mutableAggBufferOffset: Int = 0,
+                          inputAggBufferOffset: Int = 0)
+  extends GpuDeclarativeAggregate with GpuAggregateWindowFunction {
+
+  def this(child: Expression) = this(child, 0, 0)
+
+  // Both `CollectList` and `CollectSet` are non-deterministic since their results depend on the
+  // actual order of input rows.
+  override lazy val deterministic: Boolean = false
+
+  override def nullable: Boolean = false
+
+  override def prettyName: String = "collect_list"
+
+  override def dataType: DataType = ArrayType(child.dataType, false)
+
+  override def children: Seq[Expression] = child :: Nil
+
+  // WINDOW FUNCTION
+  override val windowInputProjection: Seq[Expression] = Seq(child)
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
+    Aggregation.collect().onColumn(inputs.head._2)
+
+  // Declarative aggregate. But for now 'CollectList' does not support it.
+  // The members as below should NOT be used yet, ensured by the
+  // "TypeCheck.aggNotGroupByOrReduction" when trying to override the expression.
+  private lazy val cudfList = AttributeReference("collect_list", dataType)()
+  // Make them lazy to avoid being initialized when creating a GpuCollectList.
+  override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException
+  override lazy val updateExpressions: Seq[Expression] = throw new UnsupportedOperationException
+  override lazy val mergeExpressions: Seq[GpuExpression] = throw new UnsupportedOperationException
+  override lazy val evaluateExpression: Expression = throw new UnsupportedOperationException
+  override val inputProjection: Seq[Expression] = Seq(child)
+  override def aggBufferAttributes: Seq[AttributeReference] = cudfList :: Nil
 }

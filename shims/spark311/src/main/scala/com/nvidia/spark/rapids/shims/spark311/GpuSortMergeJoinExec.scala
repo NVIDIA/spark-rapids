@@ -63,8 +63,7 @@ class GpuSortMergeJoinMeta(
             willNotWorkOnGpu(s"can't replace sortMergeJoin because one of the SortExec's before " +
               s"can't be replaced.")
           } else {
-            plan.shouldBeRemoved("removing SortExec as part replacing sortMergeJoin with " +
-              s"shuffleHashJoin")
+            plan.shouldBeRemoved("replacing sortMergeJoin with shuffleHashJoin")
           }
         }
       }

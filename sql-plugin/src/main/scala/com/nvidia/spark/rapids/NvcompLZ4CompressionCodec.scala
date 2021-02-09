@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,8 +36,7 @@ class NvcompLZ4CompressionCodec extends TableCompressionCodec with Arm {
       require(compressedSize <= oversizedBuffer.getLength, "compressed buffer overrun")
       val tableMeta = MetaUtils.buildTableMeta(
         Some(tableId),
-        contigTable.getTable,
-        tableBuffer,
+        contigTable,
         CodecType.NVCOMP_LZ4,
         compressedSize)
       CompressedTable(compressedSize, tableMeta, oversizedBuffer)
@@ -138,8 +137,7 @@ class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
         require(compressedSize <= buffer.getLength, "compressed buffer overrun")
         val meta = MetaUtils.buildTableMeta(
           None,
-          contigTable.getTable,
-          contigTable.getBuffer,
+          contigTable,
           CodecType.NVCOMP_LZ4,
           compressedSize)
         CompressedTable(compressedSize, meta, buffer)

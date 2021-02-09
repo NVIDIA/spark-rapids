@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ import copy
 from datetime import date, datetime, timedelta, timezone
 from decimal import *
 import math
+from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import pytest
@@ -23,6 +24,7 @@ import random
 from spark_session import is_tz_utc
 import sre_yield
 import struct
+from conftest import skip_unless_precommit_tests
 
 class DataGen:
     """Base class for data generation"""
@@ -221,13 +223,13 @@ class DecimalGen(DataGen):
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
-        self._scale = scale
-        self._precision = precision
+        self.scale = scale
+        self.precision = precision
         pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
         self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._precision) + ',' + str(self._scale) + ')'
+        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def start(self, rand):
         strs = self.base_strs
@@ -568,7 +570,7 @@ class NullGen(DataGen):
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
-        pytest.skip('The java system time zone is not set to UTC')
+        skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
@@ -639,6 +641,7 @@ def debug_df(df):
     """print out the contents of a dataframe for debugging."""
     print('COLLECTED\n{}'.format(df.collect()))
     df.explain()
+    df.printSchema()
     return df
 
 def print_params(data_gen):
@@ -801,7 +804,34 @@ map_gens_sample = [simple_string_to_string_map_gen,
 
 allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
 
+no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
+
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
            decimal_gen_64bit]
+
+
+# This function adds a new column named uniq_int where each row
+# has a new unique integer value. It just starts at 0 and
+# increments by 1 for each row.
+# This can be used to add a column to a dataframe if you need to
+# sort on a column with unique values.
+# This collects the data to driver though so can be expensive.
+def append_unique_int_col_to_df(spark, dataframe):
+    def append_unique_to_rows(rows):
+        new = []
+        for item in range(len(rows)):
+            row_dict = rows[item].asDict()
+            row_dict['uniq_int'] = item
+            new_row = Row(**row_dict)
+            new.append(new_row)
+        return new
+
+    collected = dataframe.collect()
+    if (len(collected) > INT_MAX):
+        raise RuntimeError('To many rows to add unique integer values starting from 0 to')
+    existing_schema = dataframe.schema
+    new_rows = append_unique_to_rows(collected)
+    new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
+    return spark.createDataFrame(new_rows, new_schema)

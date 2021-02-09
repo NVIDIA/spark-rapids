@@ -117,6 +117,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
     val doc: String, val isInternal: Boolean) {
 
   def get(conf: Map[String, String]): T
+  def get(conf: SQLConf): T
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -128,6 +129,15 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
+  }
+
+  override def get(conf: SQLConf): T = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      defaultValue
+    } else {
+      converter(tmp)
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -151,6 +161,15 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
+  }
+
+  override def get(conf: SQLConf): Option[T] = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      None
+    } else {
+      Some(rawConverter(tmp))
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -352,7 +371,9 @@ object RapidsConf {
     .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
       "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
       "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
-      "just passes through to CUDA memory allocation directly.")
+      "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
+      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), " +
+      "as \"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -409,6 +430,23 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  // METRICS
+
+  val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
+      .doc("GPU plans can produce a lot more metrics than CPU plans do. In very large " +
+          "queries this can sometimes result in going over the max result size limit for the " +
+          "driver. Supported values include " +
+          "DEBUG which will enable all metrics supported and typically only needs to be enabled " +
+          "when debugging the plugin. " +
+          "MODERATE which should output enough metrics to understand how long each part of the " +
+          "query is taking and how much data is going to each part of the query. " +
+          "ESSENTIAL which disables most metrics except those Apache Spark CPU plans will also " +
+          "report or their equivalents.")
+      .stringConf
+      .transform(_.toUpperCase(java.util.Locale.ROOT))
+      .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
+      .createWithDefault("MODERATE")
 
   // ENABLE/DISABLE PROCESSING
 
@@ -656,6 +694,14 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
+  val TEST_VALIDATE_EXECS_ONGPU = conf("spark.rapids.sql.test.validateExecsInGpuPlan")
+    .doc("Comma separate string of exec class names to validate they " +
+      "are GPU accelerated. Used for testing.")
+    .internal()
+    .stringConf
+    .toSequence
+    .createWithDefault(Nil)
+
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
@@ -777,6 +823,18 @@ object RapidsConf {
       .stringConf
       .createWithDefault("none")
 
+  // ALLUXIO CONFIGS
+
+  val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
+    .doc("List of paths to be replaced with corresponding alluxio scheme. Eg, when configure" +
+      "is set to \"s3:/foo->alluxio://0.1.2.3:19998/foo,gcs:/bar->alluxio://0.1.2.3:19998/bar\", " +
+      "which means:  " +
+      "     s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv and " +
+      "     gcs:/bar/b.csv will be replaced to alluxio://0.1.2.3:19998/bar/b.csv")
+    .stringConf
+    .toSequence
+    .createOptional
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -817,6 +875,14 @@ object RapidsConf {
       "queries and cluster configurations. In those cases the plugin will disable GPU support " +
       "for the entire query. Set this to false if you want to override that behavior, but use " +
       "with caution.")
+    .booleanConf
+    .createWithDefault(true)
+
+  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
+    .doc("Option to turn off using the optimized Arrow copy code when reading from " +
+      "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
+      "have to turn it off, but its convenient for testing.")
+    .internal()
     .booleanConf
     .createWithDefault(true)
 
@@ -964,6 +1030,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).asJava
 
+  lazy val metricsLevel: String = get(METRICS_LEVEL)
+
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
@@ -983,6 +1051,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
+
+  lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
@@ -1115,7 +1185,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
+  lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
+
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
+
+  lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
