@@ -56,38 +56,33 @@ def test_make_array(data_gen):
                 'array(a, b)',
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
+
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-def test_orderby_array(data_gen):
+def test_orderby_array_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select array_table.a, array_table.a[0] as first_val from array_table order by first_val',
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int',
         conf=allow_negative_scale_of_decimal_conf)
 
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
 def test_orderby_array_of_arrays(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-    lambda spark : unary_op_df(spark, data_gen),
+    lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select array_table.a, array_table.a[0][0] as first_val from array_table order by first_val')
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
 
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
                                                           ['child1', string_gen],
                                                           ['child2', float_gen]]))], ids=idfn)
 def test_orderby_array_of_structs(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select array_table.a, array_table.a[0].child0 as first_val from array_table order by first_val')
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,

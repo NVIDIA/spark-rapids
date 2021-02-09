@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -40,23 +40,64 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param id buffer ID to associate with this buffer
    * @param table cudf table based from the contiguous buffer
    * @param contigBuffer device memory buffer backing the table
+   * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
    */
   def addTable(
       id: RapidsBufferId,
       table: Table,
       contigBuffer: DeviceMemoryBuffer,
+      tableMeta: TableMeta,
       initialSpillPriority: Long): Unit = {
-    val buffer = uncompressedBufferFromTable(id, table, contigBuffer, initialSpillPriority)
+    val buffer = new RapidsDeviceMemoryBuffer(
+      id,
+      contigBuffer.getLength,
+      tableMeta,
+      Some(table),
+      contigBuffer,
+      initialSpillPriority)
     try {
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
-          s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
-          s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}, " +
-          s"meta_num_cols=${buffer.meta.columnMetasLength}]")
+          s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
       addBuffer(buffer)
     } catch {
       case t: Throwable =>
-        logError(s"Error while adding, freeing the buffer ${buffer.id}: ", t)
+        buffer.free()
+        throw t
+    }
+  }
+
+  /**
+   * Adds a contiguous table to the device storage. This does NOT take ownership of the
+   * contiguous table, so it is the responsibility of the caller to close it. The refcount of the
+   * underlying device buffer will be incremented so the contiguous table can be closed before
+   * this buffer is destroyed.
+   * @param id buffer ID to associate with this buffer
+   * @param contigTable contiguous table to track in storage
+   * @param initialSpillPriority starting spill priority value for the buffer
+   */
+  def addContiguousTable(
+      id: RapidsBufferId,
+      contigTable: ContiguousTable,
+      initialSpillPriority: Long): Unit = {
+    val contigBuffer = contigTable.getBuffer
+    val size = contigBuffer.getLength
+    val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
+    contigBuffer.incRefCount()
+    val buffer = new RapidsDeviceMemoryBuffer(
+      id,
+      size,
+      meta,
+      None,
+      contigBuffer,
+      initialSpillPriority)
+    try {
+      logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
+          s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
+          s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
+      addBuffer(buffer)
+    } catch {
+      case t: Throwable =>
         buffer.free()
         throw t
     }
@@ -74,44 +115,24 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long): Unit = {
-    logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
-        s"meta_id=${tableMeta.bufferMeta.id}, " +
-        s"meta_size=${tableMeta.bufferMeta.size}, " +
-        s"meta_num_cols=${tableMeta.columnMetasLength}]")
-
-    val table = if (tableMeta.bufferMeta.codecBufferDescrsLength() > 0) {
-      // buffer is compressed so there is no Table.
-      None
-    } else {
-      // hold the 1 ref count extra in buffer, it will be removed later in releaseResources
-      Some(MetaUtils.getTableFromMeta(buffer, tableMeta)) // REFCOUNT 1 + # COLS
-    }
-
     val buff = new RapidsDeviceMemoryBuffer(
       id,
       buffer.getLength,
       tableMeta,
-      table,
+      None,
       buffer,
       initialSpillPriority)
-
-    addBuffer(buff)
-  }
-
-  private def uncompressedBufferFromTable(
-      id: RapidsBufferId,
-      table: Table,
-      contigBuffer: DeviceMemoryBuffer,
-      initialSpillPriority: Long): RapidsDeviceMemoryBuffer = {
-    val size = contigBuffer.getLength
-    val meta = MetaUtils.buildTableMeta(id.tableId, table, contigBuffer)
-    new RapidsDeviceMemoryBuffer(
-      id,
-      size,
-      meta,
-      Some(table),
-      contigBuffer,
-      initialSpillPriority)
+    try {
+      logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
+          s"uncompressed=${buff.meta.bufferMeta.uncompressedSize}, " +
+          s"meta_id=${tableMeta.bufferMeta.id}, " +
+          s"meta_size=${tableMeta.bufferMeta.size}]")
+      addBuffer(buff)
+    } catch {
+      case t: Throwable =>
+        buff.free()
+        throw t
+    }
   }
 
   class RapidsDeviceMemoryBuffer(
@@ -121,8 +142,6 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long) extends RapidsBufferBase(id, size, meta, spillPriority) {
-    require(table.isDefined || meta.bufferMeta.codecBufferDescrsLength() > 0)
-
     override val storageTier: StorageTier = StorageTier.DEVICE
 
     override protected def releaseResources(): Unit = {
@@ -138,7 +157,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {
         //REFCOUNT ++ of all columns
-        GpuColumnVectorFromBuffer.from(table.get, contigBuffer, sparkTypes)
+        GpuColumnVectorFromBuffer.from(table.get, contigBuffer, meta, sparkTypes)
       } else {
         columnarBatchFromDeviceBuffer(contigBuffer, sparkTypes)
       }

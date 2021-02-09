@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark311
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
 import com.nvidia.spark.rapids.shims.spark301.GpuBroadcastExchangeExec
 
 import org.apache.spark.rdd.RDD
@@ -29,10 +28,8 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Dist
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, SerializeConcatHostBuffersDeserializeBatch}
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -98,12 +95,15 @@ case class GpuBroadcastHashJoinExec(
     condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+  import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
-    "streamTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "stream time"),
-    "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
-    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
+    STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -127,17 +127,17 @@ case class GpuBroadcastHashJoinExec(
     throw new IllegalStateException(
       "GpuBroadcastHashJoin does not support row-based processing")
 
-  override def doExecuteColumnar() : RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = longMetric(TOTAL_TIME)
-    val streamTime = longMetric("streamTime")
-    val joinTime = longMetric("joinTime")
-    val filterTime = longMetric("filterTime")
-    val joinOutputRows = longMetric("joinOutputRows")
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val streamTime = gpuLongMetric(STREAM_TIME)
+    val joinTime = gpuLongMetric(JOIN_TIME)
+    val filterTime = gpuLongMetric(FILTER_TIME)
+    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val broadcastRelation = broadcastExchange
-      .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
+        .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 

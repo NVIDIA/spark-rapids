@@ -702,9 +702,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
     long sum = 0;
     if (batch.numCols() > 0) {
-      if (batch.column(0) instanceof GpuCompressedColumnVector) {
-        GpuCompressedColumnVector gccv = (GpuCompressedColumnVector) batch.column(0);
-        sum += gccv.getBuffer().getLength();
+      if (batch.column(0) instanceof WithTableBuffer) {
+        WithTableBuffer wtb = (WithTableBuffer) batch.column(0);
+        sum += wtb.getTableBuffer().getLength();
       } else {
         for (int i = 0; i < batch.numCols(); i++) {
           sum += ((GpuColumnVector) batch.column(i)).getBase().getDeviceMemorySize();

@@ -20,7 +20,7 @@ package org.apache.spark.sql.rapids.execution
 import java.util
 
 import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{GpuMetricNames, NvtxWithMetrics, ShimLoader}
+import com.nvidia.spark.rapids.{GpuMetric, NvtxWithMetrics, ShimLoader}
 
 import org.apache.spark._
 import org.apache.spark.rdd.RDD
@@ -209,8 +209,8 @@ class ShuffledBatchRDD(
             .map(_._2).sum
         (reader, partitionSize)
     }
-    metrics(GpuMetricNames.NUM_PARTITIONS).add(1)
-    metrics(GpuMetricNames.PARTITION_SIZE).add(partitionSize)
+    metrics(GpuMetric.NUM_PARTITIONS).add(1)
+    metrics(GpuMetric.PARTITION_SIZE).add(partitionSize)
     reader.read().asInstanceOf[Iterator[Product2[Int, ColumnarBatch]]].map(_._2)
   }
 

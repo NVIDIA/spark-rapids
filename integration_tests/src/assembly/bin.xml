@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION.
+  Copyright (c) 2020-2021, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -31,6 +31,10 @@
             <outputDirectory>integration_tests</outputDirectory>
         </file>
         <file>
+            <source>run_pyspark_from_build.sh</source>
+            <outputDirectory>integration_tests</outputDirectory>
+        </file>
+        <file>
             <source>pytest.ini</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
@@ -46,6 +50,10 @@
             <includes>
                 <include>*.py</include>
             </includes>
+        </fileSet>
+        <fileSet>
+            <directory>src/test/resources/</directory>
+            <outputDirectory>integration_tests/src/test/resources</outputDirectory>
         </fileSet>
     </fileSets>
 </assembly>

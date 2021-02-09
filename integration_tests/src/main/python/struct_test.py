@@ -40,24 +40,20 @@ def test_make_struct(data_gen):
                 'named_struct("foo", b, "bar", 5, "end", a)'))
 
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
                                       StructGen([["first", short_gen], ["second", int_gen], ["third", long_gen]]),
                                       StructGen([["first", long_gen], ["second", long_gen], ["third", long_gen]]),
                                       StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'struct_table',
-        'select struct_table.a, struct_table.a.first as val from struct_table order by val')
+        'select struct_table.a, struct_table.uniq_int from struct_table order by uniq_int')
 
 
-@pytest.mark.xfail(condition=is_dataproc_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/1541')
 @pytest.mark.parametrize('data_gen', [StructGen([["first", string_gen], ["second", ArrayGen(string_gen)], ["third", ArrayGen(string_gen)]])], ids=idfn)
 def test_orderby_struct_2(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : unary_op_df(spark, data_gen),
+        lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'struct_table',
-        'select struct_table.a, struct_table.a.second[0] as val from struct_table order by val')
+        'select struct_table.a, struct_table.uniq_int from struct_table order by uniq_int')

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.apache.spark.TaskContext;
 import org.apache.spark.sql.catalyst.CudfUnsafeRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
-import org.apache.spark.sql.execution.metric.SQLMetric;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import scala.collection.Iterator;
@@ -50,19 +49,19 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected final long dataLength;
   protected final DType[] rapidsTypes;
   protected final DataType[] outputTypes;
-  protected final SQLMetric totalTime;
-  protected final SQLMetric numInputRows;
-  protected final SQLMetric numOutputRows;
-  protected final SQLMetric numOutputBatches;
+  protected final GpuMetric totalTime;
+  protected final GpuMetric numInputRows;
+  protected final GpuMetric numOutputRows;
+  protected final GpuMetric numOutputBatches;
 
   protected UnsafeRowToColumnarBatchIterator(
       Iterator<UnsafeRow> input,
       Attribute[] schema,
       CoalesceGoal goal,
-      SQLMetric totalTime,
-      SQLMetric numInputRows,
-      SQLMetric numOutputRows,
-      SQLMetric numOutputBatches) {
+      GpuMetric totalTime,
+      GpuMetric numInputRows,
+      GpuMetric numOutputRows,
+      GpuMetric numOutputBatches) {
     this.input = input;
     int sizePerRowEstimate = CudfUnsafeRow.getRowSizeEstimate(schema);
     numRowsEstimate = (int)Math.max(1,
