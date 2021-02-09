@@ -177,9 +177,10 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin
 ```
 
-Please note that if you are using Spark 3.1.1 or higher, the Rapids and CUDF jars do not need to be
-installed on all the nodes and the configs `spark.executor.extraClassPath` and `spark.driver.extraClassPath`
-can be replaced in the above command with `--jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}`.
+Please note that if you are using Spark 3.1.1 or higher, the RAPIDS Accelerator for Apache Spark plugin jar
+and CUDF jar do not need to be installed on all the nodes and the configs
+`spark.executor.extraClassPath` and `spark.driver.extraClassPath` can be replaced in the above
+command with `--jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}`.
 This will automatically distribute the jars to the nodes for you.
 
 ## Running on YARN
