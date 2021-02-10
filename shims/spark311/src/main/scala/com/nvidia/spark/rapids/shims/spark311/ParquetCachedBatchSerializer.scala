@@ -25,6 +25,7 @@ import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -318,7 +319,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         if (batch.numCols() == 0) {
           List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
-          withResource(putOnGpuIfNeeded(batch))(gpuCB => compressColumnarBatchWithParquet(gpuCB))
+          withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
+            compressColumnarBatchWithParquet(gpuCB, schema.toStructType)
+          }
         }
       })
     } else {
@@ -339,7 +342,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   val BYTES_ALLOWED_PER_BATCH: Long = _2GB - APPROX_PAR_META_DATA
 
   private[rapids] def compressColumnarBatchWithParquet(
-     gpuCB: ColumnarBatch): List[ParquetCachedBatch] = {
+     gpuCB: ColumnarBatch,
+     schema: StructType): List[ParquetCachedBatch]= {
     val estimatedRowSize = scala.Range(0, gpuCB.numCols()).map { idx =>
       gpuCB.column(idx).asInstanceOf[GpuColumnVector].getBase.getDeviceMemorySize / gpuCB.numRows()
     }.sum
@@ -367,7 +371,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
         for (i <- splitVectors.head.indices) {
           withResource(makeTableForIndex(i)) { table =>
-            buffers += ParquetCachedBatch(writeTableToCachedBatch(table))
+            buffers += ParquetCachedBatch(writeTableToCachedBatch(table, schema))
           }
         }
       } finally {
@@ -375,16 +379,23 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       }
     } else {
       withResource(GpuColumnVector.from(gpuCB)) { table =>
-        buffers += ParquetCachedBatch(writeTableToCachedBatch(table))
+        buffers += ParquetCachedBatch(writeTableToCachedBatch(table, schema))
       }
     }
 
     buffers.toList
   }
 
-  private def writeTableToCachedBatch(table: Table): ParquetBufferConsumer = {
+  private def writeTableToCachedBatch(
+     table: Table,
+     schema: StructType): ParquetBufferConsumer = {
     val buffer = new ParquetBufferConsumer(table.getRowCount.toInt)
-    withResource(Table.writeParquetChunked(ParquetWriterOptions.DEFAULT, buffer)) { writer =>
+    val options = ParquetWriterOptions.builder()
+      .withPrecisionValues(GpuParquetFileFormat.getFlatPrecisionList(schema):_*)
+      .withStatisticsFrequency(StatisticsFrequency.ROWGROUP)
+      .withTimestampInt96(false)
+      .build()
+    withResource(Table.writeParquetChunked(options, buffer)) { writer =>
       writer.write(table)
     }
     buffer
@@ -1249,7 +1260,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, converters)
       })
       columnarBatchRdd.flatMap(cb => {
-        withResource(cb)(cb => compressColumnarBatchWithParquet(cb))
+        withResource(cb)(cb => compressColumnarBatchWithParquet(cb, structSchema))
       })
     } else {
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, parquetSchema)
