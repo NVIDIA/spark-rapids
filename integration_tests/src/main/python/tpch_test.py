@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_databricks_runtime
 from marks import approximate_float, incompat, ignore_order, allow_non_gpu, allow_non_gpu_databricks
-from spark_session import with_spark_session, is_before_spark_310
+from spark_session import with_spark_session
 
 _base_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.hasNans': 'false',

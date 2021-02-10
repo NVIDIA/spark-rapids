@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from conftest import is_databricks_runtime
-from spark_session import with_spark_session, is_before_spark_310
+from spark_session import with_spark_session
 import pytest
 
 SELECT_SQL = [
