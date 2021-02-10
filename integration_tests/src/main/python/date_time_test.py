@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import incompat
 from pyspark.sql.types import *
-from spark_session import with_spark_session, is_before_spark_310
+from spark_session import with_spark_session
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
