@@ -29,7 +29,7 @@ import org.mockito.invocation.InvocationOnMock
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.ByteType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
