@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_310
+from spark_session import with_cpu_session, with_gpu_session
 import random
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for

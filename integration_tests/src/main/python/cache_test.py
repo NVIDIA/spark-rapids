@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
 from datetime import date
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_spark_300, is_before_spark_310
+from spark_session import with_cpu_session, with_gpu_session, is_spark_300
 from join_test import create_df
 from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
