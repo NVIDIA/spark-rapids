@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session, is_before_spark_310, is_spark_300
+from spark_session import with_cpu_session, with_spark_session, is_spark_300
 
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
@@ -153,9 +153,6 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list):
             lambda spark : spark.read.option('mergeSchema', 'true').orc(data_path),
             conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
 
-@pytest.mark.xfail(
-    condition=not(is_before_spark_310()),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/576')
 def test_input_meta(spark_tmp_path):
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
     with_cpu_session(
