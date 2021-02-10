@@ -52,17 +52,6 @@ double_special_cases = [
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]), pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]), BooleanGen(), DateGen(), TimestampGen()]
 
-all_gen_filters = [(StringGen(), "rlike(a, '^(?=.{1,5}$).*')"),
-                            (ByteGen(), "a < 100"),
-                            (ShortGen(), "a < 100"),
-                            (IntegerGen(), "a < 1000"),
-                            (LongGen(), "a < 1000"),
-                            (BooleanGen(), "a == false"),
-                            (DateGen(), "a > '1/21/2012'"),
-                            (TimestampGen(), "a > '1/21/2012'"),
-                            pytest.param((FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), "a < 1000"), marks=[incompat]),
-                            pytest.param((DoubleGen(special_cases=double_special_cases),"a < 1000"), marks=[incompat])]
-
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
@@ -79,7 +68,7 @@ def test_cache_join(data_gen, join_type, enableVectorizedConf):
 
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
-@pytest.mark.parametrize('data_gen', all_gen_filters, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 # We are OK running everything on CPU until we complete 'https://github.com/NVIDIA/spark-rapids/issues/360'
@@ -88,7 +77,7 @@ def test_cache_join(data_gen, join_type, enableVectorizedConf):
 @allow_non_gpu(any=True)
 @ignore_order
 def test_cached_join_filter(data_gen, join_type, enableVectorizedConf):
-    data, filter = data_gen
+    data = data_gen
     if is_spark_300() and data.data_type == BooleanType():
         pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
 
@@ -96,7 +85,7 @@ def test_cached_join_filter(data_gen, join_type, enableVectorizedConf):
         left, right = create_df(spark, data, 500, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count() #populates the cache
-        return cached.filter(filter)
+        return cached.filter("a is not null")
 
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
