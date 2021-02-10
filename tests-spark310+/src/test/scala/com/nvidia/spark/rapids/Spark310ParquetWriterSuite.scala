@@ -146,7 +146,8 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
       val cb = new ColumnarBatch(gpuCols, ROWS)
       whenSplitCalled(cb)
       val ser = new ParquetCachedBatchSerializer
-      ser.compressColumnarBatchWithParquet(cb)
+      val dummySchema = new StructType(new StructField("empty", BooleanType, false))
+      ser.compressColumnarBatchWithParquet(cb, dummySchema)
       theTableMock.close()
     }
   }
