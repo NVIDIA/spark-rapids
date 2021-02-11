@@ -61,3 +61,33 @@ def test_orderby_struct_2(data_gen):
         lambda spark : unary_op_df(spark, data_gen),
         'struct_table',
         'select struct_table.a, struct_table.a.second[0] as val from struct_table order by val')
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", long_gen], ["second", ArrayGen(short_gen)], ["third", ArrayGen(byte_gen)], ["fourth", boolean_gen]])], ids=idfn)
+def test_cast_struct_to_string(data_gen):
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast(string_type)))
+
+    # assert_gpu_and_cpu_are_equal_sql(
+    #     lambda spark : unary_op_df(spark, data_gen),
+    #     'struct_table',
+    #     'select CAST(struct_table.a as STRING)')
+
+    # assert_gpu_and_cpu_are_equal_sql(
+    #     lambda spark : unary_op_df(spark, data_gen),
+    #     'struct_table',
+    #     'select struct_table.a, struct_table.a.second[0] as val from struct_table order by val')
+        # .select(
+        #     f.col('a').cast(data_type)
+        # ),
+        # unary_op_df(spark, data_gen),
+        # 'struct_table',
+        # 'select struct_table.a, struct_table.a.second[0] as val from struct_table order by val')
+        # binary_op_df(spark, data_gen).select(
+        #         f.col('a') + f.lit(100).cast(data_type),
+        #         f.lit(-12).cast(data_type) + f.col('b'),
+        #         f.lit(None).cast(data_type) + f.col('a'),
+        #         f.col('b') + f.lit(None).cast(data_type),
+        #         f.col('a') + f.col('b')),
+    # )

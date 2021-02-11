@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -239,6 +241,8 @@ case class GpuCast(
         }
       case (TimestampType, StringType) =>
         castTimestampToString(input)
+      case (StructType(fields), StringType) =>
+        castStructToString(input)
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
@@ -482,6 +486,101 @@ case class GpuCast(
         cv.stringReplaceWithBackrefs(GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3")
       }
     }
+  }
+
+  private def castStructToString(input: GpuColumnVector): ColumnVector = {
+    // for each column, cast to string
+    val inputBase: ColumnVector = input.getBase()
+
+    var nullStrScalar: Scalar = null
+    var emptyStrScalar: Scalar = null
+    var separatorColumn: ColumnVector = null
+    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
+
+    try {
+      withResource(GpuScalar.from(", ", StringType)) { separatorScalar =>
+        separatorColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
+      }
+      withResource(inputBase.getChildColumnView(0)) { childView =>
+        columns += childView.asStrings()
+      }
+      for(childIndex <- 1 to inputBase.getNumChildren()) {
+        withResource(inputBase.getChildColumnView(childIndex)) { childView =>
+          columns += separatorColumn
+          columns += childView.asStrings()
+        }
+        // val castedChild: ColumnVector = childView.asStrings()
+        // // val castedChild2: ColumnVector = childView.castTo(StringType)
+        // // val childVector: ColumnVector = new ColumnVector()
+        // // val childGpuVector: GpuColumnVector = GpuColumnVector.from(childVector, StringType)
+        // // val castedChild: ColumnVector = doColumnar(childGpuVector)
+        // columns += separatorColumn
+        // columns += castedChild
+        // val childView: ColumnView = inputBase.getChildColumnView(childIndex)
+      }
+      nullStrScalar = GpuScalar.from(null, StringType)
+      emptyStrScalar = GpuScalar.from("", StringType)
+      ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
+        columns.toArray[ColumnView])
+    } finally {
+      // columns.close()
+      if (separatorColumn != null) { // potentially already closed
+        separatorColumn.close()
+      }
+      if (emptyStrScalar != null) {
+        emptyStrScalar.close()
+      }
+      if (nullStrScalar != null) {
+        nullStrScalar.close()
+      }
+    }
+    // val separatorScalar: Scalar = 
+    // separatorColumn = 
+    // columns += .asStrings()
+    
+
+
+    // // for (num_children) {
+    //   input.getChildColumn(childIndex)
+    //   column += gpuCast.doColumnar(child)
+    // // }
+    
+    // for (int childIndex = 0; childIndex < numChildren; childIndex++) {
+    //   try (ColumnView tmp = cv.getChildColumnView(childIndex)) {
+    //     StructField entry = ((StructType) colType).apply(childIndex);
+    //     if (!typeConversionAllowed(tmp, entry.dataType())) {
+    //       return false;
+    //     }
+    //   }
+    // }
+    // return input.getBase()
+
+    // create table with separators
+    // concatenate with ", " separator
+    // add in brackets
+
+    // //from Gpu compressed column vector
+    // ColumnMeta columnMeta
+    // else if (colType instanceof StructType) {
+    //       if (!(dt.equals(DType.STRUCT))) {
+    //         return false;
+    //       }
+    //       StructType st = (StructType) colType;
+    //       final int numChildren = columnMeta.childrenLength();
+    //       if (numChildren != st.size()) {
+    //         return false;
+    //       }
+    //       for (int childIndex = 0; childIndex < numChildren; childIndex++) {
+    //         ColumnMeta tmp = columnMeta.children(childIndex);
+    //         StructField entry = ((StructType) colType).apply(childIndex);
+    //         if (!typeConversionAllowed(tmp, entry.dataType())) {
+    //           return false;
+    //         }
+    //       }
+    //       return true;
+
+    //     withResource(input.getBase.castTo(DType.))
+    //   }
   }
 
   private def castFloatingTypeToString(input: GpuColumnVector): ColumnVector = {

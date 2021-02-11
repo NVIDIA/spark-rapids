@@ -766,7 +766,7 @@ class CastChecks extends ExprChecks {
   val mapChecks: TypeSig = none
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
-  val structChecks: TypeSig = none
+  val structChecks: TypeSig = STRING + STRUCT.nested(all)
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
 
   val udtChecks: TypeSig = none
