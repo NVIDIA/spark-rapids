@@ -51,7 +51,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           .orderBy("df2.more_strings_2")
 
       df.collect()
-      println(df.queryExecution.executedPlan)
 
       val cpuSort = ShimLoader.getSparkShims
           .findOperators(df.queryExecution.executedPlan,
@@ -92,8 +91,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
       val df = df1.join(df2, col("df1.more_strings_1").equalTo(col("df2.more_strings_2")))
           .orderBy("df2.more_strings_2")
 
-     df.collect()
-      println(df.queryExecution.executedPlan)
+      df.collect()
 
       val cpuSort = ShimLoader.getSparkShims
           .findOperators(df.queryExecution.executedPlan,
@@ -105,8 +103,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
 
       assert(cpuSort.nonEmpty)
       assert(gpuSort.isEmpty)
-
-      //getCannotBeReplacedReasons(df.queryExecution.executedPlan).foreach(println)
 
       df
     }, conf)
