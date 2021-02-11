@@ -494,6 +494,21 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
+  var cpuCost: Double = 0
+  var gpuCost: Double = 0
+
+  def setCpuCost(cost: Double): Unit = {
+    this.cpuCost = cost
+  }
+
+  def getCpuCost(): Double = cpuCost
+
+  def setGpuCost(cost: Double): Unit = {
+    this.gpuCost = cost
+  }
+
+  def getGpuCost(): Double = gpuCost
+
   override def convertToCpu(): SparkPlan = {
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
   }

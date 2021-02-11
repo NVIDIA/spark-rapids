@@ -878,7 +878,45 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
+  val CBO_ENABLED = conf("spark.rapids.sql.cbo.enabled")
+      .internal()
+      .doc("Enable cost-based optimizer that will attempt to avoid " +
+          "transitions to GPU for operations that will not result in improved performance " +
+          "over CPU")
+      .booleanConf
+      .createWithDefault(false)
+
+  val CBO_DEBUG_ENABLED = conf("spark.rapids.sql.cbo.debug")
+      .internal()
+      .doc("Enable debug logging for CBO")
+      .booleanConf
+      .createWithDefault(false)
+
+  val CBO_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.cbo.defaultExecGpuCost")
+      .internal()
+      .doc("Default relative GPU cost of running an operator on the GPU")
+      .doubleConf
+      .createWithDefault(0.8)
+
+  val CBO_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.cbo.defaultExprGpuCost")
+      .internal()
+      .doc("Default relative GPU cost of running an expression on the GPU")
+      .doubleConf
+      .createWithDefault(0.8)
+
+  val CBO_DEFAULT_TRANSITION_TO_CPU_COST = conf("spark.rapids.sql.cbo.defaultTransitionToCpuCost")
+      .internal()
+      .doc("Default cost of transitioning from GPU to CPU")
+      .doubleConf
+      .createWithDefault(0.15)
+
+  val CBO_DEFAULT_TRANSITION_TO_GPU_COST = conf("spark.rapids.sql.cbo.defaultTransitionToGpuCost")
+      .internal()
+      .doc("Default cost of transitioning from CPU to GPU")
+      .doubleConf
+      .createWithDefault(0.15)
+
+  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptmizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
       "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
       "have to turn it off, but its convenient for testing.")
@@ -1189,10 +1227,39 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
+  lazy val cboEnabled: Boolean = get(CBO_ENABLED)
+
+  lazy val cboDebugEnabled: Boolean = get(CBO_DEBUG_ENABLED)
+
+  lazy val cboDefaultOperatorCost: Double = get(CBO_DEFAULT_GPU_OPERATOR_COST)
+
+  lazy val cboDefaultExpressionCost: Double = get(CBO_DEFAULT_GPU_EXPRESSION_COST)
+
+  lazy val cboDefaultTransitionToCpu: Double = get(CBO_DEFAULT_TRANSITION_TO_CPU_COST)
+
+  lazy val cboDefaultTransitionToGpu: Double = get(CBO_DEFAULT_TRANSITION_TO_GPU_COST)
+
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
     conf.get(key).map(toBoolean(_, key)).getOrElse(default)
   }
+
+  /**
+   * Get the GPU cost of an expression, for use in the cost-based optimizer.
+   */
+  def getExpressionCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.cbo.expr.$operatorName"
+    conf.get(key).map(toDouble(_, key))
+  }
+
+  /**
+   * Get the GPU cost of an operator, for use in the cost-based optimizer.
+   */
+  def getOperatorCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.cbo.exec.$operatorName"
+    conf.get(key).map(toDouble(_, key))
+  }
+
 }

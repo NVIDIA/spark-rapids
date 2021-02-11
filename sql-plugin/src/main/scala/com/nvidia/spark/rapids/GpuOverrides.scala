@@ -2752,7 +2752,10 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan): SparkPlan = {
+
+  // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
+  // gets called once for each query stage (where a query stage is an `Exchange`).
+  override def apply(plan: SparkPlan) :SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
@@ -2780,6 +2783,20 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       }
       plan
     } else {
+      if (conf.cboEnabled) {
+        // we need to run these rules both before and after CBO because the cost
+        // is impacted by forcing operators onto CPU due to other rules that we have
+        wrap.runAfterTagRules()
+
+        val optimizer = new CostBasedOptimizer(conf)
+        optimizer.optimize(
+          plan = wrap,
+          finalOperator = true)
+
+        // show final cost breakdown - is there benefit from running this on a GPU?
+        val (cpuCost, gpuCost) = optimizer.calculateFinalCost(plan = wrap, finalOperator = true)
+        logDebug(s"CPU cost: $cpuCost, GPU cost: $gpuCost")
+      }
       wrap.runAfterTagRules()
       if (!exp.equalsIgnoreCase("NONE")) {
         wrap.tagForExplain()
