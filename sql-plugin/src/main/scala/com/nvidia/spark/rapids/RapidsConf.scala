@@ -117,6 +117,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
     val doc: String, val isInternal: Boolean) {
 
   def get(conf: Map[String, String]): T
+  def get(conf: SQLConf): T
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -128,6 +129,15 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
+  }
+
+  override def get(conf: SQLConf): T = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      defaultValue
+    } else {
+      converter(tmp)
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -151,6 +161,15 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
+  }
+
+  override def get(conf: SQLConf): Option[T] = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      None
+    } else {
+      Some(rawConverter(tmp))
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -352,7 +371,9 @@ object RapidsConf {
     .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
       "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
       "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
-      "just passes through to CUDA memory allocation directly.")
+      "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
+      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), " +
+      "as \"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -409,6 +430,23 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  // METRICS
+
+  val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
+      .doc("GPU plans can produce a lot more metrics than CPU plans do. In very large " +
+          "queries this can sometimes result in going over the max result size limit for the " +
+          "driver. Supported values include " +
+          "DEBUG which will enable all metrics supported and typically only needs to be enabled " +
+          "when debugging the plugin. " +
+          "MODERATE which should output enough metrics to understand how long each part of the " +
+          "query is taking and how much data is going to each part of the query. " +
+          "ESSENTIAL which disables most metrics except those Apache Spark CPU plans will also " +
+          "report or their equivalents.")
+      .stringConf
+      .transform(_.toUpperCase(java.util.Locale.ROOT))
+      .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
+      .createWithDefault("MODERATE")
 
   // ENABLE/DISABLE PROCESSING
 
@@ -651,6 +689,14 @@ object RapidsConf {
   val TEST_ALLOWED_NONGPU = conf("spark.rapids.sql.test.allowedNonGpu")
     .doc("Comma separate string of exec or expression class names that are allowed " +
       "to not be GPU accelerated for testing.")
+    .internal()
+    .stringConf
+    .toSequence
+    .createWithDefault(Nil)
+
+  val TEST_VALIDATE_EXECS_ONGPU = conf("spark.rapids.sql.test.validateExecsInGpuPlan")
+    .doc("Comma separate string of exec class names to validate they " +
+      "are GPU accelerated. Used for testing.")
     .internal()
     .stringConf
     .toSequence
@@ -984,6 +1030,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).asJava
 
+  lazy val metricsLevel: String = get(METRICS_LEVEL)
+
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
@@ -1003,6 +1051,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
+
+  lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 

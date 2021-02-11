@@ -33,7 +33,7 @@ case class GpuCheckOverflow(child: Expression,
     val expectedCudfScale = -dataType.scale
     if (foundCudfScale == expectedCudfScale) {
       base.incRefCount()
-    } else if (foundCudfScale < expectedCudfScale) {
+    } else if (-foundCudfScale < -expectedCudfScale) {
       base.castTo(DType.create(DType.DTypeEnum.DECIMAL64, expectedCudfScale))
     } else {
       // need to round off

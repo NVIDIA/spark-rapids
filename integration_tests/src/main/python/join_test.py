@@ -170,11 +170,7 @@ _mixed_df2_with_nulls = [('a', RepeatSeqGen(LongGen(nullable=(True, 20.0)), leng
                          ('b', StringGen()), ('c', BooleanGen())]
 
 @ignore_order
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti',
-    pytest.param('FullOuter', marks=pytest.mark.xfail(
-        condition=not(is_before_spark_310()),
-        reason='https://github.com/NVIDIA/spark-rapids/issues/575')),
-    'Cross'], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'FullOuter', 'Cross'], ids=idfn)
 def test_broadcast_join_mixed(join_type):
     def do_join(spark):
         left = gen_df(spark, _mixed_df1_with_nulls, length=500)

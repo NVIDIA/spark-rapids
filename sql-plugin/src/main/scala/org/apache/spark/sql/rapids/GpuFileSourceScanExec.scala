@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuDataSourceRDD, GpuExec, GpuMetricNames, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuDataSourceRDD, GpuExec, GpuMetric, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.{ExecSubqueryExpression, ExplainUtils, Fil
 import org.apache.spark.sql.execution.datasources.{BucketingUtils, DataSourceStrategy, DataSourceUtils, FileFormat, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -67,6 +67,7 @@ case class GpuFileSourceScanExec(
     tableIdentifier: Option[TableIdentifier],
     queryUsesInputFile: Boolean = false)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
+  import GpuMetric._
 
   private val isParquetFileFormat: Boolean = relation.fileFormat.isInstanceOf[ParquetFileFormat]
   private val isPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled || !isParquetFileFormat
@@ -295,7 +296,7 @@ case class GpuFileSourceScanExec(
           options = relation.options,
           hadoopConf =
             relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
-          metrics = metrics)
+          metrics = allMetrics)
         Some(reader)
       } else {
         None
@@ -318,10 +319,10 @@ case class GpuFileSourceScanExec(
 
   /** SQL metrics generated only for scans using dynamic partition pruning. */
   private lazy val staticMetrics = if (partitionFilters.filter(isDynamicPruningFilter).nonEmpty) {
-    Map("staticFilesNum" -> SQLMetrics.createMetric(sparkContext, "static number of files read"),
-      "staticFilesSize" -> SQLMetrics.createSizeMetric(sparkContext, "static size of files read"))
+    Map("staticFilesNum" -> createMetric(ESSENTIAL_LEVEL, "static number of files read"),
+      "staticFilesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "static size of files read"))
   } else {
-    Map.empty[String, SQLMetric]
+    Map.empty[String, GpuMetric]
   }
 
   /** Helper for computing total number and size of files in selected partitions. */
@@ -342,36 +343,39 @@ case class GpuFileSourceScanExec(
     }
   }
 
-  override lazy val metrics = Map(
-    "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-    "numFiles" -> SQLMetrics.createMetric(sparkContext, "number of files read"),
-    "metadataTime" -> SQLMetrics.createTimingMetric(sparkContext, "metadata time"),
-    "filesSize" -> SQLMetrics.createSizeMetric(sparkContext, "size of files read")
+  override lazy val allMetrics = Map(
+    NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    "numFiles" -> createMetric(ESSENTIAL_LEVEL, "number of files read"),
+    "metadataTime" -> createTimingMetric(ESSENTIAL_LEVEL, "metadata time"),
+    "filesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "size of files read"),
+    GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
+    BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
   ) ++ {
     // Tracking scan time has overhead, we can't afford to do it for each row, and can only do
     // it for each batch.
     if (supportsColumnar) {
-      Some("scanTime" -> SQLMetrics.createTimingMetric(sparkContext, "scan time"))
+      Some("scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time"))
     } else {
       None
     }
   } ++ {
     if (relation.partitionSchemaOption.isDefined) {
       Map(
-        "numPartitions" -> SQLMetrics.createMetric(sparkContext, "number of partitions read"),
-        "pruningTime" ->
-          SQLMetrics.createTimingMetric(sparkContext, "dynamic partition pruning time"))
+        NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
+        "pruningTime" -> createTimingMetric(ESSENTIAL_LEVEL, "dynamic partition pruning time"))
     } else {
-      Map.empty[String, SQLMetric]
+      Map.empty[String, GpuMetric]
     }
-  } ++ staticMetrics ++ GpuMetricNames.buildGpuScanMetrics(sparkContext)
+  } ++ staticMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric("numOutputRows")
-    val scanTime = longMetric("scanTime")
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val scanTime = gpuLongMetric("scanTime")
     inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
@@ -465,7 +469,7 @@ case class GpuFileSourceScanExec(
         relation.partitionSchema,
         pushedDownFilters.toArray,
         rapidsConf,
-        metrics,
+        allMetrics,
         queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
@@ -517,7 +521,7 @@ case class GpuFileSourceScanExec(
         relation.partitionSchema,
         pushedDownFilters.toArray,
         rapidsConf,
-        metrics,
+        allMetrics,
         queryUsesInputFile)
 
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code

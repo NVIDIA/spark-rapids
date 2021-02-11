@@ -16,13 +16,12 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, Table}
-import com.nvidia.spark.rapids.{CoalesceGoal, GpuBindReferences, GpuBuildLeft, GpuBuildRight, GpuBuildSide, GpuColumnVector, GpuExec, GpuExpression, GpuFilter, GpuIsNotNull, GpuProjectExec, NvtxWithMetrics, RapidsMeta, RequireSingleBatch}
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
@@ -157,13 +156,13 @@ trait GpuHashJoin extends GpuExec {
   def doJoin(builtTable: Table,
       stream: Iterator[ColumnarBatch],
       boundCondition: Option[Expression],
-      numOutputRows: SQLMetric,
-      joinOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric,
-      streamTime: SQLMetric,
-      joinTime: SQLMetric,
-      filterTime: SQLMetric,
-      totalTime: SQLMetric): Iterator[ColumnarBatch] = {
+      numOutputRows: GpuMetric,
+      joinOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      streamTime: GpuMetric,
+      joinTime: GpuMetric,
+      filterTime: GpuMetric,
+      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
     new Iterator[ColumnarBatch] {
       import scala.collection.JavaConverters._
       var nextCb: Option[ColumnarBatch] = None
@@ -215,11 +214,11 @@ trait GpuHashJoin extends GpuExec {
   private[this] def doJoin(builtTable: Table,
       streamedBatch: ColumnarBatch,
       boundCondition: Option[Expression],
-      numOutputRows: SQLMetric,
-      numJoinOutputRows: SQLMetric,
-      numOutputBatches: SQLMetric,
-      joinTime: SQLMetric,
-      filterTime: SQLMetric): Option[ColumnarBatch] = {
+      numOutputRows: GpuMetric,
+      numJoinOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      joinTime: GpuMetric,
+      filterTime: GpuMetric): Option[ColumnarBatch] = {
 
     val combined = withResource(streamedBatch) { streamedBatch =>
       withResource(GpuProjectExec.project(streamedBatch, gpuStreamedKeys)) {

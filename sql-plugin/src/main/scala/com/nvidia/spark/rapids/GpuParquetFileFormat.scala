@@ -101,6 +101,18 @@ object GpuParquetFileFormat {
     }
   }
 
+  def getFlatPrecisionList(schema: StructType): Seq[Int] =  {
+    def precisionsList(t: DataType): Seq[Int] = {
+      t match {
+        case d: DecimalType => List(d.precision)
+        case s: StructType => s.flatMap(f => precisionsList(f.dataType))
+        case ArrayType(elementType, _) => precisionsList(elementType)
+        case _ => List.empty
+      }
+    }
+    schema.flatMap(f => precisionsList(f.dataType))
+  }
+
   def parseCompressionType(compressionType: String): Option[CompressionType] = {
     compressionType match {
       case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
@@ -277,22 +289,15 @@ class GpuParquetWriter(
 
     super.write(newBatch, statsTrackers)
   }
-  override val tableWriter: TableWriter = {
-    def precisionsList(t: DataType): Seq[Int] = {
-      t match {
-        case d: DecimalType => List(d.precision)
-        case s: StructType => s.flatMap(f => precisionsList(f.dataType))
-        case ArrayType(elementType, _) => precisionsList(elementType)
-        case _ => List.empty
-      }
-    }
 
+
+  override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = ParquetWriterOptions.builder()
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
       .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96)
-      .withPrecisionValues(dataSchema.flatMap(f => precisionsList(f.dataType)):_*)
+      .withPrecisionValues(GpuParquetFileFormat.getFlatPrecisionList(dataSchema):_*)
     dataSchema.foreach(entry => {
       if (entry.nullable) {
         builder.withColumnNames(entry.name)

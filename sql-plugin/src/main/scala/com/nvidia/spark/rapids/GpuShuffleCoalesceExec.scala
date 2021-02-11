@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -41,12 +40,15 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     extends UnaryExecNode with GpuExec {
 
-  import GpuMetricNames._
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_INPUT_BATCHES),
-    "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
-    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time")
+  import GpuMetric._
+
+  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
+    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME)
   )
 
   override def output: Seq[Attribute] = child.output
@@ -58,7 +60,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
   }
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val metricsMap = metrics
+    val metricsMap = allMetrics
     val targetSize = targetBatchByteSize
     val sparkSchema = GpuColumnVector.extractTypes(schema)
 
@@ -78,13 +80,13 @@ class GpuShuffleCoalesceIterator(
     batchIter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
     sparkSchema: Array[DataType],
-    metricsMap: Map[String, SQLMetric])
+    metricsMap: Map[String, GpuMetric])
     extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
-  private[this] val totalTimeMetric = metricsMap(GpuMetricNames.TOTAL_TIME)
-  private[this] val inputBatchesMetric = metricsMap(GpuMetricNames.NUM_INPUT_BATCHES)
-  private[this] val inputRowsMetric = metricsMap(GpuMetricNames.NUM_INPUT_ROWS)
-  private[this] val outputBatchesMetric = metricsMap(GpuMetricNames.NUM_OUTPUT_BATCHES)
-  private[this] val outputRowsMetric = metricsMap(GpuMetricNames.NUM_OUTPUT_ROWS)
+  private[this] val totalTimeMetric = metricsMap(GpuMetric.TOTAL_TIME)
+  private[this] val inputBatchesMetric = metricsMap(GpuMetric.NUM_INPUT_BATCHES)
+  private[this] val inputRowsMetric = metricsMap(GpuMetric.NUM_INPUT_ROWS)
+  private[this] val outputBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
+  private[this] val outputRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
   private[this] val collectTimeMetric = metricsMap("collectTime")
   private[this] val concatTimeMetric = metricsMap("concatTime")
   private[this] val serializedTables = new util.ArrayDeque[SerializedTableColumn]

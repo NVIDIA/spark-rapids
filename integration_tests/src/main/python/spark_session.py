@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan
 from pyspark.sql import SparkSession, DataFrame
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 
@@ -88,6 +88,8 @@ def with_gpu_session(func, conf={}):
     else:
         copy['spark.rapids.sql.test.enabled'] = 'true'
         copy['spark.rapids.sql.test.allowedNonGpu'] = ','.join(get_non_gpu_allowed())
+
+    copy['spark.rapids.sql.test.validateExecsInGpuPlan'] = ','.join(get_validate_execs_in_gpu_plan())
     # TODO: remove when decimal types can be enabled by default
     copy['spark.rapids.sql.decimalType.enabled'] = 'true'
     return with_spark_session(func, conf=copy)

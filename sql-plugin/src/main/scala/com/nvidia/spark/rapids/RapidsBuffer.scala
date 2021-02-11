@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,14 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
-import java.util.Optional
 
-import ai.rapids.cudf.{DType, MemoryBuffer}
+import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
-import com.nvidia.spark.rapids.format.{ColumnMeta, TableMeta}
+import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * An identifier for a RAPIDS buffer that can be automatically spilled between buffer stores.
@@ -139,24 +138,23 @@ trait RapidsBuffer extends AutoCloseable {
  */
 sealed class DegenerateRapidsBuffer(
     override val id: RapidsBufferId,
-    override val meta: TableMeta) extends RapidsBuffer {
+    override val meta: TableMeta) extends RapidsBuffer with Arm {
   override val size: Long = 0L
   override val storageTier: StorageTier = StorageTier.DEVICE
 
   override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
     val rowCount = meta.rowCount
-    val nullCount = Optional.of(java.lang.Long.valueOf(0))
-    val columnMeta = new ColumnMeta
-    val columns = new Array[ColumnVector](meta.columnMetasLength)
-    (0 until meta.columnMetasLength).foreach { i =>
-      meta.columnMetas(columnMeta, i)
-      assert(columnMeta.childrenLength == 0, "child columns are not yet supported")
-      val dtype = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale())
-      columns(i) = GpuColumnVector.from(new ai.rapids.cudf.ColumnVector(
-        dtype, rowCount, nullCount, null, null, null),
-        sparkTypes(i))
+    val packedMeta = meta.packedMetaAsByteBuffer()
+    if (packedMeta != null) {
+      withResource(DeviceMemoryBuffer.allocate(0)) { deviceBuffer =>
+        withResource(Table.fromPackedTable(meta.packedMetaAsByteBuffer(), deviceBuffer)) { table =>
+          GpuColumnVectorFromBuffer.from(table, deviceBuffer, meta, sparkTypes)
+        }
+      }
+    } else {
+      // no packed metadata, must be a table with zero columns
+      new ColumnarBatch(Array.empty, rowCount.toInt)
     }
-    new ColumnarBatch(columns, rowCount.toInt)
   }
 
   override def free(): Unit = {}

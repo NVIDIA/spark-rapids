@@ -204,6 +204,11 @@ object GpuDeviceManager extends Logging {
       if (conf.isPooledMemEnabled) {
         init = conf.rmmPool match {
           case c if "default".equalsIgnoreCase(c) =>
+            if (Cuda.isPtdsEnabled) {
+              logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
+                  "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
+                  "We recommend you use the ARENA allocator when PTDS is enabled.")
+            }
             features += "POOLED"
             init | RmmAllocationMode.POOL
           case c if "arena".equalsIgnoreCase(c) =>

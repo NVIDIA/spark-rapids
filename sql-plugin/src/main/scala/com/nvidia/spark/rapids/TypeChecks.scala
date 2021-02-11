@@ -985,7 +985,7 @@ object ExprChecks {
   }
 
   /**
-   * Window only operations. Spark does not support these operations as anythign but a window
+   * Window only operations. Spark does not support these operations as anything but a window
    * operation.
    */
   def windowOnly(
@@ -996,6 +996,31 @@ object ExprChecks {
     ExprChecksImpl(Map(
       (WindowAggExprContext,
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+
+  /**
+   * An aggregation check where window operations are supported by the plugin, but Spark
+   * also supports group by and reduction on these.
+   * This is now really for 'collect_list' which is only supported by windowing.
+   */
+  def aggNotGroupByOrReduction(
+      outputCheck: TypeSig,
+      sparkOutputSig: TypeSig,
+      paramCheck: Seq[ParamCheck] = Seq.empty,
+      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
+    val notWindowParamCheck = paramCheck.map { pc =>
+      ParamCheck(pc.name, TypeSig.none, pc.spark)
+    }
+    val notWindowRepeat = repeatingParamCheck.map { pc =>
+      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
+    }
+    ExprChecksImpl(Map(
+      (GroupByAggExprContext,
+        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
+      (ReductionAggExprContext,
+        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
+      (WindowAggExprContext,
+        ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+  }
 }
 
 /**
