@@ -210,6 +210,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
+    GpuDeviceManager.shutdown()
   }
 }
 
