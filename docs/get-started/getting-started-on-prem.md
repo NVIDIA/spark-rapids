@@ -435,6 +435,7 @@ that matches your Spark version. Currently we support
    - Spark 3.0.1 (com.nvidia.spark.rapids.spark301.RapidsShuffleManager) 
    - Spark 3.0.2 (com.nvidia.spark.rapids.spark302.RapidsShuffleManager) 
    - Spark 3.1.1 (com.nvidia.spark.rapids.spark311.RapidsShuffleManager)
+   - Spark 3.2.0 (com.nvidia.spark.rapids.spark320.RapidsShuffleManager)
 
 ```shell
 ...

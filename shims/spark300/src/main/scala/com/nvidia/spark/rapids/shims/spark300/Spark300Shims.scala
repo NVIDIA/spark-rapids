@@ -44,7 +44,7 @@ import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, Fil
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.WindowInPandasExec
@@ -579,5 +579,10 @@ class Spark300Shims extends SparkShims {
       accum
     }
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
+
+  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
   }
 }
