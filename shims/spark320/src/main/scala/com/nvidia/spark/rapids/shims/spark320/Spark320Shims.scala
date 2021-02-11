@@ -23,6 +23,11 @@ import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, Shuffle
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 class Spark320Shims extends Spark311Shims {
+
+  /**
+   * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
+   * affecting the unapply method signature
+   */
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
