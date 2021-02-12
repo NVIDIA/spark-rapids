@@ -130,8 +130,8 @@ case class GpuMultiply(
         val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
         val outputType = dataType.asInstanceOf[DecimalType]
         val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-        withResource(lhs.getBase().castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
-          withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+        withResource(lhs.getBase().castTo(decimalType)) { decimalLhs =>
+          withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
             val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
             if (tmp.getType != cudfOutputType) {
               withResource(tmp) { tmp =>
@@ -159,7 +159,7 @@ case class GpuMultiply(
         val outputType = dataType.asInstanceOf[DecimalType]
         val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
         withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { decimalLhs =>
-          withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+          withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
             val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
             if (tmp.getType != cudfOutputType) {
               withResource(tmp) { tmp =>
@@ -187,7 +187,7 @@ case class GpuMultiply(
         val outputType = dataType.asInstanceOf[DecimalType]
         val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
         withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), outputType)) { decimalRhs =>
-          withResource(lhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
+          withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
             val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
             if (tmp.getType != cudfOutputType) {
               withResource(tmp) { tmp =>
