@@ -108,7 +108,8 @@ case class GpuSortExec(
         val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
           // bad things can happen if the target size is really small
-          math.max(16 * 1024, targetSize), totalTime, sortTime, outputBatch, outputRows)
+          math.max(16 * 1024, targetSize), totalTime, sortTime, outputBatch, outputRows,
+          peakDevMemory)
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
         iter
       } else {
@@ -183,9 +184,13 @@ case class GpuOutOfCoreSortIterator(
     totalTime: GpuMetric = NoopMetric,
     sortTime: GpuMetric = NoopMetric,
     outputBatches: GpuMetric = NoopMetric,
-    outputRows: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch]
+    outputRows: GpuMetric = NoopMetric,
+    peakDevMemory: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch]
     with Arm with AutoCloseable {
 
+  // There are so many places where we might hit a new peak that it gets kind of complex
+  // so we are picking a few places that are likely to increase the amount of memory used.
+  private var peakMemory = 0L
 
   private val pending = new Pending(cpuOrd)
 
@@ -210,6 +215,7 @@ case class GpuOutOfCoreSortIterator(
   }
 
   private final def splitAfterSortAndSave(sortedTbl: Table, sortedOffset: Int = -1): Unit = {
+    var memUsed: Long = GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
     // We need to figure out how to split up the data into reasonable batches. We could try and do
     // something really complicated and figure out how much data get per batch, but in practice
     // we really only expect to see one or two batches worth of data come in, so lets optimize
@@ -225,6 +231,7 @@ case class GpuOutOfCoreSortIterator(
       // The entire thing is sorted
       withResource(sortedTbl.contiguousSplit()) { split =>
         assert(split.length == 1)
+        memUsed += split.head.getBuffer.getLength
         closeOnExcept(
           GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
           val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
@@ -248,11 +255,15 @@ case class GpuOutOfCoreSortIterator(
 
       val boundaries = withResource(ColumnVector.fromInts(gatherIndexes: _*)) { gatherMap =>
         withResource(sortedTbl.gather(gatherMap)) { boundariesTab =>
+          // Hopefully this is minor but just in case...
+          memUsed += gatherMap.getDeviceMemorySize +
+              GpuColumnVector.getTotalDeviceMemoryUsed(boundariesTab)
           convertBoundaries(boundariesTab)
         }
       }
 
       withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { split =>
+        memUsed += split.map(_.getBuffer.getLength).sum
         val stillPending = if (sortedOffset >= 0) {
           closeOnExcept(
             GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
@@ -280,15 +291,20 @@ case class GpuOutOfCoreSortIterator(
         }
       }
     }
+    peakMemory = Math.max(peakMemory, memUsed)
   }
 
   private final def firstPassReadBatches(): Unit = {
     while(iter.hasNext) {
+      var memUsed = 0L
       val sortedTbl = withResource(iter.next()) { batch =>
+        memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(batch)
         withResource(new NvtxWithMetrics("initial sort", NvtxColor.CYAN, totalTime)) { _ =>
           sorter.appendProjectedAndSort(batch, sortTime)
         }
       }
+      memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
+      peakMemory = Math.max(peakMemory, memUsed)
       withResource(new NvtxWithMetrics("split input batch", NvtxColor.CYAN, totalTime)) { _ =>
         withResource(sortedTbl) { sortedTbl =>
           val rows = sortedTbl.getRowCount.toInt
@@ -302,6 +318,7 @@ case class GpuOutOfCoreSortIterator(
   }
 
   private final def mergeSortEnoughToOutput(): Unit = {
+    var memUsed = 0L
     // Now get enough sorted data to return
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
@@ -315,16 +332,24 @@ case class GpuOutOfCoreSortIterator(
         }
         withResource(ArrayBuffer[ColumnarBatch]()) { batches =>
           pendingSort.foreach { tmp =>
-            batches += tmp.getColumnarBatch()
+            val batch = tmp.getColumnarBatch()
+            memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(batch)
+            batches += batch
           }
           if (batches.size == 1) {
             // Single batch no need for a merge sort
             GpuColumnVector.incRefCounts(batches.head)
           } else {
-            sorter.mergeSort(batches.toArray, sortTime)
+            val ret = sorter.mergeSort(batches.toArray, sortTime)
+            memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
+            ret
           }
         }
       }
+      // We now have closed the input tables to merge sort so reset the memory used
+      // we will ignore the upper bound and the single column because it should not have much
+      // of an impact, but if we wanted to be exact we would look at those too.
+      peakMemory = Math.max(peakMemory, memUsed)
       withResource(mergedBatch) { mergedBatch =>
         // First we want figure out what is fully sorted from what is not
         val sortSplitOffset = if (pending.isEmpty) {
@@ -367,16 +392,22 @@ case class GpuOutOfCoreSortIterator(
           }
         }
       }
+      var memUsed = totalBytes
       val ret = if (tables.length == 1) {
         // We cannot concat a single table
         sorter.removeProjectedColumns(tables.head)
       } else {
         withResource(Table.concatenate(tables: _*)) { combined =>
+          // ignore the output of removing the columns because it is just dropping columns
+          // so it will be smaller than this with not added memory
+          memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(combined)
           sorter.removeProjectedColumns(combined)
         }
       }
       outputBatches += 1
       outputRows += ret.numRows()
+      peakMemory = Math.max(peakMemory, memUsed)
+      peakDevMemory.set(Math.max(peakMemory, peakDevMemory.value))
       ret
     }
   }
