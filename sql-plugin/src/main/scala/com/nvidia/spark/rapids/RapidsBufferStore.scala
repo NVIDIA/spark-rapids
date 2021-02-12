@@ -230,6 +230,7 @@ abstract class RapidsBufferStore(
       val newBuffer = try {
         logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
           s"total mem=${buffers.getTotalBytes}")
+        buffer.spillCallback(spillStore.name, buffer.size)
         spillStore.copyBuffer(buffer, stream)
       } finally {
         buffer.close()
@@ -246,7 +247,8 @@ abstract class RapidsBufferStore(
       override val id: RapidsBufferId,
       override val size: Long,
       override val meta: TableMeta,
-      initialSpillPriority: Long) extends RapidsBuffer with Arm {
+      initialSpillPriority: Long,
+      override val spillCallback: (String, Long) => Unit) extends RapidsBuffer with Arm {
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority

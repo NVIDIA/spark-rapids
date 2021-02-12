@@ -187,26 +187,32 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @param contigBuffer device memory buffer backing the table
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback callback function when a buffer is spilled. Be very careful with
+   *                      this it should not block and be as light weight as possible i.e. metrics.
    */
   def addTable(
       id: RapidsBufferId,
       table: Table,
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
-      initialSpillPriority: Long): Unit =
-    deviceStorage.addTable(id, table, contigBuffer, tableMeta, initialSpillPriority)
+      initialSpillPriority: Long,
+      spillCallback: (String, Long) => Unit): Unit =
+    deviceStorage.addTable(id, table, contigBuffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**
    * Adds a contiguous table to the device storage, taking ownership of the table.
    * @param id buffer ID to associate with this buffer
    * @param contigTable contiguos table to track in device storage
    * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback callback function when a buffer is spilled. Be very careful with
+   *                      this it should not block and be as light weight as possible i.e. metrics.
    */
   def addContiguousTable(
       id: RapidsBufferId,
       contigTable: ContiguousTable,
-      initialSpillPriority: Long): Unit =
-    deviceStorage.addContiguousTable(id, contigTable, initialSpillPriority)
+      initialSpillPriority: Long,
+      spillCallback: (String, Long) => Unit): Unit =
+    deviceStorage.addContiguousTable(id, contigTable, initialSpillPriority, spillCallback)
 
   /**
    * Adds a buffer to the device storage, taking ownership of the buffer.
@@ -214,13 +220,16 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback callback function when a buffer is spilled. Be very careful with
+   *                      this it should not block and be as light weight as possible i.e. metrics.
    */
   def addBuffer(
       id: RapidsBufferId,
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
-      initialSpillPriority: Long): Unit =
-    deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority)
+      initialSpillPriority: Long,
+      spillCallback: (String, Long) => Unit): Unit =
+    deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**
    * Lookup the buffer that corresponds to the specified buffer ID and acquire it.

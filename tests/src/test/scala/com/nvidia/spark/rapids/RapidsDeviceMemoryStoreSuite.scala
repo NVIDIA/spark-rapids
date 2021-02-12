@@ -211,7 +211,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     }
 
     class MockRapidsBuffer(id: RapidsBufferId, size: Long, meta: TableMeta, spillPriority: Long)
-        extends RapidsBufferBase(id, size, meta, spillPriority) {
+        extends RapidsBufferBase(id, size, meta, spillPriority, (_, _) => ()) {
       override protected def releaseResources(): Unit = {}
 
       override val storageTier: StorageTier = StorageTier.HOST

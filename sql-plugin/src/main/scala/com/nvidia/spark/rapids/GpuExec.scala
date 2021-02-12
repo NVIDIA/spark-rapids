@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.SparkContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.SparkPlan
@@ -35,7 +35,7 @@ object MetricsLevel {
   }
 }
 
-object GpuMetric {
+object GpuMetric extends Logging {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
   val GPU_DECODE_TIME = "gpuDecodeTime"
@@ -57,6 +57,9 @@ object GpuMetric {
   val BUILD_DATA_SIZE = "buildDataSize"
   val BUILD_TIME = "buildTime"
   val STREAM_TIME = "streamTime"
+  val SPILL_AMOUNT = "spillData"
+  val SPILL_AMOUNT_DISK = "spillDisk"
+  val SPILL_AMOUNT_HOST = "spillHost"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -79,6 +82,9 @@ object GpuMetric {
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
+  val DESCRIPTION_SPILL_AMOUNT = "bytes spilled"
+  val DESCRIPTION_SPILL_AMOUNT_DISK = "bytes spilled to disk"
+  val DESCRIPTION_SPILL_AMOUNT_HOST = "bytes spilled to host"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -103,6 +109,24 @@ object GpuMetric {
   object DEBUG_LEVEL extends MetricsLevel(0)
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
+
+  def makeSpillCallback(allMetrics: Map[String, GpuMetric]): (String, Long) => Unit = {
+    val spillAmount = allMetrics(SPILL_AMOUNT)
+    val disk = allMetrics(SPILL_AMOUNT_DISK)
+    val host = allMetrics(SPILL_AMOUNT_HOST)
+    def updateMetrics(place: String, amount: Long): Unit = {
+      spillAmount += amount
+      place match {
+        case "host" =>
+          host += amount
+        case "gds" | "disk" =>
+          disk += amount
+        case _ =>
+          logWarning(s"Spill to $place is unsupported in metrics: $amount")
+      }
+    }
+    updateMetrics
+  }
 }
 
 sealed abstract class GpuMetric extends Serializable {
@@ -198,6 +222,12 @@ trait GpuExec extends SparkPlan with Arm {
   final override lazy val metrics: Map[String, SQLMetric] = unwrap(allMetrics)
 
   lazy val additionalMetrics: Map[String, GpuMetric] = Map.empty
+
+  protected def spillMetrics: Map[String, GpuMetric] = Map(
+    SPILL_AMOUNT -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_SPILL_AMOUNT),
+    SPILL_AMOUNT_DISK -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_SPILL_AMOUNT_DISK),
+    SPILL_AMOUNT_HOST -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_SPILL_AMOUNT_HOST)
+  )
 
   /**
    * Returns true if there is something in the exec that cannot work when batches between

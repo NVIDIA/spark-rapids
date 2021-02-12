@@ -73,6 +73,11 @@ trait RapidsBuffer extends AutoCloseable {
   val storageTier: StorageTier
 
   /**
+   * A callback function that can be used for metrics when a buffer is spilled
+   */
+  val spillCallback: (String, Long) => Unit
+
+  /**
    * Get the columnar batch within this buffer. The caller must have
    * successfully acquired the buffer beforehand.
    * @param sparkTypes the spark data types the batch should have
@@ -169,4 +174,6 @@ sealed class DegenerateRapidsBuffer(
   override def setSpillPriority(priority: Long): Unit = {}
 
   override def close(): Unit = {}
+
+  override val spillCallback: (String, Long) => Unit = (_, _) => ()
 }
