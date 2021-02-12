@@ -943,6 +943,10 @@ object CastOpSuite {
         "2018-1random_text",
         "2018-11-08random_text",
         "2018-11-9random_text",
+        // date component out of range
+        "2020-13-01",
+        "2020-12-32",
+        "2020-02-30",
         // `yyyy-[m]m-[d]dT*` in Spark 3.1+ these no longer work for AnsiCast, but did before
         "2010-1-01T!@#$%",
         "2010-1-02T,",
