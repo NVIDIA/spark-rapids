@@ -20,7 +20,7 @@ import java.util.{Comparator, LinkedList, PriorityQueue}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetric._
 
@@ -88,7 +88,7 @@ case class GpuSortExec(
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override lazy val additionalMetrics = {
+  override lazy val additionalMetrics: Map[String, GpuMetric] = {
     val required = Map(
       SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
       PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
@@ -215,11 +215,15 @@ case class GpuOutOfCoreSortIterator(
 
   private def convertBoundaries(tab: Table): Array[UnsafeRow] = {
     import scala.collection.JavaConverters._
-    val cb = new ColumnarBatch(
-      GpuColumnVector.extractColumns(tab, sorter.projectedBatchTypes).map(_.copyToHost()),
-      tab.getRowCount.toInt)
+    val cb = withResource(new NvtxRange("COPY BOUNDARIES", NvtxColor.PURPLE)) { _ =>
+      new ColumnarBatch(
+        GpuColumnVector.extractColumns(tab, sorter.projectedBatchTypes).map(_.copyToHost()),
+        tab.getRowCount.toInt)
+    }
     withResource(cb) { cb =>
-      cb.rowIterator().asScala.map(unsafeProjection).map(_.copy().asInstanceOf[UnsafeRow]).toArray
+      withResource(new NvtxRange("TO UNSAFE ROW", NvtxColor.RED)) { _ =>
+        cb.rowIterator().asScala.map(unsafeProjection).map(_.copy().asInstanceOf[UnsafeRow]).toArray
+      }
     }
   }
 
@@ -241,12 +245,14 @@ case class GpuOutOfCoreSortIterator(
       withResource(sortedTbl.contiguousSplit()) { split =>
         assert(split.length == 1)
         memUsed += split.head.getBuffer.getLength
-        closeOnExcept(
-          GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
-          val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-            spillCallback)
-          sortedSize += sp.sizeInBytes
-          sorted.add(sp)
+        withResource(new NvtxRange("Store Sorted Table", NvtxColor.DARK_GREEN)) { _ =>
+          closeOnExcept(
+            GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
+            val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              spillCallback)
+            sortedSize += sp.sizeInBytes
+            sorted.add(sp)
+          }
         }
       }
     } else {
@@ -263,42 +269,49 @@ case class GpuOutOfCoreSortIterator(
         Seq(0) ++ splitIndexes
       }
 
-      val boundaries = withResource(ColumnVector.fromInts(gatherIndexes: _*)) { gatherMap =>
-        withResource(sortedTbl.gather(gatherMap)) { boundariesTab =>
-          // Hopefully this is minor but just in case...
-          memUsed += gatherMap.getDeviceMemorySize +
-              GpuColumnVector.getTotalDeviceMemoryUsed(boundariesTab)
-          convertBoundaries(boundariesTab)
+      val boundaries =
+        withResource(new NvtxRange("boundaries", NvtxColor.ORANGE)) { _ =>
+          withResource(ColumnVector.fromInts(gatherIndexes: _*)) { gatherMap =>
+            withResource(sortedTbl.gather(gatherMap)) { boundariesTab =>
+              // Hopefully this is minor but just in case...
+              memUsed += gatherMap.getDeviceMemorySize +
+                  GpuColumnVector.getTotalDeviceMemoryUsed(boundariesTab)
+              convertBoundaries(boundariesTab)
+            }
+          }
         }
-      }
 
       withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { split =>
         memUsed += split.map(_.getBuffer.getLength).sum
         val stillPending = if (sortedOffset >= 0) {
-          closeOnExcept(
-            GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
-            val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              spillCallback)
-            sortedSize += sp.sizeInBytes
-            sorted.add(sp)
+          withResource(new NvtxRange("Store Sorted Table", NvtxColor.DARK_GREEN)) { _ =>
+            closeOnExcept(
+              GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
+              val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+                spillCallback)
+              sortedSize += sp.sizeInBytes
+              sorted.add(sp)
+            }
           }
           split.slice(1, split.length)
         } else {
           split
         }
 
-        assert(boundaries.length == stillPending.length)
-        stillPending.zip(boundaries).foreach {
-          case (ct: ContiguousTable, lower: UnsafeRow) =>
-            if (ct.getRowCount > 0) {
-              closeOnExcept(
-                GpuColumnVectorFromBuffer.from(ct, sorter.projectedBatchTypes)) { cb =>
-                pending.add(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                  spillCallback), lower)
+        withResource(new NvtxRange("Store Split Tables", NvtxColor.YELLOW)) { _ =>
+          assert(boundaries.length == stillPending.length)
+          stillPending.zip(boundaries).foreach {
+            case (ct: ContiguousTable, lower: UnsafeRow) =>
+              if (ct.getRowCount > 0) {
+                closeOnExcept(
+                  GpuColumnVectorFromBuffer.from(ct, sorter.projectedBatchTypes)) { cb =>
+                  pending.add(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+                    spillCallback), lower)
+                }
+              } else {
+                ct.close()
               }
-            } else {
-              ct.close()
-            }
+          }
         }
       }
     }
@@ -328,7 +341,12 @@ case class GpuOutOfCoreSortIterator(
     }
   }
 
-  private final def mergeSortEnoughToOutput(): Unit = {
+  /**
+   * Merge sort enough data that we can output a batch and put it in the sorted queue.
+   * @return if we can determine that we can return a final batch without putting it in the sorted
+   *         queue then optionally return it.
+   */
+  private final def mergeSortEnoughToOutput(): Option[ColumnarBatch] = {
     var memUsed = 0L
     // Now get enough sorted data to return
     while (!pending.isEmpty && sortedSize < targetSize) {
@@ -382,19 +400,31 @@ case class GpuOutOfCoreSortIterator(
             }
           }
         }
+        if (sortSplitOffset == mergedBatch.numRows() - 1 && sorted.isEmpty &&
+            (GpuColumnVector.getTotalDeviceMemoryUsed(mergedBatch) >= targetSize ||
+                pending.isEmpty)) {
+          // This is a special case where we have everything we need to output already so why
+          // bother with another contig split just to put it into the queue
+          return Some(GpuColumnVector.incRefCounts(mergedBatch))
+        }
         withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
           splitAfterSortAndSave(mergedTbl, sortSplitOffset)
         }
       }
     }
+    None
   }
 
+  /**
+   * Take data from the sorted queue and return a final batch that can be returned
+   * @return a batch that can be returned.
+   */
   private final def concatOutput(): ColumnarBatch = {
     // combine all the sorted data into a single batch
     withResource(ArrayBuffer[Table]()) { tables =>
       var totalBytes = 0L
-      while(!sorted.isEmpty &&
-          (totalBytes + sorted.peek().sizeInBytes) < targetSize) {
+      while(!sorted.isEmpty && (tables.isEmpty ||
+          (totalBytes + sorted.peek().sizeInBytes) < targetSize)) {
         withResource(sorted.pop()) { tmp =>
           sortedSize -= tmp.sizeInBytes
           totalBytes += tmp.sizeInBytes
@@ -432,8 +462,7 @@ case class GpuOutOfCoreSortIterator(
       firstPassReadBatches()
     }
     withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, totalTime)) { _ =>
-      mergeSortEnoughToOutput()
-      concatOutput()
+      mergeSortEnoughToOutput().getOrElse(concatOutput())
     }
   }
 
