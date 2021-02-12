@@ -33,16 +33,20 @@ on the GPU.
 The RAPIDS Accelerator only supports RAPIDS accelerated forms of the
 following UDF types:
 - Scala UDFs implementing a `Function` interface and registered via `SparkSession.udf.register`
+- Java UDFs implementing
+  [one of the `org.apache.spark.sql.api.java.UDF` interfaces](https://github.com/apache/spark/tree/branch-3.0/sql/core/src/main/java/org/apache/spark/sql/api/java)
+  and registered either via `SparkSession.udf.register` or
+  `spark.udf.registerJavaFunction` in PySpark
 - [Simple](https://github.com/apache/hive/blob/cb213d88304034393d68cc31a95be24f5aac62b6/ql/src/java/org/apache/hadoop/hive/ql/exec/UDF.java)
   or
   [Generic](https://github.com/apache/hive/blob/cb213d88304034393d68cc31a95be24f5aac62b6/ql/src/java/org/apache/hadoop/hive/ql/udf/generic/GenericUDF.java)
   Hive UDFs
 
 Other forms of Spark UDFs are not supported, such as:
-- Spark Java UDFs (i.e.: derived from `org.apache.spark.sql.api.java.UDF`* interfaces)
+- Scala or Java User-Defined Aggregate Functions
 - Hive Aggregate Function (UDAF)
 - Hive Tabular Function (UDTF)
-- Lambda functions
+- Lambda Functions
 
 ## Adding GPU Implementations to UDFs
 
@@ -103,6 +107,15 @@ in the [udf-examples](../../udf-examples) project.
 decodes URL-encoded strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 - [URLEncode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
+URL-encodes strings using the
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+
+### Spark Java UDF Examples
+
+- [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLDecode.java)
+decodes URL-encoded strings using the
+[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+- [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLEncode.java)
 URL-encodes strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 
