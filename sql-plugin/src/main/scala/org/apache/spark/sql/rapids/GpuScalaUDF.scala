@@ -16,11 +16,14 @@
 
 package org.apache.spark.sql.rapids
 
+import java.lang.invoke.SerializedLambda
+
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, GpuUserDefinedFunction, RepeatingParamCheck, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 
 case class GpuScalaUDF(
@@ -45,19 +48,17 @@ object GpuScalaUDF {
       repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
     (a, conf, p, r) => new ExprMeta[ScalaUDF](a, conf, p, r) {
       override def tagExprForGpu(): Unit = {
-        a.function match {
-          case _: RapidsUDF =>
-          case _ =>
-            val udfName = a.udfName.getOrElse("UDF")
-            val udfClass = a.function.getClass
-            willNotWorkOnGpu(s"$udfName implemented by $udfClass does not provide " +
-                "a GPU implementation")
+        if (getRapidsUDFInstance(a.function).isEmpty) {
+          val udfName = a.udfName.getOrElse("UDF")
+          val udfClass = a.function.getClass
+          willNotWorkOnGpu(s"$udfName implemented by $udfClass does not provide " +
+              "a GPU implementation")
         }
       }
 
       override def convertToGpu(): GpuExpression = {
         GpuScalaUDF(
-          a.function.asInstanceOf[RapidsUDF],
+          getRapidsUDFInstance(a.function).get,
           a.dataType,
           childExprs.map(_.convertToGpu()),
           a.udfName,
@@ -65,4 +66,41 @@ object GpuScalaUDF {
           a.udfDeterministic)
       }
     })
+
+  /**
+   * Determine if the UDF function implements the [[RapidsUDF]] interface, returning the instance
+   * if it does. The lambda wrapper that Spark applies to Java UDFs will be inspected if necessary
+   * to locate the user's UDF instance.
+   */
+  private def getRapidsUDFInstance(function: AnyRef): Option[RapidsUDF] = {
+    function match {
+      case f: RapidsUDF => Some(f)
+      case f =>
+        try {
+          // This may be a lambda that Spark's UDFRegistration wrapped around a Java UDF instance.
+          val clazz = f.getClass
+          if (TrampolineUtil.getSimpleName(clazz).toLowerCase().contains("lambda")) {
+            // Try to find a `writeReplace` method, further indicating it is likely a lambda
+            // instance, and invoke it to serialize the lambda. Once serialized, captured arguments
+            // can be examine to locate the Java UDF instance.
+            // Note this relies on implementation details of Spark's UDFRegistration class.
+            val writeReplace = clazz.getDeclaredMethod("writeReplace")
+            writeReplace.setAccessible(true)
+            val serializedLambda = writeReplace.invoke(f).asInstanceOf[SerializedLambda]
+            if (serializedLambda.getCapturedArgCount == 1) {
+              serializedLambda.getCapturedArg(0) match {
+                case c: RapidsUDF => Some(c)
+                case _ => None
+              }
+            } else {
+              None
+            }
+          } else {
+            None
+          }
+        } catch {
+          case _: ClassCastException | _: NoSuchMethodException | _: SecurityException => None
+        }
+    }
+  }
 }
