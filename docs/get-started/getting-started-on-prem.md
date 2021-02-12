@@ -422,33 +422,113 @@ in these scenarios:
   - _GPU-to-GPU_: Shuffle blocks that were able to fit in GPU memory.
   - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk) but will be manifested 
   in the GPU in the downstream Spark task.
+  
+### System Setup
 
-In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
-Mellanox hardware go to *step 2*:
+In order to enable _RapidsShuffleManager_, UCX user-space libraries and its dependencies must be 
+installed on the host and within Docker containers. A host has additional requirements, like the 
+MLNX_OFED driver and `nv_peer_mem` kernel module.
 
-1. If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the
-[MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), and the
-[`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
+#### Baremetal
 
-    With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
+1. If you have Mellanox hardware, please ensure you have the [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), and the
+[`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed. UCX packages
+   are compatible with MLNX_OFED 5.0+. Please install the latest driver available.
 
-2. Install [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
+   With `nv_peer_mem` (GPUDirectRDMA), IB/RoCE-based transfers can perform zero-copy transfers 
+   directly from GPU memory. Note that GPUDirectRDMA is known to show 
+   [performance and bugs](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#supported-systems) 
+   in machines that don't connect their GPUs and NICs to PCIe switches (i.e. directly to the 
+   root-complex). 
+   
+   If you encounter issues or poor performance, GPUDirectRDMA can be controlled via the 
+   UCX environment variable `UCX_IB_GPU_DIRECT_RDMA=no`, but please file a GitHub issue so we
+   can investigate further.
+    
+2. (skip if you followed Step 1) For setups without RoCE/Infiniband, UCX 1.9.0 packaging 
+   requires RDMA packages for installation. UCX 1.10.0+ will relax these requirements for these
+   types of environments, so this step should not be needed in the future.
+   
+   If you still want to install UCX 1.9.0 in a machine without RoCE/Infiniband hardware, please 
+   build and install `rdma-core`. You can use the Docker sample below as reference.
+    
+3. Fetch and install the UCX package for your OS and CUDA version 
+   [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
+   
+   UCX versions 1.9 and below require the user to install the cuda-compat package
+   matching the cuda version of the UCX package (i.e. `cuda-compat-11-1`), in addition to: 
+   `ibverbs-providers`, `libgomp1`, `libibverbs1`, `libnuma1`, `librdmacm1`. 
+   
+   For UCX versions 1.10.0+, UCX will drop the `cuda-compat` requirement, and remove explicit 
+   RDMA dependencies greatly simplifying installation in some cases. Note that these dependencies 
+   have been met if you followed Steps 1 or 2 above.
+   
+#### Docker containers
 
+Running with UCX in containers imposes certain requirements. In a multi-GPU system, all GPUs that 
+want to take advantage of PCIe peer-to-peer or NVLink, need to be visible within the container 
+(a container per GPU will not work easily). Additionally, if you want to use RoCE/Infiniband, 
+the `/dev/infiniband` device should be exposed in the container. 
 
-3. You will need to configure your spark job with extra settings for UCX (we are looking to 
-simplify these settings in the near future). Choose the version of the shuffle manager
-that matches your Spark version. Currently we support
-   - Spark 3.0.0 (com.nvidia.spark.rapids.spark300.RapidsShuffleManager) 
-   - Spark 3.0.1 (com.nvidia.spark.rapids.spark301.RapidsShuffleManager) 
-   - Spark 3.0.2 (com.nvidia.spark.rapids.spark302.RapidsShuffleManager) 
-   - Spark 3.1.1 (com.nvidia.spark.rapids.spark311.RapidsShuffleManager)
+If UCX will be used to communicate between containers, the IPC (`--ipc`) and 
+PID namespaces (`--pid`) should also be shared. 
 
+As of the writing of this document we have successfully tested `--privileged` containers, which
+essentially turns off all isolation. We will revise this document to include any new configurations
+as we are able to test different scenarios.
+
+1. A system administrator should have performed Step 1 (_Baremetal_) in the host system.
+
+2. Within the Docker container we need to install UCX and its requirements. The following is an 
+   example of a Docker container that shows how to install `rdma-core` and UCX 1.9.0 with 
+   `cuda-10.1` support. You can use this as a base layer for containers that your executors 
+   will use.
+   
+   ```
+   ARG CUDA_VER=10.1
+   
+   # Throw away image to build rdma_core
+   FROM ubuntu:18.04 as rdma_core
+   
+   RUN apt update
+   RUN apt-get install -y dh-make git build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
+   
+   RUN git clone --depth 1 --branch v33.0 https://github.com/linux-rdma/rdma-core
+   RUN cd rdma-core && debian/rules binary
+   
+   # Now start the main container
+   FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
+   
+   COPY --from=rdma_core /*.deb /tmp/
+   
+   RUN apt update
+   RUN apt-get install -y cuda-compat-10-1 wget udev dh-make libnuma1 libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
+   RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.9.0/ucx-v1.9.0-ubuntu18.04-mofed5.0-1.0.0.0-cuda10.1.deb
+   RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
+   ```
+
+### Spark App Configuration
+
+1. Choose the version of the shuffle manager that matches your Spark version. 
+   Currently we support:
+
+    | Spark Shim | spark.shuffle.manager value                              |
+    | -----------| -------------------------------------------------------- |
+    | 3.0.0      | com.nvidia.spark.rapids.spark300.RapidsShuffleManager    |
+    | 3.0.0 EMR  | com.nvidia.spark.rapids.spark300emr.RapidsShuffleManager |
+    | 3.0.1      | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
+    | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
+    | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
+    | 3.1.1      | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
+
+2. Recommended settings for UCX 1.9.0+
 ```shell
 ...
 --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark300.RapidsShuffleManager \
 --conf spark.shuffle.service.enabled=false \
 --conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
 --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
+--conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
 --conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
@@ -458,7 +538,7 @@ that matches your Spark version. Currently we support
 Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.
 
-### UCX Environment Variables
+#### UCX Environment Variables
 - `UCX_TLS`: 
   - `cuda_copy`, and `cuda_ipc`: enables handling of CUDA memory in UCX, both for copy-based transport
     and peer-to-peer communication between GPUs (NVLink/PCIe).
@@ -469,6 +549,13 @@ non-standard location.
   data to utilize various channels (e.g. two NICs). A value greater than `1` can cause a performance drop 
   for high-bandwidth transports between GPUs.
 - `UCX_MEMTYPE_CACHE=n`: Disables a cache in UCX that can cause UCX to fail when running with CUDA buffers. 
+- `UCX_RNDV_SCHEME=put_zcopy`: By default, `UCX_RNDV_SCHEME=auto` will pick different schemes for 
+  the RNDV protocol (`get_zcopy` or `put_zcopy`) depending on message size, and on other parameters 
+  given the hardware, transports, and settings. We have found that `UCX_RNDV_SCHEME=put_zcopy` 
+  is more reliable than automatic detection, or `get_zcopy` in our testing, especially in UCX 1.9.0. 
+  The main difference between get and put is the direction of transfer. A send operation under 
+  `get_zcopy` will really be `RDMA READ` from the receiver, whereas the same send will be 
+  `RDMA_WRITE` from the sender if `put_zcopy` is utilized.
   
 ### RapidsShuffleManager Fine Tuning
 Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
