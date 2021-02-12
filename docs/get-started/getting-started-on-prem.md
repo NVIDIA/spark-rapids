@@ -114,6 +114,7 @@ machine or multiple machines for distributed setup.
 The first step is to [Install Spark](#install-spark), the 
 [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the 
 [GPU discovery script](#install-the-gpu-discovery-script) on all the nodes you want to use.
+See the note at the end of this section if using Spark 3.1.1 or above.
 After that choose one of the nodes to be your master node and start the master.  Note that the
 master process does **not** need a GPU to function properly.
 
@@ -176,6 +177,12 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin
 ```
 
+Please note that if you are using Spark 3.1.1 or higher, the RAPIDS Accelerator for Apache Spark plugin jar
+and CUDF jar do not need to be installed on all the nodes and the configs
+`spark.executor.extraClassPath` and `spark.driver.extraClassPath` can be replaced in the above
+command with `--jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}`.
+This will automatically distribute the jars to the nodes for you.
+
 ## Running on YARN
 
 YARN requires you to [Install Spark](#install-spark), the
@@ -223,7 +230,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```  
 
 ### YARN 2.10 with Isolation and GPU Scheduling Enabled
@@ -250,7 +257,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ``` 
 
 ### YARN without Isolation
@@ -288,7 +295,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```  
 
 ## Running on Kubernetes
@@ -367,7 +374,7 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --conf spark.task.resource.gpu.amount=0.166 \
   --conf spark.executor.resource.gpu.amount=1 \
   --files $SPARK_RAPIDS_DIR/getGpusResources.sh
-  --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+  --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
   
 ## Example Join Operation
