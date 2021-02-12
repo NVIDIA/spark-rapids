@@ -74,7 +74,6 @@ def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
-                f.col('a'), f.col('b'),
                 f.col('a') / f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) / f.col('b'),
                 f.lit(None).cast(data_type) / f.col('a'),

@@ -119,7 +119,7 @@ object GpuScalar {
       if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
         throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision constraint of $t")
       }
-      if (t.asInstanceOf[DecimalType].precision <= Decimal.MAX_INT_DIGITS) {
+      if (DecimalType.is32BitDecimalType(t.asInstanceOf[DecimalType])) {
         Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().intValue())
       } else {
         Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValue())

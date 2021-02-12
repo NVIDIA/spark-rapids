@@ -659,11 +659,11 @@ abstract class FileParquetPartitionReaderBase(
     }
   }
 
-  def getList(fields: Seq[Type]): Seq[Int] = {
+  def getPrecisionsList(fields: Seq[Type]): Seq[Int] = {
     fields.filter(field => field.getOriginalType == OriginalType.DECIMAL || !field.isPrimitive())
       .flatMap { field =>
         if (!field.isPrimitive) {
-          getList(field.asGroupType().getFields.asScala)
+          getPrecisionsList(field.asGroupType().getFields.asScala)
         } else {
           Seq(field.asPrimitiveType().getDecimalMetadata.getPrecision)
         }
@@ -683,7 +683,7 @@ abstract class FileParquetPartitionReaderBase(
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
       val precisionList =
-        scala.collection.mutable.Queue(getList(clippedGroups.getFields.asScala): _*)
+        scala.collection.mutable.Queue(getPrecisionsList(clippedGroups.getFields.asScala): _*)
       try {
         withResource(inputTable) { table =>
           var readAt = 0
@@ -750,12 +750,24 @@ abstract class FileParquetPartitionReaderBase(
       }
       if (hasNew) {
         // create a new list
-        val copy = cv.copyToColumnVector()
-        new ColumnVector(DType.LIST, copy.getRowCount,
-          Optional.of[java.lang.Long](copy.getNullCount),
-          copy.getData.asInstanceOf[DeviceMemoryBuffer],
-          copy.getValid.asInstanceOf[DeviceMemoryBuffer],
-          copy.getOffsets.asInstanceOf[DeviceMemoryBuffer],
+        val validityView = cv.getValid()
+        val offsetsView = cv.getOffsets()
+        val dataView = cv.getData()
+
+        val validity = DeviceMemoryBuffer.allocate(validityView.getLength)
+        validity.copyFromDeviceBufferAsync(0, validityView, 0,
+          validityView.getLength, Cuda.DEFAULT_STREAM)
+
+        val offsets = DeviceMemoryBuffer.allocate(offsetsView.getLength)
+        offsets.copyFromDeviceBufferAsync(0, offsetsView, 0,
+          offsetsView.getLength, Cuda.DEFAULT_STREAM)
+
+        val data = DeviceMemoryBuffer.allocate(dataView.getLength)
+        data.copyFromDeviceBufferAsync(0, dataView, 0, dataView.getLength, Cuda.DEFAULT_STREAM)
+
+        new ColumnVector(DType.LIST, cv.getRowCount,
+          Optional.of[java.lang.Long](cv.getNullCount),
+          data, validity, offsets,
           buffers.asJava, viewHandles)
       } else {
         cv

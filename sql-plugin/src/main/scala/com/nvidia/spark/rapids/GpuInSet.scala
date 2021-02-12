@@ -86,10 +86,9 @@ case class GpuInSet(
       }
     case t: DecimalType =>
       val decs = values.asInstanceOf[Seq[Decimal]]
-      val isIntDecimal = t.precision <= Decimal.MAX_INT_DIGITS
       withResource(HostColumnVector.builder(
         DecimalUtil.createCudfDecimal(t.precision, t.scale), decs.size)) { builder =>
-        if (isIntDecimal) {
+        if (DecimalType.is32BitDecimalType(t)) {
           decs.foreach(d => builder.appendUnscaledDecimal(d.toUnscaledLong.toInt))
         } else {
           decs.foreach(d => builder.appendUnscaledDecimal(d.toUnscaledLong))
