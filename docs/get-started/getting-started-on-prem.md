@@ -592,8 +592,8 @@ In this section, we are using a docker container built using the sample dockerfi
      ```
      
    Example 3: GPU <-> GPU across the network, without GPUDirectRDMA. You will notice that the
-   bandwidth achieved is higher than with GPUDirectRDMA on. This is expect, and a known issue in
-   machines like this where we don't have PCIe switches.
+   bandwidth achieved is higher than with GPUDirectRDMA on. This is expected, and a known issue in
+   machines where GPUs and NICs are connected directly to the root complex.
    
    - On server container:
      ```
