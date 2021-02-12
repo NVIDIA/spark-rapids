@@ -506,6 +506,111 @@ as we are able to test different scenarios.
    RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.9.0/ucx-v1.9.0-ubuntu18.04-mofed5.0-1.0.0.0-cuda10.1.deb
    RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
    ```
+  
+### Validating UCX Environment
+
+After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate the installation.
+
+In this section, we are using a docker container built using the sample dockerfile above. 
+
+1. Test to check whether UCX can link against CUDA:
+    ```
+    root@test-machin:/# ucx_info -d|grep cuda     
+    # Memory domain: cuda_cpy
+    #     Component: cuda_cpy
+    #      Transport: cuda_copy
+    #         Device: cuda
+    # Memory domain: cuda_ipc
+    #     Component: cuda_ipc
+    #      Transport: cuda_ipc
+    #         Device: cuda
+    ```
+   
+2. Mellanox device seen by UCX, and what transports are enabled (i.e. `rc`)
+   ```
+   root@test-machine:/# ucx_info -d|grep mlx5_3:1 -B1
+   #      Transport: rc_verbs
+   #         Device: mlx5_3:1
+   --
+   #      Transport: rc_mlx5
+   #         Device: mlx5_3:1
+   --
+   #      Transport: dc_mlx5
+   #         Device: mlx5_3:1
+   --
+   #      Transport: ud_verbs
+   #         Device: mlx5_3:1
+   --
+   #      Transport: ud_mlx5
+   #         Device: mlx5_3:1
+   ```
+   
+3. You should be able to execute `ucx_perftest`, and get a good idea that things are working as
+   you expect. 
+   
+   Example 1: GPU <-> GPU in the same host. Without NVLink you should expect PCIe speeds. In this
+   case this is PCIe3, and somewhere along the lines of ~10GB/sec is expected. It should also match
+   the performance seen in `p2pBandwidthLatencyTest`, which is included with the cuda toolkit.
+   
+   - On server container:
+     ```
+     root@test-server:/# CUDA_VISIBLE_DEVICES=0 ucx_perftest -t tag_bw -s 10000000 -n 1000 -m cuda
+     ```
+   
+   - On client container:
+     ```
+     root@test-client:/# CUDA_VISIBLE_DEVICES=1 ucx_perftest -t tag_bw -s 10000000 -n 1000 -m cuda localhost
+     +--------------+--------------+-----------------------------+---------------------+-----------------------+
+     |              |              |      overhead (usec)        |   bandwidth (MB/s)  |  message rate (msg/s) |
+     +--------------+--------------+---------+---------+---------+----------+----------+-----------+-----------+
+     |    Stage     | # iterations | typical | average | overall |  average |  overall |  average  |  overall  |
+     +--------------+--------------+---------+---------+---------+----------+----------+-----------+-----------+
+     Final:                  1000     0.000   986.122   986.122     9670.96    9670.96        1014        1014
+     ```
+     
+   Example 2: GPU <-> GPU across the network, using GPUDirectRDMA. You will notice that in this
+   example we picked GPU 3. In our test machine, GPU 3 is closest (same root complex) to the NIC
+   we are using for RoCE, and yields better performance than GPU 0, for example, which is sitting
+   on a different socket. 
+   
+   - On server container:
+     ```
+     root@test-server: CUDA_VISIBLE_DEVICES=3 ucx_perftest -t tag_bw -s 10000000 -n 1000 -m cuda
+     ```
+     
+   - On client container:
+     ```
+     root@test-client:/# CUDA_VISIBLE_DEVICES=3 ucx_perftest -t tag_bw -s 10000000 -n 1000 -m cuda test-server
+     +--------------+--------------+-----------------------------+---------------------+-----------------------+
+     |              |              |      overhead (usec)        |   bandwidth (MB/s)  |  message rate (msg/s) |
+     +--------------+--------------+---------+---------+---------+----------+----------+-----------+-----------+
+     |    Stage     | # iterations | typical | average | overall |  average |  overall |  average  |  overall  |
+     +--------------+--------------+---------+---------+---------+----------+----------+-----------+-----------+
+     [thread 0]               498     0.000  2016.444  2016.444     4729.49    4729.49         496         496
+     [thread 0]               978     0.000  2088.412  2051.766     4566.50    4648.07         479         487
+     Final:                  1000     0.000  3739.639  2088.899     2550.18    4565.44         267         479
+     ```
+     
+   Example 3: GPU <-> GPU across the network, without GPUDirectRDMA. You will notice that the
+   bandwidth achieved is higher than with GPUDirectRDMA on. This is expect, and a known issue in
+   machines like this where we don't have PCIe switches.
+   
+   - On server container:
+     ```
+     root@test-server:/# UCX_IB_GPU_DIRECT_RDMA=no CUDA_VISIBLE_DEVICES=3 ucx_perftest -t tag_bw -s 10000000 -n 1000 -m cuda
+     ```
+   
+   - On client container:
+     ```
+     root@test-client:/# UCX_IB_GPU_DIRECT_RDMA=no CUDA_VISIBLE_DEVICES=3 ucx_perftest -t tag_bw -s 10000000 -n 1000 -m cuda test-server
+     +--------------+--------------+-----------------------------+---------------------+-----------------------+
+     |              |              |      overhead (usec)        |   bandwidth (MB/s)  |  message rate (msg/s) |
+     +--------------+--------------+---------+---------+---------+----------+----------+-----------+-----------+
+     |    Stage     | # iterations | typical | average | overall |  average |  overall |  average  |  overall  |
+     +--------------+--------------+---------+---------+---------+----------+----------+-----------+-----------+
+     [thread 0]               670     0.000  1497.859  1497.859     6366.91    6366.91         668         668
+     Final:                  1000     0.000  1718.843  1570.784     5548.35    6071.33         582         637
+     ```
 
 ### Spark App Configuration
 
