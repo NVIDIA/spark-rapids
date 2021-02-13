@@ -30,6 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, Nul
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
@@ -190,4 +191,11 @@ trait SparkShims {
   def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
 
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
+
+  /** dropped by SPARK-34234 */
+  def attachTreeIfSupported[TreeType <: TreeNode[_], A](
+    tree: TreeType,
+    msg: String = "")(
+    f: => A
+  ): A
 }

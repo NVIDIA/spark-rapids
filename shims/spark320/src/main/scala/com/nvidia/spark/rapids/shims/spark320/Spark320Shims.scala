@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims.spark320
 
 import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 
+import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -31,5 +32,14 @@ class Spark320Shims extends Spark311Shims {
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
+  }
+
+  /** dropped by SPARK-34234 */
+  override def attachTreeIfSupported[TreeType <: TreeNode[_], A](
+    tree: TreeType,
+    msg: String)(
+    f: => A
+  ): A = {
+    identity(f)
   }
 }

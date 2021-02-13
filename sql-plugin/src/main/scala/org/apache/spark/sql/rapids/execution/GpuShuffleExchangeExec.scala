@@ -26,7 +26,6 @@ import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.errors._
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
@@ -142,13 +141,14 @@ abstract class GpuShuffleExchangeExecBase(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = attachTree(this, "execute") {
-    // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
-    if (cachedShuffleRDD == null) {
-      cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = ShimLoader.getSparkShims
+    .attachTreeIfSupported(this, "execute") {
+      // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
+      if (cachedShuffleRDD == null) {
+        cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
+      }
+      cachedShuffleRDD
     }
-    cachedShuffleRDD
-  }
 }
 
 object GpuShuffleExchangeExec {
