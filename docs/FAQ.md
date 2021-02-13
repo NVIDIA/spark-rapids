@@ -29,7 +29,7 @@ with most cloud service providers to set up testing and validation on their dist
 ### What CUDA versions are supported?
 
 CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here][download.md] for download 
+corresponds to the version you are using. Please look [here](download.md) for download 
 links for the latest release.
 
 ### What is the right hardware setup to run GPU accelerated Spark?
@@ -39,14 +39,15 @@ Reference architectures should be available around Q1 2021.
 ### What parts of Apache Spark are accelerated?
 
 Currently a limited set of SQL and DataFrame operations are supported, please see the
-[configs](configs.md) for a more complete list of what is supported. Some of structured streaming
-is likely to be accelerated, but it has not been an area of focus right now. Other areas like
-MLLib, GraphX or RDDs are not accelerated.
+[configs](configs.md) and [supported operations](supported_ops.md) for a more complete list of what
+is supported. Some of structured streaming is likely to be accelerated, but it has not been an area
+of focus right now. Other areas like MLLib, GraphX or RDDs are not accelerated.
 
 ### What is the road-map like?
 
-Please look at the github repository https://github.com/nvidia/spark-rapids It contains
-issue tracking and planning for sprints and releases.
+Please look at the github repository
+[https://github.com/nvidia/spark-rapids](https://github.com/nvidia/spark-rapids). It contains issue
+tracking and planning for sprints and releases.
 
 ### How much faster will my query run?
 
@@ -146,7 +147,7 @@ few places where this is not the case.
   this we want to process larger batches of data when possible. These operators will try to combine
   smaller batches of data into fewer, larger batches to process more efficiently.
 
-* `SortMergeJoin` - The RAPIDS accelerator does not support sort merge joins yet. For now, we 
+* `SortMergeJoin` - The RAPIDS Accelerator does not support sort merge joins yet. For now, we 
   translate sort merge joins into shuffled hash joins. Because of this there are times when sorts 
   may be removed or other sorts added to meet the ordering requirements of the query.
 
@@ -170,7 +171,7 @@ stale results.
 
 ### How are failures handled?
 
-The RAPIDS accelerator does not change the way failures are normally handled by Apache Spark.
+The RAPIDS Accelerator does not change the way failures are normally handled by Apache Spark.
 
 ### How does the Spark scheduler decide what to do on the GPU vs the CPU?
 
@@ -220,7 +221,7 @@ Yes
 The GPU is not needed on the driver and there is no benefit to having one available on the driver
 for the RAPIDS plugin.
 
-### How does the performance compare to DataBricks' DeltaEngine?
+### How does the performance compare to Databricks' DeltaEngine?
 
 We have not evaluated the performance yet. DeltaEngine is not open source, so any analysis needs to
 be done with Databricks in some form. When DeltaEngine is generally available and the terms of
@@ -256,7 +257,7 @@ There are multiple reasons why this a problematic configuration:
 - CUDA context switches between processes sharing a single GPU can be expensive
 - Each executor would have a fraction of the GPU memory available for processing
 
-### Is [Multi Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
+### Is [Multi-Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES` or other means).
@@ -298,7 +299,7 @@ files.  Spark tends to prefer sort based joins, and in some cases sort based agg
 the GPU versions are all hash based. This means that the resulting data can come out in a different
 order for the CPU and the GPU. This is not wrong, but can make the size of the output data
 different because of compression. Users can turn on
-(spark.rapids.sql.hashOptimizeSort.enabled)[configs.md#sql.hashOptimizeSort.enabled] to have
+[spark.rapids.sql.hashOptimizeSort.enabled](configs.md#sql.hashOptimizeSort.enabled) to have
 the GPU try to replicate more closely what the output ordering would have been if sort were used,
 like on the CPU.
 
@@ -321,7 +322,7 @@ To fix it you can either disable the IOMMU, or you can disable using pinned memo
 
 ### Is speculative execution supported?
 
-Yes, speculative execution in Spark is fine with the RAPIDS accelerator plugin.
+Yes, speculative execution in Spark is fine with the RAPIDS Accelerator plugin.
 
 As with all speculative execution, it may or may not be beneficial depending on the nature of why a
 particular task is slow and how easily speculation is triggered. You should monitor your Spark jobs
