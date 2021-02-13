@@ -5,17 +5,75 @@ nav_order: 11
 ---
 # Frequently Asked Questions
 
-### Why does `explain()` show that the GPU will be used even after setting `spark.rapids.sql.enabled` to `false`?
+* TOC
+{:toc}
 
-Apache Spark caches what is used to build the output of the `explain()` function. That cache has no
-knowledge about configs, so it may return results that are not up to date with the current config
-settings. This is true of all configs in Spark. If you changed
-`spark.sql.autoBroadcastJoinThreshold` after running `explain()` on a `DataFrame`, the resulting
-query would not change to reflect that config and still show a `SortMergeJoin` even though the new
-config might have changed to be a `BroadcastHashJoin` instead. When actually running something like
-with `collect`, `show` or `write` a new `DataFrame` is constructed causing Spark to re-plan the
-query. This is why `spark.rapids.sql.enabled` is still respected when running, even if explain shows
-stale results.
+### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
+
+The RAPIDS Accelerator for Apache Spark requires version 3.0.0 or 3.0.1 of Apache Spark. Because the
+plugin replaces parts of the physical plan that Apache Spark considers to be internal the code for
+those plans can change even between bug fix releases. As a part of our process, we try to stay on
+top of these changes and release updates as quickly as possible.
+
+### Which distributions are supported?
+
+The RAPIDS Accelerator for Apache Spark officially supports [Apache
+Spark](get-started/getting-started-on-prem.md), [AWS EMR
+6.2.0](get-started/getting-started-aws-emr.md), [Databricks Runtime
+7.3](get-started/getting-started-databricks.md) and [Google Cloud
+Dataproc](get-started/getting-started-gcp.md).  Most distributions based off of Apache Spark 3.0.0
+should work, but because the plugin replaces parts of the physical plan that Apache Spark considers
+to be internal the code for those plans can change from one distribution to another. We are working
+with most cloud service providers to set up testing and validation on their distributions.
+
+### What CUDA versions are supported?
+
+CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
+corresponds to the version you are using. Please look [here][download.md] for download 
+links for the latest release.
+
+### What is the right hardware setup to run GPU accelerated Spark?
+
+Reference architectures should be available around Q1 2021.
+
+### What parts of Apache Spark are accelerated?
+
+Currently a limited set of SQL and DataFrame operations are supported, please see the
+[configs](configs.md) for a more complete list of what is supported. Some of structured streaming
+is likely to be accelerated, but it has not been an area of focus right now. Other areas like
+MLLib, GraphX or RDDs are not accelerated.
+
+### What is the road-map like?
+
+Please look at the github repository https://github.com/nvidia/spark-rapids It contains
+issue tracking and planning for sprints and releases.
+
+### How much faster will my query run?
+
+Any single operator isn’t a fixed amount faster. So there is no simple algorithm to see how much
+faster a query will run. In addition, Apache Spark can store intermediate data to disk and send it
+across the network, both of which we typically see as bottlenecks in real world queries. Generally
+for complicated queries where all the processing can run on the GPU we see between 3x and 7x
+speedup, with a 4x speedup typical. We have seen as high as 100x in some specific cases.
+
+### What operators are best suited for the GPU?
+
+* Group by operations with high cardinality
+* Joins with a high cardinality
+* Sorts with a high cardinality
+* Window operations, especially for large windows
+* Complicated processing
+* Writing Parquet/ORC
+* Reading CSV
+* Transcoding (reading an input file and doing minimal processing before writing it out again,
+possibly in a different format, like CSV to Parquet)
+
+### Are there initialization costs?
+
+From our tests the GPU typically takes about 2 to 3 seconds to initialize when an executor first
+starts. If you are only going to run a single query that only takes a few seconds to run this can
+be problematic. In general if you are going to do 30 seconds or more of processing within a single
+session the overhead can be amortized.
 
 ### How can I tell what will run on the GPU and what will not run on it?
 <a name="explain"></a>
@@ -98,85 +156,17 @@ few places where this is not the case.
   these operations into a single stage the metrics were confusing to understand. Instead, we split 
   the single stage up into multiple smaller parts, so the metrics are clearer.
 
-### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
+### Why does `explain()` show that the GPU will be used even after setting `spark.rapids.sql.enabled` to `false`?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.0 or 3.0.1 of Apache Spark. Because the
-plugin replaces parts of the physical plan that Apache Spark considers to be internal the code for
-those plans can change even between bug fix releases. As a part of our process, we try to stay on
-top of these changes and release updates as quickly as possible.
-
-### Which distributions are supported?
-
-The RAPIDS Accelerator for Apache Spark officially supports [Apache
-Spark](get-started/getting-started-on-prem.md), [AWS EMR
-6.2.0](get-started/getting-started-aws-emr.md), [Databricks Runtime
-7.3](get-started/getting-started-databricks.md) and [Google Cloud
-Dataproc](get-started/getting-started-gcp.md).  Most distributions based off of Apache Spark 3.0.0
-should work, but because the plugin replaces parts of the physical plan that Apache Spark considers
-to be internal the code for those plans can change from one distribution to another. We are working
-with most cloud service providers to set up testing and validation on their distributions.
-
-### What is the right hardware setup to run GPU accelerated Spark?
-
-Reference architectures should be available around Q1 2021.
-
-### What CUDA versions are supported?
-
-CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here][download.md] for download 
-links for the latest release.
-
-### What parts of Apache Spark are accelerated?
-
-Currently a limited set of SQL and DataFrame operations are supported, please see the
-[configs](configs.md) for a more complete list of what is supported. Some of structured streaming
-is likely to be accelerated, but it has not been an area of focus right now. Other areas like
-MLLib, GraphX or RDDs are not accelerated.
-
-### What is the road-map like?
-
-Please look at the github repository https://github.com/nvidia/spark-rapids It contains
-issue tracking and planning for sprints and releases.
-
-### How much faster will my query run?
-
-Any single operator isn’t a fixed amount faster. So there is no simple algorithm to see how much
-faster a query will run. In addition, Apache Spark can store intermediate data to disk and send it
-across the network, both of which we typically see as bottlenecks in real world queries. Generally
-for complicated queries where all the processing can run on the GPU we see between 3x and 7x
-speedup, with a 4x speedup typical. We have seen as high as 100x in some specific cases.
-
-### What operators are best suited for the GPU?
-
-* Group by operations with high cardinality
-* Joins with a high cardinality
-* Sorts with a high cardinality
-* Window operations, especially for large windows
-* Complicated processing
-* Writing Parquet/ORC
-* Reading CSV
-* Transcoding (reading an input file and doing minimal processing before writing it out again,
-possibly in a different format, like CSV to Parquet)
-
-### Are there initialization costs?
-
-From our tests the GPU typically takes about 2 to 3 seconds to initialize when an executor first
-starts. If you are only going to run a single query that only takes a few seconds to run this can
-be problematic. In general if you are going to do 30 seconds or more of processing within a single
-session the overhead can be amortized.
-
-### Why is the size of my output Parquet/ORC file different?
-
-This can come down to a number of factors.  The GPU version often compresses data in smaller chunks
-to get more parallelism and performance. This can result in larger files in some instances. We have
-also seen instances where the ordering of the data can have a big impact on the output size of the
-files.  Spark tends to prefer sort based joins, and in some cases sort based aggregations, whereas
-the GPU versions are all hash based. This means that the resulting data can come out in a different
-order for the CPU and the GPU. This is not wrong, but can make the size of the output data
-different because of compression. Users can turn on
-(spark.rapids.sql.hashOptimizeSort.enabled)[configs.md#sql.hashOptimizeSort.enabled] to have
-the GPU try to replicate more closely what the output ordering would have been if sort were used,
-like on the CPU.
+Apache Spark caches what is used to build the output of the `explain()` function. That cache has no
+knowledge about configs, so it may return results that are not up to date with the current config
+settings. This is true of all configs in Spark. If you changed
+`spark.sql.autoBroadcastJoinThreshold` after running `explain()` on a `DataFrame`, the resulting
+query would not change to reflect that config and still show a `SortMergeJoin` even though the new
+config might have changed to be a `BroadcastHashJoin` instead. When actually running something like
+with `collect`, `show` or `write` a new `DataFrame` is constructed causing Spark to re-plan the
+query. This is why `spark.rapids.sql.enabled` is still respected when running, even if explain shows
+stale results.
 
 ### How are failures handled?
 
@@ -298,6 +288,19 @@ translates these operations into GPU operations just like other query plan opera
 The Scala UDF byte-code analyzer is disabled by default and must be enabled by the user via the
 [`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) configuration
 setting.
+
+### Why is the size of my output Parquet/ORC file different?
+
+This can come down to a number of factors.  The GPU version often compresses data in smaller chunks
+to get more parallelism and performance. This can result in larger files in some instances. We have
+also seen instances where the ordering of the data can have a big impact on the output size of the
+files.  Spark tends to prefer sort based joins, and in some cases sort based aggregations, whereas
+the GPU versions are all hash based. This means that the resulting data can come out in a different
+order for the CPU and the GPU. This is not wrong, but can make the size of the output data
+different because of compression. Users can turn on
+(spark.rapids.sql.hashOptimizeSort.enabled)[configs.md#sql.hashOptimizeSort.enabled] to have
+the GPU try to replicate more closely what the output ordering would have been if sort were used,
+like on the CPU.
 
 ### Why am I getting an error when trying to use pinned memory?
 
