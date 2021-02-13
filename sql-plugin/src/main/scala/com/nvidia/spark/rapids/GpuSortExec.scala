@@ -445,10 +445,7 @@ case class GpuOutOfCoreSortIterator(
           sorter.removeProjectedColumns(combined)
         }
       }
-      outputBatches += 1
-      outputRows += ret.numRows()
       peakMemory = Math.max(peakMemory, memUsed)
-      peakDevMemory.set(Math.max(peakMemory, peakDevMemory.value))
       ret
     }
   }
@@ -462,7 +459,11 @@ case class GpuOutOfCoreSortIterator(
       firstPassReadBatches()
     }
     withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, totalTime)) { _ =>
-      mergeSortEnoughToOutput().getOrElse(concatOutput())
+      val ret = mergeSortEnoughToOutput().getOrElse(concatOutput())
+      outputBatches += 1
+      outputRows += ret.numRows()
+      peakDevMemory.set(Math.max(peakMemory, peakDevMemory.value))
+      ret
     }
   }
 
