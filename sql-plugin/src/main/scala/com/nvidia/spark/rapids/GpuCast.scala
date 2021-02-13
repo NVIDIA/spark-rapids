@@ -97,8 +97,10 @@ object GpuCast {
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_FULL =
-    "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
+  private val TIMESTAMP_REGEX_FULL_1 =
+    "\\A\\d{4}\\-\\d{2}\\-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
+  private val TIMESTAMP_REGEX_FULL_2 =
+    "\\A\\d{4}\\-\\d{2}\\-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
   /**
@@ -802,10 +804,11 @@ case class GpuCast(
 
       // convert dates that are in valid timestamp formats
       val converted =
-        convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL, "%Y-%m-%dT%H:%M:%SZ%f",
-          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
+        convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL_1, "%Y-%m-%d %H:%M:%S.%f",
+          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL_2, "%Y-%m-%dT%H:%M:%S.%f",
+            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+              convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+                convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y")))))
 
       // handle special dates like "epoch", "now", etc.
       val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
