@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
 
 
@@ -76,6 +77,17 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           copyExec: Executor,
                           bssExec: Executor,
                           rapidsConf: RapidsConf) extends AutoCloseable with Logging with Arm {
+
+  def getId: BlockManagerId = {
+    // upon seeing this port, the other side will try to connect to the port
+    // in order to establish an UCX endpoint (on demand), if the topology has "rapids" in it.
+    TrampolineUtil.newBlockManagerId(
+      originalShuffleServerId.executorId,
+      originalShuffleServerId.host,
+      originalShuffleServerId.port,
+      Some(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}=${getPort}"))
+  }
+
   /**
    * On close, this is set to false to indicate that the server is shutting down.
    */

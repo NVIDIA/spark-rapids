@@ -19,15 +19,15 @@ package com.nvidia.spark.rapids
 import java.io.File
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVectorCore, Table}
+import org.mockito.Mockito._
 import org.scalatest.Assertions
-import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsShuffleInternalManagerBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A collection of utility methods useful in tests. */
@@ -140,7 +140,7 @@ object TestUtils extends Assertions with Arm {
         SparkSession.clearActiveSession()
         SparkSession.clearDefaultSession()
       }
-      GpuShuffleEnv.setRapidsShuffleManagerInitialized(false, GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
+      GpuShuffleEnv.setRapidsShuffleManager(None)
     }
   }
 }

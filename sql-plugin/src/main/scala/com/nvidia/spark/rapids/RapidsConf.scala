@@ -750,6 +750,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
+    .doc("Enable heartbeats for Rapids Shuffle Transport, for early connection establishment")
+    .booleanConf
+    .createWithDefault(true)
+
+  val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL =
+    conf("spark.rapids.shuffle.transport.earlyStartHeartbeatInterval")
+      .doc("Shuffle early start heartbeat interval (milliseconds)")
+      .integerConf
+      .createWithDefault(5000)
+
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
     .internal()
@@ -1205,6 +1216,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
 
   lazy val shuffleTransportClassName: String = get(SHUFFLE_TRANSPORT_CLASS_NAME)
+
+  lazy val shuffleTransportEarlyStartHeartbeatInterval: Int = get(
+    SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL)
+
+  lazy val shuffleTransportEarlyStart: Boolean = get(SHUFFLE_TRANSPORT_EARLY_START)
 
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
