@@ -429,7 +429,7 @@ In order to enable _RapidsShuffleManager_, UCX user-space libraries and its depe
 installed on the host and within Docker containers. A host has additional requirements, like the 
 MLNX_OFED driver and `nv_peer_mem` kernel module.
 
-#### Baremetal
+#### <a name="ucx-baremetal"></a>Baremetal
 
 1. If you have Mellanox hardware, please ensure you have the [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), and the
 [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed. UCX packages
@@ -442,15 +442,17 @@ MLNX_OFED driver and `nv_peer_mem` kernel module.
    root-complex). 
    
    If you encounter issues or poor performance, GPUDirectRDMA can be controlled via the 
-   UCX environment variable `UCX_IB_GPU_DIRECT_RDMA=no`, but please file a GitHub issue so we
-   can investigate further.
+   UCX environment variable `UCX_IB_GPU_DIRECT_RDMA=no`, but please 
+   [file a GitHub issue](https://github.com/NVIDIA/spark-rapids/issues) so we can investigate 
+   further.
     
 2. (skip if you followed Step 1) For setups without RoCE/Infiniband, UCX 1.9.0 packaging 
    requires RDMA packages for installation. UCX 1.10.0+ will relax these requirements for these
    types of environments, so this step should not be needed in the future.
    
    If you still want to install UCX 1.9.0 in a machine without RoCE/Infiniband hardware, please 
-   build and install `rdma-core`. You can use the Docker sample below as reference.
+   build and install `rdma-core`. You can use the [Docker sample below](#ucx-minimal-dockerfile) 
+   as reference.
     
 3. Fetch and install the UCX package for your OS and CUDA version 
    [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
@@ -466,9 +468,11 @@ MLNX_OFED driver and `nv_peer_mem` kernel module.
 #### Docker containers
 
 Running with UCX in containers imposes certain requirements. In a multi-GPU system, all GPUs that 
-want to take advantage of PCIe peer-to-peer or NVLink, need to be visible within the container 
-(a container per GPU will not work easily). Additionally, if you want to use RoCE/Infiniband, 
-the `/dev/infiniband` device should be exposed in the container. 
+want to take advantage of PCIe peer-to-peer or NVLink need to be visible within the container. For
+example, if two containers are trying to communicate and each have an isolated GPU, the link between
+these GPUs will not be optimal, forcing UCX to stage buffers to the host or use TCP. 
+Additionally, if you want to use RoCE/Infiniband, the `/dev/infiniband` device should be exposed 
+in the container. 
 
 If UCX will be used to communicate between containers, the IPC (`--ipc`) and 
 PID namespaces (`--pid`) should also be shared. 
@@ -477,12 +481,15 @@ As of the writing of this document we have successfully tested `--privileged` co
 essentially turns off all isolation. We will revise this document to include any new configurations
 as we are able to test different scenarios.
 
-1. A system administrator should have performed Step 1 (_Baremetal_) in the host system.
+1. A system administrator should have performed Step 1 in (Baremetal)[#ucx-baremetal] in the 
+   host system.
 
 2. Within the Docker container we need to install UCX and its requirements. The following is an 
    example of a Docker container that shows how to install `rdma-core` and UCX 1.9.0 with 
    `cuda-10.1` support. You can use this as a base layer for containers that your executors 
    will use.
+   
+   <a name="ucx-minimal-dockerfile"></a>
    
    ```
    ARG CUDA_VER=10.1
