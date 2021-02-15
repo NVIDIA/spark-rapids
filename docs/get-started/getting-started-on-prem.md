@@ -481,7 +481,7 @@ As of the writing of this document we have successfully tested `--privileged` co
 essentially turns off all isolation. We will revise this document to include any new configurations
 as we are able to test different scenarios.
 
-1. A system administrator should have performed Step 1 in (Baremetal)[#ucx-baremetal] in the 
+1. A system administrator should have performed Step 1 in [Baremetal](#ucx-baremetal) in the 
    host system.
 
 2. Within the Docker container we need to install UCX and its requirements. The following is an 
