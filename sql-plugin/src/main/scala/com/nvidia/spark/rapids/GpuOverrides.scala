@@ -2386,6 +2386,18 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def tagPartForGpu(): Unit = {
+          def isSortOrderSimpleEnough(so: SortOrder): Boolean = so.child match {
+            case _: AttributeReference => true
+            case _ => false
+          }
+          // Once https://github.com/NVIDIA/spark-rapids/issues/1730 is fixed this check should be
+          // removed
+          if (!rp.ordering.forall(isSortOrderSimpleEnough)) {
+            willNotWorkOnGpu("computation is not supported for sort order in range partitioning")
+          }
+        }
+
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
