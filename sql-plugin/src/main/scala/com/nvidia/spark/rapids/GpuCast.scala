@@ -775,7 +775,7 @@ case class GpuCast(
       val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
       val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
 
-      // valid dates must match the regex and either of the cuDF formats
+      // valid dates must match either of the cuDF formats
       val isValidTimestamp = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
         withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
           isTimestamp1.or(isTimestamp2)
