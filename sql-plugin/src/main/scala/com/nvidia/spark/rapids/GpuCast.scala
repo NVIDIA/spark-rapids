@@ -90,15 +90,10 @@ class CastExprMeta[INPUT <: CastBase](
 
 object GpuCast {
 
-  private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
-  private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}\\Z"
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
 
-  private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_FULL =
-    "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
   /**
@@ -634,16 +629,10 @@ case class GpuCast(
      */
     def convertDateOrNull(
         input: ColumnVector,
-        regex: String,
+        len: Int,
         cudfFormat: String): ColumnVector = {
 
-      val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
-        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-          isMatch.and(isTimestamp)
-        }
-      }
-
-      withResource(isValidDate) { isValidDate =>
+      withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
             isValidDate.ifElse(asDays, nullScalar)
@@ -653,7 +642,7 @@ case class GpuCast(
     }
 
     /** This method does not close the `input` ColumnVector. */
-    def convertDateOr(
+    def convertVarLengthDateOr(
         input: ColumnVector,
         regex: String,
         cudfFormat: String,
@@ -666,6 +655,22 @@ case class GpuCast(
       }
 
       withResource(isValidDate) { isValidDate =>
+        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+          withResource(orElse) { orElse =>
+            isValidDate.ifElse(asDays, orElse)
+          }
+        }
+      }
+    }
+
+    /** This method does not close the `input` ColumnVector. */
+    def convertFixedWidthDateOr(
+        input: ColumnVector,
+        len: Int,
+        cudfFormat: String,
+        orElse: ColumnVector): ColumnVector = {
+
+      withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           withResource(orElse) { orElse =>
             isValidDate.ifElse(asDays, orElse)
@@ -691,9 +696,9 @@ case class GpuCast(
     withResource(sanitizedInput) { sanitizedInput =>
 
       // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-      val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-        convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
-          convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
+      val converted = convertVarLengthDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+        convertFixedWidthDateOr(sanitizedInput, 7, "%Y-%m",
+          convertDateOrNull(sanitizedInput, 4, "%Y")))
 
       // handle special dates like "epoch", "now", etc.
       specialDates.foldLeft(converted)((prev, specialDate) =>
@@ -730,19 +735,13 @@ case class GpuCast(
      */
     def convertTimestampOrNull(
         input: ColumnVector,
-        regex: String,
+        len: Int,
         cudfFormat: String): ColumnVector = {
 
-      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
-        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-          isMatch.and(isTimestamp)
-        }
-      }
-
-      withResource(isValidTimestamp) { isValidTimestamp =>
+      withResource(isValidTimestamp(input, len, cudfFormat)) { isTimestamp =>
         withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
           withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-            isValidTimestamp.ifElse(asDays, nullScalar)
+            isTimestamp.ifElse(asDays, nullScalar)
           }
         }
       }
@@ -783,9 +782,15 @@ case class GpuCast(
           isTimestamp1.or(isTimestamp2)
         }
       }
+
       val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
-        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
-          isCudfMatch.and(isRegexMatch)
+        val isValidLength = withResource(Scalar.fromInt(27)) { requiredLen =>
+          withResource(input.getCharLengths) { actualLen =>
+            requiredLen.equalTo(actualLen)
+          }
+        }
+        withResource(isValidLength) { isValidLength =>
+          isValidLength.and(isCudfMatch)
         }
       }
 
@@ -835,7 +840,7 @@ case class GpuCast(
         convertTimestampFullOr(sanitizedInput,
           convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
             convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
+              convertTimestampOrNull(sanitizedInput, 4, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
       val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
@@ -859,6 +864,23 @@ case class GpuCast(
       }
 
       finalResult
+    }
+  }
+
+  /**
+   * Determine which timestamps are the correct length and also comply with the specified
+   * cuDF format string.
+   */
+  private def isValidTimestamp(input: ColumnVector, len: Int, cudfFormat: String) = {
+    val isCorrectLength = withResource(Scalar.fromInt(len)) { requiredLen =>
+      withResource(input.getCharLengths) { actualLen =>
+        requiredLen.equalTo(actualLen)
+      }
+    }
+    withResource(isCorrectLength) { isCorrectLength =>
+      withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+        isCorrectLength.and(isTimestamp)
+      }
     }
   }
 
