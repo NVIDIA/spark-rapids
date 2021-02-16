@@ -429,7 +429,7 @@ In order to enable _RapidsShuffleManager_, UCX user-space libraries and its depe
 installed on the host and within Docker containers. A host has additional requirements, like the 
 MLNX_OFED driver and `nv_peer_mem` kernel module.
 
-#### <a name="ucx-baremetal"></a>Baremetal
+#### Baremetal
 
 1. If you have Mellanox hardware, please ensure you have the [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), and the
 [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed. UCX packages
@@ -481,7 +481,7 @@ As of the writing of this document we have successfully tested `--privileged` co
 essentially turns off all isolation. We will revise this document to include any new configurations
 as we are able to test different scenarios.
 
-1. A system administrator should have performed Step 1 in [Baremetal](#ucx-baremetal) in the 
+1. A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the 
    host system.
 
 2. Within the Docker container we need to install UCX and its requirements. The following is an 
