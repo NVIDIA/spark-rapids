@@ -97,6 +97,8 @@ object GpuCast {
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ ]?\\Z"
+  private val TIMESTAMP_REGEX_FULL =
+    "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
   /**
@@ -775,10 +777,15 @@ case class GpuCast(
       val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
       val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
 
-      // valid dates must match either of the cuDF formats
-      val isValidTimestamp = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
+      // valid dates must match the regex and either of the cuDF formats
+      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
         withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
           isTimestamp1.or(isTimestamp2)
+        }
+      }
+      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
+        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+          isCudfMatch.and(isRegexMatch)
         }
       }
 
