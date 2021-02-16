@@ -200,12 +200,16 @@ object GpuFileFormatWriter extends Logging {
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
             .map(attr => sparkShims.sortOrder(attr, Ascending)), outputSpec.outputColumns)
+        val sortType = if (RapidsConf.OUT_OF_CORE_SORT.get(plan.conf)) {
+          OutOfCoreSort
+        } else {
+          FullSortSingleBatch
+        }
         GpuSortExec(
           orderingExpr,
           global = false,
           child = empty2NullPlan,
-          // TODO this should change to be based on the config or just always be out of core sort
-          sortType = FullSortSingleBatch).executeColumnar()
+          sortType = sortType).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single

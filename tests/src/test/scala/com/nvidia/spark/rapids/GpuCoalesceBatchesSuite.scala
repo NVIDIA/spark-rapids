@@ -68,14 +68,14 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
       .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "1")
+      .set(RapidsConf.OUT_OF_CORE_SORT.key, "false")
       .set("spark.sql.shuffle.partitions", "1")
 
     withGpuSparkSession(spark => {
 
       val df = longsCsvDf(spark)
 
-      // currently, GpuSortExec requires a single batch but this is likely to change in the
-      // future, making this test invalid
+      // GpuSortExec requires a single batch if out of core sore is disabled.
       val df2 = df
         .sort(df.col("longs"))
 
@@ -85,15 +85,14 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
         ExecutionPlanCaptureCallback.getResultWithTimeout())
 
-      // TODO not true for out of core sort
-//      val coalesce = executedPlan
-//        .find(_.isInstanceOf[GpuCoalesceBatches]).get
-//        .asInstanceOf[GpuCoalesceBatches]
-//
-//      assert(coalesce.goal == RequireSingleBatch)
-//      assert(coalesce.goal.targetSizeBytes == Long.MaxValue)
-//
-//      assert(coalesce.longMetric(GpuMetric.NUM_OUTPUT_BATCHES).value == 1)
+      val coalesce = executedPlan
+        .find(_.isInstanceOf[GpuCoalesceBatches]).get
+        .asInstanceOf[GpuCoalesceBatches]
+
+      assert(coalesce.goal == RequireSingleBatch)
+      assert(coalesce.goal.targetSizeBytes == Long.MaxValue)
+
+      assert(coalesce.longMetric(GpuMetric.NUM_OUTPUT_BATCHES).value == 1)
 
     }, conf)
   }
@@ -284,6 +283,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // a query stage that runs on the CPU, wrapped in a CPU Exchange, with a ColumnarToRow
       // transition inserted
       .set("spark.sql.adaptive.enabled", "false")
+      // Disable out of core sort so a single batch is required
+      .set(RapidsConf.OUT_OF_CORE_SORT.key, "false")
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
@@ -314,14 +315,12 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
         assert(hostColumnarToGpu.goal == TargetSize(50000))
 
-        // TODO this only works when out of core sort is disabled
-//
-//        val gpuCoalesceBatches = executedPlan
-//          .find(_.isInstanceOf[GpuCoalesceBatches]).get
-//          .asInstanceOf[GpuCoalesceBatches]
-//
-//        assert(gpuCoalesceBatches.goal == RequireSingleBatch)
-//        assert(gpuCoalesceBatches.goal.targetSizeBytes == Long.MaxValue)
+        val gpuCoalesceBatches = executedPlan
+          .find(_.isInstanceOf[GpuCoalesceBatches]).get
+          .asInstanceOf[GpuCoalesceBatches]
+
+        assert(gpuCoalesceBatches.goal == RequireSingleBatch)
+        assert(gpuCoalesceBatches.goal.targetSizeBytes == Long.MaxValue)
 
 
       }, conf)
