@@ -97,10 +97,8 @@ object GpuCast {
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_FULL_1 =
-    "\\A\\d{4}\\-\\d{2}\\-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
-  private val TIMESTAMP_REGEX_FULL_2 =
-    "\\A\\d{4}\\-\\d{2}\\-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
+  private val TIMESTAMP_REGEX_FULL =
+    "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
   /**
@@ -771,6 +769,37 @@ case class GpuCast(
       }
     }
 
+    /** This method does not close the `input` ColumnVector. */
+    def convertTimestampFullOr(
+        input: ColumnVector,
+        orElse: ColumnVector): ColumnVector = {
+
+      val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
+      val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
+
+      // valid dates must match the regex and either of the cuDF formats
+      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
+        withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
+          isTimestamp1.or(isTimestamp2)
+        }
+      }
+      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
+        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+          isCudfMatch.and(isRegexMatch)
+        }
+      }
+
+      // we only need to parse with one of the cuDF formats because the parsing code ignores
+      // the ' ' or 'T' between the date and time components
+      withResource(isValidTimestamp) { isValidTimestamp =>
+        withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
+          withResource(orElse) { orElse =>
+            isValidTimestamp.ifElse(asDays, orElse)
+          }
+        }
+      }
+    }
+
     // special timestamps
     val today = DateUtils.currentDate()
     val todayStr = new SimpleDateFormat("yyyy-MM-dd")
@@ -801,14 +830,12 @@ case class GpuCast(
     }
 
     withResource(sanitizedInput) { sanitizedInput =>
-
       // convert dates that are in valid timestamp formats
       val converted =
-        convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL_1, "%Y-%m-%d %H:%M:%S.%f",
-          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL_2, "%Y-%m-%dT%H:%M:%S.%f",
-            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-              convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-                convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y")))))
+        convertTimestampFullOr(sanitizedInput,
+          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
       val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
