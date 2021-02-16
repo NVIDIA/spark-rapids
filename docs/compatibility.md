@@ -27,6 +27,14 @@ Spark's guarantee. It may not be 100% identical if the ordering is ambiguous.
 In versions of Spark prior to 3.1.0 `-0.0` is always < `0.0` but in 3.1.0 and above this is
 not true for sorting. For all versions of the plugin `-0.0` == `0.0` for sorting.
 
+Spark's sorting is typically a stable sort. It cannot guarantee this in distributed work loads
+because it cannot guarantee the order in which upstream data arrives to a task. There is only one
+situation where it can guarantee the order, and that is when it is reading data from a file, and
+the processing is coalesced to a single task/partition. The RAPIDS Accelerator does an unstable
+out of core sort by default. If you do rely on a stable sort in your processing you can disable
+the out of core sort by setting
+[spark.rapids.sql.outOfCoreSort.enabled](configs.md#sql.outOfCoreSort.enabled) to `false`.
+
 ## Floating Point
 
 For most basic floating-point operations like addition, subtraction, multiplication, and division

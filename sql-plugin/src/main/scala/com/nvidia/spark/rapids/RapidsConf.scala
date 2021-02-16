@@ -432,8 +432,10 @@ object RapidsConf {
     .createWithDefault(false)
 
   val OUT_OF_CORE_SORT = conf("spark.rapids.sql.outOfCoreSort.enabled")
-      .doc("enable or disable out of core sorting for performance testing purposes")
-      .internal()
+      .doc("enable or disable out of core sorting. Out of core sorting allows for sorting " +
+          "large skewed data sets, but is not a stable sort. Apache Spark does not guarantee a " +
+          "stable sort in most cases, except when coalescing all data to a single task and " +
+          "sorting there. In that case we will produce different results.")
       .booleanConf
       .createWithDefault(true)
 
