@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -934,6 +934,7 @@ object CastOpSuite {
         "2010-01-6T  12:34:56.000111Z",
         "2010-01-6 T 12:34:56.000111Z",
         "2010-01-6  T12:34:56.000111Z",
+        "2030-11-11 12:02:03.012345Z TRAILING TEXT",
         "2010-01-6 ",
         "2010-01-6 T",
         "2010-01-6 T\n",
@@ -943,6 +944,12 @@ object CastOpSuite {
         "2018-1random_text",
         "2018-11-08random_text",
         "2018-11-9random_text",
+        // date component out of range
+        "2020-13-01",
+        "2020-12-32",
+        "2020-02-30",
+        "2030-00-11 12:02:03.012345Z",
+        "2030-00-11T12:02:03.012345Z",
         // `yyyy-[m]m-[d]dT*` in Spark 3.1+ these no longer work for AnsiCast, but did before
         "2010-1-01T!@#$%",
         "2010-1-02T,",
