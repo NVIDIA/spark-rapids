@@ -352,4 +352,10 @@ Casting from string to timestamp currently has the following limitations.
 - <a name="Footnote1"></a>[1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
  milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
- 
+
+### Constant Folding
+
+ConstantFolding is an operator optimization rule in Catalyst that replaces expressions that can
+be statically evaluated with their equivalent literal values. We don't support excluding the rule 
+`org.apache.spark.sql.catalyst.optimizer.ConstantFolding` as we rely on this rule internally 
+and excluding it will cause some of our assumptions to fail. 
