@@ -169,10 +169,7 @@ object BenchUtils {
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
 
-
     for (i <- 0 until iterations) {
-      val taskFailureListener = new TaskFailureListener
-      spark.sparkContext.addSparkListener(taskFailureListener)
       spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
       
       // cause Spark to call unregisterShuffle
@@ -191,7 +188,9 @@ object BenchUtils {
 
       println(s"$logPrefix Start iteration $i:")
       val start = System.nanoTime()
+      val taskFailureListener = new TaskFailureListener
       try {
+        spark.sparkContext.addSparkListener(taskFailureListener)
         df = createDataFrame(spark)
 
         resultsAction match {
@@ -223,6 +222,8 @@ object BenchUtils {
           queryTimes.append(-1)
           exceptions.append(BenchUtils.stackTraceAsString(e))
           e.printStackTrace()
+      } finally {
+        spark.sparkContext.removeSparkListener(taskFailureListener)
       }
     }
 
