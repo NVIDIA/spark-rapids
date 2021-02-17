@@ -627,7 +627,7 @@ case class GpuCast(
      * Parse dates that match the provided regex. This method does not close the `input`
      * ColumnVector.
      */
-    def convertDateOrNull(
+    def convertFixedLenDateOrNull(
         input: ColumnVector,
         len: Int,
         cudfFormat: String): ColumnVector = {
@@ -642,7 +642,7 @@ case class GpuCast(
     }
 
     /** This method does not close the `input` ColumnVector. */
-    def convertVarLengthDateOr(
+    def convertVarLenDateOr(
         input: ColumnVector,
         regex: String,
         cudfFormat: String,
@@ -664,7 +664,7 @@ case class GpuCast(
     }
 
     /** This method does not close the `input` ColumnVector. */
-    def convertFixedWidthDateOr(
+    def convertFixedLenDateOr(
         input: ColumnVector,
         len: Int,
         cudfFormat: String,
@@ -696,9 +696,9 @@ case class GpuCast(
     withResource(sanitizedInput) { sanitizedInput =>
 
       // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-      val converted = convertVarLengthDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-        convertFixedWidthDateOr(sanitizedInput, 7, "%Y-%m",
-          convertDateOrNull(sanitizedInput, 4, "%Y")))
+      val converted = convertVarLenDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+        convertFixedLenDateOr(sanitizedInput, 7, "%Y-%m",
+          convertFixedLenDateOrNull(sanitizedInput, 4, "%Y")))
 
       // handle special dates like "epoch", "now", etc.
       specialDates.foldLeft(converted)((prev, specialDate) =>
@@ -733,7 +733,7 @@ case class GpuCast(
      * Parse dates that match the the provided regex. This method does not close the `input`
      * ColumnVector.
      */
-    def convertTimestampOrNull(
+    def convertFixedLenTimestampOrNull(
         input: ColumnVector,
         len: Int,
         cudfFormat: String): ColumnVector = {
@@ -748,7 +748,7 @@ case class GpuCast(
     }
 
     /** This method does not close the `input` ColumnVector. */
-    def convertTimestampOr(
+    def convertVarLenTimestampOr(
         input: ColumnVector,
         regex: String,
         cudfFormat: String,
@@ -769,7 +769,7 @@ case class GpuCast(
     }
 
     /** This method does not close the `input` ColumnVector. */
-    def convertTimestampFullOr(
+    def convertFullTimestampOr(
         input: ColumnVector,
         orElse: ColumnVector): ColumnVector = {
 
@@ -837,10 +837,10 @@ case class GpuCast(
     withResource(sanitizedInput) { sanitizedInput =>
       // convert dates that are in valid timestamp formats
       val converted =
-        convertTimestampFullOr(sanitizedInput,
-          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-              convertTimestampOrNull(sanitizedInput, 4, "%Y"))))
+        convertFullTimestampOr(sanitizedInput,
+          convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+              convertFixedLenTimestampOrNull(sanitizedInput, 4, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
       val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
