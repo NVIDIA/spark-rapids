@@ -428,6 +428,24 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.children.foreach(assertIsOnTheGpu(_, conf))
   }
 
+  /**
+   * This is intended for testing only and this only supports looking for an exec once.
+   */
+  private def validateExecsInGpuPlan(plan: SparkPlan, conf: RapidsConf): Unit = {
+    val validateExecs = conf.validateExecsInGpuPlan.toSet
+    if (validateExecs.nonEmpty) {
+      def planContainsInstanceOf(plan: SparkPlan): Boolean = {
+        validateExecs.contains(plan.getClass.getSimpleName)
+      }
+      // to set to make uniq execs
+      val execsFound = ShimLoader.getSparkShims.findOperators(plan, planContainsInstanceOf).toSet
+      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
+      require(execsNotFound.isEmpty,
+        s"Plan ${plan.toString()} does not contain the following execs: " +
+        execsNotFound.mkString(","))
+    }
+  }
+
   def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
     case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExecParent] =>
       val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExecParent]
@@ -457,6 +475,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       if (conf.isTestEnabled) {
         assertIsOnTheGpu(updatedPlan, conf)
+        validateExecsInGpuPlan(updatedPlan, conf)
       }
       updatedPlan
     } else {

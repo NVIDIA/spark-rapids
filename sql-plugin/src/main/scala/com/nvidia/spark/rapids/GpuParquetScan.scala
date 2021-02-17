@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import scala.math.max
 import ai.rapids.cudf._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.RebaseHelper
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.commons.io.IOUtils
@@ -57,7 +57,6 @@ import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFil
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -359,7 +358,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, SQLMetric],
+    metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean) extends PartitionReaderFactory with Arm with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
@@ -468,7 +467,7 @@ case class GpuParquetPartitionReaderFactory(
     partitionSchema: StructType,
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
-    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory with Arm with Logging {
+    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Arm with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
@@ -507,7 +506,7 @@ abstract class FileParquetPartitionReaderBase(
     isSchemaCaseSensitive: Boolean,
     readDataSchema: StructType,
     debugDumpPrefix: String,
-    execMetrics: Map[String, SQLMetric]) extends PartitionReader[ColumnarBatch] with Logging
+    execMetrics: Map[String, GpuMetric]) extends PartitionReader[ColumnarBatch] with Logging
   with ScanWithMetrics with Arm {
 
   protected var isDone: Boolean = false
@@ -886,7 +885,7 @@ class MultiFileParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric],
+    execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int)
   extends FileParquetPartitionReaderBase(conf, isSchemaCaseSensitive, readDataSchema,
@@ -922,7 +921,7 @@ class MultiFileParquetPartitionReader(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
-        metrics("peakDevMemory") += maxDeviceMemory
+        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batch = readBatch()
       }
@@ -1304,7 +1303,7 @@ class MultiFileCloudParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric],
+    execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
     maxNumFileProcessed: Int,
@@ -1484,7 +1483,7 @@ class MultiFileCloudParquetPartitionReader(
           }
         } else {
           isDone = true
-          metrics("peakDevMemory") += maxDeviceMemory
+          metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
         }
       }
     }
@@ -1625,7 +1624,7 @@ class ParquetPartitionReader(
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
-    execMetrics: Map[String, SQLMetric],
+    execMetrics: Map[String, GpuMetric],
     isCorrectedRebaseMode: Boolean)  extends
   FileParquetPartitionReaderBase(conf,
     isSchemaCaseSensitive, readDataSchema, debugDumpPrefix, execMetrics) {
@@ -1638,7 +1637,7 @@ class ParquetPartitionReader(
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
-        metrics("peakDevMemory") += maxDeviceMemory
+        metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
         batch = readBatch()
       }

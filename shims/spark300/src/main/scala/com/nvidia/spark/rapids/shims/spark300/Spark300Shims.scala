@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.shims.spark300
 import java.nio.ByteBuffer
 import java.time.ZoneId
 
+import scala.collection.mutable.ListBuffer
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 import org.apache.arrow.vector.ValueVector
@@ -37,7 +39,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -555,4 +557,27 @@ class Spark300Shims extends SparkShims {
   }
 
   override def shouldFailDivByZero(): Boolean = false
+
+  /**
+   * Return list of matching predicates present in the plan
+   * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
+   */
+  override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
 }

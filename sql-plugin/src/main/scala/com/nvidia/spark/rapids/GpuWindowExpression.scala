@@ -199,13 +199,18 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
         }
       }
     }
-    val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
-    if (expectedType != aggColumn.getType) {
-      withResource(aggColumn) { aggColumn =>
-        GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
-      }
-    } else {
-      GpuColumnVector.from(aggColumn, windowFunc.dataType)
+    // For nested type, do not cast
+    aggColumn.getType match {
+      case dType if dType.isNestedType =>
+        GpuColumnVector.from(aggColumn, windowFunc.dataType)
+      case _ =>
+        val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
+        // The API 'castTo' will take care of the 'from' type and 'to' type, and
+        // just increase the reference count by one when they are the same.
+        // so it is OK to always call it here.
+        withResource(aggColumn) { aggColumn =>
+          GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
+        }
     }
   }
 
@@ -230,13 +235,18 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
         }
       }
     }
-    val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
-    if (expectedType != aggColumn.getType) {
-      withResource(aggColumn) { aggColumn =>
-        GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
-      }
-    } else {
-      GpuColumnVector.from(aggColumn, windowFunc.dataType)
+    // For nested type, do not cast
+    aggColumn.getType match {
+      case dType if dType.isNestedType =>
+        GpuColumnVector.from(aggColumn, windowFunc.dataType)
+      case _ =>
+        val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
+        // The API 'castTo' will take care of the 'from' type and 'to' type, and
+        // just increase the reference count by one when they are the same.
+        // so it is OK to always call it here.
+        withResource(aggColumn) { aggColumn =>
+          GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
+        }
     }
   }
 }

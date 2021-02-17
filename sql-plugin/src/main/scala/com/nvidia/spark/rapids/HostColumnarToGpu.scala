@@ -26,7 +26,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
@@ -230,14 +229,14 @@ object HostColumnarToGpu extends Logging {
 class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     goal: CoalesceGoal,
     schema: StructType,
-    numInputRows: SQLMetric,
-    numInputBatches: SQLMetric,
-    numOutputRows: SQLMetric,
-    numOutputBatches: SQLMetric,
-    collectTime: SQLMetric,
-    concatTime: SQLMetric,
-    totalTime: SQLMetric,
-    peakDevMemory: SQLMetric,
+    numInputRows: GpuMetric,
+    numInputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    collectTime: GpuMetric,
+    concatTime: GpuMetric,
+    totalTime: GpuMetric,
+    peakDevMemory: GpuMetric,
     opName: String,
     useArrowCopyOpt: Boolean)
   extends AbstractGpuCoalesceIterator(iter,
@@ -353,17 +352,15 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
   extends UnaryExecNode
   with GpuExec {
-  import GpuMetricNames._
-
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    NUM_INPUT_ROWS ->
-      SQLMetrics.createMetric(sparkContext, GpuMetricNames.DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES ->
-      SQLMetrics.createMetric(sparkContext, GpuMetricNames.DESCRIPTION_NUM_INPUT_BATCHES),
-    "collectTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "collect batch time"),
-    "concatTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "concat batch time"),
-    "peakDevMemory" ->
-      SQLMetrics.createMetric(sparkContext, GpuMetricNames.DESCRIPTION_PEAK_DEVICE_MEMORY)
+  import GpuMetric._
+  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
+    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
+    PEAK_DEVICE_MEMORY -> createMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
   )
 
   override def output: Seq[Attribute] = child.output
@@ -387,14 +384,14 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
    */
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
 
-    val numInputRows = longMetric(NUM_INPUT_ROWS)
-    val numInputBatches = longMetric(NUM_INPUT_BATCHES)
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val collectTime = longMetric("collectTime")
-    val concatTime = longMetric("concatTime")
-    val totalTime = longMetric(TOTAL_TIME)
-    val peakDevMemory = longMetric("peakDevMemory")
+    val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
+    val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val collectTime = gpuLongMetric(COLLECT_TIME)
+    val concatTime = gpuLongMetric(CONCAT_TIME)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
     // cache in a local to avoid serializing the plan
     val outputSchema = schema

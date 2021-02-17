@@ -130,9 +130,9 @@ case class GpuWindowExec(
     throw new IllegalStateException(s"Row-based execution should not happen, in $this.")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputBatches = metrics(GpuMetricNames.NUM_OUTPUT_BATCHES)
-    val numOutputRows = metrics(GpuMetricNames.NUM_OUTPUT_ROWS)
-    val totalTime = metrics(GpuMetricNames.TOTAL_TIME)
+    val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
+    val totalTime = gpuLongMetric(GpuMetric.TOTAL_TIME)
 
     val projectList = if (resultColumnsOnly) {
       windowExpressionAliases

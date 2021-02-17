@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,8 +55,9 @@ trait GpuPartitioning extends Partitioning with Arm {
           case Some(codec) =>
             compressSplits(splits, codec, contiguousTables, dataTypes)
           case None =>
-            withResource(contiguousTables) { cts =>
-              cts.foreach { ct => splits.append(GpuColumnVectorFromBuffer.from(ct, dataTypes)) }
+            // GpuPackedTableColumn takes ownership of the contiguous tables
+            closeOnExcept(contiguousTables) { cts =>
+              cts.foreach { ct => splits.append(GpuPackedTableColumn.from(ct)) }
             }
         }
         splits.toArray
@@ -135,10 +136,8 @@ trait GpuPartitioning extends Partitioning with Arm {
 
       // add each table either to the batch to be compressed or to the empty batch tracker
       contiguousTables.zipWithIndex.foreach { case (ct, i) =>
-        if (ct.getTable.getRowCount == 0) {
-          withResource(ct) { _ =>
-            emptyBatches.append((GpuColumnVector.from(ct.getTable, dataTypes), i))
-          }
+        if (ct.getRowCount == 0) {
+          emptyBatches.append((GpuPackedTableColumn.from(ct), i))
         } else {
           compressor.addTableToCompress(ct)
         }
@@ -153,7 +152,7 @@ trait GpuPartitioning extends Partitioning with Arm {
           val numCompressedToAdd = emptyOutputIndex - outputIndex
           (0 until numCompressedToAdd).foreach { _ =>
             val compressedTable = compressedTables(compressedTableIndex)
-            outputBatches.append(GpuCompressedColumnVector.from(compressedTable, dataTypes))
+            outputBatches.append(GpuCompressedColumnVector.from(compressedTable))
             compressedTableIndex += 1
           }
           outputBatches.append(emptyBatch)
@@ -163,7 +162,7 @@ trait GpuPartitioning extends Partitioning with Arm {
         // add any compressed batches that remain after the last empty batch
         (compressedTableIndex until compressedTables.length).foreach { i =>
           val ct = compressedTables(i)
-          outputBatches.append(GpuCompressedColumnVector.from(ct, dataTypes))
+          outputBatches.append(GpuCompressedColumnVector.from(ct))
         }
       }
     }

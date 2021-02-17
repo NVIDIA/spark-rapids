@@ -48,7 +48,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
   def verifyTableMeta(expected: TableMeta, actual: TableMeta): Unit = {
     assertResult(expected.rowCount())(actual.rowCount())
-    assertResult(expected.columnMetasLength())(actual.columnMetasLength())
+    assertResult(expected.packedMetaAsByteBuffer())(actual.packedMetaAsByteBuffer())
     verifyBufferMeta(expected.bufferMeta, actual.bufferMeta)
   }
 
