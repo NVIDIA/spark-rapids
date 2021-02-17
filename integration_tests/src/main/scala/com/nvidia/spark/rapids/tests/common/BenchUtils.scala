@@ -27,7 +27,8 @@ import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods.parse
 import org.json4s.jackson.Serialization.writePretty
 
-import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
+import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, Success, TaskEndReason}
+import org.apache.spark.scheduler.{SparkListener, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{InputAdapter, QueryExecution, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
@@ -167,7 +168,11 @@ object BenchUtils {
 
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
+
+
     for (i <- 0 until iterations) {
+      val taskFailureListener = new TaskFailureListener
+      spark.sparkContext.addSparkListener(taskFailureListener)
       spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
       
       // cause Spark to call unregisterShuffle
@@ -197,6 +202,12 @@ object BenchUtils {
             ensureValidColumnNames(df).write.mode(mode).options(options).orc(path)
           case WriteParquet(path, mode, options) =>
             ensureValidColumnNames(df).write.mode(mode).options(options).parquet(path)
+        }
+
+        if (taskFailureListener.taskFailures.nonEmpty) {
+          throw new RuntimeException(
+            s"${taskFailureListener.taskFailures.size} task failure(s) detected. " +
+                s"First failure: ${taskFailureListener.taskFailures.head}")
         }
 
         val end = System.nanoTime()
@@ -721,6 +732,20 @@ object BenchUtils {
     w.close()
     sw.toString
   }
+}
+
+class TaskFailureListener extends SparkListener {
+
+  val taskFailures = new ListBuffer[TaskEndReason]()
+
+  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+    taskEnd.reason match {
+      case Success =>
+      case reason => taskFailures += reason
+    }
+    super.onTaskEnd(taskEnd)
+  }
+
 }
 
 class BenchmarkListener(
