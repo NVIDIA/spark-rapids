@@ -168,7 +168,6 @@ object BenchUtils {
 
     var df: DataFrame = null
     val queryTimes = new ListBuffer[Long]()
-
     for (i <- 0 until iterations) {
       spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
       
