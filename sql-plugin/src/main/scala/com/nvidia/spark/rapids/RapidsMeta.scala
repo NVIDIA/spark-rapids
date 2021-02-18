@@ -30,6 +30,7 @@ import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.window.WindowExecBase
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -241,6 +242,18 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       } else {
         willNotWorkOnGpu(s"the $operationName ${wrapped.getClass.getSimpleName} has" +
             s" been disabled. Set $confKey to true if you wish to enable it")
+      }
+    }
+
+    val isExp = wrapped.isInstanceOf[Expression]
+    val isConstantFoldingOff =
+      conf.getStringConf(SQLConf.OPTIMIZER_EXCLUDED_RULES.key).getOrElse("")
+      .contains("org.apache.spark.sql.catalyst.optimizer.ConstantFolding")
+    if (isConstantFoldingOff && isExp) {
+      val exp = wrapped.asInstanceOf[Expression]
+      if (exp.foldable && !GpuOverrides.isLit(exp)) {
+        willNotWorkOnGpu(s"Cannot run on GPU because constant folding is off and expression " +
+          s"${exp} is foldable and operates on non literals")
       }
     }
 
