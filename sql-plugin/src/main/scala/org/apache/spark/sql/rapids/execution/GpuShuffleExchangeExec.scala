@@ -177,9 +177,7 @@ object GpuShuffleExchangeExec {
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
       val shim = ShimLoader.getSparkShims
-      val boundReferences = outputAttributes.zipWithIndex.map { withIndex =>
-        val index = withIndex._2
-        val attr = withIndex._1
+      val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
         shim.sortOrder(GpuBoundReference(index, attr.dataType, attr.nullable), Ascending)
       }
       val sorter = new GpuSorter(boundReferences, outputAttributes)

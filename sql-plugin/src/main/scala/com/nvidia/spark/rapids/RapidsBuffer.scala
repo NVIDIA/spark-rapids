@@ -75,7 +75,7 @@ trait RapidsBuffer extends AutoCloseable {
   /**
    * A callback function that can be used for metrics when a buffer is spilled
    */
-  val spillCallback: (String, Long) => Unit
+  val spillCallback: (StorageTier, Long) => Unit
 
   /**
    * Get the columnar batch within this buffer. The caller must have
@@ -175,5 +175,5 @@ sealed class DegenerateRapidsBuffer(
 
   override def close(): Unit = {}
 
-  override val spillCallback: (String, Long) => Unit = (_, _) => ()
+  override val spillCallback: (StorageTier, Long) => Unit = (_, _) => ()
 }

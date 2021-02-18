@@ -27,13 +27,18 @@ Spark's guarantee. It may not be 100% identical if the ordering is ambiguous.
 In versions of Spark prior to 3.1.0 `-0.0` is always < `0.0` but in 3.1.0 and above this is
 not true for sorting. For all versions of the plugin `-0.0` == `0.0` for sorting.
 
-Spark's sorting is typically a stable sort. It cannot guarantee this in distributed work loads
-because it cannot guarantee the order in which upstream data arrives to a task. There is only one
-situation where it can guarantee the order, and that is when it is reading data from a file, and
-the processing is coalesced to a single task/partition. The RAPIDS Accelerator does an unstable
-out of core sort by default. If you do rely on a stable sort in your processing you can disable
+Spark's sorting is typically a [stable](https://en.wikipedia.org/wiki/Sorting_algorithm#Stability)
+sort. Sort stability cannot be guaranteed in distributed work loads because the order in which
+upstream data arrives to a task is not guaranteed. Sort stability is only
+guaranteed in one situation which is reading and sorting data from a file using a single 
+task/partition. The RAPIDS Accelerator does an unstable
+[out of core](https://en.wikipedia.org/wiki/External_memory_algorithm) sort by default. This
+simply means that the sort algorithm allows for spilling parts of the data if it is larger than
+can fit in the GPU's memory, but it does not guarantee ordering of rows when the ordering of the
+keys is ambiguous. If you do rely on a stable sort in your processing you can disable
 the out of core sort by setting
-[spark.rapids.sql.outOfCoreSort.enabled](configs.md#sql.outOfCoreSort.enabled) to `false`.
+[spark.rapids.sql.outOfCoreSort.enabled](configs.md#sql.outOfCoreSort.enabled) to `false` and
+RAPIDS will try to sort all the data for a given task/partition at once on the GPU.
 
 ## Floating Point
 

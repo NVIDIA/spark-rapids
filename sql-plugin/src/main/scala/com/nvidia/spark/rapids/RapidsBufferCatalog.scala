@@ -188,7 +188,8 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param spillCallback callback function when a buffer is spilled. Be very careful with
-   *                      this it should not block and be as light weight as possible i.e. metrics.
+   *                      this it should not allocate GPU memory or block and be as light weight
+   *                      as possible i.e. metrics.
    */
   def addTable(
       id: RapidsBufferId,
@@ -196,7 +197,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (String, Long) => Unit): Unit =
+      spillCallback: (StorageTier, Long) => Unit): Unit =
     deviceStorage.addTable(id, table, contigBuffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**
@@ -205,13 +206,14 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @param contigTable contiguos table to track in device storage
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param spillCallback callback function when a buffer is spilled. Be very careful with
-   *                      this it should not block and be as light weight as possible i.e. metrics.
+   *                      this it should not allocate GPU memory or block and be as light weight
+   *                      as possible i.e. metrics.
    */
   def addContiguousTable(
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: (String, Long) => Unit): Unit =
+      spillCallback: (StorageTier, Long) => Unit): Unit =
     deviceStorage.addContiguousTable(id, contigTable, initialSpillPriority, spillCallback)
 
   /**
@@ -221,14 +223,15 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param spillCallback callback function when a buffer is spilled. Be very careful with
-   *                      this it should not block and be as light weight as possible i.e. metrics.
+   *                      this it should not allocate GPU memory or block and be as light weight
+   *                      as possible i.e. metrics.
    */
   def addBuffer(
       id: RapidsBufferId,
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (String, Long) => Unit): Unit =
+      spillCallback: (StorageTier, Long) => Unit): Unit =
     deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**

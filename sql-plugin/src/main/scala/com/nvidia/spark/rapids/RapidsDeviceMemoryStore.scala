@@ -51,7 +51,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (String, Long) => Unit): Unit = {
+      spillCallback: (StorageTier, Long) => Unit): Unit = {
     val buffer = new RapidsDeviceMemoryBuffer(
       id,
       contigBuffer.getLength,
@@ -86,7 +86,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: (String, Long) => Unit = (_, _) => ()): Unit = {
+      spillCallback: (StorageTier, Long) => Unit = (_, _) => ()): Unit = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -125,7 +125,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (String, Long) => Unit = (_, _) => ()): Unit = {
+      spillCallback: (StorageTier, Long) => Unit = (_, _) => ()): Unit = {
     val buff = new RapidsDeviceMemoryBuffer(
       id,
       buffer.getLength,
@@ -154,7 +154,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long,
-      spillCallback: (String, Long) => Unit) extends
+      spillCallback: (StorageTier, Long) => Unit) extends
       RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.DEVICE
 

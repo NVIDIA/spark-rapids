@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,9 @@ object SortUtils extends Arm {
       boundExprs: Seq[A]): Seq[GpuColumnVector] = {
     withResource(GpuProjectExec.project(cb, boundExprs)) { cb =>
       (0 until cb.numCols()).map(cb.column(_).asInstanceOf[GpuColumnVector].incRefCount())
+          // because this processing has a side effect (inc ref count) we want to force
+          // the data to execute now, instead of lazily. To do this we first convert it
+          // to an array and then back to a sequence again.  Seq does not have a force method
           .toArray.toSeq
     }
   }
@@ -72,10 +75,20 @@ object SortUtils extends Arm {
     }
 }
 
+/**
+ * A class that provides convenience methods for sorting batches of data
+ * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
+ * @param inputSchema The schema of the input data
+ */
 class GpuSorter(
     sortOrder: Seq[SortOrder],
     inputSchema: Array[Attribute]) extends Arm with Serializable {
 
+  /**
+   * A class that provides convenience methods for sorting batches of data
+   * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
+   * @param inputSchema The schema of the input data
+   */
   def this(sortOrder: Seq[SortOrder], inputSchema: Seq[Attribute]) =
     this(sortOrder, inputSchema.toArray)
 
@@ -83,15 +96,20 @@ class GpuSorter(
 
   private[this] val numInputColumns = inputSchema.length
 
+  /**
+   * A sort order that the CPU can use to sort data that is the output of `appendProjectedColumns`.
+   * This is required because the sort order that we have access to is for doing computation on the
+   * GPU, not the CPU.
+   */
   def cpuOrdering: Seq[SortOrder] = cpuOrderingInternal.toSeq
 
-  private[this] lazy val (needsComputation, cudfOrdering, cpuOrderingInternal) = {
-    val needsComputation = mutable.ArrayBuffer[SortOrder]()
+  private[this] lazy val (sortOrdersThatNeedComputation, cudfOrdering, cpuOrderingInternal) = {
+    val sortOrdersThatNeedsComputation = mutable.ArrayBuffer[SortOrder]()
     val cpuOrdering = mutable.ArrayBuffer[SortOrder]()
     val cudfOrdering = mutable.ArrayBuffer[Table.OrderByArg]()
     var newColumnIndex = numInputColumns
     // Remove duplicates in the ordering itself because
-    // There is no need to do it twice
+    // there is no need to do it twice.
     boundSortOrder.distinct.foreach { so =>
       SortUtils.extractReference(so.child) match {
         case Some(ref) =>
@@ -104,7 +122,7 @@ class GpuSorter(
           val index = newColumnIndex
           newColumnIndex += 1
           cudfOrdering += SortUtils.getOrder(so, index)
-          needsComputation += so
+          sortOrdersThatNeedsComputation += so
           // We already did the computation so instead of trying to translate
           // the computation back to the CPU too, just use the existing columns.
           cpuOrdering += ShimLoader.getSparkShims.sortOrder(
@@ -112,16 +130,31 @@ class GpuSorter(
             so.direction, so.nullOrdering)
       }
     }
-    (needsComputation.toArray, cudfOrdering.toArray, cpuOrdering.toArray)
+    (sortOrdersThatNeedsComputation.toArray, cudfOrdering.toArray, cpuOrdering.toArray)
   }
 
-  lazy val computationSchema: Seq[Attribute] =
-    needsComputation.map { so =>
+  /**
+   * A schema for columns that are computed as a part of sorting. The name of this field should be
+   * ignored as it is a temporary implementation detail. The order and types of them are what
+   * matter.
+   */
+  private[this] lazy val computationSchema: Seq[Attribute] =
+    sortOrdersThatNeedComputation.map { so =>
       AttributeReference(s"SORT_TMP", so.dataType, so.nullable)()
     }
 
+  /**
+   * Some sort order require computation to get the fields to sort on. This is done as a part of
+   * the `appendProjectedColumns` method and this holds the schema for the result of that method.
+   */
   lazy val projectedBatchSchema: Seq[Attribute] = inputSchema ++ computationSchema
+  /**
+   * The types and order for the columns returned by `appendProjectedColumns`
+   */
   lazy val projectedBatchTypes: Array[DataType] = projectedBatchSchema.map(_.dataType).toArray
+  /**
+   * The original input types without any temporary columns added to them needed for sorting.
+   */
   lazy val originalTypes: Array[DataType] = inputSchema.map(_.dataType)
 
   /**
@@ -130,10 +163,11 @@ class GpuSorter(
    * @return the batch with columns added
    */
   final def appendProjectedColumns(inputBatch: ColumnarBatch): ColumnarBatch = {
-    if (needsComputation.isEmpty) {
+    if (sortOrdersThatNeedComputation.isEmpty) {
       GpuColumnVector.incRefCounts(inputBatch)
     } else {
-      withResource(GpuProjectExec.project(inputBatch, needsComputation.map(_.child))) { extra =>
+      withResource(GpuProjectExec.project(inputBatch,
+        sortOrdersThatNeedComputation.map(_.child))) { extra =>
         GpuColumnVector.combineColumns(inputBatch, extra)
       }
     }
@@ -169,6 +203,13 @@ class GpuSorter(
     }
   }
 
+  /**
+   * Merge multiple batches together. All of these batches should be the output of
+   * `appendProjectedColumns` and the output of this will also be in that same format.
+   * @param batches the batches to sort
+   * @param sortTime metric for the time spent doing the merge sort
+   * @return the sorted data.
+   */
   final def mergeSort(batches: Array[ColumnarBatch], sortTime: GpuMetric): ColumnarBatch = {
     withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
       if (batches.length == 1) {
@@ -210,7 +251,7 @@ class GpuSorter(
    * @return the ColumnarBatch
    */
   final def removeProjectedColumns(input: Table): ColumnarBatch =
-    GpuColumnVector.from(input, originalTypes,0, numInputColumns)
+    GpuColumnVector.from(input, originalTypes, 0, numInputColumns)
 
   /**
    * Append any columns needed for sorting the batch and sort it. Be careful because

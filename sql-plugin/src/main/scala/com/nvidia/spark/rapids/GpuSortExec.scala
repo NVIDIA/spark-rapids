@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.StorageTier.StorageTier
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -78,9 +79,8 @@ case class GpuSortExec(
   override def requiredChildDistribution: Seq[Distribution] =
     if (global) OrderedDistribution(sortOrder) :: Nil else UnspecifiedDistribution :: Nil
 
-  // Eventually this might change, but for now we will produce a single batch, which is the same
-  // as what we require from our input.
   override def outputBatching: CoalesceGoal = sortType match {
+    // We produce a single batch if we know that our input will be a single batch
     case FullSortSingleBatch => RequireSingleBatch
     case _ => null
   }
@@ -115,7 +115,8 @@ case class GpuSortExec(
         val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
         val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
-          // bad things can happen if the target size is really small
+          // To avoid divide by zero errors, underflow and overflow issues in tests
+          // that want the targetSize to be 0, we set it to something more reasonable
           math.max(16 * 1024, targetSize), totalTime, sortTime, outputBatch, outputRows,
           peakDevMemory, spillCallback)
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
@@ -150,14 +151,23 @@ case class GpuSortEachBatchIterator(
   }
 }
 
-case class OutOfCoreBatch(buffer: SpillableColumnarBatch, row: UnsafeRow) extends AutoCloseable {
+/**
+ * Holds data for the out of core sort. It includes the batch of data and the first row in that
+ * batch so we can sort the batches.
+ */
+case class OutOfCoreBatch(buffer: SpillableColumnarBatch,
+    firstRow: UnsafeRow) extends AutoCloseable {
   override def close(): Unit = buffer.close()
 }
 
+/**
+ * Data that the out of core sort algorithm has not finished sorting. This acts as a priority
+ * queue with each batch sorted by the first row in that batch.
+ */
 class Pending(cpuOrd: LazilyGeneratedOrdering) extends AutoCloseable {
   private val pending = new PriorityQueue[OutOfCoreBatch](new Comparator[OutOfCoreBatch]() {
     override def compare(a: OutOfCoreBatch, b: OutOfCoreBatch): Int =
-      cpuOrd.compare(a.row, b.row)
+      cpuOrd.compare(a.firstRow, b.firstRow)
   })
   private var pendingSize = 0L
   def add(buffer: SpillableColumnarBatch, row: UnsafeRow): Unit = {
@@ -184,6 +194,23 @@ class Pending(cpuOrd: LazilyGeneratedOrdering) extends AutoCloseable {
   override def close(): Unit = pending.forEach(_.close())
 }
 
+/**
+ * Sorts incoming batches of data spilling if needed.
+ * <br/>
+ * The algorithm for this is a modified version of an external merge sort with multiple passes for
+ * large data.
+ * https://en.wikipedia.org/wiki/External_sorting#External_merge_sort
+ * <br/>
+ * The main difference is that we cannot stream the data when doing a merge sort. So, we instead
+ * divide the data into batches that are small enough that we can do a merge sort on N batches
+ * and still fit the output within the target batch size. When merging batches instead of
+ * individual rows we cannot assume that all of the resulting data is globally sorted. Hopefully,
+ * most of it is globally sorted but we have to use the first row from the next pending batch to
+ * determine the cutoff point between globally sorted data and data that still needs to be merged
+ * with other batches. The globally sorted portion is put into a sorted queue while the rest of
+ * the merged data is split and put back into a pending queue.  The process repeats until we have
+ * enough data to output.
+ */
 case class GpuOutOfCoreSortIterator(
     iter: Iterator[ColumnarBatch],
     sorter: GpuSorter,
@@ -194,25 +221,36 @@ case class GpuOutOfCoreSortIterator(
     outputBatches: GpuMetric,
     outputRows: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: (String, Long) => Unit) extends Iterator[ColumnarBatch]
+    spillCallback: (StorageTier, Long) => Unit) extends Iterator[ColumnarBatch]
     with Arm with AutoCloseable {
 
   // There are so many places where we might hit a new peak that it gets kind of complex
   // so we are picking a few places that are likely to increase the amount of memory used.
+  // and we update this temporary value. Only when we output a batch do we put this into the
+  // peakDevMemory metric
   private var peakMemory = 0L
 
+  // A priority queue of data that is not merged yet.
   private val pending = new Pending(cpuOrd)
 
+  // data that has been determined to be globally sorted and is waiting to be output.
   private val sorted = new LinkedList[SpillableColumnarBatch]()
+  // how much data, in bytes, that is stored in `sorted`
   private var sortedSize = 0L
 
   override def hasNext: Boolean = !sorted.isEmpty || !pending.isEmpty || iter.hasNext
 
   // Use types for the UnsafeProjection otherwise we need to have CPU BoundAttributeReferences
+  // used for converting between columnar data and rows (to get the first row in each batch).
   private lazy val unsafeProjection = UnsafeProjection.create(sorter.projectedBatchTypes)
+  // Used for converting between rows and columns when we have to put a cuttoff on the GPU
+  // to know how much of the data after a merge sort is fully sorted.
   private lazy val converters = new GpuRowToColumnConverter(
     TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))
 
+  /**
+   * Convert the boundaries (first rows for each batch) into unsafe rows for use later on.
+   */
   private def convertBoundaries(tab: Table): Array[UnsafeRow] = {
     import scala.collection.JavaConverters._
     val cb = withResource(new NvtxRange("COPY BOUNDARIES", NvtxColor.PURPLE)) { _ =>
@@ -227,6 +265,13 @@ case class GpuOutOfCoreSortIterator(
     }
   }
 
+  /**
+   * A rather complex function. It will take a sorted table (either the output of a regular sort or
+   * a merge sort), split it up, and place the split portions into the proper queues. If
+   * sortedOffset >= 0 then everything below that offset is considered to be fully sorted and is
+   * placed in the sorted queue. Everything else is spilt into smaller batches as determined by
+   * this function and placed in the pending priority queue to be merge sorted.
+   */
   private final def splitAfterSortAndSave(sortedTbl: Table, sortedOffset: Int = -1): Unit = {
     var memUsed: Long = GpuColumnVector.getTotalDeviceMemoryUsed(sortedTbl)
     // We need to figure out how to split up the data into reasonable batches. We could try and do
@@ -242,12 +287,12 @@ case class GpuOutOfCoreSortIterator(
 
     if (sortedOffset == rows - 1) {
       // The entire thing is sorted
-      withResource(sortedTbl.contiguousSplit()) { split =>
-        assert(split.length == 1)
-        memUsed += split.head.getBuffer.getLength
+      withResource(sortedTbl.contiguousSplit()) { splits =>
+        assert(splits.length == 1)
+        memUsed += splits.head.getBuffer.getLength
         withResource(new NvtxRange("Store Sorted Table", NvtxColor.DARK_GREEN)) { _ =>
           closeOnExcept(
-            GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
+            GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
             val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
               spillCallback)
             sortedSize += sp.sizeInBytes
@@ -281,21 +326,21 @@ case class GpuOutOfCoreSortIterator(
           }
         }
 
-      withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { split =>
-        memUsed += split.map(_.getBuffer.getLength).sum
+      withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { splits =>
+        memUsed += splits.map(_.getBuffer.getLength).sum
         val stillPending = if (sortedOffset >= 0) {
           withResource(new NvtxRange("Store Sorted Table", NvtxColor.DARK_GREEN)) { _ =>
             closeOnExcept(
-              GpuColumnVectorFromBuffer.from(split.head, sorter.projectedBatchTypes)) { cb =>
+              GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
               val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
                 spillCallback)
               sortedSize += sp.sizeInBytes
               sorted.add(sp)
             }
           }
-          split.slice(1, split.length)
+          splits.slice(1, splits.length)
         } else {
-          split
+          splits
         }
 
         withResource(new NvtxRange("Store Split Tables", NvtxColor.YELLOW)) { _ =>
@@ -318,6 +363,10 @@ case class GpuOutOfCoreSortIterator(
     peakMemory = Math.max(peakMemory, memUsed)
   }
 
+  /**
+   * First pass through the data. Read in all of the batches, sort each batch and split them up into
+   * smaller chunks for later merge sorting.
+   */
   private final def firstPassReadBatches(): Unit = {
     while(iter.hasNext) {
       var memUsed = 0L
@@ -386,8 +435,8 @@ case class GpuOutOfCoreSortIterator(
           mergedBatch.numRows() - 1
         } else {
           // The data is only fully sorted if there is nothing pending that is smaller than it
-          // so get the nest smallest row that is pending
-          val cutoff = pending.peek().row
+          // so get the next "smallest" row that is pending.
+          val cutoff = pending.peek().firstRow
           val builders = new GpuColumnarBatchBuilder(
             TrampolineUtil.fromAttributes(sorter.projectedBatchSchema), 1, null)
           converters.convert(cutoff, builders)

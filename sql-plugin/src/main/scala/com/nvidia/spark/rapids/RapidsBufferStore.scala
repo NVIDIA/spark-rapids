@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -230,7 +231,7 @@ abstract class RapidsBufferStore(
       val newBuffer = try {
         logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
           s"total mem=${buffers.getTotalBytes}")
-        buffer.spillCallback(spillStore.name, buffer.size)
+        buffer.spillCallback(buffer.storageTier, buffer.size)
         spillStore.copyBuffer(buffer, stream)
       } finally {
         buffer.close()
@@ -248,7 +249,7 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: (String, Long) => Unit) extends RapidsBuffer with Arm {
+      override val spillCallback: (StorageTier, Long) => Unit) extends RapidsBuffer with Arm {
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority

@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.StorageTier.{DISK, GDS, HOST, StorageTier}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
@@ -110,19 +112,19 @@ object GpuMetric extends Logging {
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
 
-  def makeSpillCallback(allMetrics: Map[String, GpuMetric]): (String, Long) => Unit = {
+  def makeSpillCallback(allMetrics: Map[String, GpuMetric]): (StorageTier, Long) => Unit = {
     val spillAmount = allMetrics(SPILL_AMOUNT)
     val disk = allMetrics(SPILL_AMOUNT_DISK)
     val host = allMetrics(SPILL_AMOUNT_HOST)
-    def updateMetrics(place: String, amount: Long): Unit = {
+    def updateMetrics(tier: StorageTier, amount: Long): Unit = {
       spillAmount += amount
-      place match {
-        case "host" =>
+      tier match {
+        case HOST =>
           host += amount
-        case "gds" | "disk" =>
+        case GDS | DISK =>
           disk += amount
         case _ =>
-          logWarning(s"Spill to $place is unsupported in metrics: $amount")
+          logWarning(s"Spill to $tier is unsupported in metrics: $amount")
       }
     }
     updateMetrics

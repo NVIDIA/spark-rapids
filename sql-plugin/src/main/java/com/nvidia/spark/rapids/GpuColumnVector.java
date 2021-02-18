@@ -574,9 +574,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   static boolean typeConversionAllowed(Table table, DataType[] colTypes, int startCol, int endCol) {
     final int numColumns = endCol - startCol;
-    if (numColumns != colTypes.length) {
-      return false;
-    }
+    assert numColumns == colTypes.length: "The number of columns and the number of types don't match";
     boolean ret = true;
     for (int colIndex = startCol; colIndex < endCol; colIndex++) {
       boolean t = typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex - startCol]);
@@ -593,9 +591,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   static boolean typeConversionAllowed(Table table, DataType[] colTypes) {
     final int numColumns = table.getNumberOfColumns();
-    if (numColumns != colTypes.length) {
-      return false;
-    }
+    assert numColumns == colTypes.length: "The number of columns and the number of types don't match";
     boolean ret = true;
     for (int colIndex = 0; colIndex < numColumns; colIndex++) {
       ret = ret && typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex]);
@@ -702,6 +698,13 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return batch;
   }
 
+  /**
+   * Take the columns from all of the batches passed in and put them in a single batch. The order
+   * of the columns is preserved.
+   * <br/>
+   * For example if we had <pre>combineColumns({A, B}, {C, D})</pre> The result would be a single
+   * batch with <pre>{A, B, C, D}</pre>
+   */
   public static ColumnarBatch combineColumns(ColumnarBatch ... batches) {
     boolean isFirst = true;
     int numRows = 0;
@@ -808,8 +811,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         for (int i = 0; i < batch.numCols(); i++) {
           ai.rapids.cudf.ColumnVector cv = ((GpuColumnVector)batch.column(i)).getBase();
           long id = cv.getNativeView();
-          if (!found.contains(id)) {
-            found.add(id);
+          if (found.add(id)) {
             sum += cv.getDeviceMemorySize();
           }
         }
@@ -818,30 +820,28 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return sum;
   }
 
-  public static long getTotalDeviceMemoryUsed(GpuColumnVector[] tb) {
+  public static long getTotalDeviceMemoryUsed(GpuColumnVector[] vectors) {
     long sum = 0;
     HashSet<Long> found = new HashSet<>();
-    for (int i = 0; i < tb.length; i++) {
-      ai.rapids.cudf.ColumnVector cv = tb[i].getBase();
+    for (int i = 0; i < vectors.length; i++) {
+      ai.rapids.cudf.ColumnVector cv = vectors[i].getBase();
       long id = cv.getNativeView();
-      if (!found.contains(id)) {
-        found.add(id);
+      if (found.add(id)) {
         sum += cv.getDeviceMemorySize();
       }
     }
     return sum;
   }
 
-  public static long getTotalDeviceMemoryUsed(Table tb) {
+  public static long getTotalDeviceMemoryUsed(Table table) {
     long sum = 0;
-    int len = tb.getNumberOfColumns();
+    int len = table.getNumberOfColumns();
     // Deduplicate columns that are the same
     HashSet<Long> found = new HashSet<>();
     for (int i = 0; i < len; i++) {
-      ai.rapids.cudf.ColumnVector cv = tb.getColumn(i);
+      ai.rapids.cudf.ColumnVector cv = table.getColumn(i);
       long id = cv.getNativeView();
-      if (!found.contains(id)) {
-        found.add(id);
+      if (found.add(id)) {
         sum += cv.getDeviceMemorySize();
       }
     }

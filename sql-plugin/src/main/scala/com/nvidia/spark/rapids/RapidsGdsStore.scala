@@ -70,7 +70,7 @@ class RapidsGdsStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: (String, Long) => Unit) extends
+      spillCallback: (StorageTier, Long) => Unit) extends
       RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
