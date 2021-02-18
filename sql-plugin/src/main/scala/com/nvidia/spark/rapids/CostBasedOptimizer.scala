@@ -18,10 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression}
-import org.apache.spark.sql.execution.{ProjectExec, SortExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
+import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.internal.SQLConf
 
 class CostBasedOptimizer(conf: RapidsConf) extends Logging {
 
@@ -63,9 +61,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
             .map(costModel.transitionToGpuCost).sum
         val gpuCost = operatorGpuCost + transitionCost
         if (gpuCost > operatorCpuCost) {
-          plan.willNotWorkOnGpu(s"it is not worth moving the " +
-              s"${plan.wrapped.getClass.getSimpleName} operator to GPU: " +
-              s"cpuCost=$operatorCpuCost; gpuCost=$operatorGpuCost; transitionCost=$transitionCost")
+          plan.costPreventsRunningOnGpu()
           // stay on CPU, so costs are same
           totalGpuCost = totalCpuCost;
         } else {
@@ -79,8 +75,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
             val transitionCost = costModel.transitionToCpuCost(child)
             val childGpuTotal = childGpuCost + transitionCost
             if (childGpuTotal > childCpuCost) {
-              forceOnCpuRecursively(child, s"Forcing ${child.wrapped.getClass.getSimpleName} " +
-                  s"onto CPU: cpuCost=$totalCpuCost; gpuCost=$totalGpuCost", indent)
+              child.recursiveCostPreventsRunningOnGpu()
             }
         }
 
@@ -95,40 +90,24 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
       totalGpuCost += costModel.transitionToCpuCost(plan)
     }
 
-    cboDebug(indent, s"Considering section ${plan.wrapped.getClass.getSimpleName}" +
-        s": cpuCost=$totalCpuCost; gpuCost=$totalGpuCost")
-
     if (totalGpuCost > totalCpuCost) {
       // we have reached a point where we have transitioned onto GPU for part of this
       // plan but with no benefit from doing so, so we want to undo this and go back to CPU
       if (plan.canThisBeReplaced) {
         // this plan would have been on GPU so we move it and onto CPU and recurse down
         // until we reach a part of the plan that is already on CPU and then stop
-        forceOnCpuRecursively(plan, s"Forcing ${plan.wrapped.getClass.getSimpleName} " +
-            s"onto CPU: cpuCost=$totalCpuCost; gpuCost=$totalGpuCost", indent)
+        plan.recursiveCostPreventsRunningOnGpu()
       } else {
         // this plan would have not have been on GPU so this probably means that at
         // least one of the child plans is on GPU and the cost of transitioning back
         // to CPU has now made it not worth it, so we put the children back onto CPU
         // and recurse down until we reach a part of the plan that is already on CPU
         // and then stop
-        plan.childPlans.foreach { child =>
-          forceOnCpuRecursively(child, s"Forcing ${plan.wrapped.getClass.getSimpleName} " +
-              s"onto CPU: cpuCost=$totalCpuCost; gpuCost=$totalGpuCost", indent)
-        }
+        plan.childPlans.foreach(_.recursiveCostPreventsRunningOnGpu())
       }
 
       // reset the costs because this section of the plan was not moved to GPU
       totalGpuCost = totalCpuCost
-    } else {
-      if (plan.canThisBeReplaced) {
-        cboDebug(indent, s"Keeping ${plan.wrapped.getClass.getSimpleName} " +
-            s"on GPU: cpuCost=$totalCpuCost; gpuCost=$totalGpuCost")
-      } else {
-        totalGpuCost = totalCpuCost
-        cboDebug(indent, s"Keeping ${plan.wrapped.getClass.getSimpleName} " +
-            s"on CPU: cpuCost=$totalCpuCost; gpuCost=$totalGpuCost")
-      }
     }
 
     if (!plan.canThisBeReplaced) {
@@ -139,68 +118,6 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     (totalCpuCost, totalGpuCost)
   }
 
-  def calculateFinalCost(
-      plan: SparkPlanMeta[_],
-      finalOperator: Boolean): (Double, Double) = {
-
-    // get the CPU and GPU cost of the child plan(s)
-    val (childCpuCosts, childGpuCosts) = plan.childPlans
-        .map(child => optimize(child, finalOperator = false)).unzip
-
-    // get the CPU and GPU cost of this operator
-    val (operatorCpuCost, operatorGpuCost) = costModel.applyCost(plan)
-
-    // calculate total (this operator + children)
-    val totalCpuCost = operatorCpuCost + childCpuCosts.sum
-    var totalGpuCost = operatorGpuCost + childGpuCosts.sum
-
-    // determine how many transitions between CPU and GPU are taking place between
-    // the child operators and this operator
-    val numTransitions = plan.childPlans
-        .count(_.canThisBeReplaced != plan.canThisBeReplaced)
-
-    if (numTransitions > 0) {
-      val transitionCost = if (plan.canThisBeReplaced) {
-        // transition from CPU to GPU
-        plan.childPlans.filter(!_.canThisBeReplaced)
-            .map(costModel.transitionToGpuCost).sum
-      } else {
-        //  transition from GPU to CPU
-        plan.childPlans.filter(_.canThisBeReplaced)
-            .map(costModel.transitionToCpuCost).sum
-      }
-      totalGpuCost += transitionCost
-    }
-
-    // special behavior if this is the final operator in the plan
-    if (finalOperator && plan.canThisBeReplaced) {
-      totalGpuCost += costModel.transitionToCpuCost(plan)
-    }
-
-    (totalCpuCost, totalGpuCost)
-  }
-
-  def forceOnCpuRecursively(plan: SparkPlanMeta[_], reason: String, indent: String): Unit = {
-    // stop when we hit an operator that is already on the CPU
-    if (plan.canThisBeReplaced) {
-      cboDebug(indent, reason)
-      plan.willNotWorkOnGpu(reason)
-      plan.setGpuCost(1.0)
-      plan.childPlans.foreach(plan => forceOnCpuRecursively(plan, reason, indent + "  "))
-    }
-  }
-
-  def prettyPrint(plan: SparkPlanMeta[_], indent: String = ""): Unit = {
-    println(s"$indent ${plan.wrapped.getClass.getSimpleName} " +
-        s"cpuCost=${plan.cpuCost}; " +
-        s"gpuCost=${plan.gpuCost}; " +
-        s"canThisBeReplaced=${plan.canThisBeReplaced}")
-    plan.childPlans.foreach(plan => prettyPrint(plan, indent + "  "))
-  }
-
-  private def cboDebug(indent: String, msg: String): Unit = {
-    logDebug(s"$indent$msg")
-  }
 }
 
 /**

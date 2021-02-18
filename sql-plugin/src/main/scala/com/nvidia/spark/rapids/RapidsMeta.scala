@@ -115,8 +115,28 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
   protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
+  protected var cannotRunOnGpuBecauseOfCost: Boolean = false
 
   val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+
+  /**
+   * Recursively force a section of the plan back onto CPU, stopping once a plan
+   * is reached that is already on CPU.
+   */
+  final def recursiveCostPreventsRunningOnGpu(): Unit = {
+    if (canThisBeReplaced) {
+      costPreventsRunningOnGpu()
+      childDataWriteCmds.foreach(_.recursiveCostPreventsRunningOnGpu())
+    }
+  }
+
+  final def costPreventsRunningOnGpu(): Unit = {
+    cannotRunOnGpuBecauseOfCost = true
+    willNotWorkOnGpu("Removed by cost-based optimizer")
+    childExprs.foreach(_.recursiveCostPreventsRunningOnGpu())
+    childParts.foreach(_.recursiveCostPreventsRunningOnGpu())
+    childScans.foreach(_.recursiveCostPreventsRunningOnGpu())
+  }
 
   final def recursiveSparkPlanPreventsRunningOnGpu(): Unit = {
     cannotRunOnGpuBecauseOfSparkPlan = true
@@ -292,6 +312,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     } else if (canThisBeReplaced) {
       if (cannotRunOnGpuBecauseOfSparkPlan) {
         "@"
+      } else if (cannotRunOnGpuBecauseOfCost) {
+        "$"
       } else {
         "*"
       }

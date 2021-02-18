@@ -2792,10 +2792,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         optimizer.optimize(
           plan = wrap,
           finalOperator = true)
-
-        // show final cost breakdown - is there benefit from running this on a GPU?
-        val (cpuCost, gpuCost) = optimizer.calculateFinalCost(plan = wrap, finalOperator = true)
-        logDebug(s"CPU cost: $cpuCost, GPU cost: $gpuCost")
       }
       wrap.runAfterTagRules()
       if (!exp.equalsIgnoreCase("NONE")) {
