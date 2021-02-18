@@ -29,7 +29,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.SparkException
+import org.apache.spark.{SparkContext, SparkException}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
@@ -265,7 +265,10 @@ abstract class GpuBroadcastExchangeExecBase(
   @transient
   private val timeout: Long = SQLConf.get.broadcastTimeout
 
-  val _runId: UUID = UUID.randomUUID()
+  // Cancelling a SQL statement from Spark ThriftServer needs to cancel
+  // its related broadcast sub-jobs. So set the run id to job group id if exists.
+  val _runId: UUID = Option(sparkContext.getLocalProperty(SparkContext.SPARK_JOB_GROUP_ID))
+    .map(UUID.fromString).getOrElse(UUID.randomUUID)
 
   @transient
   lazy val relationFuture: Future[Broadcast[Any]] = {
