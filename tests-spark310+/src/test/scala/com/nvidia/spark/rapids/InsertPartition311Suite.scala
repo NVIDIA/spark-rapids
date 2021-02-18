@@ -18,12 +18,12 @@ package com.nvidia.spark.rapids
 
 import org.scalatest.BeforeAndAfterEach
 
-class InsertPartitionSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
+class InsertPartition311Suite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
   var tableNr = 0
 
   override def afterEach(): Unit = {
     List(1, 2).foreach { tnr =>
-      SparkSessionHolder.sparkSession.sql(s"DROP TABLE t$tnr")
+      SparkSessionHolder.sparkSession.sql(s"DROP TABLE IF EXISTS t$tnr")
     }
   }
 
