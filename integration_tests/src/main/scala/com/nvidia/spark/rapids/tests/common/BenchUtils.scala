@@ -39,6 +39,10 @@ import org.apache.spark.sql.util.QueryExecutionListener
 
 object BenchUtils {
 
+  val STATUS_COMPLETED = "Completed"
+  val STATUS_COMPLETED_WITH_TASK_FAILURES = "CompletedWithTaskFailures"
+  val STATUS_FAILED = "Failed"
+
   /** Perform benchmark of calling collect */
   def collect(
       spark: SparkSession,
@@ -205,22 +209,24 @@ object BenchUtils {
 
         val end = System.nanoTime()
         val elapsed = NANOSECONDS.toMillis(end - start)
-        if (taskFailureListener.taskFailures.isEmpty) {
-          queryStatus.append("Completed")
+        queryTimes.append(elapsed)
+
+        val status = if (taskFailureListener.taskFailures.isEmpty) {
+          STATUS_COMPLETED
         } else {
-          queryStatus.append("CompletedWithTaskFailures")
           // add the first task failure to the list of exceptions in the report
           exceptions.append(taskFailureListener.taskFailures.head.toString)
+          STATUS_COMPLETED_WITH_TASK_FAILURES
         }
-        queryTimes.append(elapsed)
-        println(s"$logPrefix Iteration $i took $elapsed msec.")
+        queryStatus.append(status)
+        println(s"$logPrefix Iteration $i took $elapsed msec. Status: $status.")
 
       } catch {
         case e: Exception =>
           val end = System.nanoTime()
           val elapsed = NANOSECONDS.toMillis(end - start)
           println(s"$logPrefix Iteration $i failed after $elapsed msec.")
-          queryStatus.append("Failed")
+          queryStatus.append(STATUS_FAILED)
           queryTimes.append(elapsed)
           exceptions.append(BenchUtils.stackTraceAsString(e))
           e.printStackTrace()
@@ -230,11 +236,11 @@ object BenchUtils {
     }
 
     // only show query times if there were no failed queries
-    if (!queryTimes.contains(-1)) {
+    if (!queryStatus.contains(STATUS_FAILED)) {
 
       // summarize all query times
       for (i <- 0 until iterations) {
-        println(s"$logPrefix Iteration $i took ${queryTimes(i)} msec.")
+        println(s"$logPrefix Iteration $i took ${queryTimes(i)} msec. Status: ${queryStatus(i)}")
       }
 
       // for multiple runs, summarize cold/hot timings
