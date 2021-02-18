@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverride
 import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
 import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}
 
-object GetTimeStamp {
+object TimeStamp {
 
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[GetTimestamp](

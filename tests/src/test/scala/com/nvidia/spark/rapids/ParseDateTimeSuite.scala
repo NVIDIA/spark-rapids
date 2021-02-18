@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, to_date, unix_timestamp}
+import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
@@ -33,6 +33,18 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
       datesAsStrings,
       conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
+  }
+
+  testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
+      timestampsAsStrings,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
+  }
+
+  testSparkResultsAreEqual("to_timestamp dd/MM/yyyy",
+      timestampsAsStrings,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_timestamp(col("c0"), "dd/MM/yyyy"))
   }
 
   testSparkResultsAreEqual("to_date default pattern",
