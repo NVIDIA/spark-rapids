@@ -167,6 +167,7 @@ object BenchUtils {
     val exceptions = new ListBuffer[String]()
 
     var df: DataFrame = null
+    val queryStatus = new ListBuffer[String]()
     val queryTimes = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
       spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
@@ -202,14 +203,15 @@ object BenchUtils {
             ensureValidColumnNames(df).write.mode(mode).options(options).parquet(path)
         }
 
-        if (taskFailureListener.taskFailures.nonEmpty) {
-          throw new RuntimeException(
-            s"${taskFailureListener.taskFailures.size} task failure(s) detected. " +
-                s"First failure: ${taskFailureListener.taskFailures.head}")
-        }
-
         val end = System.nanoTime()
         val elapsed = NANOSECONDS.toMillis(end - start)
+        if (taskFailureListener.taskFailures.isEmpty) {
+          queryStatus.append("Completed")
+        } else {
+          queryStatus.append("CompletedWithTaskFailures")
+          // add the first task failure to the list of exceptions in the report
+          exceptions.append(taskFailureListener.taskFailures.head.toString)
+        }
         queryTimes.append(elapsed)
         println(s"$logPrefix Iteration $i took $elapsed msec.")
 
@@ -218,7 +220,8 @@ object BenchUtils {
           val end = System.nanoTime()
           val elapsed = NANOSECONDS.toMillis(end - start)
           println(s"$logPrefix Iteration $i failed after $elapsed msec.")
-          queryTimes.append(-1)
+          queryStatus.append("Failed")
+          queryTimes.append(elapsed)
           exceptions.append(BenchUtils.stackTraceAsString(e))
           e.printStackTrace()
       } finally {
@@ -280,58 +283,35 @@ object BenchUtils {
       executedPlanStr
     )
 
-    val report = resultsAction match {
-      case Collect() => BenchmarkReport(
-        filename,
-        queryStartTime.toEpochMilli,
-        environment,
-        testConfiguration,
-        "collect",
-        Map.empty,
-        queryDescription,
-        queryPlan,
-        queryPlansWithMetrics,
-        queryTimes,
-        exceptions)
+    var report = BenchmarkReport(
+      filename,
+      queryStartTime.toEpochMilli,
+      environment,
+      testConfiguration,
+      "",
+      Map.empty,
+      queryDescription,
+      queryPlan,
+      queryPlansWithMetrics,
+      queryTimes,
+      queryStatus,
+      exceptions)
 
-      case w: WriteCsv => BenchmarkReport(
-        filename,
-        queryStartTime.toEpochMilli,
-        environment,
-        testConfiguration,
-        "csv",
-        w.writeOptions,
-        queryDescription,
-        queryPlan,
-        queryPlansWithMetrics,
-        queryTimes,
-        exceptions)
+    report = resultsAction match {
+      case Collect() => report.copy(
+        action = "collect")
 
-      case w: WriteOrc => BenchmarkReport(
-        filename,
-        queryStartTime.toEpochMilli,
-        environment,
-        testConfiguration,
-        "orc",
-        w.writeOptions,
-        queryDescription,
-        queryPlan,
-        queryPlansWithMetrics,
-        queryTimes,
-        exceptions)
+      case w: WriteCsv => report.copy(
+        action = "csv",
+        writeOptions = w.writeOptions)
 
-      case w: WriteParquet => BenchmarkReport(
-        filename,
-        queryStartTime.toEpochMilli,
-        environment,
-        testConfiguration,
-        "parquet",
-        w.writeOptions,
-        queryDescription,
-        queryPlan,
-        queryPlansWithMetrics,
-        queryTimes,
-        exceptions)
+      case w: WriteOrc => report.copy(
+        action = "orc",
+        writeOptions = w.writeOptions)
+
+      case w: WriteParquet => report.copy(
+        action = "parquet",
+        writeOptions = w.writeOptions)
     }
 
     writeReport(report, filename)
@@ -814,6 +794,7 @@ case class BenchmarkReport(
     queryPlan: QueryPlan,
     queryPlans: Seq[SparkPlanNode],
     queryTimes: Seq[Long],
+    queryStatus: Seq[String],
     exceptions: Seq[String])
 
 /** Configuration options that affect how the tests are run */
