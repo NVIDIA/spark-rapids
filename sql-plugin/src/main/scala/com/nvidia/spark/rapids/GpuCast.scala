@@ -97,6 +97,12 @@ object GpuCast {
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
 
   /**
+   * The length of a timestamp with 6 digits for microseconds followed by 'Z', such
+   * as "2020-01-01T12:34:56.123456Z".
+   */
+  private val FULL_TIMESTAMP_LENGTH = 27
+
+  /**
    * Regex for identifying strings that contain numeric values that can be casted to integral
    * types. This includes floating point numbers but not numbers containing exponents.
    */
@@ -624,8 +630,14 @@ case class GpuCast(
     }
 
     /**
-     * Parse dates that match the provided regex. This method does not close the `input`
-     * ColumnVector.
+     * Parse dates that match the provided length and format. This method does not
+     * close the `input` ColumnVector.
+     *
+     * @param input Input ColumnVector
+     * @param len The string length to match against
+     * @param cudfFormat The cuDF timestamp format to match against
+     * @return ColumnVector containing timestamps for input entries that match both
+     *         the length and format, and null for other entries
      */
     def convertFixedLenDateOrNull(
         input: ColumnVector,
@@ -648,31 +660,39 @@ case class GpuCast(
         cudfFormat: String,
         orElse: ColumnVector): ColumnVector = {
 
-      val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
-        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-          isMatch.and(isTimestamp)
+      withResource(orElse) { orElse =>
+        val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+          withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+            isMatch.and(isTimestamp)
+          }
         }
-      }
-
-      withResource(isValidDate) { isValidDate =>
-        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-          withResource(orElse) { orElse =>
+        withResource(isValidDate) { isValidDate =>
+          withResource(input.asTimestampDays(cudfFormat)) { asDays =>
             isValidDate.ifElse(asDays, orElse)
           }
         }
       }
     }
 
-    /** This method does not close the `input` ColumnVector. */
+    /**
+     * Parse dates that match the provided length and format. This method does not
+     * close the `input` ColumnVector.
+     *
+     * @param input Input ColumnVector
+     * @param len The string length to match against
+     * @param cudfFormat The cuDF timestamp format to match against
+     * @return ColumnVector containing timestamps for input entries that match both
+     *         the length and format, and null for other entries
+     */
     def convertFixedLenDateOr(
         input: ColumnVector,
         len: Int,
         cudfFormat: String,
         orElse: ColumnVector): ColumnVector = {
 
-      withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
-        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-          withResource(orElse) { orElse =>
+      withResource(orElse) { orElse =>
+        withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
+          withResource(input.asTimestampDays(cudfFormat)) { asDays =>
             isValidDate.ifElse(asDays, orElse)
           }
         }
@@ -754,14 +774,14 @@ case class GpuCast(
         cudfFormat: String,
         orElse: ColumnVector): ColumnVector = {
 
-      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
-        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-          isMatch.and(isTimestamp)
+      withResource(orElse) { orElse =>
+        val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+          withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+            isMatch.and(isTimestamp)
+          }
         }
-      }
-      withResource(isValidTimestamp) { isValidTimestamp =>
-        withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-          withResource(orElse) { orElse =>
+        withResource(isValidTimestamp) { isValidTimestamp =>
+          withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
             isValidTimestamp.ifElse(asDays, orElse)
           }
         }
@@ -776,29 +796,30 @@ case class GpuCast(
       val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
       val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
 
-      // valid dates must match the regex and either of the cuDF formats
-      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
-        withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
-          isTimestamp1.or(isTimestamp2)
-        }
-      }
+      withResource(orElse) { orElse =>
 
-      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
-        val isValidLength = withResource(Scalar.fromInt(27)) { requiredLen =>
-          withResource(input.getCharLengths) { actualLen =>
-            requiredLen.equalTo(actualLen)
+        // valid dates must match the regex and either of the cuDF formats
+        val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
+          withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
+            isTimestamp1.or(isTimestamp2)
           }
         }
-        withResource(isValidLength) { isValidLength =>
-          isValidLength.and(isCudfMatch)
-        }
-      }
 
-      // we only need to parse with one of the cuDF formats because the parsing code ignores
-      // the ' ' or 'T' between the date and time components
-      withResource(isValidTimestamp) { isValidTimestamp =>
-        withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
-          withResource(orElse) { orElse =>
+        val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
+          val isValidLength = withResource(Scalar.fromInt(FULL_TIMESTAMP_LENGTH)) { requiredLen =>
+            withResource(input.getCharLengths) { actualLen =>
+              requiredLen.equalTo(actualLen)
+            }
+          }
+          withResource(isValidLength) { isValidLength =>
+            isValidLength.and(isCudfMatch)
+          }
+        }
+
+        // we only need to parse with one of the cuDF formats because the parsing code ignores
+        // the ' ' or 'T' between the date and time components
+        withResource(isValidTimestamp) { isValidTimestamp =>
+          withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
             isValidTimestamp.ifElse(asDays, orElse)
           }
         }
@@ -868,8 +889,14 @@ case class GpuCast(
   }
 
   /**
-   * Determine which timestamps are the correct length and also comply with the specified
+   * Determine which timestamps are the specified length and also comply with the specified
    * cuDF format string.
+   *
+   * @param input Input ColumnVector
+   * @param len The string length to match against
+   * @param cudfFormat The cuDF timestamp format to match against
+   * @return ColumnVector containing booleans representing which entries match both
+   *         the length and format
    */
   private def isValidTimestamp(input: ColumnVector, len: Int, cudfFormat: String) = {
     val isCorrectLength = withResource(Scalar.fromInt(len)) { requiredLen =>
