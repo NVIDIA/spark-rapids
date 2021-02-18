@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -637,10 +637,16 @@ case class GpuCast(
         regex: String,
         cudfFormat: String): ColumnVector = {
 
-      withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
-        withResource(input.matchesRe(regex)) { isMatch =>
-          withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-            isMatch.ifElse(asDays, nullScalar)
+      val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+
+      withResource(isValidDate) { isValidDate =>
+        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+          withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+            isValidDate.ifElse(asDays, nullScalar)
           }
         }
       }
@@ -653,10 +659,16 @@ case class GpuCast(
         cudfFormat: String,
         orElse: ColumnVector): ColumnVector = {
 
-      withResource(input.matchesRe(regex)) { isMatch =>
+      val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+
+      withResource(isValidDate) { isValidDate =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           withResource(orElse) { orElse =>
-            isMatch.ifElse(asDays, orElse)
+            isValidDate.ifElse(asDays, orElse)
           }
         }
       }
@@ -721,10 +733,16 @@ case class GpuCast(
         regex: String,
         cudfFormat: String): ColumnVector = {
 
-      withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
-        withResource(input.matchesRe(regex)) { isMatch =>
+      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+
+      withResource(isValidTimestamp) { isValidTimestamp =>
+        withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
           withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-            isMatch.ifElse(asDays, nullScalar)
+            isValidTimestamp.ifElse(asDays, nullScalar)
           }
         }
       }
@@ -737,10 +755,46 @@ case class GpuCast(
         cudfFormat: String,
         orElse: ColumnVector): ColumnVector = {
 
-      withResource(input.matchesRe(regex)) { isMatch =>
+      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+      withResource(isValidTimestamp) { isValidTimestamp =>
         withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
           withResource(orElse) { orElse =>
-            isMatch.ifElse(asDays, orElse)
+            isValidTimestamp.ifElse(asDays, orElse)
+          }
+        }
+      }
+    }
+
+    /** This method does not close the `input` ColumnVector. */
+    def convertTimestampFullOr(
+        input: ColumnVector,
+        orElse: ColumnVector): ColumnVector = {
+
+      val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
+      val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
+
+      // valid dates must match the regex and either of the cuDF formats
+      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
+        withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
+          isTimestamp1.or(isTimestamp2)
+        }
+      }
+      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
+        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+          isCudfMatch.and(isRegexMatch)
+        }
+      }
+
+      // we only need to parse with one of the cuDF formats because the parsing code ignores
+      // the ' ' or 'T' between the date and time components
+      withResource(isValidTimestamp) { isValidTimestamp =>
+        withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
+          withResource(orElse) { orElse =>
+            isValidTimestamp.ifElse(asDays, orElse)
           }
         }
       }
@@ -776,10 +830,9 @@ case class GpuCast(
     }
 
     withResource(sanitizedInput) { sanitizedInput =>
-
       // convert dates that are in valid timestamp formats
       val converted =
-        convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL, "%Y-%m-%dT%H:%M:%SZ%f",
+        convertTimestampFullOr(sanitizedInput,
           convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
             convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
               convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
