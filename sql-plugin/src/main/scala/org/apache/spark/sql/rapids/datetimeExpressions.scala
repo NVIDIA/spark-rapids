@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -477,11 +477,16 @@ abstract class GpuToTimestamp
     } else { // Timestamp or DateType
       lhs.getBase.asTimestampMicroseconds()
     }
-    withResource(tmp) { r =>
-      // The type we are returning is a long not an actual timestamp
-      withResource(Scalar.fromInt(downScaleFactor)) { downScaleFactor =>
-        withResource(tmp.asLongs()) { longMicroSecs =>
-          longMicroSecs.div(downScaleFactor)
+    // Return Timestamp value if dataType it is expecting is of TimestampType
+    if (dataType.equals(TimestampType)) {
+      tmp
+    } else {
+      withResource(tmp) { tmp =>
+        // The type we are returning is a long not an actual timestamp
+        withResource(Scalar.fromInt(downScaleFactor)) { downScaleFactor =>
+          withResource(tmp.asLongs()) { longMicroSecs =>
+            longMicroSecs.div(downScaleFactor)
+          }
         }
       }
     }
@@ -598,6 +603,24 @@ case class GpuToUnixTimestampImproved(strTs: Expression,
   override def left: Expression = strTs
   override def right: Expression = format
 
+}
+
+case class GpuGetTimestamp(
+    strTs: Expression,
+    format: Expression,
+    sparkFormat: String,
+    strf: String,
+    timeZoneId: Option[String] = None) extends GpuToTimestamp {
+
+  override def strfFormat = strf
+  override val downScaleFactor = 1
+  override def dataType: DataType = TimestampType
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  override def left: Expression = strTs
+  override def right: Expression = format
 }
 
 case class GpuFromUnixTime(
