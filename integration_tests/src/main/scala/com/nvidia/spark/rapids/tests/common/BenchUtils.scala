@@ -254,8 +254,7 @@ object BenchUtils {
     }
 
     // write results to file
-    val suffix = if (exceptions.isEmpty) "" else "-failed"
-    val filename = s"$filenameStub-${queryStartTime.toEpochMilli}$suffix.json"
+    val filename = s"$filenameStub-${queryStartTime.toEpochMilli}.json"
     println(s"$logPrefix Saving benchmark report to $filename")
 
     // try not to leak secrets
@@ -323,7 +322,7 @@ object BenchUtils {
     if (generateDotGraph) {
       queryPlansWithMetrics.headOption match {
         case Some(plan) =>
-          val filename = s"$filenameStub-${queryStartTime.toEpochMilli}$suffix.dot"
+          val filename = s"$filenameStub-${queryStartTime.toEpochMilli}.dot"
           println(s"$logPrefix Saving query plan diagram to $filename")
           BenchUtils.generateDotGraph(plan, None, filename)
         case _ =>
