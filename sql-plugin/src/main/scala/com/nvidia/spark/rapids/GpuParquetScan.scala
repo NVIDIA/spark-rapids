@@ -25,7 +25,7 @@ import java.util.concurrent._
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
+import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, LinkedHashMap, ListBuffer, Queue}
 import scala.math.max
 
 import ai.rapids.cudf._
@@ -46,11 +46,6 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, Type, Types}
-import scala.annotation.tailrec
-import scala.collection.JavaConverters._
-import scala.collection.immutable.HashSet
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, ListBuffer, Queue}
-import scala.math.max
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -67,9 +62,10 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, DateType, Decimal, DecimalType, MapType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
+
 
 /**
  * Base GpuParquetScan used for common code across Spark versions. Gpu version of
@@ -773,22 +769,25 @@ abstract class FileParquetPartitionReaderBase(
         cv
       }
     } else if (dt == DType.STRUCT) {
-      var hasNew = false
-      val newColumns = new Array[ColumnView](cv.getNumChildren)
+      val newColumns = ArrayBuilder.make[ColumnView]()
+      newColumns.sizeHint(cv.getNumChildren)
+      val newColIndices = ArrayBuilder.make[Int]()
+      newColIndices.sizeHint(cv.getNumChildren)
       (0 until cv.getNumChildren).foreach { i =>
         val child = cv.getChildColumnView(i)
         val newChild = convertDecimal64ToDecimal32(child, precisionList)
-        if (newChild != child && !hasNew) {
-          hasNew = true
+        if (newChild != child) {
+          newColumns += newChild
+          newColIndices += i
         }
-        newColumns(i) = newChild
       }
-      if (hasNew) {
+      val cols = newColumns.result()
+      if (cols.nonEmpty) {
         // create a new struct column with the new ones
-        withResource(newColumns) { cols =>
-          ColumnVector.makeStruct(cols: _*)
+        withResource(cols) { newCols =>
+          ColumnVector.replaceColumnsInStruct(cv, newColIndices.result(), newCols)
         }
-      } else {
+    } else {
         cv
       }
     } else {
