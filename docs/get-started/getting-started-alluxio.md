@@ -278,6 +278,45 @@ There are two ways to leverage Alluxio in RAPIDS.
       --conf spark.executor.extraJavaOptions="-Dalluxio.conf.dir=${ALLUXIO_HOME}/conf" \
    ```
 
+## Alluxio in GCP Dataproc w. RAPIDS
+
+1, Create GCP dataproc Alluxio + RAPIDS cluster:
+```
+export REGION=us-central1
+export ZONE=us-central1-b
+export GCS_BUCKET=dongm-alluxio-dataproc
+export CLUSTER_NAME=nvspark-dataproc-alluxio1
+export NUM_GPUS=4
+export NUM_WORKERS=4
+
+gcloud dataproc clusters create $CLUSTER_NAME  \
+    --zone $ZONE \
+    --region $REGION \
+    --image-version=preview-ubuntu \
+    --master-machine-type n1-standard-8 \
+    --master-boot-disk-size 500 \
+    --num-workers $NUM_WORKERS \
+    --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
+    --worker-machine-type n1-highmem-32 \
+    --num-worker-local-ssds 4 \
+    --initialization-actions gs://${GCS_BUCKET}/alluxio-dataproc.sh,gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --optional-components=JUPYTER,ZEPPELIN \
+    --metadata alluxio_root_ufs_uri="gs://${GCS_BUCKET}/tpcds",gpu-driver-provider="NVIDIA",rapids-runtime="SPARK",alluxio_site_properties="alluxio.master.mount.table.root.option.fs.gcs.accessKeyId='GOOGAPHC77BYHEHKXGKQSXSZ';alluxio.master.mount.table.root.option.fs.gcs.secretAccessKey='IFauREQ/tB24o/iUsUw9zPTYxo+2d8Giq0/pPCft'" \
+    --bucket $GCS_BUCKET \
+    --subnet=default \
+    --enable-component-gateway \
+    --service-account=vminstance@data-science-enterprise.iam.gserviceaccount.com \
+    --properties="^#^spark:spark.task.resource.gpu.amount=0.125#spark:spark.executor.cores=8#spark:spark.task.cpus=1#spark:spark.executor.memory=8G"
+```
+
+2, Validation Alluxio install and preload files:
+- Use Alluxio user by: `sudo su - alluxio`
+- Make sure all test passes `alluxio runTests`
+- Prefetch file metadata `alluxio fs ls -R /`, change permission (only for benchmark, not recommended) `alluxio fs chmod -R 777 /`
+- Load data to Alluxio (if workspace is large enough) `./bin/alluxio fs distributedLoad /*`
+
+3, Use Alluxio namespace when run spark code.
+
 ## Alluxio Troubleshooting
 
 This section will give some links about how to configure, tune Alluxio and some troubleshooting.
