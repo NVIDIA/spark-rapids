@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.StorageTier.{DISK, GDS, HOST, StorageTier}
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, ExprId}
@@ -84,7 +84,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
   val DESCRIPTION_BUILD_TIME = "build time"
   val DESCRIPTION_STREAM_TIME = "stream time"
-  val DESCRIPTION_SPILL_AMOUNT = "bytes spilled"
+  val DESCRIPTION_SPILL_AMOUNT = "bytes spilled from GPU"
   val DESCRIPTION_SPILL_AMOUNT_DISK = "bytes spilled to disk"
   val DESCRIPTION_SPILL_AMOUNT_HOST = "bytes spilled to host"
 
@@ -112,19 +112,24 @@ object GpuMetric extends Logging {
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
 
-  def makeSpillCallback(allMetrics: Map[String, GpuMetric]): (StorageTier, Long) => Unit = {
+  def makeSpillCallback(
+      allMetrics: Map[String, GpuMetric]): (StorageTier, StorageTier, Long) => Unit = {
     val spillAmount = allMetrics(SPILL_AMOUNT)
     val disk = allMetrics(SPILL_AMOUNT_DISK)
     val host = allMetrics(SPILL_AMOUNT_HOST)
-    def updateMetrics(tier: StorageTier, amount: Long): Unit = {
-      spillAmount += amount
-      tier match {
+    def updateMetrics(from: StorageTier, to: StorageTier, amount: Long): Unit = {
+      from match {
+        case DEVICE =>
+          spillAmount += amount
+        case _ => // ignored
+      }
+      to match {
         case HOST =>
           host += amount
         case GDS | DISK =>
           disk += amount
         case _ =>
-          logWarning(s"Spill to $tier is unsupported in metrics: $amount")
+          logWarning(s"Spill to $to is unsupported in metrics: $amount")
       }
     }
     updateMetrics

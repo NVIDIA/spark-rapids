@@ -431,13 +431,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val OUT_OF_CORE_SORT = conf("spark.rapids.sql.outOfCoreSort.enabled")
-      .doc("enable or disable out of core sorting. Out of core sorting allows for sorting " +
-          "large skewed data sets, but is not a stable sort. Apache Spark does not guarantee a " +
-          "stable sort in most cases, except when coalescing all data to a single task and " +
-          "sorting there. In that case we will produce different results.")
+  val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
+      .doc("enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
+          "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
+          "order in which upstream data arrives to a task is not guaranteed. Sort stability then " +
+          "only matters when reading and sorting data from a file using a single task/partition. " +
+          "Because of limitations in the plugin when you enable stable sorting all of the data " +
+          "for a single task will be combined into a single batch before sorting. This currently " +
+          "disables spilling from GPU memory if the data size is too large.")
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   // METRICS
 
@@ -1047,7 +1050,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
-  lazy val outOfCoreSort: Boolean = get(OUT_OF_CORE_SORT)
+  lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 

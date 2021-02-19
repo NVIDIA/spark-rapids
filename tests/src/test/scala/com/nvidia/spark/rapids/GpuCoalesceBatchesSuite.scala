@@ -68,7 +68,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
       .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "1")
-      .set(RapidsConf.OUT_OF_CORE_SORT.key, "false")
+      .set(RapidsConf.STABLE_SORT.key, "true")
       .set("spark.sql.shuffle.partitions", "1")
 
     withGpuSparkSession(spark => {
@@ -284,7 +284,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // transition inserted
       .set("spark.sql.adaptive.enabled", "false")
       // Disable out of core sort so a single batch is required
-      .set(RapidsConf.OUT_OF_CORE_SORT.key, "false")
+      .set(RapidsConf.STABLE_SORT.key, "true")
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,

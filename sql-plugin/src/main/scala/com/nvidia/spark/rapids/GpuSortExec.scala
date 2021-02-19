@@ -51,7 +51,7 @@ class GpuSortMeta(
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans.head.convertIfNeeded(),
-      if (conf.outOfCoreSort) OutOfCoreSort else FullSortSingleBatch)
+      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort)
   }
 }
 
@@ -221,7 +221,7 @@ case class GpuOutOfCoreSortIterator(
     outputBatches: GpuMetric,
     outputRows: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: (StorageTier, Long) => Unit) extends Iterator[ColumnarBatch]
+    spillCallback: (StorageTier, StorageTier, Long) => Unit) extends Iterator[ColumnarBatch]
     with Arm with AutoCloseable {
 
   // There are so many places where we might hit a new peak that it gets kind of complex

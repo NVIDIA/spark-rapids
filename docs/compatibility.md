@@ -35,10 +35,10 @@ task/partition. The RAPIDS Accelerator does an unstable
 [out of core](https://en.wikipedia.org/wiki/External_memory_algorithm) sort by default. This
 simply means that the sort algorithm allows for spilling parts of the data if it is larger than
 can fit in the GPU's memory, but it does not guarantee ordering of rows when the ordering of the
-keys is ambiguous. If you do rely on a stable sort in your processing you can disable
-the out of core sort by setting
-[spark.rapids.sql.outOfCoreSort.enabled](configs.md#sql.outOfCoreSort.enabled) to `false` and
-RAPIDS will try to sort all the data for a given task/partition at once on the GPU.
+keys is ambiguous. If you do rely on a stable sort in your processing you can request this by
+setting [spark.rapids.sql.stableSort.enabled](configs.md#sql.stableSort.enabled) to `true` and
+RAPIDS will try to sort all the data for a given task/partition at once on the GPU. This may change
+in the future to all for a spillable stable sort.
 
 ## Floating Point
 

@@ -30,7 +30,7 @@ import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 class RapidsDiskStore(
     diskBlockManager: RapidsDiskBlockManager,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("disk", catalog) {
+    extends RapidsBufferStore(StorageTier.DISK, catalog) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override def createBuffer(
@@ -92,8 +92,8 @@ class RapidsDiskStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: (StorageTier, Long) => Unit) extends
-      RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
+      spillCallback: (StorageTier, StorageTier, Long) => Unit)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     override val storageTier: StorageTier = StorageTier.DISK

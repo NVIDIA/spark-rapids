@@ -200,10 +200,10 @@ object GpuFileFormatWriter extends Logging {
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
             .map(attr => sparkShims.sortOrder(attr, Ascending)), outputSpec.outputColumns)
-        val sortType = if (RapidsConf.OUT_OF_CORE_SORT.get(plan.conf)) {
-          OutOfCoreSort
-        } else {
+        val sortType = if (RapidsConf.STABLE_SORT.get(plan.conf)) {
           FullSortSingleBatch
+        } else {
+          OutOfCoreSort
         }
         GpuSortExec(
           orderingExpr,

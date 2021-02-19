@@ -130,11 +130,12 @@ object SpillableColumnarBatch extends Arm {
    * @param batch the batch to make spillable
    * @param priority the initial spill priority of this batch
    * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never block and really just be used for metrics.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
   def apply(batch: ColumnarBatch,
       priority: Long,
-      spillCallback: (StorageTier, Long) => Unit = (_, _) => ()): SpillableColumnarBatch = {
+      spillCallback: (StorageTier, StorageTier, Long) => Unit = RapidsBuffer.defaultSpillCallback)
+  : SpillableColumnarBatch = {
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
       // We consumed it
@@ -152,7 +153,7 @@ object SpillableColumnarBatch extends Arm {
       id: RapidsBufferId,
       batch: ColumnarBatch,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, Long) => Unit): Unit = {
+      spillCallback: (StorageTier, StorageTier, Long) => Unit): Unit = {
     withResource(batch) { batch =>
       val numColumns = batch.numCols()
       if (GpuCompressedColumnVector.isBatchCompressed(batch)) {

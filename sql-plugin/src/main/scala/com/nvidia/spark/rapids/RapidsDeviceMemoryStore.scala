@@ -28,7 +28,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("GPU", catalog) {
+    extends RapidsBufferStore(StorageTier.DEVICE, catalog) {
   override protected def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
@@ -42,8 +42,8 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param contigBuffer device memory buffer backing the table
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback callback function when a buffer is spilled. Be very careful with
-   *                      this it should not block and be as light weight as possible i.e. metrics.
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
   def addTable(
       id: RapidsBufferId,
@@ -51,7 +51,8 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, Long) => Unit): Unit = {
+      spillCallback: (StorageTier, StorageTier, Long) => Unit
+      = RapidsBuffer.defaultSpillCallback): Unit = {
     val buffer = new RapidsDeviceMemoryBuffer(
       id,
       contigBuffer.getLength,
@@ -79,14 +80,15 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param id buffer ID to associate with this buffer
    * @param contigTable contiguous table to track in storage
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback callback function when a buffer is spilled. Be very careful with
-   *                      this it should not block and be as light weight as possible i.e. metrics.
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
   def addContiguousTable(
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, Long) => Unit = (_, _) => ()): Unit = {
+      spillCallback: (StorageTier, StorageTier, Long) => Unit
+      = RapidsBuffer.defaultSpillCallback): Unit = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -117,15 +119,16 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback callback function when a buffer is spilled. Be very careful with
-   *                      this it should not block and be as light weight as possible i.e. metrics.
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
   def addBuffer(
       id: RapidsBufferId,
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, Long) => Unit = (_, _) => ()): Unit = {
+      spillCallback: (StorageTier, StorageTier, Long) => Unit
+      = RapidsBuffer.defaultSpillCallback): Unit = {
     val buff = new RapidsDeviceMemoryBuffer(
       id,
       buffer.getLength,
@@ -154,8 +157,8 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long,
-      spillCallback: (StorageTier, Long) => Unit) extends
-      RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
+      override val spillCallback: (StorageTier, StorageTier, Long) => Unit)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.DEVICE
 
     override protected def releaseResources(): Unit = {
