@@ -7,13 +7,14 @@ nav_order: 3
 ## Release v0.4.0
 
 New functionality for the release includes
-* Decimal support up to 64 bit, including reading and writing decimal from Parquet
-* Ability to call native CUDA or cudf functions from Scala, Java or Hive UDFs
+* Decimal support up to 64 bit, including reading and writing decimal from Parquet (can be enabled
+  by setting `spark.rapids.sql.decimalType.enabled` to True)
+* Ability for users to provide GPU versions of Scala, Java or Hive UDFs
 * Shuffle and sort support for `struct` data types
 * `array_contains` for list operations
 * `collect_list` and `average` for windowing operations
 * Murmur3 `hash` operation 
-* Reading a v2 datasource when the data being read is an `ArrowColumnVector`
+* Improved performance when reading from DataSource v2 when the source produces data in the Arrow format
 
 This release includes additional performance improvements, including
 * RAPIDS Shuffle with UCX performance improvements
@@ -38,7 +39,7 @@ Software Requirements:
 	
 	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
-	Apache Spark 3.0, 3.0.1, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
+	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
 	
 	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 	
