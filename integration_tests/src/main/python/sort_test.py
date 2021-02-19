@@ -72,10 +72,12 @@ def test_multi_orderby_with_limit(data_gen):
 @pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
 def test_orderby_with_processing(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a')))
+            # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
+            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')))
 
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
 def test_orderby_with_processing_and_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a')).limit(100))
+            # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
+            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')).limit(100))
