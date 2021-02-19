@@ -211,13 +211,11 @@ object BenchUtils {
         val elapsed = NANOSECONDS.toMillis(end - start)
         queryTimes.append(elapsed)
 
-        val status = if (taskFailureListener.taskFailures.isEmpty) {
-          STATUS_COMPLETED
-        } else {
-          // add the first task failure to the list of exceptions in the report
-          exceptions.append(taskFailureListener.taskFailures.head.toString)
-          STATUS_COMPLETED_WITH_TASK_FAILURES
-        }
+        val failureOpt = taskFailureListener.taskFailures.headOption
+        val status = failureOpt.map(_ =>  STATUS_COMPLETED_WITH_TASK_FAILURES)
+            .getOrElse(STATUS_COMPLETED)
+        failureOpt.foreach(failure => exceptions.append(failure.toString))
+
         queryStatus.append(status)
         println(s"$logPrefix Iteration $i took $elapsed msec. Status: $status.")
 
