@@ -356,6 +356,6 @@ Casting from string to timestamp currently has the following limitations.
 ### Constant Folding
 
 ConstantFolding is an operator optimization rule in Catalyst that replaces expressions that can
-be statically evaluated with their equivalent literal values. We don't support excluding the rule 
-`org.apache.spark.sql.catalyst.optimizer.ConstantFolding` as we rely on this rule internally 
-and excluding it will cause some of our assumptions to fail. 
+be statically evaluated with their equivalent literal values. The RAPIDS Accelerator doesn't
+support excluding the rule `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` as we rely on 
+this rule internally and excluding it may cause the query to produce undesired results
