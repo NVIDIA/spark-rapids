@@ -49,8 +49,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       val spillPriority = 3
       val bufferId = MockRapidsBufferId(7)
-      closeOnExcept(buildContiguousTable()) { ct =>
-        // store takes ownership of the table
+      withResource(buildContiguousTable()) { ct =>
         store.addContiguousTable(bufferId, ct, spillPriority)
       }
       val captor: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
@@ -142,7 +141,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       assertResult(0)(store.currentSize)
       val bufferSizes = new Array[Long](2)
       bufferSizes.indices.foreach { i =>
-        closeOnExcept(buildContiguousTable()) { ct =>
+        withResource(buildContiguousTable()) { ct =>
           bufferSizes(i) = ct.getBuffer.getLength
           // store takes ownership of the table
           store.addContiguousTable(MockRapidsBufferId(i), ct, initialSpillPriority = 0)
@@ -164,7 +163,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       store.setSpillStore(spillStore)
       spillPriorities.indices.foreach { i =>
-        closeOnExcept(buildContiguousTable()) { ct =>
+        withResource(buildContiguousTable()) { ct =>
           bufferSizes(i) = ct.getBuffer.getLength
           // store takes ownership of the table
           store.addContiguousTable(MockRapidsBufferId(i), ct, spillPriorities(i))
