@@ -139,16 +139,6 @@
             <modules>
                 <module>tests-spark310+</module>
             </modules>
-            <repositories>
-                <!--
-                TODO remove once Apache Spark 3.1.1 is released.
-                Last 3.1.1-SNAPSHOT is before SPARK-34223
-                -->
-                <repository>
-                    <id>spark311rc</id>
-                    <url>https://repository.apache.org/content/repositories/orgapachespark-1365/</url>
-                </repository>
-            </repositories>
         </profile>
     </profiles>
 
@@ -186,7 +176,7 @@
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
-        <spark311.version>3.1.1</spark311.version>
+        <spark311.version>3.1.1-SNAPSHOT</spark311.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
