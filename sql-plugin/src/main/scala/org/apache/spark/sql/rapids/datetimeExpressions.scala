@@ -481,7 +481,7 @@ abstract class GpuToTimestamp
     if (dataType.equals(TimestampType)) {
       tmp
     } else {
-      withResource(tmp) { r =>
+      withResource(tmp) { tmp =>
         // The type we are returning is a long not an actual timestamp
         withResource(Scalar.fromInt(downScaleFactor)) { downScaleFactor =>
           withResource(tmp.asLongs()) { longMicroSecs =>
