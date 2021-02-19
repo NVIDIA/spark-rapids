@@ -29,31 +29,31 @@
     <version>0.4.0-SNAPSHOT</version>
 
     <properties>
-        <spark.test.version>3.0.0</spark.test.version>
+        <spark.test.version>${spark300.version}</spark.test.version>
     </properties>
     <profiles>
         <profile>
             <id>spark301dbtests</id>
             <properties>
-                <spark.test.version>3.0.1-databricks</spark.test.version>
+                <spark.test.version>${spark301db.version}</spark.test.version>
             </properties>
         </profile>
         <profile>
             <id>spark301tests</id>
             <properties>
-                <spark.test.version>3.0.1</spark.test.version>
+                <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
         </profile>
         <profile>
             <id>spark302tests</id>
             <properties>
-                <spark.test.version>3.0.2-SNAPSHOT</spark.test.version>
+                <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
         </profile>
         <profile>
             <id>spark311tests</id>
             <properties>
-                <spark.test.version>3.1.1-SNAPSHOT</spark.test.version>
+                <spark.test.version>${spark311.version}</spark.test.version>
             </properties>
         </profile>
     </profiles>
