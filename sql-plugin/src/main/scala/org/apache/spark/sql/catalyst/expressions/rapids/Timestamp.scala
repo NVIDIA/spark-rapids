@@ -28,7 +28,9 @@ object TimeStamp {
     GpuOverrides.expr[GetTimestamp](
       "Gets timestamps from strings using given pattern.",
       ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("timeExp", TypeSig.STRING, TypeSig.STRING),
+        ("timeExp",
+            TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP,
+            TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP),
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
