@@ -96,6 +96,9 @@ class Spark311Shims extends Spark301Shims {
     }
   }
 
+  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
+    sqlConf.maxMetadataStringLength
+
   def exprs311: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
