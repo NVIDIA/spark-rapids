@@ -309,6 +309,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   final private def getIndicatorChar: String = {
     if (shouldThisBeRemoved) {
       "#"
+    } else if (cannotRunOnGpuBecauseOfCost) {
+      "$"
     } else if (canThisBeReplaced) {
       if (cannotRunOnGpuBecauseOfSparkPlan) {
         "@"

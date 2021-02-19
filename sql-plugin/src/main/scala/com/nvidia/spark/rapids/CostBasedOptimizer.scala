@@ -16,10 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression}
-import org.apache.spark.sql.execution.ProjectExec
+import org.apache.spark.sql.execution.{ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.internal.SQLConf
 
 class CostBasedOptimizer(conf: RapidsConf) extends Logging {
 
@@ -30,15 +33,25 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
   /**
    * Walk the plan and determine CPU and GPU costs for each operator and then make decisions
    * about whether operators should run on CPU or GPU.
+   *
+   * @param plan The plan to optimize
+   * @return A list of optimizations that were applied
    */
-  def optimize(
+  def optimize(plan: SparkPlanMeta[_]): Seq[String] = {
+    val explain = new ListBuffer[String]()
+    recursivelyOptimize(plan, explain, finalOperator = true, "")
+    explain.reverse
+  }
+
+  private def recursivelyOptimize(
       plan: SparkPlanMeta[_],
+      explain: ListBuffer[String],
       finalOperator: Boolean,
       indent: String = ""): (Double, Double) = {
 
     // get the CPU and GPU cost of the child plan(s)
     val childCosts = plan.childPlans
-        .map(child => optimize(child, finalOperator = false, indent + "  "))
+        .map(child => recursivelyOptimize(child, explain, finalOperator = false, indent + "  "))
 
     val (childCpuCosts, childGpuCosts) = childCosts.unzip
 
@@ -56,11 +69,12 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
 
     if (numTransitions > 0) {
       if (plan.canThisBeReplaced) {
-        // transition from CPU to GPU
+        // at least one child is transitioning from CPU to GPU
         val transitionCost = plan.childPlans.filter(!_.canThisBeReplaced)
             .map(costModel.transitionToGpuCost).sum
         val gpuCost = operatorGpuCost + transitionCost
         if (gpuCost > operatorCpuCost) {
+          explain.append(s"It is not worth moving to the GPU just for operator: ${format(plan)}")
           plan.costPreventsRunningOnGpu()
           // stay on CPU, so costs are same
           totalGpuCost = totalCpuCost;
@@ -68,18 +82,22 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
           totalGpuCost += transitionCost
         }
       } else {
-        //  transition one or more children from GPU to CPU
+        // at least one child is transitioning from GPU to CPU
         plan.childPlans.zip(childCosts).foreach {
           case (child, childCosts) =>
             val (childCpuCost, childGpuCost) = childCosts
             val transitionCost = costModel.transitionToCpuCost(child)
             val childGpuTotal = childGpuCost + transitionCost
-            if (childGpuTotal > childCpuCost) {
+            if (child.canThisBeReplaced && childGpuTotal > childCpuCost) {
+              explain.append(s"It is no longer worth keeping this section on GPU; " +
+                  s"gpuCost=$childGpuTotal, cpuCost=$childCpuCost:\n${formatTree(plan)}")
               child.recursiveCostPreventsRunningOnGpu()
             }
         }
 
-        val transitionCost = plan.childPlans.filter(_.canThisBeReplaced)
+        // recalculate the transition costs because child plans may have changed
+        val transitionCost = plan.childPlans
+            .filter(_.canThisBeReplaced)
             .map(costModel.transitionToCpuCost).sum
         totalGpuCost += transitionCost
       }
@@ -96,14 +114,9 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
       if (plan.canThisBeReplaced) {
         // this plan would have been on GPU so we move it and onto CPU and recurse down
         // until we reach a part of the plan that is already on CPU and then stop
+        explain.append(s"It is no longer worth keeping this section on GPU; " +
+            s"gpuCost=$totalGpuCost, cpuCost=$totalCpuCost:\n${format(plan)}")
         plan.recursiveCostPreventsRunningOnGpu()
-      } else {
-        // this plan would have not have been on GPU so this probably means that at
-        // least one of the child plans is on GPU and the cost of transitioning back
-        // to CPU has now made it not worth it, so we put the children back onto CPU
-        // and recurse down until we reach a part of the plan that is already on CPU
-        // and then stop
-        plan.childPlans.foreach(_.recursiveCostPreventsRunningOnGpu())
       }
 
       // reset the costs because this section of the plan was not moved to GPU
@@ -116,6 +129,27 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     }
 
     (totalCpuCost, totalGpuCost)
+  }
+
+  private def format(plan: SparkPlanMeta[_]): String = {
+    plan.wrapped match {
+      case p: SparkPlan => p.simpleString(SQLConf.get.maxToStringFields)
+      case other => other.toString()
+    }
+  }
+
+  private def formatTree(plan: SparkPlanMeta[_]): String = {
+    val b = new StringBuilder
+    formatTree(plan, b, "")
+    b.toString
+  }
+
+  private def formatTree(plan: SparkPlanMeta[_], b: StringBuilder, indent: String): Unit = {
+    b.append(indent)
+    b.append(format(plan))
+    b.append('\n')
+    plan.childPlans.filter(_.canThisBeReplaced)
+        .foreach(child => formatTree(child, b, indent + "  "))
   }
 
 }

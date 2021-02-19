@@ -2783,15 +2783,15 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       }
       plan
     } else {
-      if (conf.cboEnabled) {
+      val optimizations = if (conf.cboEnabled) {
         // we need to run these rules both before and after CBO because the cost
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
 
         val optimizer = new CostBasedOptimizer(conf)
-        optimizer.optimize(
-          plan = wrap,
-          finalOperator = true)
+        optimizer.optimize(wrap)
+      } else {
+        Seq.empty
       }
       wrap.runAfterTagRules()
       if (!exp.equalsIgnoreCase("NONE")) {
@@ -2799,6 +2799,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
         if (!explain.isEmpty) {
           logWarning(s"\n$explain")
+          if (optimizations.nonEmpty) {
+            logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")
+          }
         }
       }
       val convertedPlan = wrap.convertIfNeeded()
