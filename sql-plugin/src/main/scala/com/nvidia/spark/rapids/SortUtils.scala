@@ -89,8 +89,8 @@ object SortUtils extends Arm {
  * include sorting, merge sorting, and finding bounds. These can be combined in various ways to
  * do different algorithms. When you are done with these different operations you can drop the
  * temporary columns that were added, just for computation, using `removeProjectedColumns`.
- * Some times you may want to pull data back to the CPU and sort rows there too. we provide
- * cpuOrders that lets you do this on rows that have had the extra ordering columns added to them.
+ * Some times you may want to pull data back to the CPU and sort rows there too. We provide
+ * `cpuOrders` that lets you do this on rows that have had the extra ordering columns added to them.
  * This also provides `fullySortBatch` as an optimization. If all you want to do is sort a batch
  * you don't want to have to sort the temp columns too, and this provide that.
  * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
@@ -156,7 +156,7 @@ class GpuSorter(
    */
   private[this] lazy val computationSchema: Seq[Attribute] =
     sortOrdersThatNeedComputation.map { so =>
-      AttributeReference(s"SORT_TMP", so.dataType, so.nullable)()
+      AttributeReference("SORT_TMP", so.dataType, so.nullable)()
     }
 
   /**
