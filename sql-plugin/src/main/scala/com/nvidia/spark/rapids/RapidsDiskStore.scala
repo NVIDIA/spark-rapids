@@ -92,7 +92,7 @@ class RapidsDiskStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: (StorageTier, StorageTier, Long) => Unit)
+      spillCallback: RapidsBuffer.SpillCallback)
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 

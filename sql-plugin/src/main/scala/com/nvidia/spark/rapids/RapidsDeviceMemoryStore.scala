@@ -51,8 +51,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, StorageTier, Long) => Unit
-      = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val buffer = new RapidsDeviceMemoryBuffer(
       id,
       contigBuffer.getLength,
@@ -87,8 +86,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, StorageTier, Long) => Unit
-      = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -127,8 +125,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, StorageTier, Long) => Unit
-      = RapidsBuffer.defaultSpillCallback): Unit = {
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val buff = new RapidsDeviceMemoryBuffer(
       id,
       buffer.getLength,
@@ -157,7 +154,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long,
-      override val spillCallback: (StorageTier, StorageTier, Long) => Unit)
+      override val spillCallback: RapidsBuffer.SpillCallback)
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.DEVICE
 

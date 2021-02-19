@@ -179,7 +179,8 @@ object GpuShuffleExchangeExec {
       val shim = ShimLoader.getSparkShims
       val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
         shim.sortOrder(GpuBoundReference(index, attr.dataType, attr.nullable), Ascending)
-      }
+        // Force the sequence to materialize so we don't have issues with serializing too much
+      }.toArray.toSeq
       val sorter = new GpuSorter(boundReferences, outputAttributes)
       rdd.mapPartitions { cbIter =>
         GpuSortEachBatchIterator(cbIter, sorter)

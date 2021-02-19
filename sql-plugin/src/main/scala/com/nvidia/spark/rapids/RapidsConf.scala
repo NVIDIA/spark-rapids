@@ -432,7 +432,7 @@ object RapidsConf {
     .createWithDefault(false)
 
   val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
-      .doc("enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
+      .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
           "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
           "order in which upstream data arrives to a task is not guaranteed. Sort stability then " +
           "only matters when reading and sorting data from a file using a single task/partition. " +

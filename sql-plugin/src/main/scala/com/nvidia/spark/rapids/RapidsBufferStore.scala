@@ -251,8 +251,7 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: (StorageTier, StorageTier, Long) => Unit)
-      extends RapidsBuffer with Arm {
+      override val spillCallback: RapidsBuffer.SpillCallback) extends RapidsBuffer with Arm {
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority

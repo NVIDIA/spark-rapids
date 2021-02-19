@@ -221,7 +221,7 @@ case class GpuOutOfCoreSortIterator(
     outputBatches: GpuMetric,
     outputRows: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: (StorageTier, StorageTier, Long) => Unit) extends Iterator[ColumnarBatch]
+    spillCallback: RapidsBuffer.SpillCallback) extends Iterator[ColumnarBatch]
     with Arm with AutoCloseable {
 
   // There are so many places where we might hit a new peak that it gets kind of complex
@@ -290,14 +290,12 @@ case class GpuOutOfCoreSortIterator(
       withResource(sortedTbl.contiguousSplit()) { splits =>
         assert(splits.length == 1)
         memUsed += splits.head.getBuffer.getLength
-        withResource(new NvtxRange("Store Sorted Table", NvtxColor.DARK_GREEN)) { _ =>
-          closeOnExcept(
-            GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
-            val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              spillCallback)
-            sortedSize += sp.sizeInBytes
-            sorted.add(sp)
-          }
+        closeOnExcept(
+          GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
+          val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+            spillCallback)
+          sortedSize += sp.sizeInBytes
+          sorted.add(sp)
         }
       }
     } else {
@@ -329,34 +327,30 @@ case class GpuOutOfCoreSortIterator(
       withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { splits =>
         memUsed += splits.map(_.getBuffer.getLength).sum
         val stillPending = if (sortedOffset >= 0) {
-          withResource(new NvtxRange("Store Sorted Table", NvtxColor.DARK_GREEN)) { _ =>
-            closeOnExcept(
-              GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
-              val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-                spillCallback)
-              sortedSize += sp.sizeInBytes
-              sorted.add(sp)
-            }
+          closeOnExcept(
+            GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
+            val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              spillCallback)
+            sortedSize += sp.sizeInBytes
+            sorted.add(sp)
           }
           splits.slice(1, splits.length)
         } else {
           splits
         }
 
-        withResource(new NvtxRange("Store Split Tables", NvtxColor.YELLOW)) { _ =>
-          assert(boundaries.length == stillPending.length)
-          stillPending.zip(boundaries).foreach {
-            case (ct: ContiguousTable, lower: UnsafeRow) =>
-              if (ct.getRowCount > 0) {
-                closeOnExcept(
-                  GpuColumnVectorFromBuffer.from(ct, sorter.projectedBatchTypes)) { cb =>
-                  pending.add(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                    spillCallback), lower)
-                }
-              } else {
-                ct.close()
+        assert(boundaries.length == stillPending.length)
+        stillPending.zip(boundaries).foreach {
+          case (ct: ContiguousTable, lower: UnsafeRow) =>
+            if (ct.getRowCount > 0) {
+              closeOnExcept(
+                GpuColumnVectorFromBuffer.from(ct, sorter.projectedBatchTypes)) { cb =>
+                pending.add(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+                  spillCallback), lower)
               }
-          }
+            } else {
+              ct.close()
+            }
         }
       }
     }

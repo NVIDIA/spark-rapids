@@ -38,7 +38,7 @@ can fit in the GPU's memory, but it does not guarantee ordering of rows when the
 keys is ambiguous. If you do rely on a stable sort in your processing you can request this by
 setting [spark.rapids.sql.stableSort.enabled](configs.md#sql.stableSort.enabled) to `true` and
 RAPIDS will try to sort all the data for a given task/partition at once on the GPU. This may change
-in the future to all for a spillable stable sort.
+in the future to allow for a spillable stable sort.
 
 ## Floating Point
 

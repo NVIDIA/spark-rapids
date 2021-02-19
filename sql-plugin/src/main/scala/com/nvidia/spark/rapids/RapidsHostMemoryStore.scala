@@ -119,7 +119,7 @@ class RapidsHostMemoryStore(
       spillPriority: Long,
       buffer: HostMemoryBuffer,
       isInternalPoolAllocated: Boolean,
-      spillCallback: (StorageTier, StorageTier, Long) => Unit)
+      spillCallback: RapidsBuffer.SpillCallback)
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.HOST
 

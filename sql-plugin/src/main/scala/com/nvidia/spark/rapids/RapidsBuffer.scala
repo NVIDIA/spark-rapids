@@ -60,6 +60,19 @@ object StorageTier extends Enumeration {
 
 object RapidsBuffer {
   /**
+   * Callback type for when a batch is spilled from one storage tier to another. This is
+   * intended to only be used for metrics gathering in parts of the GPU plan that can spill.
+   * No GPU memory should ever be allocated from this callback, blocking in this function
+   * is strongly discouraged. It should be as light weight as possible. It takes three arguments
+   * <ul>
+   * <li><code>from</code> the storage tier the data is being spilled from.</li>
+   * <li><code>to</code> the storage tier the data is being spilled to.</li>
+   * <li><code>amount</code> the amount of data in bytes that is spilled.</li>
+   * </ul>
+   */
+  type SpillCallback = (StorageTier, StorageTier, Long) => Unit
+
+  /**
    * A default NOOP callback for when a buffer is spilled
    */
   def defaultSpillCallback(to: StorageTier, from: StorageTier, amount: Long): Unit = ()
@@ -79,18 +92,7 @@ trait RapidsBuffer extends AutoCloseable {
   /** The storage tier for this buffer */
   val storageTier: StorageTier
 
-  /**
-   * Called when a batch is spilled from one storage tier to another. This is intended to only
-   * be used for metrics gathering in parts of the GPU plan that can spill. No GPU memory
-   * should ever be allocated from this callback, blocking in this function is strongly
-   * discouraged. It should be as light weight as possible. It takes three arguments
-   * <ul>
-   * <li><code>from</code> the storage tier the data is being spilled from.</li>
-   * <li><code>to</code> the storage tier the data is being spilled to.</li>
-   * <li><code>amount</code> the amount of data in bytes that is spilled.</li>
-   * </ul>
-   */
-  val spillCallback: (StorageTier, StorageTier, Long) => Unit
+  val spillCallback: RapidsBuffer.SpillCallback
 
   /**
    * Get the columnar batch within this buffer. The caller must have
@@ -161,6 +163,7 @@ sealed class DegenerateRapidsBuffer(
     override val meta: TableMeta) extends RapidsBuffer with Arm {
   override val size: Long = 0L
   override val storageTier: StorageTier = StorageTier.DEVICE
+
   override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
     val rowCount = meta.rowCount
     val packedMeta = meta.packedMetaAsByteBuffer()
@@ -189,6 +192,5 @@ sealed class DegenerateRapidsBuffer(
 
   override def close(): Unit = {}
 
-  override val spillCallback: (StorageTier, StorageTier, Long) => Unit
-  = RapidsBuffer.defaultSpillCallback
+  override val spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback
 }

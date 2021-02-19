@@ -134,7 +134,7 @@ object SpillableColumnarBatch extends Arm {
    */
   def apply(batch: ColumnarBatch,
       priority: Long,
-      spillCallback: (StorageTier, StorageTier, Long) => Unit = RapidsBuffer.defaultSpillCallback)
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback)
   : SpillableColumnarBatch = {
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
@@ -153,7 +153,7 @@ object SpillableColumnarBatch extends Arm {
       id: RapidsBufferId,
       batch: ColumnarBatch,
       initialSpillPriority: Long,
-      spillCallback: (StorageTier, StorageTier, Long) => Unit): Unit = {
+      spillCallback: RapidsBuffer.SpillCallback): Unit = {
     withResource(batch) { batch =>
       val numColumns = batch.numCols()
       if (GpuCompressedColumnVector.isBatchCompressed(batch)) {

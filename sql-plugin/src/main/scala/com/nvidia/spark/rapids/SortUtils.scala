@@ -76,7 +76,23 @@ object SortUtils extends Arm {
 }
 
 /**
- * A class that provides convenience methods for sorting batches of data
+ * A class that provides convenience methods for sorting batches of data. A Spark SortOrder
+ * typically will just reference a single column using an AttributeReference. This is the simplest
+ * situation so we just need to bind the attribute references to where they go, but it is possible
+ * that some computation can be done in the SortOrder.  This would be a situation like sorting
+ * strings by their length instead of in lexicographical order. Because cudf does not support this
+ * directly we instead go through the SortOrder instances that are a part of this sorter and find
+ * the ones that require computation. We then do the sort in a few stages first we compute any
+ * needed columns from the SortOrder instances that require some computation, and add them to the
+ * original batch.  The method `appendProjectedColumns` does this. This then provides a number of
+ * methods that can be used to operate on a batch that has these new columns added to it. These
+ * include sorting, merge sorting, and finding bounds. These can be combined in various ways to
+ * do different algorithms. When you are done with these different operations you can drop the
+ * temporary columns that were added, just for computation, using `removeProjectedColumns`.
+ * Some times you may want to pull data back to the CPU and sort rows there too. we provide
+ * cpuOrders that lets you do this on rows that have had the extra ordering columns added to them.
+ * This also provides `fullySortBatch` as an optimization. If all you want to do is sort a batch
+ * you don't want to have to sort the temp columns too, and this provide that.
  * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
  * @param inputSchema The schema of the input data
  */
@@ -98,8 +114,8 @@ class GpuSorter(
 
   /**
    * A sort order that the CPU can use to sort data that is the output of `appendProjectedColumns`.
-   * This is required because the sort order that we have access to is for doing computation on the
-   * GPU, not the CPU.
+   * You cannot use the regular sort order directly because it has been translated to the GPU when
+   * computation is needed.
    */
   def cpuOrdering: Seq[SortOrder] = cpuOrderingInternal.toSeq
 
@@ -144,8 +160,8 @@ class GpuSorter(
     }
 
   /**
-   * Some sort order require computation to get the fields to sort on. This is done as a part of
-   * the `appendProjectedColumns` method and this holds the schema for the result of that method.
+   * Some SortOrder instances require adding temporary columns which is done as a part of
+   * the `appendProjectedColumns` method. This is the schema for the result of that method.
    */
   lazy val projectedBatchSchema: Seq[Attribute] = inputSchema ++ computationSchema
   /**
@@ -158,7 +174,7 @@ class GpuSorter(
   lazy val originalTypes: Array[DataType] = inputSchema.map(_.dataType)
 
   /**
-   * Append any columns to the batch that need to be materialized
+   * Append any columns to the batch that need to be materialized for sorting to work.
    * @param inputBatch the batch to add columns to
    * @return the batch with columns added
    */

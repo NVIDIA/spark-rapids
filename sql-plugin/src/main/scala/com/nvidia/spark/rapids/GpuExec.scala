@@ -112,8 +112,7 @@ object GpuMetric extends Logging {
   object MODERATE_LEVEL extends MetricsLevel(1)
   object ESSENTIAL_LEVEL extends MetricsLevel(2)
 
-  def makeSpillCallback(
-      allMetrics: Map[String, GpuMetric]): (StorageTier, StorageTier, Long) => Unit = {
+  def makeSpillCallback(allMetrics: Map[String, GpuMetric]): RapidsBuffer.SpillCallback = {
     val spillAmount = allMetrics(SPILL_AMOUNT)
     val disk = allMetrics(SPILL_AMOUNT_DISK)
     val host = allMetrics(SPILL_AMOUNT_HOST)
