@@ -139,7 +139,7 @@ trait SparkShims {
     readFunction: (PartitionedFile) => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
 
-  def getFileSourceMaxMetadataValueLength(sqlContext: SQLConf): Int
+  def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
 
   def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,
