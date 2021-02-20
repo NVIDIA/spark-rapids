@@ -313,7 +313,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
 - Use Alluxio user by: `sudo su - alluxio`
 - Make sure all test passes `alluxio runTests`
 - Prefetch file metadata `alluxio fs ls -R /`, change permission (only for benchmark, not recommended) `alluxio fs chmod -R 777 /`
-- Load data to Alluxio (if workspace is large enough) `./bin/alluxio fs distributedLoad /*`
+- Load data to Alluxio (if workspace is large enough) `./bin/alluxio fs distributedLoad /`
 
 3, Use Alluxio namespace when run spark code.
 
