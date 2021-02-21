@@ -720,13 +720,13 @@ object CastOpSuite {
 
   def doublesAsStrings(session: SparkSession): DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(DoubleType), false)
-    val df = FuzzerUtils.generateDataFrame(session, schema, 100)
+    val df = FuzzerUtils.generateDataFrame(session, schema, 2048)
     df.withColumn("c0", col("c0").cast(StringType))
   }
 
   def floatsAsStrings(session: SparkSession): DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(FloatType), false)
-    val df = FuzzerUtils.generateDataFrame(session, schema, 100)
+    val df = FuzzerUtils.generateDataFrame(session, schema, 2048)
     df.withColumn("c0", col("c0").cast(StringType))
   }
 
