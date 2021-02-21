@@ -203,16 +203,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def testCastTo(castTo: DataType)(frame: DataFrame): DataFrame ={
-    frame.withColumn("c1", col("c0").cast(castTo))
-  }
-
-  private def stringDf(str: String)(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    // use more than one value otherwise spark optimizes it out as a literal
-    Seq(str, str).toDF("c0")
-  }
-
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
   test("cast byte to string") {
