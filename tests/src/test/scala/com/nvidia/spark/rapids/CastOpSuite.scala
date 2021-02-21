@@ -399,7 +399,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   testSparkResultsAreEqual("ansi_cast string to float exp", exponentsAsStringsDf,
     conf = sparkConf, maxFloatDiff = 0.0001) {
-    frame =>frame.select(
+    frame => frame.select(
       col("c0").cast(FloatType))
   }
 
