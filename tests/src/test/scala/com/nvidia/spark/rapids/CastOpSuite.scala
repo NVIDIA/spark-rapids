@@ -231,11 +231,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Long](DataTypes.LongType)
   }
 
-  ignore("cast float to string") {
+  test("cast float to string") {
     testCastToString[Float](DataTypes.FloatType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
-  ignore("cast double to string") {
+  test("cast double to string") {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
@@ -296,30 +296,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(FloatType),
       col("doubles").cast(DoubleType),
       col("doubles").cast(TimestampType))
-  }
-
-  ignore("Test cast from double to string") {
-
-    //NOTE that the testSparkResultsAreEqual method isn't adequate in this case because we
-    // need to use a specialized comparison function
-
-    val conf = new SparkConf()
-      .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
-
-    val (cpu, gpu) = runOnCpuAndGpu(doubleDf, frame => frame.select(
-      col("doubles").cast(StringType))
-      .orderBy(col("doubles")), conf)
-
-    val fromCpu = cpu.map(row => row.getAs[String](0))
-    val fromGpu = gpu.map(row => row.getAs[String](0))
-
-    fromCpu.zip(fromGpu).foreach {
-      case (c, g) =>
-        if (!compareStringifiedFloats(c, g)) {
-          fail(s"Running on the GPU and on the CPU did not match: CPU value: $c. " +
-            s"GPU value: $g.")
-        }
-    }
   }
 
   testSparkResultsAreEqual("Test cast from boolean", booleanDf) {
@@ -396,14 +372,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(TimestampType))
   }
 
-  ignore("Test cast from strings to double that doesn't match") {
-        testSparkResultsAreEqual("Test cast from strings to double that doesn't match",
-          badDoubleStringsDf) {
-          frame =>frame.select(
-              col("doubles").cast(DoubleType))
-        }
-  }
-
   testSparkResultsAreEqual("Test cast from strings to doubles", doublesAsStrings,
     conf = sparkConf, maxFloatDiff = 0.0001) {
     frame => frame.select(
@@ -425,16 +393,27 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c1").cast(FloatType))
   }
 
+  ignore("overflow double strings") {
+    testSparkResultsAreEqual("overflow double strings", badDoubleStringsDf,
+      conf = sparkConf, maxFloatDiff = 0.0001) {
+      frame => frame.select(
+        col("c0").cast(DoubleType))
+    }
+  }
+
   testSparkResultsAreEqual("ansi_cast string to double exp", exponentsAsStringsDf,
     conf = sparkConf, maxFloatDiff = 0.0001) {
     frame => frame.select(
       col("c0").cast(DoubleType))
   }
 
-  testSparkResultsAreEqual("ansi_cast string to float exp", exponentsAsStringsDf,
-    conf = sparkConf, maxFloatDiff = 0.0001) {
-    frame => frame.select(
-      col("c0").cast(FloatType))
+  ignore("Test cast from strings to double that doesn't match") {
+    testSparkResultsAreEqual("ansi_cast string to float exp", exponentsAsStringsDf,
+      conf = sparkConf, maxFloatDiff = 0.0001) {
+      frame =>
+        frame.select(
+          col("c0").cast(FloatType))
+    }
   }
 
   // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
