@@ -340,6 +340,93 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def outputTypeOverride: DType =
     GpuColumnVector.getNonNestedRapidsType(dataType)
 
+  def implicitReturnType(l: BinaryOperable, r: BinaryOperable) =
+    BinaryOperable.implicitConversion(l, r)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    import DecimalUtil._
+    (left.dataType, right.dataType) match {
+      case (l: DecimalType, r: DecimalType)
+        if !DecimalType.is32BitDecimalType(dataType) &&
+          DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r) => {
+        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+        val outputType = dataType.asInstanceOf[DecimalType]
+        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+        withResource(lhs.getBase().castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
+          withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+            val tmp = decimalLhs.div(decimalRhs, implicitReturnType(decimalLhs, decimalRhs))
+            if (tmp.getType != cudfOutputType) {
+              withResource(tmp) { tmp =>
+                tmp.castTo(cudfOutputType)
+              }
+            } else {
+              tmp
+            }
+          }
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+    import DecimalUtil._
+    (left.dataType, right.dataType) match {
+      case (l: DecimalType, r: DecimalType)
+        if !DecimalType.is32BitDecimalType(dataType) &&
+          DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r) => {
+        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+        val outputType = dataType.asInstanceOf[DecimalType]
+        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+        withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { decimalLhs =>
+          withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
+            val tmp = decimalLhs.div(decimalRhs, implicitReturnType(decimalLhs, decimalRhs))
+            if (tmp.getType != cudfOutputType) {
+              withResource(tmp) { tmp =>
+                tmp.castTo(cudfOutputType)
+              }
+            } else {
+              tmp
+            }
+          }
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+    import DecimalUtil._
+    (left.dataType, right.dataType) match {
+      case (l: DecimalType, r: DecimalType)
+        if !DecimalType.is32BitDecimalType(dataType) &&
+          DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r) => {
+        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
+        val outputType = dataType.asInstanceOf[DecimalType]
+        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
+        withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), dataType)) { decimalRhs =>
+          withResource(lhs.getBase.castTo(cudfOutputType)) { decimalLhs =>
+            val tmp = decimalLhs.div(decimalRhs, implicitReturnType(decimalLhs, decimalRhs))
+            if (tmp.getType != cudfOutputType) {
+              withResource(tmp) { tmp =>
+                tmp.castTo(cudfOutputType)
+              }
+            } else {
+              tmp
+            }
+          }
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
   // Override the output type as a special case for decimal
   override def dataType: DataType = (left.dataType, right.dataType) match {
     case (l: DecimalType, r: DecimalType) =>  GpuDivideUtil.decimalDataType(l, r)
