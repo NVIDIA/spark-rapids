@@ -729,45 +729,7 @@ abstract class FileParquetPartitionReaderBase(
         cv
       }
     } else if (dt == DType.LIST) {
-      // list column can only have upto 2 children
-      val viewHandles: Array[Long] = new Array[Long](cv.getNumChildren())
-      val buffers = new ListBuffer[DeviceMemoryBuffer]()
-      var hasNew = false
-      (0 until cv.getNumChildren()).foreach { i =>
-        val child = cv.getChildColumnView(i)
-        val newChild = convertDecimal64ToDecimal32(child, precisionList)
-        if (newChild != child) {
-          if (!hasNew) {
-            hasNew = true
-          }
-        }
-        viewHandles(i) = newChild.getNativeView()
-        buffers.appendAll(getBuffersToClose(newChild))
-      }
-      if (hasNew) {
-        // create a new list
-        val validityView = cv.getValid()
-        val offsetsView = cv.getOffsets()
-        val dataView = cv.getData()
-
-        val validity = DeviceMemoryBuffer.allocate(validityView.getLength)
-        validity.copyFromDeviceBufferAsync(0, validityView, 0,
-          validityView.getLength, Cuda.DEFAULT_STREAM)
-
-        val offsets = DeviceMemoryBuffer.allocate(offsetsView.getLength)
-        offsets.copyFromDeviceBufferAsync(0, offsetsView, 0,
-          offsetsView.getLength, Cuda.DEFAULT_STREAM)
-
-        val data = DeviceMemoryBuffer.allocate(dataView.getLength)
-        data.copyFromDeviceBufferAsync(0, dataView, 0, dataView.getLength, Cuda.DEFAULT_STREAM)
-
-        new ColumnVector(DType.LIST, cv.getRowCount,
-          Optional.of[java.lang.Long](cv.getNullCount),
-          data, validity, offsets,
-          buffers.asJava, viewHandles)
-      } else {
-        cv
-      }
+      cv.asInstanceOf[ColumnVector].castLeafD64ToD32()
     } else if (dt == DType.STRUCT) {
       val newColumns = ArrayBuilder.make[ColumnView]()
       newColumns.sizeHint(cv.getNumChildren)

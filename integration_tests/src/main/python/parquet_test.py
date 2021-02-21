@@ -201,8 +201,8 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             conf=all_confs)
 
 @pytest.mark.parametrize('parquet_gens', [decimal_gens,
-        pytest.param(ArrayGen(DecimalGen(7,2), max_length=10), marks=pytest.mark.xfail),
-        pytest.param([StructGen([['child0', DecimalGen(7, 2)]])], marks=pytest.mark.xfail)], ids=idfn)
+                                          [ArrayGen(DecimalGen(7,2), max_length=10)],
+                                          [StructGen([['child0', DecimalGen(7, 2)]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
