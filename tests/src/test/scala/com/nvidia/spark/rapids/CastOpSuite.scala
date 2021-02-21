@@ -397,13 +397,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c0").cast(DoubleType))
   }
 
-  ignore("Test cast from strings to double that doesn't match") {
-    testSparkResultsAreEqual("ansi_cast string to float exp", exponentsAsStringsDf,
-      conf = sparkConf, maxFloatDiff = 0.0001) {
-      frame =>
-        frame.select(
-          col("c0").cast(FloatType))
-    }
+  testSparkResultsAreEqual("ansi_cast string to float exp", exponentsAsStringsDf,
+    conf = sparkConf, maxFloatDiff = 0.0001) {
+    frame =>frame.select(
+      col("c0").cast(FloatType))
   }
 
   // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
