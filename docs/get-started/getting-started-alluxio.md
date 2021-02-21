@@ -301,7 +301,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --num-worker-local-ssds 4 \
     --initialization-actions gs://${GCS_BUCKET}/alluxio-dataproc.sh,gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
     --optional-components=JUPYTER,ZEPPELIN \
-    --metadata alluxio_root_ufs_uri="gs://${GCS_BUCKET}/tpcds",gpu-driver-provider="NVIDIA",rapids-runtime="SPARK",alluxio_site_properties="alluxio.master.mount.table.root.option.fs.gcs.accessKeyId='GOOGAPHC77BYHEHKXGKQSXSZ';alluxio.master.mount.table.root.option.fs.gcs.secretAccessKey='IFauREQ/tB24o/iUsUw9zPTYxo+2d8Giq0/pPCft'" \
+    --metadata alluxio_root_ufs_uri="gs://${GCS_BUCKET}/tpcds",gpu-driver-provider="NVIDIA",rapids-runtime="SPARK",alluxio_site_properties="alluxio.master.mount.table.root.option.fs.gcs.accessKeyId=<GCS ACCESS KEY>;alluxio.master.mount.table.root.option.fs.gcs.secretAccessKey=<GCS SECRETS>" \
     --bucket $GCS_BUCKET \
     --subnet=default \
     --enable-component-gateway \
