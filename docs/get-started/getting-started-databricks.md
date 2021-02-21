@@ -15,9 +15,9 @@ on NVIDIA GPUs on Databricks.
     * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
     * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
 
-Databricks 7.3 LTS ML runs CUDA 10.1 Update
-2[*](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environment), and the
-initialization scripts will install the appropriate cudf version to match.
+[Databricks 7.3 LTS
+ML](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environment) runs CUDA 10.1
+Update 2, and the initialization scripts will install the appropriate cudf version to match.
 
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
