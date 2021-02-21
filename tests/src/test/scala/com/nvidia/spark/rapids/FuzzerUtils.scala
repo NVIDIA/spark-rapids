@@ -301,7 +301,7 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
   }
 
   def nextFloat(): Float = {
-    r.nextInt(19) match {
+    r.nextInt(11) match {
       case 0 => Float.NaN
       case 1 => Float.PositiveInfinity
       case 2 => Float.NegativeInfinity
@@ -311,13 +311,13 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
       case 6 => r.nextFloat()
       case 7 => 0f
       case 8 => -0f
-      case s if s % 2 == 0 => r.nextFloat() * Float.MinValue
-      case _ => r.nextFloat() * Float.MaxValue
+      case 9 => r.nextFloat() * Float.MinValue
+      case 10 => r.nextFloat() * Float.MaxValue
     }
   }
 
   def nextDouble(): Double = {
-    r.nextInt(19) match {
+    r.nextInt(11) match {
       case 0 => Double.NaN
       case 1 => Double.PositiveInfinity
       case 2 => Double.NegativeInfinity
@@ -327,8 +327,8 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
       case 6 => r.nextDouble()
       case 7 => 0d
       case 8 => -0d
-      case s if s % 2 == 0 => r.nextDouble() * Double.MinValue
-      case _ => r.nextDouble() * Double.MaxValue
+      case 9 => r.nextDouble() * Double.MinValue
+      case 10 => r.nextDouble() * Double.MaxValue
     }
   }
 
