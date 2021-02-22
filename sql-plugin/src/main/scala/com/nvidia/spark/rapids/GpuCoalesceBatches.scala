@@ -468,6 +468,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     concatTime: GpuMetric,
     totalTime: GpuMetric,
     peakDevMemory: GpuMetric,
+    spillCallback: RapidsBuffer.SpillCallback,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -490,7 +491,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit =
-    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+    batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+      spillCallback))
 
   private[this] var codec: TableCompressionCodec = _
 
@@ -553,7 +555,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
     assert(onDeck.isEmpty)
-    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+    onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+      spillCallback))
   }
 
   override protected def clearOnDeck(): Unit = {
@@ -575,15 +578,29 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   private[this] val maxDecompressBatchMemory =
     new RapidsConf(child.conf).shuffleCompressionMaxBatchMemory
 
+  private[this] lazy val cannotSpill = child.schema.fields.exists { f =>
+    f.dataType match {
+      case MapType(_, _, _) | ArrayType(_, _) | StructType(_) => true
+      case _ => false
+    }
+  }
+
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
-    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  )
+  override lazy val additionalMetrics: Map[String, GpuMetric] = {
+    val tmp = Map(
+      NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+      NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+      COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
+      CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
+      PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
+    )
+    if (cannotSpill) {
+      tmp
+    } else {
+      tmp ++ spillMetrics
+    }
+  }
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new IllegalStateException("ROW BASED PROCESSING IS NOT SUPPORTED")
@@ -608,12 +625,6 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema
     val decompressMemoryTarget = maxDecompressBatchMemory
-    val cannotSpill = child.schema.fields.exists { f =>
-      f.dataType match {
-        case MapType(_, _, _) | ArrayType(_, _) | StructType(_) => true
-        case _ => false
-      }
-    }
 
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
@@ -626,9 +637,10 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
           numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
           concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
       } else {
+        val callback = GpuMetric.makeSpillCallback(allMetrics)
         new GpuCoalesceIterator(iter, outputSchema, goal, decompressMemoryTarget,
           numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-          concatTime, totalTime, peakDevMemory, "GpuCoalesceBatches")
+          concatTime, totalTime, peakDevMemory, callback, "GpuCoalesceBatches")
       }
     }
   }
