@@ -354,8 +354,8 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
         val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
         val outputType = dataType.asInstanceOf[DecimalType]
         val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-        withResource(lhs.getBase().castDecimal32ToDecimal64(decimalType)) { decimalLhs =>
-          withResource(rhs.getBase.castDecimal32ToDecimal64(decimalType)) { decimalRhs =>
+        withResource(lhs.getBase().castTo(decimalType)) { decimalLhs =>
+          withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
             val tmp = decimalLhs.div(decimalRhs, implicitReturnType(decimalLhs, decimalRhs))
             if (tmp.getType != cudfOutputType) {
               withResource(tmp) { tmp =>

@@ -747,7 +747,7 @@ abstract class FileParquetPartitionReaderBase(
       if (cols.nonEmpty) {
         // create a new struct column with the new ones
         withResource(cols) { newCols =>
-          ColumnVector.replaceColumnsInStruct(cv, newColIndices.result(), newCols)
+          cv.replaceColumnsInStruct(newColIndices.result(), newCols)
         }
     } else {
         cv
