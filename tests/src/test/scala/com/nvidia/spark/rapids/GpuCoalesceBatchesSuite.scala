@@ -165,7 +165,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val vector3 = toArrowField("array", ArrayType(IntegerType), nullable = true, null)
       .createVector(allocator).asInstanceOf[ListVector]
     vector3.allocateNew()
-    val elementVector = vector3.getDataVector().asInstanceOf[IntVector]
+    val elementVector = vector3.getDataVector.asInstanceOf[IntVector]
 
     (0 until 10).foreach { i =>
       vector1.setSafe(i, i)
@@ -404,6 +404,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
+      RapidsBuffer.defaultSpillCallback,
       "test concat")
 
     var expected = 0
@@ -485,6 +486,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
+      RapidsBuffer.defaultSpillCallback,
       "test concat")
 
     var expected = 0

@@ -27,7 +27,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{AggregationOnColumn, ArrowIPCOptions, ArrowIPCWriterOptions, ColumnVector, HostBufferConsumer, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
-import com.nvidia.spark.rapids.{Arm, ConcatAndConsumeAll, GpuAggregateWindowFunction, GpuBindReferences, GpuColumnVector, GpuColumnVectorFromBuffer, GpuExec, GpuMetric, GpuProjectExec, GpuSemaphore, GpuUnevaluable, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.{Arm, ConcatAndConsumeAll, GpuAggregateWindowFunction, GpuBindReferences, GpuColumnVector, GpuColumnVectorFromBuffer, GpuExec, GpuMetric, GpuProjectExec, GpuSemaphore, GpuUnevaluable, RapidsBuffer, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -59,7 +59,8 @@ class RebatchingRoundoffIterator(
     schema: StructType,
     targetRoundoff: Int,
     inputRows: GpuMetric,
-    inputBatches: GpuMetric)
+    inputBatches: GpuMetric,
+    spillCallback: RapidsBuffer.SpillCallback)
     extends Iterator[ColumnarBatch] with Arm {
   var pending: Option[SpillableColumnarBatch] = None
 
@@ -94,7 +95,8 @@ class RebatchingRoundoffIterator(
       inputBatches += 1
       inputRows += got.numRows()
       rowsSoFar += got.numRows()
-      batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+      batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+        spillCallback))
     }
     val toConcat = batches.safeMap(_.getColumnarBatch()).toArray
     ConcatAndConsumeAll.buildNonEmptyBatch(toConcat, schema)
@@ -129,7 +131,8 @@ class RebatchingRoundoffIterator(
             localPending.setSpillPriority(SpillPriorities.ACTIVE_BATCHING_PRIORITY)
             batches.append(localPending)
             pending = None
-            batches.append(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+            batches.append(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+              spillCallback))
             fillAndConcat(batches)
           } finally {
             batches.safeClose()
@@ -145,7 +148,8 @@ class RebatchingRoundoffIterator(
       } else {
         val batches: ArrayBuffer[SpillableColumnarBatch] = ArrayBuffer.empty
         try {
-          batches.append(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
+          batches.append(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+            spillCallback))
           fillAndConcat(batches)
         } finally {
           batches.safeClose()
@@ -170,7 +174,8 @@ class RebatchingRoundoffIterator(
       pending =
           Some(SpillableColumnarBatch(GpuColumnVectorFromBuffer.from(split.last,
             GpuColumnVector.extractTypes(schema)),
-            SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+            spillCallback))
       GpuColumnVectorFromBuffer.from(split.head, GpuColumnVector.extractTypes(schema))
     }
   }
@@ -185,8 +190,9 @@ class BatchQueue extends AutoCloseable with Arm {
     mutable.Queue[SpillableColumnarBatch]()
   private var isSet = false
 
-  def add(batch: ColumnarBatch): Unit = synchronized {
-    queue.enqueue(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
+  def add(batch: ColumnarBatch, spillCallback: RapidsBuffer.SpillCallback): Unit = synchronized {
+    queue.enqueue(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+      spillCallback))
     if (!isSet) {
       // Wake up anyone waiting for the first batch.
       isSet = true
@@ -543,13 +549,14 @@ case class GpuArrowEvalPythonExec(
     NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
-  )
+  ) ++ spillMetrics
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
 
@@ -598,12 +605,12 @@ case class GpuArrowEvalPythonExec(
 
       val boundReferences = GpuBindReferences.bindReferences(allInputs, childOutput)
       val batchedIterator = new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize,
-        numInputRows, numInputBatches)
+        numInputRows, numInputBatches, spillCallback)
       val pyInputIterator = batchedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
         val ret = GpuProjectExec.project(batch, boundReferences)
-        queue.add(batch)
+        queue.add(batch, spillCallback)
         ret
       }
 
