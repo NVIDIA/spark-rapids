@@ -173,6 +173,7 @@ object BenchUtils {
     var df: DataFrame = null
     val queryStatus = new ListBuffer[String]()
     val queryTimes = new ListBuffer[Long]()
+    val rowCounts = new ListBuffer[Long]()
     for (i <- 0 until iterations) {
       spark.sparkContext.setJobDescription(s"Benchmark Run: query=$queryDescription; iteration=$i")
       
@@ -198,7 +199,9 @@ object BenchUtils {
         df = createDataFrame(spark)
 
         resultsAction match {
-          case Collect() => df.collect()
+          case Collect() =>
+            val rows = df.collect()
+            rowCounts.append(rows.length)
           case WriteCsv(path, mode, options) =>
             ensureValidColumnNames(df).write.mode(mode).options(options).csv(path)
           case WriteOrc(path, mode, options) =>
@@ -296,6 +299,7 @@ object BenchUtils {
       queryDescription,
       queryPlan,
       queryPlansWithMetrics,
+      rowCounts,
       queryTimes,
       queryStatus,
       exceptions)
@@ -796,6 +800,7 @@ case class BenchmarkReport(
     query: String,
     queryPlan: QueryPlan,
     queryPlans: Seq[SparkPlanNode],
+    rowCounts: Seq[Long],
     queryTimes: Seq[Long],
     queryStatus: Seq[String],
     exceptions: Seq[String])
