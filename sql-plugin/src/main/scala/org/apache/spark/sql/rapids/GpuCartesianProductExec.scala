@@ -18,8 +18,10 @@ package org.apache.spark.sql.rapids
 
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
@@ -141,27 +143,41 @@ class GpuCartesianRDD(
   override def compute(split: Partition, context: TaskContext):
   Iterator[ColumnarBatch] = {
     val currSplit = split.asInstanceOf[GpuCartesianPartition]
+
+    // create a buffer to cache stream-side data in a spillable manner
+    val spillBatchBuffer = mutable.ArrayBuffer[SpillableColumnarBatch]()
+    closeOnExcept(spillBatchBuffer) { buffer =>
+      rdd2.iterator(currSplit.s2, context).foreach { cb =>
+        // TODO: is it necessary to create a specific spill priorities for spillBatchBuffer?
+        buffer += SpillableColumnarBatch(
+          cb.getBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+      }
+    }
+
     rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
       val table = withResource(lhs) { lhs =>
         GpuColumnVector.from(lhs.getBatch)
       }
-      // Ideally instead of looping through and recomputing rdd2 for
-      // each batch in rdd1 we would instead cache rdd2 in a way that
-      // it could spill to disk so we can avoid re-computation
-      val ret = GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
-        rdd2.iterator(currSplit.s2, context).map(i => i.getBatch),
-        table,
-        GpuBuildLeft,
-        boundCondition,
-        outputSchema,
-        joinTime,
-        joinOutputRows,
-        numOutputRows,
-        numOutputBatches,
-        filterTime,
-        totalTime)
+      val ret = closeOnExcept(spillBatchBuffer) { buffer =>
+        GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
+          // fetch stream-side data from buffer in case of re-computation
+          buffer.toIterator.map(spill => spill.getColumnarBatch()),
+          table,
+          GpuBuildLeft,
+          boundCondition,
+          outputSchema,
+          joinTime,
+          joinOutputRows,
+          numOutputRows,
+          numOutputBatches,
+          filterTime,
+          totalTime)
+      }
 
-      CompletionIterator[ColumnarBatch, Iterator[ColumnarBatch]](ret, table.close())
+      CompletionIterator[ColumnarBatch, Iterator[ColumnarBatch]](ret, {
+        table.close()
+        spillBatchBuffer.safeClose()
+      })
     }
   }
 
