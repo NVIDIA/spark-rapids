@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.StorageTier.StorageTier
+
 import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -125,8 +127,15 @@ object SpillableColumnarBatch extends Arm {
   /**
    * Create a new SpillableColumnarBatch.
    * @note This takes over ownership of batch, and batch should not be used after this.
+   * @param batch the batch to make spillable
+   * @param priority the initial spill priority of this batch
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
-  def apply(batch: ColumnarBatch, priority: Long): SpillableColumnarBatch = {
+  def apply(batch: ColumnarBatch,
+      priority: Long,
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback)
+  : SpillableColumnarBatch = {
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
       // We consumed it
@@ -135,7 +144,7 @@ object SpillableColumnarBatch extends Arm {
     } else {
       val types =  GpuColumnVector.extractTypes(batch)
       val id = TempSpillBufferId()
-      addBatch(id, batch, priority)
+      addBatch(id, batch, priority, spillCallback)
       new SpillableColumnarBatchImpl(id, numRows, types)
     }
   }
@@ -143,17 +152,20 @@ object SpillableColumnarBatch extends Arm {
   private[this] def addBatch(
       id: RapidsBufferId,
       batch: ColumnarBatch,
-      initialSpillPriority: Long): Unit = {
+      initialSpillPriority: Long,
+      spillCallback: RapidsBuffer.SpillCallback): Unit = {
     withResource(batch) { batch =>
       val numColumns = batch.numCols()
       if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
         val cv = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
         val buff = cv.getTableBuffer
         buff.incRefCount()
-        RapidsBufferCatalog.addBuffer(id, buff, cv.getTableMeta, initialSpillPriority)
+        RapidsBufferCatalog.addBuffer(id, buff, cv.getTableMeta, initialSpillPriority,
+          spillCallback)
       } else if (GpuPackedTableColumn.isBatchPacked(batch)) {
         val cv = batch.column(0).asInstanceOf[GpuPackedTableColumn]
-        RapidsBufferCatalog.addContiguousTable(id, cv.getContiguousTable, initialSpillPriority)
+        RapidsBufferCatalog.addContiguousTable(id, cv.getContiguousTable, initialSpillPriority,
+          spillCallback)
       } else if (numColumns > 0 &&
           (0 until numColumns)
               .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
@@ -161,12 +173,14 @@ object SpillableColumnarBatch extends Arm {
         val table = GpuColumnVector.from(batch)
         val buff = cv.getBuffer
         buff.incRefCount()
-        RapidsBufferCatalog.addTable(id, table, buff, cv.getTableMeta, initialSpillPriority)
+        RapidsBufferCatalog.addTable(id, table, buff, cv.getTableMeta, initialSpillPriority,
+          spillCallback)
       } else {
         withResource(GpuColumnVector.from(batch)) { tmpTable =>
           withResource(tmpTable.contiguousSplit()) { contigTables =>
             require(contigTables.length == 1, "Unexpected number of contiguous spit tables")
-            RapidsBufferCatalog.addContiguousTable(id, contigTables.head, initialSpillPriority)
+            RapidsBufferCatalog.addContiguousTable(id, contigTables.head, initialSpillPriority,
+              spillCallback)
           }
         }
       }

@@ -201,7 +201,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   }
 
   class MockSpillStore(catalog: RapidsBufferCatalog)
-      extends RapidsBufferStore("mock spill store", catalog) {
+      extends RapidsBufferStore(StorageTier.HOST, catalog) {
     val spilledBuffers = new ArrayBuffer[RapidsBufferId]
 
     override protected def createBuffer(b: RapidsBuffer, s: Cuda.Stream): RapidsBufferBase = {
@@ -210,7 +210,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     }
 
     class MockRapidsBuffer(id: RapidsBufferId, size: Long, meta: TableMeta, spillPriority: Long)
-        extends RapidsBufferBase(id, size, meta, spillPriority) {
+        extends RapidsBufferBase(id, size, meta, spillPriority, RapidsBuffer.defaultSpillCallback) {
       override protected def releaseResources(): Unit = {}
 
       override val storageTier: StorageTier = StorageTier.HOST

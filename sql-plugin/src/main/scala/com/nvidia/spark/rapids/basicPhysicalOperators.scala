@@ -199,6 +199,9 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 
   override val output: Seq[Attribute] = range.output
 
+  override protected val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+
   override def outputOrdering: Seq[SortOrder] = range.outputOrdering
 
   override def outputPartitioning: Partitioning = {
