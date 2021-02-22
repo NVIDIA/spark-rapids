@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.StorageTier.StorageTier
-
 import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -134,8 +132,7 @@ object SpillableColumnarBatch extends Arm {
    */
   def apply(batch: ColumnarBatch,
       priority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback)
-  : SpillableColumnarBatch = {
+      spillCallback: RapidsBuffer.SpillCallback): SpillableColumnarBatch = {
     val numRows = batch.numRows()
     if (batch.numCols() <= 0) {
       // We consumed it
