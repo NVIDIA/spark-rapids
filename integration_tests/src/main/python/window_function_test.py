@@ -21,7 +21,6 @@ from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from conftest import is_databricks_runtime
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
@@ -247,19 +246,19 @@ _collect_sql_string =\
   '''
     select
       collect_list(c_int) over
-        (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_int,
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_int,
       collect_list(c_long) over
-        (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_long,
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_long,
       collect_list(c_time) over
-        (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_time,
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_time,
       collect_list(c_string) over
-        (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_string,
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_string,
       collect_list(c_float) over
-        (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_float,
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_float,
       collect_list(c_decimal) over
-        (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_decimal,
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal,
       collect_list(c_struct) over
-        (partition by a order by b,c_int rows between UNBOUNDED preceding and CURRENT ROW) as collect_struct
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct
     from window_collect_table
   '''
 
@@ -280,8 +279,6 @@ def test_window_aggs_for_rows_collect_list():
   Once native supports dropping nulls, will enable the tests above and remove this one.
 '''
 # SortExec does not support array type, so sort the result locally.
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-        reason='https://github.com/NVIDIA/spark-rapids/issues/1680')
 @ignore_order(local=True)
 def test_window_aggs_for_rows_collect_list_no_nulls():
     assert_gpu_and_cpu_are_equal_sql(
