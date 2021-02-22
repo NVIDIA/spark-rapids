@@ -27,7 +27,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.errors._
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
@@ -176,11 +176,14 @@ object GpuShuffleExchangeExec {
      * task when indeterminate tasks re-run.
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
-      val sorter = new GpuColumnarBatchSorter(Seq.empty[SortOrder],
-        null, false, false)
+      val shim = ShimLoader.getSparkShims
+      val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
+        shim.sortOrder(GpuBoundReference(index, attr.dataType, attr.nullable), Ascending)
+        // Force the sequence to materialize so we don't have issues with serializing too much
+      }.toArray.toSeq
+      val sorter = new GpuSorter(boundReferences, outputAttributes)
       rdd.mapPartitions { cbIter =>
-        val sortedIterator = sorter.sort(cbIter)
-        sortedIterator
+        GpuSortEachBatchIterator(cbIter, sorter)
       }
     } else {
       rdd

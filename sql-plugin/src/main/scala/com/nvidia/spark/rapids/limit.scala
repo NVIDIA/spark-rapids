@@ -19,17 +19,15 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, Table}
-import ai.rapids.cudf
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, NullsFirst, NullsLast, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
@@ -59,7 +57,7 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
       new Iterator[ColumnarBatch] {
-        var remainingLimit = limit
+        private var remainingLimit = limit
 
         override def hasNext: Boolean = remainingLimit > 0 && cbIter.hasNext
 
@@ -138,69 +136,11 @@ class GpuCollectLimitMeta(
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
       ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
-        GpuLocalLimitExec(collectLimit.limit, childPlans(0).convertIfNeeded())))
+        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded())))
 
 }
 
 object GpuTopN extends Arm {
-  private[this] def getOrderArgs(
-      sortOrder: Seq[SortOrder],
-      inputTbl: Table): Seq[Table.OrderByArg] = {
-    val orderByArgs = if (sortOrder.nonEmpty) {
-      sortOrder.zipWithIndex.map { case (order, index) =>
-        if (order.isAscending) {
-          Table.asc(index, order.nullOrdering == NullsFirst)
-        } else {
-          Table.desc(index, order.nullOrdering == NullsLast)
-        }
-      }
-    } else {
-      (0 until inputTbl.getNumberOfColumns).map { index =>
-        Table.asc(index, true)
-      }
-    }
-    orderByArgs
-  }
-
-  private def doGpuSort(
-      inputTbl: Table,
-      sortOrder: Seq[SortOrder],
-      types: Seq[DataType]): ColumnarBatch = {
-    val orderByArgs = getOrderArgs(sortOrder, inputTbl)
-    val numSortCols = sortOrder.length
-    withResource(inputTbl.orderBy(orderByArgs: _*)) { resultTbl =>
-      GpuColumnVector.from(resultTbl, types.toArray, numSortCols, resultTbl.getNumberOfColumns)
-    }
-  }
-
-  private[this] def sortBatch(
-      sortOrder: Seq[SortOrder],
-      inputBatch: ColumnarBatch,
-      sortTime: GpuMetric): ColumnarBatch = {
-    withResource(new NvtxWithMetrics("sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
-      var outputTypes: Seq[DataType] = Nil
-      var inputTbl: Table = null
-      var inputCvs: Seq[GpuColumnVector] = Nil
-      try {
-        if (sortOrder.nonEmpty) {
-          inputCvs = SortUtils.getGpuColVectorsAndBindReferences(inputBatch, sortOrder)
-          inputTbl = new cudf.Table(inputCvs.map(_.getBase): _*)
-          outputTypes = sortOrder.map(_.child.dataType) ++
-              GpuColumnVector.extractTypes(inputBatch)
-        } else if (inputBatch.numCols() > 0) {
-          inputTbl = GpuColumnVector.from(inputBatch)
-          outputTypes = GpuColumnVector.extractTypes(inputBatch)
-        }
-        doGpuSort(inputTbl, sortOrder, outputTypes)
-      } finally {
-        inputCvs.safeClose()
-        if (inputTbl != null) {
-          inputTbl.close()
-        }
-      }
-    }
-  }
-
   private[this] def concatAndClose(a: SpillableColumnarBatch,
       b: ColumnarBatch,
       concatTime: GpuMetric): ColumnarBatch = {
@@ -237,16 +177,16 @@ object GpuTopN extends Arm {
   }
 
   def apply(limit: Int,
-      sortOrder: Seq[SortOrder],
+      sorter: GpuSorter,
       batch: ColumnarBatch,
       sortTime: GpuMetric): ColumnarBatch = {
-    withResource(sortBatch(sortOrder, batch, sortTime)) { sorted =>
+    withResource(sorter.fullySortBatch(batch, sortTime, NoopMetric)) { sorted =>
       takeN(sorted, limit)
     }
   }
 
   def apply(limit: Int,
-      sortOrder: Seq[SortOrder],
+      sorter: GpuSorter,
       iter: Iterator[ColumnarBatch],
       totalTime: GpuMetric,
       sortTime: GpuMetric,
@@ -271,22 +211,22 @@ object GpuTopN extends Arm {
 
             val runningResult = if (pending.isEmpty) {
               withResource(input) { input =>
-                apply(limit, sortOrder, input, sortTime)
+                apply(limit, sorter, input, sortTime)
               }
             } else if (totalSize > Integer.MAX_VALUE) {
               // The intermediate size is likely big enough we don't want to risk an overflow,
               // so sort/slice before we concat and sort/slice again.
               val tmp = withResource(input) { input =>
-                apply(limit, sortOrder, input, sortTime)
+                apply(limit, sorter, input, sortTime)
               }
               withResource(concatAndClose(pending.get, tmp, concatTime)) { concat =>
-                apply(limit, sortOrder, concat, sortTime)
+                apply(limit, sorter, concat, sortTime)
               }
             } else {
               // The intermediate size looks like we could never overflow the indexes so
               // do it the more efficient way and concat first followed by the sort/slice
               withResource(concatAndClose(pending.get, input, concatTime)) { concat =>
-                apply(limit, sortOrder, concat, sortTime)
+                apply(limit, sorter, concat, sortTime)
               }
             }
             pending =
@@ -330,7 +270,7 @@ case class GpuTopN(
   )
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val boundSortExprs = GpuBindReferences.bindReferences(sortOrder, child.output)
+    val sorter = new GpuSorter(sortOrder, child.output)
     val boundProjectExprs = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val totalTime = gpuLongMetric(TOTAL_TIME)
     val inputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
@@ -340,7 +280,7 @@ case class GpuTopN(
     val sortTime = gpuLongMetric(SORT_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     child.executeColumnar().mapPartitions { iter =>
-      val topN = GpuTopN(limit, boundSortExprs, iter, totalTime, sortTime, concatTime,
+      val topN = GpuTopN(limit, sorter, iter, totalTime, sortTime, concatTime,
         inputBatches, inputRows, outputBatches, outputRows)
       if (projectList != child.output) {
         topN.map { batch =>

@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
-import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{ESSENTIAL_LEVEL, MODERATE_LEVEL, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -111,6 +111,9 @@ case class GpuGenerateExec(
   override def producedAttributes: AttributeSet = AttributeSet(generatorOutput)
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override protected val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")

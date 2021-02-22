@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("gds", catalog) with Arm {
+    extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override def createBuffer(
@@ -59,7 +59,8 @@ class RapidsGdsStore(
         0
       }
       logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
-      new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority)
+      new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority,
+        other.spillCallback)
     }
   }
 
@@ -68,7 +69,9 @@ class RapidsGdsStore(
       fileOffset: Long,
       size: Long,
       meta: TableMeta,
-      spillPriority: Long) extends RapidsBufferBase(id, size, meta, spillPriority) {
+      spillPriority: Long,
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
     // TODO(rongou): cache this buffer to avoid repeated reads from disk.

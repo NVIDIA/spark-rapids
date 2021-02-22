@@ -431,6 +431,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
+      .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
+          "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
+          "order in which upstream data arrives to a task is not guaranteed. Sort stability then " +
+          "only matters when reading and sorting data from a file using a single task/partition. " +
+          "Because of limitations in the plugin when you enable stable sorting all of the data " +
+          "for a single task will be combined into a single batch before sorting. This currently " +
+          "disables spilling from GPU memory if the data size is too large.")
+      .booleanConf
+      .createWithDefault(false)
+
   // METRICS
 
   val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
@@ -1038,6 +1049,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
+
+  lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 

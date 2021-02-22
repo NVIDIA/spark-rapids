@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,15 @@ trait Arm {
 
   /** Executes the provided code block and then closes the array of resources */
   def withResource[T <: AutoCloseable, V](r: Array[T])(block: Array[T] => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
+    }
+  }
+
+  /** Executes the provided code block and then closes the array buffer of resources */
+  def withResource[T <: AutoCloseable, V](r: ArrayBuffer[T])(block: ArrayBuffer[T] => V): V = {
     try {
       block(r)
     } finally {

@@ -29,7 +29,9 @@ import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 
 /**
@@ -69,6 +71,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+  private static String hexString(byte[] bytes) {
+    StringBuilder str = new StringBuilder();
+    for (byte b : bytes) {
+      str.append(String.format("%02x", b&0xff));
+    }
+    return str.toString();
+  }
+
   /**
    * Print to standard error the contents of a column. Note that this should never be
    * called from production code, as it is very slow.  Also note that this is not production
@@ -86,6 +96,48 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           System.err.println(i + " NULL");
         } else {
           System.err.println(i + " " + hostCol.getBigDecimal(i));
+        }
+      }
+    } else if (DType.STRING.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " \"" + hostCol.getJavaString(i) + "\" " +
+              hexString(hostCol.getUTF8(i)));
+        }
+      }
+    } else if (DType.INT32.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getInt(i));
+        }
+      }
+    } else if (DType.INT8.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getByte(i));
+        }
+      }
+    } else if (DType.BOOL8.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getBoolean(i));
+        }
+      }
+    } else if (DType.TIMESTAMP_MICROSECONDS.equals(type) ||
+        DType.INT64.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getLong(i));
         }
       }
     } else {
@@ -520,6 +572,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+  static boolean typeConversionAllowed(Table table, DataType[] colTypes, int startCol, int endCol) {
+    final int numColumns = endCol - startCol;
+    assert numColumns == colTypes.length: "The number of columns and the number of types don't match";
+    boolean ret = true;
+    for (int colIndex = startCol; colIndex < endCol; colIndex++) {
+      boolean t = typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex - startCol]);
+      ret = ret && t;
+    }
+    return ret;
+  }
+
   /**
    * This should only ever be called from an assertion. This is to avoid the performance overhead
    * of doing the complicated check in production.  Sadly this means that we don't get to give a
@@ -528,9 +591,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   static boolean typeConversionAllowed(Table table, DataType[] colTypes) {
     final int numColumns = table.getNumberOfColumns();
-    if (numColumns != colTypes.length) {
-      return false;
-    }
+    assert numColumns == colTypes.length: "The number of columns and the number of types don't match";
     boolean ret = true;
     for (int colIndex = 0; colIndex < numColumns; colIndex++) {
       ret = ret && typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex]);
@@ -545,22 +606,24 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * both the table that is passed in and the batch returned to be sure that there are no leaks.
    *
    * @param table a table of vectors
-   * @param colTypes List of the column data types in the table passed in
+   * @param colTypes List of the column data types for the returned batch. It matches startColIndex
+   *                 to untilColIndex instead of everything in table.
    * @param startColIndex index of the first vector you want in the final ColumnarBatch
    * @param untilColIndex until index of the columns. (ie doesn't include that column num)
    * @return a ColumnarBatch of the vectors from the table
    */
   public static ColumnarBatch from(Table table, DataType[] colTypes, int startColIndex, int untilColIndex) {
     assert table != null : "Table cannot be null";
-    assert typeConversionAllowed(table, colTypes) : "Type conversion is not allowed from " + table +
-        " to " + Arrays.toString(colTypes);
+    assert typeConversionAllowed(table, colTypes, startColIndex, untilColIndex) :
+        "Type conversion is not allowed from " + table + " to " + Arrays.toString(colTypes) +
+            " columns " + startColIndex + " to " + untilColIndex;
     int numColumns = untilColIndex - startColIndex;
     ColumnVector[] columns = new ColumnVector[numColumns];
     int finalLoc = 0;
     boolean success = false;
     try {
       for (int i = startColIndex; i < untilColIndex; i++) {
-        columns[finalLoc] = from(table.getColumn(i).incRefCount(), colTypes[i]);
+        columns[finalLoc] = from(table.getColumn(i).incRefCount(), colTypes[i - startColIndex]);
         finalLoc++;
       }
       long rows = table.getRowCount();
@@ -623,6 +686,44 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       vectors[i] = ((GpuColumnVector)batch.column(i)).getBase();
     }
     return vectors;
+  }
+
+  /**
+   * Increment the reference count for all columns in the input batch.
+   */
+  public static ColumnarBatch incRefCounts(ColumnarBatch batch) {
+    for (ai.rapids.cudf.ColumnVector cv: extractBases(batch)) {
+      cv.incRefCount();
+    }
+    return batch;
+  }
+
+  /**
+   * Take the columns from all of the batches passed in and put them in a single batch. The order
+   * of the columns is preserved.
+   * <br/>
+   * For example if we had <pre>combineColumns({A, B}, {C, D})</pre> The result would be a single
+   * batch with <pre>{A, B, C, D}</pre>
+   */
+  public static ColumnarBatch combineColumns(ColumnarBatch ... batches) {
+    boolean isFirst = true;
+    int numRows = 0;
+    ArrayList<ColumnVector> columns = new ArrayList<>();
+    for (ColumnarBatch cb: batches) {
+      if (isFirst) {
+        numRows = cb.numRows();
+        isFirst = false;
+      } else {
+        assert cb.numRows() == numRows : "Rows do not match expected " + numRows + " found " +
+            cb.numRows();
+      }
+      int numColumns = cb.numCols();
+      for (int i = 0; i < numColumns; i++) {
+        columns.add(cb.column(i));
+      }
+    }
+    ColumnarBatch ret = new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]), numRows);
+    return incRefCounts(ret);
   }
 
   /**
@@ -706,27 +807,43 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         WithTableBuffer wtb = (WithTableBuffer) batch.column(0);
         sum += wtb.getTableBuffer().getLength();
       } else {
+        HashSet<Long> found = new HashSet<>();
         for (int i = 0; i < batch.numCols(); i++) {
-          sum += ((GpuColumnVector) batch.column(i)).getBase().getDeviceMemorySize();
+          ai.rapids.cudf.ColumnVector cv = ((GpuColumnVector)batch.column(i)).getBase();
+          long id = cv.getNativeView();
+          if (found.add(id)) {
+            sum += cv.getDeviceMemorySize();
+          }
         }
       }
     }
     return sum;
   }
 
-  public static long getTotalDeviceMemoryUsed(GpuColumnVector[] cv) {
+  public static long getTotalDeviceMemoryUsed(GpuColumnVector[] vectors) {
     long sum = 0;
-    for (int i = 0; i < cv.length; i++){
-      sum += cv[i].getBase().getDeviceMemorySize();
+    HashSet<Long> found = new HashSet<>();
+    for (int i = 0; i < vectors.length; i++) {
+      ai.rapids.cudf.ColumnVector cv = vectors[i].getBase();
+      long id = cv.getNativeView();
+      if (found.add(id)) {
+        sum += cv.getDeviceMemorySize();
+      }
     }
     return sum;
   }
 
-  public static long getTotalDeviceMemoryUsed(Table tb) {
+  public static long getTotalDeviceMemoryUsed(Table table) {
     long sum = 0;
-    int len = tb.getNumberOfColumns();
+    int len = table.getNumberOfColumns();
+    // Deduplicate columns that are the same
+    HashSet<Long> found = new HashSet<>();
     for (int i = 0; i < len; i++) {
-      sum += tb.getColumn(i).getDeviceMemorySize();
+      ai.rapids.cudf.ColumnVector cv = table.getColumn(i);
+      long id = cv.getNativeView();
+      if (found.add(id)) {
+        sum += cv.getDeviceMemorySize();
+      }
     }
     return sum;
   }
