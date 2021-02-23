@@ -374,7 +374,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c0").cast(FloatType))
   }
 
-  testSparkResultsAreEqual("Test bad cast from strings to floats", badFloatStringsDf,
+  testSparkResultsAreEqual("Test bad cast from strings to floats", invalidFloatStringsDf,
     conf = sparkConf, maxFloatDiff = 0.0001) {
     frame =>frame.select(
       col("c0").cast(DoubleType),
@@ -383,9 +383,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c1").cast(FloatType))
   }
 
-  ignore("overflow double strings") {
-    testSparkResultsAreEqual("overflow double strings", badDoubleStringsDf,
-      conf = sparkConf, maxFloatDiff = 0.0001) {
+  // Currently there is a bug in cudf which doesn't convert some corner cases correctly
+  // The bug is documented here https://github.com/rapidsai/cudf/issues/5225
+  ignore("Test cast from strings to double that doesn't match") {
+    testSparkResultsAreEqual("Test cast from strings to double that doesn't match",
+        badDoubleStringsDf, conf = sparkConf, maxFloatDiff = 0.0001) {
       frame => frame.select(
         col("c0").cast(DoubleType))
     }

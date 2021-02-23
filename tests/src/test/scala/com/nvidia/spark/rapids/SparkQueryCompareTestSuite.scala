@@ -1131,14 +1131,23 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       "9.8e5").toDF("c0")
   }
 
-  def badFloatStringsDf(session: SparkSession): DataFrame = {
+  def invalidFloatStringsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq(("A", "null"), ("1.3", "43.54")).toDF("c0", "c1")
   }
 
+  def uncoverFloatStringsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq("3.4028235678E38", "-3.402823568E38", "3.41E38").toDF("c0")
+  }
+
   def badDoubleStringsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq("1.7976931348623159E308", "-1.7976931348623159E308").toDF("c0")
+    Seq(
+      "1.7976931348623159E308", "-1.7976931348623159E308",
+      "1.79769313486231581E308", "-1.79769313486231581E308",
+      "17.9769313486231582E307", "-17.9769313486231582E307",
+    ).toDF("c0")
   }
 
   def stringsAndLongsDf(session: SparkSession): DataFrame = {
