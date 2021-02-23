@@ -192,10 +192,13 @@ class CudfCount(ref: Expression) extends CudfAggregate(ref) {
 }
 
 class CudfSum(ref: Expression) extends CudfAggregate(ref) {
+  @transient val rapidsSumType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
+
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum
-  override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum
+    (col: cudf.ColumnVector) => col.sum(rapidsSumType)
+
+  override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar = updateReductionAggregate
+
   override lazy val updateAggregate: Aggregation = Aggregation.sum()
   override lazy val mergeAggregate: Aggregation = Aggregation.sum()
   override def toString(): String = "CudfSum"
