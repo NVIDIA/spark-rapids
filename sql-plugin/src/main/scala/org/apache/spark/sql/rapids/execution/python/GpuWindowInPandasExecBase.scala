@@ -490,8 +490,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf, pythonModuleKey)
     // cache in a local to avoid serializing the plan
-    val retAttributes = windowExpression.map(_.asInstanceOf[NamedExpression].toAttribute)
-    val pythonOutputSchema = StructType.fromAttributes(retAttributes)
+    val pythonOutputSchema = StructType.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
 
     // 8) Start processing.

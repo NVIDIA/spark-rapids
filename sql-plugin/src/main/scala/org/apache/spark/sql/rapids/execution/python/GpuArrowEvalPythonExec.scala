@@ -555,7 +555,7 @@ case class GpuArrowEvalPythonExec(
 
     // cache in a local to avoid serializing the plan
     val inputSchema = child.output.toStructType
-    val pythonOutputSchema = StructType.fromAttributes(resultAttrs)
+    val pythonOutputSchema = StructType.fromAttributes(udfs.map(_.resultAttribute))
 
     val childOutput = child.output
     val targetBatchSize = batchSize
