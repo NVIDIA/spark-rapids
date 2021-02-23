@@ -88,7 +88,8 @@ class GroupingIterator(
     wrapped: Iterator[ColumnarBatch],
     partitionSpec: Seq[Expression],
     inputRows: GpuMetric,
-    inputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
+    inputBatches: GpuMetric,
+    spillCallback: RapidsBuffer.SpillCallback) extends Iterator[ColumnarBatch] with Arm {
 
   // Currently do it in a somewhat ugly way. In the future cuDF will provide a dedicated API.
   // Current solution assumes one group data exists in only one batch, so just split the
@@ -147,7 +148,8 @@ class GroupingIterator(
                 val splitBatches = tables.safeMap(table =>
                   GpuColumnVectorFromBuffer.from(table, GpuColumnVector.extractTypes(batch)))
                 groupBatches.enqueue(splitBatches.tail.map(sb =>
-                  SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)): _*)
+                  SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+                    spillCallback)): _*)
                 splitBatches.head
               }
             }
@@ -392,7 +394,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
-  )
+  ) ++ spillMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -402,6 +404,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
 
     // 1) Unwrap the expressions and build some info data:
@@ -504,7 +507,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
-        numInputRows, numInputBatches)
+        numInputRows, numInputBatches, spillCallback)
       val pyInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
@@ -513,7 +516,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
         val inputBatch = withResource(projectedBatch) { projectedCb =>
           insertWindowBounds(projectedCb)
         }
-        queue.add(batch)
+        queue.add(batch, spillCallback)
         inputBatch
       }
 

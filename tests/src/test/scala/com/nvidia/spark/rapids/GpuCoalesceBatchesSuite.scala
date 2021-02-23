@@ -68,14 +68,14 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
       .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "1")
+      .set(RapidsConf.STABLE_SORT.key, "true")
       .set("spark.sql.shuffle.partitions", "1")
 
     withGpuSparkSession(spark => {
 
       val df = longsCsvDf(spark)
 
-      // currently, GpuSortExec requires a single batch but this is likely to change in the
-      // future, making this test invalid
+      // GpuSortExec requires a single batch if out of core sore is disabled.
       val df2 = df
         .sort(df.col("longs"))
 
@@ -165,7 +165,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val vector3 = toArrowField("array", ArrayType(IntegerType), nullable = true, null)
       .createVector(allocator).asInstanceOf[ListVector]
     vector3.allocateNew()
-    val elementVector = vector3.getDataVector().asInstanceOf[IntVector]
+    val elementVector = vector3.getDataVector.asInstanceOf[IntVector]
 
     (0 until 10).foreach { i =>
       vector1.setSafe(i, i)
@@ -283,6 +283,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // a query stage that runs on the CPU, wrapped in a CPU Exchange, with a ColumnarToRow
       // transition inserted
       .set("spark.sql.adaptive.enabled", "false")
+      // Disable out of core sort so a single batch is required
+      .set(RapidsConf.STABLE_SORT.key, "true")
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
@@ -402,6 +404,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
+      RapidsBuffer.defaultSpillCallback,
       "test concat")
 
     var expected = 0
@@ -483,6 +486,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
+      RapidsBuffer.defaultSpillCallback,
       "test concat")
 
     var expected = 0
