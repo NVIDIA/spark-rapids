@@ -203,16 +203,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def testCastTo(castTo: DataType)(frame: DataFrame): DataFrame ={
-    frame.withColumn("c1", col("c0").cast(castTo))
-  }
-
-  private def stringDf(str: String)(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
-    // use more than one value otherwise spark optimizes it out as a literal
-    Seq(str, str).toDF("c0")
-  }
-
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
   test("cast byte to string") {
@@ -231,11 +221,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Long](DataTypes.LongType)
   }
 
-  ignore("cast float to string") {
+  test("cast float to string") {
     testCastToString[Float](DataTypes.FloatType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
-  ignore("cast double to string") {
+  test("cast double to string") {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
@@ -296,30 +286,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(FloatType),
       col("doubles").cast(DoubleType),
       col("doubles").cast(TimestampType))
-  }
-
-  ignore("Test cast from double to string") {
-
-    //NOTE that the testSparkResultsAreEqual method isn't adequate in this case because we
-    // need to use a specialized comparison function
-
-    val conf = new SparkConf()
-      .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
-
-    val (cpu, gpu) = runOnCpuAndGpu(doubleDf, frame => frame.select(
-      col("doubles").cast(StringType))
-      .orderBy(col("doubles")), conf)
-
-    val fromCpu = cpu.map(row => row.getAs[String](0))
-    val fromGpu = gpu.map(row => row.getAs[String](0))
-
-    fromCpu.zip(fromGpu).foreach {
-      case (c, g) =>
-        if (!compareStringifiedFloats(c, g)) {
-          fail(s"Running on the GPU and on the CPU did not match: CPU value: $c. " +
-            s"GPU value: $g.")
-        }
-    }
   }
 
   testSparkResultsAreEqual("Test cast from boolean", booleanDf) {
@@ -396,14 +362,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(TimestampType))
   }
 
-  ignore("Test cast from strings to double that doesn't match") {
-        testSparkResultsAreEqual("Test cast from strings to double that doesn't match",
-          badDoubleStringsDf) {
-          frame =>frame.select(
-              col("doubles").cast(DoubleType))
-        }
-  }
-
   testSparkResultsAreEqual("Test cast from strings to doubles", doublesAsStrings,
     conf = sparkConf, maxFloatDiff = 0.0001) {
     frame => frame.select(
@@ -416,13 +374,23 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c0").cast(FloatType))
   }
 
-  testSparkResultsAreEqual("Test bad cast from strings to floats", badFloatStringsDf,
+  testSparkResultsAreEqual("Test bad cast from strings to floats", invalidFloatStringsDf,
     conf = sparkConf, maxFloatDiff = 0.0001) {
     frame =>frame.select(
       col("c0").cast(DoubleType),
       col("c0").cast(FloatType),
       col("c1").cast(DoubleType),
       col("c1").cast(FloatType))
+  }
+
+  // Currently there is a bug in cudf which doesn't convert some corner cases correctly
+  // The bug is documented here https://github.com/rapidsai/cudf/issues/5225
+  ignore("Test cast from strings to double that doesn't match") {
+    testSparkResultsAreEqual("Test cast from strings to double that doesn't match",
+        badDoubleStringsDf, conf = sparkConf, maxFloatDiff = 0.0001) {
+      frame => frame.select(
+        col("c0").cast(DoubleType))
+    }
   }
 
   testSparkResultsAreEqual("ansi_cast string to double exp", exponentsAsStringsDf,
@@ -720,13 +688,13 @@ object CastOpSuite {
 
   def doublesAsStrings(session: SparkSession): DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(DoubleType), false)
-    val df = FuzzerUtils.generateDataFrame(session, schema, 100)
+    val df = FuzzerUtils.generateDataFrame(session, schema, 2048)
     df.withColumn("c0", col("c0").cast(StringType))
   }
 
   def floatsAsStrings(session: SparkSession): DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(FloatType), false)
-    val df = FuzzerUtils.generateDataFrame(session, schema, 100)
+    val df = FuzzerUtils.generateDataFrame(session, schema, 2048)
     df.withColumn("c0", col("c0").cast(StringType))
   }
 
