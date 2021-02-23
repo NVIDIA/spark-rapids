@@ -86,8 +86,8 @@ def test_orderby_with_processing_and_limit(data_gen):
 @pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
 def test_single_orderby_with_skew(data_gen):
     # When doing range partitioning the upstream data is sampled to try and get the bounds for cutoffs.
-    # the data comes back as really skewed those partitions will be resampled for more data
-    # this is to try and trigger it to happen
+    # If the data comes back with skewed partitions then those partitions will be resampled for more data.
+    # This is to try and trigger it to happen.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen)\
                     .selectExpr('a', 'random(1) > 0.5 as b')\

@@ -68,6 +68,10 @@ object SamplingUtils extends Arm {
   /**
    * Random sampling without replacement.
    * @param fraction the percentage of rows to randomly select
+   * @param sorter used to add rows needed for sorting on the CPU later
+   * @param converter used to convert a batch of data to rows.
+   * @param seed the seed to the random number generator
+   * @return the sampled rows
    */
   def randomResample(
       input: Iterator[ColumnarBatch],
@@ -145,6 +149,9 @@ object SamplingUtils extends Arm {
   /**
    * Reservoir sampling implementation that also returns the input size.
    * @param k the number of rows to randomly select.
+   * @param sorter used to add rows needed for sorting on the CPU later
+   * @param converter used to convert a batch of data to rows.
+   * @param seed the seed to the random number generator
    * @return (samples, input size)
    */
   def reservoirSampleAndCount(

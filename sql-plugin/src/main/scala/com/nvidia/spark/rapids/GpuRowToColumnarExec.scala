@@ -50,10 +50,11 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable w
   }
 
   /**
-   * Convert an array of rows into a batch. Please not that this does not do bounds checking so
-   * keep the size of the batch small.
+   * Convert an array of rows into a batch. Please note that this does not do bounds or size
+   * checking so keep the size of the batch small.
    * @param rows the rows to convert.
-   * @return The batch on the GPU
+   * @param schema the schema of the rows.
+   * @return The batch on the GPU.
    */
   final def convertBatch(rows: Array[InternalRow], schema: StructType): ColumnarBatch = {
     val numRows = rows.length
