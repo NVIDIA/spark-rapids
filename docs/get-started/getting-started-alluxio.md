@@ -282,26 +282,26 @@ There are two ways to leverage Alluxio in RAPIDS.
 
 1, Create GCP dataproc Alluxio + RAPIDS cluster:
 ```
-export REGION=us-central1
-export ZONE=us-central1-b
-export GCS_BUCKET=dongm-alluxio-dataproc
-export CLUSTER_NAME=nvspark-dataproc-alluxio1
+export REGION=[Your Preferred GCP Region]
+export ZONE=[Your Preferred GCP Zone]
+export GCS_BUCKET=[Your GCS Bucket]
+export CLUSTER_NAME=[Your Cluster Name]
 export NUM_GPUS=4
 export NUM_WORKERS=4
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --zone $ZONE \
     --region $REGION \
-    --image-version=preview-ubuntu \
+    --image-version=2.0-ubuntu18 \
     --master-machine-type n1-standard-8 \
     --master-boot-disk-size 500 \
     --num-workers $NUM_WORKERS \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
     --worker-machine-type n1-highmem-32 \
     --num-worker-local-ssds 4 \
-    --initialization-actions gs://${GCS_BUCKET}/alluxio-dataproc.sh,gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --initialization-actions gs://alluxio-public/dataproc/2.0.1/alluxio-dataproc.sh,gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
     --optional-components=JUPYTER,ZEPPELIN \
-    --metadata alluxio_root_ufs_uri="gs://${GCS_BUCKET}/tpcds",gpu-driver-provider="NVIDIA",rapids-runtime="SPARK",alluxio_site_properties="alluxio.master.mount.table.root.option.fs.gcs.accessKeyId=<GCS ACCESS KEY>;alluxio.master.mount.table.root.option.fs.gcs.secretAccessKey=<GCS SECRETS>" \
+    --metadata alluxio_root_ufs_uri="gs://${GCS_BUCKET}/tpcds",gpu-driver-provider="NVIDIA",rapids-runtime="SPARK",alluxio_site_properties="alluxio.master.mount.table.root.option.fs.gcs.accessKeyId=<gcs_access_key_id>;alluxio.master.mount.table.root.option.fs.gcs.secretAccessKey=<gcs_secret_access_key>" \
     --bucket $GCS_BUCKET \
     --subnet=default \
     --enable-component-gateway \
