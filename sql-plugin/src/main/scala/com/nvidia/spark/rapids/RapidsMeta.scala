@@ -245,17 +245,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       }
     }
 
-    val isExp = wrapped.isInstanceOf[Expression]
-    val isConstantFoldingOff =
-      conf.getStringConf(SQLConf.OPTIMIZER_EXCLUDED_RULES.key).getOrElse("")
-      .contains("org.apache.spark.sql.catalyst.optimizer.ConstantFolding")
-    if (isConstantFoldingOff && isExp) {
-      val exp = wrapped.asInstanceOf[Expression]
-      if (exp.foldable && !GpuOverrides.isLit(exp)) {
-        willNotWorkOnGpu(s"Cannot run on GPU because constant folding is off and expression " +
-          s"${exp} is foldable and operates on non literals")
-      }
-    }
 
     tagSelfForGpu()
   }
@@ -820,6 +809,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   final override def tagSelfForGpu(): Unit = {
+    val isConstantFoldingOff =
+      SQLConf.get.optimizerExcludedRules
+        .contains("org.apache.spark.sql.catalyst.optimizer.ConstantFolding")
+    if (isConstantFoldingOff) {
+      val exp = wrapped.asInstanceOf[Expression]
+      if (exp.foldable && !GpuOverrides.isLit(exp)) {
+        willNotWorkOnGpu(s"Cannot run on GPU because constant folding is off and expression " +
+          s"${exp} is foldable and operates on non literals")
+      }
+    }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
   }
