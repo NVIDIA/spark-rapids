@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.time.ZoneId
 
+import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
@@ -396,6 +397,16 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   }
 }
 
+/**
+ * Listener trait so that tests can confirm that the expected optimizations are being applied
+ */
+trait GpuOverridesListener {
+  def optimizedPlan(
+      plan: SparkPlanMeta[SparkPlan],
+      sparkPlan: SparkPlan,
+      costOptimizations: Seq[Optimization])
+}
+
 object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
@@ -410,6 +421,16 @@ object GpuOverrides {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+
+  private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
+
+  def addListener(listener: GpuOverridesListener): Unit = {
+    listeners += listener
+  }
+
+  def removeListener(listener: GpuOverridesListener): Unit = {
+    listeners -= listener
+  }
 
   def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
     val s = strLit.toString
@@ -2787,7 +2808,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // we need to run these rules both before and after CBO because the cost
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
-
         val optimizer = new CostBasedOptimizer(conf)
         optimizer.optimize(wrap)
       } else {
@@ -2805,7 +2825,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
       }
       val convertedPlan = wrap.convertIfNeeded()
-      addSortsIfNeeded(convertedPlan, conf)
+      val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
+      GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
+      sparkPlan
     }
   }
 

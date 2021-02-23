@@ -37,21 +37,25 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
    * @param plan The plan to optimize
    * @return A list of optimizations that were applied
    */
-  def optimize(plan: SparkPlanMeta[_]): Seq[String] = {
-    val explain = new ListBuffer[String]()
-    recursivelyOptimize(plan, explain, finalOperator = true, "")
-    explain.reverse
+  def optimize(plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
+    val optimizations = new ListBuffer[Optimization]()
+    recursivelyOptimize(plan, optimizations, finalOperator = true, "")
+    optimizations
   }
 
   private def recursivelyOptimize(
-      plan: SparkPlanMeta[_],
-      explain: ListBuffer[String],
+      plan: SparkPlanMeta[SparkPlan],
+      optimizations: ListBuffer[Optimization],
       finalOperator: Boolean,
       indent: String = ""): (Double, Double) = {
 
     // get the CPU and GPU cost of the child plan(s)
     val childCosts = plan.childPlans
-        .map(child => recursivelyOptimize(child, explain, finalOperator = false, indent + "  "))
+        .map(child => recursivelyOptimize(
+          child.asInstanceOf[SparkPlanMeta[SparkPlan]],
+          optimizations,
+          finalOperator = false,
+          indent + "  "))
 
     val (childCpuCosts, childGpuCosts) = childCosts.unzip
 
@@ -74,7 +78,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
             .map(costModel.transitionToGpuCost).sum
         val gpuCost = operatorGpuCost + transitionCost
         if (gpuCost > operatorCpuCost) {
-          explain.append(s"It is not worth moving to the GPU just for operator: ${format(plan)}")
+          optimizations.append(AvoidTransition(plan))
           plan.costPreventsRunningOnGpu()
           // stay on CPU, so costs are same
           totalGpuCost = totalCpuCost;
@@ -89,8 +93,8 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
             val transitionCost = costModel.transitionToCpuCost(child)
             val childGpuTotal = childGpuCost + transitionCost
             if (child.canThisBeReplaced && childGpuTotal > childCpuCost) {
-              explain.append(s"It is no longer worth keeping this section on GPU; " +
-                  s"gpuCost=$childGpuTotal, cpuCost=$childCpuCost:\n${formatTree(plan)}")
+              optimizations.append(ReplaceSection(
+                child.asInstanceOf[SparkPlanMeta[SparkPlan]], totalCpuCost, totalGpuCost))
               child.recursiveCostPreventsRunningOnGpu()
             }
         }
@@ -114,8 +118,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
       if (plan.canThisBeReplaced) {
         // this plan would have been on GPU so we move it and onto CPU and recurse down
         // until we reach a part of the plan that is already on CPU and then stop
-        explain.append(s"It is no longer worth keeping this section on GPU; " +
-            s"gpuCost=$totalGpuCost, cpuCost=$totalCpuCost:\n${format(plan)}")
+        optimizations.append(ReplaceSection(plan, totalCpuCost, totalGpuCost))
         plan.recursiveCostPreventsRunningOnGpu()
       }
 
@@ -129,27 +132,6 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     }
 
     (totalCpuCost, totalGpuCost)
-  }
-
-  private def format(plan: SparkPlanMeta[_]): String = {
-    plan.wrapped match {
-      case p: SparkPlan => p.simpleString(SQLConf.get.maxToStringFields)
-      case other => other.toString()
-    }
-  }
-
-  private def formatTree(plan: SparkPlanMeta[_]): String = {
-    val b = new StringBuilder
-    formatTree(plan, b, "")
-    b.toString
-  }
-
-  private def formatTree(plan: SparkPlanMeta[_], b: StringBuilder, indent: String): Unit = {
-    b.append(indent)
-    b.append(format(plan))
-    b.append('\n')
-    plan.childPlans.filter(_.canThisBeReplaced)
-        .foreach(child => formatTree(child, b, indent + "  "))
   }
 
 }

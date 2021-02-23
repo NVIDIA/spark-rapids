@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.execution.{ProjectExec, SortExec, WholeStageCodegenExec}
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.execution.{ExplainMode, ProjectExec, SortExec, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
@@ -40,6 +41,15 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
               "Alias,Cast,LessThan")
 
+    var optimizations: Seq[Optimization] = Seq()
+
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+        sparkPlan: SparkPlan,
+        costOptimizations: Seq[Optimization]) => {
+      optimizations = costOptimizations
+    })
+
     withGpuSparkSession(spark => {
       val df1: DataFrame = createQuery(spark)
           .alias("df1")
@@ -52,6 +62,13 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
 
       df.collect()
 
+      // check that the expected optimization was applied
+      assert(optimizations.length == 1)
+      val opt = optimizations.head.asInstanceOf[ReplaceSection[_]]
+      assert(opt.totalGpuCost > opt.totalCpuCost)
+      assert(opt.plan.wrapped.isInstanceOf[SortExec])
+
+      // check that the final plan has a CPU sort and no GPU sort
       val cpuSort = ShimLoader.getSparkShims
           .findOperators(df.queryExecution.executedPlan,
             _.isInstanceOf[SortExec])
