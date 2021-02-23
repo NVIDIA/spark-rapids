@@ -146,33 +146,39 @@ class GpuCartesianRDD(
 
     // create a buffer to cache stream-side data in a spillable manner
     val spillBatchBuffer = mutable.ArrayBuffer[SpillableColumnarBatch]()
-    closeOnExcept(spillBatchBuffer) { buffer =>
-      rdd2.iterator(currSplit.s2, context).foreach { cb =>
-        // TODO: is it necessary to create a specific spill priorities for spillBatchBuffer?
-        buffer += SpillableColumnarBatch(
-          cb.getBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-      }
-    }
 
-    rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
+    rdd1.iterator(currSplit.s1, context).zipWithIndex.flatMap { case (lhs, index) =>
       val table = withResource(lhs) { lhs =>
         GpuColumnVector.from(lhs.getBatch)
       }
-      val ret = closeOnExcept(spillBatchBuffer) { buffer =>
-        GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
-          // fetch stream-side data from buffer in case of re-computation
-          buffer.toIterator.map(spill => spill.getColumnarBatch()),
-          table,
-          GpuBuildLeft,
-          boundCondition,
-          outputSchema,
-          joinTime,
-          joinOutputRows,
-          numOutputRows,
-          numOutputBatches,
-          filterTime,
-          totalTime)
+
+      val streamIterator = if (index == 0) {
+        // lazily compute and cache stream-side data
+        rdd2.iterator(currSplit.s2, context).map { serializableBatch =>
+          closeOnExcept(spillBatchBuffer) { buffer =>
+            val batch = SpillableColumnarBatch(
+              serializableBatch.getBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            buffer += batch
+            batch.getColumnarBatch()
+          }
+        }
+      } else {
+        // fetch stream-side data directly if they are cached
+        spillBatchBuffer.toIterator.map(_.getColumnarBatch())
       }
+
+      val ret = GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
+        streamIterator,
+        table,
+        GpuBuildLeft,
+        boundCondition,
+        outputSchema,
+        joinTime,
+        joinOutputRows,
+        numOutputRows,
+        numOutputBatches,
+        filterTime,
+        totalTime)
 
       CompletionIterator[ColumnarBatch, Iterator[ColumnarBatch]](ret, {
         table.close()
