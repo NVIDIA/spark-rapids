@@ -269,9 +269,11 @@ object GpuShuffleExchangeExec {
       case h: GpuHashPartitioning =>
         GpuBindReferences.bindReference(h, outputAttributes)
       case r: GpuRangePartitioning =>
-        r.part.createRangeBounds(r.numPartitions, r.gpuOrdering, rdd, outputAttributes,
-          SQLConf.get.rangeExchangeSampleSizePerPartition)
-        GpuBindReferences.bindReference(r, outputAttributes)
+        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes)
+        val bounds = GpuRangePartitioner.createRangeBounds(r.numPartitions, sorter,
+          rdd, SQLConf.get.rangeExchangeSampleSizePerPartition)
+        // No need to bind arguments for the GpuRangePartitioner. The Sorter has already done it
+        new GpuRangePartitioner(bounds, sorter)
       case s: GpuSinglePartitioning =>
         GpuBindReferences.bindReference(s, outputAttributes)
       case rrp: GpuRoundRobinPartitioning =>
