@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.sql.{Date, Timestamp}
+
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
@@ -33,6 +35,18 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
       datesAsStrings,
       conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
+  }
+
+  testSparkResultsAreEqual("to_date parse date",
+      dates,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
+  }
+
+  testSparkResultsAreEqual("to_date parse timestamp",
+      timestamps,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
   testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
@@ -132,6 +146,16 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     assert(cpuNowSeconds <= gpuNowSeconds)
   }
 
+  private def dates(spark: SparkSession) = {
+    import spark.implicits._
+    dateValues.toDF("c0")
+  }
+
+  private def timestamps(spark: SparkSession) = {
+    import spark.implicits._
+    tsValues.toDF("c0")
+  }
+
   private def timestampsAsStrings(spark: SparkSession) = {
     import spark.implicits._
     timestampValues.toDF("c0")
@@ -179,6 +203,17 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     "\t1999-12-31",
     "\n1999-12-31",
     "1999/12/31"
+  )
+
+  private val dateValues = Seq(
+    Date.valueOf("2020-07-24"),
+    Date.valueOf("2020-07-25"),
+    Date.valueOf("1999-12-31"))
+
+  private val tsValues = Seq(
+    Timestamp.valueOf("2015-07-24 10:00:00.3"),
+    Timestamp.valueOf("2015-07-25 02:02:02.2"),
+    Timestamp.valueOf("1999-12-31 11:59:59.999")
   )
 }
 
