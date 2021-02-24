@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark320
 
+import com.nvidia.spark.rapids.ShimVersion
 import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 
 import org.apache.spark.sql.catalyst.trees.TreeNode
@@ -24,6 +25,8 @@ import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, Shuffle
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 class Spark320Shims extends Spark311Shims {
+
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
 
   /**
    * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
