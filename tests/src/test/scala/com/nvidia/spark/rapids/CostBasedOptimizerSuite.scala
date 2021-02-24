@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
+import org.scalatest.BeforeAndAfter
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{ProjectExec, SortExec, SparkPlan, WholeStageCodegenExec}
@@ -27,7 +29,15 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.types.DataTypes
 
-class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
+class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndAfter {
+
+  before {
+    GpuOverrides.removeAllListeners()
+  }
+
+  after {
+    GpuOverrides.removeAllListeners()
+  }
 
   test("Force section of plan back onto CPU, AQE on") {
 

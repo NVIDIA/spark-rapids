@@ -422,6 +422,7 @@ object GpuOverrides {
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
+  // this listener mechanism is global and is intended for use by unit tests only
   private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
 
   def addListener(listener: GpuOverridesListener): Unit = {
@@ -430,6 +431,10 @@ object GpuOverrides {
 
   def removeListener(listener: GpuOverridesListener): Unit = {
     listeners -= listener
+  }
+
+  def removeAllListeners(): Unit = {
+    listeners.clear()
   }
 
   def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
