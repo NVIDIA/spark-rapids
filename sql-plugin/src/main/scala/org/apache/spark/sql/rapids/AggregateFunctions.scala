@@ -192,6 +192,22 @@ class CudfCount(ref: Expression) extends CudfAggregate(ref) {
 }
 
 class CudfSum(ref: Expression) extends CudfAggregate(ref) {
+  // Up to 3.1.1, analyzed plan widened the input column type before applying
+  // aggregation. Thus even though we did not explicitly pass the output column type
+  // we did not run into integer overflow issues:
+  //
+  // == Analyzed Logical Plan ==
+  // sum(shorts): bigint
+  // Aggregate [sum(cast(shorts#77 as bigint)) AS sum(shorts)#94L]
+  //
+  // In Spark's main branch (3.2.0-SNAPSHOT as of this comment), analyzed logical plan
+  // no longer applies the cast to the input column such that the output column type has to
+  // be passed explicitly into aggregation
+  //
+  // == Analyzed Logical Plan ==
+  // sum(shorts): bigint
+  // Aggregate [sum(shorts#33) AS sum(shorts)#50L]
+  //
   @transient val rapidsSumType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
 
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
