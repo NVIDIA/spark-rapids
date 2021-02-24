@@ -187,7 +187,8 @@ case class GpuRangePartitioner(
             sorter.upperBound(sorted, ranges)
           }
           withResource(retCv) { retCv =>
-            GpuColumnVector.toIntArray(retCv)
+            // The first entry must always be 0, which upper bound is not doing
+            Array(0) ++ GpuColumnVector.toIntArray(retCv)
           }
         }
         (parts, sorter.removeProjectedColumns(sortedTbl))
