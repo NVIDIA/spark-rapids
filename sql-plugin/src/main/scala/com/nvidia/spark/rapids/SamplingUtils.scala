@@ -67,9 +67,13 @@ object SamplingUtils extends Arm {
 
   /**
    * Random sampling without replacement.
+   * @param input iterator to feed batches for sampling.
    * @param fraction the percentage of rows to randomly select
-   * @param sorter used to add rows needed for sorting on the CPU later
-   * @param converter used to convert a batch of data to rows.
+   * @param sorter used to add rows needed for sorting on the CPU later. The sorter should be
+   *               setup for the schema of the input data and the output sampled rows will have
+   *               any needed rows added to them as the sorter needs to.
+   * @param converter used to convert a batch of data to rows. This should have been setup to
+   *                  convert to rows based of the expected output for the sorter.
    * @param seed the seed to the random number generator
    * @return the sampled rows
    */
@@ -148,9 +152,13 @@ object SamplingUtils extends Arm {
 
   /**
    * Reservoir sampling implementation that also returns the input size.
+   * @param input iterator to feed batches for sampling.
    * @param k the number of rows to randomly select.
-   * @param sorter used to add rows needed for sorting on the CPU later
-   * @param converter used to convert a batch of data to rows.
+   * @param sorter used to add rows needed for sorting on the CPU later. The sorter should be
+   *               setup for the schema of the input data and the output sampled rows will have
+   *               any needed rows added to them as the sorter needs to.
+   * @param converter used to convert a batch of data to rows. This should have been setup to
+   *                  convert to rows based of the expected output for the sorter.
    * @param seed the seed to the random number generator
    * @return (samples, input size)
    */
