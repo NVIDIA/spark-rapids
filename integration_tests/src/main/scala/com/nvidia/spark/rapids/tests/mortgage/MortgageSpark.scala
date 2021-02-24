@@ -426,12 +426,23 @@ object Main {
     val acqPath = args(2)
     val output = args(3)
 
+    // extend args to support csv/orc/parquet dataset
+    val format = if (args.length > 4) args(4) else "parquet"
+
     val session = SparkSession.builder
       .appName("MortgageJob")
       .getOrCreate()
 
-    0.until(10).foreach { _ =>
-      Run.parquet(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
+    format match {
+      case "csv" => 0.until(10).foreach { _ =>
+        Run.csv(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
+      }
+      case "orc" => 0.until(10).foreach { _ =>
+        Run.orc(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
+      }
+      case _ => 0.until(10).foreach { _ =>
+        Run.parquet(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
+      }
     }
   }
 }
