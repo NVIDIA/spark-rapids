@@ -657,8 +657,7 @@ In this section, we are using a docker container built using the sample dockerfi
 --conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
---conf spark.executorEnv.UCX_RC_RX_QUEUE_LEN=1024 \
---conf spark.executorEnv.UCX_UD_RX_QUEUE_LEN=1024 \
+--conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
 --conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
 --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
@@ -684,9 +683,9 @@ non-standard location.
   The main difference between get and put is the direction of transfer. A send operation under 
   `get_zcopy` will really be `RDMA READ` from the receiver, whereas the same send will be 
   `RDMA_WRITE` from the sender if `put_zcopy` is utilized.
-- `UCX_RC_RX_QUEUE_LEN=1024` and `UCX_UD_RX_QUEUE_LEN=1024`: Length of receive queue for `rc` and 
-  `ud` transports respectively. The length change is recommended as it has shown better performance 
-  when there is memory pressure and message sizes are relatively large (> few hundred Bytes)
+- `UCX_IB_RX_QUEUE_LEN=1024`: Length of receive queue for the Infiniband/RoCE transports. The 
+  length change is recommended as it has shown better performance when there is memory pressure 
+  and message sizes are relatively large (> few hundred Bytes)
   
 ### RapidsShuffleManager Fine Tuning
 Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
