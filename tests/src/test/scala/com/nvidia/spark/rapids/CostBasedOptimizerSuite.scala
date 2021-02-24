@@ -36,7 +36,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
@@ -91,7 +91,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
@@ -146,7 +146,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec," +
               "Alias,Cast,LessThan")
@@ -185,7 +185,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec," +
               "Alias,Cast,LessThan")
@@ -223,7 +223,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
               "Alias,Cast,LessThan")
@@ -256,7 +256,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
           "Alias,Cast,LessThan")
@@ -301,7 +301,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
               "Alias,Cast,LessThan")
@@ -325,7 +325,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
         .set(RapidsConf.CBO_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL_CBO")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
               "Alias,Cast,LessThan")
