@@ -845,7 +845,7 @@ object RapidsConf {
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
-      "values are ALL: print everything except cost-based optimizations, ALL_CBO: print " +
+      "values are ALL_NO_CBO: print everything except cost-based optimizations, ALL: print " +
         "everything including cost-based optimizations, NONE: print nothing, NOT_ON_GPU: print " +
         "only parts of a query that did not go on the GPU")
     .stringConf
