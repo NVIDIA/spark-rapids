@@ -190,6 +190,19 @@ In the 0.2 release, AQE is supported but all exchanges will default to the CPU. 
 release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
 the GPU when AQE is enabled. 
 
+#### Why does my query show as not on the GPU when Adaptive Query Execution is enabled?
+
+When running an `explain()` on a query where AQE is on, it is possible that AQE has not finalized
+the plan.  In this case a message stating `AdaptiveSparkPlan isFinalPlan=false` will be printed at
+the top of the physical plan, and the explain output will show the query plan with CPU operators.
+It is possible to view the plan on the GPU by looking at the details for the job in the Spark UI.
+
+```
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
++- ...
+```
+
 ### Are cache and persist supported?
 
 Yes cache and persist are supported, but they are not GPU accelerated yet. We are working with
