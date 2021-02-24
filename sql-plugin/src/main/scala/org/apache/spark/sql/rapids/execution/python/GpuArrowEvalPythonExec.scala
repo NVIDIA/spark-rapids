@@ -555,7 +555,12 @@ case class GpuArrowEvalPythonExec(
 
     // cache in a local to avoid serializing the plan
     val inputSchema = child.output.toStructType
-    val pythonOutputSchema = StructType.fromAttributes(resultAttrs)
+    // Build the Python output schema from UDF expressions instead of the 'resultAttrs', because
+    // the 'resultAttrs' is NOT always equal to the Python output schema. For example,
+    // On Databricks when projecting only one column from a Python UDF output where containing
+    // multiple result columns, there will be only one attribute in the 'resultAttrs' for the
+    // projecting output, but the output schema for this Python UDF contains multiple columns.
+    val pythonOutputSchema = StructType.fromAttributes(udfs.map(_.resultAttribute))
 
     val childOutput = child.output
     val targetBatchSize = batchSize
