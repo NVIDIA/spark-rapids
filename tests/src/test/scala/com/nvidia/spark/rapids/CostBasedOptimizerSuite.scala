@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ListBuffer
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.execution.{ExplainMode, ProjectExec, SortExec, SparkPlan, WholeStageCodegenExec}
+import org.apache.spark.sql.execution.{ProjectExec, SortExec, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
@@ -41,13 +42,12 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
               "Alias,Cast,LessThan")
 
-    var optimizations: Seq[Optimization] = Seq()
-
+    val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
       (plan: SparkPlanMeta[SparkPlan],
         sparkPlan: SparkPlan,
         costOptimizations: Seq[Optimization]) => {
-      optimizations = costOptimizations
+      optimizations += costOptimizations
     })
 
     withGpuSparkSession(spark => {
@@ -63,8 +63,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
       df.collect()
 
       // check that the expected optimization was applied
-      assert(optimizations.length == 1)
-      val opt = optimizations.head.asInstanceOf[ReplaceSection[_]]
+      val opt = optimizations.last.last.asInstanceOf[ReplaceSection[_]]
       assert(opt.totalGpuCost > opt.totalCpuCost)
       assert(opt.plan.wrapped.isInstanceOf[SortExec])
 
@@ -98,6 +97,14 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
               "Alias,Cast,LessThan")
 
+    val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          sparkPlan: SparkPlan,
+          costOptimizations: Seq[Optimization]) => {
+        optimizations += costOptimizations
+      })
+
     withGpuSparkSession(spark => {
       val df1: DataFrame = createQuery(spark)
           .alias("df1")
@@ -110,6 +117,13 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
 
       df.collect()
 
+      // check that the expected optimization was applied
+      assert(7 == optimizations.flatten
+          .filter(_.isInstanceOf[ReplaceSection[_]])
+          .map(_.asInstanceOf[ReplaceSection[_]])
+          .count(_.plan.wrapped.isInstanceOf[SortExec]))
+
+      // check that the final plan has a CPU sort and no GPU sort
       val cpuSort = ShimLoader.getSparkShims
           .findOperators(df.queryExecution.executedPlan,
             _.isInstanceOf[SortExec])
@@ -137,10 +151,24 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec," +
               "Alias,Cast,LessThan")
 
+    val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          sparkPlan: SparkPlan,
+          costOptimizations: Seq[Optimization]) => {
+        optimizations += costOptimizations
+      })
+
     withGpuSparkSession(spark => {
       val df: DataFrame = createQuery(spark)
           .orderBy("more_strings_1")
       df.collect()
+
+      // check that the expected optimization was applied
+      val opt = optimizations.last.last.asInstanceOf[ReplaceSection[_]]
+      assert(opt.totalGpuCost > opt.totalCpuCost)
+      assert(opt.plan.wrapped.isInstanceOf[SortExec])
+
       //assert that the top-level sort stayed on the CPU
       df.queryExecution.executedPlan.asInstanceOf[AdaptiveSparkPlanExec]
           .executedPlan.asInstanceOf[WholeStageCodegenExec]
@@ -162,11 +190,25 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec," +
               "Alias,Cast,LessThan")
 
+    val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          sparkPlan: SparkPlan,
+          costOptimizations: Seq[Optimization]) => {
+        optimizations += costOptimizations
+      })
+
     withGpuSparkSession(spark => {
       val df: DataFrame = createQuery(spark)
           .orderBy("more_strings_1")
       df.collect()
-       //assert that the top-level sort stayed on the CPU
+
+      // check that the expected optimization was applied
+      val opt = optimizations.last.last.asInstanceOf[ReplaceSection[_]]
+      assert(opt.totalGpuCost > opt.totalCpuCost)
+      assert(opt.plan.wrapped.isInstanceOf[SortExec])
+
+      //assert that the top-level sort stayed on the CPU
       df.queryExecution.executedPlan.asInstanceOf[WholeStageCodegenExec]
           .child.asInstanceOf[SortExec]
 
@@ -186,9 +228,18 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
               "Alias,Cast,LessThan")
 
+    val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          sparkPlan: SparkPlan,
+          costOptimizations: Seq[Optimization]) => {
+        optimizations += costOptimizations
+      })
+
     withGpuSparkSession(spark => {
       val df: DataFrame = createQuery(spark)
       df.collect()
+
       // assert that the top-level projection stayed on the CPU
       df.queryExecution.executedPlan.asInstanceOf[AdaptiveSparkPlanExec]
           .executedPlan.asInstanceOf[WholeStageCodegenExec]
@@ -210,9 +261,31 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
           "Alias,Cast,LessThan")
 
+    var optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          sparkPlan: SparkPlan,
+          costOptimizations: Seq[Optimization]) => {
+        optimizations += costOptimizations
+      })
+
     withGpuSparkSession(spark => {
       val df: DataFrame = createQuery(spark)
       df.collect()
+
+      // check that the expected optimization was applied
+      assert(3 == optimizations
+          .flatten
+          .filter(_.isInstanceOf[AvoidTransition[_]])
+          .map(_.asInstanceOf[AvoidTransition[_]])
+          .count(_.plan.wrapped.isInstanceOf[ProjectExec]))
+
+      // check that the expected optimization was applied
+      assert(3 == optimizations
+          .flatten
+          .filter(_.isInstanceOf[AvoidTransition[_]])
+          .map(_.asInstanceOf[AvoidTransition[_]])
+          .count(_.plan.wrapped.isInstanceOf[ProjectExec]))
 
       // assert that the top-level projection stayed on the CPU
       assert(df.queryExecution.executedPlan.asInstanceOf[WholeStageCodegenExec]
@@ -289,4 +362,12 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite {
     df
   }
 
+  private def addListener(optimizations: ListBuffer[Optimization]): Unit = {
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          sparkPlan: SparkPlan,
+          costOptimizations: Seq[Optimization]) => {
+        optimizations.appendAll(costOptimizations)
+      })
+  }
 }
