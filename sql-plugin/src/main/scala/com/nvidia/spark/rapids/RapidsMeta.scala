@@ -30,6 +30,7 @@ import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.window.WindowExecBase
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -807,6 +808,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   final override def tagSelfForGpu(): Unit = {
+    if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
+      willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
+        s"$wrapped is foldable and operates on non literals")
+    }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
   }
