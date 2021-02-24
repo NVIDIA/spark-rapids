@@ -376,7 +376,8 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --files $SPARK_RAPIDS_DIR/getGpusResources.sh
   --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
-  ## Example Join Operation
+
+## Example Join Operation
 Once you have started your Spark shell you can run the following commands to do a basic join and
 look at the UI to see that it runs on the GPU.
 ```scala
@@ -391,15 +392,15 @@ and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
 ![Join Example on Spark SQL UI](../img/join-sql-ui-example.png)
 
-## Enabling RapidsShuffleManager
+## Enabling RAPIDS Shuffle Manager
 
-The _RapidsShuffleManager_ is an implementation of the `ShuffleManager` interface in Apache Spark
+The _RAPIDS Shuffle Manager_ is an implementation of the `ShuffleManager` interface in Apache Spark
 that allows custom mechanisms to exchange shuffle data, enabling _Remote Direct Memory 
 Access (RDMA)_ and peer-to-peer communication between GPUs (NVLink/PCIe), by 
 leveraging [Unified Communication X (UCX)](https://www.openucx.org/).
 
 You can find out how to enable the accelerated shuffle in the 
-[RAPIDS Shuffle Manager](../additional-functionality/rapids-shuffle.md) documentation.
+[RAPIDS Shuffle Manager documentation](../additional-functionality/rapids-shuffle.md).
 
 ##  GPU Scheduling For Pandas UDF
 ---

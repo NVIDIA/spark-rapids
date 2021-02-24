@@ -8,16 +8,14 @@ nav_order: 5
 ---
 **NOTE**
 
-The _RapidsShuffleManager_ is a beta feature!
+The _RAPIDS Shuffle Manager_ is a beta feature!
 
 ---
 
-The _RapidsShuffleManager_ is an implementation of the `ShuffleManager` interface in Apache Spark
-that allows custom mechanisms to exchange shuffle data.
-
-The _RapidsShuffleManager_ has two components: a spillable cache, and a transport that can utilize 
-_Remote Direct Memory Access (RDMA)_ and high-bandwidth transfers within a node that has multiple 
-GPUs. This is possible because the plugin utilizes 
+The _RAPIDS Shuffle Manager_ is an implementation of the `ShuffleManager` interface in Apache Spark
+that allows custom mechanisms to exchange shuffle data. It has two components: a spillable cache, 
+and a transport that can utilize _Remote Direct Memory Access (RDMA)_ and high-bandwidth transfers 
+within a node that has multiple GPUs. This is possible because the plugin utilizes 
 [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
 
 - **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
@@ -39,8 +37,8 @@ in these scenarios:
   
 ### System Setup
 
-In order to enable _RapidsShuffleManager_, UCX user-space libraries and its dependencies must be 
-installed on the host and within Docker containers. A host has additional requirements, like the 
+In order to enable the _RAPIDS Shuffle Manager_, UCX user-space libraries and its dependencies must 
+be installed on the host and within Docker containers. A host has additional requirements, like the 
 MLNX_OFED driver and `nv_peer_mem` kernel module.
 
 #### Baremetal
@@ -301,8 +299,8 @@ non-standard location.
   length change is recommended as it has shown better performance when there is memory pressure 
   and message sizes are relatively large (> few hundred Bytes)
   
-### RapidsShuffleManager Fine Tuning
-Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
+### Fine Tuning
+Here are some settings that could be utilized to fine tune the _RAPIDS Shuffle Manager_:
 
 #### Bounce Buffers
 The following configs control the number of bounce buffers, and the size. Please note that for
