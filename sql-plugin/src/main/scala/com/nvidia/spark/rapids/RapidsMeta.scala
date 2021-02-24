@@ -808,14 +808,9 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   final override def tagSelfForGpu(): Unit = {
-    val isConstantFoldingOff =
-      SQLConf.get.optimizerExcludedRules
-        .contains("org.apache.spark.sql.catalyst.optimizer.ConstantFolding")
-    if (isConstantFoldingOff) {
-      if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
-        willNotWorkOnGpu(s"Cannot run on GPU because constant folding is off and expression " +
-          s"$wrapped is foldable and operates on non literals")
-      }
+    if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
+      willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
+        s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
