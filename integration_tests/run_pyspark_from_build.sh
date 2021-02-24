@@ -31,6 +31,8 @@ else
         PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
         TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*.jar)
         UDF_EXAMPLE_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-udf-examples*.jar)
+        ## reset SCRIPTPATH to support alternate scripts path on the cloud environment
+        SCRIPTPATH="$LOCAL_JAR_PATH/integration_tests"
     else
         CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark*.jar)
@@ -115,22 +117,15 @@ else
           $RUN_TEST_PARAMS \
           "$@"
     else
-        ## 'REMOTE_RES_PATH' is set in the cloud environment to support distributed file path
-        if [ -n "$REMOTE_RES_PATH" ]; then
-            PYTEST_RES_PARAMS="$REMOTE_RES_PATH/../runtests.py \
-              --std_input_path=$REMOTE_RES_PATH/src/test/resources/"
-        else
-            PYTEST_RES_PARAMS="$SCRIPTPATH/runtests.py --rootdir $SCRIPTPATH $SCRIPTPATH/src/main/python \
-              --std_input_path=$SCRIPTPATH/src/test/resources/"
-        fi
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
           --conf "spark.driver.extraJavaOptions=-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS" \
           --conf 'spark.executor.extraJavaOptions=-ea -Duser.timezone=UTC' \
           --conf 'spark.sql.session.timeZone=UTC' \
           --conf 'spark.sql.shuffle.partitions=12' \
           $SPARK_SUBMIT_FLAGS \
-          $PYTEST_RES_PARAMS \
+          "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
+          --std_input_path="$SCRIPTPATH"/src/test/resources/ \
           --color=yes \
           $TEST_TYPE_PARAM \
           "$TEST_ARGS" \
