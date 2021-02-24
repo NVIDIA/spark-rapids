@@ -55,16 +55,16 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 11.0 => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.18-SNAPSHOT-cuda10-1.jar
-- rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar
+- cudf-0.18-cuda10-1.jar
+- rapids-4-spark_2.12-0.4.0.jar
 
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.18-SNAPSHOT-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.18-cuda10-1.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.4.0.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -725,7 +725,7 @@ To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job 
     On Standalone, you need to add
     ```shell
     ...
-    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar \
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.4.0.jar \
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
     ```
 

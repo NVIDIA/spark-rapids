@@ -505,9 +505,8 @@ object RapidsConf {
 
   val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
       .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits and is only supported by a small number of operations currently.  " +
-          "This can result in a lot of data movement to and from the GPU, which can slow down " +
-          "processing in some cases.")
+          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
+          "which can slow down processing in some cases.")
       .booleanConf
       .createWithDefault(false)
 
@@ -917,7 +916,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,cudf-0.18-SNAPSHOT-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.4.0.jar,cudf-0.18-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
