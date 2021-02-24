@@ -190,15 +190,11 @@ class ShuffleBufferCatalog(
    * Lookup the shuffle buffer that corresponds to the specified shuffle buffer ID and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
    * @param id shuffle buffer identifier
+   * @param unspill if true, unspill the buffer to device storage
    * @return shuffle buffer that has been acquired
    */
-  def acquireBuffer(id: ShuffleBufferId): RapidsBuffer = {
-    val buffer = catalog.acquireBuffer(id)
-    // Shuffle buffers that have been read are less likely to be read again,
-    // so update the spill priority based on this access
-    val spillPriority = SpillPriorities.getShuffleOutputBufferReadPriority
-    buffer.setSpillPriority(spillPriority)
-    buffer
+  def acquireBuffer(id: ShuffleBufferId, unspill: Boolean = false): RapidsBuffer = {
+    RapidsBufferCatalog.acquireBuffer(id, unspill)
   }
 
   /**
@@ -209,7 +205,7 @@ class ShuffleBufferCatalog(
    */
   def acquireBuffer(tableId: Int): RapidsBuffer = {
     val shuffleBufferId = getShuffleBufferId(tableId)
-    acquireBuffer(shuffleBufferId)
+    acquireBuffer(shuffleBufferId, unspill = true)
   }
 
   /**

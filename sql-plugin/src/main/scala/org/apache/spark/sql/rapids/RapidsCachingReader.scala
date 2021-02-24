@@ -142,7 +142,7 @@ class RapidsCachingReader[K, C](
       try {
         val cachedIt = cachedBufferIds.iterator.map(bufferId => {
           GpuSemaphore.acquireIfNecessary(context)
-          val cb = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+          val cb = withResource(catalog.acquireBuffer(bufferId, unspill = true)) { buffer =>
             buffer.getColumnarBatch(sparkTypes)
           }
           val cachedBytesRead = GpuColumnVector.getTotalDeviceMemoryUsed(cb)

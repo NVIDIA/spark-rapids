@@ -251,7 +251,9 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: RapidsBuffer.SpillCallback) extends RapidsBuffer with Arm {
+      override val spillCallback: RapidsBuffer.SpillCallback,
+      override val unspillCallback: RapidsBuffer.UnspillCallback,
+      override val fileOffset: Option[Long]) extends RapidsBuffer with Arm {
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority
@@ -278,20 +280,7 @@ abstract class RapidsBufferStore(
     }
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
-      // NOTE: Cannot hold a lock on this buffer here because memory is being
-      // allocated. Allocations can trigger synchronous spills which can
-      // deadlock if another thread holds the device store lock and is trying
-      // to spill to this store.
-      withResource(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
-        withResource(getMemoryBuffer) {
-          case h: HostMemoryBuffer =>
-            logDebug(s"copying from host $h to device $deviceBuffer")
-            deviceBuffer.copyFromHostBuffer(h)
-          case _ => throw new IllegalStateException(
-            "must override getColumnarBatch if not providing a host buffer")
-        }
-        columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
-      }
+      throw new IllegalStateException("should only get columnar batch from device buffer")
     }
 
     protected def columnarBatchFromDeviceBuffer(devBuffer: DeviceMemoryBuffer,
@@ -344,6 +333,8 @@ abstract class RapidsBufferStore(
     private[RapidsBufferStore] def updateSpillPriorityValue(priority: Long): Unit = {
       spillPriority = priority
     }
+
+    override def alreadySpilledToDisk: Boolean = fileOffset.isDefined
 
     /** Must be called with a lock on the buffer */
     private def freeBuffer(): Unit = {

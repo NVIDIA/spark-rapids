@@ -264,8 +264,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
       val catalog = getCatalogOrThrow
       val requestHandler = new RapidsShuffleRequestHandler() {
         override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
-          val shuffleBufferId = catalog.getShuffleBufferId(tableId)
-          catalog.acquireBuffer(shuffleBufferId)
+          catalog.acquireBuffer(tableId)
         }
 
         override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {

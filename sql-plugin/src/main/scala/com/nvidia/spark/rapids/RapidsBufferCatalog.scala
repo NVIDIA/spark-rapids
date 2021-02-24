@@ -235,9 +235,28 @@ object RapidsBufferCatalog extends Logging with Arm {
    * Lookup the buffer that corresponds to the specified buffer ID and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
    * @param id buffer identifier
+   * @param unspill if true, unspill the buffer to device storage
    * @return buffer that has been acquired
    */
-  def acquireBuffer(id: RapidsBufferId): RapidsBuffer = singleton.acquireBuffer(id)
+  def acquireBuffer(id: RapidsBufferId, unspill: Boolean = false): RapidsBuffer = {
+    val buffer = singleton.acquireBuffer(id)
+    if (unspill && buffer.storageTier != StorageTier.DEVICE) {
+      val newBuffer = try {
+        logDebug(s"Unspilling $buffer ${buffer.id} to ${deviceStorage.name}")
+        buffer.unspillCallback(buffer.storageTier, deviceStorage.tier, buffer.size)
+        deviceStorage.copyBuffer(buffer, null)
+      } finally {
+        buffer.close()
+      }
+      if (newBuffer != null) {
+        singleton.updateBufferMap(buffer.storageTier, newBuffer)
+      }
+      buffer.free()
+      singleton.acquireBuffer(id)
+    } else {
+      buffer
+    }
+  }
 
   /** Remove a buffer ID from the catalog and release the resources of the registered buffer. */
   def removeBuffer(id: RapidsBufferId): Unit = singleton.removeBuffer(id)
