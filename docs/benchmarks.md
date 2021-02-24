@@ -38,7 +38,7 @@ benchmark.
 
 The integration test jar needs to be added to the `--jars` configuration option when launching the
 Spark shell. This jar can be found in the `integration_tests/target` directory after running
-`mvn package`, with a filename matching `rapids-4-spark-integration-tests_2.12-*-SNAPSHOT.jar`.
+`mvn package`, with a filename matching `rapids-4-spark-integration-tests_2.12-0.4.0.jar`.
 
 To run benchmarks on the GPU, the RAPIDS Accelerator for Apache Spark must also be installed,
 following the instructions provided in the [Getting Started](get-started/getting-started.md) guide.
