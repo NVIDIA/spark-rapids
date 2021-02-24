@@ -478,8 +478,9 @@ If UCX will be used to communicate between containers, the IPC (`--ipc`) and
 PID namespaces (`--pid`) should also be shared. 
 
 As of the writing of this document we have successfully tested `--privileged` containers, which
-essentially turns off all isolation. We will revise this document to include any new configurations
-as we are able to test different scenarios.
+essentially turns off all isolation. We are also assuming `--network=host` is specified, allowing
+the container to share the host's network. We will revise this document to include any new 
+configurations as we are able to test different scenarios.
 
 1. A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the 
    host system.
@@ -520,7 +521,20 @@ After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate t
 
 In this section, we are using a docker container built using the sample dockerfile above. 
 
-1. Test to check whether UCX can link against CUDA:
+1. Start the docker container with `--privileged` mode. In this example, we are also adding 
+   `--device /dev/infiniband` to make Mellanox devices available for our test:
+    ```
+    nvidia-docker run \
+     --network=host \
+     --device /dev/infiniband \
+     --privileged \
+     -it \
+     ucx_container:latest \
+     /bin/bash 
+    ```
+   If you are testing between different machines, please run the above command in each node.
+   
+2. Test to check whether UCX can link against CUDA:
     ```
     root@test-machin:/# ucx_info -d|grep cuda     
     # Memory domain: cuda_cpy
@@ -533,7 +547,7 @@ In this section, we are using a docker container built using the sample dockerfi
     #         Device: cuda
     ```
    
-2. Mellanox device seen by UCX, and what transports are enabled (i.e. `rc`)
+3. Mellanox device seen by UCX, and what transports are enabled (i.e. `rc`)
    ```
    root@test-machine:/# ucx_info -d|grep mlx5_3:1 -B1
    #      Transport: rc_verbs
@@ -552,7 +566,7 @@ In this section, we are using a docker container built using the sample dockerfi
    #         Device: mlx5_3:1
    ```
    
-3. You should be able to execute `ucx_perftest`, and get a good idea that things are working as
+4. You should be able to execute `ucx_perftest`, and get a good idea that things are working as
    you expect. 
    
    Example 1: GPU <-> GPU in the same host. Without NVLink you should expect PCIe speeds. In this
@@ -643,6 +657,8 @@ In this section, we are using a docker container built using the sample dockerfi
 --conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
+--conf spark.executorEnv.UCX_RC_RX_QUEUE_LEN=1024 \
+--conf spark.executorEnv.UCX_UD_RX_QUEUE_LEN=1024 \
 --conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
 --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
@@ -668,6 +684,9 @@ non-standard location.
   The main difference between get and put is the direction of transfer. A send operation under 
   `get_zcopy` will really be `RDMA READ` from the receiver, whereas the same send will be 
   `RDMA_WRITE` from the sender if `put_zcopy` is utilized.
+- `UCX_RC_RX_QUEUE_LEN=1024` and `UCX_UD_RX_QUEUE_LEN=1024`: Length of receive queue for `rc` and 
+  `ud` transports respectively. The length change is recommended as it has shown better performance 
+  when there is memory pressure and message sizes are relatively large (> few hundred Bytes)
   
 ### RapidsShuffleManager Fine Tuning
 Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
