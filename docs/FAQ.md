@@ -195,7 +195,8 @@ the GPU when AQE is enabled.
 When running an `explain()` on a query where AQE is on, it is possible that AQE has not finalized
 the plan.  In this case a message stating `AdaptiveSparkPlan isFinalPlan=false` will be printed at
 the top of the physical plan, and the explain output will show the query plan with CPU operators.
-It is possible to view the plan on the GPU by looking at the details for the job in the Spark UI.
+As the query runs, the plan on the UI will update and show operations running on the GPU.  This can
+happen for any AdaptiveSparkPlan where `isFinalPlan=false`. 
 
 ```
 == Physical Plan ==
