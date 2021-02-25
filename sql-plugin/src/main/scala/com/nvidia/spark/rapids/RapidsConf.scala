@@ -298,7 +298,7 @@ object RapidsConf {
 
   // Resource Configuration
 
-  val PINNED_POOL_SIZE = conf("spark.rapids.memory.pinnedPool.size-DUMMY_MODIFIED")
+  val PINNED_POOL_SIZE = conf("spark.rapids.memory.pinnedPool.size")
     .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
     .bytesConf(ByteUnit.BYTE)
