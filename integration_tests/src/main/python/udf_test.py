@@ -92,14 +92,16 @@ def test_single_aggregate_udf(data_gen):
             conf=arrow_udf_conf)
 
 
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/757")
 @ignore_order
 @allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_group_aggregate_udf(data_gen):
     @f.pandas_udf('long')
     def pandas_sum(to_process: pd.Series) -> int:
-        return to_process.sum()
+        # Sort the values before computing the sum.
+        # For details please go to
+        #   https://github.com/NVIDIA/spark-rapids/issues/740#issuecomment-784917512
+        return to_process.sort_values().sum()
 
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen)\
@@ -134,35 +136,17 @@ window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Pre
               'Lower_Upper']
 
 
-# It fails periodically only when using LongGen, so split it into
-#   "test_window_aggregate_udf_long"
-# and
-#   "test_window_aggregate_udf"
-# to unblock the basic window functionality test.
-@pytest.mark.skip("https://github.com/NVIDIA/spark-rapids/issues/740")
 @ignore_order
-@pytest.mark.parametrize('data_gen', [long_gen], ids=idfn)
-@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
-def test_window_aggregate_udf_long(data_gen, window):
-
-    @f.pandas_udf('long')
-    def pandas_sum(to_process: pd.Series) -> int:
-        return to_process.sum()
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen).select(
-            pandas_sum(f.col('b')).over(window)),
-        conf=arrow_udf_conf)
-
-
-@ignore_order
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)
 def test_window_aggregate_udf(data_gen, window):
 
     @f.pandas_udf('long')
     def pandas_sum(to_process: pd.Series) -> int:
-        return to_process.sum()
+        # Sort the values before computing the sum.
+        # For details please go to
+        #   https://github.com/NVIDIA/spark-rapids/issues/740#issuecomment-784917512
+        return to_process.sort_values().sum()
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen).select(
