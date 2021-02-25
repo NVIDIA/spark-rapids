@@ -33,7 +33,7 @@ gcloud services enable storage-api.googleapis.com
 
 After the command line environment is setup, log in to your GCP account.  You can now create a
 Dataproc cluster with the configuration shown below.  The configuration will allow users to run any
-of the [notebook demos](https://github.com/NVIDIA/spark-rapids/tree/branch-0.2/docs/demo/GCP) on
+of the [notebook demos](https://github.com/NVIDIA/spark-rapids/tree/main/docs/demo/GCP) on
 GCP.  Alternatively, users can also start 2*2T4 worker nodes.
 
 The script below will initialize with the following: 
@@ -60,7 +60,7 @@ The script below will initialize with the following:
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region $REGION \
-    --image-version=preview-ubuntu18 \
+    --image-version=2.0-ubuntu18 \
     --master-machine-type n1-standard-16 \
     --num-workers $NUM_WORKERS \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
@@ -96,7 +96,7 @@ configuration the first stage should take ~110 seconds (1/3 of CPU execution tim
 and the second stage takes ~170 seconds (1/7 of CPU execution time with same config).  The notebook
 depends on the pre-compiled [Spark RAPIDS SQL
 plugin](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark) and
-[cuDF](https://mvnrepository.com/artifact/ai.rapids/cudf/0.15), which are pre-downloaded by the GCP
+[cuDF](https://mvnrepository.com/artifact/ai.rapids/cudf), which are pre-downloaded by the GCP
 Dataproc [RAPIDS init
 script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 

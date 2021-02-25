@@ -12,7 +12,7 @@ RAPIDS Accelerator to perform the user-defined operation on the GPU.
 
 Note that there are other potential solutions to performing user-defined
 operations on the GPU. See the
-[Frequently Asked Questions entry](FAQ.md#how-can-i-run-custom-expressionsudfs-on-the-gpu)
+[Frequently Asked Questions entry](../FAQ.md#how-can-i-run-custom-expressionsudfs-on-the-gpu)
 on UDFs for more details.
 
 ## UDF Obstacles To Query Acceleration
