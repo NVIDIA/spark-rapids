@@ -12,32 +12,32 @@ The _RAPIDS Shuffle Manager_ is a beta feature!
 
 ---
 
-The _RAPIDS Shuffle Manager_ is an implementation of the `ShuffleManager` interface in Apache Spark
+The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interface in Apache Spark
 that allows custom mechanisms to exchange shuffle data. It has two components: a spillable cache, 
-and a transport that can utilize _Remote Direct Memory Access (RDMA)_ and high-bandwidth transfers 
+and a transport that can utilize Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
 within a node that has multiple GPUs. This is possible because the plugin utilizes 
 [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
 
 - **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
 but can spill in the following cases:
-  - _GPU out of memory_: If an allocation in the GPU failed to acquire memory, spill will get triggered
+  - GPU out of memory: If an allocation in the GPU failed to acquire memory, spill will get triggered
     moving GPU buffers to host to allow for the original allocation to succeed.
-  - _Host spill store filled_: If the host memory store has reached a maximum threshold 
+  - Host spill store filled: If the host memory store has reached a maximum threshold 
     (`spark.rapids.memory.host.spillStorageSize`), host buffers will be spilled to disk until
     the host spill store shrinks back below said configurable threshold.
     
   Tasks local to the producing executor will short-circuit read from the cache.
 
-- **Transport**: Handles block transfers between executors using various means like: _NVLink_,
-_PCIe_, _Infiniband (IB)_, _RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX,
+- **Transport**: Handles block transfers between executors using various means like NVLink,
+PCIe, Infiniband (IB), RDMA over Converged Ethernet (RoCE) or TCP, and as configured in UCX,
 in these scenarios:
-  - _GPU-to-GPU_: Shuffle blocks that were able to fit in GPU memory.
-  - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk) but will be manifested 
+  - GPU-to-GPU: Shuffle blocks that were able to fit in GPU memory.
+  - Host-to-GPU and Disk-to-GPU: Shuffle blocks that spilled to host (or disk) but will be manifested 
   in the GPU in the downstream Spark task.
   
 ### System Setup
 
-In order to enable the _RAPIDS Shuffle Manager_, UCX user-space libraries and its dependencies must 
+In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its dependencies must 
 be installed on the host and within Docker containers. A host has additional requirements, like the 
 MLNX_OFED driver and `nv_peer_mem` kernel module.
 
