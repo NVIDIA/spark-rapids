@@ -43,7 +43,7 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
     expr match {
       case lag: Lag =>
         GpuOverrides.extractLit(lag.offset) match {
-         case Some(Literal(offset:Int, IntegerType)) =>
+         case Some(Literal(offset: Int, IntegerType)) =>
             Literal(-offset, IntegerType)
          case _ =>
            throw new IllegalStateException(
