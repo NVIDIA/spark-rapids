@@ -229,3 +229,43 @@ class DefaultCostModel(conf: RapidsConf) extends CostModel {
   }
 
 }
+
+sealed abstract class Optimization
+
+case class AvoidTransition[INPUT <: SparkPlan](plan: SparkPlanMeta[INPUT]) extends Optimization {
+  override def toString: String = s"It is not worth moving to GPU for operator: " +
+      s"${Explain.format(plan)}"
+}
+
+case class ReplaceSection[INPUT <: SparkPlan](
+    plan: SparkPlanMeta[INPUT],
+    totalCpuCost: Double,
+    totalGpuCost: Double) extends Optimization {
+  override def toString: String = s"It is not worth keeping this section on GPU; " +
+      s"gpuCost=$totalGpuCost, cpuCost=$totalCpuCost:\n${Explain.format(plan)}"
+}
+
+object Explain {
+
+  def format(plan: SparkPlanMeta[_]): String = {
+    plan.wrapped match {
+      case p: SparkPlan => p.simpleString(SQLConf.get.maxToStringFields)
+      case other => other.toString
+    }
+  }
+
+  def formatTree(plan: SparkPlanMeta[_]): String = {
+    val b = new StringBuilder
+    formatTree(plan, b, "")
+    b.toString
+  }
+
+  def formatTree(plan: SparkPlanMeta[_], b: StringBuilder, indent: String): Unit = {
+    b.append(indent)
+    b.append(format(plan))
+    b.append('\n')
+    plan.childPlans.filter(_.canThisBeReplaced)
+        .foreach(child => formatTree(child, b, indent + "  "))
+  }
+
+}
