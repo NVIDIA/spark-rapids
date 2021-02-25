@@ -688,8 +688,6 @@ def to_cast_string(spark_type):
         return 'STRING'
     elif isinstance(spark_type, DecimalType):
         return 'DECIMAL({}, {})'.format(spark_type.precision, spark_type.scale)
-    elif isinstance(spark_type, StructType):
-        return 'STRUCT'
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 

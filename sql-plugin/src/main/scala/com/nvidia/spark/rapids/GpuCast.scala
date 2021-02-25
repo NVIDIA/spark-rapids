@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.time.DateTimeException
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -489,98 +489,56 @@ case class GpuCast(
   }
 
   private def castStructToString(input: GpuColumnVector): ColumnVector = {
-    // for each column, cast to string
-    val inputBase: ColumnVector = input.getBase()
-
-    var nullStrScalar: Scalar = null
-    var emptyStrScalar: Scalar = null
     var separatorColumn: ColumnVector = null
+    var spaceColumn: ColumnVector = null
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
+    val coreColumns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
 
     try {
-      withResource(GpuScalar.from(", ", StringType)) { separatorScalar =>
+      withResource(GpuScalar.from(",", StringType)) { separatorScalar =>
         separatorColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
       }
-      withResource(inputBase.getChildColumnView(0)) { childView =>
+      withResource(GpuScalar.from(" ", StringType)) { separatorScalar =>
+        spaceColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
+      }
+      withResource(GpuScalar.from("[", StringType)) { bracketScalar =>
+        columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount().toInt)
+      }
+      withResource(input.getBase().getChildColumnView(0)) { childView =>
         columns += childView.asStrings()
+        coreColumns += childView.asStrings()
       }
-      for(childIndex <- 1 to inputBase.getNumChildren()) {
-        withResource(inputBase.getChildColumnView(childIndex)) { childView =>
+
+      for(childIndex <- 1 until input.getBase().getNumChildren()) {
+        withResource(input.getBase().getChildColumnView(childIndex)) { childView =>
           columns += separatorColumn
+          columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, childView)
           columns += childView.asStrings()
+          coreColumns += columns.last
         }
-        // val castedChild: ColumnVector = childView.asStrings()
-        // // val castedChild2: ColumnVector = childView.castTo(StringType)
-        // // val childVector: ColumnVector = new ColumnVector()
-        // // val childGpuVector: GpuColumnVector = GpuColumnVector.from(childVector, StringType)
-        // // val castedChild: ColumnVector = doColumnar(childGpuVector)
-        // columns += separatorColumn
-        // columns += castedChild
-        // val childView: ColumnView = inputBase.getChildColumnView(childIndex)
       }
-      nullStrScalar = GpuScalar.from(null, StringType)
-      emptyStrScalar = GpuScalar.from("", StringType)
-      ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
-        columns.toArray[ColumnView])
+
+      withResource(GpuScalar.from("]", StringType)) { bracketScalar =>
+        columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount().toInt)
+      }
+      withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
+        withResource(ColumnVector.stringConcatenate(emptyStrScalar, emptyStrScalar,
+          columns.toArray[ColumnView])) { fullResult =>
+          fullResult.mergeAndSetValidity(BinaryOp.BITWISE_OR, coreColumns: _*)
+        }
+      }
     } finally {
-      // columns.close()
-      if (separatorColumn != null) { // potentially already closed
+      if (separatorColumn != null) {
+        columns.foreach(col =>
+          if(col.getNativeView() != separatorColumn.getNativeView()) {
+            col.close()
+          })
         separatorColumn.close()
       }
-      if (emptyStrScalar != null) {
-        emptyStrScalar.close()
-      }
-      if (nullStrScalar != null) {
-        nullStrScalar.close()
+      if (spaceColumn != null) {
+        spaceColumn.close()
       }
     }
-    // val separatorScalar: Scalar = 
-    // separatorColumn = 
-    // columns += .asStrings()
-    
-
-
-    // // for (num_children) {
-    //   input.getChildColumn(childIndex)
-    //   column += gpuCast.doColumnar(child)
-    // // }
-    
-    // for (int childIndex = 0; childIndex < numChildren; childIndex++) {
-    //   try (ColumnView tmp = cv.getChildColumnView(childIndex)) {
-    //     StructField entry = ((StructType) colType).apply(childIndex);
-    //     if (!typeConversionAllowed(tmp, entry.dataType())) {
-    //       return false;
-    //     }
-    //   }
-    // }
-    // return input.getBase()
-
-    // create table with separators
-    // concatenate with ", " separator
-    // add in brackets
-
-    // //from Gpu compressed column vector
-    // ColumnMeta columnMeta
-    // else if (colType instanceof StructType) {
-    //       if (!(dt.equals(DType.STRUCT))) {
-    //         return false;
-    //       }
-    //       StructType st = (StructType) colType;
-    //       final int numChildren = columnMeta.childrenLength();
-    //       if (numChildren != st.size()) {
-    //         return false;
-    //       }
-    //       for (int childIndex = 0; childIndex < numChildren; childIndex++) {
-    //         ColumnMeta tmp = columnMeta.children(childIndex);
-    //         StructField entry = ((StructType) colType).apply(childIndex);
-    //         if (!typeConversionAllowed(tmp, entry.dataType())) {
-    //           return false;
-    //         }
-    //       }
-    //       return true;
-
-    //     withResource(input.getBase.castTo(DType.))
-    //   }
   }
 
   private def castFloatingTypeToString(input: GpuColumnVector): ColumnVector = {
