@@ -126,8 +126,7 @@ object SamplingUtils extends Arm {
     if (runningCb == null) {
       return Array.empty
     }
-    // Get back on the GPU to return the result.
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    // Getting a spilled batch will acquire the semaphore if needed
     val cb = withResource(runningCb) { spb =>
       runningCb = null
       spb.getColumnarBatch()
@@ -224,8 +223,7 @@ object SamplingUtils extends Arm {
       // Nothing to sort
       return (Array.empty, numTotalRows)
     }
-    // Get back on the GPU to return the result.
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    // Getting a spilled batch will acquire the semaphore if needed
     val cb = withResource(runningCb) { spb =>
       runningCb = null
       spb.getColumnarBatch()

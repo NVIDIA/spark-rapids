@@ -242,6 +242,7 @@ def _gen_data_for_collect(nullable=True):
             ['child_decimal', DecimalGen(precision=8, scale=3)]]))]
 
 
+
 _collect_sql_string =\
   '''
     select
