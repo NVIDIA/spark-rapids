@@ -2809,7 +2809,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       }
       plan
     } else {
-      val optimizations = if (conf.cboEnabled) {
+      val optimizations = if (conf.optimizerEnabled) {
         // we need to run these rules both before and after CBO because the cost
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()

@@ -167,13 +167,13 @@ class DefaultCostModel(conf: RapidsConf) extends CostModel {
   def transitionToGpuCost(plan: SparkPlanMeta[_]) = {
     // this is a placeholder for now - we would want to try and calculate the transition cost
     // based on the data types and size (if known)
-    conf.cboDefaultTransitionToGpu
+    conf.defaultTransitionToGpuCost
   }
 
   def transitionToCpuCost(plan: SparkPlanMeta[_]) = {
     // this is a placeholder for now - we would want to try and calculate the transition cost
     // based on the data types and size (if known)
-    conf.cboDefaultTransitionToCpu
+    conf.defaultTransitionToCpuCost
   }
 
   override def applyCost(plan: SparkPlanMeta[_]): (Double, Double) = {
@@ -197,12 +197,12 @@ class DefaultCostModel(conf: RapidsConf) extends CostModel {
           // with disabling one exchange that would make a join inconsistent
           1.0
 
-        case _ => conf.cboDefaultOperatorCost
+        case _ => conf.defaultOperatorCost
       }
     }
 
-    plan.setCpuCost(cpuCost)
-    plan.setGpuCost(gpuCost)
+    plan.cpuCost = cpuCost
+    plan.gpuCost = gpuCost
 
     (cpuCost, gpuCost)
   }
@@ -215,14 +215,14 @@ class DefaultCostModel(conf: RapidsConf) extends CostModel {
           // different CAST operations have different costs, so we allow these to be configured
           // based on the data types involved
           expr.conf.getExpressionCost(s"Cast${cast.fromType}To${cast.toType}")
-              .getOrElse(conf.cboDefaultExpressionCost)
+              .getOrElse(conf.defaultExpressionCost)
         case _ =>
           // many of our BaseExprMeta implementations are anonymous classes so we look directly at
           // the wrapped expressions in some cases
           expr.wrapped match {
             case _: AttributeReference => 1.0 // no benefit on GPU
             case Alias(_: AttributeReference, _) => 1.0 // no benefit on GPU
-            case _ => conf.cboDefaultExpressionCost
+            case _ => conf.defaultExpressionCost
           }
       }
     }

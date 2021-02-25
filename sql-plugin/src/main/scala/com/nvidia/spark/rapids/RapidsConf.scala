@@ -879,7 +879,7 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val CBO_ENABLED = conf("spark.rapids.sql.cbo.enabled")
+  val OPTIMIZER_ENABLED = conf("spark.rapids.sql.optimizer.enabled")
       .internal()
       .doc("Enable cost-based optimizer that will attempt to avoid " +
           "transitions to GPU for operations that will not result in improved performance " +
@@ -887,31 +887,33 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val CBO_DEBUG_ENABLED = conf("spark.rapids.sql.cbo.debug")
+  val OPTIMIZER_DEBUG_ENABLED = conf("spark.rapids.sql.optimizer.debug")
       .internal()
       .doc("Enable debug logging for CBO")
       .booleanConf
       .createWithDefault(false)
 
-  val CBO_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.cbo.defaultExecGpuCost")
+  val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.defaultExecGpuCost")
       .internal()
       .doc("Default relative GPU cost of running an operator on the GPU")
       .doubleConf
       .createWithDefault(0.8)
 
-  val CBO_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.cbo.defaultExprGpuCost")
+  val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.defaultExprGpuCost")
       .internal()
       .doc("Default relative GPU cost of running an expression on the GPU")
       .doubleConf
       .createWithDefault(0.8)
 
-  val CBO_DEFAULT_TRANSITION_TO_CPU_COST = conf("spark.rapids.sql.cbo.defaultTransitionToCpuCost")
+  val OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST = conf(
+    "spark.rapids.sql.optimizer.defaultTransitionToCpuCost")
       .internal()
       .doc("Default cost of transitioning from GPU to CPU")
       .doubleConf
       .createWithDefault(0.15)
 
-  val CBO_DEFAULT_TRANSITION_TO_GPU_COST = conf("spark.rapids.sql.cbo.defaultTransitionToGpuCost")
+  val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
+    "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
       .internal()
       .doc("Default cost of transitioning from CPU to GPU")
       .doubleConf
@@ -1228,17 +1230,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
-  lazy val cboEnabled: Boolean = get(CBO_ENABLED)
+  lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
-  lazy val cboDebugEnabled: Boolean = get(CBO_DEBUG_ENABLED)
+  lazy val optimizerDebugEnabled: Boolean = get(OPTIMIZER_DEBUG_ENABLED)
 
-  lazy val cboDefaultOperatorCost: Double = get(CBO_DEFAULT_GPU_OPERATOR_COST)
+  lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
 
-  lazy val cboDefaultExpressionCost: Double = get(CBO_DEFAULT_GPU_EXPRESSION_COST)
+  lazy val defaultExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
 
-  lazy val cboDefaultTransitionToCpu: Double = get(CBO_DEFAULT_TRANSITION_TO_CPU_COST)
+  lazy val defaultTransitionToCpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST)
 
-  lazy val cboDefaultTransitionToGpu: Double = get(CBO_DEFAULT_TRANSITION_TO_GPU_COST)
+  lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
@@ -1251,7 +1253,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * Get the GPU cost of an expression, for use in the cost-based optimizer.
    */
   def getExpressionCost(operatorName: String): Option[Double] = {
-    val key = s"spark.rapids.sql.cbo.expr.$operatorName"
+    val key = s"spark.rapids.sql.optimizer.expr.$operatorName"
     conf.get(key).map(toDouble(_, key))
   }
 
@@ -1259,7 +1261,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    * Get the GPU cost of an operator, for use in the cost-based optimizer.
    */
   def getOperatorCost(operatorName: String): Option[Double] = {
-    val key = s"spark.rapids.sql.cbo.exec.$operatorName"
+    val key = s"spark.rapids.sql.optimizer.exec.$operatorName"
     conf.get(key).map(toDouble(_, key))
   }
 
