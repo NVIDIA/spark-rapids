@@ -45,21 +45,6 @@ import org.apache.spark.sql.rapids.shims.spark311._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
-abstract class OffsetWindowFunctionMeta2[INPUT <: OffsetWindowFunction] (
-    isLag: Boolean,
-    expr: INPUT,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends ExprMeta[INPUT](expr, conf, parent, rule) {
-  val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
-  val adjustedOffset: Expression = if(isLag) UnaryMinus(expr.offset) else expr.offset
-  val offset: BaseExprMeta[_] =
-    GpuOverrides.wrapExpr(adjustedOffset, conf, Some(this))
-  val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
-}
-
 class Spark311Shims extends Spark301Shims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
