@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.spark311
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, ExprMeta, GpuOverrides, RapidsConf, RapidsMeta}
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, Lag, Literal, OffsetWindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Expression, Lag, Lead, Literal, OffsetWindowFunction}
 import org.apache.spark.sql.types.IntegerType
 
 /**
@@ -42,12 +42,23 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
   val adjustedOffset: Expression = {
     expr match {
       case lag: Lag =>
-        lag.offset match {
-          case Literal(v: Int, IntegerType) =>
-            Literal(-v)
-          case _ => expr.offset
+        GpuOverrides.extractLit(lag.offset) match {
+         case Some(Literal(offset:Int, IntegerType)) =>
+            Literal(-offset, IntegerType)
+         case _ =>
+           throw new IllegalStateException(
+             s"Only integer literal offsets are supported for LAG. Found:${lag.offset}")
         }
-      case _ => expr.offset
+      case lead: Lead =>
+        GpuOverrides.extractLit(lead.offset) match {
+          case Some(Literal(offset: Int, IntegerType)) =>
+            Literal(offset, IntegerType)
+          case _ =>
+            throw new IllegalStateException(
+              s"Only integer literal offsets are supported for LEAD. Found:${lead.offset}")
+        }
+      case other =>
+        throw new IllegalStateException(s"$other is not a supported window function")
     }
   }
   val offset: BaseExprMeta[_] =
