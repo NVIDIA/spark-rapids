@@ -34,7 +34,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   def spark3BeforeSpark32: Boolean = ShimLoader.getSparkShims.getSparkShimVersion match {
     case SparkShimVersion(3, minor, _) if minor < 2 => true
-    case _ => false
+    case _ => true
   }
 
   def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
