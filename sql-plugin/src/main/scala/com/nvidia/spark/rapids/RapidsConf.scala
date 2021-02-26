@@ -516,9 +516,8 @@ object RapidsConf {
 
   val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
       .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits and is only supported by a small number of operations currently.  " +
-          "This can result in a lot of data movement to and from the GPU, which can slow down " +
-          "processing in some cases.")
+          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
+          "which can slow down processing in some cases.")
       .booleanConf
       .createWithDefault(false)
 

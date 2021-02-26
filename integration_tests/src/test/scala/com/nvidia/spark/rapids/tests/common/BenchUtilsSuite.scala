@@ -52,6 +52,7 @@ class BenchUtilsSuite extends FunSuite with BeforeAndAfterEach {
       query = "q1",
       queryPlan = QueryPlan("logical", "physical"),
       Seq.empty,
+      rowCounts = Seq(10, 10, 10),
       queryTimes = Seq(99, 88, 77),
       queryStatus = Seq("Completed", "Completed", "Completed"),
       exceptions = Seq.empty)
