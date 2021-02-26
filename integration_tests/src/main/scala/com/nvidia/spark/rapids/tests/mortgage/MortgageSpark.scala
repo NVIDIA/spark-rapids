@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -426,23 +426,21 @@ object Main {
     val acqPath = args(2)
     val output = args(3)
 
-    // extend args to support csv/orc/parquet dataset
-    val format = if (args.length > 4) args(4) else "parquet"
-
     val session = SparkSession.builder
       .appName("MortgageJob")
       .getOrCreate()
 
-    format match {
-      case "csv" => 0.until(10).foreach { _ =>
-        Run.csv(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
-      }
-      case "orc" => 0.until(10).foreach { _ =>
-        Run.orc(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
-      }
-      case _ => 0.until(10).foreach { _ =>
-        Run.parquet(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
-      }
+    // extend args to support csv/orc/parquet dataset
+    if (args.length > 5) {
+        throw new IllegalArgumentException("Supports up to 5 arguments.")
     }
+    val format = args.lift(4).getOrElse("parquet")
+    val runFun = format match {
+      case "csv" => Run.csv(session, perfPath, acqPath)
+      case "orc" => Run.orc(session, perfPath, acqPath)
+      case _ => Run.parquet(session, perfPath, acqPath)
+    }
+
+    0.until(10).foreach( _ => runFun.write.mode("overwrite").parquet(output))
   }
 }
