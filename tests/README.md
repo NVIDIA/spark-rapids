@@ -63,7 +63,7 @@ Apache Spark specific configurations can be passed in by setting the `SPARK_CONF
 variable.
 
 Examples: 
-- To run tests against Apache Spark 3.1.0, 
+- To run tests against Apache Spark 3.1.1, 
  `mvn -P spark311tests test` 
 - To pass Apache Spark configs `--conf spark.dynamicAllocation.enabled=false --conf spark.task.cpus=1` do something like.
  `SPARK_CONF="spark.dynamicAllocation.enabled=false,spark.task.cpus=1" mvn ...`
