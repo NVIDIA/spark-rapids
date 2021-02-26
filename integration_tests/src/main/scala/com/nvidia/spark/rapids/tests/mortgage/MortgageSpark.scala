@@ -423,7 +423,7 @@ object AggregatesWithJoin {
 object Main {
   def main(args: Array[String]): Unit = {
     if (args.length < 4 || args.length > 5) {
-        System.err.println("Usage:<sparkverion> <perfpath> <acqpath> <outputpath> [csv|orc|parquet]")
+        System.err.println("Usage:<sparkversion> <perfpath> <acqpath> <outputpath> [csv|orc|parquet]")
         System.exit(1)
     }
     val perfPath = args(1)
