@@ -110,57 +110,20 @@ object GpuMultiplyUtil {
   }
 }
 
-case class GpuMultiply(
-    left: Expression,
-    right: Expression) extends CudfBinaryArithmetic {
-  override def inputType: AbstractDataType = NumericType
-
-  override def symbol: String = "*"
-
-  override def binaryOp: BinaryOp = BinaryOp.MUL
-
+abstract class CudfDecimalMulDiv extends CudfBinaryArithmetic {
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     import DecimalUtil._
     (left.dataType, right.dataType) match {
       case (l: DecimalType, r: DecimalType)
-        if DecimalType.is64BitDecimalType(dataType) &&
+        if !DecimalType.is32BitDecimalType(dataType) &&
           DecimalType.is32BitDecimalType(l) &&
           DecimalType.is32BitDecimalType(r) => {
         // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
         val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
-        val outputType = dataType.asInstanceOf[DecimalType]
-        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-        withResource(lhs.getBase().castTo(decimalType)) { decimalLhs =>
+        val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
+        withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
           withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
-            val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
-            if (tmp.getType != cudfOutputType) {
-              withResource(tmp) { tmp =>
-                tmp.castTo(cudfOutputType)
-              }
-            } else {
-              tmp
-            }
-          }
-        }
-      }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
-    import DecimalUtil._
-    (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType)
-        if DecimalType.is64BitDecimalType(dataType) &&
-          DecimalType.is32BitDecimalType(l) &&
-          DecimalType.is32BitDecimalType(r) => {
-        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
-        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
-        val outputType = dataType.asInstanceOf[DecimalType]
-        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-        withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), dataType)) { decimalLhs =>
-          withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
-            val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
+            val tmp = decimalLhs.binaryOp(binaryOp, decimalRhs, cudfOutputType)
             if (tmp.getType != cudfOutputType) {
               withResource(tmp) { tmp =>
                 tmp.castTo(cudfOutputType)
@@ -176,32 +139,70 @@ case class GpuMultiply(
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
-    import DecimalUtil._
     (left.dataType, right.dataType) match {
       case (l: DecimalType, r: DecimalType)
-        if DecimalType.is64BitDecimalType(dataType) &&
+        if !DecimalType.is32BitDecimalType(dataType) &&
           DecimalType.is32BitDecimalType(l) &&
           DecimalType.is32BitDecimalType(r) => {
         // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
-        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
-        val outputType = dataType.asInstanceOf[DecimalType]
-        val cudfOutputType = createCudfDecimal(outputType.precision, outputType.scale)
-        withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), outputType)) { decimalRhs =>
-          withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
-            val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
-            if (tmp.getType != cudfOutputType) {
-              withResource(tmp) { tmp =>
-                tmp.castTo(cudfOutputType)
+        val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
+        val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
+        val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
+        withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), sparkDecimalType)) {
+          decimalRhs =>
+            withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
+              val tmp = decimalLhs.binaryOp(binaryOp, decimalRhs, cudfOutputType)
+              if (tmp.getType != cudfOutputType) {
+                withResource(tmp) { tmp =>
+                  tmp.castTo(cudfOutputType)
+                }
+              } else {
+                tmp
               }
-            } else {
-              tmp
             }
-          }
         }
       }
       case _ => super.doColumnar(lhs, rhs)
     }
   }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+    (left.dataType, right.dataType) match {
+      case (l: DecimalType, r: DecimalType)
+        if !DecimalType.is32BitDecimalType(dataType) &&
+          DecimalType.is32BitDecimalType(l) &&
+          DecimalType.is32BitDecimalType(r) => {
+        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
+        val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
+        val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
+        withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), sparkDecimalType)) {
+          decimalLhs =>
+            withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
+              val tmp = decimalLhs.binaryOp(binaryOp, decimalRhs, cudfOutputType)
+              if (tmp.getType != cudfOutputType) {
+                withResource(tmp) { tmp =>
+                  tmp.castTo(cudfOutputType)
+                }
+              } else {
+                tmp
+              }
+            }
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+}
+
+case class GpuMultiply(
+    left: Expression,
+    right: Expression) extends CudfDecimalMulDiv {
+  override def inputType: AbstractDataType = NumericType
+
+  override def symbol: String = "*"
+
+  override def binaryOp: BinaryOp = BinaryOp.MUL
 
   // Override the output type as a special case for decimal
   override def dataType: DataType = (left.dataType, right.dataType) match {
@@ -268,7 +269,7 @@ object GpuDivModLike {
   }
 }
 
-trait GpuDivModLike extends CudfBinaryArithmetic {
+trait GpuDivModLike extends CudfDecimalMulDiv {
   lazy val failOnError: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero()
 
   override def nullable: Boolean = true
@@ -279,108 +280,25 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
     throw new ArithmeticException("divide by zero")
   }
 
-  def divVV(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    import DecimalUtil._
-    (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType)
-        if !DecimalType.is32BitDecimalType(dataType) &&
-          DecimalType.is32BitDecimalType(l) &&
-          DecimalType.is32BitDecimalType(r) => {
-        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
-        val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
-        val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
-        withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
-          withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
-            val tmp = decimalLhs.trueDiv(decimalRhs, cudfOutputType)
-            if (tmp.getType != cudfOutputType) {
-              withResource(tmp) { tmp =>
-                tmp.castTo(cudfOutputType)
-              }
-            } else {
-              tmp
-            }
-          }
-        }
-      }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
-  def divSV(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType)
-        if !DecimalType.is32BitDecimalType(dataType) &&
-          DecimalType.is32BitDecimalType(l) &&
-          DecimalType.is32BitDecimalType(r) => {
-        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
-        val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
-        val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
-        val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
-        withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), sparkDecimalType)) {
-          decimalLhs =>
-            withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
-              val tmp = decimalLhs.trueDiv(decimalRhs, cudfOutputType)
-              if (tmp.getType != cudfOutputType) {
-                withResource(tmp) { tmp =>
-                  tmp.castTo(cudfOutputType)
-                }
-              } else {
-                tmp
-              }
-            }
-        }
-      }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
-  def divVS(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType)
-        if !DecimalType.is32BitDecimalType(dataType) &&
-          DecimalType.is32BitDecimalType(l) &&
-          DecimalType.is32BitDecimalType(r) => {
-        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
-        val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
-        val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
-        val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
-        withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), sparkDecimalType)) {
-          decimalRhs =>
-            withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
-              val tmp = decimalLhs.trueDiv(decimalRhs, cudfOutputType)
-              if (tmp.getType != cudfOutputType) {
-                withResource(tmp) { tmp =>
-                  tmp.castTo(cudfOutputType)
-                }
-              } else {
-                tmp
-              }
-            }
-        }
-      }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     if (failOnError) {
       withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
         if (rhs.getBase.contains(zeroScalar)) {
           divByZeroError()
         } else {
-          divVV(lhs, rhs)
+          super.doColumnar(lhs, rhs)
         }
       }
     } else {
       withResource(replaceZeroWithNull(rhs)) { replaced =>
-        divVV(lhs, GpuColumnVector.from(replaced, right.dataType))
+        super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
       }
     }
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     withResource(replaceZeroWithNull(rhs)) { replaced =>
-      divSV(lhs, GpuColumnVector.from(replaced, right.dataType))
+      super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
     }
   }
 
@@ -394,7 +312,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
         }
       }
     } else {
-      divVS(lhs, rhs)
+      super.doColumnar(lhs, rhs)
     }
   }
 }
@@ -422,7 +340,6 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
 
   override def outputTypeOverride: DType =
     GpuColumnVector.getNonNestedRapidsType(dataType)
-
 
   // Override the output type as a special case for decimal
   override def dataType: DataType = (left.dataType, right.dataType) match {

@@ -202,12 +202,22 @@ object HostColumnarToGpu extends Logging {
               b.appendNull()
             } else {
               // The precision here matters for cpu column vectors (such as OnHeapColumnVector).
-              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+              if (DecimalType.is32BitDecimalType(dt)) {
+                b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
+              } else {
+                b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+              }
             }
           }
         } else {
-          for (i <- 0 until rows) {
-            b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+          if (DecimalType.is32BitDecimalType(dt)) {
+            for (i <- 0 until rows) {
+              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
+            }
+          } else {
+            for (i <- 0 until rows) {
+              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+            }
           }
         }
       case (t, _) =>

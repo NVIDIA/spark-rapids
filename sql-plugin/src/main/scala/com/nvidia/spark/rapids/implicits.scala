@@ -228,5 +228,4 @@ object RapidsPluginImplicits {
       super.safeMap(colIds, (i: Int) => fn(in.column(i).asInstanceOf[GpuColumnVector]))
     }
   }
-
 }
