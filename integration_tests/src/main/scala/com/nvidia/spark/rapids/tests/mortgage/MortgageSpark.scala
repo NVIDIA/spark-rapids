@@ -422,6 +422,10 @@ object AggregatesWithJoin {
 
 object Main {
   def main(args: Array[String]): Unit = {
+    if (args.length < 4 || args.length > 5) {
+        System.err.println("Usage:<sparkverion> <perfpath> <acqpath> <outputpath> [csv|orc|parquet]")
+        System.exit(1)
+    }
     val perfPath = args(1)
     val acqPath = args(2)
     val output = args(3)
@@ -431,14 +435,14 @@ object Main {
       .getOrCreate()
 
     // extend args to support csv/orc/parquet dataset
-    if (args.length > 5) {
-        throw new IllegalArgumentException("Supports up to 5 arguments.")
-    }
     val format = args.lift(4).getOrElse("parquet")
     val runFun = format match {
       case "csv" => Run.csv(session, perfPath, acqPath)
       case "orc" => Run.orc(session, perfPath, acqPath)
-      case _ => Run.parquet(session, perfPath, acqPath)
+      case "parquet" => Run.parquet(session, perfPath, acqPath)
+      case _ =>
+        System.err.println(s"Invalid input format $format, expected one of csv, orc, parquet")
+        System.exit(1)
     }
 
     0.until(10).foreach( _ => runFun.write.mode("overwrite").parquet(output))
