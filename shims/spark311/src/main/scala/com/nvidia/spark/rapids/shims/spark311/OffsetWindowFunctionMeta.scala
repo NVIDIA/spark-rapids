@@ -37,9 +37,8 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
-  val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
-  // For LAG() expressions, negate the offset value.
-  val adjustedOffset: Expression = {
+  lazy val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
+  lazy val adjustedOffset: Expression = {
     expr match {
       case lag: Lag =>
         GpuOverrides.extractLit(lag.offset) match {
@@ -61,8 +60,23 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
         throw new IllegalStateException(s"$other is not a supported window function")
     }
   }
-  val offset: BaseExprMeta[_] =
+  lazy val offset: BaseExprMeta[_] =
     GpuOverrides.wrapExpr(adjustedOffset, conf, Some(this))
-  val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
+  lazy val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+
+  override def tagExprForGpu(): Unit = {
+    expr match {
+      case Lead(_,_,_) => // Supported.
+      case Lag(_,_,_) =>  // Supported.
+      case other =>
+        willNotWorkOnGpu( s"Only LEAD/LAG offset window functions are supported. Found: $other")
+    }
+
+    if (GpuOverrides.extractLit(expr.offset).isEmpty) { // Not a literal offset.
+      willNotWorkOnGpu(
+        s"Only integer literal offsets are supported for LEAD/LAG. Found: ${expr.offset}")
+    }
+  }
 }
