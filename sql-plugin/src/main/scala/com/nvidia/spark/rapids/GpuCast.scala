@@ -606,98 +606,98 @@ case class GpuCast(
     }
   }
 
-  private def castStringToDate(input: ColumnVector): ColumnVector = {
+  /**
+   * Replace special date strings such as "now" with timestampDays. This method does not
+   * close the `input` ColumnVector.
+   */
+  def specialDateOr(
+      input: ColumnVector,
+      special: String,
+      value: Int,
+      orColumnVector: ColumnVector): ColumnVector = {
 
-    /**
-     * Replace special date strings such as "now" with timestampDays. This method does not
-     * close the `input` ColumnVector.
-     */
-    def specialDateOr(
-        input: ColumnVector,
-        special: String,
-        value: Int,
-        orColumnVector: ColumnVector): ColumnVector = {
-
-      withResource(orColumnVector) { other =>
-        withResource(Scalar.fromString(special)) { str =>
-          withResource(input.equalTo(str)) { isStr =>
-            withResource(Scalar.timestampDaysFromInt(value)) { date =>
-              isStr.ifElse(date, other)
-            }
+    withResource(orColumnVector) { other =>
+      withResource(Scalar.fromString(special)) { str =>
+        withResource(input.equalTo(str)) { isStr =>
+          withResource(Scalar.timestampDaysFromInt(value)) { date =>
+            isStr.ifElse(date, other)
           }
         }
       }
     }
+  }
 
-    /**
-     * Parse dates that match the provided length and format. This method does not
-     * close the `input` ColumnVector.
-     *
-     * @param input Input ColumnVector
-     * @param len The string length to match against
-     * @param cudfFormat The cuDF timestamp format to match against
-     * @return ColumnVector containing timestamps for input entries that match both
-     *         the length and format, and null for other entries
-     */
-    def convertFixedLenDateOrNull(
-        input: ColumnVector,
-        len: Int,
-        cudfFormat: String): ColumnVector = {
+  /**
+   * Parse dates that match the provided length and format. This method does not
+   * close the `input` ColumnVector.
+   *
+   * @param input Input ColumnVector
+   * @param len The string length to match against
+   * @param cudfFormat The cuDF timestamp format to match against
+   * @return ColumnVector containing timestamps for input entries that match both
+   *         the length and format, and null for other entries
+   */
+  def convertFixedLenDateOrNull(
+      input: ColumnVector,
+      len: Int,
+      cudfFormat: String): ColumnVector = {
 
+    withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
+      withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+        withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+          isValidDate.ifElse(asDays, nullScalar)
+        }
+      }
+    }
+  }
+
+  /** This method does not close the `input` ColumnVector. */
+  def convertVarLenDateOr(
+      input: ColumnVector,
+      regex: String,
+      cudfFormat: String,
+      orElse: ColumnVector): ColumnVector = {
+
+    withResource(orElse) { orElse =>
+      val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+      withResource(isValidDate) { isValidDate =>
+        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+          isValidDate.ifElse(asDays, orElse)
+        }
+      }
+    }
+  }
+
+  /**
+   * Parse dates that match the provided length and format. This method does not
+   * close the `input` ColumnVector.
+   *
+   * @param input Input ColumnVector
+   * @param len The string length to match against
+   * @param cudfFormat The cuDF timestamp format to match against
+   * @return ColumnVector containing timestamps for input entries that match both
+   *         the length and format, and null for other entries
+   */
+  def convertFixedLenDateOr(
+      input: ColumnVector,
+      len: Int,
+      cudfFormat: String,
+      orElse: ColumnVector): ColumnVector = {
+
+    withResource(orElse) { orElse =>
       withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-          withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
-            isValidDate.ifElse(asDays, nullScalar)
-          }
+          isValidDate.ifElse(asDays, orElse)
         }
       }
     }
+  }
 
-    /** This method does not close the `input` ColumnVector. */
-    def convertVarLenDateOr(
-        input: ColumnVector,
-        regex: String,
-        cudfFormat: String,
-        orElse: ColumnVector): ColumnVector = {
-
-      withResource(orElse) { orElse =>
-        val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
-          withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-            isMatch.and(isTimestamp)
-          }
-        }
-        withResource(isValidDate) { isValidDate =>
-          withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-            isValidDate.ifElse(asDays, orElse)
-          }
-        }
-      }
-    }
-
-    /**
-     * Parse dates that match the provided length and format. This method does not
-     * close the `input` ColumnVector.
-     *
-     * @param input Input ColumnVector
-     * @param len The string length to match against
-     * @param cudfFormat The cuDF timestamp format to match against
-     * @return ColumnVector containing timestamps for input entries that match both
-     *         the length and format, and null for other entries
-     */
-    def convertFixedLenDateOr(
-        input: ColumnVector,
-        len: Int,
-        cudfFormat: String,
-        orElse: ColumnVector): ColumnVector = {
-
-      withResource(orElse) { orElse =>
-        withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
-          withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-            isValidDate.ifElse(asDays, orElse)
-          }
-        }
-      }
-    }
+  private def castStringToDate(input: ColumnVector): ColumnVector = {
 
     var sanitizedInput = input.incRefCount()
 
@@ -726,105 +726,105 @@ case class GpuCast(
     }
   }
 
+  /**
+   * Replace special date strings such as "now" with timestampMicros. This method does not
+   * close the `input` ColumnVector.
+   */
+  private def specialTimestampOr(
+      input: ColumnVector,
+      special: String,
+      value: Long,
+      orColumnVector: ColumnVector): ColumnVector = {
+
+    withResource(orColumnVector) { other =>
+      withResource(Scalar.fromString(special)) { str =>
+        withResource(input.equalTo(str)) { isStr =>
+          withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
+            isStr.ifElse(date, other)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Parse dates that match the the provided regex. This method does not close the `input`
+   * ColumnVector.
+   */
+  private def convertFixedLenTimestampOrNull(
+      input: ColumnVector,
+      len: Int,
+      cudfFormat: String): ColumnVector = {
+
+    withResource(isValidTimestamp(input, len, cudfFormat)) { isTimestamp =>
+      withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
+        withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
+          isTimestamp.ifElse(asDays, nullScalar)
+        }
+      }
+    }
+  }
+
+  /** This method does not close the `input` ColumnVector. */
+  private def convertVarLenTimestampOr(
+      input: ColumnVector,
+      regex: String,
+      cudfFormat: String,
+      orElse: ColumnVector): ColumnVector = {
+
+    withResource(orElse) { orElse =>
+      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+      withResource(isValidTimestamp) { isValidTimestamp =>
+        withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
+          isValidTimestamp.ifElse(asDays, orElse)
+        }
+      }
+    }
+  }
+
+  /** This method does not close the `input` ColumnVector. */
+  private def convertFullTimestampOr(
+      input: ColumnVector,
+      orElse: ColumnVector): ColumnVector = {
+
+    val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
+    val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
+
+    withResource(orElse) { orElse =>
+
+      // valid dates must match the regex and either of the cuDF formats
+      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
+        withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
+          isTimestamp1.or(isTimestamp2)
+        }
+      }
+
+      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
+        val isValidLength = withResource(Scalar.fromInt(FULL_TIMESTAMP_LENGTH)) { requiredLen =>
+          withResource(input.getCharLengths) { actualLen =>
+            requiredLen.equalTo(actualLen)
+          }
+        }
+        withResource(isValidLength) { isValidLength =>
+          isValidLength.and(isCudfMatch)
+        }
+      }
+
+      // we only need to parse with one of the cuDF formats because the parsing code ignores
+      // the ' ' or 'T' between the date and time components
+      withResource(isValidTimestamp) { isValidTimestamp =>
+        withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
+          isValidTimestamp.ifElse(asDays, orElse)
+        }
+      }
+    }
+  }
+
   private def castStringToTimestamp(input: ColumnVector): ColumnVector = {
-
-    /**
-     * Replace special date strings such as "now" with timestampMicros. This method does not
-     * close the `input` ColumnVector.
-     */
-    def specialTimestampOr(
-        input: ColumnVector,
-        special: String,
-        value: Long,
-        orColumnVector: ColumnVector): ColumnVector = {
-
-      withResource(orColumnVector) { other =>
-        withResource(Scalar.fromString(special)) { str =>
-          withResource(input.equalTo(str)) { isStr =>
-            withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
-              isStr.ifElse(date, other)
-            }
-          }
-        }
-      }
-    }
-
-    /**
-     * Parse dates that match the the provided regex. This method does not close the `input`
-     * ColumnVector.
-     */
-    def convertFixedLenTimestampOrNull(
-        input: ColumnVector,
-        len: Int,
-        cudfFormat: String): ColumnVector = {
-
-      withResource(isValidTimestamp(input, len, cudfFormat)) { isTimestamp =>
-        withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
-          withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-            isTimestamp.ifElse(asDays, nullScalar)
-          }
-        }
-      }
-    }
-
-    /** This method does not close the `input` ColumnVector. */
-    def convertVarLenTimestampOr(
-        input: ColumnVector,
-        regex: String,
-        cudfFormat: String,
-        orElse: ColumnVector): ColumnVector = {
-
-      withResource(orElse) { orElse =>
-        val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
-          withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-            isMatch.and(isTimestamp)
-          }
-        }
-        withResource(isValidTimestamp) { isValidTimestamp =>
-          withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-            isValidTimestamp.ifElse(asDays, orElse)
-          }
-        }
-      }
-    }
-
-    /** This method does not close the `input` ColumnVector. */
-    def convertFullTimestampOr(
-        input: ColumnVector,
-        orElse: ColumnVector): ColumnVector = {
-
-      val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
-      val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
-
-      withResource(orElse) { orElse =>
-
-        // valid dates must match the regex and either of the cuDF formats
-        val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
-          withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
-            isTimestamp1.or(isTimestamp2)
-          }
-        }
-
-        val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
-          val isValidLength = withResource(Scalar.fromInt(FULL_TIMESTAMP_LENGTH)) { requiredLen =>
-            withResource(input.getCharLengths) { actualLen =>
-              requiredLen.equalTo(actualLen)
-            }
-          }
-          withResource(isValidLength) { isValidLength =>
-            isValidLength.and(isCudfMatch)
-          }
-        }
-
-        // we only need to parse with one of the cuDF formats because the parsing code ignores
-        // the ' ' or 'T' between the date and time components
-        withResource(isValidTimestamp) { isValidTimestamp =>
-          withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
-            isValidTimestamp.ifElse(asDays, orElse)
-          }
-        }
-      }
-    }
 
     // special timestamps
     val today = DateUtils.currentDate()
