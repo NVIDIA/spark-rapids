@@ -50,11 +50,8 @@ class SpillableColumnarBatchSuite extends FunSuite with Arm {
     override def free(): Unit = {}
     override def getSpillPriority: Long = 0
     override def setSpillPriority(priority: Long): Unit = {}
-    override def alreadySpilledToDisk: Boolean = false
     override def close(): Unit = {}
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = null
     override val spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback
-    override val unspillCallback: RapidsBuffer.UnspillCallback = RapidsBuffer.defaultUnspillCallback
-    override val fileOffset: Option[Long] = None
   }
 }

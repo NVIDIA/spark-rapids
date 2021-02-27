@@ -36,37 +36,31 @@ class RapidsDiskStore(
   override def createBuffer(
       incoming: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    if (incoming.alreadySpilledToDisk) {
-      logDebug(s"Respilling $incoming ${incoming.id} of size ${incoming.size} to disk")
-      new RapidsDiskBuffer(incoming.id, incoming.fileOffset.get, incoming.size, incoming.meta,
-        incoming.getSpillPriority, incoming.spillCallback, incoming.unspillCallback)
-    } else {
-      val incomingBuffer = incoming.getMemoryBuffer
-      try {
-        val hostBuffer = incomingBuffer match {
-          case h: HostMemoryBuffer => h
-          case _ => throw new UnsupportedOperationException("buffer without host memory")
-        }
-        val id = incoming.id
-        val path = if (id.canShareDiskPaths) {
-          sharedBufferFiles.computeIfAbsent(id, _ => id.getDiskPath(diskBlockManager))
-        } else {
-          id.getDiskPath(diskBlockManager)
-        }
-        val fileOffset = if (id.canShareDiskPaths) {
-          // only one writer at a time for now when using shared files
-          path.synchronized {
-            copyBufferToPath(hostBuffer, path, append = true)
-          }
-        } else {
-          copyBufferToPath(hostBuffer, path, append = false)
-        }
-        logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
-        new RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
-          incoming.getSpillPriority, incoming.spillCallback, incoming.unspillCallback)
-      } finally {
-        incomingBuffer.close()
+    val incomingBuffer = incoming.getMemoryBuffer
+    try {
+      val hostBuffer = incomingBuffer match {
+        case h: HostMemoryBuffer => h
+        case _ => throw new UnsupportedOperationException("buffer without host memory")
       }
+      val id = incoming.id
+      val path = if (id.canShareDiskPaths) {
+        sharedBufferFiles.computeIfAbsent(id, _ => id.getDiskPath(diskBlockManager))
+      } else {
+        id.getDiskPath(diskBlockManager)
+      }
+      val fileOffset = if (id.canShareDiskPaths) {
+        // only one writer at a time for now when using shared files
+        path.synchronized {
+          copyBufferToPath(hostBuffer, path, append = true)
+        }
+      } else {
+        copyBufferToPath(hostBuffer, path, append = false)
+      }
+      logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
+      new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
+        incoming.getSpillPriority, incoming.spillCallback)
+    } finally {
+      incomingBuffer.close()
     }
   }
 
@@ -98,10 +92,8 @@ class RapidsDiskStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback,
-      unspillCallback: RapidsBuffer.UnspillCallback)
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback, unspillCallback,
-        Some(fileOffset)) {
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     override val storageTier: StorageTier = StorageTier.DISK

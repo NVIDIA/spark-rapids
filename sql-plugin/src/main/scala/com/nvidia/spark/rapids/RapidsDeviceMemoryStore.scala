@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -28,25 +28,11 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore(StorageTier.DEVICE, catalog) with Arm {
-
+    extends RapidsBufferStore(StorageTier.DEVICE, catalog) {
   override protected def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    withResource(other.getMemoryBuffer) { otherBuffer =>
-      val deviceBuffer = otherBuffer match {
-        case d: DeviceMemoryBuffer => d
-        case h: HostMemoryBuffer =>
-          val deviceBuffer = DeviceMemoryBuffer.allocate(other.size)
-          logDebug(s"copying from host $h to device $deviceBuffer")
-          deviceBuffer.copyFromHostBuffer(h)
-          deviceBuffer
-        case _ => throw new IllegalStateException("What buffer is this")
-      }
-      new RapidsDeviceMemoryBuffer(other.id, other.size, other.meta, None,
-        deviceBuffer, other.getSpillPriority, other.spillCallback, other.unspillCallback,
-        other.fileOffset)
-    }
+    throw new IllegalStateException("should not be spilling to device memory")
   }
 
   /**
@@ -65,9 +51,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback,
-      unspillCallback: RapidsBuffer.UnspillCallback = RapidsBuffer.defaultUnspillCallback,
-      fileOffset: Option[Long] = None): Unit = {
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val buffer = new RapidsDeviceMemoryBuffer(
       id,
       contigBuffer.getLength,
@@ -75,9 +59,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       Some(table),
       contigBuffer,
       initialSpillPriority,
-      spillCallback,
-      unspillCallback,
-      fileOffset)
+      spillCallback)
     try {
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
@@ -104,9 +86,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback,
-      unspillCallback: RapidsBuffer.UnspillCallback = RapidsBuffer.defaultUnspillCallback,
-      fileOffset: Option[Long] = None): Unit = {
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -118,9 +98,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       None,
       contigBuffer,
       initialSpillPriority,
-      spillCallback,
-      unspillCallback,
-      fileOffset)
+      spillCallback)
     try {
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
@@ -147,9 +125,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback,
-      unspillCallback: RapidsBuffer.UnspillCallback = RapidsBuffer.defaultUnspillCallback,
-      fileOffset: Option[Long] = None): Unit = {
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val buff = new RapidsDeviceMemoryBuffer(
       id,
       buffer.getLength,
@@ -157,9 +133,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       None,
       buffer,
       initialSpillPriority,
-      spillCallback,
-      unspillCallback,
-      fileOffset)
+      spillCallback)
     try {
       logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
           s"uncompressed=${buff.meta.bufferMeta.uncompressedSize}, " +
@@ -180,11 +154,8 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
       spillPriority: Long,
-      override val spillCallback: RapidsBuffer.SpillCallback,
-      override val unspillCallback: RapidsBuffer.UnspillCallback,
-      override val fileOffset: Option[Long])
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback, unspillCallback,
-        fileOffset) {
+      override val spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.DEVICE
 
     override protected def releaseResources(): Unit = {

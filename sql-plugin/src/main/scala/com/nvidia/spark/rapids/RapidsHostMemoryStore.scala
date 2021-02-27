@@ -102,9 +102,7 @@ class RapidsHostMemoryStore(
       other.getSpillPriority,
       hostBuffer,
       isPinned,
-      other.spillCallback,
-      other.unspillCallback,
-      other.fileOffset)
+      other.spillCallback)
   }
 
   def numBytesFree: Long = maxSize - currentSize
@@ -121,11 +119,8 @@ class RapidsHostMemoryStore(
       spillPriority: Long,
       buffer: HostMemoryBuffer,
       isInternalPoolAllocated: Boolean,
-      spillCallback: RapidsBuffer.SpillCallback,
-      unspillCallback: RapidsBuffer.UnspillCallback,
-      fileOffset: Option[Long])
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback, unspillCallback,
-        fileOffset) {
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.HOST
 
     override def getMemoryBuffer: MemoryBuffer = {

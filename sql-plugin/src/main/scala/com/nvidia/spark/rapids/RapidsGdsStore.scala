@@ -37,36 +37,30 @@ class RapidsGdsStore(
   override def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    if (other.alreadySpilledToDisk) {
-      logDebug(s"Respilling $other ${other.id} of size ${other.size} to disk")
-      new RapidsGdsBuffer(other.id, other.fileOffset.get, other.size, other.meta,
-        other.getSpillPriority, other.spillCallback, other.unspillCallback)
-    } else {
-      withResource(other.getMemoryBuffer) { otherBuffer =>
-        val deviceBuffer = otherBuffer match {
-          case d: DeviceMemoryBuffer => d
-          case _ => throw new IllegalStateException("copying from buffer without device memory")
-        }
-        val id = other.id
-        val path = if (id.canShareDiskPaths) {
-          sharedBufferFiles.computeIfAbsent(id, _ => id.getDiskPath(diskBlockManager))
-        } else {
-          id.getDiskPath(diskBlockManager)
-        }
-        // When sharing files, append to the file; otherwise, write from the beginning.
-        val fileOffset = if (id.canShareDiskPaths) {
-          // only one writer at a time for now when using shared files
-          path.synchronized {
-            CuFile.appendDeviceBufferToFile(path, deviceBuffer)
-          }
-        } else {
-          CuFile.writeDeviceBufferToFile(path, 0, deviceBuffer)
-          0
-        }
-        logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
-        new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority,
-          other.spillCallback, other.unspillCallback)
+    withResource(other.getMemoryBuffer) { otherBuffer =>
+      val deviceBuffer = otherBuffer match {
+        case d: DeviceMemoryBuffer => d
+        case _ => throw new IllegalStateException("copying from buffer without device memory")
       }
+      val id = other.id
+      val path = if (id.canShareDiskPaths) {
+        sharedBufferFiles.computeIfAbsent(id, _ => id.getDiskPath(diskBlockManager))
+      } else {
+        id.getDiskPath(diskBlockManager)
+      }
+      // When sharing files, append to the file; otherwise, write from the beginning.
+      val fileOffset = if (id.canShareDiskPaths) {
+        // only one writer at a time for now when using shared files
+        path.synchronized {
+          CuFile.appendDeviceBufferToFile(path, deviceBuffer)
+        }
+      } else {
+        CuFile.writeDeviceBufferToFile(path, 0, deviceBuffer)
+        0
+      }
+      logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
+      new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority,
+        other.spillCallback)
     }
   }
 
@@ -76,12 +70,11 @@ class RapidsGdsStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback,
-      unspillCallback: RapidsBuffer.UnspillCallback)
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback, unspillCallback,
-        Some(fileOffset)) {
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
+    // TODO(rongou): cache this buffer to avoid repeated reads from disk.
     override def getMemoryBuffer: DeviceMemoryBuffer = synchronized {
       val path = if (id.canShareDiskPaths) {
         sharedBufferFiles.get(id)
@@ -104,6 +97,12 @@ class RapidsGdsStore(
         if (!path.delete() && path.exists()) {
           logWarning(s"Unable to delete GDS spill path $path")
         }
+      }
+    }
+
+    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
+      withResource(getMemoryBuffer) { deviceBuffer =>
+        columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
   }

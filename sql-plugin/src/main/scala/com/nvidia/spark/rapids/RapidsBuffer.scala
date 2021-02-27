@@ -76,24 +76,6 @@ object RapidsBuffer {
    * A default NOOP callback for when a buffer is spilled
    */
   def defaultSpillCallback(to: StorageTier, from: StorageTier, amount: Long): Unit = ()
-
-  /**
-   * Callback type for when a batch is unspilled from one storage tier to another. This is
-   * intended to only be used for metrics gathering in parts of the GPU plan that can unspill.
-   * No GPU memory should ever be allocated from this callback, blocking in this function
-   * is strongly discouraged. It should be as light weight as possible. It takes three arguments
-   * <ul>
-   * <li><code>from</code> the storage tier the data is being unspilled from.</li>
-   * <li><code>to</code> the storage tier the data is being unspilled to.</li>
-   * <li><code>amount</code> the amount of data in bytes that is unspilled.</li>
-   * </ul>
-   */
-  type UnspillCallback = (StorageTier, StorageTier, Long) => Unit
-
-  /**
-   * A default NOOP callback for when a buffer is unspilled
-   */
-  def defaultUnspillCallback(to: StorageTier, from: StorageTier, amount: Long): Unit = ()
 }
 
 /** Interface provided by all types of RAPIDS buffers */
@@ -111,11 +93,6 @@ trait RapidsBuffer extends AutoCloseable {
   val storageTier: StorageTier
 
   val spillCallback: RapidsBuffer.SpillCallback
-
-  val unspillCallback: RapidsBuffer.UnspillCallback
-
-  /** The file offset of this buffer in bytes if it has already been written to disk. */
-  val fileOffset: Option[Long]
 
   /**
    * Get the columnar batch within this buffer. The caller must have
@@ -170,11 +147,6 @@ trait RapidsBuffer extends AutoCloseable {
    * @param priority new priority value for this buffer
    */
   def setSpillPriority(priority: Long): Unit
-
-  /**
-   * Whether the buffer has already been spilled to disk.
-   */
-  def alreadySpilledToDisk: Boolean
 }
 
 /**
@@ -218,13 +190,7 @@ sealed class DegenerateRapidsBuffer(
 
   override def setSpillPriority(priority: Long): Unit = {}
 
-  override def alreadySpilledToDisk: Boolean = false
-
   override def close(): Unit = {}
 
   override val spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback
-
-  override val unspillCallback: RapidsBuffer.UnspillCallback = RapidsBuffer.defaultUnspillCallback
-
-  override val fileOffset: Option[Long] = None
 }
