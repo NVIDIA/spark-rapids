@@ -63,8 +63,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     conf: SparkConf = new SparkConf(),
     execsAllowedNonGpu: Seq[String] = Seq.empty,
     batchSize: Int = 0,
-    repart: Int = 1,
-    assumeCondition: SparkSession => (Boolean, String) = null)
+    repart: Int = 1)
     (fn: DataFrame => DataFrame) {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
@@ -74,7 +73,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testSparkResultsAreEqual(testName, df,
       conf = conf, repart = repart,
       execsAllowedNonGpu = execsAllowedNonGpu,
-      incompat = true, sort = true, assumeCondition = assumeCondition)(fn)
+      incompat = true, sort = true)(fn)
   }
 
   def firstDf(spark: SparkSession): DataFrame = {
@@ -418,8 +417,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual(
       "float basic aggregates group by string literal",
-      floatCsvDf,
-      assumeCondition = _ => (spark3BeforeSpark32, "TBD github issue")) {
+      floatCsvDf) {
     frame => frame.groupBy(lit("2019-02-10")).agg(
       min(col("floats")) + lit(123),
       sum(col("more_floats") + lit(123.0)),
@@ -433,8 +431,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   FLOAT_TEST_testSparkResultsAreEqual(
       "float basic aggregates group by float and string literal",
-      floatCsvDf,
-      assumeCondition = _ => (spark3BeforeSpark32, "TBD github issue")) {
+      floatCsvDf) {
     frame => {
       val feature_window_end_time = date_format(lit("2018-02-01"), "yyyy-MM-dd HH:mm:ss")
       val frameWithCol = frame.withColumn("timestamp_lit", feature_window_end_time)
@@ -464,8 +461,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf,
-    assumeCondition = _ => (spark3BeforeSpark32, "TBD github issue")) {
+  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by floats", floatCsvDf) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -478,8 +474,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by more_floats", floatCsvDf,
-    assumeCondition = _ => (spark3BeforeSpark32, "TBD github issue")) {
+  FLOAT_TEST_testSparkResultsAreEqual("float basic aggregates group by more_floats", floatCsvDf) {
     frame => frame.groupBy("floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -498,8 +493,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       conf = replaceHashAggMode("partial"),
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract",
-          "Cast", "Count"),
-    assumeCondition = _ => (spark3BeforeSpark32, "TBD github issue")) {
+          "Cast", "Count")) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -518,8 +512,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       conf = replaceHashAggMode("final"),
       execsAllowedNonGpu = Seq("HashAggregateExec", "AggregateExpression", "AttributeReference",
           "Alias", "Literal", "Min", "Sum", "Max", "Average", "Add", "Multiply", "Subtract",
-          "Cast", "Count", "KnownFloatingPointNormalized", "NormalizeNaNAndZero"),
-      assumeCondition = _ => (spark3BeforeSpark32, "TBD github issues") ) {
+          "Cast", "Count", "KnownFloatingPointNormalized", "NormalizeNaNAndZero")) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -535,9 +528,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   FLOAT_TEST_testSparkResultsAreEqual(
       "nullable float basic aggregates group by more_floats",
       nullableFloatCsvDf,
-      conf = makeBatchedBytes(3),
-      assumeCondition = _ => (spark3BeforeSpark32, "TBD github issue")
-  ) {
+      conf = makeBatchedBytes(3)) {
     frame => frame.groupBy("more_floats").agg(
       lit(456f),
       min(col("floats")) + lit(123),
@@ -692,8 +683,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   FLOAT_TEST_testSparkResultsAreEqual(
       "sum(floats) group by more_floats 2 partitions",
       floatCsvDf,
-      repart = 2,
-      assumeCondition = _ => (spark3BeforeSpark32, "TBD github issue")) {
+      repart = 2) {
     frame => frame.groupBy("more_floats").sum("floats")
   }
 
@@ -854,8 +844,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.filter("floats > 10000000.0").agg(count("*"))
   }
 
-  FLOAT_TEST_testSparkResultsAreEqual("empty df: reduction aggs", floatCsvDf,
-    assumeCondition = _ => (spark3BeforeSpark32, "TBD github link")) {
+  FLOAT_TEST_testSparkResultsAreEqual("empty df: reduction aggs", floatCsvDf) {
     frame => frame.filter("floats > 10000000.0").agg(
       lit(456f),
       min(col("floats")) + lit(123),

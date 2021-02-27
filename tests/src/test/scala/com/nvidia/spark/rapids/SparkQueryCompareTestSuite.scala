@@ -163,7 +163,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   val DOUBLE_NEGATIVE_NAN_UPPER_RANGE = java.lang.Double.longBitsToDouble(0xffffffffffffffffL)
 
   def withGpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
-    println("##### GERA DEBUG: GPU ######")
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "true")
       .set(RapidsConf.TEST_CONF.key, "true")
@@ -172,7 +171,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   def withCpuSparkSession[U](f: SparkSession => U, conf: SparkConf = new SparkConf()): U = {
-    println("##### GERA DEBUG: CPU ######")
     val c = conf.clone()
       .set(RapidsConf.SQL_ENABLED.key, "false") // Just to be sure
       // temp work around to unsupported timestamp type

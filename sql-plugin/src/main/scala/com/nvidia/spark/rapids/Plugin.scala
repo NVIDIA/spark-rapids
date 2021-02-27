@@ -110,7 +110,6 @@ object RapidsPluginUtils extends Logging {
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
-    println("### GERA DEBUG: initialize driver plugin #####")
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
