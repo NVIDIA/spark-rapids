@@ -299,7 +299,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
     --worker-machine-type n1-highmem-32 \
     --num-worker-local-ssds 4 \
-    --initialization-actions gs://alluxio-public/dataproc/2.0.1/alluxio-dataproc.sh,gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --initialization-actions gs://alluxio-public/dataproc/2.5.0/alluxio-dataproc.sh,gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata alluxio_root_ufs_uri="gs://${GCS_BUCKET}/tpcds",gpu-driver-provider="NVIDIA",rapids-runtime="SPARK",alluxio_site_properties="alluxio.master.mount.table.root.option.fs.gcs.accessKeyId=<gcs_access_key_id>;alluxio.master.mount.table.root.option.fs.gcs.secretAccessKey=<gcs_secret_access_key>" \
     --bucket $GCS_BUCKET \
