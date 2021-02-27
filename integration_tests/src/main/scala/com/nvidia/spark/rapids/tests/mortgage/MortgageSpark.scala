@@ -441,7 +441,7 @@ object Main {
       "parquet" -> Run.parquet(session, perfPath, acqPath)
     )
     val format = args.lift(4).getOrElse("parquet")
-    if (!dataFrameFormatMap.contains(format))
+    if (!dataFrameFormatMap.contains(format)) {
         System.err.println(s"Invalid input format $format, expected one of csv, orc, parquet")
         System.exit(1)
     }
