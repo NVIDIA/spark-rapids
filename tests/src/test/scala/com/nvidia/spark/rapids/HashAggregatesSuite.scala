@@ -32,11 +32,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private val floatAggConf: SparkConf = new SparkConf().set(
     RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
 
-  def spark3BeforeSpark32: Boolean = ShimLoader.getSparkShims.getSparkShimVersion match {
-    case SparkShimVersion(3, minor, _) if minor < 2 => true
-    case _ => true
-  }
-
   def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
     // configures whether Plugin will replace certain aggregate exec nodes
     conf.set("spark.rapids.sql.hashAgg.replaceMode", mode)
