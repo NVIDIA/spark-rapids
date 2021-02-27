@@ -88,7 +88,7 @@ class CastExprMeta[INPUT <: CastBase](
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
 }
 
-object GpuCast extends Arm {
+object GpuCast {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
 

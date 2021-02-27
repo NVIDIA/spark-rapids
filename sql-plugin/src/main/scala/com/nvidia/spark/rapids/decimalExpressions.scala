@@ -57,7 +57,9 @@ case class GpuUnscaledValue(child: Expression) extends GpuUnaryExpression {
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     if (input.getBase.getType.isBackedByInt) {
-        input.getBase.castTo(DType.INT64)
+      withResource(input.getBase.logicalCastTo(DType.INT32)) { int32View =>
+        int32View.castTo(DType.INT64)
+      }
     } else {
       withResource(input.getBase.logicalCastTo(DType.INT64)) { view =>
         view.copyToColumnVector()

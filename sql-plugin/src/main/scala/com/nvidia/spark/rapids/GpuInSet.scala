@@ -95,7 +95,6 @@ case class GpuInSet(
         }
         builder.buildAndPutOnDevice()
       }
-
     case _ =>
       throw new UnsupportedOperationException(s"Unsupported list type: ${child.dataType}")
     }

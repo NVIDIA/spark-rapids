@@ -62,7 +62,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DateType, Decimal, DecimalType, MapType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -671,15 +671,15 @@ abstract class FileParquetPartitionReaderBase(
       filePath: String,
       clippedSchema: MessageType): Table = {
 
-    val typeCastingNeeded =
-      !GpuColumnVector.typeConversionAllowed(inputTable, readDataSchema.fields.map(f => f.dataType))
+    val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
+    // check if there are cols with precision that can be stored in an int
+    val typeCastingNeeded = precisions.filter(p => p <= Decimal.MAX_INT_DIGITS).nonEmpty
     if (readDataSchema.length > inputTable.getNumberOfColumns || typeCastingNeeded) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
-      val precisionList =
-        scala.collection.mutable.Queue(getPrecisionsList(clippedGroups.getFields.asScala): _*)
+      val precisionList = scala.collection.mutable.Queue(precisions: _*)
       try {
         withResource(inputTable) { table =>
           var readAt = 0
@@ -729,7 +729,7 @@ abstract class FileParquetPartitionReaderBase(
         cv
       }
     } else if (dt == DType.LIST) {
-      cv.asInstanceOf[ColumnVector].castLeafD64ToD32()
+      cv.asInstanceOf[ColumnVector].castLeafDecimal64ToDecimal32()
     } else if (dt == DType.STRUCT) {
       val newColumns = ArrayBuilder.make[ColumnView]()
       newColumns.sizeHint(cv.getNumChildren)
@@ -755,17 +755,6 @@ abstract class FileParquetPartitionReaderBase(
     } else {
       throw new IllegalArgumentException("Unknown data type")
     }
-  }
-
-  private def getBuffersToClose(cv: ColumnView): Seq[DeviceMemoryBuffer] = {
-    val toClose = new ListBuffer[DeviceMemoryBuffer]
-    (0 until cv.getNumChildren).foreach { i =>
-      toClose.appendAll(getBuffersToClose(cv.getChildColumnView(i)))
-    }
-    toClose.append(cv.getData().asInstanceOf[DeviceMemoryBuffer])
-    toClose.append(cv.getOffsets().asInstanceOf[DeviceMemoryBuffer])
-    toClose.append(cv.getValid().asInstanceOf[DeviceMemoryBuffer])
-    toClose
   }
 
   protected def dumpParquetData(
