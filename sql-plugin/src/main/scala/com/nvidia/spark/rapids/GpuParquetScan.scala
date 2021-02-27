@@ -688,7 +688,14 @@ abstract class FileParquetPartitionReaderBase(
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
               val col = if (typeCastingNeeded && precisionList.nonEmpty) {
-                convertDecimal64ToDecimal32(origCol, precisionList).asInstanceOf[ColumnVector]
+                val tmp = convertDecimal64ToDecimal32(origCol, precisionList)
+                if (tmp != origCol) {
+                  withResource(tmp) { tmp =>
+                    tmp.copyToColumnVector()
+                  }
+                } else {
+                  tmp.asInstanceOf[ColumnVector]
+                }
               } else {
                 origCol
               }
@@ -729,7 +736,15 @@ abstract class FileParquetPartitionReaderBase(
         cv
       }
     } else if (dt == DType.LIST) {
-      cv.asInstanceOf[ColumnVector].castLeafDecimal64ToDecimal32()
+      val child = cv.getChildColumnView(0)
+      val newChild = convertDecimal64ToDecimal32(child, precisionList)
+      if (child == newChild) {
+        cv
+      } else {
+        withResource(newChild) { newChild =>
+          cv.replaceListChild(newChild)
+        }
+      }
     } else if (dt == DType.STRUCT) {
       val newColumns = ArrayBuilder.make[ColumnView]()
       newColumns.sizeHint(cv.getNumChildren)
@@ -747,7 +762,7 @@ abstract class FileParquetPartitionReaderBase(
       if (cols.nonEmpty) {
         // create a new struct column with the new ones
         withResource(cols) { newCols =>
-          cv.replaceColumnsInStruct(newColIndices.result(), newCols)
+          cv.replaceChildrenWithViews(newColIndices.result(), newCols)
         }
     } else {
         cv
