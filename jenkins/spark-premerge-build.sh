@@ -40,6 +40,8 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
 mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TEST_TAGS='' -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4
 # Run the unit tests for other Spark versions but dont run full python integration tests
 env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark301tests,snapshot-shims test -Dpytest.TEST_TAGS=''
+env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark302tests,snapshot-shims test -Dpytest.TEST_TAGS=''
+env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark303tests,snapshot-shims test -Dpytest.TEST_TAGS=''
 env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark311tests,snapshot-shims test -Dpytest.TEST_TAGS=''
 
 # The jacoco coverage should have been collected, but because of how the shade plugin
