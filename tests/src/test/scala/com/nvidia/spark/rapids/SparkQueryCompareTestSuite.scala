@@ -114,7 +114,12 @@ object SparkSessionHolder extends Logging {
       setAllConfs(origConf.toArray)
       val currentKeys = spark.conf.getAll.keys.toSet
       val toRemove = currentKeys -- origConfKeys
-      toRemove.foreach(spark.conf.unset)
+      if (toRemove.contains("spark.shuffle.manager")) {
+        // cannot unset the config so need to reinitialize
+        reinitSession()
+      } else {
+        toRemove.foreach(spark.conf.unset)
+      }
     }
     logDebug(s"RESET CONF TO: ${spark.conf.getAll}")
   }
