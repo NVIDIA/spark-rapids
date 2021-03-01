@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,12 @@
 
 ###
 #
+# Build the image for rapids-plugin development environment
+#
 # Arguments: CUDA_VER=10.1 or 10.2
 #
 ###
+
 ARG CUDA_VER=10.1
 
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu16.04
@@ -29,8 +32,10 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     apt-get install -y maven \
-    openjdk-8-jdk python3.8 python3.8-distutils python3-setuptools
+    openjdk-8-jdk python3.8 python3.8-distutils python3-setuptools tzdata git
 RUN python3.8 -m easy_install pip
 
 RUN ln -s /usr/bin/python3.8 /usr/bin/python
-RUN python -m pip install pytest sre_yield
+RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist
+
+RUN apt install -y inetutils-ping expect
