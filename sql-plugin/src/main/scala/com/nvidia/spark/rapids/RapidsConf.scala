@@ -845,9 +845,8 @@ object RapidsConf {
 
   val EXPLAIN = conf("spark.rapids.sql.explain")
     .doc("Explain why some parts of a query were not placed on a GPU or not. Possible " +
-      "values are ALL_NO_CBO: print everything except cost-based optimizations, ALL: print " +
-        "everything including cost-based optimizations, NONE: print nothing, NOT_ON_GPU: print " +
-        "only parts of a query that did not go on the GPU")
+      "values are ALL: print everything, NONE: print nothing, NOT_ON_GPU: print only parts of " +
+      "a query that did not go on the GPU")
     .stringConf
     .createWithDefault("NONE")
 
@@ -887,9 +886,16 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val OPTIMIZER_EXPLAIN = conf("spark.rapids.sql.optimizer.explain")
+      .internal()
+      .doc("Explain why some parts of a query were not placed on a GPU due to " +
+          "optimization rules. Possible values are ALL: print everything, NONE: print nothing")
+      .stringConf
+      .createWithDefault("NONE")
+
   val OPTIMIZER_DEBUG_ENABLED = conf("spark.rapids.sql.optimizer.debug")
       .internal()
-      .doc("Enable debug logging for CBO")
+      .doc("Enable debug logging for the optimizer")
       .booleanConf
       .createWithDefault(false)
 
@@ -1231,6 +1237,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
+
+  lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
 
   lazy val optimizerDebugEnabled: Boolean = get(OPTIMIZER_DEBUG_ENABLED)
 
