@@ -171,6 +171,12 @@ any GPU resources on the cluster. For standalone, Mesos, and Kubernetes you can 
 of executors you want to use per application. The extra core is for the driver. Dynamic allocation can mess with these settings
 under YARN and even though it is off by default you probably want to be sure it is disabled (spark.dynamicAllocation.enabled=false).
 
+### Running in Alternate Path
+
+In case your test jars and resources are downloaded from dependency Repo, and you want to run tests with them using the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh), then the `LOCAL_JAR_PATH/local-path` must be set to specify the alternate path, e.g. `LOCAL_JAR_PATH=/local-path bash /local-path/integration_tests/[run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
+
+By setting `LOCAL_JAR_PATH=/local-path` the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path.
+
 ### Enabling TPCxBB/TPCH/TPCDS/Mortgage Tests
 
 The TPCxBB, TPCH, TPCDS, and Mortgage tests in this framework can be enabled by providing a couple of options:
