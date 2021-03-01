@@ -15,24 +15,6 @@
 def pytest_addoption(parser):
     """Pytest hook to define command line options for pytest"""
     parser.addoption(
-        "--tpcxbb_format", action="store", default="parquet", help="format of TPCXbb data"
-    )
-    parser.addoption(
-        "--tpcxbb_path", action="store", default=None, help="path to TPCXbb data"
-    )
-    parser.addoption(
-        "--tpcds_format", action="store", default="parquet", help="format of TPC-DS data"
-    )
-    parser.addoption(
-        "--tpcds_path", action="store", default=None, help="path to TPC-DS data"
-    )
-    parser.addoption(
-        "--tpch_format", action="store", default="parquet", help="format of TPCH data"
-    )
-    parser.addoption(
-        "--tpch_path", action="store", default=None, help="path to TPCH data"
-    )
-    parser.addoption(
         "--mortgage_format", action="store", default="parquet", help="format of Mortgage data"
     )
     parser.addoption(
@@ -61,4 +43,3 @@ def pytest_addoption(parser):
         "--test_type", action='store', default="developer",
         help="the type of tests that are being run to help check all the correct tests are run - developer, pre-commit, or nightly"
     )
-
