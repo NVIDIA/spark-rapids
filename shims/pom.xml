@@ -46,6 +46,7 @@
             </activation>
             <modules>
                 <module>spark302</module>
+                <module>spark303</module>
                 <module>spark311</module>
             </modules>
         </profile>

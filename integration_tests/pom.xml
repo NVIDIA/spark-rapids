@@ -51,6 +51,12 @@
             </properties>
         </profile>
         <profile>
+            <id>spark303tests</id>
+            <properties>
+                <spark.test.version>${spark303.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
             <id>spark311tests</id>
             <properties>
                 <spark.test.version>${spark311.version}</spark.test.version>
