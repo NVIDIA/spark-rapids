@@ -893,12 +893,6 @@ object RapidsConf {
       .stringConf
       .createWithDefault("NONE")
 
-  val OPTIMIZER_DEBUG_ENABLED = conf("spark.rapids.sql.optimizer.debug")
-      .internal()
-      .doc("Enable debug logging for the optimizer")
-      .booleanConf
-      .createWithDefault(false)
-
   val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.defaultExecGpuCost")
       .internal()
       .doc("Default relative GPU cost of running an operator on the GPU")
@@ -1239,8 +1233,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
-
-  lazy val optimizerDebugEnabled: Boolean = get(OPTIMIZER_DEBUG_ENABLED)
 
   lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
 
