@@ -31,8 +31,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
+import java.util.HashSet;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -135,27 +135,23 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (hostCol.isNull(i)) {
         System.err.println(i + " NULL");
       } else {
-        String value;
-        switch (intType.getTypeId()) {
-          case INT8:
-            value = String.valueOf(hostCol.getByte(i));
+        final int sizeInBytes = intType.getSizeInBytes();
+        final Object value;
+        switch (sizeInBytes) {
+          case Byte.BYTES:
+            value = hostCol.getByte(i);
             break;
-          case INT16:
-            value = String.valueOf(hostCol.getShort(i));
+          case Short.BYTES:
+            value = hostCol.getShort(i);
             break;
-          case INT32:
-            value = String.valueOf(hostCol.getInt(i));
+          case Integer.BYTES:
+            value = hostCol.getInt(i);
             break;
-          case INT64:
-          case TIMESTAMP_DAYS:
-          case TIMESTAMP_SECONDS:
-          case TIMESTAMP_MICROSECONDS:
-          case TIMESTAMP_MILLISECONDS:
-          case TIMESTAMP_NANOSECONDS:
-            value = String.valueOf(hostCol.getLong(i));
+          case Long.BYTES:
+            value = hostCol.getLong(i);
             break;
           default:
-            value = "NOT_AN_INT";
+            throw new IllegalArgumentException("INFEASIBLE: Unsupported integer-like type " + intType);
         }
         System.err.println(i + " " + value);
       }
