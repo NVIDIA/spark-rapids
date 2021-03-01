@@ -47,6 +47,7 @@
             <modules>
                 <module>spark302</module>
                 <module>spark311</module>
+                <module>spark312</module>
             </modules>
         </profile>
     </profiles>

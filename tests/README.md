@@ -57,6 +57,7 @@ default version runs against Spark 3.0.0, to run against other versions use one 
    - `-Pspark301tests` (spark 3.0.1)
    - `-Pspark302tests` (spark 3.0.2)
    - `-Pspark311tests` (spark 3.1.1)
+   - `-Pspark312tests` (spark 3.1.2)
 
 Please refer to the [tests project POM](pom.xml) to see the list of test profiles supported.
 Apache Spark specific configurations can be passed in by setting the `SPARK_CONF` environment

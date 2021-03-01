@@ -132,10 +132,13 @@
             </properties>
         </profile>
         <profile>
-            <id>spark301tests</id>
+            <id>spark311tests</id>
+            <modules>
+                <module>tests-spark310+</module>
+            </modules>
         </profile>
         <profile>
-            <id>spark311tests</id>
+            <id>spark312tests</id>
             <modules>
                 <module>tests-spark310+</module>
             </modules>
@@ -177,6 +180,7 @@
         <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
         <spark311.version>3.1.1-SNAPSHOT</spark311.version>
+        <spark312.version>3.1.2-SNAPSHOT</spark312.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
