@@ -31,8 +31,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.HashSet;
+import java.util.List;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
