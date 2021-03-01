@@ -29,7 +29,7 @@ import org.mockito.invocation.InvocationOnMock
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.ByteType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -146,7 +146,8 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
       val cb = new ColumnarBatch(gpuCols, ROWS)
       whenSplitCalled(cb)
       val ser = new ParquetCachedBatchSerializer
-      ser.compressColumnarBatchWithParquet(cb)
+      val dummySchema = new StructType(Array(new StructField("empty", BooleanType, false)))
+      ser.compressColumnarBatchWithParquet(cb, dummySchema)
       theTableMock.close()
     }
   }

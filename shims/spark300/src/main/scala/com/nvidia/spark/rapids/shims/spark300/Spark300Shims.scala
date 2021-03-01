@@ -48,6 +48,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleEx
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.WindowInPandasExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
@@ -399,6 +400,9 @@ class Spark300Shims extends SparkShims {
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
+
+  // Hardcoded for Spark-3.0.*
+  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int = 100
 
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
     FilePartition(index, files)

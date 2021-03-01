@@ -4,6 +4,53 @@ title: Download
 nav_order: 3
 ---
 
+## Release v0.4.0
+
+New functionality for the release includes
+* Decimal support up to 64 bit, including reading and writing decimal from Parquet (can be enabled
+  by setting `spark.rapids.sql.decimalType.enabled` to True)
+* Ability for users to provide GPU versions of Scala, Java or Hive UDFs
+* Shuffle and sort support for `struct` data types
+* `array_contains` for list operations
+* `collect_list` and `average` for windowing operations
+* Murmur3 `hash` operation 
+* Improved performance when reading from DataSource v2 when the source produces data in the Arrow format
+
+This release includes additional performance improvements, including
+* RAPIDS Shuffle with UCX performance improvements
+* Instructions on how to use [Alluxio caching](get-started/getting-started-alluxio.md) with Spark to
+  leverage caching.
+
+The release is supported on Apache Spark 3.0.0, 3.0.1, 3.1.1, Databricks 7.3 ML LTS and Google Cloud
+Platform Dataproc 2.0.
+
+The list of all supported operations is provided [here](supported_ops.md).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
+
+Hardware Requirements: 
+
+	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
+	
+Software Requirements:
+
+	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
+	
+	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	
+	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
+	
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+	
+	Python 3.6+, Scala 2.12, Java 8 
+
+### Download v0.4.0
+* [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.0/rapids-4-spark_2.12-0.4.0.jar)
+* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda11.jar)
+* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-2.jar)
+* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-1.jar)
+
 ## Release v0.3.0
 This release includes additional performance improvements, including
 * Use of per thread default stream to make more efficient use of the GPU

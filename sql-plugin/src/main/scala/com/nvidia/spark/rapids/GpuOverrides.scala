@@ -26,6 +26,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
+import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -2329,8 +2330,8 @@ object GpuOverrides {
 
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    commonExpressions ++ GpuHiveOverrides.exprs ++ ShimLoader.getSparkShims.getExprs
-
+    commonExpressions ++ GpuHiveOverrides.exprs ++ ShimLoader.getSparkShims.getExprs ++
+      TimeStamp.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -2385,6 +2386,18 @@ object GpuOverrides {
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def tagPartForGpu(): Unit = {
+          def isSortOrderSimpleEnough(so: SortOrder): Boolean = so.child match {
+            case _: AttributeReference => true
+            case _ => false
+          }
+          // Once https://github.com/NVIDIA/spark-rapids/issues/1730 is fixed this check should be
+          // removed
+          if (!rp.ordering.forall(isSortOrderSimpleEnough)) {
+            willNotWorkOnGpu("computation is not supported for sort order in range partitioning")
+          }
+        }
 
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
@@ -2664,7 +2677,8 @@ object GpuOverrides {
     ),
     exec[CustomShuffleReaderExec](
       "A wrapper of shuffle query stage",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+        TypeSig.STRUCT).nested(), TypeSig.all),
       (exec, conf, p, r) =>
       new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
         override def tagPlanForGpu(): Unit = {

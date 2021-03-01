@@ -25,10 +25,18 @@ then
     >&2 echo "SPARK_HOME IS NOT SET CANNOT RUN PYTHON INTEGRATION TESTS..."
 else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
-    CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
-    PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark*.jar)
-    TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*.jar)
-    UDF_EXAMPLE_JARS=$(echo "$SCRIPTPATH"/../udf-examples/target/rapids-4-spark-udf-examples*.jar)
+    # support alternate local jars NOT building from the source code
+    if [ -d "$LOCAL_JAR_PATH" ]; then
+        CUDF_JARS=$(echo "$LOCAL_JAR_PATH"/cudf-*.jar)
+        PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark*.jar)
+        TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*.jar)
+        UDF_EXAMPLE_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-udf-examples*.jar)
+    else
+        CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
+        PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark*.jar)
+        TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*.jar)
+        UDF_EXAMPLE_JARS=$(echo "$SCRIPTPATH"/../udf-examples/target/rapids-4-spark-udf-examples*.jar)
+    fi
     ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS $UDF_EXAMPLE_JARS"
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];

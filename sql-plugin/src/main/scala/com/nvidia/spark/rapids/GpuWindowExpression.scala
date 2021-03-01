@@ -738,10 +738,43 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
-  val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
-  val offset: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.offset, conf, Some(this))
-  val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
+  lazy val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
+  lazy val offset: BaseExprMeta[_] = {
+    expr match {
+      case Lead(_,_,_) => // Supported.
+      case Lag(_,_,_) =>  // Supported.
+      case other =>
+        throw new IllegalStateException(
+          s"Only LEAD/LAG offset window functions are supported. Found: $other")
+    }
+
+    val literalOffset = GpuOverrides.extractLit(expr.offset) match {
+      case Some(Literal(offset: Int, IntegerType)) =>
+        Literal(offset, IntegerType)
+      case _ =>
+        throw new IllegalStateException(
+          s"Only integer literal offsets are supported for LEAD/LAG. Found: ${expr.offset}")
+    }
+
+    GpuOverrides.wrapExpr(literalOffset, conf, Some(this))
+  }
+  lazy val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+
+  override def tagExprForGpu(): Unit = {
+    expr match {
+      case Lead(_,_,_) => // Supported.
+      case Lag(_,_,_) =>  // Supported.
+      case other =>
+        willNotWorkOnGpu( s"Only LEAD/LAG offset window functions are supported. Found: $other")
+    }
+
+    if (GpuOverrides.extractLit(expr.offset).isEmpty) { // Not a literal offset.
+      willNotWorkOnGpu(
+        s"Only integer literal offsets are supported for LEAD/LAG. Found: ${expr.offset}")
+    }
+  }
 }
 
 trait GpuOffsetWindowFunction extends GpuAggregateWindowFunction {

@@ -23,6 +23,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
@@ -39,6 +40,8 @@ object TrampolineUtil {
   }
 
   def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
+
+  def fromAttributes(attrs: Seq[Attribute]): StructType = StructType.fromAttributes(attrs)
 
   def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
 

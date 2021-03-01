@@ -20,7 +20,7 @@ we typically run with the default options and only increase the scale factor dep
 dbgen -b dists.dss -s 10
 ```
 
-You can include the test jar `rapids-4-spark-integration-tests_2.12-0.4.0-SNAPSHOT.jar` with the
+You can include the test jar `rapids-4-spark-integration-tests_2.12-0.5.0-SNAPSHOT.jar` with the
 Spark --jars option to get the TPCH tests. To setup for the queries you can run 
 `TpchLikeSpark.setupAllCSV` for CSV formatted data or `TpchLikeSpark.setupAllParquet`
 for parquet formatted data.  Both of those take the Spark session, and a path to the dbgen
@@ -63,7 +63,7 @@ Apache Spark specific configurations can be passed in by setting the `SPARK_CONF
 variable.
 
 Examples: 
-- To run tests against Apache Spark 3.1.0, 
+- To run tests against Apache Spark 3.1.1, 
  `mvn -P spark311tests test` 
 - To pass Apache Spark configs `--conf spark.dynamicAllocation.enabled=false --conf spark.task.cpus=1` do something like.
  `SPARK_CONF="spark.dynamicAllocation.enabled=false,spark.task.cpus=1" mvn ...`

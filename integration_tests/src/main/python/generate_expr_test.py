@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 
 import pytest
 
-from spark_session import is_before_spark_310
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import ignore_order

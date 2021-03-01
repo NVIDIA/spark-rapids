@@ -36,6 +36,7 @@ import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types._
@@ -137,6 +138,8 @@ trait SparkShims {
     sparkSession: SparkSession,
     readFunction: (PartitionedFile) => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
+
+  def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
 
   def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,

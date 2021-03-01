@@ -431,6 +431,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
+      .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
+          "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
+          "order in which upstream data arrives to a task is not guaranteed. Sort stability then " +
+          "only matters when reading and sorting data from a file using a single task/partition. " +
+          "Because of limitations in the plugin when you enable stable sorting all of the data " +
+          "for a single task will be combined into a single batch before sorting. This currently " +
+          "disables spilling from GPU memory if the data size is too large.")
+      .booleanConf
+      .createWithDefault(false)
+
   // METRICS
 
   val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
@@ -505,9 +516,8 @@ object RapidsConf {
 
   val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
       .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits and is only supported by a small number of operations currently.  " +
-          "This can result in a lot of data movement to and from the GPU, which can slow down " +
-          "processing in some cases.")
+          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
+          "which can slow down processing in some cases.")
       .booleanConf
       .createWithDefault(false)
 
@@ -662,9 +672,10 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to false disables orc output acceleration")
+    .doc("When set to false disables orc output acceleration. This has been disabled by " +
+        "default because of https://github.com/NVIDIA/spark-rapids/issues/1550")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val ENABLE_CSV = conf("spark.rapids.sql.format.csv.enabled")
     .doc("When set to false disables all csv input and output acceleration. " +
@@ -916,7 +927,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,cudf-0.18-SNAPSHOT-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar,cudf-0.19-SNAPSHOT-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1037,6 +1048,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
+
+  lazy val stableSort: Boolean = get(STABLE_SORT)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 

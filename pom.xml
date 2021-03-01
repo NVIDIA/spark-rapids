@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>0.4.0-SNAPSHOT</version>
+    <version>0.5.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://github.com/NVIDIA</url>
@@ -145,9 +145,9 @@
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <spark.version>3.0.0</spark.version>
+        <spark.version>${spark300.version}</spark.version>
         <cuda.version>cuda10-1</cuda.version>
-        <cudf.version>0.18-SNAPSHOT</cudf.version>
+        <cudf.version>0.19-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
@@ -174,6 +174,7 @@
          If you update a dependendy version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
         <spark301.version>3.0.1</spark301.version>
+        <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2-SNAPSHOT</spark302.version>
         <spark311.version>3.1.1-SNAPSHOT</spark311.version>
         <spark320.version>3.2.0-SNAPSHOT</spark320.version>
