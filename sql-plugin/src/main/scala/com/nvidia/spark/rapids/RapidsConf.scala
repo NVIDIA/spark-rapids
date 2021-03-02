@@ -585,6 +585,22 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_WINDOW_BATCHING_GROUPS_TO_PYTHON =
+    conf("spark.rapids.sql.windowBatchingGroupsToPython.enabled")
+      .doc("When set to true, enables sending the whole data batch to Python once, instead " +
+        "of splitting and sending groups one by one. This is for Pandas UDF over windows. Spark " +
+        "sends only one group data to Python one time. Enabling this can probably improve the " +
+        "performance of the data transfer for GPUs, especially there are too many small groups. " +
+        "It is disabled by default because this works only when all the windows are bounded. " +
+        "Besides it is not 100% compatible with CPU when the data sent to Python contains " +
+        "nulls. On the Python side, Pandas will cast integral types to float when there are " +
+        "nulls. So for GPUs all the groups in a batch will be float type, but for CPUs only the " +
+        "groups with nulls will be float type. If some integral values in the group without " +
+        "nulls are big enough, they will lose precision after being casted to float for GPUs, " +
+        "then they will be different from those for CPUs.")
+      .booleanConf
+      .createWithDefault(false)
+
   // FILE FORMATS
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -1128,6 +1144,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
+
+  lazy val isWindowBatchingGroupsToPythonEnabled: Boolean = get(
+    ENABLE_WINDOW_BATCHING_GROUPS_TO_PYTHON)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 

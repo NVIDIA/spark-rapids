@@ -206,7 +206,6 @@ case class GpuArrowEvalPythonExec(
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
   private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
 
-
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
@@ -229,7 +228,7 @@ case class GpuArrowEvalPythonExec(
     val numToPythonRows = gpuLongMetric(NUM_TO_PYTHON_ROWS)
     val numToPythonBatches = gpuLongMetric(NUM_TO_PYTHON_BATCHES)
     val writeBatchesTime = gpuLongMetric(WRITE_BATCHES_TIME)
-    val pythonExecutionTime = gpuLongMetric(PYTHON_EXECUTION_TIME)
+    val pythonExecTime = gpuLongMetric(PYTHON_EXECUTION_TIME)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
@@ -300,7 +299,7 @@ case class GpuArrowEvalPythonExec(
 
       if (pyInputIterator.hasNext) {
         val pythonRunnerListener = GpuPythonMetrics.createMetricsAndWakeUpListener(
-          queue, numToPythonRows, numToPythonBatches, writeBatchesTime, pythonExecutionTime)
+          queue, numToPythonRows, numToPythonBatches, writeBatchesTime, pythonExecTime)
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           evalType,

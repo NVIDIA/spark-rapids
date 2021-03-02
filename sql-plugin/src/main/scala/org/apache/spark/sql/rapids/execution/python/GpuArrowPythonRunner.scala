@@ -29,8 +29,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions, PythonEvalType,
-  PythonFunction, PythonRDD, SpecialLengths}
+import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions, PythonEvalType, PythonFunction, PythonRDD, SpecialLengths}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.toPrettySQL
 import org.apache.spark.sql.execution.python.PythonUDFRunner

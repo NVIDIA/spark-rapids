@@ -154,6 +154,25 @@ def test_window_aggregate_udf(data_gen, window):
         conf=arrow_udf_conf)
 
 
+# No long_gen to avoid the known corner case causing the incompatibility with CPU.
+# For details please go to the doc of the conf:
+#   "spark.rapids.sql.windowBatchingGroupsToPython.enabled"
+@ignore_order
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
+@pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+def test_window_aggregate_udf_batching_groups(data_gen, window):
+
+    @f.pandas_udf('long')
+    def pandas_sum(to_process: pd.Series) -> int:
+        return to_process.sum()
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, data_gen).select(
+            pandas_sum(f.col('b')).over(window)),
+        conf={**arrow_udf_conf,
+              **{'spark.rapids.sql.windowBatchingGroupsToPython.enabled': 'true'}})
+
+
 @ignore_order
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)

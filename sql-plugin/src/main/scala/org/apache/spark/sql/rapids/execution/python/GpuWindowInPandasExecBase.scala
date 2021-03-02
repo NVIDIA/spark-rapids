@@ -78,31 +78,26 @@ abstract class GpuWindowInPandasExecMetaBase(
 }
 
 /**
- * This iterator will do all the necessary transformations on the incoming batches for windowing
- * things before sending batches to the Python side, now including prepending window bounds and
- * group information.
+ * This iterator will build the additional info columns on the incoming batches for windowing
+ * things before sending batches to the Python side, now including only window bounds.
  * @param wrapped the incoming ColumnarBatch iterator.
- * @param pythonInputs the Python UDF inputs for this node.
- * @param partitionSpec the partition specification of the window expression for this node.
- * @param boundedFrames the bounded window frames for this node
- * @param hasUnboundedFrames whether there are unbounded frames for this node
- * @param isBuildGroupInfo whether to build group info column
- * @param inputRows metric for rows read
- * @param inputBatches metric for batches read
- * @param countGroupTime metric for the time of counting size for each group
- * @param buildBoundsTime metric for the time of building window bounds
+ * @param partitionRefs the column references used by the window partition spec.
+ * @param windowFrames the window frames for the windowing
+ * @param isSplitGroups whether to split the groups into batches respectively
+ * @param metricInputRows metric for rows read
+ * @param metricInputBatches metric for batches read
+ * @param metricCountGroupTime metric for the time of counting size for each group
+ * @param metricBuildBoundsTime metric for the time of building window bounds
  */
 class WindowingPythonIterator(
     wrapped: Iterator[ColumnarBatch],
-    pythonInputs: Seq[Expression],
-    partitionSpec: Seq[Expression],
-    boundedFrames: Seq[Expression],
-    hasUnboundedFrames: Boolean,
-    isBuildGroupInfo: Boolean,
-    inputRows: GpuMetric,
-    inputBatches: GpuMetric,
-    countGroupTime: GpuMetric,
-    buildBoundsTime: GpuMetric,
+    partitionRefs: Seq[Expression],
+    windowFrames: Seq[GpuSpecifiedWindowFrame],
+    isSplitGroups: Boolean)(
+    metricInputRows: GpuMetric,
+    metricInputBatches: GpuMetric,
+    metricCountGroupTime: GpuMetric,
+    metricBuildBoundsTime: GpuMetric,
     spillCallback: RapidsBuffer.SpillCallback)
   extends Iterator[(ColumnarBatch, ColumnarBatch)] with Arm {
 
@@ -116,25 +111,21 @@ class WindowingPythonIterator(
 
   override def hasNext(): Boolean = queueBatches.nonEmpty || wrapped.hasNext
 
-  // Return both the original batch and the python input batch,
-  // since the original batch will be used to join with the result batch.
+  // Return both the original batch and the additional info batch.
+  // The info batch will be used by the Python side.
   override def next(): (ColumnarBatch, ColumnarBatch) = {
     val (nextBatch, gpLens) = if (queueBatches.nonEmpty) {
       val (sBatch, lens) = queueBatches.dequeue()
       (sBatch.getColumnarBatch(), lens)
     } else {
       val batch = wrapped.next()
-      inputBatches += 1
-      inputRows += batch.numRows()
-      val groupLens = withResource(new MetricRange(countGroupTime)) { _ =>
+      metricInputBatches += 1
+      metricInputRows += batch.numRows()
+      val groupLens = withResource(new MetricRange(metricCountGroupTime)) { _ =>
         genGroupInfoFromBatch(batch)
       }
-      if (hasUnboundedFrames && !isBuildGroupInfo && groupLens.size > 1) {
-        // Splitting the batch per groups only when
-        //   1) There are unbounded frames, and
-        //   1) not build the group information column, and
-        //   2) there are more than one groups
-        // Since the Python side does not support splitting groups in a batch now.
+      if (isSplitGroups && groupLens.size > 1) {
+        // Split the groups when being required and there are more than one group.
         val groupBatchesAndSizes = splitBatchPerGroups(batch, groupLens)
           .zip(groupLens.map(Seq(_)))
         val tails = groupBatchesAndSizes.tail.map {
@@ -149,7 +140,7 @@ class WindowingPythonIterator(
         (batch, groupLens)
       }
     }
-    (nextBatch, buildPythonInputBatch(nextBatch, gpLens))
+    (nextBatch, buildInfoBatchForPython(nextBatch, gpLens))
   }
 
   private[this] def splitBatchPerGroups(
@@ -167,7 +158,12 @@ class WindowingPythonIterator(
     }
   }
 
-  private[this] def buildPythonInputBatch(
+  /*
+   * Two items in order:
+   *   1) The group info (Disabled),
+   *   2) The window bounds
+   */
+  private[this] def buildInfoBatchForPython(
       batch: ColumnarBatch,
       gpLens: Seq[_]): ColumnarBatch = {
 
@@ -181,34 +177,18 @@ class WindowingPythonIterator(
       gpLens.sliding(rollingSize, rollingSize).toSeq
     }
 
-    val bufferCVs = mutable.ArrayBuffer[cudf.ColumnVector]()
-    // To minimize the size of the data to be sent to Python,
-    // build the group information column only when required.
-    if (isBuildGroupInfo) {
-      val (gpCV, _) = genColumnForGroupInfo(gpInfo, 0)
-      bufferCVs.append(gpCV)
-    }
-
     // Build the window bounds for bounded frames
-    val boundsCVs = boundedFrames.flatMap { fr =>
-      val frame = fr.asInstanceOf[GpuSpecifiedWindowFrame]
+    val boundsCVs = windowFrames.filterNot(_.isUnbounded).flatMap { frame =>
       frame.frameType match {
         case RowFrame =>
-          val (lowerCV, upperCV, _) = withResource(new MetricRange(buildBoundsTime)) { _ =>
+          val (lowerCV, upperCV, _) = withResource(new MetricRange(metricBuildBoundsTime)) { _ =>
             genColumnsForWindowBounds(frame, gpInfo, 0)
           }
           Seq(lowerCV, upperCV)
         case f => throw new UnsupportedOperationException(s"Unsupported window frame $f")
       }
-    }
-    bufferCVs.appendAll(boundsCVs)
-
-    val groupInfoAndBoundsCVs = bufferCVs.map(GpuColumnVector.from(_, IntegerType)).toArray
-    // project the batch for python inputs
-    val pythonInputCVs = withResource(GpuProjectExec.project(batch, pythonInputs)) { pyBatch =>
-      GpuColumnVector.extractColumns(pyBatch).map(_.incRefCount())
-    }
-    new ColumnarBatch(groupInfoAndBoundsCVs ++ pythonInputCVs, batch.numRows())
+    }.map(GpuColumnVector.from(_, IntegerType))
+    new ColumnarBatch(boundsCVs.toArray, batch.numRows())
   }
 
   /*
@@ -217,13 +197,13 @@ class WindowingPythonIterator(
    */
   private[this] def genGroupInfoFromBatch(batch: ColumnarBatch): Seq[Int] = {
     assert(batch != null, "batch is null.")
-    if (batch.numRows() > 0 && batch.numCols() > 0 && partitionSpec.nonEmpty) {
+    if (batch.numRows() > 0 && batch.numCols() > 0 && partitionRefs.nonEmpty) {
       //  a) Run count aggregation on each group in the batch, including null values.
       //  b) Restore the original order (Ascending with NullsFirst) defined in window plan,
       //     since "cudf.Table.groupBy" will break the order.
       //  c) Copy the 'count' column to host and it is the group info.
-      val partitionIndices = partitionSpec.indices
-      val cntTable = withResource(GpuProjectExec.project(batch, partitionSpec)) { projected =>
+      val partitionIndices = partitionRefs.indices
+      val cntTable = withResource(GpuProjectExec.project(batch, partitionRefs)) { projected =>
         withResource(GpuColumnVector.from(projected)) { table =>
           table
             .groupBy(partitionIndices:_*)
@@ -262,33 +242,6 @@ class WindowingPythonIterator(
     } else {
       throw new IllegalArgumentException("Empty sequence is not allowed.")
     }
-  }
-
-  /*
-   * Build column vector for group information.
-   * (Currently do it be leveraging the existing APIs in cuDF Java.
-   * But still need a dedicated API for better performance.)
-   */
-  private[this] def genColumnForGroupInfo(
-      gpLens: Seq[_],
-      groupOffset: Int): (cudf.ColumnVector, Int) = {
-    assert(gpLens != null)
-    var gpOffset = groupOffset
-    val bufferGroupCV = mutable.ArrayBuffer[cudf.ColumnVector]()
-    gpLens.foreach {
-      case gpInfo: Seq[_] =>
-        val (groupCV, offset) = genColumnForGroupInfo(gpInfo, gpOffset)
-        bufferGroupCV.append(groupCV)
-        gpOffset = offset
-      case gpLen: Int =>
-        val gpCV = withResource(cudf.Scalar.fromInt(gpLen)) { lenVal =>
-          cudf.ColumnVector.fromScalar(lenVal, gpLen)
-        }
-        bufferGroupCV.append(gpCV)
-        // Update offset to next group
-        gpOffset += gpLen
-    }
-    (buildNonEmptyCV(bufferGroupCV), gpOffset)
   }
 
   // Build column vectors for lower bound and upper bound.
@@ -450,28 +403,15 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
    * (2) Function from frame index to its upper bound column index in the python input row
    * (3) Seq from frame index to its window bound type
    * (4) Seq of all the window frames
-   * (5) Seq of the bounded window frames
-   * (6) Boolean indicates whether to build group information column
    */
   private type WindowMetaHelpers = (
       Int => Int,
       Int => Int,
       Seq[String],
-      Seq[Expression],
-      Seq[Expression],
-      Boolean)
+      Seq[GpuSpecifiedWindowFrame])
 
   private def computeWindowMetaHelpers: WindowMetaHelpers = {
     val windowFrames =  windowFramesWithExpressions.map(_._1)
-
-    // Since Python does not support splitting groups now, so do not build group info.
-    // TODO Enable it when Python side support splitting groups.
-    val isBuildGroupInfo = false // unboundedFrames.nonEmpty && partitionSpec.nonEmpty
-    val initVal = if (isBuildGroupInfo) {
-      1
-    } else {
-      0
-    }
 
     val windowBoundTypes = windowFrames.map { frame =>
       if (frame.isUnbounded) {
@@ -485,7 +425,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       case _ => 2
     }
 
-    val upperBoundIndices = requiredIndices.scan(initVal)(_ + _).tail
+    val upperBoundIndices = requiredIndices.scan(0)(_ + _).tail
     val boundIndices = requiredIndices.zip(upperBoundIndices).map { case (num, upperBoundIndex) =>
       if (num == 0) {
         // Sentinel values for unbounded window
@@ -498,8 +438,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     def lowerBoundIndex(frameIndex: Int) = boundIndices(frameIndex)._1
     def upperBoundIndex(frameIndex: Int) = boundIndices(frameIndex)._2
 
-    (lowerBoundIndex, upperBoundIndex, windowBoundTypes,
-     windowFrames, windowFrames.filterNot(_.isUnbounded), isBuildGroupInfo)
+    (lowerBoundIndex, upperBoundIndex, windowBoundTypes, windowFrames)
   }
 
   private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
@@ -574,10 +513,10 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val numToPythonRows = gpuLongMetric(NUM_TO_PYTHON_ROWS)
     val numToPythonBatches = gpuLongMetric(NUM_TO_PYTHON_BATCHES)
-    val writeBatchesTime = gpuLongMetric(WRITE_BATCHES_TIME)
-    val pythonExecutionTime = gpuLongMetric(PYTHON_EXECUTION_TIME)
-    val countGroupTime = gpuLongMetric(COUNT_GROUP_TIME)
-    val buildBoundsTime = gpuLongMetric(BUILD_BOUNDS_TIME)
+    val metricWriteBatchesTime = gpuLongMetric(WRITE_BATCHES_TIME)
+    val metricPythonExeTime = gpuLongMetric(PYTHON_EXECUTION_TIME)
+    val metricCountGroupTime = gpuLongMetric(COUNT_GROUP_TIME)
+    val metricBuildBoundsTime = gpuLongMetric(BUILD_BOUNDS_TIME)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
@@ -593,9 +532,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     val (lowerBoundIndex,
          upperBoundIndex,
          frameBoundTypes,
-         windowFrames,
-         boundedFrames,
-         isBuildGroupInfo) = computeWindowMetaHelpers
+         windowFrames) = computeWindowMetaHelpers
     val isBounded = { frameIndex: Int => lowerBoundIndex(frameIndex) >= 0 }
 
     // 2) Extract window functions, here should be Python (Pandas) UDFs
@@ -613,8 +550,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       .map(expId => frameBoundTypes(exprIndex2FrameIndex(expId)))
       .mkString(",")
     val pythonRunnerConf: Map[String, String] = ArrowUtils.getPythonRunnerConfMap(conf) +
-      (windowBoundTypeConf -> udfWindowBoundTypesStr) +
-      (windowBatchGroupConf -> isBuildGroupInfo.toString)
+      (windowBoundTypeConf -> udfWindowBoundTypesStr)
 
     // 4) Filter child output attributes down to only those that are UDF inputs.
     // Also eliminate duplicate UDF inputs. This is similar to how other Python UDF node
@@ -631,24 +567,13 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       }.toArray
     }.toArray
 
-    // 5) Setting group info and window bounds when needed.
-    // Setting group information only when there are unbounded windows.
-    val groupInfoInput = if (isBuildGroupInfo) {
-      Seq(
-        // Group information is always the first column
-        GpuBoundReference(0, IntegerType, nullable = false)
-      )
-    } else {
-      Seq.empty
-    }
-
-    // Setting window bounds for each window frames only when there are bounded windows.
-    // Each window frame has different bounds so each has its own window bound columns.
+    // 5) Setting window bounds for each window frames, Each window frame has different bounds so
+    // each has its own window bound columns.
     val windowBoundsInput = windowFrames.indices.flatMap { frameIndex =>
       if (isBounded(frameIndex)) {
         Seq(
-          GpuBoundReference(lowerBoundIndex(frameIndex), IntegerType, nullable = false),
-          GpuBoundReference(upperBoundIndex(frameIndex), IntegerType, nullable = false)
+          BoundReference(lowerBoundIndex(frameIndex), IntegerType, nullable = false),
+          BoundReference(upperBoundIndex(frameIndex), IntegerType, nullable = false)
         )
       } else {
         Seq.empty
@@ -664,16 +589,14 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       val frameIndex = exprIndex2FrameIndex(exprIndex)
       if (isBounded(frameIndex)) {
         argOffsets(exprIndex) = Array(lowerBoundIndex(frameIndex), upperBoundIndex(frameIndex)) ++
-          argOffsets(exprIndex).map(_ + groupInfoInput.length + windowBoundsInput.length)
+          argOffsets(exprIndex).map(_ + windowBoundsInput.length)
       } else {
-        argOffsets(exprIndex) = groupInfoInput.map(ref => ref.ordinal).toArray ++
-          argOffsets(exprIndex).map(_ + groupInfoInput.length + windowBoundsInput.length)
+        argOffsets(exprIndex) = argOffsets(exprIndex).map(_ + windowBoundsInput.length)
       }
     }
 
     // 7) Building the final input and schema
-    val allInputs = groupInfoInput ++ windowBoundsInput ++ dataInputs
-    val allInputTypes = allInputs.map(_.dataType)
+    val allInputTypes = (windowBoundsInput ++ dataInputs).map(_.dataType)
     val pythonInputSchema = StructType(
       allInputTypes.zipWithIndex.map { case (dt, i) =>
         StructField(s"_$i", dt)
@@ -681,7 +604,13 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     )
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf, pythonModuleKey)
-    // cache in a local to avoid serializing the plan
+    // Split the input batch per group when
+    //   there are unbounded frames, or
+    //   batching groups is disabled.
+    lazy val isSplitGroups = frameBoundTypes.contains(UnboundedWindow) ||
+      (!new RapidsConf(conf).isWindowBatchingGroupsToPythonEnabled)
+    val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
+    val boundPythonInputRefs = GpuBindReferences.bindGpuReferences(dataInputs, child.output)
 
     // Build the Python output schema from UDF expressions instead of the 'windowExpression',
     // because the 'windowExpression' does NOT always represent the Python output schema.
@@ -690,32 +619,35 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     // 'windowExpression' for the projecting output, but the output schema for this Python
     // UDF contains multiple columns.
     val pythonOutputSchema = StructType.fromAttributes(udfExpressions.map(_.resultAttribute))
-    val childOutput = child.output
 
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
       val queue: BatchQueue = new BatchQueue()
       context.addTaskCompletionListener[Unit](_ => queue.close())
-
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
-      val boundPythonInputRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Do required data transformations by windowing iterator
       val pyInputIterator = new WindowingPythonIterator(
           inputIter,
-          boundPythonInputRefs,
           boundPartitionRefs,
-          boundedFrames,
-          boundedFrames.size < windowFrames.size,
-          isBuildGroupInfo,
+          windowFrames,
+          isSplitGroups)(
           numInputRows,
           numInputBatches,
-          countGroupTime,
-          buildBoundsTime,
+          metricCountGroupTime,
+          metricBuildBoundsTime,
           spillCallback).map {
-        case (originBatch, pythonInputBatch) =>
+        case (originBatch, infoBatch) =>
+          // We have to do the project before adding the batch because the batch might be closed
+          // when it is added.
+          val projectBatch = GpuProjectExec.project(originBatch, boundPythonInputRefs)
           queue.add(originBatch, spillCallback)
-          pythonInputBatch
+          withResource(projectBatch) { proBatch =>
+            withResource(infoBatch) { inBatch =>
+              val infoCVs = GpuColumnVector.extractColumns(inBatch).map(_.incRefCount())
+              val pythonInputCVs = GpuColumnVector.extractColumns(proBatch).map(_.incRefCount())
+              new ColumnarBatch(infoCVs ++ pythonInputCVs, proBatch.numRows())
+            }
+          }
       }
 
       if (isPythonOnGpuEnabled) {
@@ -725,7 +657,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
       if (pyInputIterator.hasNext) {
         val pythonRunnerListener = GpuPythonMetrics.createMetricsAndWakeUpListener(
-          queue, numToPythonRows, numToPythonBatches, writeBatchesTime, pythonExecutionTime)
+          queue, numToPythonRows, numToPythonBatches, metricWriteBatchesTime, metricPythonExeTime)
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           PythonEvalType.SQL_WINDOW_AGG_PANDAS_UDF,
