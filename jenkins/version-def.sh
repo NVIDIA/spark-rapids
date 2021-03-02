@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,10 +26,10 @@ for VAR in $OVERWRITE_PARAMS;do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"0.18-SNAPSHOT"}
+CUDF_VER=${CUDF_VER:-"0.19-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda10-1"}
-PROJECT_VER=${PROJECT_VER:-"0.4.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"0.4.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"0.5.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"0.5.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.0.0"}
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 SERVER_ID=${SERVER_ID:-"snapshots"}

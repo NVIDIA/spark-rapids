@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,7 +112,7 @@ case class GpuRangePartitioning(
 
     try {
       //get Inputs table bound
-      inputCvs = SortUtils.getGpuColVectorsAndBindReferences(batch, gpuOrdering)
+      inputCvs = SortUtils.evaluateForSort(batch, gpuOrdering)
       inputTbl = new Table(inputCvs.map(_.getBase): _*)
       //sort incoming batch to compare with ranges
       sortedTbl = inputTbl.orderBy(orderByArgs: _*)
@@ -120,9 +120,8 @@ case class GpuRangePartitioning(
       //get the table for upper bound calculation
       slicedSortedTbl = new Table(sortColumns: _*)
       //get the final column batch, remove the sort order sortColumns
-      val outputTypes = gpuOrdering.map(_.child.dataType) ++
-          GpuColumnVector.extractTypes(batch)
-      finalSortedCb = GpuColumnVector.from(sortedTbl, outputTypes.toArray,
+      val outputTypes = GpuColumnVector.extractTypes(batch)
+      finalSortedCb = GpuColumnVector.from(sortedTbl, outputTypes,
         numSortCols, sortedTbl.getNumberOfColumns)
       val numRows = finalSortedCb.numRows
       partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)

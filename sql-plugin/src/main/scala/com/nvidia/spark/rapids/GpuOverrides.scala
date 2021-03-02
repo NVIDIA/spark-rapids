@@ -1849,7 +1849,7 @@ object GpuOverrides {
           }
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuSum(child)
+        override def convertToGpu(child: Expression): GpuExpression = GpuSum(child, a.dataType)
       }),
     expr[Average](
       "Average aggregate operator",

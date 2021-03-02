@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 class RapidsHostMemoryStore(
     maxSize: Long,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("host", catalog) {
+    extends RapidsBufferStore(StorageTier.HOST, catalog) {
   private[this] val pool = HostMemoryBuffer.allocate(maxSize, false)
   private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
   private[this] var haveLoggedMaxExceeded = false
@@ -101,7 +101,8 @@ class RapidsHostMemoryStore(
       other.meta,
       other.getSpillPriority,
       hostBuffer,
-      isPinned)
+      isPinned,
+      other.spillCallback)
   }
 
   def numBytesFree: Long = maxSize - currentSize
@@ -117,7 +118,9 @@ class RapidsHostMemoryStore(
       meta: TableMeta,
       spillPriority: Long,
       buffer: HostMemoryBuffer,
-      isInternalPoolAllocated: Boolean) extends RapidsBufferBase(id, size, meta, spillPriority) {
+      isInternalPoolAllocated: Boolean,
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.HOST
 
     override def getMemoryBuffer: MemoryBuffer = {

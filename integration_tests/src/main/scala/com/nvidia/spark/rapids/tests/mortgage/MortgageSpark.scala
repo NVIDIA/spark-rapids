@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -422,6 +422,10 @@ object AggregatesWithJoin {
 
 object Main {
   def main(args: Array[String]): Unit = {
+    if (args.length < 4 || args.length > 5) {
+        System.err.println("Usage:<sparkversion> <perfpath> <acqpath> <outputpath> [csv|orc|parquet]")
+        System.exit(1)
+    }
     val perfPath = args(1)
     val acqPath = args(2)
     val output = args(3)
@@ -430,8 +434,18 @@ object Main {
       .appName("MortgageJob")
       .getOrCreate()
 
-    0.until(10).foreach { _ =>
-      Run.parquet(session, perfPath, acqPath).write.mode("overwrite").parquet(output)
+    // extend args to support csv/orc/parquet dataset
+    val dataFrameFormatMap = Map(
+      "csv" -> Run.csv(session, perfPath, acqPath),
+      "orc" -> Run.orc(session, perfPath, acqPath),
+      "parquet" -> Run.parquet(session, perfPath, acqPath)
+    )
+    val format = args.lift(4).getOrElse("parquet")
+    if (!dataFrameFormatMap.contains(format)) {
+        System.err.println(s"Invalid input format $format, expected one of csv, orc, parquet")
+        System.exit(1)
     }
+
+    0.until(10).foreach( _ => dataFrameFormatMap(format).write.mode("overwrite").parquet(output))
   }
 }
