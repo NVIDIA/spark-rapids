@@ -203,6 +203,70 @@ case class GpuTimeSub(start: Expression,
   }
 }
 
+case class GpuDateAddInterval(start: Expression,
+    interval: Expression,
+    timeZoneId: Option[String] = None)
+    extends GpuTimeMath(start, interval, timeZoneId) {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  override def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+    us.add(us_s)
+  }
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(DateType, CalendarIntervalType)
+
+  override def dataType: DataType = DateType
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    var lhs: Any = null
+    var rhs: Any = null
+    try {
+      lhs = left.columnarEval(batch)
+      rhs = right.columnarEval(batch)
+
+      (lhs, rhs) match {
+        case (l: GpuColumnVector, intvl: CalendarInterval) =>
+          if (intvl.months != 0) {
+            throw new UnsupportedOperationException("Months aren't supported at the moment")
+          }
+          val microSecToDays = if (intvl.microseconds < 0) {
+            // This is to calculate when subtraction is performed. Need to take into account the
+            // interval( which are less than days). Convert it into days which needs to be
+            // subtracted along with intvl.days(if provided).
+            (intvl.microseconds.abs / (24 * 60 * 60 * 1000 * 1000.0)).ceil.toInt * -1
+          } else {
+            (intvl.microseconds / (24 * 60 * 60 * 1000 * 1000.0)).toInt
+          }
+          val daysToAdd = intvl.days + microSecToDays
+          if (daysToAdd != 0) {
+            withResource(Scalar.fromInt(daysToAdd)) { us_s =>
+              withResource(l.getBase.castTo(DType.INT32)) { us =>
+                withResource(intervalMath(us_s, us)) { intResult =>
+                  GpuColumnVector.from(intResult.castTo(DType.TIMESTAMP_DAYS), dataType)
+                }
+              }
+            }
+          } else {
+            l.incRefCount()
+          }
+        case _ =>
+          throw new UnsupportedOperationException("GpuDateAddInterval takes column and interval " +
+            "as an argument only")
+      }
+    } finally {
+      if (lhs.isInstanceOf[AutoCloseable]) {
+        lhs.asInstanceOf[AutoCloseable].close()
+      }
+      if (rhs.isInstanceOf[AutoCloseable]) {
+        rhs.asInstanceOf[AutoCloseable].close()
+      }
+    }
+  }
+}
+
 case class GpuDateDiff(endDate: Expression, startDate: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes {
 
