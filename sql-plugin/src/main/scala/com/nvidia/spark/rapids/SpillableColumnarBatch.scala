@@ -115,7 +115,7 @@ class SpillableColumnarBatchImpl (id: TempSpillBufferId,
    */
   override def close(): Unit = {
     if (!closed) {
-      RapidsBufferCatalog.removeBuffer(id)
+      RapidsBufferCatalog.removeBuffers(id)
       closed = true
     }
   }

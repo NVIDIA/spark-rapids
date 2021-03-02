@@ -181,7 +181,7 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
           devStore.synchronousSpill(0)
           hostStore.synchronousSpill(0)
           assert(bufferPath.exists)
-          catalog.removeBuffer(bufferId)
+          catalog.removeBuffers(bufferId)
           if (canShareDiskPaths) {
             assert(bufferPath.exists())
           } else {
