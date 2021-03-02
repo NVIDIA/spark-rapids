@@ -25,12 +25,14 @@ object DecimalUtil {
   def createCudfDecimal(precision: Int, scale: Int): DType = {
     if (precision <= Decimal.MAX_INT_DIGITS) {
       DType.create(DType.DTypeEnum.DECIMAL32, -scale)
-    }
-    else {
+    } else {
       DType.create(DType.DTypeEnum.DECIMAL64, -scale)
     }
   }
 
+  /**
+   * Return the size in bytes of the data type.
+   */
   private[rapids] def getDataTypeSize(dt: DataType): Int = {
     dt match {
       case d: DecimalType if d.precision <= Decimal.MAX_INT_DIGITS => 4

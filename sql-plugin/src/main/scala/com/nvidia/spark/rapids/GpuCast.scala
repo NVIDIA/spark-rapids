@@ -1067,67 +1067,26 @@ case class GpuCast(
     val cudfDecimal = DecimalUtil.createCudfDecimal(to.precision, to.scale)
 
     def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
-      to.scale - from.scale match {
-        case 0 =>
-          if (isFrom32Bit == isTo32Bit) {
-            checkedInput.incRefCount()
-          } else {
-            // the input is already checked, just cast it
-            checkedInput.castTo(cudfDecimal)
-          }
-        case diff if diff > 0 =>
+      if (to.scale == from.scale) {
+        if (isFrom32Bit == isTo32Bit) {
+          checkedInput.incRefCount()
+        } else {
+          // the input is already checked, just cast it
           checkedInput.castTo(cudfDecimal)
-        case _ =>
+        }
+      } else if (to.scale > from.scale) {
+        checkedInput.castTo(cudfDecimal)
+      } else {
           withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
             rounded => rounded.castTo(cudfDecimal)
           }
       }
     }
 
-    def checkForOverflow: ColumnVector = {
-      // Check whether there exists overflow during promoting precision or not.
-      // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
-      // cuDF binaryOperation on decimal will rescale right input to fit the left one.
-      // The rescaling may lead to overflow.
-      // absBound is the maximum value that the input column can have before being casted
-      val prec = to.precision + from.scale - to.scale
-
-      // if target precision is greater than and smaller than the max/min precision that can
-      // be held in the input, go ahead with the cast without further checking
-      // When we support 128 bit Decimals we should add a check for that
-      // if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
-      // !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS)
-      if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS) {
-        return input.incRefCount()
-      }
-      val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
-        val absBound = math.pow(10, prec).toLong
-        (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
-      } else {
-        val absBound = math.pow(10, prec).toInt
-        (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
-      }
-      val checkedInput = if (ansiMode) {
-        assertValuesInRange(input,
-          minValue = minValueScalar,
-          maxValue = maxValueScalar,
-          inclusiveMin = false, inclusiveMax = false)
-        input.incRefCount()
-      } else {
-        replaceOutOfRangeValues(input,
-          minValue = minValueScalar,
-          maxValue = maxValueScalar,
-          replaceValue = Scalar.fromNull(input.getType),
-          inclusiveMin = false, inclusiveMax = false)
-      }
-
-      checkedInput
-    }
-
     if (to.scale <= from.scale) {
       if (!isFrom32Bit && isTo32Bit) {
         // check for overflow when 64bit => 32bit
-        withResource(checkForOverflow) { checkedInput =>
+        withResource(checkForOverflow(input, from, to, isFrom32Bit)) { checkedInput =>
           castCheckedDecimal(checkedInput)
         }
       } else {
@@ -1140,9 +1099,59 @@ case class GpuCast(
       }
     } else {
       //  from.scale > to.scale
-      withResource(checkForOverflow) { checkedInput =>
+      withResource(checkForOverflow(input, from, to, isFrom32Bit)) { checkedInput =>
         castCheckedDecimal(checkedInput)
       }
     }
+  }
+
+  def checkForOverflow(
+     input: ColumnVector,
+     from: DecimalType,
+     to: DecimalType,
+     isFrom32Bit: Boolean): ColumnVector = {
+
+    // When moving from a smaller scale to a bigger scale (or 32-bit to 64-bit), the target type is
+    // able to hold much more values on the fraction side which leaves less room for the whole
+    // number.
+    // Ex:
+    //  999999.999 => from.scale = 3
+    //  9999.99999 => to.scale = 5
+    // this means that there could be values in the input that will not be able to fit in the
+    // target type, so we calculate the max number that should be in the input column before we
+    // can safely cast the values without overflowing.
+    // In the above example the source can have a maximum of 4 digits before decimal point and
+    // 3 after the decimal point. Therefore the values of absMax and absMin will be calculated
+    // based on the maxPrecision value.
+    val maxPrecision = to.precision + from.scale - to.scale
+
+    // When we support 128 bit Decimals we should add a check for that
+    // if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
+    // !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS)
+    if (isFrom32Bit && maxPrecision > Decimal.MAX_INT_DIGITS) {
+      return input.incRefCount()
+    }
+    val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
+      val absBound = math.pow(10, maxPrecision).toLong
+      (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
+    } else {
+      val absBound = math.pow(10, maxPrecision).toInt
+      (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
+    }
+    val checkedInput = if (ansiMode) {
+      assertValuesInRange(input,
+        minValue = minValueScalar,
+        maxValue = maxValueScalar,
+        inclusiveMin = false, inclusiveMax = false)
+      input.incRefCount()
+    } else {
+      replaceOutOfRangeValues(input,
+        minValue = minValueScalar,
+        maxValue = maxValueScalar,
+        replaceValue = Scalar.fromNull(input.getType),
+        inclusiveMin = false, inclusiveMax = false)
+    }
+
+    checkedInput
   }
 }
