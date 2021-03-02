@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
-
 import com.nvidia.spark.rapids.GpuGenerateExecSparkPlanMeta.isOuterSupported
 import com.nvidia.spark.rapids.GpuMetric.{ESSENTIAL_LEVEL, MODERATE_LEVEL, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
