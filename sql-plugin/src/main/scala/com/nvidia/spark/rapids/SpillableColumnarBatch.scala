@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -54,8 +55,10 @@ trait SpillableColumnarBatch extends AutoCloseable {
 class JustRowsColumnarBatch(numRows: Int) extends SpillableColumnarBatch {
   override def numRows(): Int = numRows
   override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
-  override def getColumnarBatch(): ColumnarBatch =
+  override def getColumnarBatch(): ColumnarBatch = {
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     new ColumnarBatch(Array.empty, numRows)
+  }
   override def close(): Unit = () // NOOP nothing to close
   override val sizeInBytes: Long = 0L
 }
@@ -106,6 +109,7 @@ class SpillableColumnarBatchImpl (id: TempSpillBufferId,
    */
   override def getColumnarBatch(): ColumnarBatch = {
     withResource(RapidsBufferCatalog.acquireBuffer(id)) { rapidsBuffer =>
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
       rapidsBuffer.getColumnarBatch(sparkTypes)
     }
   }

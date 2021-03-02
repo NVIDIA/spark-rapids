@@ -171,26 +171,6 @@ any GPU resources on the cluster. For standalone, Mesos, and Kubernetes you can 
 of executors you want to use per application. The extra core is for the driver. Dynamic allocation can mess with these settings
 under YARN and even though it is off by default you probably want to be sure it is disabled (spark.dynamicAllocation.enabled=false).
 
-### Enabling TPCxBB/TPCH/TPCDS/Mortgage Tests
-
-The TPCxBB, TPCH, TPCDS, and Mortgage tests in this framework can be enabled by providing a couple of options:
-
-   * TPCxBB `tpcxbb-format` (optional, defaults to "parquet"), and `tpcxbb-path` (required, path to the TPCxBB data).
-   * TPCH `tpch-format` (optional, defaults to "parquet"), and `tpch-path` (required, path to the TPCH data).
-   * TPCDS `tpcds-format` (optional, defaults to "parquet"), and `tpcds-path` (required, path to the TPCDS data).
-   * Mortgage `mortgage-format` (optional, defaults to "parquet"), and `mortgage-path` (required, path to the Mortgage data).
-
-As an example, here is the `spark-submit` command with the TPCxBB parameters on CUDA 10.1:
-
-```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.5.0-SNAPSHOT.jar,cudf-0.19-SNAPSHOT-cuda10-1.jar,rapids-4-spark-tests_2.12-0.5.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
-```
-
-Be aware that running these tests with read data requires at least an entire GPU, and preferable several GPUs/executors
-in your cluster so please be careful when enabling these tests.  Also some of these test actually produce non-deterministic
-results when run in a real cluster. If you do see failures when running these tests please contact us so we can investigate
-them and possibly tag the tests appropriately when running on an actual cluster.
-
 ### Enabling cudf_udf Tests
 
 The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default not only because of the complicated environment setup, but also because GPU resources scheduling for Pandas UDF is an experimental feature now, the performance may not always be better.

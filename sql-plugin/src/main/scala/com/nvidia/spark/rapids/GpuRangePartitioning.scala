@@ -16,15 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnVector, Table}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, OrderedDistribution}
-import org.apache.spark.sql.types.{DataType, IntegerType, StructType}
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -35,17 +29,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @note The actual number of partitions created might not be the same
  * as the `numPartitions` parameter, in the case where the number of sampled records is less than
  * the value of `partitions`.
+ *
+ * The GpuRangePartitioner is where all of the processing actually happens.
  */
-
 case class GpuRangePartitioning(
     gpuOrdering: Seq[SortOrder],
-    numPartitions: Int,
-    schema: StructType)(val part: GpuRangePartitioner)
-  extends GpuExpression with GpuPartitioning {
-
-  override def otherCopyArgs: Seq[AnyRef] = Seq(part)
-
-  var rangeBounds: Array[InternalRow] = _
+    numPartitions: Int) extends GpuExpression with GpuPartitioning {
 
   override def children: Seq[SortOrder] = gpuOrdering
   override def nullable: Boolean = false
@@ -81,89 +70,6 @@ case class GpuRangePartitioning(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var rangesBatch: ColumnarBatch = null
-    var rangesTbl: Table = null
-    var sortedTbl: Table = null
-    var slicedSortedTbl: Table = null
-    var finalSortedCb: ColumnarBatch = null
-    var retCv: ColumnVector = null
-    var inputCvs: Seq[GpuColumnVector] = null
-    var inputTbl: Table = null
-    var partitionColumns: Array[GpuColumnVector] = null
-    var parts: Array[Int] = Array(0)
-    var slicedCb: Array[ColumnarBatch] = null
-    val descFlags = new ArrayBuffer[Boolean]()
-    val nullFlags = new ArrayBuffer[Boolean]()
-    val numSortCols = gpuOrdering.length
-
-    val orderByArgs: Seq[Table.OrderByArg] = gpuOrdering.zipWithIndex.map { case (order, index) =>
-      val nullsSmallest = SortUtils.areNullsSmallest(order)
-      if (order.isAscending) {
-        descFlags += false
-        nullFlags += nullsSmallest
-        Table.asc(index, nullsSmallest)
-      } else {
-        descFlags += true
-        nullFlags += nullsSmallest
-        Table.desc(index, nullsSmallest)
-      }
-    }
-
-    try {
-      //get Inputs table bound
-      inputCvs = SortUtils.evaluateForSort(batch, gpuOrdering)
-      inputTbl = new Table(inputCvs.map(_.getBase): _*)
-      //sort incoming batch to compare with ranges
-      sortedTbl = inputTbl.orderBy(orderByArgs: _*)
-      val sortColumns = (0 until numSortCols).map(sortedTbl.getColumn(_))
-      //get the table for upper bound calculation
-      slicedSortedTbl = new Table(sortColumns: _*)
-      //get the final column batch, remove the sort order sortColumns
-      val outputTypes = GpuColumnVector.extractTypes(batch)
-      finalSortedCb = GpuColumnVector.from(sortedTbl, outputTypes,
-        numSortCols, sortedTbl.getNumberOfColumns)
-      val numRows = finalSortedCb.numRows
-      partitionColumns = GpuColumnVector.extractColumns(finalSortedCb)
-      // get the ranges table and get upper bounds if possible
-      // rangeBounds can be empty or of length < numPartitions in cases where the samples are less
-      // than numPartitions. The way Spark handles it is by allowing the returned partitions to be
-      // rangeBounds.length + 1 which is essentially what happens here when we do upperBound on the
-      // ranges table, or return one partition.
-      if (part.rangeBounds.nonEmpty) {
-        rangesBatch = part.getRangesBatch(schema, part.rangeBounds)
-        rangesTbl = GpuColumnVector.from(rangesBatch)
-        retCv = slicedSortedTbl.upperBound(nullFlags.toArray, rangesTbl, descFlags.toArray)
-        parts = parts ++ GpuColumnVector.toIntArray(retCv)
-      }
-      slicedCb = sliceInternalGpuOrCpu(numRows, parts, partitionColumns)
-    } finally {
-      batch.close()
-      if (inputCvs != null) {
-        inputCvs.safeClose()
-      }
-      if (inputTbl != null) {
-        inputTbl.close()
-      }
-      if (sortedTbl != null) {
-        sortedTbl.close()
-      }
-      if (slicedSortedTbl != null) {
-        slicedSortedTbl.close()
-      }
-      if (rangesBatch != null) {
-        rangesBatch.close()
-      }
-      if (rangesTbl != null) {
-        rangesTbl.close()
-      }
-      if (retCv != null) {
-        retCv.close()
-      }
-      if (partitionColumns != null) {
-        partitionColumns.safeClose()
-      }
-    }
-    slicedCb.zipWithIndex.filter(_._1 != null)
-  }
+  override def columnarEval(batch: ColumnarBatch): Any =
+    throw new IllegalStateException("This cannot be executed")
 }
