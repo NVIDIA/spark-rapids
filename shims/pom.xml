@@ -46,6 +46,7 @@
             </activation>
             <modules>
                 <module>spark311</module>
+                <module>spark320</module>
             </modules>
         </profile>
     </profiles>
@@ -71,12 +72,21 @@
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

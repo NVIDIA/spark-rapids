@@ -107,23 +107,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
               hexString(hostCol.getUTF8(i)));
         }
       }
-    } else if (DType.INT32.equals(type)) {
-      for (int i = 0; i < hostCol.getRowCount(); i++) {
-        if (hostCol.isNull(i)) {
-          System.err.println(i + " NULL");
-        } else {
-          System.err.println(i + " " + hostCol.getInt(i));
-        }
-      }
-    } else if (DType.INT8.equals(type)) {
-      for (int i = 0; i < hostCol.getRowCount(); i++) {
-        if (hostCol.isNull(i)) {
-          System.err.println(i + " NULL");
-        } else {
-          System.err.println(i + " " + hostCol.getByte(i));
-        }
-      }
-    } else if (DType.BOOL8.equals(type)) {
+    } else if (DType.INT32.equals(type)
+            || DType.INT8.equals(type)
+            || DType.INT16.equals(type)
+            || DType.INT64.equals(type)
+            || DType.TIMESTAMP_DAYS.equals(type)
+            || DType.TIMESTAMP_SECONDS.equals(type)
+            || DType.TIMESTAMP_MICROSECONDS.equals(type)
+            || DType.TIMESTAMP_MILLISECONDS.equals(type)
+            || DType.TIMESTAMP_NANOSECONDS.equals(type)) {
+      debugInteger(hostCol, type);
+   } else if (DType.BOOL8.equals(type)) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
           System.err.println(i + " NULL");
@@ -131,17 +125,36 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           System.err.println(i + " " + hostCol.getBoolean(i));
         }
       }
-    } else if (DType.TIMESTAMP_MICROSECONDS.equals(type) ||
-        DType.INT64.equals(type)) {
-      for (int i = 0; i < hostCol.getRowCount(); i++) {
-        if (hostCol.isNull(i)) {
-          System.err.println(i + " NULL");
-        } else {
-          System.err.println(i + " " + hostCol.getLong(i));
-        }
-      }
     } else {
       System.err.println("TYPE " + type + " NOT SUPPORTED FOR DEBUG PRINT");
+    }
+  }
+
+  private static void debugInteger(HostColumnVector hostCol, DType intType) {
+    for (int i = 0; i < hostCol.getRowCount(); i++) {
+      if (hostCol.isNull(i)) {
+        System.err.println(i + " NULL");
+      } else {
+        final int sizeInBytes = intType.getSizeInBytes();
+        final Object value;
+        switch (sizeInBytes) {
+          case Byte.BYTES:
+            value = hostCol.getByte(i);
+            break;
+          case Short.BYTES:
+            value = hostCol.getShort(i);
+            break;
+          case Integer.BYTES:
+            value = hostCol.getInt(i);
+            break;
+          case Long.BYTES:
+            value = hostCol.getLong(i);
+            break;
+          default:
+            throw new IllegalArgumentException("INFEASIBLE: Unsupported integer-like type " + intType);
+        }
+        System.err.println(i + " " + value);
+      }
     }
   }
 
