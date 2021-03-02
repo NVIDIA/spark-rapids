@@ -88,7 +88,7 @@ class ShuffleBufferCatalog(
         // NOTE: Not synchronizing array buffer because this shuffle should be inactive.
         bufferIds.foreach { id =>
           tableMap.remove(id.tableId)
-          catalog.removeBuffers(id)
+          catalog.removeBuffer(id)
         }
       }
       info.blockMap.forEachValue(Long.MaxValue, bufferRemover)
@@ -220,7 +220,7 @@ class ShuffleBufferCatalog(
    */
   def removeBuffer(id: ShuffleBufferId): Unit = {
     tableMap.remove(id.tableId)
-    catalog.removeBuffers(id)
+    catalog.removeBuffer(id)
   }
 }
 

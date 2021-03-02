@@ -148,9 +148,9 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         }
         assertResult(bufferSizes.take(i+1).sum)(store.currentSize)
       }
-      catalog.removeBuffers(MockRapidsBufferId(0))
+      catalog.removeBuffer(MockRapidsBufferId(0))
       assertResult(bufferSizes(1))(store.currentSize)
-      catalog.removeBuffers(MockRapidsBufferId(1))
+      catalog.removeBuffer(MockRapidsBufferId(1))
       assertResult(0)(store.currentSize)
     }
   }

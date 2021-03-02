@@ -79,12 +79,12 @@ class RapidsBufferCatalog extends Logging {
         if (value == null) {
           mutable.SortedMap(buffer.storageTier -> buffer)
         } else {
-          if (value.contains(buffer.storageTier)) {
+          val old = value.put(buffer.storageTier, buffer)
+          if (old.isDefined) {
             throw new IllegalStateException(
-              s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered $value")
-          } else {
-            value += (buffer.storageTier -> buffer)
+              s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered $old")
           }
+          value
         }
       }
     }
@@ -115,32 +115,13 @@ class RapidsBufferCatalog extends Logging {
   }
 
   /** Remove a buffer ID from the catalog and release the resources of the registered buffers. */
-  def removeBuffers(id: RapidsBufferId): Unit = {
+  def removeBuffer(id: RapidsBufferId): Unit = {
     val updater = new BiFunction[RapidsBufferId, mutable.SortedMap[StorageTier, RapidsBuffer],
         mutable.SortedMap[StorageTier, RapidsBuffer]] {
       override def apply(key: RapidsBufferId, value: mutable.SortedMap[StorageTier, RapidsBuffer])
       : mutable.SortedMap[StorageTier, RapidsBuffer] = {
         value.mapValues(_.free())
         null
-      }
-    }
-    bufferMap.computeIfPresent(id, updater)
-  }
-
-  /**
-   * Remove a buffer ID at a storage tier from the catalog and release the resources of the
-   * registered buffer.
-   */
-  def removeBuffer(id: RapidsBufferId, tier: StorageTier): Unit = {
-    val updater = new BiFunction[RapidsBufferId, mutable.SortedMap[StorageTier, RapidsBuffer],
-        mutable.SortedMap[StorageTier, RapidsBuffer]] {
-      override def apply(key: RapidsBufferId, value: mutable.SortedMap[StorageTier, RapidsBuffer])
-      : mutable.SortedMap[StorageTier, RapidsBuffer] = {
-        val buffer = value.remove(tier)
-        if (buffer.isDefined) {
-          buffer.get.free()
-        }
-        value
       }
     }
     bufferMap.computeIfPresent(id, updater)
@@ -284,11 +265,5 @@ object RapidsBufferCatalog extends Logging with Arm {
   def acquireBuffer(id: RapidsBufferId): RapidsBuffer = singleton.acquireBuffer(id)
 
   /** Remove a buffer ID from the catalog and release the resources of the registered buffers. */
-  def removeBuffers(id: RapidsBufferId): Unit = singleton.removeBuffers(id)
-
-  /**
-   * Remove a buffer ID at a storage tier from the catalog and release the resources of the
-   * registered buffer.
-   */
-  def removeBuffer(id: RapidsBufferId, tier: StorageTier): Unit = singleton.removeBuffer(id, tier)
+  def removeBuffers(id: RapidsBufferId): Unit = singleton.removeBuffer(id)
 }

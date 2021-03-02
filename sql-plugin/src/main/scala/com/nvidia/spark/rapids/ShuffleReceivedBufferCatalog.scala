@@ -107,7 +107,7 @@ class ShuffleReceivedBufferCatalog(
    */
   def removeBuffer(id: ShuffleReceivedBufferId): Unit = {
     tableMap.remove(id.tableId)
-    catalog.removeBuffers(id)
+    catalog.removeBuffer(id)
   }
 }
 

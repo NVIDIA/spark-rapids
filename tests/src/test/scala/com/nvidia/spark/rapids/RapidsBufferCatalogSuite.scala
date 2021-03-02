@@ -98,7 +98,7 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     val bufferId = MockBufferId(5)
     val buffer = mockBuffer(bufferId)
     catalog.registerNewBuffer(buffer)
-    catalog.removeBuffers(bufferId)
+    catalog.removeBuffer(bufferId)
     verify(buffer).free()
   }
 
