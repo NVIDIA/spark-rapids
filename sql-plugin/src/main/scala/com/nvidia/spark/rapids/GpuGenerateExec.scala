@@ -16,18 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeSet, CreateArray, Explode, Expression, Literal, PosExplode}
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType}
+import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuGenerateExecSparkPlanMeta(
@@ -36,75 +34,147 @@ class GpuGenerateExecSparkPlanMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) {
 
-  private def exprsFromArray(data: ArrayData, dataType: DataType): Seq[BaseExprMeta[Expression]] = {
-    (0 until data.numElements()).map { i =>
-      Literal(data.get(i, dataType), dataType).asInstanceOf[Expression]
-    }.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  override val childExprs: Seq[BaseExprMeta[_]] = {
+    (Seq(gen.generator) ++ gen.requiredChildOutput).map(
+      GpuOverrides.wrapExpr(_, conf, Some(this)))
   }
-
-  private val arrayExprs =  gen.generator match {
-    case PosExplode(CreateArray(exprs, _)) =>
-      // This bypasses the check to see if we can support an array or not.
-      // and the posexplode/explode which is going to be built into this one...
-      exprs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-    case PosExplode(Literal(data, ArrayType(baseType, _))) =>
-      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
-    case PosExplode(Alias(Literal(data, ArrayType(baseType, _)), _)) =>
-      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
-    case Explode(CreateArray(exprs, _)) =>
-      exprs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-    case Explode(Literal(data, ArrayType(baseType, _))) =>
-      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
-    case Explode(Alias(Literal(data, ArrayType(baseType, _)), _)) =>
-      exprsFromArray(data.asInstanceOf[ArrayData], baseType)
-    case _ => Seq.empty
-  }
-
-  override val childExprs: Seq[BaseExprMeta[_]] = arrayExprs
 
   override def tagPlanForGpu(): Unit = {
-    // We can only run on the GPU if we are doing a posexplode of an array we are generating
-    // right now
-    gen.generator match {
-      case PosExplode(CreateArray(_, _)) => // Nothing
-      case PosExplode(Literal(_, ArrayType(_, _))) => // Nothing
-      case PosExplode(Alias(Literal(_, ArrayType(_, _)), _)) => // Nothing
-      case Explode(CreateArray(_, _)) => // Nothing
-      case Explode(Literal(_, ArrayType(_, _))) => // Nothing
-      case Explode(Alias(Literal(_, ArrayType(_, _)), _)) => // Nothing
-      case _ => willNotWorkOnGpu("Only posexplode of a created array is currently supported")
-    }
-
     if (gen.outer) {
       willNotWorkOnGpu("outer is not currently supported")
     }
   }
 
-  /**
-   * Convert what this wraps to a GPU enabled version.
-   */
   override def convertToGpu(): GpuExec = {
     GpuGenerateExec(
-      gen.generator.isInstanceOf[PosExplode],
-      arrayExprs.map(_.convertToGpu()),
+      childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
       gen.requiredChildOutput,
+      gen.outer,
       gen.generatorOutput,
       childPlans.head.convertIfNeeded())
   }
 }
 
 /**
- * Takes the place of GenerateExec(PosExplode(CreateArray(_))).  It would be great to do it in a
- * more general case but because we don't support arrays/maps, we have to hard code the cases
- * where we don't actually need to put the data into an array first.
+ * GPU overrides of [[org.apache.spark.sql.catalyst.expressions.Generator]], corporate with
+ * `GpuGenerateExec`.
  */
+trait GpuGenerator extends GpuUnevaluable {
+
+  override def dataType: DataType = ArrayType(elementSchema)
+
+  override def foldable: Boolean = false
+
+  override def nullable: Boolean = false
+
+  /**
+   * The output element schema.
+   */
+  def elementSchema: StructType
+
+  /**
+   * Apply generator to produce result ColumnarBatch from input batch.
+   *
+   * This is a specialized method for GPU runtime, which is called by GpuGenerateExec who owns
+   * the generator. The reason of creating a new method rather than implementing columnarEval is
+   * that generator is an integrated Table transformer instead of column transformer in terms of
+   * cuDF.
+   *
+   * @param inputBatch projected input data, which ensures appending columns are ahead of
+   *                   generators' inputs. So, generators can distinguish them with an offset.
+   * @param generatorOffset column offset of generator's input columns in `inputBatch`
+   * @param outer when true, each input row will be output at least once, even if the output of the
+   *              given `generator` is empty.
+   *
+   * @return result ColumnarBatch
+   */
+  def generate(inputBatch: ColumnarBatch,
+    generatorOffset: Int,
+    outer: Boolean): ColumnarBatch
+}
+
+trait GpuCollectionGenerator extends GpuGenerator {
+  /** The position of an element within the collection should also be returned. */
+  def position: Boolean
+
+  /** Rows will be inlined during generation. */
+  def inline: Boolean
+
+  /** The type of the returned collection object. */
+  def collectionType: DataType = dataType
+}
+
+abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuCollectionGenerator {
+  override val inline: Boolean = false
+
+  override def checkInputDataTypes(): TypeCheckResult = child.dataType match {
+    case _: ArrayType | _: MapType =>
+      TypeCheckResult.TypeCheckSuccess
+    case _ =>
+      TypeCheckResult.TypeCheckFailure(
+        "input to function explode should be array or map type, " +
+          s"not ${child.dataType.catalogString}")
+  }
+
+  // hive-compatible default alias for explode function ("col" for array, "key", "value" for map)
+  override def elementSchema: StructType = child.dataType match {
+    case ArrayType(et, containsNull) =>
+      if (position) {
+        new StructType()
+          .add("pos", IntegerType, nullable = false)
+          .add("col", et, containsNull)
+      } else {
+        new StructType()
+          .add("col", et, containsNull)
+      }
+    case MapType(kt, vt, valueContainsNull) =>
+      if (position) {
+        new StructType()
+          .add("pos", IntegerType, nullable = false)
+          .add("key", kt, nullable = false)
+          .add("value", vt, valueContainsNull)
+      } else {
+        new StructType()
+          .add("key", kt, nullable = false)
+          .add("value", vt, valueContainsNull)
+      }
+  }
+
+  override def collectionType: DataType = child.dataType
+}
+
+case class GpuExplode(child: Expression) extends GpuExplodeBase {
+  override val position: Boolean = false
+
+  override def generate(inputBatch: ColumnarBatch,
+    generatorOffset: Int,
+    outer: Boolean): ColumnarBatch = {
+
+    require(inputBatch.numCols() - 1 == generatorOffset,
+      "GpuExplode should has and only has one input attribute")
+    val schema = GpuColumnVector.extractTypes(inputBatch).zipWithIndex.map {
+      // extract output type of explode from input ArrayData
+      case (dataType, index) if index == generatorOffset =>
+        require(dataType.isInstanceOf[ArrayType], "GpuExplode only supports ArrayData now")
+        dataType.asInstanceOf[ArrayType].elementType
+      // map types of other required columns
+      case (dataType, _) =>
+        dataType
+    }
+    withResource(GpuColumnVector.from(inputBatch)) { table =>
+      withResource(table.explode(generatorOffset)) { exploded =>
+        GpuColumnVector.from(exploded, schema)
+      }
+    }
+  }
+}
+
 case class GpuGenerateExec(
-    includePos: Boolean,
-    arrayProject: Seq[Expression],
+    generator: GpuGenerator,
     requiredChildOutput: Seq[Attribute],
+    outer: Boolean,
     generatorOutput: Seq[Attribute],
-    child: SparkPlan
-) extends UnaryExecNode with GpuExec {
+    child: SparkPlan) extends UnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = requiredChildOutput ++ generatorOutput
 
@@ -119,75 +189,25 @@ case class GpuGenerateExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val totalTime = gpuLongMetric(TOTAL_TIME)
-    val boundArrayProjectList =
-      GpuBindReferences.bindGpuReferences(arrayProject, child.output).toArray
-    val numArrayColumns = boundArrayProjectList.length
-    val boundOthersProjectList: Array[GpuExpression] =
-      GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output).toArray
-    val numOtherColumns = boundOthersProjectList.length
-    val numExplodeColumns = if (includePos) 2 else 1
+    val generatorProjectList: Seq[GpuExpression] =
+      GpuBindReferences.bindGpuReferences(generator.children, child.output)
+    val othersProjectList: Seq[GpuExpression] =
+      GpuBindReferences.bindGpuReferences(requiredChildOutput, child.output)
 
-    val outputSchema = output.map(_.dataType).toArray
-    child.executeColumnar().mapPartitions { it =>
-      new Iterator[ColumnarBatch] {
-        var currentBatch: ColumnarBatch = _
-        var indexIntoData = 0
-
-        private def closeCurrent(): Unit = if (currentBatch != null) {
-          currentBatch.close()
-          currentBatch = null
-        }
-
-        TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrent())
-
-        def fetchNextBatch(): Unit = {
-          indexIntoData = 0
-          closeCurrent()
-          if (it.hasNext) {
-            currentBatch = it.next()
+    child.executeColumnar().map { inputFromChild =>
+      withResource(inputFromChild) { input =>
+        withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)) { _ =>
+          // Project input columns, setting other columns ahead of generator's input columns.
+          // With the projected batches and an offset, generators can extract input columns or
+          // other required columns separately.
+          val projectedInput = GpuProjectExec.project(
+            input, othersProjectList ++ generatorProjectList)
+          val result = withResource(projectedInput) { generatorInput =>
+            generator.generate(generatorInput, othersProjectList.length, outer)
           }
-        }
-
-        override def hasNext: Boolean = {
-          if (currentBatch == null || indexIntoData >= numArrayColumns) {
-            fetchNextBatch()
-          }
-          currentBatch != null
-        }
-
-        override def next(): ColumnarBatch = {
-          if (currentBatch == null || indexIntoData >= numArrayColumns) {
-            fetchNextBatch()
-          }
-          withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)) { _ =>
-            val result = new Array[ColumnVector](numExplodeColumns + numOtherColumns)
-            try {
-              withResource(GpuProjectExec.project(currentBatch, boundOthersProjectList)) { cb =>
-                (0 until cb.numCols()).foreach { i =>
-                  result(i) = cb.column(i).asInstanceOf[GpuColumnVector].getBase.incRefCount()
-                }
-              }
-              if (includePos) {
-                result(numOtherColumns) = withResource(GpuScalar.from(indexIntoData, IntegerType)) {
-                  scalar => ColumnVector.fromScalar(scalar, currentBatch.numRows())
-                }
-              }
-              result(numOtherColumns + numExplodeColumns - 1) =
-                withResource(GpuProjectExec.project(currentBatch,
-                  Seq(boundArrayProjectList(indexIntoData)))) { cb =>
-                  cb.column(0).asInstanceOf[GpuColumnVector].getBase.incRefCount()
-                }
-
-              withResource(new Table(result: _*)) { table =>
-                indexIntoData += 1
-                numOutputBatches += 1
-                numOutputRows += table.getRowCount
-                GpuColumnVector.from(table, outputSchema)
-              }
-            } finally {
-              result.safeClose()
-            }
-          }
+          numOutputBatches += 1
+          numOutputRows += result.numRows()
+          result
         }
       }
     }

@@ -19,6 +19,7 @@ from data_gen import *
 from marks import ignore_order
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import with_cpu_session
 
 def four_op_df(spark, gen, length=2048, seed=0):
     return gen_df(spark, StructGen([
@@ -26,6 +27,9 @@ def four_op_df(spark, gen, length=2048, seed=0):
         ('b', gen),
         ('c', gen),
         ('d', gen)], nullable=False), length=length, seed=seed)
+
+"""
+below tests are temporarily disabled because explode_position has not been supported in cuDF-nightly  
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -44,6 +48,7 @@ def test_posexplode_litarray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
                 f.posexplode(array_lit)))
+"""
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -63,3 +68,33 @@ def test_explode_litarray(data_gen):
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
                 f.explode(array_lit)))
 
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+def test_explode_split_string():
+    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr('a', 'explode(split(b, "_"))'))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr(
+                'a', 'explode(split(b, "_")) as c').selectExpr(
+                'a', 'explode(split(c, "A"))'))
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+def test_explode_from_parquet(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_gen = [int_gen, ArrayGen(long_gen)]
+    with_cpu_session(
+            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.parquet(data_path).selectExpr('a', 'explode(b)'))
+    # test with nested array
+    data_path1 = spark_tmp_path + '/PARQUET_DATA1'
+    data_gen1 = [int_gen, ArrayGen(ArrayGen(long_gen))]
+    with_cpu_session(
+            lambda spark: two_col_df(spark, *data_gen1).write.parquet(data_path1))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.read.parquet(data_path1).selectExpr(
+            'a', 'explode(b) as c').selectExpr('a', 'explode(c)'))
