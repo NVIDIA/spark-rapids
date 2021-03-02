@@ -338,31 +338,31 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.DoubleType)(frame)
   }
 
-  testCastFailsForBadInputs("Test bad cast 1 from strings to floats", badFloatStringsDf,
+  testCastFailsForBadInputs("Test bad cast 1 from strings to floats", invalidFloatStringsDf,
       msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
     frame =>frame.select(col("c0").cast(FloatType))
   }
 
-  testCastFailsForBadInputs("Test bad cast 2 from strings to floats", badFloatStringsDf,
+  testCastFailsForBadInputs("Test bad cast 2 from strings to floats", invalidFloatStringsDf,
       msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
     frame =>frame.select(col("c1").cast(FloatType))
   }
 
-  testCastFailsForBadInputs("Test bad cast 1 from strings to double", badFloatStringsDf,
+  testCastFailsForBadInputs("Test bad cast 1 from strings to double", invalidFloatStringsDf,
       msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
     frame =>frame.select(col("c0").cast(DoubleType))
   }
 
-  testCastFailsForBadInputs("Test bad cast 2 from strings to double", badFloatStringsDf,
+  testCastFailsForBadInputs("Test bad cast 2 from strings to double", invalidFloatStringsDf,
       msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
     frame =>frame.select(col("c1").cast(DoubleType))
   }
 
-  //Currently there is a bug in cudf which doesn't convert one value correctly
+  // Currently there is a bug in cudf which doesn't convert some corner cases correctly
   // The bug is documented here https://github.com/rapidsai/cudf/issues/5225
   ignore("Test cast from strings to double that doesn't match") {
     testSparkResultsAreEqual("Test cast from strings to double that doesn't match",
-        badDoubleStringsDf) {
+        badDoubleStringsDf, conf = sparkConf, maxFloatDiff = 0.0001) {
       frame =>frame.select(
         col("c0").cast(DoubleType))
     }
@@ -372,12 +372,12 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Ansi cast from floating point to string
   ///////////////////////////////////////////////////////////////////////////
 
-  ignore("ansi_cast float to string") {
+  test("ansi_cast float to string") {
     testCastToString[Float](DataTypes.FloatType, ansiMode = true,
       comparisonFunc = Some(compareStringifiedFloats))
   }
 
-  ignore("ansi_cast double to string") {
+  test("ansi_cast double to string") {
     testCastToString[Double](DataTypes.DoubleType, ansiMode = true,
       comparisonFunc = Some(compareStringifiedFloats))
   }

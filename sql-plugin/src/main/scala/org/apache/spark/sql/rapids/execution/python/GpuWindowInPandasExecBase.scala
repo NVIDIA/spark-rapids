@@ -490,8 +490,14 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf, pythonModuleKey)
     // cache in a local to avoid serializing the plan
-    val retAttributes = windowExpression.map(_.asInstanceOf[NamedExpression].toAttribute)
-    val pythonOutputSchema = StructType.fromAttributes(retAttributes)
+
+    // Build the Python output schema from UDF expressions instead of the 'windowExpression',
+    // because the 'windowExpression' does NOT always represent the Python output schema.
+    // For example, on Databricks when projecting only one column from a Python UDF output
+    // where containing multiple result columns, there will be only one item in the
+    // 'windowExpression' for the projecting output, but the output schema for this Python
+    // UDF contains multiple columns.
+    val pythonOutputSchema = StructType.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
 
     // 8) Start processing.

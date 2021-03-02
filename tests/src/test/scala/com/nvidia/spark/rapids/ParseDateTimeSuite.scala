@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,36 +16,49 @@
 
 package com.nvidia.spark.rapids
 
+import java.sql.{Date, Timestamp}
+
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, to_date, unix_timestamp}
+import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
 
-  val execsAllowedNonGpu = ShimLoader.getSparkShims.getSparkShimVersion match {
-    case SparkShimVersion(3, 1, _) =>
-      // The behavior has changed in Spark 3.1.0 and `to_date` gets translated to
-      // `cast(gettimestamp(c0#20108, yyyy-MM-dd, Some(UTC)) as date)` and we do
-      // not currently support `gettimestamp` on GPU
-      // https://github.com/NVIDIA/spark-rapids/issues/1157
-      Seq("ProjectExec,Alias,Cast,GetTimestamp,Literal")
-    case _ =>
-      Seq.empty
-  }
-
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
-      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED"),
-      execsAllowedNonGpu = execsAllowedNonGpu) {
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
   testSparkResultsAreEqual("to_date dd/MM/yyyy",
-    datesAsStrings,
-    conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED"),
-    execsAllowedNonGpu = execsAllowedNonGpu) {
+      datesAsStrings,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yyyy"))
+  }
+
+  testSparkResultsAreEqual("to_date parse date",
+      dates,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
+  }
+
+  testSparkResultsAreEqual("to_date parse timestamp",
+      timestamps,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
+  }
+
+  testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
+      timestampsAsStrings,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
+  }
+
+  testSparkResultsAreEqual("to_timestamp dd/MM/yyyy",
+      timestampsAsStrings,
+      conf = new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED")) {
+    df => df.withColumn("c1", to_timestamp(col("c0"), "dd/MM/yyyy"))
   }
 
   testSparkResultsAreEqual("to_date default pattern",
@@ -133,6 +146,16 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     assert(cpuNowSeconds <= gpuNowSeconds)
   }
 
+  private def dates(spark: SparkSession) = {
+    import spark.implicits._
+    dateValues.toDF("c0")
+  }
+
+  private def timestamps(spark: SparkSession) = {
+    import spark.implicits._
+    tsValues.toDF("c0")
+  }
+
   private def timestampsAsStrings(spark: SparkSession) = {
     import spark.implicits._
     timestampValues.toDF("c0")
@@ -180,6 +203,17 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     "\t1999-12-31",
     "\n1999-12-31",
     "1999/12/31"
+  )
+
+  private val dateValues = Seq(
+    Date.valueOf("2020-07-24"),
+    Date.valueOf("2020-07-25"),
+    Date.valueOf("1999-12-31"))
+
+  private val tsValues = Seq(
+    Timestamp.valueOf("2015-07-24 10:00:00.3"),
+    Timestamp.valueOf("2015-07-25 02:02:02.2"),
+    Timestamp.valueOf("1999-12-31 11:59:59.999")
   )
 }
 
