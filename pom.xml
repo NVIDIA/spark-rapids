@@ -131,11 +131,39 @@
 	        <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
         </profile>
+
+        <profile>
+            <id>spark301dbtests</id>
+            <properties>
+                <spark.test.version>${spark301db.version}</spark.test.version>
+            </properties>
+        </profile>
         <profile>
             <id>spark301tests</id>
+            <properties>
+                <spark.test.version>${spark301.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark302tests</id>
+            <properties>
+                <spark.test.version>${spark302.version}</spark.test.version>
+            </properties>
         </profile>
         <profile>
             <id>spark311tests</id>
+            <properties>
+                <spark.test.version>${spark311.version}</spark.test.version>
+            </properties>
+            <modules>
+                <module>tests-spark310+</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>spark320tests</id>
+            <properties>
+                <spark.test.version>${spark320.version}</spark.test.version>
+            </properties>
             <modules>
                 <module>tests-spark310+</module>
             </modules>
@@ -146,6 +174,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark300.version}</spark.version>
+        <spark.test.version>${spark300.version}</spark.test.version>
         <cuda.version>cuda10-1</cuda.version>
         <cudf.version>0.19-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -177,6 +206,7 @@
         <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2</spark302.version>
         <spark311.version>3.1.1-SNAPSHOT</spark311.version>
+        <spark320.version>3.2.0-SNAPSHOT</spark320.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
