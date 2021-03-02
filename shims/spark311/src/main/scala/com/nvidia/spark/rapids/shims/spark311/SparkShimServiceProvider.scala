@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.shims.spark311
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
 
 object SparkShimServiceProvider {
-  // keep 3.1.0 snapshot version for now until 3.1.1 is released
   val VERSION = SparkShimVersion(3, 1, 1)
   val VERSIONNAMES = Seq(s"$VERSION")
 }
