@@ -1319,8 +1319,10 @@ object GpuOverrides {
               willNotWorkOnGpu("interval months isn't supported")
             }
           }
-          if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-            willNotWorkOnGpu("Only UTC zone id is supported")
+          a.timeZoneId.foreach {
+            case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
+              willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
+            case _ =>
           }
         }
 
