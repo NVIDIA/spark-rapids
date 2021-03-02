@@ -265,5 +265,5 @@ object RapidsBufferCatalog extends Logging with Arm {
   def acquireBuffer(id: RapidsBufferId): RapidsBuffer = singleton.acquireBuffer(id)
 
   /** Remove a buffer ID from the catalog and release the resources of the registered buffers. */
-  def removeBuffers(id: RapidsBufferId): Unit = singleton.removeBuffer(id)
+  def removeBuffer(id: RapidsBufferId): Unit = singleton.removeBuffer(id)
 }
