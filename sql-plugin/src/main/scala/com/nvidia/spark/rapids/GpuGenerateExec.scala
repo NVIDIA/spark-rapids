@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
+import com.nvidia.spark.rapids.GpuGenerateExecSparkPlanMeta.{OUTER_SUPPORTED_GENERATORS, isOuterSupported}
 import com.nvidia.spark.rapids.GpuMetric.{ESSENTIAL_LEVEL, MODERATE_LEVEL, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructType}
@@ -40,8 +40,8 @@ class GpuGenerateExecSparkPlanMeta(
   }
 
   override def tagPlanForGpu(): Unit = {
-    if (gen.outer) {
-      willNotWorkOnGpu("outer is not currently supported")
+    if (gen.outer && !isOuterSupported(gen.generator)) {
+      willNotWorkOnGpu(s"outer is not currently supported with ${gen.generator.nodeName}")
     }
   }
 
@@ -52,6 +52,14 @@ class GpuGenerateExecSparkPlanMeta(
       gen.outer,
       gen.generatorOutput,
       childPlans.head.convertIfNeeded())
+  }
+}
+
+object GpuGenerateExecSparkPlanMeta {
+  private val OUTER_SUPPORTED_GENERATORS: Set[String] = Set()
+
+  def isOuterSupported(gen: Generator): Boolean = {
+    OUTER_SUPPORTED_GENERATORS.contains(gen.nodeName)
   }
 }
 
