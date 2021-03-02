@@ -1111,32 +1111,54 @@ case class GpuCast(
      to: DecimalType,
      isFrom32Bit: Boolean): ColumnVector = {
 
+    // Decimal numbers in general terms have two parts, a part before decimal (whole number)
+    // and a part after decimal (fractional number)
     // When moving from a smaller scale to a bigger scale (or 32-bit to 64-bit), the target type is
-    // able to hold much more values on the fraction side which leaves less room for the whole
-    // number.
+    // able to hold much more values on the fractional side which leaves less room for the whole
+    // number. In the following examples we have kept the precision constant to keep it simple.
+    //
     // Ex:
     //  999999.999 => from.scale = 3
     //  9999.99999 => to.scale = 5
-    // this means that there could be values in the input that will not be able to fit in the
-    // target type, so we calculate the max number that should be in the input column before we
-    // can safely cast the values without overflowing.
-    // In the above example the source can have a maximum of 4 digits before decimal point and
-    // 3 after the decimal point. Therefore the values of absMax and absMin will be calculated
-    // based on the maxPrecision value.
-    val maxPrecision = to.precision + from.scale - to.scale
+    //
+    // In the above example the source can have a maximum of 4 digits for the whole number and
+    // 3 digits for fractional side. We are not worried about the fractional side as the target can
+    // hold more digits than the source can. What we need to make sure is the source
+    // doesn't have values that are bigger than the destination whole number side can hold.
+    // So we calculate the max number that should be in the input column before we can safely cast
+    // the values without overflowing. If we find values bigger, we handle it depending on if we
+    // are in ANSI mode or not.
+    //
+    // When moving from a bigger scale to a smaller scale (or 64-bit to 32-bit), the target type
+    // is able to have more digits on the whole number side but less on the fractional
+    // side. In this case all we need to do is round the value to the new scale. Only, in case we
+    // are moving from 64-bit to a 32-bit do we need to check for overflow
+    //
+    // Ex:
+    // 9999.99999 => from.scale = 5
+    // 999999.999 => to.scale = 3
+    //
+    // Here you can see the "to.scale" can hold less fractional values but more on the whole
+    // number side so overflow check is unnecessary when the bases are the same i.e. 32-bit to
+    // 32-bit and 64-bit to 64-bit. Only when we go from a 64-bit number to a 32-bit number in this
+    // case we need to check for overflow.
+    //
+    // Therefore the values of absMax and absMin will be calculated based on the absBoundPrecision
+    // value to make sure the source has values that don't exceed the upper and lower bounds
+    val absBoundPrecision = to.precision - to.scale
 
     // When we support 128 bit Decimals we should add a check for that
     // if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
     // !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS)
-    if (isFrom32Bit && maxPrecision > Decimal.MAX_INT_DIGITS) {
+    if (isFrom32Bit && absBoundPrecision > Decimal.MAX_INT_DIGITS) {
       return input.incRefCount()
     }
     val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
-      val absBound = math.pow(10, maxPrecision).toLong
-      (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
+      val absBound = math.pow(10, absBoundPrecision).toLong
+      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
     } else {
-      val absBound = math.pow(10, maxPrecision).toInt
-      (Scalar.fromDecimal(-from.scale, -absBound), Scalar.fromDecimal(-from.scale, absBound))
+      val absBound = math.pow(10, absBoundPrecision).toInt
+      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
     }
     val checkedInput = if (ansiMode) {
       assertValuesInRange(input,
