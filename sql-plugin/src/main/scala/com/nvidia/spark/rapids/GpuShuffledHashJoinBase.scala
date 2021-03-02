@@ -100,4 +100,8 @@ abstract class GpuShuffledHashJoinBase(
       }
     }
   }
+
+  override def nodeName: String = {
+    if (isSkewJoin) super.nodeName + "(skew=true)" else super.nodeName
+  }
 }

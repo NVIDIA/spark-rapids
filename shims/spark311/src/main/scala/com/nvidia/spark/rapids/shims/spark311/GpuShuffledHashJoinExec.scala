@@ -83,8 +83,4 @@ case class GpuShuffledHashJoinExec(
     rightKeys,
     buildSide,
     condition,
-    isSkewJoin = isSkewJoin) {
-  override def nodeName: String = {
-    if (isSkewJoin) super.nodeName + "(skew=true)" else super.nodeName
-  }
-}
+    isSkewJoin = isSkewJoin)

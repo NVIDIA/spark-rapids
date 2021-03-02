@@ -81,5 +81,4 @@ case class GpuShuffledHashJoinExec(
       rightKeys,
       buildSide,
       condition,
-      isSkewJoin = false) {
-}
+      isSkewJoin = false)
