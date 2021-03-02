@@ -43,6 +43,8 @@ object TrampolineUtil {
 
   def fromAttributes(attrs: Seq[Attribute]): StructType = StructType.fromAttributes(attrs)
 
+  def toAttributes(structType: StructType): Seq[Attribute] = structType.toAttributes
+
   def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
 
   /** Get a human-readable string, e.g.: "4.0 MiB", for a value in bytes. */
