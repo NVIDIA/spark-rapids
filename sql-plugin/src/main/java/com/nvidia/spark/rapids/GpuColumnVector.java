@@ -58,6 +58,20 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Print to standard error the contents of a table. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the table to print out.
+   * @param cb the batch to print out.
+   */
+  public static synchronized void debug(String name, ColumnarBatch cb) {
+    try (Table table = from(cb)) {
+      debug(name, table);
+    }
+  }
+
+  /**
    * Print to standard error the contents of a column. Note that this should never be
    * called from production code, as it is very slow.  Also note that this is not production
    * code.  You might need/want to update how the data shows up or add in support for more
@@ -123,6 +137,22 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           System.err.println(i + " NULL");
         } else {
           System.err.println(i + " " + hostCol.getBoolean(i));
+        }
+      }
+    } else if (DType.FLOAT64.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getDouble(i));
+        }
+      }
+    } else if (DType.FLOAT32.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getFloat(i));
         }
       }
     } else {
