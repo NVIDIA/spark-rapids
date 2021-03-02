@@ -116,15 +116,10 @@ class RapidsBufferCatalog extends Logging {
 
   /** Remove a buffer ID from the catalog and release the resources of the registered buffers. */
   def removeBuffer(id: RapidsBufferId): Unit = {
-    val updater = new BiFunction[RapidsBufferId, mutable.SortedMap[StorageTier, RapidsBuffer],
-        mutable.SortedMap[StorageTier, RapidsBuffer]] {
-      override def apply(key: RapidsBufferId, value: mutable.SortedMap[StorageTier, RapidsBuffer])
-      : mutable.SortedMap[StorageTier, RapidsBuffer] = {
-        value.mapValues(_.free())
-        null
-      }
+    val buffers = bufferMap.remove(id)
+    if (buffers != null) {
+      buffers.values.foreach((buffer) => buffer.free())
     }
-    bufferMap.computeIfPresent(id, updater)
   }
 
   /** Return the number of buffers currently in the catalog. */
