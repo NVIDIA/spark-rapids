@@ -21,8 +21,8 @@ This release includes additional performance improvements, including
 * Instructions on how to use [Alluxio caching](get-started/getting-started-alluxio.md) with Spark to
   leverage caching.
 
-The release is supported on Apache Spark 3.0.0, 3.0.1, 3.1.1, Databricks 7.3 ML LTS and Google Cloud
-Platform Dataproc 2.0.
+The release is supported on Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS and
+Google Cloud Platform Dataproc 2.0.
 
 The list of all supported operations is provided [here](supported_ops.md).
 
