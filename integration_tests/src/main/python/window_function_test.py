@@ -101,7 +101,6 @@ def meta_idfn(meta):
         return meta + idfn(something)
     return tmp
 
-@pytest.mark.xfail(condition=not(is_before_spark_310()), reason='https://github.com/NVIDIA/spark-rapids/issues/999')
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
