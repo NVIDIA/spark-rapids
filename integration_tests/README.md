@@ -99,14 +99,15 @@ The test files are everything under `./integration_tests/src/test/resources/`  B
 where you placed them because you will need to tell the tests where they are.
 
 When running these tests you will need to include the test jar, the integration test jar,
-scala-test and scalactic. You can find scala-test and scalactic under `~/.m2/repository`.
+the udf-examples jar, scala-test and scalactic. You can find scala-test and scalactic under
+`~/.m2/repository`.
 
 It is recommended that you use `spark-shell` and the scalatest shell to run each test
 individually, so you don't risk running unit tests along with the integration tests.
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-0.3.0-tests.jar,rapids-4-spark-integration-tests_2.12-0.3.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-0.4.0-tests.jar,rapids-4-spark-udf-examples_2.12-0.4.0,rapids-4-spark-integration-tests_2.12-0.4.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -130,7 +131,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 10.1 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0.jar,rapids-4-spark-udf-examples_2.12-0.4.0.jar,cudf-0.18-cuda10-1.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -140,7 +141,7 @@ You do need to have access to a compatible GPU with the needed CUDA drivers. The
 
 ### Runtime Environment
 
-`--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks` and `emr`. This is generally used
+`--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks`,`emr`,`dataproc` and `apache`. This is generally used
 when certain environments have different behavior, and the tests don't have a good way to auto-detect the environment yet.
 
 ### timezone
@@ -170,26 +171,6 @@ any GPU resources on the cluster. For standalone, Mesos, and Kubernetes you can 
 of executors you want to use per application. The extra core is for the driver. Dynamic allocation can mess with these settings
 under YARN and even though it is off by default you probably want to be sure it is disabled (spark.dynamicAllocation.enabled=false).
 
-### Enabling TPCxBB/TPCH/TPCDS/Mortgage Tests
-
-The TPCxBB, TPCH, TPCDS, and Mortgage tests in this framework can be enabled by providing a couple of options:
-
-   * TPCxBB `tpcxbb-format` (optional, defaults to "parquet"), and `tpcxbb-path` (required, path to the TPCxBB data).
-   * TPCH `tpch-format` (optional, defaults to "parquet"), and `tpch-path` (required, path to the TPCH data).
-   * TPCDS `tpcds-format` (optional, defaults to "parquet"), and `tpcds-path` (required, path to the TPCDS data).
-   * Mortgage `mortgage-format` (optional, defaults to "parquet"), and `mortgage-path` (required, path to the Mortgage data).
-
-As an example, here is the `spark-submit` command with the TPCxBB parameters on CUDA 10.1:
-
-```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar,rapids-4-spark-tests_2.12-0.3.0.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
-```
-
-Be aware that running these tests with read data requires at least an entire GPU, and preferable several GPUs/executors
-in your cluster so please be careful when enabling these tests.  Also some of these test actually produce non-deterministic
-results when run in a real cluster. If you do see failures when running these tests please contact us so we can investigate
-them and possibly tag the tests appropriately when running on an actual cluster.
-
 ### Enabling cudf_udf Tests
 
 The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default not only because of the complicated environment setup, but also because GPU resources scheduling for Pandas UDF is an experimental feature now, the performance may not always be better.
@@ -211,7 +192,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 10.1:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar,rapids-4-spark-tests_2.12-0.3.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.3.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.3.0.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0.jar,rapids-4-spark-udf-examples_2.12-0.4.0.jar,cudf-0.18-cuda10-1.jar,rapids-4-spark-tests_2.12-0.4.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.4.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.4.0.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
+import org.apache.spark.sql.rapids.execution.GpuHashJoin
 import org.apache.spark.sql.types.DataType
 
 /**
@@ -31,7 +32,7 @@ class GpuSortMergeJoinMeta(
     join: SortMergeJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[SortMergeJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
@@ -42,10 +43,6 @@ class GpuSortMergeJoinMeta(
     GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
@@ -66,8 +63,7 @@ class GpuSortMergeJoinMeta(
             willNotWorkOnGpu(s"can't replace sortMergeJoin because one of the SortExec's before " +
               s"can't be replaced.")
           } else {
-            plan.shouldBeRemoved("removing SortExec as part replacing sortMergeJoin with " +
-              s"shuffleHashJoin")
+            plan.shouldBeRemoved("replacing sortMergeJoin with shuffleHashJoin")
           }
         }
       }
@@ -86,7 +82,7 @@ class GpuSortMergeJoinMeta(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
-      buildSide,
+      GpuJoinUtils.getGpuBuildSide(buildSide),
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded())

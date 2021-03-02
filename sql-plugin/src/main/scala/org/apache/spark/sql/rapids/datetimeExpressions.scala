@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.time.ZoneId
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, ConfKeysAndIncompat, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -284,7 +284,7 @@ case class GpuDayOfYear(child: Expression) extends GpuDateUnaryExpression {
 abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpression]
    (expr: A, conf: RapidsConf,
    parent: Option[RapidsMeta[_, _, _]],
-   rule: ConfKeysAndIncompat) extends BinaryExprMeta[A](expr, conf, parent, rule) {
+   rule: DataFromReplacementRule) extends BinaryExprMeta[A](expr, conf, parent, rule) {
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
@@ -330,7 +330,11 @@ object GpuToTimestamp extends Arm {
     "yyyy/MM/dd",
     "yyyy/MM",
     "dd/MM/yyyy",
-    "yyyy-MM-dd HH:mm:ss"
+    "yyyy-MM-dd HH:mm:ss",
+    "MM-dd",
+    "MM/dd",
+    "dd-MM",
+    "dd/MM"
   )
 
   def daysScalarSeconds(name: String): Scalar = {
@@ -473,11 +477,16 @@ abstract class GpuToTimestamp
     } else { // Timestamp or DateType
       lhs.getBase.asTimestampMicroseconds()
     }
-    withResource(tmp) { r =>
-      // The type we are returning is a long not an actual timestamp
-      withResource(Scalar.fromInt(downScaleFactor)) { downScaleFactor =>
-        withResource(tmp.asLongs()) { longMicroSecs =>
-          longMicroSecs.div(downScaleFactor)
+    // Return Timestamp value if dataType it is expecting is of TimestampType
+    if (dataType.equals(TimestampType)) {
+      tmp
+    } else {
+      withResource(tmp) { tmp =>
+        // The type we are returning is a long not an actual timestamp
+        withResource(Scalar.fromInt(downScaleFactor)) { downScaleFactor =>
+          withResource(tmp.asLongs()) { longMicroSecs =>
+            longMicroSecs.div(downScaleFactor)
+          }
         }
       }
     }
@@ -594,6 +603,24 @@ case class GpuToUnixTimestampImproved(strTs: Expression,
   override def left: Expression = strTs
   override def right: Expression = format
 
+}
+
+case class GpuGetTimestamp(
+    strTs: Expression,
+    format: Expression,
+    sparkFormat: String,
+    strf: String,
+    timeZoneId: Option[String] = None) extends GpuToTimestamp {
+
+  override def strfFormat = strf
+  override val downScaleFactor = 1
+  override def dataType: DataType = TimestampType
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  override def left: Expression = strTs
+  override def right: Expression = format
 }
 
 case class GpuFromUnixTime(

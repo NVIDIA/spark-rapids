@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -145,7 +145,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
       }
 
-      GpuSemaphore.initialize(conf.concurrentGpuTasks)
+      val concurrentGpuTasks = conf.concurrentGpuTasks
+      logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
+      GpuSemaphore.initialize(concurrentGpuTasks)
     } catch {
       case e: Throwable =>
         // Exceptions in executor plugin can cause a single thread to die but the executor process
@@ -208,6 +210,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
+    GpuDeviceManager.shutdown()
   }
 }
 

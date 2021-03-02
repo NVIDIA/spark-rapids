@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import scala.math.max
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetricNames._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -43,9 +42,8 @@ import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, Partit
 import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{DateType, DecimalType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -54,15 +52,20 @@ import org.apache.spark.util.SerializableConfiguration
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
     @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuExec {
-
+  import GpuMetric._
   @transient lazy val batch: Batch = scan.toBatch
 
   override def supportsColumnar = true
 
-  override lazy val additionalMetrics = GpuMetricNames.buildGpuScanMetrics(sparkContext)
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics = Map(
+    GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
+    BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
 
   scan match {
-    case s: ScanWithMetrics => s.metrics = metrics ++ additionalMetrics
+    case s: ScanWithMetrics => s.metrics = allMetrics ++ additionalMetrics
     case _ =>
   }
 
@@ -81,7 +84,7 @@ case class GpuBatchScanExec(
 
 trait ScanWithMetrics {
   //this is initialized by the exec post creation
-  var metrics : Map[String, SQLMetric] = Map.empty
+  var metrics : Map[String, GpuMetric] = Map.empty
 }
 
 object GpuCSVScan {
@@ -229,6 +232,10 @@ object GpuCSVScan {
       }
     }
     // TODO parsedOptions.emptyValueInRead
+
+    if (readSchema.exists(_.dataType.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu("DecimalType is not supported")
+    }
   }
 }
 
@@ -301,7 +308,7 @@ case class GpuCSVPartitionReaderFactory(
     parsedOptions: CSVOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
-    metrics: Map[String, SQLMetric]) extends FilePartitionReaderFactory {
+    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -324,8 +331,9 @@ class CSVPartitionReader(
     parsedOptions: CSVOptions,
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
-    execMetrics: Map[String, SQLMetric])
+    execMetrics: Map[String, GpuMetric])
   extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
+  import GpuMetric._
 
   private var batch: Option[ColumnarBatch] = None
   private val lineReader = new HadoopFileLinesReader(partFile, parsedOptions.lineSeparatorInRead,
@@ -481,7 +489,7 @@ class CSVPartitionReader(
   override def next(): Boolean = {
     batch.foreach(_.close())
     batch = if (isExhausted) {
-      metrics("peakDevMemory").set(maxDeviceMemory)
+      metrics(PEAK_DEVICE_MEMORY).set(maxDeviceMemory)
       None
     } else {
       readBatch()

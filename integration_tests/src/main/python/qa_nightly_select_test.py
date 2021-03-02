@@ -145,6 +145,7 @@ _qa_conf = {
         'spark.rapids.sql.variableFloatAgg.enabled': 'true',
         'spark.rapids.sql.hasNans': 'false',
         'spark.rapids.sql.castStringToFloat.enabled': 'true',
+        'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'true',
         'spark.rapids.sql.castFloatToString.enabled': 'true'
         }
 

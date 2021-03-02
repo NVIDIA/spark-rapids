@@ -55,16 +55,16 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 11.0 => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.17-cuda10-1.jar
-- rapids-4-spark_2.12-0.3.0.jar
+- cudf-0.18-cuda10-1.jar
+- rapids-4-spark_2.12-0.4.0.jar
 
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.17-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.3.0.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.18-cuda10-1.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.4.0.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -114,6 +114,7 @@ machine or multiple machines for distributed setup.
 The first step is to [Install Spark](#install-spark), the 
 [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the 
 [GPU discovery script](#install-the-gpu-discovery-script) on all the nodes you want to use.
+See the note at the end of this section if using Spark 3.1.1 or above.
 After that choose one of the nodes to be your master node and start the master.  Note that the
 master process does **not** need a GPU to function properly.
 
@@ -176,6 +177,12 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin
 ```
 
+Please note that if you are using Spark 3.1.1 or higher, the RAPIDS Accelerator for Apache Spark plugin jar
+and CUDF jar do not need to be installed on all the nodes and the configs
+`spark.executor.extraClassPath` and `spark.driver.extraClassPath` can be replaced in the above
+command with `--jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}`.
+This will automatically distribute the jars to the nodes for you.
+
 ## Running on YARN
 
 YARN requires you to [Install Spark](#install-spark), the
@@ -223,7 +230,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```  
 
 ### YARN 2.10 with Isolation and GPU Scheduling Enabled
@@ -250,7 +257,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ``` 
 
 ### YARN without Isolation
@@ -288,7 +295,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
-       --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+       --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```  
 
 ## Running on Kubernetes
@@ -367,9 +374,9 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --conf spark.task.resource.gpu.amount=0.166 \
   --conf spark.executor.resource.gpu.amount=1 \
   --files $SPARK_RAPIDS_DIR/getGpusResources.sh
-  --jars  ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
+  --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
 ```
-  
+
 ## Example Join Operation
 Once you have started your Spark shell you can run the following commands to do a basic join and
 look at the UI to see that it runs on the GPU.
@@ -385,103 +392,15 @@ and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
 ![Join Example on Spark SQL UI](../img/join-sql-ui-example.png)
 
-## Enabling RapidsShuffleManager
----
-**NOTE**
+## Enabling RAPIDS Shuffle Manager
 
-The _RapidsShuffleManager_ is a beta feature!
+The _RAPIDS Shuffle Manager_ is an implementation of the `ShuffleManager` interface in Apache Spark
+that allows custom mechanisms to exchange shuffle data, enabling _Remote Direct Memory 
+Access (RDMA)_ and peer-to-peer communication between GPUs (NVLink/PCIe), by 
+leveraging [Unified Communication X (UCX)](https://www.openucx.org/).
 
----
-
-The _RapidsShuffleManager_ is an implementation of the `ShuffleManager` interface in Apache Spark
-that allows custom mechanisms to exchange shuffle data. The _RapidsShuffleManager_ has two components:
-a spillable cache, and a transport that can utilize _Remote Direct Memory Access (RDMA)_ and high-bandwidth 
-transfers within a node that has multiple GPUs. This is possible because the plugin utilizes 
-[Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
-
-- **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
-but can spill in the following cases:
-  - _GPU out of memory_: If an allocation in the GPU failed to acquire memory, spill will get triggered
-    moving GPU buffers to host to allow for the original allocation to succeed.
-  - _Host spill store filled_: If the host memory store has reached a maximum threshold 
-    (`spark.rapids.memory.host.spillStorageSize`), host buffers will be spilled to disk until
-    the host spill store shrinks back below said configurable threshold.
-    
-  Tasks local to the producing executor will short-circuit read from the cache.
-
-- **Transport**: Handles block transfers between executors using various means like: _NVLink_, _PCIe_, _Infiniband (IB)_, 
-_RDMA over Converged Ethernet (RoCE)_ or _TCP_, and as configured in UCX, in these scenarios:
-  - _GPU-to-GPU_: Shuffle blocks that were able to fit in GPU memory.
-  - _Host-to-GPU_ and _Disk-to-GPU_: Shuffle blocks that spilled to host (or disk) but will be manifested 
-  in the GPU in the downstream Spark task.
-
-In order to enable the _RapidsShuffleManager_, please follow these steps. If you don't have 
-Mellanox hardware go to *step 2*:
-
-1. If you have Mellanox NICs and an Infiniband(IB) or RoCE network, please ensure you have the 
-[MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), 
-and the [`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed.
-
-    With `nv_peer_mem`, IB/RoCE-based transfers can perform zero-copy transfers directly from GPU memory.
-
-2. Install [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
-
-
-3. You will need to configure your spark job with extra settings for UCX (we are looking to 
-simplify these settings in the near future). Choose the version of the shuffle manager
-that matches your Spark version. Currently we support
-   - Spark 3.0.0 (com.nvidia.spark.rapids.spark300.RapidsShuffleManager) 
-   - Spark 3.0.1 (com.nvidia.spark.rapids.spark301.RapidsShuffleManager) 
-   - Spark 3.0.2 (com.nvidia.spark.rapids.spark302.RapidsShuffleManager) 
-   - Spark 3.1.0 (com.nvidia.spark.rapids.spark310.RapidsShuffleManager)
-
-```shell
-...
---conf spark.shuffle.manager=com.nvidia.spark.rapids.spark300.RapidsShuffleManager \
---conf spark.shuffle.service.enabled=false \
---conf spark.rapids.shuffle.transport.enabled=true \
---conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
---conf spark.executorEnv.UCX_ERROR_SIGNALS= \
---conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
---conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
---conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
---conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
-```
-
-Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a 
-non-standard location.
-
-### UCX Environment Variables
-- `UCX_TLS`: 
-  - `cuda_copy`, and `cuda_ipc`: enables handling of CUDA memory in UCX, both for copy-based transport
-    and peer-to-peer communication between GPUs (NVLink/PCIe).
-  - `rc`: enables Infiniband and RoCE based transport in UCX.
-  - `tcp`: allows for TCP communication in cases where UCX deems necessary.
-- `UCX_ERROR_SIGNALS=`: Disables UCX signal catching, as it can cause issues with the JVM.
-- `UCX_MAX_RNDV_RAILS=1`: Set this to `1` to disable multi-rail transfers in UCX, where UCX splits
-  data to utilize various channels (e.g. two NICs). A value greater than `1` can cause a performance drop 
-  for high-bandwidth transports between GPUs.
-- `UCX_MEMTYPE_CACHE=n`: Disables a cache in UCX that can cause UCX to fail when running with CUDA buffers. 
-  
-### RapidsShuffleManager Fine Tuning
-Here are some settings that could be utilized to fine tune the _RapidsShuffleManager_:
-
-#### Bounce Buffers
-The following configs control the number of bounce buffers, and the size. Please note that for
-device buffers, two pools are created (for sending and receiving). Take this into account when
-sizing your pools. 
-
-The GPU buffers should be smaller than the [`PCI BAR Size`](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#bar-sizes)
-for your GPU. Please verify the [defaults](../configs.md) work in your case.
-
-- `spark.rapids.shuffle.ucx.bounceBuffers.device.count`
-- `spark.rapids.shuffle.ucx.bounceBuffers.host.count`
-- `spark.rapids.shuffle.ucx.bounceBuffers.size`
-
-#### Spillable Store
-This setting controls the amount of host memory (RAM) that can be utilized to spill GPU blocks when
-the GPU is out of memory, before going to disk. Please verify the [defaults](../configs.md).
-- `spark.rapids.memory.host.spillStorageSize`
+You can find out how to enable the accelerated shuffle in the 
+[RAPIDS Shuffle Manager documentation](../additional-functionality/rapids-shuffle.md).
 
 ##  GPU Scheduling For Pandas UDF
 ---
@@ -491,9 +410,12 @@ The _GPU Scheduling for Pandas UDF_ is an experimental feature, and may change a
 
 ---
 
-_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs), and has two components: 
+_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined
+function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs),
+and has two components:
 
-- **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the same GPU with JVM.
+- **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the
+  same GPU with JVM.
 
 - **Increase Speed**: Make the data transport faster between JVM process and Python process.
 
@@ -501,7 +423,8 @@ _GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defi
 
 To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job with extra settings.
 
-1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive mode to assign GPUs under spark.
+1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive
+   mode to assign GPUs under spark.
 2. Currently the python files are packed into the spark rapids plugin jar. 
 
     On Yarn, you need to add
@@ -514,7 +437,7 @@ To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job 
     On Standalone, you need to add
     ```shell
     ...
-    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.3.0.jar \
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.4.0.jar \
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
     ```
 
@@ -544,7 +467,8 @@ spark.rapids.python.memory.gpu.allocFraction
 spark.rapids.python.memory.gpu.maxAllocFraction
 ```
 
-To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md).
+To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
+Apache Spark Configuration Guide](../configs.md).
 
 
 

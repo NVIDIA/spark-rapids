@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, ShimLoader}
-import com.nvidia.spark.rapids.GpuMetricNames.{DESCRIPTION_NUM_PARTITIONS, DESCRIPTION_PARTITION_SIZE, DESCRIPTION_TOTAL_TIME, NUM_PARTITIONS, PARTITION_SIZE, TOTAL_TIME}
+import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric, ShimLoader}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -25,7 +24,6 @@ import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartit
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -38,6 +36,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuCustomShuffleReaderExec(
     child: SparkPlan,
     partitionSpecs: Seq[ShufflePartitionSpec]) extends UnaryExecNode with GpuExec  {
+  import GpuMetric._
 
   /**
    * We intentionally override metrics in this case rather than overriding additionalMetrics so
@@ -46,12 +45,10 @@ case class GpuCustomShuffleReaderExec(
    *
    * The Spark version of this operator does not output any metrics.
    */
-  override lazy val metrics: Map[String, SQLMetric] = Map(
-    PARTITION_SIZE ->
-        SQLMetrics.createSizeMetric(sparkContext, DESCRIPTION_PARTITION_SIZE),
-    NUM_PARTITIONS ->
-        SQLMetrics.createMetric(sparkContext, DESCRIPTION_NUM_PARTITIONS),
-    TOTAL_TIME -> SQLMetrics.createNanoTimingMetric(sparkContext, DESCRIPTION_TOTAL_TIME)
+  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    PARTITION_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
+    NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
+    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
   )
 
   override def output: Seq[Attribute] = child.output

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -117,6 +117,7 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
     val doc: String, val isInternal: Boolean) {
 
   def get(conf: Map[String, String]): T
+  def get(conf: SQLConf): T
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -128,6 +129,15 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
+  }
+
+  override def get(conf: SQLConf): T = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      defaultValue
+    } else {
+      converter(tmp)
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -151,6 +161,15 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
+  }
+
+  override def get(conf: SQLConf): Option[T] = {
+    val tmp = conf.getConfString(key, null)
+    if (tmp == null) {
+      None
+    } else {
+      Some(rawConverter(tmp))
+    }
   }
 
   override def help(asTable: Boolean = false): Unit = {
@@ -333,6 +352,14 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1))
 
+  val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
+    .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
+      "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
+      "experimental feature. For more information on GDS, see " +
+      "https://docs.nvidia.com/gpudirect-storage/.")
+    .booleanConf
+    .createWithDefault(false)
+
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -344,7 +371,9 @@ object RapidsConf {
     .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
       "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
       "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
-      "just passes through to CUDA memory allocation directly.")
+      "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
+      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), " +
+      "as \"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -401,6 +430,23 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(false)
+
+  // METRICS
+
+  val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
+      .doc("GPU plans can produce a lot more metrics than CPU plans do. In very large " +
+          "queries this can sometimes result in going over the max result size limit for the " +
+          "driver. Supported values include " +
+          "DEBUG which will enable all metrics supported and typically only needs to be enabled " +
+          "when debugging the plugin. " +
+          "MODERATE which should output enough metrics to understand how long each part of the " +
+          "query is taking and how much data is going to each part of the query. " +
+          "ESSENTIAL which disables most metrics except those Apache Spark CPU plans will also " +
+          "report or their equivalents.")
+      .stringConf
+      .transform(_.toUpperCase(java.util.Locale.ROOT))
+      .checkValues(Set("DEBUG", "MODERATE", "ESSENTIAL"))
+      .createWithDefault("MODERATE")
 
   // ENABLE/DISABLE PROCESSING
 
@@ -459,9 +505,8 @@ object RapidsConf {
 
   val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
       .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits and is only supported by a small number of operations currently.  " +
-          "This can result in a lot of data movement to and from the GPU, which can slow down " +
-          "processing in some cases.")
+          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
+          "which can slow down processing in some cases.")
       .booleanConf
       .createWithDefault(false)
 
@@ -476,11 +521,25 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_FLOAT_TO_STRING = conf("spark.rapids.sql.castFloatToString.enabled")
-    .doc("Casting from floating point types to string on the GPU returns results that have " +
-      "a different precision than the default Java toString behavior.")
+  val ENABLE_CAST_FLOAT_TO_DECIMAL = conf("spark.rapids.sql.castFloatToDecimal.enabled")
+    .doc("Casting from floating point types to decimal on the GPU returns results that have " +
+      "tiny difference compared to results returned from CPU.")
     .booleanConf
     .createWithDefault(false)
+
+  val ENABLE_CAST_FLOAT_TO_STRING = conf("spark.rapids.sql.castFloatToString.enabled")
+    .doc("Casting from floating point types to string on the GPU returns results that have " +
+      "a different precision than the default results of Spark.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES =
+    conf("spark.rapids.sql.castFloatToIntegralTypes.enabled")
+      .doc("Casting from floating point types to integral types on the GPU supports a " +
+          "slightly different range of values when using Spark 3.1.0 or later. Refer to the CAST " +
+          "documentation for more details.")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
@@ -544,16 +603,13 @@ object RapidsConf {
       "See spark.rapids.sql.format.parquet.multiThreadedRead.numThreads and " +
       "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
-      "This can be set to AUTO to select the reader we think is best. This will " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
       "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
-      "in the cloud. See spark.rapids.cloudSchemes. " +
-      "The default is currently set to MULTITHREADED because the COALESCING reader " +
-      "does not handle partitioned data efficiently. If you aren't using partitioned data " +
-      "in a non cloud environment, the COALESCING reader would be a good choice.")
+      "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(ParquetReaderType.values.map(_.toString))
-    .createWithDefault(ParquetReaderType.MULTITHREADED.toString)
+    .createWithDefault(ParquetReaderType.AUTO.toString)
 
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
@@ -605,9 +661,10 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to false disables orc output acceleration")
+    .doc("When set to false disables orc output acceleration. This has been disabled by " +
+        "default because of https://github.com/NVIDIA/spark-rapids/issues/1550")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val ENABLE_CSV = conf("spark.rapids.sql.format.csv.enabled")
     .doc("When set to false disables all csv input and output acceleration. " +
@@ -632,6 +689,14 @@ object RapidsConf {
   val TEST_ALLOWED_NONGPU = conf("spark.rapids.sql.test.allowedNonGpu")
     .doc("Comma separate string of exec or expression class names that are allowed " +
       "to not be GPU accelerated for testing.")
+    .internal()
+    .stringConf
+    .toSequence
+    .createWithDefault(Nil)
+
+  val TEST_VALIDATE_EXECS_ONGPU = conf("spark.rapids.sql.test.validateExecsInGpuPlan")
+    .doc("Comma separate string of exec class names to validate they " +
+      "are GPU accelerated. Used for testing.")
     .internal()
     .stringConf
     .toSequence
@@ -666,9 +731,13 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
-    .doc("When set to true, enable the Rapids Shuffle Transport for accelerated shuffle.")
+    .doc("Enable the Rapids Shuffle Transport for accelerated shuffle. By default, this " +
+        "requires UCX to be installed in the system. Consider setting to false if running with " +
+        "a single executor and UCX is not available, for short-circuit cached shuffle " +
+        "(i.e. for testing purposes)")
+    .internal()
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
@@ -754,6 +823,18 @@ object RapidsConf {
       .stringConf
       .createWithDefault("none")
 
+  // ALLUXIO CONFIGS
+
+  val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
+    .doc("List of paths to be replaced with corresponding alluxio scheme. Eg, when configure" +
+      "is set to \"s3:/foo->alluxio://0.1.2.3:19998/foo,gcs:/bar->alluxio://0.1.2.3:19998/bar\", " +
+      "which means:  " +
+      "     s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv and " +
+      "     gcs:/bar/b.csv will be replaced to alluxio://0.1.2.3:19998/bar/b.csv")
+    .stringConf
+    .toSequence
+    .createOptional
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -797,6 +878,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
+    .doc("Option to turn off using the optimized Arrow copy code when reading from " +
+      "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
+      "have to turn it off, but its convenient for testing.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -817,7 +906,7 @@ object RapidsConf {
       println("---")
       println("layout: page")
       println("title: Configuration")
-      println("nav_order: 3")
+      println("nav_order: 4")
       println("---")
       println(s"<!-- Generated by RapidsConf.help. DO NOT EDIT! -->")
       // scalastyle:off line.size.limit
@@ -827,7 +916,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.3.0.jar,cudf-0.17-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.4.0.jar,cudf-0.18-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -941,6 +1030,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).asJava
 
+  lazy val metricsLevel: String = get(METRICS_LEVEL)
+
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
@@ -961,6 +1052,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
+  lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
+
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
@@ -978,6 +1071,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
+
+  lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
@@ -1007,6 +1102,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 
+  lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
+
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
@@ -1014,6 +1111,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
+
+  lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
@@ -1086,7 +1185,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val allowDisableEntirePlan: Boolean = get(ALLOW_DISABLE_ENTIRE_PLAN)
 
+  lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
+
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
+
+  lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

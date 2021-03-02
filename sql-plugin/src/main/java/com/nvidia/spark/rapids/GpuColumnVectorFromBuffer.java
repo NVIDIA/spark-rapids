@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.ContiguousTable;
 import ai.rapids.cudf.DeviceMemoryBuffer;
 import ai.rapids.cudf.Table;
+import com.nvidia.spark.rapids.format.TableMeta;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
@@ -28,6 +29,7 @@ import java.util.Arrays;
 /** GPU column vector carved from a single buffer, like those from cudf's contiguousSplit. */
 public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
   private final DeviceMemoryBuffer buffer;
+  private final TableMeta tableMeta;
 
   /**
    * Get a ColumnarBatch from a set of columns in a contiguous table. This differs from the
@@ -43,7 +45,8 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
   public static ColumnarBatch from(ContiguousTable contigTable, DataType[] colTypes) {
     DeviceMemoryBuffer buffer = contigTable.getBuffer();
     Table table = contigTable.getTable();
-    return from(table, buffer, colTypes);
+    TableMeta meta = MetaUtils.buildTableMeta(0, contigTable);
+    return from(table, buffer, meta, colTypes);
   }
 
   /**
@@ -55,10 +58,12 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
    *
    * @param table a table with columns at offsets of `buffer`
    * @param buffer a device buffer that packs data for columns in `table`
+   * @param meta metadata describing the table layout and schema
    * @param colTypes the types the columns should have.
    * @return batch of GpuColumnVectorFromBuffer instances derived from the table and buffer
    */
-  public static ColumnarBatch from(Table table, DeviceMemoryBuffer buffer, DataType[] colTypes) {
+  public static ColumnarBatch from(Table table, DeviceMemoryBuffer buffer,
+      TableMeta meta, DataType[] colTypes) {
     assert table != null : "Table cannot be null";
     assert GpuColumnVector.typeConversionAllowed(table, colTypes) :
         "Type conversion is not allowed from " + table + " to " + Arrays.toString(colTypes);
@@ -72,7 +77,7 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
       for (int i = 0; i < numColumns; ++i) {
         ColumnVector v = table.getColumn(i);
         DataType type = colTypes[i];
-        columns[i] = new GpuColumnVectorFromBuffer(type, v.incRefCount(), buffer);
+        columns[i] = new GpuColumnVectorFromBuffer(type, v.incRefCount(), buffer, meta);
       }
       return new ColumnarBatch(columns, (int) rows);
     } catch (Exception e) {
@@ -99,11 +104,13 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
    * @param type the spark data type for this column
    * @param cudfColumn a ColumnVector instance
    * @param buffer the buffer to hold
+   * @param meta the metadata describing the buffer layout
    */
   public GpuColumnVectorFromBuffer(DataType type, ColumnVector cudfColumn,
-      DeviceMemoryBuffer buffer) {
+      DeviceMemoryBuffer buffer, TableMeta meta) {
     super(type, cudfColumn);
     this.buffer = buffer;
+    this.tableMeta = meta;
   }
 
   /**
@@ -113,5 +120,14 @@ public final class GpuColumnVectorFromBuffer extends GpuColumnVector {
    */
   public DeviceMemoryBuffer getBuffer() {
     return buffer;
+  }
+
+  /**
+   * Get the metadata describing the data layout in the buffer,
+   * shared between columns of the original `ContiguousTable`
+   * @return opaque metadata
+   */
+  public TableMeta getTableMeta() {
+    return tableMeta;
   }
 }

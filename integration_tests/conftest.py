@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,24 +14,6 @@
 
 def pytest_addoption(parser):
     """Pytest hook to define command line options for pytest"""
-    parser.addoption(
-        "--tpcxbb_format", action="store", default="parquet", help="format of TPCXbb data"
-    )
-    parser.addoption(
-        "--tpcxbb_path", action="store", default=None, help="path to TPCXbb data"
-    )
-    parser.addoption(
-        "--tpcds_format", action="store", default="parquet", help="format of TPC-DS data"
-    )
-    parser.addoption(
-        "--tpcds_path", action="store", default=None, help="path to TPC-DS data"
-    )
-    parser.addoption(
-        "--tpch_format", action="store", default="parquet", help="format of TPCH data"
-    )
-    parser.addoption(
-        "--tpch_path", action="store", default=None, help="path to TPCH data"
-    )
     parser.addoption(
         "--mortgage_format", action="store", default="parquet", help="format of Mortgage data"
     )
@@ -52,4 +34,12 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--cudf_udf", action='store_true', default=False, help="if true enable cudf_udf test"
+    )
+    parser.addoption(
+        "--rapids_udf_example_native", action='store_true', default=False,
+        help="if true enable tests for RAPIDS UDF examples with native code"
+    )
+    parser.addoption(
+        "--test_type", action='store', default="developer",
+        help="the type of tests that are being run to help check all the correct tests are run - developer, pre-commit, or nightly"
     )

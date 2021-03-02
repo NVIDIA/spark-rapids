@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
+import java.time.DateTimeException
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
@@ -30,17 +31,20 @@ class CastExprMeta[INPUT <: CastBase](
     ansiEnabled: Boolean,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
   private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
-  private val fromType = cast.child.dataType
-  private val toType = cast.dataType
+  val fromType = cast.child.dataType
+  val toType = cast.dataType
 
   override def tagExprForGpu(): Unit = {
-    if (!GpuCast.canCast(fromType, toType)) {
-      willNotWorkOnGpu(s"$castExpr from $fromType " +
-        s"to $toType is not currently supported on the GPU")
+    if (!conf.isCastFloatToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
+      (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
+      willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
+        "floating point data types to decimals and this can produce results that slightly " +
+        "differ from the default behavior in Spark.  To enable this operation on the GPU, set " +
+        s"${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
     }
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
       (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
@@ -76,10 +80,9 @@ class CastExprMeta[INPUT <: CastBase](
     }
   }
 
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true,
-      allowBinary = true)
+  def buildTagMessage(entry: ConfEntry[_]): String = {
+    s"${entry.doc}. To enable this operation on the GPU, set ${entry.key} to true."
+  }
 
   override def convertToGpu(child: Expression): GpuExpression =
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
@@ -87,16 +90,17 @@ class CastExprMeta[INPUT <: CastBase](
 
 object GpuCast {
 
-  private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
-  private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}\\Z"
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
 
-  private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_FULL =
-    "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
+
+  /**
+   * The length of a timestamp with 6 digits for microseconds followed by 'Z', such
+   * as "2020-01-01T12:34:56.123456Z".
+   */
+  private val FULL_TIMESTAMP_LENGTH = 27
 
   /**
    * Regex for identifying strings that contain numeric values that can be casted to integral
@@ -121,74 +125,6 @@ object GpuCast {
     "required range"
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
-
-
-  /**
-   * Returns true iff we can cast `from` to `to` using the GPU.
-   */
-  def canCast(from: DataType, to: DataType): Boolean = {
-    if (from == to) {
-      return true
-    }
-    from match {
-      case NullType => to match {
-          // The only thing we really need is that we can use a null scalar to create a vector
-        case BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType |
-             DoubleType | TimestampType | DateType | StringType => true
-        case _ => false
-      }
-      case BooleanType => to match {
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case TimestampType => true
-        case StringType => true
-        case _ => false
-      }
-      case ByteType | ShortType | IntegerType | LongType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case StringType => true
-        case TimestampType => true
-        case BinaryType => true
-        case _ => false
-      }
-      case FloatType | DoubleType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case TimestampType => true
-        case StringType => true
-        case _ => false
-      }
-      case DateType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType => true
-        case FloatType | DoubleType => true
-        case TimestampType => true
-        case StringType => true
-        case _ => false
-      }
-      case TimestampType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType => true
-        case LongType => true
-        case FloatType | DoubleType => true
-        case DateType => true
-        case StringType => true
-        case _ => false
-      }
-      case StringType => to match {
-        case BooleanType => true
-        case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
-        case DateType => true
-        case TimestampType => true
-        case BinaryType => true
-        case _ => false
-      }
-      case _ => false
-    }
-  }
 }
 
 /**
@@ -445,22 +381,35 @@ case class GpuCast(
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.getBase.asByteList(true)
 
+      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
+        castIntegralsToDecimal(input.getBase, dt)
+
+      case (FloatType | DoubleType, dt: DecimalType) =>
+        castFloatsToDecimal(input.getBase, dt)
+
+      case (from: DecimalType, to: DecimalType) =>
+        castDecimalToDecimal(input.getBase, from, to)
+
       case _ =>
         input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
     }
   }
 
   /**
-   * Asserts that all values in a column are within the specfied range.
+   * Asserts that all values in a column are within the specific range.
    *
-   * @param values ColumnVector
+   * @param values ColumnVector to be performed with range check
    * @param minValue Named parameter for function to create Scalar representing range minimum value
    * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
   private def assertValuesInRange(values: ColumnVector,
     minValue: => Scalar,
-    maxValue: => Scalar): Unit = {
+    maxValue: => Scalar,
+    inclusiveMin: Boolean = true,
+    inclusiveMax: Boolean = true): Unit = {
 
     def throwIfAny(cv: ColumnVector): Unit = {
       withResource(cv) { cv =>
@@ -473,11 +422,58 @@ case class GpuCast(
     }
 
     withResource(minValue) { minValue =>
-      throwIfAny(values.lessThan(minValue))
+      throwIfAny(inclusiveMin match {
+        case true => values.lessThan(minValue)
+        case false => values.lessOrEqualTo(minValue)
+      })
     }
 
     withResource(maxValue) { maxValue =>
-      throwIfAny(values.greaterThan(maxValue))
+      throwIfAny(inclusiveMax match {
+        case true => values.greaterThan(maxValue)
+        case false => values.greaterOrEqualTo(maxValue)
+      })
+    }
+  }
+
+  /**
+   * Detects outlier values of a column given with specific range, and replaces them with
+   * a inputted substitution value.
+   *
+   * @param values ColumnVector to be performed with range check
+   * @param minValue Named parameter for function to create Scalar representing range minimum value
+   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param replaceValue Named parameter for function to create scalar to substitute outlier value
+   * @param inclusiveMin Whether the min value is included in the valid range or not
+   * @param inclusiveMax Whether the max value is included in the valid range or not
+   */
+  private def replaceOutOfRangeValues(values: ColumnVector,
+    minValue: => Scalar,
+    maxValue: => Scalar,
+    replaceValue: => Scalar,
+    inclusiveMin: Boolean = true,
+    inclusiveMax: Boolean = true): ColumnVector = {
+
+    withResource(minValue) { minValue =>
+      withResource(maxValue) { maxValue =>
+        val minPredicate = inclusiveMin match {
+          case true => values.lessThan(minValue)
+          case false => values.lessOrEqualTo(minValue)
+        }
+        withResource(minPredicate) { minPredicate =>
+          val maxPredicate = inclusiveMax match {
+            case true => values.greaterThan(maxValue)
+            case false => values.greaterOrEqualTo(maxValue)
+          }
+          withResource(maxPredicate) { maxPredicate =>
+            withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
+              withResource(replaceValue) { nullScalar =>
+                rangePredicate.ifElse(nullScalar, values)
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -610,62 +606,98 @@ case class GpuCast(
     }
   }
 
-  private def castStringToDate(input: ColumnVector): ColumnVector = {
+  /**
+   * Replace special date strings such as "now" with timestampDays. This method does not
+   * close the `input` ColumnVector.
+   */
+  def specialDateOr(
+      input: ColumnVector,
+      special: String,
+      value: Int,
+      orColumnVector: ColumnVector): ColumnVector = {
 
-    /**
-     * Replace special date strings such as "now" with timestampDays. This method does not
-     * close the `input` ColumnVector.
-     */
-    def specialDateOr(
-        input: ColumnVector,
-        special: String,
-        value: Int,
-        orColumnVector: ColumnVector): ColumnVector = {
-
-      withResource(orColumnVector) { other =>
-        withResource(Scalar.fromString(special)) { str =>
-          withResource(input.equalTo(str)) { isStr =>
-            withResource(Scalar.timestampDaysFromInt(value)) { date =>
-              isStr.ifElse(date, other)
-            }
+    withResource(orColumnVector) { other =>
+      withResource(Scalar.fromString(special)) { str =>
+        withResource(input.equalTo(str)) { isStr =>
+          withResource(Scalar.timestampDaysFromInt(value)) { date =>
+            isStr.ifElse(date, other)
           }
         }
       }
     }
+  }
 
-    /**
-     * Parse dates that match the provided regex. This method does not close the `input`
-     * ColumnVector.
-     */
-    def convertDateOrNull(
-        input: ColumnVector,
-        regex: String,
-        cudfFormat: String): ColumnVector = {
+  /**
+   * Parse dates that match the provided length and format. This method does not
+   * close the `input` ColumnVector.
+   *
+   * @param input Input ColumnVector
+   * @param len The string length to match against
+   * @param cudfFormat The cuDF timestamp format to match against
+   * @return ColumnVector containing timestamps for input entries that match both
+   *         the length and format, and null for other entries
+   */
+  def convertFixedLenDateOrNull(
+      input: ColumnVector,
+      len: Int,
+      cudfFormat: String): ColumnVector = {
 
-      withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
-        withResource(input.matchesRe(regex)) { isMatch =>
-          withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-            isMatch.ifElse(asDays, nullScalar)
-          }
+    withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
+      withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+        withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
+          isValidDate.ifElse(asDays, nullScalar)
         }
       }
     }
+  }
 
-    /** This method does not close the `input` ColumnVector. */
-    def convertDateOr(
-        input: ColumnVector,
-        regex: String,
-        cudfFormat: String,
-        orElse: ColumnVector): ColumnVector = {
+  /** This method does not close the `input` ColumnVector. */
+  def convertVarLenDateOr(
+      input: ColumnVector,
+      regex: String,
+      cudfFormat: String,
+      orElse: ColumnVector): ColumnVector = {
 
-      withResource(input.matchesRe(regex)) { isMatch =>
+    withResource(orElse) { orElse =>
+      val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+      withResource(isValidDate) { isValidDate =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-          withResource(orElse) { orElse =>
-            isMatch.ifElse(asDays, orElse)
-          }
+          isValidDate.ifElse(asDays, orElse)
         }
       }
     }
+  }
+
+  /**
+   * Parse dates that match the provided length and format. This method does not
+   * close the `input` ColumnVector.
+   *
+   * @param input Input ColumnVector
+   * @param len The string length to match against
+   * @param cudfFormat The cuDF timestamp format to match against
+   * @return ColumnVector containing timestamps for input entries that match both
+   *         the length and format, and null for other entries
+   */
+  def convertFixedLenDateOr(
+      input: ColumnVector,
+      len: Int,
+      cudfFormat: String,
+      orElse: ColumnVector): ColumnVector = {
+
+    withResource(orElse) { orElse =>
+      withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
+        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+          isValidDate.ifElse(asDays, orElse)
+        }
+      }
+    }
+  }
+
+  private def castStringToDate(input: ColumnVector): ColumnVector = {
 
     var sanitizedInput = input.incRefCount()
 
@@ -684,9 +716,9 @@ case class GpuCast(
     withResource(sanitizedInput) { sanitizedInput =>
 
       // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-      val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-        convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
-          convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
+      val converted = convertVarLenDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+        convertFixedLenDateOr(sanitizedInput, 7, "%Y-%m",
+          convertFixedLenDateOrNull(sanitizedInput, 4, "%Y")))
 
       // handle special dates like "epoch", "now", etc.
       specialDates.foldLeft(converted)((prev, specialDate) =>
@@ -694,62 +726,105 @@ case class GpuCast(
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector): ColumnVector = {
+  /**
+   * Replace special date strings such as "now" with timestampMicros. This method does not
+   * close the `input` ColumnVector.
+   */
+  private def specialTimestampOr(
+      input: ColumnVector,
+      special: String,
+      value: Long,
+      orColumnVector: ColumnVector): ColumnVector = {
 
-    /**
-     * Replace special date strings such as "now" with timestampMicros. This method does not
-     * close the `input` ColumnVector.
-     */
-    def specialTimestampOr(
-        input: ColumnVector,
-        special: String,
-        value: Long,
-        orColumnVector: ColumnVector): ColumnVector = {
-
-      withResource(orColumnVector) { other =>
-        withResource(Scalar.fromString(special)) { str =>
-          withResource(input.equalTo(str)) { isStr =>
-            withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
-              isStr.ifElse(date, other)
-            }
+    withResource(orColumnVector) { other =>
+      withResource(Scalar.fromString(special)) { str =>
+        withResource(input.equalTo(str)) { isStr =>
+          withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
+            isStr.ifElse(date, other)
           }
         }
       }
     }
+  }
 
-    /**
-     * Parse dates that match the the provided regex. This method does not close the `input`
-     * ColumnVector.
-     */
-    def convertTimestampOrNull(
-        input: ColumnVector,
-        regex: String,
-        cudfFormat: String): ColumnVector = {
+  /**
+   * Parse dates that match the the provided regex. This method does not close the `input`
+   * ColumnVector.
+   */
+  private def convertFixedLenTimestampOrNull(
+      input: ColumnVector,
+      len: Int,
+      cudfFormat: String): ColumnVector = {
 
+    withResource(isValidTimestamp(input, len, cudfFormat)) { isTimestamp =>
       withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
-        withResource(input.matchesRe(regex)) { isMatch =>
-          withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-            isMatch.ifElse(asDays, nullScalar)
-          }
-        }
-      }
-    }
-
-    /** This method does not close the `input` ColumnVector. */
-    def convertTimestampOr(
-        input: ColumnVector,
-        regex: String,
-        cudfFormat: String,
-        orElse: ColumnVector): ColumnVector = {
-
-      withResource(input.matchesRe(regex)) { isMatch =>
         withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-          withResource(orElse) { orElse =>
-            isMatch.ifElse(asDays, orElse)
-          }
+          isTimestamp.ifElse(asDays, nullScalar)
         }
       }
     }
+  }
+
+  /** This method does not close the `input` ColumnVector. */
+  private def convertVarLenTimestampOr(
+      input: ColumnVector,
+      regex: String,
+      cudfFormat: String,
+      orElse: ColumnVector): ColumnVector = {
+
+    withResource(orElse) { orElse =>
+      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+      withResource(isValidTimestamp) { isValidTimestamp =>
+        withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
+          isValidTimestamp.ifElse(asDays, orElse)
+        }
+      }
+    }
+  }
+
+  /** This method does not close the `input` ColumnVector. */
+  private def convertFullTimestampOr(
+      input: ColumnVector,
+      orElse: ColumnVector): ColumnVector = {
+
+    val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
+    val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
+
+    withResource(orElse) { orElse =>
+
+      // valid dates must match the regex and either of the cuDF formats
+      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
+        withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
+          isTimestamp1.or(isTimestamp2)
+        }
+      }
+
+      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
+        val isValidLength = withResource(Scalar.fromInt(FULL_TIMESTAMP_LENGTH)) { requiredLen =>
+          withResource(input.getCharLengths) { actualLen =>
+            requiredLen.equalTo(actualLen)
+          }
+        }
+        withResource(isValidLength) { isValidLength =>
+          isValidLength.and(isCudfMatch)
+        }
+      }
+
+      // we only need to parse with one of the cuDF formats because the parsing code ignores
+      // the ' ' or 'T' between the date and time components
+      withResource(isValidTimestamp) { isValidTimestamp =>
+        withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
+          isValidTimestamp.ifElse(asDays, orElse)
+        }
+      }
+    }
+  }
+
+  private def castStringToTimestamp(input: ColumnVector): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()
@@ -781,17 +856,58 @@ case class GpuCast(
     }
 
     withResource(sanitizedInput) { sanitizedInput =>
-
       // convert dates that are in valid timestamp formats
       val converted =
-        convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_FULL, "%Y-%m-%dT%H:%M:%SZ%f",
-          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
+        convertFullTimestampOr(sanitizedInput,
+          convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+              convertFixedLenTimestampOrNull(sanitizedInput, 4, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
-      specialDates.foldLeft(converted)((prev, specialDate) =>
+      val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
         specialTimestampOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+
+      // When ANSI mode is enabled, we need to throw an exception if any values could not be
+      // converted
+      if (ansiMode) {
+        closeOnExcept(finalResult) { finalResult =>
+          withResource(input.isNotNull) { wasNotNull =>
+            withResource(finalResult.isNull) { isNull =>
+              withResource(wasNotNull.and(isNull)) { notConverted =>
+                if (notConverted.any().getBoolean) {
+                  throw new DateTimeException(
+                    "One or more values could not be converted to TimestampType")
+                }
+              }
+            }
+          }
+        }
+      }
+
+      finalResult
+    }
+  }
+
+  /**
+   * Determine which timestamps are the specified length and also comply with the specified
+   * cuDF format string.
+   *
+   * @param input Input ColumnVector
+   * @param len The string length to match against
+   * @param cudfFormat The cuDF timestamp format to match against
+   * @return ColumnVector containing booleans representing which entries match both
+   *         the length and format
+   */
+  private def isValidTimestamp(input: ColumnVector, len: Int, cudfFormat: String) = {
+    val isCorrectLength = withResource(Scalar.fromInt(len)) { requiredLen =>
+      withResource(input.getCharLengths) { actualLen =>
+        requiredLen.equalTo(actualLen)
+      }
+    }
+    withResource(isCorrectLength) { isCorrectLength =>
+      withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+        isCorrectLength.and(isTimestamp)
+      }
     }
   }
 
@@ -852,4 +968,131 @@ case class GpuCast(
     }
   }
 
+  private def castIntegralsToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+
+    // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
+    val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
+      case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
+      case bound => (-bound.toLong + 1, bound.toLong - 1)
+    }
+    // At first, we conduct overflow check onto input column.
+    // Then, we cast checked input into target decimal type.
+    val checkedInput = if (ansiMode) {
+      assertValuesInRange(input,
+        minValue = Scalar.fromLong(lowBound),
+        maxValue = Scalar.fromLong(upBound))
+      input.incRefCount()
+    } else {
+      replaceOutOfRangeValues(input,
+        minValue = Scalar.fromLong(lowBound),
+        maxValue = Scalar.fromLong(upBound),
+        replaceValue = Scalar.fromNull(input.getType))
+    }
+
+    withResource(checkedInput) { checked =>
+      if (dt.scale < 0) {
+        // Rounding is essential when scale is negative,
+        // so we apply HALF_UP rounding manually to keep align with CpuCast.
+        withResource(checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))) {
+          scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+        }
+      } else if (dt.scale > 0) {
+        // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
+        // before casting it to decimal in case of overflow.
+        withResource(checked.castTo(DType.INT64)) { long =>
+          long.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+        }
+      } else {
+        checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+      }
+    }
+  }
+
+  private def castFloatsToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+
+    // Approach to minimize difference between CPUCast and GPUCast:
+    // step 1. cast input to FLOAT64 (if necessary)
+    // step 2. cast FLOAT64 to container DECIMAL (who keeps one more digit for rounding)
+    // step 3. perform HALF_UP rounding on container DECIMAL
+    val checkedInput = withResource(input.castTo(DType.FLOAT64)) { double =>
+      val roundedDouble = double.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+      withResource(roundedDouble) { rounded =>
+        // We rely on containerDecimal to perform preciser rounding. So, we have to take extra
+        // space cost of container into consideration when we run bound check.
+        val containerScaleBound = DType.DECIMAL64_MAX_PRECISION - (dt.scale + 1)
+        val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
+        if (ansiMode) {
+          assertValuesInRange(rounded,
+            minValue = Scalar.fromDouble(-bound),
+            maxValue = Scalar.fromDouble(bound),
+            inclusiveMin = false,
+            inclusiveMax = false)
+          rounded.incRefCount()
+        } else {
+          replaceOutOfRangeValues(rounded,
+            minValue = Scalar.fromDouble(-bound),
+            maxValue = Scalar.fromDouble(bound),
+            inclusiveMin = false,
+            inclusiveMax = false,
+            replaceValue = Scalar.fromNull(DType.FLOAT64))
+        }
+      }
+    }
+
+    withResource(checkedInput) { checked =>
+      // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
+      // be created because of precision overflow. In this case, we perform casting op directly.
+      if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+        checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+      } else {
+        val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -(dt.scale + 1))
+        withResource(checked.castTo(containerType)) { container =>
+          container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+        }
+      }
+    }
+  }
+
+  private def castDecimalToDecimal(input: ColumnVector,
+      from: DecimalType,
+      to: DecimalType): ColumnVector = {
+
+    // At first, we conduct overflow check onto input column.
+    // Then, we cast checked input into target decimal type.
+    val checkedInput = if (to.scale <= from.scale) {
+      // No need to promote precision unless target scale is larger than the source one,
+      // which indicates the cast is always valid when to.scale <= from.scale.
+      input.incRefCount()
+    } else {
+      // Check whether there exists overflow during promoting precision or not.
+      // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
+      // cuDF binaryOperation on decimal will rescale right input to fit the left one.
+      // The rescaling may lead to overflow.
+      val absBound = math.pow(10, DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong
+      if (ansiMode) {
+        assertValuesInRange(input,
+          minValue = Scalar.fromDecimal(-from.scale, -absBound),
+          maxValue = Scalar.fromDecimal(-from.scale, absBound),
+          inclusiveMin = false, inclusiveMax = false)
+        input.incRefCount()
+      } else {
+        replaceOutOfRangeValues(input,
+          minValue = Scalar.fromDecimal(-from.scale, -absBound),
+          maxValue = Scalar.fromDecimal(-from.scale, absBound),
+          replaceValue = Scalar.fromNull(input.getType),
+          inclusiveMin = false, inclusiveMax = false)
+      }
+    }
+
+    withResource(checkedInput) { checked =>
+      to.scale - from.scale match {
+        case 0 =>
+          checked.incRefCount()
+        case diff if diff > 0 =>
+          checked.castTo(GpuColumnVector.getNonNestedRapidsType(to))
+        case _ =>
+          checked.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+      }
+    }
+  }
 }

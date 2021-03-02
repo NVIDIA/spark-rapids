@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ def test_write_round_trip(spark_tmp_path, orc_gens, orc_impl):
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.orc(path),
             lambda spark, path: spark.read.orc(path),
             data_path,
-            conf={'spark.sql.orc.impl': orc_impl})
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
 orc_part_write_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, boolean_gen,
@@ -59,7 +59,8 @@ def test_part_write_round_trip(spark_tmp_path, orc_gen):
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').orc(path),
             lambda spark, path: spark.read.orc(path),
-            data_path)
+            data_path,
+            conf = {'spark.rapids.sql.format.orc.write.enabled': True})
 
 orc_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', orc_write_compress_options)
@@ -69,7 +70,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.orc(path),
             lambda spark, path : spark.read.orc(path),
             data_path,
-            conf={'spark.sql.orc.compression.codec': compress})
+            conf={'spark.sql.orc.compression.codec': compress, 'spark.rapids.sql.format.orc.write.enabled': True})
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
@@ -77,6 +78,7 @@ def test_write_save_table(spark_tmp_path, orc_gens, orc_impl, spark_tmp_table_fa
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     all_confs={'spark.sql.sources.useV1SourceList': "orc",
+               'spark.rapids.sql.format.orc.write.enabled': True,
                "spark.sql.orc.impl": orc_impl}
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("orc").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
@@ -100,14 +102,14 @@ def test_write_sql_save_table(spark_tmp_path, orc_gens, ts_type, orc_impl, spark
             lambda spark, path: write_orc_sql_from(spark, gen_df(spark, gen_list).coalesce(1), path, spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.orc(path),
             data_path,
-            conf={'spark.sql.orc.impl': orc_impl})
+            conf={'spark.sql.orc.impl': orc_impl, 'spark.rapids.sql.format.orc.write.enabled': True})
 
 @allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('codec', ['zlib', 'lzo'])
 def test_orc_write_compression_fallback(spark_tmp_path, codec, spark_tmp_table_factory):
     gen = TimestampGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.orc.compression.codec': codec}
+    all_confs={'spark.sql.orc.compression.codec': codec, 'spark.rapids.sql.format.orc.write.enabled': True}
     assert_gpu_fallback_write(
             lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("orc").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.orc(path),
@@ -123,4 +125,5 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
             lambda spark, path: spark.range(10e4).write.bucketBy(4, "id").sortBy("id").format('orc').mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.orc(path),
             data_path,
-            'DataWritingCommandExec')
+            'DataWritingCommandExec',
+            conf = {'spark.rapids.sql.format.orc.write.enabled': True})

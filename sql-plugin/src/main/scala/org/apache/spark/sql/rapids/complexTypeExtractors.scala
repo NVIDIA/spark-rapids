@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,14 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
-import com.nvidia.spark.rapids.{BinaryExprMeta, ConfKeysAndIncompat, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType, IntegralType, MapType, StructType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
@@ -67,17 +67,14 @@ class GpuGetArrayItemMeta(
     expr: GetArrayItem,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
     extends BinaryExprMeta[GetArrayItem](expr, conf, parent, rule) {
   import GpuOverrides._
 
   override def tagExprForGpu(): Unit = {
-    val litOrd = extractLit(expr.ordinal)
-    if (litOrd.isEmpty) {
-      willNotWorkOnGpu("only literal ordinals are supported")
-    } else {
+    extractLit(expr.ordinal).foreach { litOrd =>
       // Once literal array/struct types are supported this can go away
-      val ord = litOrd.get.value
+      val ord = litOrd.value
       if (ord == null || ord.asInstanceOf[Int] < 0) {
         expr.dataType match {
           case ArrayType(_, _) | MapType(_, _, _) | StructType(_) =>
@@ -91,13 +88,6 @@ class GpuGetArrayItemMeta(
       arr: Expression,
       ordinal: Expression): GpuExpression =
     GpuGetArrayItem(arr, ordinal)
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true,
-      allowArray = true,
-      allowStruct = true,
-      allowNesting = true)
 }
 
 /**
@@ -150,23 +140,11 @@ class GpuGetMapValueMeta(
   expr: GetMapValue,
   conf: RapidsConf,
   parent: Option[RapidsMeta[_, _, _]],
-  rule: ConfKeysAndIncompat)
+  rule: DataFromReplacementRule)
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
-  import GpuOverrides._
 
-  override def tagExprForGpu(): Unit = {
-    if (!isStringLit(expr.key)) {
-      willNotWorkOnGpu("Only String literal keys are supported")
-    }
-  }
-
-  override def convertToGpu(
-    child: Expression,
-    key: Expression): GpuExpression =
+  override def convertToGpu(child: Expression, key: Expression): GpuExpression =
     GpuGetMapValue(child, key)
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t, allowStringMaps = true)
 }
 
 case class GpuGetMapValue(child: Expression, key: Expression)
@@ -206,4 +184,30 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def left: Expression = child
 
   override def right: Expression = key
+}
+
+/** Checks if the array (left) has the element (right)
+*/
+case class GpuArrayContains(left: Expression, right: Expression)
+  extends GpuBinaryExpression with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  override def nullable: Boolean = {
+    left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
+    lhs.getBase.listContains(rhs)
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    lhs.getBase.listContainsColumn(rhs.getBase)
+
+  override def prettyName: String = "array_contains"
 }

@@ -1,28 +1,19 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 9
+nav_order: 11
 ---
 # Frequently Asked Questions
 
-### Why does `explain()` show that the GPU will be used even after setting `spark.rapids.sql.enabled` to `false`?
-
-Apache Spark caches what is used to build the output of the `explain()` function. That cache has no
-knowledge about configs, so it may return results that are not up to date with the current config
-settings. This is true of all configs in Spark. If you changed
-`spark.sql.autoBroadcastJoinThreshold` after running `explain()` on a `DataFrame`, the resulting
-query would not change to reflect that config and still show a `SortMergeJoin` even though the
-new config might have changed to be a `BroadcastHashJoin` instead. When actually running something
-like with `collect`, `show` or `write` a new `DataFrame` is constructed causing spark to re-plan the
-query. This is why `spark.rapids.sql.enabled` is still respected when running, even if explain
-shows stale results.
+* TOC
+{:toc}
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.0 or 3.0.1 of Apache Spark. Because the
-plugin replaces parts of the physical plan that Apache Spark considers to be internal the code for
-those plans can change even between bug fix releases. As a part of our process, we try to stay on
-top of these changes and release updates as quickly as possible.
+The RAPIDS Accelerator for Apache Spark requires version 3.0.0, 3.0.1, 3.0.2 or 3.1.1 of Apache
+Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to be
+internal the code for those plans can change even between bug fix releases. As a part of our
+process, we try to stay on top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 
@@ -35,27 +26,28 @@ should work, but because the plugin replaces parts of the physical plan that Apa
 to be internal the code for those plans can change from one distribution to another. We are working
 with most cloud service providers to set up testing and validation on their distributions.
 
+### What CUDA versions are supported?
+
+CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
+corresponds to the version you are using. Please look [here](download.md) for download 
+links for the latest release.
+
 ### What is the right hardware setup to run GPU accelerated Spark?
 
 Reference architectures should be available around Q1 2021.
 
-### What CUDA versions are supported?
-
-CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here][download.md] for download 
-links for the latest release.
-
 ### What parts of Apache Spark are accelerated?
 
 Currently a limited set of SQL and DataFrame operations are supported, please see the
-[configs](configs.md) for a more complete list of what is supported. Some of structured streaming
-is likely to be accelerated, but it has not been an area of focus right now. Other areas like
-MLLib, GraphX or RDDs are not accelerated.
+[configs](configs.md) and [supported operations](supported_ops.md) for a more complete list of what
+is supported. Some of structured streaming is likely to be accelerated, but it has not been an area
+of focus right now. Other areas like MLLib, GraphX or RDDs are not accelerated.
 
 ### What is the road-map like?
 
-Please look at the github repository https://github.com/nvidia/spark-rapids It contains
-issue tracking and planning for sprints and releases.
+Please look at the github repository
+[https://github.com/nvidia/spark-rapids](https://github.com/nvidia/spark-rapids). It contains issue
+tracking and planning for sprints and releases.
 
 ### How much faster will my query run?
 
@@ -84,22 +76,102 @@ starts. If you are only going to run a single query that only takes a few second
 be problematic. In general if you are going to do 30 seconds or more of processing within a single
 session the overhead can be amortized.
 
-### Why is the size of my output Parquet/ORC file different?
+### How can I tell what will run on the GPU and what will not run on it?
+<a name="explain"></a>
 
-This can come down to a number of factors.  The GPU version often compresses data in smaller chunks
-to get more parallelism and performance. This can result in larger files in some instances. We have
-also seen instances where the ordering of the data can have a big impact on the output size of the
-files.  Spark tends to prefer sort based joins, and in some cases sort based aggregations, whereas
-the GPU versions are all hash based. This means that the resulting data can come out in a different
-order for the CPU and the GPU. This is not wrong, but can make the size of the output data
-different because of compression. Users can turn on
-(spark.rapids.sql.hashOptimizeSort.enabled)[configs.md#sql.hashOptimizeSort.enabled] to have
-the GPU try to replicate more closely what the output ordering would have been if sort were used,
-like on the CPU.
+An Apache Spark plan is transformed and optimized into a set of operators called a physical plan.
+This plan is then run through a set of rules to translate it to a version that runs on the GPU.
+If you want to know what will run on the GPU and what will not along with an explanation why you
+can set [spark.rapids.sql.explain](configs.md#sql.explain) to `ALL`. If you just want to see the
+operators not on the GPU you may set it to `NOT_ON_GPU`. Be aware that some queries end up being
+broken down into multiple jobs, and in those cases a separate log message might be output for each
+job. These are logged each time a query is compiled into an `RDD`, not just when the job runs.
+Because of this calling `explain` on a DataFrame will also trigger this to be logged.
+
+The format of each line follows the pattern
+```
+indicator operation<NAME> operator? explanation
+```
+
+In this `indicator` is one of the following
+  * `*` for operations that will run on the GPU
+  * `@` for operations that could run on the GPU but will not because they are a part of a larger
+    section of the plan that will not run on the GPU
+  * `#` for operations that have been removed from the plan. The reason they are removed will be
+    in the explanation.
+  * `!` for operations that cannot run on the GPU
+
+`operation` indicates the type of the operator.
+  * `Expression` These are typically functions that operate on columns of data and produce a column
+    of data.
+  * `Exec` These are higher level operations that operate on an entire table at a time.
+  * `Partitioning` These are different types of partitioning used when reorganizing data to move to
+    different tasks.
+  * `Input` These are different input formats used with a few input statements, but not all.
+  * `Output` These are different output formats used with a few output statements, but not all.
+  * `NOT_FOUND` These are for anything that the plugin has no replacement rule for.
+
+`NAME` is the name of the operator given by Spark.
+
+`operator?` is an optional string representation of the operator given by Spark.
+
+`explanation` is a text explanation saying if this will
+  * run on the GPU
+  * could run on the GPU but will not because of something outside this operator and an
+    explanation why
+  * will not run on the GPU with an explanation why
+  * will be removed from the plan with a reason why
+
+Generally if an operator is not compatible with Spark for some reason and is off the explanation
+will include information about how it is incompatible and what configs to set to enable the
+operator if you can accept the incompatibility.
+
+### Why does the plan for the GPU query look different from the CPU query?
+
+Typically, there is a one to one mapping between CPU stages in a plan and GPU stages.  There are a
+few places where this is not the case.
+
+* `WholeStageCodeGen` - The GPU plan typically does not do code generation, and does not support 
+  generating code for an entire stage in the plan. Code generation reduces the cost of processing 
+  data one row at a time. The GPU plan processes the data in a columnar format, so the costs 
+  of processing a batch is amortized over the entire batch of data and code generation is not
+  needed.
+
+* `ColumnarToRow` and `RowToColumnar` transitions - The CPU version of Spark plans typically process 
+  data in a row based format. The main exception to this is reading some kinds of columnar data, 
+  like Parquet. Transitioning between the CPU and the GPU also requires transitioning between row
+  and columnar formatted data.
+
+* `GpuCoalesceBatches` and `GpuShuffleCoalesce` - Processing data on the GPU scales 
+  sublinearly. That means doubling the data does often takes less than half the time. Because of
+  this we want to process larger batches of data when possible. These operators will try to combine
+  smaller batches of data into fewer, larger batches to process more efficiently.
+
+* `SortMergeJoin` - The RAPIDS Accelerator does not support sort merge joins yet. For now, we 
+  translate sort merge joins into shuffled hash joins. Because of this there are times when sorts 
+  may be removed or other sorts added to meet the ordering requirements of the query.
+
+* `TakeOrderedAndProject` - The `TakeOrderedAndProject` operator will take the top N entries in 
+  each task, shuffle the results to a single executor and then take the top N results from that. 
+  The GPU plan often has more metrics than the CPU versions do, and when we tried to combine all of 
+  these operations into a single stage the metrics were confusing to understand. Instead, we split 
+  the single stage up into multiple smaller parts, so the metrics are clearer.
+
+### Why does `explain()` show that the GPU will be used even after setting `spark.rapids.sql.enabled` to `false`?
+
+Apache Spark caches what is used to build the output of the `explain()` function. That cache has no
+knowledge about configs, so it may return results that are not up to date with the current config
+settings. This is true of all configs in Spark. If you changed
+`spark.sql.autoBroadcastJoinThreshold` after running `explain()` on a `DataFrame`, the resulting
+query would not change to reflect that config and still show a `SortMergeJoin` even though the new
+config might have changed to be a `BroadcastHashJoin` instead. When actually running something like
+with `collect`, `show` or `write` a new `DataFrame` is constructed causing Spark to re-plan the
+query. This is why `spark.rapids.sql.enabled` is still respected when running, even if explain shows
+stale results.
 
 ### How are failures handled?
 
-The RAPIDS accelerator does not change the way failures are normally handled by Apache Spark.
+The RAPIDS Accelerator does not change the way failures are normally handled by Apache Spark.
 
 ### How does the Spark scheduler decide what to do on the GPU vs the CPU?
 
@@ -117,6 +189,20 @@ Yes, DPP still works.  It might not be as efficient as it could be, and we are w
 In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3 
 release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
 the GPU when AQE is enabled. 
+
+#### Why does my query show as not on the GPU when Adaptive Query Execution is enabled?
+
+When running an `explain()` on a query where AQE is on, it is possible that AQE has not finalized
+the plan.  In this case a message stating `AdaptiveSparkPlan isFinalPlan=false` will be printed at
+the top of the physical plan, and the explain output will show the query plan with CPU operators.
+As the query runs, the plan on the UI will update and show operations running on the GPU.  This can
+happen for any AdaptiveSparkPlan where `isFinalPlan=false`. 
+
+```
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
++- ...
+```
 
 ### Are cache and persist supported?
 
@@ -149,7 +235,7 @@ Yes
 The GPU is not needed on the driver and there is no benefit to having one available on the driver
 for the RAPIDS plugin.
 
-### How does the performance compare to DataBricks' DeltaEngine?
+### How does the performance compare to Databricks' DeltaEngine?
 
 We have not evaluated the performance yet. DeltaEngine is not open source, so any analysis needs to
 be done with Databricks in some form. When DeltaEngine is generally available and the terms of
@@ -166,9 +252,70 @@ the I/O and starting the initial processing can suffer.  But if you have a lot o
 cannot be done on the GPU, like complex UDFs, the more tasks you have the more CPU processing you
 can throw at it.
 
+### Why are multiple GPUs per executor not supported?
+
+The RAPIDS Accelerator only supports a single GPU per executor because that was a limitation of
+[RAPIDS cudf](https://github.com/rapidsai/cudf), the foundation of the Accelerator. Basic support
+for working with multiple GPUs has only recently been added to RAPIDS cudf, and there are no plans
+for its individual operations to leverage multiple GPUs (e.g.: a single task's join operation
+processed by multiple GPUs).
+
+Many Spark setups avoid allocating too many concurrent tasks to the same executor, and often
+multiple executors are run per node on the cluster. Therefore this feature has not been
+prioritized, as there has not been a compelling use-case that requires it.
+
+### Why are multiple executors per GPU not supported?
+
+There are multiple reasons why this a problematic configuration:
+- Apache Spark does not support scheduling a fractional number of GPUs to an executor
+- CUDA context switches between processes sharing a single GPU can be expensive
+- Each executor would have a fraction of the GPU memory available for processing
+
+### Is [Multi-Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
+
+Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
+for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES` or other means).
+
+Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
+reduces the amount of GPU memory that can be used by the Accelerator for each executor instance.
+If the cluster is purpose-built to run Spark with the RAPIDS Accelerator then we recommend running
+without MIG. Also note that the UCX-based shuffle plugin will not work as well in this
+configuration because
+[MIG does not support direct GPU to GPU transfers](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#app-considerations).
+
 ### How can I run custom expressions/UDFs on the GPU?
 
-We do not currently support this, but we are working on ways to make it possible.
+The RAPIDS Accelerator provides the following solutions for running
+user-defined functions on the GPU:
+
+#### RAPIDS Accelerated UDFs
+
+UDFs can provide a RAPIDS accelerated implementation which allows the RAPIDS Accelerator to perform
+the operation on the GPU.  See the [RAPIDS accelerated UDF documentation](additional-functionality/rapids-udfs.md)
+for details.
+
+#### Automatic Translation of Scala UDFs to Apache Spark Operations
+
+The RAPIDS Accelerator has an experimental byte-code analyzer which can translate some simple
+Scala UDFs into equivalent Apache Spark operations in the query plan. The RAPIDS Accelerator then
+translates these operations into GPU operations just like other query plan operations.
+
+The Scala UDF byte-code analyzer is disabled by default and must be enabled by the user via the
+[`spark.rapids.sql.udfCompiler.enabled`](configs.md#sql.udfCompiler.enabled) configuration
+setting.
+
+### Why is the size of my output Parquet/ORC file different?
+
+This can come down to a number of factors.  The GPU version often compresses data in smaller chunks
+to get more parallelism and performance. This can result in larger files in some instances. We have
+also seen instances where the ordering of the data can have a big impact on the output size of the
+files.  Spark tends to prefer sort based joins, and in some cases sort based aggregations, whereas
+the GPU versions are all hash based. This means that the resulting data can come out in a different
+order for the CPU and the GPU. This is not wrong, but can make the size of the output data
+different because of compression. Users can turn on
+[spark.rapids.sql.hashOptimizeSort.enabled](configs.md#sql.hashOptimizeSort.enabled) to have
+the GPU try to replicate more closely what the output ordering would have been if sort were used,
+like on the CPU.
 
 ### Why am I getting an error when trying to use pinned memory?
 
@@ -189,7 +336,7 @@ To fix it you can either disable the IOMMU, or you can disable using pinned memo
 
 ### Is speculative execution supported?
 
-Yes, speculative execution in Spark is fine with the RAPIDS accelerator plugin.
+Yes, speculative execution in Spark is fine with the RAPIDS Accelerator plugin.
 
 As with all speculative execution, it may or may not be beneficial depending on the nature of why a
 particular task is slow and how easily speculation is triggered. You should monitor your Spark jobs

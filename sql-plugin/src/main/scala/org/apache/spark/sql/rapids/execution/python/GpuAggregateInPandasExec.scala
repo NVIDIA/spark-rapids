@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,10 +41,10 @@ class GpuAggregateInPandasExecMeta(
     aggPandas: AggregateInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[AggregateInPandasExec](aggPandas, conf, parent, rule) {
 
-  override def couldReplaceMessage: String = "could partially run on GPU"
+  override def replaceMessage: String = "partially run on GPU"
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 

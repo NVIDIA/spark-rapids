@@ -35,4 +35,8 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
     frame => frame.selectExpr("md5(strings)", "md5(cast(ints as string))",
       "md5(cast(longs as binary))")
   }
+
+  testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls) {
+    frame => frame.selectExpr("hash(longs, doubles, 1, null, 'stock string', ints, strings)")
+  }
 }

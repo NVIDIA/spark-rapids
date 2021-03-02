@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetricNames._
+import com.nvidia.spark.rapids.GpuMetric._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -26,28 +26,29 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuSortMeta(
     sort: SortExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[SortExec](sort, conf, parent, rule) {
   override def convertToGpu(): GpuExec =
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans(0).convertIfNeeded())
 
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
-
   override def tagPlanForGpu(): Unit = {
     if (GpuOverrides.isAnyStringLit(sort.sortOrder)) {
       willNotWorkOnGpu("string literal values are not supported in a sort")
+    }
+    val sortOrderDataTypes = sort.sortOrder.map(_.dataType)
+    if (sortOrderDataTypes.exists(dtype =>
+      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
+        || dtype.isInstanceOf[MapType])) {
+      willNotWorkOnGpu("Nested types in Sort Order are not supported")
     }
   }
 }
@@ -83,13 +84,12 @@ case class GpuSortExec(
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override lazy val additionalMetrics = Map(
-    "sortTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "sort time"),
-    "peakDevMemory" -> SQLMetrics.createSizeMetric(sparkContext, "peak device memory"),
-    "spillSize" -> SQLMetrics.createSizeMetric(sparkContext, "spill size"))
+    SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sortTime = longMetric("sortTime")
-    val peakDevMemory = longMetric("peakDevMemory")
+    val sortTime = gpuLongMetric(SORT_TIME)
+    val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
@@ -117,12 +117,12 @@ class GpuColumnarBatchSorter(
   private var maxDeviceMemory = 0L
   private var haveSortedBatch = false
   private val numSortCols = sortOrder.length
-  private val totalTimeMetric : Option[SQLMetric] = initMetric(TOTAL_TIME)
-  private val outputBatchesMetric : Option[SQLMetric] = initMetric(NUM_OUTPUT_BATCHES)
-  private val outputRowsMetric : Option[SQLMetric] = initMetric(NUM_OUTPUT_ROWS)
+  private val totalTimeMetric : Option[GpuMetric] = initMetric(TOTAL_TIME)
+  private val outputBatchesMetric : Option[GpuMetric] = initMetric(NUM_OUTPUT_BATCHES)
+  private val outputRowsMetric : Option[GpuMetric] = initMetric(NUM_OUTPUT_ROWS)
 
-  private def initMetric(metricName: String): Option[SQLMetric] = if (shouldUpdateMetrics) {
-    Some(exec.longMetric(metricName))
+  private def initMetric(metricName: String): Option[GpuMetric] = if (shouldUpdateMetrics) {
+    Some(exec.gpuLongMetric(metricName))
   } else {
     None
   }

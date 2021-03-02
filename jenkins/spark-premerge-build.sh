@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,10 +37,10 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
 
-mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims' clean verify -Dpytest.TEST_TAGS=''
+mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TEST_TAGS='' -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4
 # Run the unit tests for other Spark versions but dont run full python integration tests
 env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark301tests,snapshot-shims test -Dpytest.TEST_TAGS=''
-env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark310tests,snapshot-shims test -Dpytest.TEST_TAGS=''
+env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark311tests,snapshot-shims test -Dpytest.TEST_TAGS=''
 
 # The jacoco coverage should have been collected, but because of how the shade plugin
 # works and jacoco we need to clean some things up so jacoco will only report for the

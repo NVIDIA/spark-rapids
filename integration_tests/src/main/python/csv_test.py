@@ -130,7 +130,7 @@ csv_supported_gens = [
         # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
         # This would require multiLine reads to work correctly so we avoid these chars
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
-        pytest.param(StringGen('[aAbB ]{0,10}'), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/127')),
+        StringGen('[aAbB ]{0,10}'),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen,
         DoubleGen(no_nans=True), # NaN, Inf, and -Inf are not supported
         # Once https://github.com/NVIDIA/spark-rapids/issues/125 and https://github.com/NVIDIA/spark-rapids/issues/124

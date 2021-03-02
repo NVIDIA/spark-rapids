@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.{AnalysisException, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTablePartition}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
-import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils.escapePathName
+import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils.getPartitionPathString
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
@@ -204,12 +204,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
       committer: FileCommitProtocol): Unit = {
     val staticPartitionPrefix = if (staticPartitions.nonEmpty) {
       "/" + partitionColumns.flatMap { p =>
-        staticPartitions.get(p.name) match {
-          case Some(value) =>
-            Some(escapePathName(p.name) + "=" + escapePathName(value))
-          case None =>
-            None
-        }
+        staticPartitions.get(p.name).map(getPartitionPathString(p.name, _))
       }.mkString("/")
     } else {
       ""

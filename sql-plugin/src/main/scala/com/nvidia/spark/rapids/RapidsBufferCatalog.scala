@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, Rmm, Table}
+import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, Rmm, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -113,6 +113,7 @@ object RapidsBufferCatalog extends Logging with Arm {
   private var deviceStorage: RapidsDeviceMemoryStore = _
   private var hostStorage: RapidsHostMemoryStore = _
   private var diskStorage: RapidsDiskStore = _
+  private var gdsStorage: RapidsGdsStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
 
   private lazy val conf: SparkConf = {
@@ -130,11 +131,16 @@ object RapidsBufferCatalog extends Logging with Arm {
     closeImpl()
     assert(memoryEventHandler == null)
     deviceStorage = new RapidsDeviceMemoryStore()
-    hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
     val diskBlockManager = new RapidsDiskBlockManager(conf)
-    diskStorage = new RapidsDiskStore(diskBlockManager)
-    deviceStorage.setSpillStore(hostStorage)
-    hostStorage.setSpillStore(diskStorage)
+    if (rapidsConf.isGdsSpillEnabled) {
+      gdsStorage = new RapidsGdsStore(diskBlockManager)
+      deviceStorage.setSpillStore(gdsStorage)
+    } else {
+      hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
+      diskStorage = new RapidsDiskStore(diskBlockManager)
+      deviceStorage.setSpillStore(hostStorage)
+      hostStorage.setSpillStore(diskStorage)
+    }
 
     logInfo("Installing GPU memory handler for spill")
     memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage, rapidsConf.gpuOomDumpDir)
@@ -166,6 +172,10 @@ object RapidsBufferCatalog extends Logging with Arm {
       diskStorage.close()
       diskStorage = null
     }
+    if (gdsStorage != null) {
+      gdsStorage.close()
+      gdsStorage = null
+    }
   }
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
@@ -175,14 +185,28 @@ object RapidsBufferCatalog extends Logging with Arm {
    * @param id buffer ID to associate with this buffer
    * @param table cudf table based from the contiguous buffer
    * @param contigBuffer device memory buffer backing the table
+   * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
    */
   def addTable(
       id: RapidsBufferId,
       table: Table,
       contigBuffer: DeviceMemoryBuffer,
+      tableMeta: TableMeta,
       initialSpillPriority: Long): Unit =
-    deviceStorage.addTable(id, table, contigBuffer, initialSpillPriority)
+    deviceStorage.addTable(id, table, contigBuffer, tableMeta, initialSpillPriority)
+
+  /**
+   * Adds a contiguous table to the device storage, taking ownership of the table.
+   * @param id buffer ID to associate with this buffer
+   * @param contigTable contiguos table to track in device storage
+   * @param initialSpillPriority starting spill priority value for the buffer
+   */
+  def addContiguousTable(
+      id: RapidsBufferId,
+      contigTable: ContiguousTable,
+      initialSpillPriority: Long): Unit =
+    deviceStorage.addContiguousTable(id, contigTable, initialSpillPriority)
 
   /**
    * Adds a buffer to the device storage, taking ownership of the buffer.

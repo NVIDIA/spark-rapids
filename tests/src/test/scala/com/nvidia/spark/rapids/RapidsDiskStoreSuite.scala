@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -196,10 +196,10 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
       devStore: RapidsDeviceMemoryStore,
       bufferId: RapidsBufferId,
       spillPriority: Long): Long = {
-    closeOnExcept(buildContiguousTable()) { ct =>
+    withResource(buildContiguousTable()) { ct =>
       val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
-      devStore.addTable(bufferId, ct.getTable, ct.getBuffer, spillPriority)
+      devStore.addContiguousTable(bufferId, ct, spillPriority)
       bufferSize
     }
   }

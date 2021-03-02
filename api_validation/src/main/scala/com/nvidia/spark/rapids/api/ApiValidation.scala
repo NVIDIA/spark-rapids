@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ object ApiValidation extends Logging {
     val gpuKeys = gpuExecs.keys
     var printNewline = false
 
-    val sparkToShimMap = Map("3.0.0" -> "spark300", "3.0.1" -> "spark301", "3.1.0" -> "spark310")
+    val sparkToShimMap = Map("3.0.0" -> "spark300", "3.0.1" -> "spark301", "3.1.1" -> "spark311")
     val sparkVersion = ShimLoader.getSparkShims.getSparkShimVersion.toString
     var shimVersion = sparkToShimMap(sparkVersion)
     // There is no separate implementation for Execs in spark-3.0.1.

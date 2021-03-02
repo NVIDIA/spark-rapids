@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,11 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 
-import org.apache.spark.sql.execution.metric.SQLMetric
-
 /**
  *  NvtxRange with option to pass one or more nano timing metric(s) that are updated upon close
  *  by the amount of time spent in the range
  */
-class NvtxWithMetrics(name: String, color: NvtxColor, val metric: SQLMetric)
+class NvtxWithMetrics(name: String, color: NvtxColor, val metric: GpuMetric)
     extends NvtxRange(name, color) {
 
   private val start = System.nanoTime()
@@ -35,7 +33,7 @@ class NvtxWithMetrics(name: String, color: NvtxColor, val metric: SQLMetric)
   }
 }
 
-class MetricRange(val metric: SQLMetric) extends AutoCloseable {
+class MetricRange(val metric: GpuMetric) extends AutoCloseable {
   private val start = System.nanoTime()
 
   override def close(): Unit = {

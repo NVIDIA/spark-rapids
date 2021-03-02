@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffledHashJoinBase}
+import org.apache.spark.sql.types.{ArrayType, DecimalType, IntegerType, StructField, StructType}
 
 object AdaptiveQueryExecSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
@@ -272,6 +273,7 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -309,6 +311,7 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
+      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -340,6 +343,8 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
+      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -357,6 +362,20 @@ class AdaptiveQueryExecSuite
       }
       // Verify local readers length
       assert(localReaders.length == 2)
+
+      // test with non-common data types
+      uncommonTypeTestData(spark)
+      val (plan2, adaptivePlan2) = runAdaptiveAndVerifyResult(spark,
+        "SELECT * FROM testData join uncommonTypeTestData ON key = a where value = '1'")
+
+      val smj2 = findTopLevelSortMergeJoin(plan2)
+      assert(smj2.size == 1)
+
+      val localReaders2 = collect(adaptivePlan2) {
+        case reader: GpuCustomShuffleReaderExec if reader.isLocalReader => reader
+      }
+      // Verify local readers length
+      assert(localReaders2.length == 2)
     }, conf)
   }
 
@@ -482,6 +501,21 @@ class AdaptiveQueryExecSuite
       .toDF("a", "b")
         .repartition(col("a"))
     registerAsParquetTable(spark, df, "testData3")
+  }
+
+  /** Ported from org.apache.spark.sql.test.SQLTestData */
+  private def uncommonTypeTestData(spark: SparkSession) {
+    import scala.collection.JavaConverters._
+    val df = spark.createDataFrame(
+      List.tabulate(20)(i => Row(i % 3, BigDecimal(i), Array(i, i), Row(i))).asJava,
+      StructType(Array(
+        StructField("a", IntegerType),
+        StructField("b", DecimalType(4, 0)),
+        StructField("c", ArrayType(IntegerType)),
+        StructField("d", StructType(Array(StructField("i", IntegerType))))
+      ))
+    ).repartition(col("a"))
+    registerAsParquetTable(spark, df, "uncommonTypeTestData")
   }
 
   /** Ported from org.apache.spark.sql.test.SQLTestData */

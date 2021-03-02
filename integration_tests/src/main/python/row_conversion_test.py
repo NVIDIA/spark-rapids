@@ -37,13 +37,14 @@ def test_row_conversions():
             ["p", StructGen([["c0", byte_gen], ["c1", ArrayGen(byte_gen)]])],
             ["q", simple_string_to_string_map_gen],
             ["r", MapGen(BooleanGen(nullable=False), ArrayGen(boolean_gen), max_length=2)],
-            ["s", null_gen]]
+            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_scale_precision]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
 def test_row_conversions_fixed_width():
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
             ["e", float_gen], ["f", double_gen], ["g", string_gen], ["h", boolean_gen],
-            ["i", timestamp_gen], ["j", date_gen]]
+            ["i", timestamp_gen], ["j", date_gen], ["k", decimal_gen_64bit],
+            ["l", decimal_gen_scale_precision]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))

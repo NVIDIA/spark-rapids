@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,12 +42,31 @@ _grpkey_longs_with_nullable_timestamps = [
     ('b', DateGen(nullable=(True, 5.0), start=date(year=2020, month=1, day=1), end=date(year=2020, month=12, day=31))),
     ('c', IntegerGen())]
 
+_grpkey_longs_with_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
+    ('b', DecimalGen(precision=18, scale=3, nullable=False)),
+    ('c', IntegerGen())]
+
+_grpkey_longs_with_nullable_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DecimalGen(precision=18, scale=10, nullable=True)),
+    ('c', IntegerGen())]
+
+_grpkey_decimals_with_nulls = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', IntegerGen()),
+    # the max decimal precision supported by sum operation is 8
+    ('c', DecimalGen(precision=8, scale=3, nullable=True))]
+
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
                                       _grpkey_longs_with_nulls,
                                       _grpkey_longs_with_timestamps,
-                                      _grpkey_longs_with_nullable_timestamps], ids=idfn)
+                                      _grpkey_longs_with_nullable_timestamps,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
+                                      _grpkey_decimals_with_nulls], ids=idfn)
 def test_window_aggs_for_rows(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=2048),
@@ -63,23 +82,25 @@ def test_window_aggs_for_rows(data_gen):
         '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_1, '
         ' count(c) over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_c, '
+        ' avg(c) over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as avg_c, '
         ' row_number() over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
-        'from window_agg_table ')
+        'from window_agg_table ',
+        conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
 
 part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, timestamp_gen]
+        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        boolean_gen, timestamp_gen]
+        boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
 
 def meta_idfn(meta):
     def tmp(something):
         return meta + idfn(something)
     return tmp
 
-@pytest.mark.xfail(condition=not(is_before_spark_310()), reason='https://github.com/NVIDIA/spark-rapids/issues/999')
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
@@ -160,6 +181,9 @@ def test_window_aggs_for_ranges(data_gen):
         ' sum(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between interval 1 day preceding and interval 1 day following) as sum_c_asc, '
+        ' avg(c) over '
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between interval 1 day preceding and interval 1 day following) as avg_c_asc, '
         ' max(c) over '
         '   (partition by a order by cast(b as timestamp) desc '
         '       range between interval 2 days preceding and interval 1 days following) as max_c_desc, '
@@ -172,13 +196,17 @@ def test_window_aggs_for_ranges(data_gen):
         ' count(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between  CURRENT ROW and UNBOUNDED following) as count_c_asc, '
+        ' avg(c) over '
+        '   (partition by a order by cast(b as timestamp) asc  '
+        '       range between UNBOUNDED preceding and CURRENT ROW) as avg_c_unbounded, '
         ' sum(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between UNBOUNDED preceding and CURRENT ROW) as sum_c_unbounded, '
         ' max(c) over '
         '   (partition by a order by cast(b as timestamp) asc  '
         '       range between UNBOUNDED preceding and UNBOUNDED following) as max_c_unbounded '
-        'from window_agg_table')
+        'from window_agg_table',
+        conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over non-timestamp columns "
                           "(https://github.com/NVIDIA/spark-rapids/issues/216)")
@@ -194,3 +222,66 @@ def test_window_aggs_for_ranges_of_dates(data_gen):
         '       range between 1 preceding and 1 following) as sum_c_asc '
         'from window_agg_table'
     )
+
+
+def _gen_data_for_collect(nullable=True):
+    return [
+        ('a', RepeatSeqGen(LongGen(), length=20)),
+        ('b', IntegerGen()),
+        ('c_int', IntegerGen(nullable=nullable)),
+        ('c_long', LongGen(nullable=nullable)),
+        ('c_time', DateGen(nullable=nullable)),
+        ('c_string', StringGen(nullable=nullable)),
+        ('c_float', FloatGen(nullable=nullable)),
+        ('c_decimal', DecimalGen(nullable=nullable, precision=8, scale=3)),
+        ('c_struct', StructGen(nullable=nullable, children=[
+            ['child_int', IntegerGen()],
+            ['child_time', DateGen()],
+            ['child_string', StringGen()],
+            ['child_decimal', DecimalGen(precision=8, scale=3)]]))]
+
+
+_collect_sql_string =\
+  '''
+    select
+      collect_list(c_int) over
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_int,
+      collect_list(c_long) over
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_long,
+      collect_list(c_time) over
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_time,
+      collect_list(c_string) over
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_string,
+      collect_list(c_float) over
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_float,
+      collect_list(c_decimal) over
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal,
+      collect_list(c_struct) over
+        (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct
+    from window_collect_table
+  '''
+
+# SortExec does not support array type, so sort the result locally.
+@ignore_order(local=True)
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1638")
+def test_window_aggs_for_rows_collect_list():
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, _gen_data_for_collect(), length=2048),
+        "window_collect_table",
+        _collect_sql_string,
+        {'spark.rapids.sql.expression.CollectList': 'true'})
+
+
+'''
+  Spark will drop nulls when collecting, but seems GPU does not yet, so exceptions come up.
+  Now set nullable to false to verify the current functionality without null values.
+  Once native supports dropping nulls, will enable the tests above and remove this one.
+'''
+# SortExec does not support array type, so sort the result locally.
+@ignore_order(local=True)
+def test_window_aggs_for_rows_collect_list_no_nulls():
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, _gen_data_for_collect(False), length=2048),
+        "window_collect_table",
+        _collect_sql_string,
+        {'spark.rapids.sql.expression.CollectList': 'true'})

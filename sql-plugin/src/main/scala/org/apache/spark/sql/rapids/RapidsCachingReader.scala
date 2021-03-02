@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,8 +106,16 @@ class RapidsCachingReader[K, C](
           require(
             blockManagerId.topologyInfo.isDefined &&
               blockManagerId.topologyInfo.get
-                .startsWith(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}="),
-            s"Attempting to handle non-rapids enabled blocks from $blockManagerId")
+                .startsWith(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}="), {
+              val enabledHint = if (!rapidsConf.shuffleTransportEnabled) {
+                "The shuffle transport is disabled. " +
+                    s"Please set ${RapidsConf.SHUFFLE_TRANSPORT_ENABLE.key}=true to enable " +
+                    "fetching remote blocks."
+              } else {
+                "This is unexpected behavior!"
+              }
+              s"Attempting to handle non-rapids enabled blocks from $blockManagerId. ${enabledHint}"
+            })
           blocksForRapidsTransport.append((blockManagerId, blockInfos))
         }
       })
