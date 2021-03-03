@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
@@ -150,7 +150,7 @@ abstract class GpuTimeMath(
           val usToSub = intvl.days.toLong * 24 * 60 * 60 * 1000 * 1000 + intvl.microseconds
           if (usToSub != 0) {
             withResource(Scalar.fromLong(usToSub)) { us_s =>
-              withResource(l.getBase.castTo(DType.INT64)) { us =>
+              withResource(l.getBase.logicalCastTo(DType.INT64)) { us =>
                 withResource(intervalMath(us_s, us)) { longResult =>
                   GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS), dataType)
                 }
@@ -173,7 +173,7 @@ abstract class GpuTimeMath(
     }
   }
 
-  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector
+  def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector
 }
 
 case class GpuTimeAdd(start: Expression,
@@ -185,7 +185,7 @@ case class GpuTimeAdd(start: Expression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
     us.add(us_s)
   }
 }
@@ -199,7 +199,7 @@ case class GpuTimeSub(start: Expression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
     us.sub(us_s)
   }
 }
@@ -213,7 +213,7 @@ case class GpuDateAddInterval(start: Expression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
     us.add(us_s)
   }
 
@@ -242,7 +242,7 @@ case class GpuDateAddInterval(start: Expression,
             val daysToAdd = intvl.days + microSecToDays
             if (daysToAdd != 0) {
               withResource(Scalar.fromInt(daysToAdd)) { us_s =>
-                withResource(l.getBase.castTo(DType.INT32)) { us =>
+                withResource(l.getBase.logicalCastTo(DType.INT32)) { us =>
                   withResource(intervalMath(us_s, us)) { intResult =>
                     GpuColumnVector.from(intResult.castTo(DType.TIMESTAMP_DAYS), dataType)
                   }
