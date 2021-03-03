@@ -30,6 +30,7 @@ default version runs against Spark 3.0.0, to run against other versions use one 
  profiles:
    - `-Pspark301tests` (spark 3.0.1)
    - `-Pspark302tests` (spark 3.0.2)
+   - `-Pspark303tests` (spark 3.0.3)
    - `-Pspark311tests` (spark 3.1.1)
 
 Please refer to the [tests project POM](pom.xml) to see the list of test profiles supported.
