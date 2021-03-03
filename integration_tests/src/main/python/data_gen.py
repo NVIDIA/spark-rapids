@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ import copy
 from datetime import date, datetime, timedelta, timezone
 from decimal import *
 import math
+from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import pytest
@@ -23,11 +24,14 @@ import random
 from spark_session import is_tz_utc
 import sre_yield
 import struct
+from conftest import skip_unless_precommit_tests
 
 class DataGen:
     """Base class for data generation"""
 
     def __repr__(self):
+        if not self.nullable:
+            return self.__class__.__name__[:-3] + '(not_null)'
         return self.__class__.__name__[:-3]
 
     def __hash__(self):
@@ -218,15 +222,14 @@ class DecimalGen(DataGen):
             scale = 0
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
-        special_cases = [Decimal('0'), Decimal(DECIMAL_MIN), Decimal(DECIMAL_MAX)]
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
-        self._scale = scale
-        self._precision = precision
+        self.scale = scale
+        self.precision = precision
         pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
         self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._precision) + ',' + str(self._scale) + ')'
+        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
 
     def start(self, rand):
         strs = self.base_strs
@@ -567,7 +570,7 @@ class NullGen(DataGen):
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
-        pytest.skip('The java system time zone is not set to UTC')
+        skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
 def gen_df(spark, data_gen, length=2048, seed=0):
     """Generate a spark dataframe from the given data generators."""
@@ -587,11 +590,15 @@ def gen_df(spark, data_gen, length=2048, seed=0):
     data = [src.gen() for index in range(0, length)]
     return spark.createDataFrame(data, src.data_type)
 
-def _mark_as_lit(data):
+def _mark_as_lit(data, data_type = None):
     # Sadly you cannot create a literal from just an array in pyspark
     if isinstance(data, list):
         return f.array([_mark_as_lit(x) for x in data])
-    return f.lit(data)
+    if data_type is None:
+        return f.lit(data)
+    else:
+        # lit does not take a data type so we might have to cast it
+        return f.lit(data).cast(data_type)
 
 def _gen_scalars_common(data_gen, count, seed=0):
     if isinstance(data_gen, list):
@@ -612,7 +619,8 @@ def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
     if force_no_nulls:
         assert(not isinstance(data_gen, NullGen))
     src = _gen_scalars_common(data_gen, count, seed=seed)
-    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+    data_type = src.data_type
+    return (_mark_as_lit(src.gen(force_no_nulls=force_no_nulls), data_type) for i in range(0, count))
 
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""
@@ -633,6 +641,7 @@ def debug_df(df):
     """print out the contents of a dataframe for debugging."""
     print('COLLECTED\n{}'.format(df.collect()))
     df.explain()
+    df.printSchema()
     return df
 
 def print_params(data_gen):
@@ -677,6 +686,8 @@ def to_cast_string(spark_type):
         return 'TIMESTAMP'
     elif isinstance(spark_type, StringType):
         return 'STRING'
+    elif isinstance(spark_type, DecimalType):
+        return 'DECIMAL({}, {})'.format(spark_type.precision, spark_type.scale)
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
@@ -722,6 +733,7 @@ decimal_gen_default = DecimalGen()
 decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
 decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
 decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
+decimal_gen_64bit = DecimalGen(precision=12, scale=2)
 
 null_gen = NullGen()
 
@@ -734,7 +746,7 @@ double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
 decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision]
+        decimal_gen_same_scale_precision, decimal_gen_64bit]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -753,12 +765,15 @@ eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 # Include decimal type while testing equalTo and notEqualTo
 eq_gens_with_decimal_gen =  eq_gens + decimal_gens
 
+#gen for testing round operator
+round_gens = numeric_gens + decimal_gens
+
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
 
 boolean_gens = [boolean_gen]
 
-single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
+single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens + [null_gen]]
 
 # Be careful to not make these too large of data generation takes for ever
 # This is only a few nested array gens, because nesting can be very deep
@@ -788,3 +803,35 @@ map_gens_sample = [simple_string_to_string_map_gen,
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
 allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
+
+no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
+
+all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+           FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
+           decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
+           decimal_gen_64bit]
+
+
+# This function adds a new column named uniq_int where each row
+# has a new unique integer value. It just starts at 0 and
+# increments by 1 for each row.
+# This can be used to add a column to a dataframe if you need to
+# sort on a column with unique values.
+# This collects the data to driver though so can be expensive.
+def append_unique_int_col_to_df(spark, dataframe):
+    def append_unique_to_rows(rows):
+        new = []
+        for item in range(len(rows)):
+            row_dict = rows[item].asDict()
+            row_dict['uniq_int'] = item
+            new_row = Row(**row_dict)
+            new.append(new_row)
+        return new
+
+    collected = dataframe.collect()
+    if (len(collected) > INT_MAX):
+        raise RuntimeError('To many rows to add unique integer values starting from 0 to')
+    existing_schema = dataframe.schema
+    new_rows = append_unique_to_rows(collected)
+    new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
+    return spark.createDataFrame(new_rows, new_schema)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION.
+  Copyright (c) 2020-2021, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.3.0</version>
+        <version>0.4.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <groupId>com.nvidia</groupId>
@@ -30,7 +30,7 @@
     <packaging>pom</packaging>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Shims</name>
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
-    <version>0.3.0</version>
+    <version>0.4.0</version>
 
     <profiles>
         <profile>
@@ -45,8 +45,6 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <modules>
-                <module>spark302</module>
-                <module>spark310</module>
             </modules>
         </profile>
     </profiles>
@@ -56,6 +54,8 @@
         <module>spark300emr</module>
         <module>spark301emr</module>
         <module>spark301</module>
+        <module>spark302</module>
+        <module>spark311</module>
         <module>aggregator</module>
     </modules>
     <dependencies>

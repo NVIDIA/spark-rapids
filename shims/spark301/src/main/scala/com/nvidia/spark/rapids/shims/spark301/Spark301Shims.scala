@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.spark301
 
+import scala.collection.mutable.ListBuffer
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark300.{GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, Spark300Shims}
 import com.nvidia.spark.rapids.spark301.RapidsShuffleManager
@@ -27,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ShuffleExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuShuffleExchangeExecBase}
@@ -42,12 +44,15 @@ class Spark301Shims extends Spark300Shims {
     super.getExecs ++ Seq(
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
@@ -55,21 +60,17 @@ class Spark301Shims extends Spark300Shims {
   def exprs301: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[First](
       "first aggregate operator",
+      ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t,
-            allowNull = true)
-
         override def convertToGpu(): GpuExpression =
           GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
       }),
     GpuOverrides.expr[Last](
       "last aggregate operator",
+      ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-        override def isSupportedType(t: DataType): Boolean =
-          GpuOverrides.isSupportedType(t,
-            allowNull = true)
-
         override def convertToGpu(): GpuExpression =
           GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
       })
@@ -129,5 +130,28 @@ class Spark301Shims extends Spark300Shims {
       extensions: SparkSessionExtensions,
       ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
     extensions.injectQueryStagePrepRule(ruleBuilder)
+  }
+
+  /**
+   * Return list of matching predicates present in the plan
+   * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
+   */
+  override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 }

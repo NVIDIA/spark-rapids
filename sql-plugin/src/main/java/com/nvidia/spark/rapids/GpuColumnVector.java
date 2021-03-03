@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids;
 
 import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
+import ai.rapids.cudf.ArrowColumnBuilder;
 import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
@@ -38,6 +39,59 @@ import java.util.List;
  * We also provide GPU accelerated versions of the transitions to and from rows.
  */
 public class GpuColumnVector extends GpuColumnVectorBase {
+
+  /**
+   * Print to standard error the contents of a table. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the table to print out.
+   * @param table the table to print out.
+   */
+  public static synchronized void debug(String name, Table table) {
+    System.err.println("DEBUG " + name + " " + table);
+    for (int col = 0; col < table.getNumberOfColumns(); col++) {
+      debug(String.valueOf(col), table.getColumn(col));
+    }
+  }
+
+  /**
+   * Print to standard error the contents of a column. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the column to print out.
+   * @param col the column to print out.
+   */
+  public static synchronized void debug(String name, ai.rapids.cudf.ColumnVector col) {
+    try (HostColumnVector hostCol = col.copyToHost()) {
+      debug(name, hostCol);
+    }
+  }
+
+  /**
+   * Print to standard error the contents of a column. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the column to print out.
+   * @param hostCol the column to print out.
+   */
+  public static synchronized void debug(String name, HostColumnVector hostCol) {
+    DType type = hostCol.getType();
+    System.err.println("COLUMN " + name + " " + type);
+    if (type.getTypeId() == DType.DTypeEnum.DECIMAL64) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getBigDecimal(i));
+        }
+      }
+    } else {
+      System.err.println("TYPE " + type + " NOT SUPPORTED FOR DEBUG PRINT");
+    }
+  }
 
   private static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
     if (spark instanceof ArrayType) {
@@ -65,9 +119,104 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  public static final class GpuColumnarBatchBuilder implements AutoCloseable {
+  public static abstract class GpuColumnarBatchBuilderBase implements AutoCloseable {
+    protected StructField[] fields;
+
+    public abstract void close();
+    public abstract void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows);
+
+    protected abstract ColumnVector buildAndPutOnDevice(int builderIndex);
+    protected abstract int buildersLength();
+
+    public ColumnarBatch build(int rows) {
+      int buildersLen = buildersLength();
+      ColumnVector[] vectors = new ColumnVector[buildersLen];
+      boolean success = false;
+      try {
+        for (int i = 0; i < buildersLen; i++) {
+          vectors[i] = buildAndPutOnDevice(i);
+        }
+        ColumnarBatch ret = new ColumnarBatch(vectors, rows);
+        success = true;
+        return ret;
+      } finally {
+        if (!success) {
+          for (ColumnVector vec: vectors) {
+            if (vec != null) {
+              vec.close();
+            }
+          }
+        }
+      }
+    }
+  }
+
+  public static final class GpuArrowColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
+    private final ai.rapids.cudf.ArrowColumnBuilder[] builders;
+
+    /**
+     * A collection of builders for building up columnar data from Arrow data.
+     * @param schema the schema of the batch.
+     * @param rows the maximum number of rows in this batch.
+     * @param batch if this is going to copy a ColumnarBatch in a non GPU format that batch
+     *              we are going to copy. If not this may be null. This is used to get an idea
+     *              of how big to allocate buffers that do not necessarily correspond to the
+     *              number of rows.
+     */
+    public GpuArrowColumnarBatchBuilder(StructType schema, int rows, ColumnarBatch batch) {
+      fields = schema.fields();
+      int len = fields.length;
+      builders = new ai.rapids.cudf.ArrowColumnBuilder[len];
+      boolean success = false;
+
+      try {
+        for (int i = 0; i < len; i++) {
+          StructField field = fields[i];
+          builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()));
+        }
+        success = true;
+      } finally {
+        if (!success) {
+          for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
+            if (b != null) {
+              b.close();
+            }
+          }
+        }
+      }
+    }
+
+    protected int buildersLength() {
+      return builders.length;
+    }
+
+    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+      ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      builders[builderIndex] = null;
+      return gcv;
+    }
+
+    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
+      HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows);
+    }
+
+    public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
+      return builders[i];
+    }
+
+    @Override
+    public void close() {
+      for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
+        if (b != null) {
+          b.close();
+        }
+      }
+    }
+  }
+
+  public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private final ai.rapids.cudf.HostColumnVector.ColumnBuilder[] builders;
-    private final StructField[] fields;
 
     /**
      * A collection of builders for building up columnar data.
@@ -100,31 +249,23 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
+    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
+      HostColumnarToGpu.columnarCopy(cv, builder(colNum), nullable, rows);
+    }
+
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
       return builders[i];
     }
 
-    public ColumnarBatch build(int rows) {
-      ColumnVector[] vectors = new ColumnVector[builders.length];
-      boolean success = false;
-      try {
-        for (int i = 0; i < builders.length; i++) {
-          ai.rapids.cudf.ColumnVector cv = builders[i].buildAndPutOnDevice();
-          vectors[i] = new GpuColumnVector(fields[i].dataType(), cv);
-          builders[i] = null;
-        }
-        ColumnarBatch ret = new ColumnarBatch(vectors, rows);
-        success = true;
-        return ret;
-      } finally {
-        if (!success) {
-          for (ColumnVector vec: vectors) {
-            if (vec != null) {
-              vec.close();
-            }
-          }
-        }
-      }
+    protected int buildersLength() {
+      return builders.length;
+    }
+
+    protected ColumnVector buildAndPutOnDevice(int builderIndex) {
+      ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      builders[builderIndex] = null;
+      return gcv;
     }
 
     public HostColumnVector[] buildHostColumns() {
@@ -311,18 +452,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * This should only ever be called from an assertion.
+   * Returns true if the cudf column can be used for the specified Spark type.
    */
   private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
-    // Only supports DECIMAL64, in case of DType transaction due to precision change.
-    if (dt.isDecimalType() && dt.isBackedByLong()) {
-      if (!(colType instanceof DecimalType)) {
-        return false;
-      }
-      // check for overflow
-      return ((DecimalType) colType).precision() <= DType.DECIMAL64_MAX_PRECISION;
-    }
     if (!dt.isNestedType()) {
       return getNonNestedRapidsType(colType).equals(dt);
     }
@@ -459,6 +592,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new GpuColumnVector(type, cudfCv);
   }
 
+  /**
+   * Converts a cudf internal vector to a Spark compatible vector. No reference counts
+   * are incremented so you need to either close the returned value or the input value,
+   * but not both. This conversion performs an unconditional check that the types are
+   * convertible rather than an assertion check.
+   * @throws IllegalArgumentException if the type conversion check fails
+   */
+  public static GpuColumnVector fromChecked(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
+    if (!typeConversionAllowed(cudfCv, type)) {
+      throw new IllegalArgumentException("Type conversion is not allowed from " + cudfCv +
+          " to " + type);
+    }
+    return new GpuColumnVector(type, cudfCv);
+  }
+
   public static GpuColumnVector from(Scalar scalar, int count, DataType sparkType) {
     return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count), sparkType);
   }
@@ -554,9 +702,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
     long sum = 0;
     if (batch.numCols() > 0) {
-      if (batch.column(0) instanceof GpuCompressedColumnVector) {
-        GpuCompressedColumnVector gccv = (GpuCompressedColumnVector) batch.column(0);
-        sum += gccv.getBuffer().getLength();
+      if (batch.column(0) instanceof WithTableBuffer) {
+        WithTableBuffer wtb = (WithTableBuffer) batch.column(0);
+        sum += wtb.getTableBuffer().getLength();
       } else {
         for (int i = 0; i < batch.numCols(); i++) {
           sum += ((GpuColumnVector) batch.column(i)).getBase().getDeviceMemorySize();

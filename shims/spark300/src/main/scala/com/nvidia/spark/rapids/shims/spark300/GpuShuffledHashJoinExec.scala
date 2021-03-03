@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark300
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -27,9 +26,7 @@ import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide, ShuffledHashJoinExec}
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.execution.GpuShuffledHashJoinBase
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, GpuShuffledHashJoinBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuJoinUtils {
@@ -49,7 +46,7 @@ class GpuShuffledHashJoinMeta(
     join: ShuffledHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends SparkPlanMeta[ShuffledHashJoinExec](join, conf, parent, rule) {
   val leftKeys: Seq[BaseExprMeta[_]] =
     join.leftKeys.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -60,10 +57,6 @@ class GpuShuffledHashJoinMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
-
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
   }
@@ -73,7 +66,7 @@ class GpuShuffledHashJoinMeta(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
-      join.buildSide,
+      GpuJoinUtils.getGpuBuildSide(join.buildSide),
       condition.map(_.convertToGpu()),
       childPlans(0).convertIfNeeded(),
       childPlans(1).convertIfNeeded(),
@@ -84,7 +77,7 @@ case class GpuShuffledHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,
-    buildSide: BuildSide,
+    buildSide: GpuBuildSide,
     condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
@@ -98,14 +91,17 @@ case class GpuShuffledHashJoinExec(
     right,
     isSkewJoin)
   with GpuHashJoin {
+  import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "buildDataSize" -> SQLMetrics.createSizeMetric(sparkContext, "build side size"),
-    "buildTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "build time"),
-    "streamTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "stream time"),
-    "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
-    "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
-    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
+    BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
+    STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
+    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
@@ -116,20 +112,20 @@ case class GpuShuffledHashJoinExec(
   }
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = buildSide match {
-    case BuildLeft => Seq(RequireSingleBatch, null)
-    case BuildRight => Seq(null, RequireSingleBatch)
+    case GpuBuildLeft => Seq(RequireSingleBatch, null)
+    case GpuBuildRight => Seq(null, RequireSingleBatch)
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
-    val buildDataSize = longMetric("buildDataSize")
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = longMetric(TOTAL_TIME)
-    val buildTime = longMetric("buildTime")
-    val streamTime = longMetric("streamTime")
-    val joinTime = longMetric("joinTime")
-    val filterTime = longMetric("filterTime")
-    val joinOutputRows = longMetric("joinOutputRows")
+    val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val buildTime = gpuLongMetric(BUILD_TIME)
+    val streamTime = gpuLongMetric(STREAM_TIME)
+    val joinTime = gpuLongMetric(JOIN_TIME)
+    val filterTime = gpuLongMetric(FILTER_TIME)
+    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
@@ -142,11 +138,11 @@ case class GpuShuffledHashJoinExec(
           buildIter, localBuildOutput)) { buildBatch: ColumnarBatch =>
           withResource(GpuProjectExec.project(buildBatch, gpuBuildKeys)) { keys =>
             val combined = GpuHashJoin.incRefCount(combine(keys, buildBatch))
-            withResource(filterBuiltTableIfNeeded(combined)) { filtered =>
+            withResource(combined) { combined =>
               combinedSize =
-                  GpuColumnVector.extractColumns(filtered)
+                  GpuColumnVector.extractColumns(combined)
                       .map(_.getBase.getDeviceMemorySize).sum.toInt
-              GpuColumnVector.from(filtered)
+              GpuColumnVector.from(combined)
             }
           }
         }

@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,37 +19,65 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import is_before_spark_310
 
-orderable_gen_classes = [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-        BooleanGen, TimestampGen, DateGen, StringGen, NullGen]
+orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), IntegerGen(nullable=False),
+        LongGen(nullable=False), FloatGen(nullable=False), DoubleGen(nullable=False), BooleanGen(nullable=False),
+        TimestampGen(nullable=False), DateGen(nullable=False), StringGen(nullable=False), DecimalGen(nullable=False),
+        DecimalGen(precision=7, scale=-3, nullable=False), DecimalGen(precision=7, scale=3, nullable=False),
+        DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2, nullable=False)]
 
-@pytest.mark.parametrize('data_gen_class', orderable_gen_classes, ids=idfn)
-@pytest.mark.parametrize('nullable', [True, False], ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
-def test_single_orderby(data_gen_class, nullable, order):
-    if (data_gen_class == NullGen):
-        data_gen = data_gen_class()
-    else:
-        data_gen = data_gen_class(nullable=nullable)
+def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).orderBy(order))
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            conf = allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen_class', orderable_gen_classes, ids=idfn)
-@pytest.mark.parametrize('nullable', [True, False], ids=idfn)
+# SPARK CPU itself has issue with negative scale for take ordered and project
+orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
+@pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
-def test_single_sort_in_part(data_gen_class, nullable, order):
-    if (data_gen_class == NullGen):
-        data_gen = data_gen_class()
-    else:
-        data_gen = data_gen_class(nullable=nullable)
+def test_single_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).sortWithinPartitions(order))
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
+
+@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
+@pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
+def test_single_sort_in_part(data_gen, order):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).sortWithinPartitions(order),
+            conf = allow_negative_scale_of_decimal_conf)
 
 orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen,
-        pytest.param(float_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/84')),
-        pytest.param(double_gen, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/84')),
-        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen]
+        pytest.param(float_gen, marks=pytest.mark.xfail(condition=is_before_spark_310(),
+            reason='Spark has -0.0 < 0.0 before Spark 3.1')),
+        pytest.param(double_gen, marks=pytest.mark.xfail(condition=is_before_spark_310(),
+            reason='Spark has -0.0 < 0.0 before Spark 3.1')),
+        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen] + decimal_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
 def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
+            lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()),
+            conf = allow_negative_scale_of_decimal_conf)
+
+# SPARK CPU itself has issue with negative scale for take ordered and project
+orderable_gens_sort_without_neg_decimal = [n for n in orderable_gens_sort if not (isinstance(n, DecimalGen) and n.scale < 0)]
+@pytest.mark.parametrize('data_gen', orderable_gens_sort_without_neg_decimal, ids=idfn)
+def test_multi_orderby_with_limit(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()).limit(100))
+
+# We are not trying all possibilities, just doing a few with numbers so the query works.
+@pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
+def test_orderby_with_processing(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
+            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')))
+
+# We are not trying all possibilities, just doing a few with numbers so the query works.
+@pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
+def test_orderby_with_processing_and_limit(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
+            lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')).limit(100))

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,15 @@
 
 package com.nvidia.spark.rapids.shims.spark300
 
+import java.nio.ByteBuffer
 import java.time.ZoneId
+
+import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
+import org.apache.arrow.vector.ValueVector
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
@@ -34,14 +39,16 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.WindowInPandasExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
@@ -105,13 +112,6 @@ class Spark300Shims extends SparkShims {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def isGpuHashJoin(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuHashJoin => true
-      case _ => false
-    }
-  }
-
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
@@ -138,6 +138,9 @@ class Spark300Shims extends SparkShims {
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
           " for the Python process when enabled. For now it only supports row based window frame.",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
+          TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
@@ -150,13 +153,9 @@ class Spark300Shims extends SparkShims {
         }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+            TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t,
-              allowArray = true,
-              allowMaps = true,
-              allowStruct = true,
-              allowNesting = true)
 
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
@@ -166,8 +165,15 @@ class Spark300Shims extends SparkShims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
+
+            val location = replaceWithAlluxioPathIfNeeded(
+              conf,
+              wrapped.relation,
+              wrapped.partitionFilters,
+              wrapped.dataFilters)
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
@@ -187,20 +193,36 @@ class Spark300Shims extends SparkShims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
+      GpuOverrides.expr[Cast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
+            .ansiEnabled, conf, p, r)),
+      GpuOverrides.expr[AnsiCast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
       GpuOverrides.expr[TimeSub](
         "Subtracts interval from timestamp",
+        ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
+              .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
         (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
             a.interval match {
@@ -209,58 +231,52 @@ class Spark300Shims extends SparkShims {
                   willNotWorkOnGpu("interval months isn't supported")
                 }
               case _ =>
-                willNotWorkOnGpu("only literals are supported for intervals")
             }
             if (ZoneId.of(a.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
               willNotWorkOnGpu("Only UTC zone id is supported")
             }
           }
 
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t, allowCalendarInterval = true)
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuTimeSub(lhs, rhs)
-          }
-        }
-      ),
+        }),
       GpuOverrides.expr[First](
         "first aggregate operator",
+        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+            ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
         (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
           val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
           val ignoreNulls: BaseExprMeta[_] =
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
 
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t,
-              allowNull = true)
-
           override def convertToGpu(): GpuExpression =
             GpuFirst(child.convertToGpu(), ignoreNulls.convertToGpu())
         }),
       GpuOverrides.expr[Last](
         "last aggregate operator",
+        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
+            ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
         (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
           val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
           val ignoreNulls: BaseExprMeta[_] =
             GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
           override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
 
-          override def isSupportedType(t: DataType): Boolean =
-            GpuOverrides.isSupportedType(t,
-              allowNull = true)
-
           override def convertToGpu(): GpuExpression =
             GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
         }),
       GpuOverrides.expr[RegExpReplace](
         "RegExpReplace support for string literal input patterns",
+        ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+          Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
+            .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
         (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
-            if (!GpuOverrides.isLit(a.rep)) {
-              willNotWorkOnGpu("Only literal values are supported for replacement string")
-            }
             if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
               willNotWorkOnGpu(
                 "Only non-null, non-empty String literals that are not regex patterns " +
@@ -385,6 +401,9 @@ class Spark300Shims extends SparkShims {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
+  // Hardcoded for Spark-3.0.*
+  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int = 100
+
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
     FilePartition(index, files)
   }
@@ -433,5 +452,136 @@ class Spark300Shims extends SparkShims {
       qualifier: Seq[String],
       explicitMetadata: Option[Metadata]): Alias = {
     Alias(child, name)(exprId, qualifier, explicitMetadata)
+  }
+
+  override def shouldIgnorePath(path: String): Boolean = {
+    InMemoryFileIndex.shouldFilterOut(path)
+  }
+
+  // Arrow version changed between Spark versions
+  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
+    vec.getDataBuffer().nioBuffer()
+  }
+
+  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
+    vec.getValidityBuffer().nioBuffer()
+  }
+
+  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
+    vec.getOffsetBuffer().nioBuffer()
+  }
+
+  override def replaceWithAlluxioPathIfNeeded(
+      conf: RapidsConf,
+      relation: HadoopFsRelation,
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]): FileIndex = {
+
+    val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
+
+    if (alluxioPathsReplace.isDefined) {
+      // alluxioPathsReplace: Seq("key->value", "key1->value1")
+      // turn the rules to the Map with eg
+      // { s3:/foo -> alluxio://0.1.2.3:19998/foo,
+      //   gs:/bar -> alluxio://0.1.2.3:19998/bar,
+      //   /baz -> alluxio://0.1.2.3:19998/baz }
+      val replaceMapOption = alluxioPathsReplace.map(rules => {
+        rules.map(rule => {
+          val split = rule.split("->")
+          if (split.size == 2) {
+            split(0).trim -> split(1).trim
+          } else {
+            throw new IllegalArgumentException(s"Invalid setting for " +
+              s"${RapidsConf.ALLUXIO_PATHS_REPLACE.key}")
+          }
+        }).toMap
+      })
+
+      replaceMapOption.map(replaceMap => {
+
+        def isDynamicPruningFilter(e: Expression): Boolean =
+          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+
+        val partitionDirs = relation.location.listFiles(
+          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+
+        // replacement func to check if the file path is prefixed with the string user configured
+        // if yes, replace it
+        val replaceFunc = (f: Path) => {
+          val pathStr = f.toString
+          val matchedSet = replaceMap.keySet.filter(reg => pathStr.startsWith(reg))
+          if (matchedSet.size > 1) {
+            // never reach here since replaceMap is a Map
+            throw new IllegalArgumentException(s"Found ${matchedSet.size} same replacing rules " +
+              s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule for each " +
+              s"file path")
+          } else if (matchedSet.size == 1) {
+            new Path(pathStr.replaceFirst(matchedSet.head, replaceMap(matchedSet.head)))
+          } else {
+            f
+          }
+        }
+
+        // replace all of input files
+        val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
+          replacePartitionDirectoryFiles(partitionDir, replaceFunc)
+        })
+
+        // replace all of rootPaths which are already unique
+        val rootPaths = relation.location.rootPaths.map(replaceFunc)
+
+        val parameters: Map[String, String] = relation.options
+
+        // infer PartitionSpec
+        val partitionSpec = GpuPartitioningUtils.inferPartitioning(
+          relation.sparkSession,
+          rootPaths,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          replaceFunc)
+
+        // generate a new InMemoryFileIndex holding paths with alluxio schema
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(partitionSpec))
+      }).getOrElse(relation.location)
+
+    } else {
+      relation.location
+    }
+  }
+
+  override def replacePartitionDirectoryFiles(partitionDir: PartitionDirectory,
+      replaceFunc: Path => Path): Seq[Path] = {
+    partitionDir.files.map(f => replaceFunc(f.getPath))
+  }
+
+  override def shouldFailDivByZero(): Boolean = false
+
+  /**
+   * Return list of matching predicates present in the plan
+   * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
+   */
+  override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 }

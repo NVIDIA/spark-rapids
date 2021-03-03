@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -156,9 +156,7 @@ class RapidsShuffleTestHelper extends FunSuite
 
 object RapidsShuffleTestHelper extends MockitoSugar with Arm {
   def buildMockTableMeta(tableId: Int, contigTable: ContiguousTable): TableMeta = {
-    val tbl = contigTable.getTable
-    val cols = (0 until tbl.getNumberOfColumns).map(tbl.getColumn)
-    MetaUtils.buildTableMeta(tableId, cols, tbl.getRowCount, contigTable.getBuffer)
+    MetaUtils.buildTableMeta(tableId, contigTable)
   }
 
   def buildDegenerateMockTableMeta(): TableMeta = {
@@ -273,15 +271,8 @@ class MockConnection(mockTransaction: Transaction) extends ClientConnection {
     mockTransaction
   }
 
-  override def receive(header: AddressLengthTag, cb: TransactionCallback): Transaction = {
-    cb(mockTransaction)
-    mockTransaction
-  }
-
-  override def receive(
-      bounceBuffers: Seq[AddressLengthTag],
-      cb: TransactionCallback): Transaction = {
-    receiveLengths.appendAll(bounceBuffers.map(_.length))
+  override def receive(alt: AddressLengthTag, cb: TransactionCallback): Transaction = {
+    receiveLengths.append(alt.length)
     cb(mockTransaction)
     mockTransaction
   }

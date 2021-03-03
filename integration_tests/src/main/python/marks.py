@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,10 +14,13 @@
 
 import pytest
 
+allow_non_gpu_databricks = pytest.mark.allow_non_gpu_databricks
 allow_non_gpu = pytest.mark.allow_non_gpu
+validate_execs_in_gpu_plan = pytest.mark.validate_execs_in_gpu_plan
 approximate_float = pytest.mark.approximate_float
 ignore_order = pytest.mark.ignore_order
 incompat = pytest.mark.incompat
 limit = pytest.mark.limit
 qarun = pytest.mark.qarun
 cudf_udf = pytest.mark.cudf_udf
+rapids_udf_example_native = pytest.mark.rapids_udf_example_native

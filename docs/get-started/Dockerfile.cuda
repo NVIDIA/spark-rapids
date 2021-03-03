@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ RUN set -ex && \
     ln -s /lib /lib64 && \
     mkdir -p /opt/spark && \
     mkdir -p /opt/spark/jars && \
-    mkdir -p /opt/tpch && \
     mkdir -p /opt/spark/examples && \
     mkdir -p /opt/spark/work-dir && \
     mkdir -p /opt/sparkRapidsPlugin && \
@@ -53,8 +52,8 @@ COPY spark-3.0.1-bin-hadoop3.2/examples /opt/spark/examples
 COPY spark-3.0.1-bin-hadoop3.2/kubernetes/tests /opt/spark/tests
 COPY spark-3.0.1-bin-hadoop3.2/data /opt/spark/data
 
-COPY cudf-0.17-cuda10-1.jar /opt/sparkRapidsPlugin
-COPY rapids-4-spark_2.12-0.3.0.jar /opt/sparkRapidsPlugin
+COPY cudf-0.18-cuda10-1.jar /opt/sparkRapidsPlugin
+COPY rapids-4-spark_2.12-0.4.0.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
 
 RUN mkdir /opt/spark/python

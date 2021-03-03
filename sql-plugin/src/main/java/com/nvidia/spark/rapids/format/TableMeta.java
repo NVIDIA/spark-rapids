@@ -18,39 +18,41 @@ public final class TableMeta extends Table {
   public TableMeta __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   /**
-   * metadata about the table buffer
+   * metadata about the data encoding
    */
   public BufferMeta bufferMeta() { return bufferMeta(new BufferMeta()); }
   public BufferMeta bufferMeta(BufferMeta obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
   /**
-   * metadata for each column in the table buffer
-   */
-  public ColumnMeta columnMetas(int j) { return columnMetas(new ColumnMeta(), j); }
-  public ColumnMeta columnMetas(ColumnMeta obj, int j) { int o = __offset(6); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
-  public int columnMetasLength() { int o = __offset(6); return o != 0 ? __vector_len(o) : 0; }
-  /**
    * number of rows in the table
    */
-  public long rowCount() { int o = __offset(8); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public boolean mutateRowCount(long row_count) { int o = __offset(8); if (o != 0) { bb.putLong(o + bb_pos, row_count); return true; } else { return false; } }
+  public long rowCount() { int o = __offset(6); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
+  public boolean mutateRowCount(long row_count) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, row_count); return true; } else { return false; } }
+  /**
+   * opaque metadata describing the packed table schema and data layout
+   */
+  public byte packedMeta(int j) { int o = __offset(8); return o != 0 ? bb.get(__vector(o) + j * 1) : 0; }
+  public int packedMetaLength() { int o = __offset(8); return o != 0 ? __vector_len(o) : 0; }
+  public ByteBuffer packedMetaAsByteBuffer() { return __vector_as_bytebuffer(8, 1); }
+  public ByteBuffer packedMetaInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 8, 1); }
+  public boolean mutatePackedMeta(int j, byte packed_meta) { int o = __offset(8); if (o != 0) { bb.put(__vector(o) + j * 1, packed_meta); return true; } else { return false; } }
 
   public static int createTableMeta(FlatBufferBuilder builder,
       int buffer_metaOffset,
-      int column_metasOffset,
-      long row_count) {
+      long row_count,
+      int packed_metaOffset) {
     builder.startObject(3);
     TableMeta.addRowCount(builder, row_count);
-    TableMeta.addColumnMetas(builder, column_metasOffset);
+    TableMeta.addPackedMeta(builder, packed_metaOffset);
     TableMeta.addBufferMeta(builder, buffer_metaOffset);
     return TableMeta.endTableMeta(builder);
   }
 
   public static void startTableMeta(FlatBufferBuilder builder) { builder.startObject(3); }
   public static void addBufferMeta(FlatBufferBuilder builder, int bufferMetaOffset) { builder.addOffset(0, bufferMetaOffset, 0); }
-  public static void addColumnMetas(FlatBufferBuilder builder, int columnMetasOffset) { builder.addOffset(1, columnMetasOffset, 0); }
-  public static int createColumnMetasVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
-  public static void startColumnMetasVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
-  public static void addRowCount(FlatBufferBuilder builder, long rowCount) { builder.addLong(2, rowCount, 0L); }
+  public static void addRowCount(FlatBufferBuilder builder, long rowCount) { builder.addLong(1, rowCount, 0L); }
+  public static void addPackedMeta(FlatBufferBuilder builder, int packedMetaOffset) { builder.addOffset(2, packedMetaOffset, 0); }
+  public static int createPackedMetaVector(FlatBufferBuilder builder, byte[] data) { builder.startVector(1, data.length, 1); for (int i = data.length - 1; i >= 0; i--) builder.addByte(data[i]); return builder.endVector(); }
+  public static void startPackedMetaVector(FlatBufferBuilder builder, int numElems) { builder.startVector(1, numElems, 1); }
   public static int endTableMeta(FlatBufferBuilder builder) {
     int o = builder.endObject();
     return o;

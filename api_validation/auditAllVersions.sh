@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,4 +16,4 @@ set -ex
 
 mvn scala:run -P spark300
 mvn scala:run -P spark301
-mvn scala:run -P spark310
+mvn scala:run -P spark311

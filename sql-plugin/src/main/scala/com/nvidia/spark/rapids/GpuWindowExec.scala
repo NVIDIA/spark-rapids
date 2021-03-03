@@ -27,7 +27,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuWindowExecMeta(windowExec: WindowExec,
                         conf: RapidsConf,
                         parent: Option[RapidsMeta[_, _, _]],
-                        rule: ConfKeysAndIncompat)
+                        rule: DataFromReplacementRule)
   extends SparkPlanMeta[WindowExec](windowExec, conf, parent, rule) {
 
   /**
@@ -130,9 +130,9 @@ case class GpuWindowExec(
     throw new IllegalStateException(s"Row-based execution should not happen, in $this.")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputBatches = metrics(GpuMetricNames.NUM_OUTPUT_BATCHES)
-    val numOutputRows = metrics(GpuMetricNames.NUM_OUTPUT_ROWS)
-    val totalTime = metrics(GpuMetricNames.TOTAL_TIME)
+    val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
+    val totalTime = gpuLongMetric(GpuMetric.TOTAL_TIME)
 
     val projectList = if (resultColumnsOnly) {
       windowExpressionAliases

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,35 +18,40 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.GpuOverrides.isStringLit
-
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression}
-import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.window.WindowExecBase
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 
-trait ConfKeysAndIncompat {
+trait DataFromReplacementRule {
   val operationName: String
   def incompatDoc: Option[String] = None
   def disabledMsg: Option[String] = None
 
   def confKey: String
+
+  def getChecks: Option[TypeChecks[_]]
 }
 
 /**
- * A version of ConfKeysAndIncompat that is used when no replacement rule can be found.
+ * A version of DataFromReplacementRule that is used when no replacement rule can be found.
  */
-final class NoRuleConfKeysAndIncompat extends ConfKeysAndIncompat {
+final class NoRuleDataFromReplacementRule extends DataFromReplacementRule {
   override val operationName: String = "NOT_FOUND"
 
   override def confKey = "NOT_FOUND"
+
+  override def getChecks: Option[TypeChecks[_]] = None
 }
 
 /**
@@ -67,7 +72,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     val wrapped: INPUT,
     val conf: RapidsConf,
     val parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat) {
+    rule: DataFromReplacementRule) {
 
   /**
    * The wrapped plans that should be examined
@@ -100,18 +105,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def convertToGpu(): OUTPUT
 
   /**
-   * Check if all the types are supported in this Meta
-   */
-  final def areAllSupportedTypes(types: DataType*): Boolean =
-    types.forall(isSupportedType)
-
-  /**
-   * Check if this type is supported or not.
-   */
-  def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t)
-
-  /**
    * Keep this on the CPU, but possibly convert its children under it to run on the GPU if enabled.
    * By default this just returns what is wrapped by this.  For some types of operators/stages,
    * like SparkPlan, each part of the query can be converted independent of other parts. As such in
@@ -122,8 +115,25 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
+  protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
 
   val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+
+  final def recursiveSparkPlanPreventsRunningOnGpu(): Unit = {
+    cannotRunOnGpuBecauseOfSparkPlan = true
+    childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+  }
+
+  final def recursiveSparkPlanRemoved(): Unit = {
+    shouldBeRemoved("parent plan is removed")
+    childExprs.foreach(_.recursiveSparkPlanRemoved())
+    childParts.foreach(_.recursiveSparkPlanRemoved())
+    childScans.foreach(_.recursiveSparkPlanRemoved())
+    childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
+  }
 
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
@@ -250,13 +260,15 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private def indent(append: StringBuilder, depth: Int): Unit =
     append.append("  " * depth)
 
-  def couldReplaceMessage: String = "could run on GPU"
+  def replaceMessage: String = "run on GPU"
   def noReplacementPossibleMessage(reasons: String): String = s"cannot run on GPU because $reasons"
   def suppressWillWorkOnGpuInfo: Boolean = false
 
   private def willWorkOnGpuInfo: String = cannotBeReplacedReasons match {
     case None => "NOT EVALUATED FOR GPU YET"
-    case Some(v) if v.isEmpty => couldReplaceMessage
+    case Some(v) if v.isEmpty &&
+        (cannotRunOnGpuBecauseOfSparkPlan || shouldThisBeRemoved) => "could " + replaceMessage
+    case Some(v) if v.isEmpty => "will " + replaceMessage
     case Some(v) =>
       noReplacementPossibleMessage(v mkString "; ")
   }
@@ -275,6 +287,20 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   protected val printWrapped = false
 
+  final private def getIndicatorChar: String = {
+    if (shouldThisBeRemoved) {
+      "#"
+    } else if (canThisBeReplaced) {
+      if (cannotRunOnGpuBecauseOfSparkPlan) {
+        "@"
+      } else {
+        "*"
+      }
+    } else {
+      "!"
+    }
+  }
+
   /**
    * Create a string representation of this in append.
    * @param strBuilder where to place the string representation.
@@ -282,9 +308,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param all should all the data be printed or just what does not work on the GPU?
    */
   protected def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
-    if ((all || !canThisBeReplaced) && !suppressWillWorkOnGpuInfo) {
+    if ((all || !canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) &&
+        !suppressWillWorkOnGpuInfo) {
       indent(strBuilder, depth)
-      strBuilder.append(if (canThisBeReplaced) "*" else "!")
+      strBuilder.append(getIndicatorChar)
 
       strBuilder.append(operationName)
         .append(" <")
@@ -328,7 +355,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends RapidsMeta[INPUT, Partitioning, GpuPartitioning](part, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
@@ -354,7 +381,7 @@ final class RuleNotFoundPartMeta[INPUT <: Partitioning](
     part: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
-  extends PartMeta[INPUT](part, conf, parent, new NoRuleConfKeysAndIncompat) {
+  extends PartMeta[INPUT](part, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagPartForGpu(): Unit = {
     willNotWorkOnGpu(s"no GPU enabled version of partitioning ${part.getClass} could be found")
@@ -370,7 +397,7 @@ final class RuleNotFoundPartMeta[INPUT <: Partitioning](
 abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends RapidsMeta[INPUT, Scan, Scan](scan, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
@@ -389,7 +416,7 @@ final class RuleNotFoundScanMeta[INPUT <: Scan](
     scan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
-  extends ScanMeta[INPUT](scan, conf, parent, new NoRuleConfKeysAndIncompat) {
+  extends ScanMeta[INPUT](scan, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagSelfForGpu(): Unit = {
     willNotWorkOnGpu(s"no GPU enabled version of scan ${scan.getClass} could be found")
@@ -406,7 +433,7 @@ abstract class DataWritingCommandMeta[INPUT <: DataWritingCommand](
     cmd: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
     extends RapidsMeta[INPUT, DataWritingCommand, GpuDataWritingCommand](cmd, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
@@ -425,7 +452,7 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
     cmd: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
-    extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleConfKeysAndIncompat) {
+    extends DataWritingCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagSelfForGpu(): Unit = {
     willNotWorkOnGpu(s"no GPU accelerated version of command ${cmd.getClass} could be found")
@@ -441,8 +468,24 @@ final class RuleNotFoundDataWritingCommandMeta[INPUT <: DataWritingCommand](
 abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends RapidsMeta[INPUT, SparkPlan, GpuExec](plan, conf, parent, rule) {
+
+  def tagForExplain(): Unit = {
+    if (!canThisBeReplaced) {
+      childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu)
+      childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+      childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+      childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    }
+    if (shouldThisBeRemoved) {
+      childExprs.foreach(_.recursiveSparkPlanRemoved())
+      childParts.foreach(_.recursiveSparkPlanRemoved())
+      childScans.foreach(_.recursiveSparkPlanRemoved())
+      childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
+    }
+    childPlans.foreach(_.tagForExplain())
+  }
 
   override val childPlans: Seq[SparkPlanMeta[_]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
@@ -595,15 +638,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   override final def tagSelfForGpu(): Unit = {
-    if (!areAllSupportedTypes(plan.output.map(_.dataType) :_*)) {
-      val unsupported = plan.output.map(_.dataType).filter(!areAllSupportedTypes(_)).toSet
-      willNotWorkOnGpu(s"unsupported data types in output: ${unsupported.mkString(", ")}")
-    }
-    if (!areAllSupportedTypes(plan.children.flatMap(_.output.map(_.dataType)) :_*)) {
-      val unsupported = plan.children.flatMap(_.output.map(_.dataType))
-        .filter(!areAllSupportedTypes(_)).toSet
-      willNotWorkOnGpu(s"unsupported data types in input: ${unsupported.mkString(", ")}")
-    }
+    rule.getChecks.foreach(_.tag(this))
 
     if (!canExprTreeBeReplaced) {
       willNotWorkOnGpu("not all expressions can be replaced")
@@ -661,7 +696,7 @@ final class RuleNotFoundSparkPlanMeta[INPUT <: SparkPlan](
     plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
-  extends SparkPlanMeta[INPUT](plan, conf, parent, new NoRuleConfKeysAndIncompat) {
+  extends SparkPlanMeta[INPUT](plan, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagPlanForGpu(): Unit =
     willNotWorkOnGpu(s"no GPU enabled version of operator ${plan.getClass} could be found")
@@ -677,7 +712,7 @@ final class DoNotReplaceOrWarnSparkPlanMeta[INPUT <: SparkPlan](
     plan: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
-    extends SparkPlanMeta[INPUT](plan, conf, parent, new NoRuleConfKeysAndIncompat) {
+    extends SparkPlanMeta[INPUT](plan, conf, parent, new NoRuleDataFromReplacementRule) {
 
   /** We don't want to spam the user with messages about these operators */
   override def suppressWillWorkOnGpuInfo: Boolean = true
@@ -689,6 +724,54 @@ final class DoNotReplaceOrWarnSparkPlanMeta[INPUT <: SparkPlan](
     throw new IllegalStateException("Cannot be converted to GPU")
 }
 
+sealed abstract class ExpressionContext
+object ProjectExprContext extends ExpressionContext {
+  override def toString: String = "project"
+}
+object LambdaExprContext extends ExpressionContext  {
+  override def toString: String = "lambda"
+}
+object GroupByAggExprContext extends ExpressionContext  {
+  override def toString: String = "aggregation"
+}
+object ReductionAggExprContext extends ExpressionContext  {
+  override def toString: String = "reduction"
+}
+object WindowAggExprContext extends ExpressionContext  {
+  override def toString: String = "window"
+}
+
+object ExpressionContext {
+  private[this] def findParentPlanMeta(meta: BaseExprMeta[_]): Option[SparkPlanMeta[_]] =
+    meta.parent match {
+      case Some(p: BaseExprMeta[_]) => findParentPlanMeta(p)
+      case Some(p: SparkPlanMeta[_]) => Some(p)
+      case _ => None
+    }
+
+  def getAggregateFunctionContext(meta: BaseExprMeta[_]): ExpressionContext = {
+    val parent = findParentPlanMeta(meta)
+    assert(parent.isDefined, "It is expected that an aggregate function is a child of a SparkPlan")
+    parent.get.wrapped match {
+      case _: WindowExecBase => WindowAggExprContext
+      case agg: BaseAggregateExec =>
+        if (agg.groupingExpressions.isEmpty) {
+          ReductionAggExprContext
+        } else {
+          GroupByAggExprContext
+        }
+      case _ => throw new IllegalStateException(
+        s"Found an aggregation function in an unexpected context $parent")
+    }
+  }
+
+  def getRegularOperatorContext(meta: RapidsMeta[_, _, _]): ExpressionContext = meta.wrapped match {
+    case _: LambdaFunction => LambdaExprContext
+    case _: Expression if meta.parent.isDefined => getRegularOperatorContext(meta.parent.get)
+    case _ => ProjectExprContext
+  }
+}
+
 /**
  * Base class for metadata around `Expression`.
  */
@@ -696,7 +779,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
@@ -715,31 +798,21 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   def dataType: DataType = expr.dataType
 
+  lazy val context: ExpressionContext = expr match {
+    case _: LambdaFunction => LambdaExprContext
+    case _: WindowExpression => WindowAggExprContext
+    case _: WindowFunction => WindowAggExprContext
+    case _: AggregateFunction => ExpressionContext.getAggregateFunctionContext(this)
+    case _: AggregateExpression => ExpressionContext.getAggregateFunctionContext(this)
+    case _ => ExpressionContext.getRegularOperatorContext(this)
+  }
+
   final override def tagSelfForGpu(): Unit = {
-    try {
-      if (!areAllSupportedTypes(expr.dataType)) {
-        willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
-          s"produces an unsupported type ${expr.dataType}")
-      }
-    } catch {
-      case _ : java.lang.UnsupportedOperationException =>
-        if (!ignoreUnsetDataTypes) {
-          willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
-            s" does not have a corresponding dataType.")
-        }
+    if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
+      willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
+        s"$wrapped is foldable and operates on non literals")
     }
-    val inputDataTypes = childExprs.map { expr =>
-      try {
-        expr.dataType
-      } catch {
-        case _ : java.lang.UnsupportedOperationException => null
-      }
-    }.filter(_ != null).toArray
-    if (!areAllSupportedTypes(inputDataTypes :_*)) {
-      val unsupported = inputDataTypes
-          .filter(!areAllSupportedTypes(_)).toSet
-      willNotWorkOnGpu(s"unsupported data types in input: ${unsupported.mkString(", ")}")
-    }
+    rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
   }
 
@@ -754,7 +827,7 @@ abstract class ExprMeta[INPUT <: Expression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
     extends BaseExprMeta[INPUT](expr, conf, parent, rule) {
 
   override def convertToGpu(): GpuExpression
@@ -767,7 +840,7 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
@@ -783,7 +856,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
@@ -799,7 +872,7 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
@@ -815,7 +888,7 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
@@ -828,17 +901,10 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
 
 abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     expr: INPUT,
-    trimStr: Option[Expression],
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
-
-  override def tagExprForGpu(): Unit = {
-    if (trimStr != None && !isStringLit(trimStr.get)) {
-      willNotWorkOnGpu("only literal parameters supported for string literal trimStr parameter")
-    }
-  }
 
   override final def convertToGpu(): GpuExpression = {
     val trimParam = if (childExprs.size > 1) {
@@ -859,7 +925,7 @@ abstract class ComplexTypeMergingExprMeta[INPUT <: ComplexTypeMergingExpression]
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
   override final def convertToGpu(): GpuExpression =
     convertToGpu(childExprs.map(_.convertToGpu()))
@@ -874,7 +940,7 @@ final class RuleNotFoundExprMeta[INPUT <: Expression](
     expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
-  extends ExprMeta[INPUT](expr, conf, parent, new NoRuleConfKeysAndIncompat) {
+  extends ExprMeta[INPUT](expr, conf, parent, new NoRuleDataFromReplacementRule) {
 
   override def tagExprForGpu(): Unit =
     willNotWorkOnGpu(s"no GPU enabled version of expression ${expr.getClass} could be found")

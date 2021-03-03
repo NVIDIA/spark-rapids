@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,6 +48,9 @@ def is_allowing_any_non_gpu():
 def get_non_gpu_allowed():
     return _non_gpu_allowed
 
+def get_validate_execs_in_gpu_plan():
+    return _validate_execs_in_gpu_plan
+
 _runtime_env = "apache"
 
 def runtime_env():
@@ -61,6 +64,32 @@ def is_databricks_runtime():
 
 def is_emr_runtime():
     return runtime_env() == "emr"
+
+def is_dataproc_runtime():
+    return runtime_env() == "dataproc"
+
+_is_nightly_run = False
+_is_precommit_run = False
+
+def is_nightly_run():
+    return _is_nightly_run
+
+def is_at_least_precommit_run():
+    return _is_nightly_run or _is_precommit_run
+
+def skip_unless_nightly_tests(description):
+    if (_is_nightly_run):
+        raise AssertionError(description + ' during nightly test run')
+    else:
+        pytest.skip(description)
+
+def skip_unless_precommit_tests(description):
+    if (_is_nightly_run):
+        raise AssertionError(description + ' during nightly test run')
+    elif (_is_precommit_run):
+        raise AssertionError(description + ' during pre-commit test run')
+    else:
+        pytest.skip(description)
 
 _limit = -1
 
@@ -103,7 +132,18 @@ def pytest_runtest_setup(item):
 
     global _allow_any_non_gpu
     global _non_gpu_allowed
+    _non_gpu_allowed_databricks = []
+    _allow_any_non_gpu_databricks = False
+    non_gpu_databricks = item.get_closest_marker('allow_non_gpu_databricks')
     non_gpu = item.get_closest_marker('allow_non_gpu')
+    if non_gpu_databricks:
+        if is_databricks_runtime():
+            if non_gpu_databricks.kwargs and non_gpu_databricks.kwargs['any']:
+                _allow_any_non_gpu_databricks = True
+            elif non_gpu_databricks.args:
+                _non_gpu_allowed_databricks = non_gpu_databricks.args
+            else:
+                pytest.warn('allow_non_gpu_databricks marker without anything allowed')
     if non_gpu:
         if non_gpu.kwargs and non_gpu.kwargs['any']:
             _allow_any_non_gpu = True
@@ -119,6 +159,19 @@ def pytest_runtest_setup(item):
         _allow_any_non_gpu = False
         _non_gpu_allowed = []
 
+    _allow_any_non_gpu = _allow_any_non_gpu | _allow_any_non_gpu_databricks
+    if _non_gpu_allowed and _non_gpu_allowed_databricks:
+        _non_gpu_allowed = _non_gpu_allowed + _non_gpu_allowed_databricks
+    elif _non_gpu_allowed_databricks:
+        _non_gpu_allowed = _non_gpu_allowed_databricks
+
+    global _validate_execs_in_gpu_plan
+    validate_execs = item.get_closest_marker('validate_execs_in_gpu_plan')
+    if validate_execs and validate_execs.args:
+        _validate_execs_in_gpu_plan = validate_execs.args
+    else:
+        _validate_execs_in_gpu_plan = []
+
     global _limit
     limit_mrk = item.get_closest_marker('limit')
     if limit_mrk:
@@ -129,6 +182,15 @@ def pytest_runtest_setup(item):
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
+    global _is_nightly_run
+    global _is_precommit_run
+    test_type = config.getoption('test_type').lower()
+    if "nightly" == test_type:
+        _is_nightly_run = True
+    elif "pre-commit" == test_type:
+        _is_precommit_run = True
+    elif "developer" != test_type:
+        raise Exception("not supported test type {}".format(test_type))
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
@@ -166,7 +228,7 @@ def pytest_collection_modifyitems(config, items):
 def std_input_path(request):
     path = request.config.getoption("std_input_path")
     if path is None:
-        pytest.skip("std_input_path is not configured")
+        skip_unless_precommit_tests("std_input_path is not configured")
     else:
         yield path
 
@@ -217,108 +279,6 @@ def _get_jvm(spark):
 def spark_jvm():
     return _get_jvm(get_spark_i_know_what_i_am_doing())
 
-class TpchRunner:
-  def __init__(self, tpch_format, tpch_path):
-    self.tpch_format = tpch_format
-    self.tpch_path = tpch_path
-    self.setup(get_spark_i_know_what_i_am_doing())
-
-  def setup(self, spark):
-    jvm_session = _get_jvm_session(spark)
-    jvm = _get_jvm(spark)
-    formats = {
-      "csv": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllCSV,
-      "parquet": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllParquet,
-      "orc": jvm.com.nvidia.spark.rapids.tests.tpch.TpchLikeSpark.setupAllOrc
-    }
-    if not self.tpch_format in formats:
-        raise RuntimeError("{} is not a supported tpch input type".format(self.tpch_format))
-    formats.get(self.tpch_format)(jvm_session, self.tpch_path)
-
-  def do_test_query(self, query):
-    spark = get_spark_i_know_what_i_am_doing()
-    jvm_session = _get_jvm_session(spark)
-    jvm = _get_jvm(spark)
-    tests = {
-      "q1": jvm.com.nvidia.spark.rapids.tests.tpch.Q1Like,
-      "q2": jvm.com.nvidia.spark.rapids.tests.tpch.Q2Like,
-      "q3": jvm.com.nvidia.spark.rapids.tests.tpch.Q3Like,
-      "q4": jvm.com.nvidia.spark.rapids.tests.tpch.Q4Like,
-      "q5": jvm.com.nvidia.spark.rapids.tests.tpch.Q5Like,
-      "q6": jvm.com.nvidia.spark.rapids.tests.tpch.Q6Like,
-      "q7": jvm.com.nvidia.spark.rapids.tests.tpch.Q7Like,
-      "q8": jvm.com.nvidia.spark.rapids.tests.tpch.Q8Like,
-      "q9": jvm.com.nvidia.spark.rapids.tests.tpch.Q9Like,
-      "q10": jvm.com.nvidia.spark.rapids.tests.tpch.Q10Like,
-      "q11": jvm.com.nvidia.spark.rapids.tests.tpch.Q11Like,
-      "q12": jvm.com.nvidia.spark.rapids.tests.tpch.Q12Like,
-      "q13": jvm.com.nvidia.spark.rapids.tests.tpch.Q13Like,
-      "q14": jvm.com.nvidia.spark.rapids.tests.tpch.Q14Like,
-      "q15": jvm.com.nvidia.spark.rapids.tests.tpch.Q15Like,
-      "q16": jvm.com.nvidia.spark.rapids.tests.tpch.Q16Like,
-      "q17": jvm.com.nvidia.spark.rapids.tests.tpch.Q17Like,
-      "q18": jvm.com.nvidia.spark.rapids.tests.tpch.Q18Like,
-      "q19": jvm.com.nvidia.spark.rapids.tests.tpch.Q19Like,
-      "q20": jvm.com.nvidia.spark.rapids.tests.tpch.Q20Like,
-      "q21": jvm.com.nvidia.spark.rapids.tests.tpch.Q21Like,
-      "q22": jvm.com.nvidia.spark.rapids.tests.tpch.Q22Like
-    }
-    df = tests.get(query).apply(jvm_session)
-    return DataFrame(df, spark.getActiveSession())
-   
-@pytest.fixture(scope="session")
-def tpch(request):
-    tpch_format = request.config.getoption("tpch_format")
-    tpch_path = request.config.getoption("tpch_path")
-    if tpch_path is None:
-        std_path = request.config.getoption("std_input_path")
-        if std_path is None:
-            pytest.skip("TPCH not configured to run")
-        else:
-            tpch_path = std_path + '/tpch/'
-            tpch_format = 'parquet'
-    yield TpchRunner(tpch_format, tpch_path)
-
-class TpcxbbRunner:
-  def __init__(self, tpcxbb_format, tpcxbb_path):
-    self.tpcxbb_format = tpcxbb_format
-    self.tpcxbb_path = tpcxbb_path
-    self.setup(get_spark_i_know_what_i_am_doing())
-
-  def setup(self, spark):
-    jvm_session = _get_jvm_session(spark)
-    jvm = _get_jvm(spark)
-    formats = {
-      "csv": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllCSV,
-      "parquet": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllParquet,
-      "orc": jvm.com.nvidia.spark.rapids.tests.tpcxbb.TpcxbbLikeSpark.setupAllOrc
-    }
-    if not self.tpcxbb_format in formats:
-        raise RuntimeError("{} is not a supported tpcxbb input type".format(self.tpcxbb_format))
-    formats.get(self.tpcxbb_format)(jvm_session,self.tpcxbb_path)
-
-  def do_test_query(self, query):
-    spark = get_spark_i_know_what_i_am_doing()
-    jvm_session = _get_jvm_session(spark)
-    jvm = _get_jvm(spark)
-    tests = {
-      "q5": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q5Like,
-      "q16": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q16Like,
-      "q21": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q21Like,
-      "q22": jvm.com.nvidia.spark.rapids.tests.tpcxbb.Q22Like
-    }
-    df = tests.get(query).apply(jvm_session)
-    return DataFrame(df, spark.getActiveSession())
-   
-@pytest.fixture(scope="session")
-def tpcxbb(request):
-  tpcxbb_format = request.config.getoption("tpcxbb_format")
-  tpcxbb_path = request.config.getoption("tpcxbb_path")
-  if tpcxbb_path is None:
-    pytest.skip("TPCxBB not configured to run")
-  else:
-    yield TpcxbbRunner(tpcxbb_format, tpcxbb_path)
-
 class MortgageRunner:
   def __init__(self, mortgage_format, mortgage_acq_path, mortgage_perf_path):
     self.mortgage_format = mortgage_format
@@ -349,49 +309,22 @@ def mortgage(request):
     if mortgage_path is None:
         std_path = request.config.getoption("std_input_path")
         if std_path is None:
-            pytest.skip("Mortgage not configured to run")
+            skip_unless_precommit_tests("Mortgage tests are not configured to run")
         else:
             yield MortgageRunner('parquet', std_path + '/parquet_acq', std_path + '/parquet_perf')
     else:
         yield MortgageRunner(mortgage_format, mortgage_path + '/acq', mortgage_path + '/perf')
 
-class TpcdsRunner:
-  def __init__(self, tpcds_format, tpcds_path):
-    self.tpcds_format = tpcds_format
-    self.tpcds_path = tpcds_path
-    self.setup(get_spark_i_know_what_i_am_doing())
-
-  def setup(self, spark):
-    jvm_session = _get_jvm_session(spark)
-    jvm = _get_jvm(spark)
-    formats = {
-      "csv": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllCSV,
-      "parquet": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllParquet,
-      "orc": jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.setupAllOrc
-    }
-    if not self.tpcds_format in formats:
-        raise RuntimeError("{} is not a supported tpcds input type".format(self.tpcds_format))
-    formats.get(self.tpcds_format)(jvm_session, self.tpcds_path, True)
-
-  def do_test_query(self, query):
-    spark = get_spark_i_know_what_i_am_doing()
-    jvm_session = _get_jvm_session(spark)
-    jvm = _get_jvm(spark)
-    df = jvm.com.nvidia.spark.rapids.tests.tpcds.TpcdsLikeSpark.run(jvm_session, query)
-    return DataFrame(df, spark.getActiveSession())
-   
-@pytest.fixture(scope="session")
-def tpcds(request):
-  tpcds_format = request.config.getoption("tpcds_format")
-  tpcds_path = request.config.getoption("tpcds_path")
-  if tpcds_path is None:
-    pytest.skip("TPC-DS not configured to run")
-  else:
-    yield TpcdsRunner(tpcds_format, tpcds_path)
-
 @pytest.fixture(scope="session")
 def enable_cudf_udf(request):
     enable_udf_cudf = request.config.getoption("cudf_udf")
     if not enable_udf_cudf:
+        # cudf_udf tests are not required for any test runs
         pytest.skip("cudf_udf not configured to run")
 
+@pytest.fixture(scope="session")
+def enable_rapids_udf_example_native(request):
+    native_enabled = request.config.getoption("rapids_udf_example_native")
+    if not native_enabled:
+        # udf_example_native tests are not required for any test runs
+        pytest.skip("rapids_udf_example_native is not configured to run")

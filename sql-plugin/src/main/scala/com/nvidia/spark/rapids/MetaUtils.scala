@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,57 +40,36 @@ object MetaUtils extends Arm {
    * Build a TableMeta message from a Table in contiguous memory
    *
    * @param tableId the ID to use for this table
-   * @param table the table whose metadata will be encoded in the message
-   * @param buffer the contiguous buffer backing the Table
+   * @param ct the contiguous table whose metadata will be encoded in the message
    * @return heap-based flatbuffer message
    */
-  def buildTableMeta(tableId: Int, table: Table, buffer: DeviceMemoryBuffer): TableMeta = {
-    buildTableMeta(tableId,
-      (0 until table.getNumberOfColumns).map(i => table.getColumn(i)),
-      table.getRowCount,
-      buffer)
-  }
-
-  /**
-   * Build a TableMeta message
-   * @param tableId the ID to use for this table
-   * @param columns the columns in the table
-   * @param numRows the number of rows in the table
-   * @param buffer the contiguous buffer backing the columns in the table
-   * @return heap-based flatbuffer message
-   */
-  def buildTableMeta(
-      tableId: Int,
-      columns: Seq[ColumnVector],
-      numRows: Long,
-      buffer: DeviceMemoryBuffer): TableMeta = {
+  def buildTableMeta(tableId: Int, ct: ContiguousTable): TableMeta = {
     val fbb = new FlatBufferBuilder(1024)
-    val bufferSize = buffer.getLength
+    val bufferSize = ct.getBuffer.getLength
     BufferMeta.startBufferMeta(fbb)
     BufferMeta.addId(fbb, tableId)
     BufferMeta.addSize(fbb, bufferSize)
     BufferMeta.addUncompressedSize(fbb, bufferSize)
-    val bufferMetaOffset = BufferMeta.endBufferMeta(fbb)
-    buildTableMeta(fbb, bufferMetaOffset, columns, numRows, buffer.getAddress)
+    val bufferMetaOffset = Some(BufferMeta.endBufferMeta(fbb))
+    buildTableMeta(fbb, bufferMetaOffset, ct.getMetadataDirectBuffer, ct.getRowCount)
   }
 
   /**
    * Build a TableMeta message from a Table that originated in contiguous memory that has
    * since been compressed.
    * @param tableId ID to use for this table
-   * @param table table whose metadata will be encoded in the message
-   * @param uncompressedBuffer uncompressed buffer that backs the Table
+   * @param ct contiguous table representing the uncompressed data
    * @param codecId identifier of the codec being used, see CodecType
    * @param compressedSize compressed data from the uncompressed buffer
    * @return heap-based flatbuffer message
    */
   def buildTableMeta(
       tableId: Option[Int],
-      table: Table,
-      uncompressedBuffer: DeviceMemoryBuffer,
+      ct: ContiguousTable,
       codecId: Byte,
       compressedSize: Long): TableMeta = {
     val fbb = new FlatBufferBuilder(1024)
+    val uncompressedBuffer = ct.getBuffer
     val codecDescrOffset = CodecBufferDescriptor.createCodecBufferDescriptor(
       fbb,
       codecId,
@@ -105,32 +84,33 @@ object MetaUtils extends Arm {
     BufferMeta.addSize(fbb, compressedSize)
     BufferMeta.addUncompressedSize(fbb, uncompressedBuffer.getLength)
     BufferMeta.addCodecBufferDescrs(fbb, codecDescrArrayOffset)
-    val bufferMetaOffset = BufferMeta.endBufferMeta(fbb)
-    val columns = (0 until table.getNumberOfColumns).map(i => table.getColumn(i))
-    buildTableMeta(fbb, bufferMetaOffset, columns, table.getRowCount, uncompressedBuffer.getAddress)
+    val bufferMetaOffset = Some(BufferMeta.endBufferMeta(fbb))
+    buildTableMeta(fbb, bufferMetaOffset, ct.getMetadataDirectBuffer, ct.getRowCount)
   }
 
   /**
    * Build a TableMeta message with a pre-built BufferMeta message
    * @param fbb flatbuffer builder that has an already built BufferMeta message
    * @param bufferMetaOffset offset where the BufferMeta message was built
-   * @param columns the columns in the table
+   * @param packedMeta opaque metadata needed to unpack the table
    * @param numRows the number of rows in the table
-   * @param baseAddress address of uncompressed contiguous buffer holding the table
    * @return flatbuffer message
    */
   def buildTableMeta(
       fbb: FlatBufferBuilder,
-      bufferMetaOffset: Int,
-      columns: Seq[ColumnVector],
-      numRows: Long,
-      baseAddress: Long): TableMeta = {
-    val columnMetaOffsets = columns.map(col => addColumnMeta(fbb, baseAddress, col)).toArray
-    val columnMetasOffset = TableMeta.createColumnMetasVector(fbb, columnMetaOffsets)
+      bufferMetaOffset: Option[Int],
+      packedMeta: ByteBuffer,
+      numRows: Long): TableMeta = {
+    val vectorBuffer = fbb.createUnintializedVector(1, packedMeta.remaining(), 1)
+    packedMeta.mark()
+    vectorBuffer.put(packedMeta)
+    packedMeta.reset()
+    val packedMetaOffset = fbb.endVector()
+
     TableMeta.startTableMeta(fbb)
-    TableMeta.addBufferMeta(fbb, bufferMetaOffset)
+    bufferMetaOffset.foreach { bmo => TableMeta.addBufferMeta(fbb, bmo) }
+    TableMeta.addPackedMeta(fbb, packedMetaOffset)
     TableMeta.addRowCount(fbb, numRows)
-    TableMeta.addColumnMetas(fbb, columnMetasOffset)
     fbb.finish(TableMeta.endTableMeta(fbb))
     // copy the message to trim the backing array to only what is needed
     TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))
@@ -138,83 +118,32 @@ object MetaUtils extends Arm {
 
   /**
    * Build a TableMeta message for a degenerate table (zero columns or rows)
-   * @param batch the degenerate columnar batch
+   * @param batch the degenerate columnar batch which must be compressed or packed
    * @return heap-based flatbuffer message
    */
   def buildDegenerateTableMeta(batch: ColumnarBatch): TableMeta = {
     require(batch.numRows == 0 || batch.numCols == 0, "batch not degenerate")
-    if (batch.numCols > 0) {
-      // Batched compression can result in degenerate batches appearing compressed. In that case
-      // the table metadata has already been computed and can be returned directly.
+    if (batch.numCols() == 0) {
+      val fbb = new FlatBufferBuilder(1024)
+      TableMeta.startTableMeta(fbb)
+      TableMeta.addRowCount(fbb, batch.numRows)
+      fbb.finish(TableMeta.endTableMeta(fbb))
+      // copy the message to trim the backing array to only what is needed
+      TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))
+    } else {
       batch.column(0) match {
         case c: GpuCompressedColumnVector =>
-          return c.getTableMeta
+          // Batched compression can result in degenerate batches appearing compressed. In that case
+          // the table metadata has already been computed and can be returned directly.
+          c.getTableMeta
+        case c: GpuPackedTableColumn =>
+          val contigTable = c.getContiguousTable
+          val fbb = new FlatBufferBuilder(1024)
+          buildTableMeta(fbb, None, contigTable.getMetadataDirectBuffer, contigTable.getRowCount)
         case _ =>
+          throw new IllegalStateException("batch must be compressed or packed")
       }
     }
-    val fbb = new FlatBufferBuilder(1024)
-    val columnMetaOffset = if (batch.numCols > 0) {
-      val columns = GpuColumnVector.extractBases(batch)
-      val columnMetaOffsets = new ArrayBuffer[Int](batch.numCols)
-      for (i <- 0 until batch.numCols) {
-        ColumnMeta.startColumnMeta(fbb)
-        ColumnMeta.addNullCount(fbb, 0)
-        ColumnMeta.addRowCount(fbb, batch.numRows)
-        val columnType = columns(i).getType
-        ColumnMeta.addDtypeId(fbb, columnType.getTypeId.getNativeId)
-        ColumnMeta.addDtypeScale(fbb, columnType.getScale)
-        columnMetaOffsets.append(ColumnMeta.endColumnMeta(fbb))
-      }
-      Some(TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray))
-    } else {
-      None
-    }
-
-    TableMeta.startTableMeta(fbb)
-    TableMeta.addRowCount(fbb, batch.numRows)
-    columnMetaOffset.foreach(c => TableMeta.addColumnMetas(fbb, c))
-    fbb.finish(TableMeta.endTableMeta(fbb))
-    // copy the message to trim the backing array to only what is needed
-    TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))
-  }
-
-  /** Add a ColumnMeta, returning the buffer offset where it was added */
-  private def addColumnMeta(
-      fbb: FlatBufferBuilder,
-      baseAddress: Long,
-      column: ColumnView): Int = {
-    val columnType = column.getType
-    val childVectorOffset = if (columnType.isNestedType) {
-      val childMetaOffsets = (0 until column.getNumChildren).map { i =>
-        withResource(column.getChildColumnView(i)) { childView =>
-          addColumnMeta(fbb, baseAddress, childView)
-        }
-      }
-      Some(ColumnMeta.createChildrenVector(fbb, childMetaOffsets.toArray))
-    } else {
-      None
-    }
-
-    ColumnMeta.startColumnMeta(fbb)
-    ColumnMeta.addNullCount(fbb, column.getNullCount)
-    ColumnMeta.addRowCount(fbb, column.getRowCount)
-    val data = column.getData
-    if (data != null) {
-      ColumnMeta.addDataOffset(fbb, data.getAddress - baseAddress)
-      ColumnMeta.addDataLength(fbb, data.getLength)
-    }
-    val validity = column.getValid
-    if (validity != null) {
-      ColumnMeta.addValidityOffset(fbb, validity.getAddress - baseAddress)
-    }
-    val offsets = column.getOffsets
-    if (offsets != null) {
-      ColumnMeta.addOffsetsOffset(fbb, offsets.getAddress - baseAddress)
-    }
-    ColumnMeta.addDtypeId(fbb, columnType.getTypeId.getNativeId)
-    ColumnMeta.addDtypeScale(fbb, columnType.getScale)
-    childVectorOffset.foreach(x => ColumnMeta.addChildren(fbb, x))
-    ColumnMeta.endColumnMeta(fbb)
   }
 
   /**
@@ -225,13 +154,9 @@ object MetaUtils extends Arm {
    * @return table that must be closed by the caller
    */
   def getTableFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta): Table = {
-    withResource(new Array[ColumnVector](meta.columnMetasLength())) { columns =>
-      val columnMeta = new ColumnMeta
-      (0 until meta.columnMetasLength).foreach { i =>
-        columns(i) = makeCudfColumn(deviceBuffer, meta.columnMetas(columnMeta, i))
-      }
-      new Table(columns :_*)
-    }
+    val packedMeta = meta.packedMetaAsByteBuffer
+    require(packedMeta != null, "Missing packed table metadata")
+    Table.fromPackedTable(packedMeta, deviceBuffer)
   }
 
   /**
@@ -242,87 +167,10 @@ object MetaUtils extends Arm {
    * @param sparkTypes the spark types that the `ColumnarBatch` should have.
    * @return columnar batch that must be closed by the caller
    */
-  def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer,
-      meta: TableMeta,
+  def getBatchFromMeta(deviceBuffer: DeviceMemoryBuffer, meta: TableMeta,
       sparkTypes: Array[DataType]): ColumnarBatch = {
-    closeOnExcept(new ArrayBuffer[GpuColumnVector](meta.columnMetasLength())) { columns =>
-      val columnMeta = new ColumnMeta
-      (0 until meta.columnMetasLength).foreach { i =>
-        columns.append(makeColumn(deviceBuffer, meta.columnMetas(columnMeta, i), sparkTypes(i)))
-      }
-      new ColumnarBatch(columns.toArray, meta.rowCount.toInt)
-    }
-  }
-
-  private def makeColumn(
-      buffer: DeviceMemoryBuffer,
-      meta: ColumnMeta,
-      sparkType: DataType): GpuColumnVector = {
-    val columnView = makeCudfColumnView(buffer, meta)
-    val column = ColumnViewUtil.fromViewWithContiguousAllocation(columnView, buffer)
-    new GpuColumnVectorFromBuffer(sparkType, column, buffer)
-  }
-
-  private def makeCudfColumn(buffer: DeviceMemoryBuffer, meta: ColumnMeta): ColumnVector = {
-    val columnView = makeCudfColumnView(buffer, meta)
-    ColumnViewUtil.fromViewWithContiguousAllocation(columnView, buffer)
-  }
-
-  private def makeCudfColumnView(
-      buffer: DeviceMemoryBuffer,
-      meta: ColumnMeta): Long = {
-    val numChildren = meta.childrenLength()
-    val childViews = if (numChildren > 0) new Array[Long](numChildren) else null
-    try {
-      if (childViews != null) {
-        val columnMetaObj = new ColumnMeta
-        childViews.indices.foreach { i =>
-          val childMeta = meta.children(columnMetaObj, i)
-          childViews(i) = makeCudfColumnView(buffer, childMeta)
-        }
-      }
-
-      val dtype = DType.fromNative(meta.dtypeId(), meta.dtypeScale())
-      val rowCount = meta.rowCount().toInt
-      val nullCount = meta.nullCount().toInt
-      val baseAddress = buffer.getAddress
-      val dataLength = meta.dataLength()
-      val dataAddress = if (dtype.isNestedType) {
-        0L
-      } else {
-        baseAddress + meta.dataOffset()
-      }
-      val validityAddress = if (nullCount > 0) {
-        baseAddress + meta.validityOffset()
-      } else {
-        0L
-      }
-      val offsetsAddress = if (dtype.hasOffsets) {
-        baseAddress + meta.offsetsOffset()
-      } else {
-        0L
-      }
-      ColumnViewUtil.makeCudfColumnView(
-        dtype.getTypeId.getNativeId,
-        dtype.getScale,
-        dataAddress,
-        dataLength,
-        offsetsAddress,
-        validityAddress,
-        nullCount,
-        rowCount,
-        childViews)
-    } catch {
-      case t: Throwable =>
-        if (childViews != null) {
-          try {
-            childViews.foreach(ColumnViewUtil.deleteColumnView)
-          } catch {
-            case e: Throwable =>
-              t.addSuppressed(e)
-          }
-        }
-        throw t
+    withResource(getTableFromMeta(deviceBuffer, meta)) { table =>
+      GpuColumnVectorFromBuffer.from(table, deviceBuffer, meta, sparkTypes)
     }
   }
 }
@@ -361,32 +209,6 @@ object ShuffleMetadata extends Logging{
     BufferMeta.endBufferMeta(fbb)
   }
 
-  private def copyColumnMeta(fbb: FlatBufferBuilder, col: ColumnMeta): Int = {
-    val numChildren = col.childrenLength()
-    val childMetaVectorOffset = if (numChildren > 0) {
-      val columnMetaObj = new ColumnMeta
-      val childMetaOffsets = (0 until numChildren).map { i =>
-        val childMeta = col.children(columnMetaObj, i)
-        copyColumnMeta(fbb, childMeta)
-      }
-      Some(ColumnMeta.createChildrenVector(fbb, childMetaOffsets.toArray))
-    } else {
-      None
-    }
-
-    ColumnMeta.startColumnMeta(fbb)
-    ColumnMeta.addNullCount(fbb, col.nullCount())
-    ColumnMeta.addRowCount(fbb, col.rowCount())
-    ColumnMeta.addDataOffset(fbb, col.dataOffset())
-    ColumnMeta.addDataLength(fbb, col.dataLength())
-    ColumnMeta.addValidityOffset(fbb, col.validityOffset())
-    ColumnMeta.addOffsetsOffset(fbb, col.offsetsOffset())
-    childMetaVectorOffset.foreach(x => ColumnMeta.addChildren(fbb, x))
-    ColumnMeta.addDtypeId(fbb, col.dtypeId())
-    ColumnMeta.addDtypeScale(fbb, col.dtypeScale())
-    ColumnMeta.endColumnMeta(fbb)
-  }
-
   /**
    * Given a sequence of `TableMeta`, re-lay the metas using the flat buffer builder in `fbb`.
    * @param fbb builder to use
@@ -402,21 +224,18 @@ object ShuffleMetadata extends Logging{
         None
       }
 
-      val columnMetaObj = new ColumnMeta
-      val columnMetaOffsets = (0 until tableMeta.columnMetasLength()).map { i =>
-        val columnMeta = tableMeta.columnMetas(columnMetaObj, i)
-        copyColumnMeta(fbb, columnMeta)
-      }
-
-      val columnMetaOffset = if (columnMetaOffsets.nonEmpty) {
-        Some(TableMeta.createColumnMetasVector(fbb, columnMetaOffsets.toArray))
+      val packedMetaBuffer = tableMeta.packedMetaAsByteBuffer()
+      val packedMetaOffset = if (packedMetaBuffer != null) {
+        val destBuffer = fbb.createUnintializedVector(1, packedMetaBuffer.remaining(), 1)
+        destBuffer.put(packedMetaBuffer)
+        Some(fbb.endVector())
       } else {
         None
       }
 
       TableMeta.startTableMeta(fbb)
       buffMetaOffset.foreach(bmo => TableMeta.addBufferMeta(fbb, bmo))
-      columnMetaOffset.foreach(cmo => TableMeta.addColumnMetas(fbb, cmo))
+      packedMetaOffset.foreach(pmo => TableMeta.addPackedMeta(fbb, pmo))
       TableMeta.addRowCount(fbb, tableMeta.rowCount())
       TableMeta.endTableMeta(fbb)
     }.toArray
@@ -514,24 +333,6 @@ object ShuffleMetadata extends Logging{
     fbb.dataBuffer()
   }
 
-  private def printColumnMeta(colName: String, columnMeta: ColumnMeta): String = {
-    val columnType = DType.fromNative(columnMeta.dtypeId(), columnMeta.dtypeScale())
-    val numChildren = columnMeta.childrenLength()
-    val childrenStr = if (numChildren > 0) {
-      val columnMetaObj = new ColumnMeta
-      (0 until numChildren).map { i =>
-        val childName = s"$colName child $i"
-        val childMeta = columnMeta.children(columnMetaObj, i)
-        printColumnMeta(childName, childMeta)
-      }.mkString
-    } else {
-      ""
-    }
-    s"$colName [type=$columnType rows=${columnMeta.rowCount} " +
-        s"nullcount=${columnMeta.nullCount()} data_len=${columnMeta.dataLength()}]\n" +
-        s"$childrenStr"
-  }
-
   def printResponse(state: String, res: MetadataResponse): String = {
     val out = new StringBuilder
     out.append(s"----------------------- METADATA RESPONSE $state --------------------------\n")
@@ -539,13 +340,8 @@ object ShuffleMetadata extends Logging{
     out.append("------------------------------------------------------------------------------\n")
     for (tableIndex <- 0 until res.tableMetasLength()) {
       val tableMeta = res.tableMetas(tableIndex)
-      out.append(s"table: $tableIndex [cols=${tableMeta.columnMetasLength()}, " +
-          s"rows=${tableMeta.rowCount}, full_content_size=${res.fullResponseSize()}]\n")
-      val columnMetaObj = new ColumnMeta
-      (0 until tableMeta.columnMetasLength()).foreach { i =>
-        val columnMeta = tableMeta.columnMetas(columnMetaObj, i)
-        out.append(printColumnMeta(s"column: $i", columnMeta))
-      }
+      out.append(s"table: $tableIndex rows=${tableMeta.rowCount}, " +
+          s"full_content_size=${res.fullResponseSize()}]\n")
     }
     out.append(s"----------------------- END METADATA RESPONSE $state ----------------------\n")
     out.toString()

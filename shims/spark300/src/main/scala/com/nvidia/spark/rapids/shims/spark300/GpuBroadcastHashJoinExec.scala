@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark300
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetricNames._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -28,9 +27,7 @@ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, SerializeConcatHostBuffersDeserializeBatch}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -40,7 +37,7 @@ class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: ConfKeysAndIncompat)
+    rule: DataFromReplacementRule)
   extends GpuBroadcastJoinMeta[BroadcastHashJoinExec](join, conf, parent, rule) {
 
   val leftKeys: Seq[BaseExprMeta[_]] =
@@ -51,10 +48,6 @@ class GpuBroadcastHashJoinMeta(
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
-  override def isSupportedType(t: DataType): Boolean =
-    GpuOverrides.isSupportedType(t,
-      allowNull = true)
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
@@ -85,7 +78,8 @@ class GpuBroadcastHashJoinMeta(
     GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
-      join.joinType, join.buildSide,
+      join.joinType,
+      GpuJoinUtils.getGpuBuildSide(join.buildSide),
       condition.map(_.convertToGpu()),
       left, right)
   }
@@ -95,23 +89,26 @@ case class GpuBroadcastHashJoinExec(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,
-    buildSide: BuildSide,
+    buildSide: GpuBuildSide,
     condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+  import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, SQLMetric] = Map(
-    "joinOutputRows" -> SQLMetrics.createMetric(sparkContext, "join output rows"),
-    "streamTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "stream time"),
-    "joinTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "join time"),
-    "filterTime" -> SQLMetrics.createNanoTimingMetric(sparkContext, "filter time"))
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
+    STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
     buildSide match {
-      case BuildLeft =>
+      case GpuBuildLeft =>
         BroadcastDistribution(mode) :: UnspecifiedDistribution :: Nil
-      case BuildRight =>
+      case GpuBuildRight =>
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
   }
@@ -125,19 +122,20 @@ case class GpuBroadcastHashJoinExec(
   }
 
   override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException("GpuBroadcastHashJoin does not support row-based processing")
+    throw new IllegalStateException(
+      "GpuBroadcastHashJoin does not support row-based processing")
 
-  override def doExecuteColumnar() : RDD[ColumnarBatch] = {
-    val numOutputRows = longMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = longMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = longMetric(TOTAL_TIME)
-    val streamTime = longMetric("streamTime")
-    val joinTime = longMetric("joinTime")
-    val filterTime = longMetric("filterTime")
-    val joinOutputRows = longMetric("joinOutputRows")
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val streamTime = gpuLongMetric(STREAM_TIME)
+    val joinTime = gpuLongMetric(JOIN_TIME)
+    val filterTime = gpuLongMetric(FILTER_TIME)
+    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val broadcastRelation = broadcastExchange
-      .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
+        .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
@@ -145,9 +143,8 @@ case class GpuBroadcastHashJoinExec(
       val ret = withResource(
         GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
         val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        val filtered = filterBuiltTableIfNeeded(combined)
-        withResource(filtered) { filtered =>
-          GpuColumnVector.from(filtered)
+        withResource(combined) { combined =>
+          GpuColumnVector.from(combined)
         }
       }
 
