@@ -130,8 +130,7 @@ class Spark301Shims extends Spark300Shims {
   override def getQueryStageRuntimeStatistics(plan: SparkPlan): Statistics = {
     plan match {
       case qs: QueryStageExec => qs.getRuntimeStatistics
-      case _ => throw new IllegalArgumentException(
-        "getQueryStageRuntimeStatistics called with plan that is not a query stage")
+      case p => throw new IllegalArgumentException(s"not a query stage: $p")
     }
   }
 
