@@ -98,6 +98,8 @@ class AdaptiveQueryExecSuite
   }
 
   test("get row counts from executed shuffle query stages") {
+    assumeSpark301orLater
+
     skewJoinTest { spark =>
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
         spark,
@@ -107,7 +109,8 @@ class AdaptiveQueryExecSuite
           .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
           .map(_.asInstanceOf[ShuffleQueryStageExec])
       assert(shuffleExchanges.nonEmpty)
-      val stats = shuffleExchanges.map(_.getRuntimeStatistics)
+      val shim = ShimLoader.getSparkShims
+      val stats = shuffleExchanges.map(e => shim.getQueryStageRuntimeStatistics(e))
       assert(stats.forall(_.rowCount.contains(1000)))
     }
   }
