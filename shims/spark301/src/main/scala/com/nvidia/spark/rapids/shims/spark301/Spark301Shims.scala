@@ -127,12 +127,8 @@ class Spark301Shims extends Spark300Shims {
   override def isShuffleExchangeLike(plan: SparkPlan): Boolean =
     plan.isInstanceOf[ShuffleExchangeLike]
 
-  override def getQueryStageRuntimeStatistics(plan: SparkPlan): Statistics = {
-    plan match {
-      case qs: QueryStageExec => qs.getRuntimeStatistics
-      case p => throw new IllegalArgumentException(s"not a query stage: $p")
-    }
-  }
+  override def getQueryStageRuntimeStatistics(qs: QueryStageExec): Statistics =
+    qs.getRuntimeStatistics
 
   override def injectQueryStagePrepRule(
       extensions: SparkSessionExtensions,

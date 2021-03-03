@@ -34,7 +34,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
@@ -74,7 +74,7 @@ trait SparkShims {
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
   def isShuffleExchangeLike(plan: SparkPlan): Boolean
-  def getQueryStageRuntimeStatistics(plan: SparkPlan): Statistics
+  def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics
   def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide

@@ -42,7 +42,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -135,7 +135,7 @@ class Spark300Shims extends SparkShims {
   override def isShuffleExchangeLike(plan: SparkPlan): Boolean =
     plan.isInstanceOf[ShuffleExchangeExec]
 
-  override def getQueryStageRuntimeStatistics(plan: SparkPlan): Statistics = {
+  override def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics = {
     Statistics(0, None)
   }
 
