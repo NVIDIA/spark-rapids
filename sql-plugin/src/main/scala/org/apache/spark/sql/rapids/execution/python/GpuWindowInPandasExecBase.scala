@@ -158,11 +158,6 @@ class WindowingPythonIterator(
     }
   }
 
-  /*
-   * Two items in order:
-   *   1) The group info (Disabled),
-   *   2) The window bounds
-   */
   private[this] def buildInfoBatchForPython(
       batch: ColumnarBatch,
       gpLens: Seq[_]): ColumnarBatch = {
@@ -390,7 +385,6 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
 
   private val windowBoundTypeConf = "pandas_window_bound_types"
-  private val windowBatchGroupConf = "pandas_window_batching_groups"
 
   private val UnboundedWindow ="unbounded"
   private val BoundedWindow ="bounded"
@@ -584,19 +578,20 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     // For UDFs with bounded window, argOffset is
     //         (lowerBoundOffset, upperBoundOffset, inputOffset1, inputOffset2, ...)
     // For UDFs with unbounded window, argOffset is
-    //         (groupInfoOffset, inputOffset1, inputOffset2, ...)
+    //         (inputOffset1, inputOffset2, ...)
     pyFuncs.indices.foreach { exprIndex =>
       val frameIndex = exprIndex2FrameIndex(exprIndex)
       if (isBounded(frameIndex)) {
         argOffsets(exprIndex) = Array(lowerBoundIndex(frameIndex), upperBoundIndex(frameIndex)) ++
-          argOffsets(exprIndex).map(_ + windowBoundsInput.length)
+            argOffsets(exprIndex).map(_ + windowBoundsInput.length)
       } else {
         argOffsets(exprIndex) = argOffsets(exprIndex).map(_ + windowBoundsInput.length)
       }
     }
 
     // 7) Building the final input and schema
-    val allInputTypes = (windowBoundsInput ++ dataInputs).map(_.dataType)
+    val allInputs = windowBoundsInput ++ dataInputs
+    val allInputTypes = allInputs.map(_.dataType)
     val pythonInputSchema = StructType(
       allInputTypes.zipWithIndex.map { case (dt, i) =>
         StructField(s"_$i", dt)
