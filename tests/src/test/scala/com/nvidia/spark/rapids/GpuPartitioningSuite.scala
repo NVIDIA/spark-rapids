@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ColumnVector, DType, Table}
+import ai.rapids.cudf.{ColumnVector, Cuda, DType, Table}
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
@@ -53,6 +53,24 @@ class GpuPartitioningSuite extends FunSuite with Arm {
       val table = packedColumn.getContiguousTable.getTable
       // The contiguous table is still responsible for closing these columns.
       (0 until table.getNumberOfColumns).map(table.getColumn).toArray
+    } else if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
+      val compressedColumn = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
+      val descr = compressedColumn.getTableMeta.bufferMeta.codecBufferDescrs(0)
+      val codec = TableCompressionCodec.getCodec(descr.codec)
+      withResource(codec.createBatchDecompressor(100 * 1024 * 1024L,
+        Cuda.DEFAULT_STREAM)) { decompressor =>
+        compressedColumn.getTableBuffer.incRefCount()
+        decompressor.addBufferToDecompress(compressedColumn.getTableBuffer,
+          compressedColumn.getTableMeta.bufferMeta)
+        withResource(decompressor.finishAsync()) { outputBuffers =>
+          val outputBuffer = outputBuffers.head
+          // There should be only one
+          withResource(
+            MetaUtils.getTableFromMeta(outputBuffer, compressedColumn.getTableMeta)) { table =>
+            (0 until table.getNumberOfColumns).map(i => table.getColumn(i).incRefCount()).toArray
+          }
+        }
+      }
     } else {
       GpuColumnVector.extractBases(batch)
     }
@@ -70,18 +88,16 @@ class GpuPartitioningSuite extends FunSuite with Arm {
   private def compareBatches(expected: ColumnarBatch, actual: ColumnarBatch): Unit = {
     assertResult(expected.numRows)(actual.numRows)
     val expectedColumns = extractBases(expected)
-    val actualColumns = extractBases(expected)
+    val actualColumns = extractBases(actual)
     assertResult(expectedColumns.length)(actualColumns.length)
     expectedColumns.zip(actualColumns).foreach { case (expected, actual) =>
-      // FIXME: For decimal types, NULL_EQUALS has not been supported in cuDF yet
-      val cpVec = if (expected.getType.isDecimalType) {
-        expected.equalTo(actual)
+      if (expected.getRowCount == 0) {
+        assertResult(expected.getType)(actual.getType)
       } else {
-        expected.equalToNullAware(actual)
-      }
-      withResource(cpVec) { compareVector =>
-        withResource(compareVector.all()) { compareResult =>
-          assert(compareResult.getBoolean)
+        withResource(expected.equalToNullAware(actual)) { compareVector =>
+          withResource(compareVector.all()) { compareResult =>
+            assert(compareResult.getBoolean)
+          }
         }
       }
     }
