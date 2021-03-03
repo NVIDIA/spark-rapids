@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.time.ZoneId
 
+import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
@@ -397,6 +398,16 @@ final class CreateDataSourceTableAsSelectCommandMeta(
   }
 }
 
+/**
+ * Listener trait so that tests can confirm that the expected optimizations are being applied
+ */
+trait GpuOverridesListener {
+  def optimizedPlan(
+      plan: SparkPlanMeta[SparkPlan],
+      sparkPlan: SparkPlan,
+      costOptimizations: Seq[Optimization])
+}
+
 object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
@@ -411,6 +422,21 @@ object GpuOverrides {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+
+  // this listener mechanism is global and is intended for use by unit tests only
+  private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
+
+  def addListener(listener: GpuOverridesListener): Unit = {
+    listeners += listener
+  }
+
+  def removeListener(listener: GpuOverridesListener): Unit = {
+    listeners -= listener
+  }
+
+  def removeAllListeners(): Unit = {
+    listeners.clear()
+  }
 
   def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
     val s = strLit.toString
@@ -2746,7 +2772,10 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan): SparkPlan = {
+
+  // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
+  // gets called once for each query stage (where a query stage is an `Exchange`).
+  override def apply(plan: SparkPlan) :SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
@@ -2774,16 +2803,30 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       }
       plan
     } else {
+      val optimizations = if (conf.optimizerEnabled) {
+        // we need to run these rules both before and after CBO because the cost
+        // is impacted by forcing operators onto CPU due to other rules that we have
+        wrap.runAfterTagRules()
+        val optimizer = new CostBasedOptimizer(conf)
+        optimizer.optimize(wrap)
+      } else {
+        Seq.empty
+      }
       wrap.runAfterTagRules()
       if (!exp.equalsIgnoreCase("NONE")) {
         wrap.tagForExplain()
         val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
         if (!explain.isEmpty) {
           logWarning(s"\n$explain")
+          if (conf.optimizerExplain.equalsIgnoreCase("ALL") && optimizations.nonEmpty) {
+            logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")
+          }
         }
       }
       val convertedPlan = wrap.convertIfNeeded()
-      addSortsIfNeeded(convertedPlan, conf)
+      val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
+      GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
+      sparkPlan
     }
   }
 
