@@ -138,7 +138,7 @@ class RapidsShuffleTestHelper extends FunSuite
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
 
     val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
-    when(mockStorage.addBuffer(any(), dmbCaptor.capture(), any(), any())).thenAnswer(_ => {
+    when(mockStorage.addBuffer(any(), dmbCaptor.capture(), any(), any(), any())).thenAnswer(_ => {
       buffersToClose.append(dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer])
     })
 

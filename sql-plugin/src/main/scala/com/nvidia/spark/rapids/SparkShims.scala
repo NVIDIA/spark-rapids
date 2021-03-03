@@ -30,12 +30,14 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, Nul
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types._
@@ -138,6 +140,8 @@ trait SparkShims {
     readFunction: (PartitionedFile) => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
 
+  def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
+
   def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,
       queryUsesInputFile: Boolean): GpuBatchScanExec
@@ -188,4 +192,13 @@ trait SparkShims {
   def shouldFailDivByZero(): Boolean
 
   def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
+
+  def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
+
+  /** dropped by SPARK-34234 */
+  def attachTreeIfSupported[TreeType <: TreeNode[_], A](
+    tree: TreeType,
+    msg: String = "")(
+    f: => A
+  ): A
 }

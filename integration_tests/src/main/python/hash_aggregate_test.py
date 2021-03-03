@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -384,9 +384,8 @@ def test_generic_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             # Coalesce and sort are to make sure that first and last, which are non-deterministic
             # become deterministic
-            lambda spark : binary_op_df(spark, data_gen)\
-                    .coalesce(1)\
-                    .sortWithinPartitions('b').selectExpr(
+            lambda spark : unary_op_df(spark, data_gen)\
+                    .coalesce(1).selectExpr(
                 'min(a)',
                 'max(a)',
                 'first(a)',

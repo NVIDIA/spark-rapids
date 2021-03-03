@@ -446,7 +446,9 @@ case class GpuHashAggregateExec(
                 // batch sizes would go over a threshold, we'd spill the aggregatedCb,
                 // and perform aggregation on the new batch (which would need to be merged, with the
                 // spilled aggregates)
-                concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
+                // Please note that in order for first/last to work properly we have to maintain
+                // the order of the input batches.
+                concatCvs = concatenateBatches(aggregatedCb, aggregatedInputCb, concatTime)
                 aggregatedCb.close()
                 aggregatedCb = null
                 aggregatedInputCb.close()
