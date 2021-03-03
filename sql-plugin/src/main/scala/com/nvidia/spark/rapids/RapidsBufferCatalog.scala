@@ -118,7 +118,7 @@ class RapidsBufferCatalog extends Logging {
   def removeBuffer(id: RapidsBufferId): Unit = {
     val buffers = bufferMap.remove(id)
     if (buffers != null) {
-      buffers.values.foreach((buffer) => buffer.free())
+      buffers.values.foreach(buffer => buffer.free())
     }
   }
 
