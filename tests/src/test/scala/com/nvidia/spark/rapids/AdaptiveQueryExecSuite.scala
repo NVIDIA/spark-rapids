@@ -24,13 +24,13 @@ import org.scalatest.BeforeAndAfterEach
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffledHashJoinBase}
+import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DecimalType, IntegerType, StructField, StructType}
 
 object AdaptiveQueryExecSuite {
@@ -94,10 +94,7 @@ class AdaptiveQueryExecSuite
   }
 
   private def findReusedExchange(plan: SparkPlan): Seq[ReusedExchangeExec] = {
-    collectWithSubqueries(plan) {
-      case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
-      case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
-    }
+    collectWithSubqueries(plan)(ShimLoader.getSparkShims.reusedExchangeExecPfn)
   }
 
   test("skewed inner join optimization") {

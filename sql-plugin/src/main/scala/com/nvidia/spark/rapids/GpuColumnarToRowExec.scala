@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
+import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -257,31 +258,7 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val totalTime = gpuLongMetric(TOTAL_TIME)
 
-    // This avoids calling `output` in the RDD closure, so that we don't need to include the entire
-    // plan (this) in the closure.
-    val localOutput = this.output
-
-    val f = if (CudfRowTransitions.areAllSupported(child.output) &&
-        // For a small number of columns it is still best to do it the original way
-        child.output.length > 4 &&
-        // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
-        // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
-        // So, we are going to be cautious and start with that until we have tested it more.
-        child.output.length < 100) {
-      (batches: Iterator[ColumnarBatch]) => {
-        // UnsafeProjection is not serializable so do it on the executor side
-        val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
-        new AcceleratedColumnarToRowIterator(localOutput,
-          batches, numInputBatches, numOutputRows, totalTime).map(toUnsafe)
-      }
-    } else {
-      (batches: Iterator[ColumnarBatch]) => {
-        // UnsafeProjection is not serializable so do it on the executor side
-        val toUnsafe = UnsafeProjection.create(localOutput, localOutput)
-        new ColumnarToRowIterator(batches,
-          numInputBatches, numOutputRows, totalTime).map(toUnsafe)
-      }
-    }
+    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, totalTime)
 
     val cdata = child.executeColumnar()
     if (exportColumnarRdd) {
@@ -297,6 +274,34 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
 object GpuColumnarToRowExecParent {
   def unapply(arg: GpuColumnarToRowExecParent): Option[(SparkPlan, Boolean)] = {
     Option(Tuple2(arg.child, arg.exportColumnarRdd))
+  }
+
+  def makeIteratorFunc(
+      output: Seq[Attribute],
+      numOutputRows: GpuMetric,
+      numInputBatches: GpuMetric,
+      totalTime: GpuMetric): Iterator[ColumnarBatch] => Iterator[InternalRow] = {
+    if (CudfRowTransitions.areAllSupported(output) &&
+        // For a small number of columns it is still best to do it the original way
+        output.length > 4 &&
+        // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
+        // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
+        // So, we are going to be cautious and start with that until we have tested it more.
+        output.length < 100) {
+      (batches: Iterator[ColumnarBatch]) => {
+        // UnsafeProjection is not serializable so do it on the executor side
+        val toUnsafe = UnsafeProjection.create(output, output)
+        new AcceleratedColumnarToRowIterator(output,
+          batches, numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+      }
+    } else {
+      (batches: Iterator[ColumnarBatch]) => {
+        // UnsafeProjection is not serializable so do it on the executor side
+        val toUnsafe = UnsafeProjection.create(output, output)
+        new ColumnarToRowIterator(batches,
+          numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+      }
+    }
   }
 }
 
