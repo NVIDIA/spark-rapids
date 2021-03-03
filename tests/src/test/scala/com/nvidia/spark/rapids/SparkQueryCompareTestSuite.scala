@@ -1521,6 +1521,19 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     ).toDF("float", "int")
   }
 
+  def nullableStringsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String, String)](
+      ("100.0", "1.0"),
+      (null, "2.0"),
+      ("300.0", "3.0"),
+      ("400.0", null),
+      ("500.0", "5.0"),
+      ("-100.0", null),
+      ("-500.0", "0.0")
+    ).toDF("strings", "more_strings")
+  }
+
   def nullableStringsIntsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     Seq[(String, Integer)](
