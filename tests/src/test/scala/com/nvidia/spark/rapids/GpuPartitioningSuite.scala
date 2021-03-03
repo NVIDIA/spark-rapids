@@ -43,16 +43,15 @@ class GpuPartitioningSuite extends FunSuite with Arm {
   }
 
   /**
-   * Retrieves the underlying column vectors for a batch without incrementing
-   * the refcounts of those columns. Therefore the column vectors are only
-   * valid as long as the batch is valid.
+   * Retrieves the underlying column vectors for a batch. It increments the reference counts for
+   * them if needed so the results need to be closed.
    */
-  private def extractBases(batch: ColumnarBatch): Array[ColumnVector] = {
+  private def extractColumnVectors(batch: ColumnarBatch): Array[ColumnVector] = {
     if (GpuPackedTableColumn.isBatchPacked(batch)) {
       val packedColumn = batch.column(0).asInstanceOf[GpuPackedTableColumn]
       val table = packedColumn.getContiguousTable.getTable
       // The contiguous table is still responsible for closing these columns.
-      (0 until table.getNumberOfColumns).map(table.getColumn).toArray
+      (0 until table.getNumberOfColumns).map(i => table.getColumn(i).incRefCount()).toArray
     } else if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
       val compressedColumn = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
       val descr = compressedColumn.getTableMeta.bufferMeta.codecBufferDescrs(0)
@@ -72,31 +71,34 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         }
       }
     } else {
-      GpuColumnVector.extractBases(batch)
+      GpuColumnVector.extractBases(batch).map(_.incRefCount())
     }
   }
 
   private def buildSubBatch(batch: ColumnarBatch, startRow: Int, endRow: Int): ColumnarBatch = {
-    val columns = extractBases(batch)
-    val types = GpuColumnVector.extractTypes(batch)
-    val sliced = columns.zip(types).map { case (c, t) =>
-      GpuColumnVector.from(c.subVector(startRow, endRow), t)
+    withResource(extractColumnVectors(batch)) { columns =>
+      val types = GpuColumnVector.extractTypes(batch)
+      val sliced = columns.zip(types).map { case (c, t) =>
+        GpuColumnVector.from(c.subVector(startRow, endRow), t)
+      }
+      new ColumnarBatch(sliced.toArray, endRow - startRow)
     }
-    new ColumnarBatch(sliced.toArray, endRow - startRow)
   }
 
   private def compareBatches(expected: ColumnarBatch, actual: ColumnarBatch): Unit = {
     assertResult(expected.numRows)(actual.numRows)
-    val expectedColumns = extractBases(expected)
-    val actualColumns = extractBases(actual)
-    assertResult(expectedColumns.length)(actualColumns.length)
-    expectedColumns.zip(actualColumns).foreach { case (expected, actual) =>
-      if (expected.getRowCount == 0) {
-        assertResult(expected.getType)(actual.getType)
-      } else {
-        withResource(expected.equalToNullAware(actual)) { compareVector =>
-          withResource(compareVector.all()) { compareResult =>
-            assert(compareResult.getBoolean)
+    withResource(extractColumnVectors(expected)) { expectedColumns =>
+      withResource(extractColumnVectors(actual)) { actualColumns =>
+        assertResult(expectedColumns.length)(actualColumns.length)
+        expectedColumns.zip(actualColumns).foreach { case (expected, actual) =>
+          if (expected.getRowCount == 0) {
+            assertResult(expected.getType)(actual.getType)
+          } else {
+            withResource(expected.equalToNullAware(actual)) { compareVector =>
+              withResource(compareVector.all()) { compareResult =>
+                assert(compareResult.getBoolean)
+              }
+            }
           }
         }
       }
