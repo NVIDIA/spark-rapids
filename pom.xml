@@ -151,6 +151,12 @@
             </properties>
         </profile>
         <profile>
+            <id>spark303tests</id>
+            <properties>
+                <spark.test.version>${spark303.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
             <id>spark311tests</id>
             <properties>
                 <spark.test.version>${spark311.version}</spark.test.version>
@@ -205,6 +211,7 @@
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2</spark302.version>
+        <spark303.version>3.0.3-SNAPSHOT</spark303.version>
         <spark311.version>3.1.1</spark311.version>
         <spark320.version>3.2.0-SNAPSHOT</spark320.version>
         <mockito.version>3.6.0</mockito.version>
