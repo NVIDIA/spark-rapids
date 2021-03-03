@@ -37,7 +37,12 @@ case class GpuShuffleExchangeExec(
   }
 
   override def runtimeStatistics: Statistics = {
-    val dataSize = metrics("dataSize").value
-    Statistics(dataSize)
+    // note that Spark will only use the sizeInBytes statistic but making the rowCount
+    // available here means that we can more easily reference it in GpuOverrides when
+    // planning future query stages when AQE is on
+    Statistics(
+      sizeInBytes = metrics("dataSize").value,
+      rowCount = Some(metrics("numOutputRows").value)
+    )
   }
 }
