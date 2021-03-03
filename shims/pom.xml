@@ -45,7 +45,6 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <modules>
-                <module>spark302</module>
                 <module>spark311</module>
                 <module>spark320</module>
             </modules>
@@ -57,6 +56,7 @@
         <module>spark300emr</module>
         <module>spark301emr</module>
         <module>spark301</module>
+        <module>spark302</module>
         <module>aggregator</module>
     </modules>
     <dependencies>
@@ -72,12 +72,21 @@
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

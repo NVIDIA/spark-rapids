@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,20 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark302
+package com.nvidia.spark.rapids.shims.spark320;
 
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 0, 2)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+import org.scalatest.FunSuite;
 
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+class Spark320ShimsSuite extends FunSuite {
+  val sparkShims: SparkShims = new SparkShimServiceProvider().buildShim
+  test("spark shims version") {
+    assert(sparkShims.getSparkShimVersion === SparkShimVersion(3, 2, 0))
   }
 
-  def buildShim: SparkShims = {
-    new Spark302Shims()
+  test("shuffle manager class") {
+    assert(sparkShims.getRapidsShuffleManagerClass ===
+      classOf[com.nvidia.spark.rapids.spark320.RapidsShuffleManager].getCanonicalName)
   }
 }
