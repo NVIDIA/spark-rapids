@@ -20,14 +20,37 @@ import com.nvidia.spark.rapids.ShimVersion
 import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.command.{RepairTableCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.internal.SQLConf
 
 class Spark320Shims extends Spark311Shims {
-
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
+
+  override def parquetRebaseReadKey: String =
+    SQLConf.PARQUET_REBASE_MODE_IN_READ.key
+  override def parquetRebaseWriteKey: String =
+    SQLConf.PARQUET_REBASE_MODE_IN_WRITE.key
+  override def avroRebaseReadKey: String =
+    SQLConf.AVRO_REBASE_MODE_IN_READ.key
+  override def avroRebaseWriteKey: String =
+    SQLConf.AVRO_REBASE_MODE_IN_WRITE.key
+  override def parquetRebaseRead(conf: SQLConf): String =
+    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_READ)
+  override def parquetRebaseWrite(conf: SQLConf): String =
+    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
+
+  override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
+    RepairTableCommand(tableName,
+      // These match the one place that this is called, if we start to call this in more places
+      // we will need to change the API to pass these values in.
+      enableAddPartitions = true,
+      enableDropPartitions = false)
+
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
