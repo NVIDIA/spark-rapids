@@ -271,9 +271,9 @@ def assert_gpu_fallback_write(write_func,
         gpu_end - gpu_start, cpu_end - cpu_start))
 
     (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, cpu_path), True)
+            lambda spark: read_func(spark, cpu_path), 'COLLECT')
     (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, gpu_path), True)
+            lambda spark: read_func(spark, gpu_path), 'COLLECT')
 
     from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
     from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
@@ -286,7 +286,7 @@ def assert_gpu_fallback_write(write_func,
 def assert_gpu_fallback_collect(func,
         cpu_fallback_class_name,
         conf={}):
-    (bring_back, collect_type) = _prep_func_for_compare(func, True)
+    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT')
     conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
@@ -340,15 +340,6 @@ def assert_gpu_and_cpu_are_equal_collect(func, conf={}):
     """
     _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf)
 
-def assert_gpu_and_cpu_are_equal_count(func, conf={}):
-    """
-    Assert when running func on both the CPU and the GPU that the results are equal.
-    In this case count() is run on the dataframe and its collected back to the driver
-    and compared here.
-    """
-    _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf)
-
-
 def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
@@ -357,6 +348,13 @@ def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     """
     _assert_gpu_and_cpu_are_equal(func, 'ITERATOR', conf=conf)
 
+def assert_gpu_and_cpu_row_counts_equal(func, conf={}):
+    """
+    Assert that the row counts from running the func are the same on both the CPU and GPU.
+    This function runs count() to only get the number of rows and compares that count
+    between the CPU and GPU. It does NOT compare any underlying data.
+    """
+    _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf)
 
 def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
     """
