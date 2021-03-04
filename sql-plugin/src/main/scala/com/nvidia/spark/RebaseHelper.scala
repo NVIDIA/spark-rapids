@@ -17,10 +17,9 @@
 package com.nvidia.spark
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
-import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.{Arm, ShimLoader}
 
 import org.apache.spark.sql.catalyst.util.RebaseDateTime
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper extends Arm {
@@ -67,9 +66,9 @@ object RebaseHelper extends Arm {
 
   def newRebaseExceptionInRead(format: String): Exception = {
     val config = if (format == "Parquet") {
-      SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
+      ShimLoader.getSparkShims.parquetRebaseReadKey
     } else if (format == "Avro") {
-      SQLConf.LEGACY_AVRO_REBASE_MODE_IN_READ.key
+      ShimLoader.getSparkShims.avroRebaseReadKey
     } else {
       throw new IllegalStateException("unrecognized format " + format)
     }

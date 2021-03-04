@@ -69,6 +69,13 @@ case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersio
 
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
+  def parquetRebaseReadKey: String
+  def parquetRebaseWriteKey: String
+  def avroRebaseReadKey: String
+  def avroRebaseWriteKey: String
+  def parquetRebaseRead(conf: SQLConf): String
+  def parquetRebaseWrite(conf: SQLConf): String
+
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
