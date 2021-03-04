@@ -127,8 +127,9 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  test("Join partitioned tables") {
+  test("Join partitioned tables DPP fallback") {
     assumeSpark301orLater
+    assumePriorToSpark320 // In 3.2.0 AQE works with DPP
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -443,7 +444,19 @@ class AdaptiveQueryExecSuite
       case DatabricksShimVersion(3, 0, 0) => false
       case _ => true
     }
-    assume(isValidTestForSparkVersion)
+    assume(isValidTestForSparkVersion, "SPARK 3.1.0 or later required")
+  }
+
+  private def assumePriorToSpark320 = {
+    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
+    val isValidTestForSparkVersion = sparkShimVersion match {
+      case ver: SparkShimVersion =>
+        (ver.major == 3 && ver.minor < 2) || ver.major < 3
+      case ver: DatabricksShimVersion =>
+        (ver.major == 3 && ver.minor < 2) || ver.major < 3
+      case _ => true
+    }
+    assume(isValidTestForSparkVersion, "Prior to SPARK 3.2.0 required")
   }
 
   def checkSkewJoin(
