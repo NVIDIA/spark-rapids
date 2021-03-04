@@ -136,7 +136,7 @@ class Spark300Shims extends SparkShims {
     plan.isInstanceOf[ShuffleExchangeExec]
 
   override def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics = {
-    Statistics(0, None)
+    Statistics(0)
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
