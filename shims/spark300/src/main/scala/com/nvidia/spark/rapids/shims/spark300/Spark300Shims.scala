@@ -29,7 +29,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
@@ -42,6 +42,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
@@ -73,6 +74,9 @@ class Spark300Shims extends SparkShims {
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
   override def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
+
+  override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
+    AlterTableRecoverPartitionsCommand(tableName)
 
   override def getScalaUDFAsExpression(
       function: AnyRef,

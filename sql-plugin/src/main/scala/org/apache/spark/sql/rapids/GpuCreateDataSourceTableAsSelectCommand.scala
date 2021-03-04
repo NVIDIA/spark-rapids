@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ package org.apache.spark.sql.rapids
 
 import java.net.URI
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand, ShimLoader}
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, CommandUtils}
+import org.apache.spark.sql.execution.command.CommandUtils
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -84,7 +84,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         case fs: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&
           sparkSession.sqlContext.conf.manageFilesourcePartitions =>
           // Need to recover partitions into the metastore so our saved data is visible.
-          sessionState.executePlan(AlterTableRecoverPartitionsCommand(table.identifier)).toRdd
+          sessionState.executePlan(
+            ShimLoader.getSparkShims.v1RepairTableCommand(table.identifier)).toRdd
         case _ =>
       }
     }
