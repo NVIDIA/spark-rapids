@@ -343,8 +343,8 @@ def assert_gpu_and_cpu_are_equal_collect(func, conf={}):
 def assert_gpu_and_cpu_are_equal_count(func, conf={}):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
-    In this case the data is collected back to the driver and compared here, so be
-    careful about the amount of data returned.
+    In this case count() is run on the dataframe and its collected back to the driver
+    and compared here.
     """
     _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf)
 
