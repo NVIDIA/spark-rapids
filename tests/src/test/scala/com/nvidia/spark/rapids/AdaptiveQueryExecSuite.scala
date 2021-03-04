@@ -108,7 +108,7 @@ class AdaptiveQueryExecSuite
       val shuffleExchanges = ShimLoader.getSparkShims
           .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
           .map(_.asInstanceOf[ShuffleQueryStageExec])
-      assert(shuffleExchanges.length == 2)
+      assert(shuffleExchanges.length === 2)
       val shim = ShimLoader.getSparkShims
       val stats = shuffleExchanges.map(e => shim.getQueryStageRuntimeStatistics(e))
       assert(stats.forall(_.rowCount.contains(1000)))
