@@ -280,8 +280,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
       GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
     if (batch.numCols() == 0) {
-      // batchRowLimit = Integer.MAX_VALUE
-      batchRowLimit = 512
+      batchRowLimit = Integer.MAX_VALUE
     }
 
     // if no columns then probably a count operation so doesn't matter which builder we use
@@ -294,7 +293,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       logDebug("Using GpuArrowColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
     } else {
-      logWarning("Using GpuColumnarBatchBuilder type is: " + schema)
+      logDebug("Using GpuColumnarBatchBuilder")
       batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
     }
     totalRows = 0
