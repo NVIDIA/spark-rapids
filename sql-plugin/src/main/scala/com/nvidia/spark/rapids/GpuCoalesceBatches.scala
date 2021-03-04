@@ -608,13 +608,15 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema
     val decompressMemoryTarget = maxDecompressBatchMemory
-    val cannotSpill = child.schema.fields.exists { f =>
-      f.dataType match {
-        case MapType(_, _, _) | ArrayType(_, _) | StructType(_) => true
-        case _ => false
-      }
-    }
-
+    // disabling spillable batches due to
+    // https://github.com/rapidsai/cudf/issues/7514
+    val cannotSpill = true
+//    val cannotSpill = child.schema.fields.exists { f =>
+//      f.dataType match {
+//        case MapType(_, _, _) | ArrayType(_, _) | StructType(_) => true
+//        case _ => false
+//      }
+//    }
     val batches = child.executeColumnar()
     batches.mapPartitions { iter =>
       if (outputSchema.isEmpty) {
