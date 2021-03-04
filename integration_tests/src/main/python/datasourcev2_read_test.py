@@ -25,7 +25,6 @@ def readTable(types, classToUse):
         .format(classToUse).load()\
         .orderBy("col1")
 
-
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
 def test_read_int():
     assert_gpu_and_cpu_are_equal_collect(readTable("int", columnarClass))
@@ -45,7 +44,6 @@ def test_read_all_types_count():
     assert_gpu_and_cpu_are_equal_count(
        readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
             conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
-
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
 def test_read_arrow_off():
