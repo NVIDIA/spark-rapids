@@ -39,7 +39,8 @@ class RapidsBufferCatalog extends Logging {
     new ConcurrentHashMap[RapidsBufferId, mutable.SortedMap[StorageTier, RapidsBuffer]]
 
   /**
-   * Lookup the buffer that corresponds to the specified buffer ID and acquire it.
+   * Lookup the buffer that corresponds to the specified buffer ID at the highest storage tier,
+   * and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
    * @param id buffer identifier
    * @return buffer that has been acquired
@@ -56,6 +57,19 @@ class RapidsBufferCatalog extends Logging {
       }
     }
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
+  }
+
+  /**
+   * Lookup the lowest storage tier of the buffer that corresponds to the specified buffer ID.
+   * @param id buffer identifier
+   * @return the lowest storage tier, or None if not found
+   */
+  def getLowestStorageTier(id: RapidsBufferId): Option[StorageTier] = {
+    val buffers = bufferMap.getOrDefault(id, mutable.SortedMap.empty)
+    buffers.lastOption match {
+      case Some((tier, _)) => Some(tier)
+      case None => None
+    }
   }
 
   /** Get the table metadata corresponding to a buffer ID. */

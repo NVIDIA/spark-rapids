@@ -171,7 +171,7 @@ class BufferSendState(
 
         acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
           require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
-          withResource(rapidsBuffer.getMemoryBuffer) { memBuff =>
+          withResource(rapidsBuffer.getDeviceMemoryBuffer) { memBuff =>
             bounceBuffToUse match {
               case _: HostMemoryBuffer =>
                 //TODO: HostMemoryBuffer needs the same functionality that
@@ -184,19 +184,10 @@ class BufferSendState(
                   buffOffset,
                   blockRange.rangeSize())
               case d: DeviceMemoryBuffer =>
-                memBuff match {
-                  case mh: HostMemoryBuffer =>
-                    // host original => device bounce
-                    d.copyFromHostBufferAsync(buffOffset, mh, blockRange.rangeStart,
-                      blockRange.rangeSize(), serverStream)
-                    logDebug(s"copying from host to device memory bounce buffer $memBuff")
-                  case md: DeviceMemoryBuffer =>
-                    // device original => device bounce
-                    logDebug(s"copying from device to device memory bounce buffer $memBuff")
-                    d.copyFromDeviceBufferAsync(buffOffset, md, blockRange.rangeStart,
-                      blockRange.rangeSize(), serverStream)
-                  case _ => throw new IllegalStateException("What buffer is this")
-                }
+                  // device original => device bounce
+                  logDebug(s"copying from device to device memory bounce buffer $memBuff")
+                  d.copyFromDeviceBufferAsync(buffOffset, memBuff, blockRange.rangeStart,
+                    blockRange.rangeSize(), serverStream)
               case _ => throw new IllegalStateException("What buffer is this")
             }
           }

@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.StorageTier.StorageTier
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -230,16 +230,24 @@ abstract class RapidsBufferStore(
     // If we fail to get a reference then this buffer has since been freed and probably best
     // to return back to the outer loop to see if enough has been freed.
     if (buffer.addReference()) {
-      val newBuffer = try {
-        logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
-          s"total mem=${buffers.getTotalBytes}")
-        buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
-        spillStore.copyBuffer(buffer, stream)
+      try {
+        val lowestTier = catalog.getLowestStorageTier(buffer.id)
+        if (lowestTier.exists(_>=spillStore.tier)) {
+          logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
+              s"already at tier ${lowestTier.get} total mem=${buffers.getTotalBytes}")
+        } else {
+          val newBuffer = try {
+            logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
+                s"total mem=${buffers.getTotalBytes}")
+            buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
+            spillStore.copyBuffer(buffer, stream)
+          }
+          if (newBuffer != null) {
+            catalog.updateBufferMap(buffer.storageTier, newBuffer)
+          }
+        }
       } finally {
         buffer.close()
-      }
-      if (newBuffer != null) {
-        catalog.updateBufferMap(buffer.storageTier, newBuffer)
       }
       buffer.free()
     }
@@ -251,10 +259,14 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: RapidsBuffer.SpillCallback) extends RapidsBuffer with Arm {
+      override val spillCallback: RapidsBuffer.SpillCallback,
+      devStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
+      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+      extends RapidsBuffer with Arm {
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority
+    private[this] var deviceRapidsBuffer: Option[RapidsBuffer] = None
 
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
@@ -282,14 +294,7 @@ abstract class RapidsBufferStore(
       // allocated. Allocations can trigger synchronous spills which can
       // deadlock if another thread holds the device store lock and is trying
       // to spill to this store.
-      withResource(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
-        withResource(getMemoryBuffer) {
-          case h: HostMemoryBuffer =>
-            logDebug(s"copying from host $h to device $deviceBuffer")
-            deviceBuffer.copyFromHostBuffer(h)
-          case _ => throw new IllegalStateException(
-            "must override getColumnarBatch if not providing a host buffer")
-        }
+      withResource(getDeviceMemoryBuffer) { deviceBuffer =>
         columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
@@ -304,11 +309,39 @@ abstract class RapidsBufferStore(
       }
     }
 
+    override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
+      deviceRapidsBuffer match {
+        case Some(rapidsBuffer) => rapidsBuffer.getDeviceMemoryBuffer
+        case None =>
+          val headBuffer = catalog.acquireBuffer(id)
+          headBuffer.storageTier match {
+            case DEVICE =>
+              deviceRapidsBuffer = Some(headBuffer)
+              deviceRapidsBuffer.get.getDeviceMemoryBuffer
+            case _ =>
+              headBuffer.close()
+              val newBuffer = {
+                logDebug(s"Unspilling $this $id to ${devStorage.name}")
+                spillCallback(storageTier, devStorage.tier, size)
+                devStorage.copyBuffer(this, null)
+              }
+              catalog.registerNewBuffer(newBuffer)
+              if (newBuffer.addReference()) {
+                deviceRapidsBuffer = Some(newBuffer)
+                deviceRapidsBuffer.get.getDeviceMemoryBuffer
+              }
+          }
+      }
+      throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
+    }
+
     override def close(): Unit = synchronized {
       if (refcount == 0) {
         throw new IllegalStateException("Buffer already closed")
       }
       refcount -= 1
+      deviceRapidsBuffer.foreach(_.close())
+      deviceRapidsBuffer = None
       if (refcount == 0 && !isValid) {
         pendingFreeBuffers.remove(id)
         pendingFreeBytes.addAndGet(-size)

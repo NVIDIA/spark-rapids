@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -29,10 +29,27 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
     extends RapidsBufferStore(StorageTier.DEVICE, catalog) {
+
   override protected def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    throw new IllegalStateException("should not be spilling to device memory")
+    val deviceBuffer = {
+      other.getMemoryBuffer match {
+        case d: DeviceMemoryBuffer => d
+        case h: HostMemoryBuffer =>
+          try {
+            val deviceBuffer = DeviceMemoryBuffer.allocate(other.size)
+            logDebug(s"copying from host $h to device $deviceBuffer")
+            deviceBuffer.copyFromHostBuffer(h)
+            deviceBuffer
+          } finally {
+            h.close()
+          }
+        case _ => throw new IllegalStateException("What buffer is this")
+      }
+    }
+    new RapidsDeviceMemoryBuffer(other.id, other.size, other.meta, None,
+      deviceBuffer, other.getSpillPriority, other.spillCallback)
   }
 
   /**
@@ -163,9 +180,13 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table.foreach(_.close())
     }
 
-    override def getMemoryBuffer: MemoryBuffer = {
+    override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
       contigBuffer.incRefCount()
       contigBuffer
+    }
+
+    override def getMemoryBuffer: MemoryBuffer = {
+      getDeviceMemoryBuffer
     }
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {

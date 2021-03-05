@@ -22,7 +22,7 @@ import java.math.RoundingMode
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.Mockito.{never, spy, verify}
+import org.mockito.Mockito.{never, spy, verify, when}
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
@@ -148,6 +148,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
       val mockStore = mock[RapidsBufferStore]
+      when(mockStore.tier) thenReturn(StorageTier.DISK)
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)

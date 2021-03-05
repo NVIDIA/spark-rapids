@@ -116,6 +116,15 @@ trait RapidsBuffer extends AutoCloseable {
   def getMemoryBuffer: MemoryBuffer
 
   /**
+   * Get the underlying device memory buffer. If the buffer currently resides outside of device
+   * memory, a new DeviceMemoryBuffer is created with the data copied over.
+   * The caller must have successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the buffer.
+   */
+  def getDeviceMemoryBuffer: DeviceMemoryBuffer
+
+  /**
    * Try to add a reference to this buffer to acquire it.
    * @note The close method must be called for every successfully obtained reference.
    * @return true if the reference was added or false if this buffer is no longer valid
@@ -183,6 +192,9 @@ sealed class DegenerateRapidsBuffer(
 
   override def getMemoryBuffer: MemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+
+  override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
+    throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
 
   override def addReference(): Boolean = true
 

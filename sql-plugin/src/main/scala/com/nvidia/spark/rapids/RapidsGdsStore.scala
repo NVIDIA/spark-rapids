@@ -74,7 +74,6 @@ class RapidsGdsStore(
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
-    // TODO(rongou): cache this buffer to avoid repeated reads from disk.
     override def getMemoryBuffer: DeviceMemoryBuffer = synchronized {
       val path = if (id.canShareDiskPaths) {
         sharedBufferFiles.get(id)
@@ -97,12 +96,6 @@ class RapidsGdsStore(
         if (!path.delete() && path.exists()) {
           logWarning(s"Unable to delete GDS spill path $path")
         }
-      }
-    }
-
-    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
-      withResource(getMemoryBuffer) { deviceBuffer =>
-        columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
   }
