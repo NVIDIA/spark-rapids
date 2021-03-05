@@ -26,40 +26,6 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils extends Arm {
-  private [this] def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch,
-      boundExprs: Seq[A]): Seq[GpuColumnVector] = {
-    withResource(GpuProjectExec.project(cb, boundExprs)) { cb =>
-      (0 until cb.numCols()).map(cb.column(_).asInstanceOf[GpuColumnVector].incRefCount())
-          // because this processing has a side effect (inc ref count) we want to force
-          // the data to execute now, instead of lazily. To do this we first convert it
-          // to an array and then back to a sequence again.  Seq does not have a force method
-          .toArray.toSeq
-    }
-  }
-
-  /*
-  * This function takes the input batch and the bound sort order references and
-  * evaluates each column in case its an expression. It then appends the original columns
-  * after the sort key columns. The sort key columns will be dropped after sorting.
-  */
-  def evaluateForSort(batch: ColumnarBatch,
-      boundInputReferences: Seq[SortOrder]): Seq[GpuColumnVector] = {
-    val sortCvs = new ArrayBuffer[GpuColumnVector](boundInputReferences.length)
-    val childExprs = boundInputReferences.map(_.child.asInstanceOf[GpuExpression])
-    sortCvs ++= evaluateBoundExpressions(batch, childExprs)
-    val originalColumns = GpuColumnVector.extractColumns(batch)
-    originalColumns.foreach(_.incRefCount())
-    sortCvs ++ originalColumns
-  }
-
-  /*
-  * Return true if nulls are needed first and ordering is ascending and vice versa
-   */
-  def areNullsSmallest(order: SortOrder): Boolean = {
-    (order.isAscending && order.nullOrdering == NullsFirst) ||
-      (!order.isAscending && order.nullOrdering == NullsLast)
-  }
-
   @scala.annotation.tailrec
   def extractReference(exp: Expression): Option[GpuBoundReference] = exp match {
     case r: GpuBoundReference => Some(r)
@@ -97,7 +63,7 @@ object SortUtils extends Arm {
  * @param inputSchema The schema of the input data
  */
 class GpuSorter(
-    sortOrder: Seq[SortOrder],
+    val sortOrder: Seq[SortOrder],
     inputSchema: Array[Attribute]) extends Arm with Serializable {
 
   /**

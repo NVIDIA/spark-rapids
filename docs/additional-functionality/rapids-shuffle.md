@@ -257,7 +257,9 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.0.1      | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
     | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
     | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
+    | 3.0.3      | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
     | 3.1.1      | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
+    | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
     | 3.2.0      | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
 
 2. Recommended settings for UCX 1.9.0+
@@ -271,7 +273,6 @@ In this section, we are using a docker container built using the sample dockerfi
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
 --conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
---conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
 --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 

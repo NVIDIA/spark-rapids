@@ -436,16 +436,18 @@ object Main {
 
     // extend args to support csv/orc/parquet dataset
     val dataFrameFormatMap = Map(
-      "csv" -> Run.csv(session, perfPath, acqPath),
-      "orc" -> Run.orc(session, perfPath, acqPath),
-      "parquet" -> Run.parquet(session, perfPath, acqPath)
+      "csv" -> { () => Run.csv(session, perfPath, acqPath) },
+      "orc" -> { () => Run.orc(session, perfPath, acqPath) },
+      "parquet" -> { () => Run.parquet(session, perfPath, acqPath) }
     )
     val format = args.lift(4).getOrElse("parquet")
-    if (!dataFrameFormatMap.contains(format)) {
+    val contains = dataFrameFormatMap.contains(format)
+    if (!contains) {
         System.err.println(s"Invalid input format $format, expected one of csv, orc, parquet")
         System.exit(1)
     }
 
-    0.until(10).foreach( _ => dataFrameFormatMap(format).write.mode("overwrite").parquet(output))
+    val runFunc = dataFrameFormatMap(format)
+    0.until(10).foreach( _ => runFunc().write.mode("overwrite").parquet(output))
   }
 }

@@ -935,10 +935,15 @@ object CastOpSuite {
         "2010-1-7 T")
     }
 
-    val timestampWithoutDate = Seq(
-      "23:59:59.333666Z",
-      "T21:34:56.333666Z"
-    )
+    val timestampWithoutDate = if (validOnly && !castStringToTimestamp) {
+      // 3.2.0+ throws exceptions on string to date ANSI cast errors
+      Seq.empty
+    } else {
+      Seq(
+        "23:59:59.333666Z",
+        "T21:34:56.333666Z"
+      )
+    }
 
     val allValues = specialDates ++
         validYear ++
