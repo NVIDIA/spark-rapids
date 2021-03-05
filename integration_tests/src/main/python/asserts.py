@@ -154,7 +154,7 @@ class _RowCmp(object):
     def __ne__(self, other):
         return self.cmp(other) != 0
 
-def _prep_func_for_compare(func, should_collect):
+def _prep_func_for_compare(func, mode):
     sort_locally = should_sort_locally()
     if should_sort_on_spark():
         def with_sorted(spark):
@@ -174,9 +174,12 @@ def _prep_func_for_compare(func, should_collect):
     else:
         limit_func = sorted_func
 
-    if should_collect:
+    if mode == 'COLLECT':
         bring_back = lambda spark: limit_func(spark).collect()
         collect_type = 'COLLECT'
+    elif mode == 'COUNT':
+        bring_back = lambda spark: limit_func(spark).count()
+        collect_type = 'COUNT'
     else:
         bring_back = lambda spark: limit_func(spark).toLocalIterator()
         collect_type = 'ITERATOR'
@@ -196,7 +199,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
         write_func,
         read_func,
         base_path,
-        should_collect,
+        mode,
         conf={}):
     conf = _prep_incompat_conf(conf)
 
@@ -214,9 +217,9 @@ def _assert_gpu_and_cpu_writes_are_equal(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
     (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, cpu_path), should_collect)
+            lambda spark: read_func(spark, cpu_path), mode)
     (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, gpu_path), should_collect)
+            lambda spark: read_func(spark, gpu_path), mode)
 
     from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
     from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
@@ -233,7 +236,7 @@ def assert_gpu_and_cpu_writes_are_equal_collect(write_func, read_func, base_path
     In this case the data is collected back to the driver and compared here, so be
     careful about the amount of data returned.
     """
-    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, True, conf=conf)
+    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'COLLECT', conf=conf)
 
 def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_path, conf={}):
     """
@@ -242,7 +245,7 @@ def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_pat
     In this case the data is pulled back to the driver in chunks and compared here
     so any amount of data can work, just be careful about how long it might take.
     """
-    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, False, conf=conf)
+    _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'ITERATOR', conf=conf)
 
 def assert_gpu_fallback_write(write_func,
         read_func,
@@ -268,9 +271,9 @@ def assert_gpu_fallback_write(write_func,
         gpu_end - gpu_start, cpu_end - cpu_start))
 
     (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, cpu_path), True)
+            lambda spark: read_func(spark, cpu_path), 'COLLECT')
     (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
-            lambda spark: read_func(spark, gpu_path), True)
+            lambda spark: read_func(spark, gpu_path), 'COLLECT')
 
     from_cpu = with_cpu_session(cpu_bring_back, conf=conf)
     from_gpu = with_cpu_session(gpu_bring_back, conf=conf)
@@ -283,7 +286,7 @@ def assert_gpu_fallback_write(write_func,
 def assert_gpu_fallback_collect(func,
         cpu_fallback_class_name,
         conf={}):
-    (bring_back, collect_type) = _prep_func_for_compare(func, True)
+    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT')
     conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
@@ -307,9 +310,9 @@ def assert_gpu_fallback_collect(func,
     assert_equal(from_cpu, from_gpu)
 
 def _assert_gpu_and_cpu_are_equal(func,
-        should_collect,
+        mode,
         conf={}):
-    (bring_back, collect_type) = _prep_func_for_compare(func, should_collect)
+    (bring_back, collect_type) = _prep_func_for_compare(func, mode)
     conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
@@ -335,7 +338,7 @@ def assert_gpu_and_cpu_are_equal_collect(func, conf={}):
     In this case the data is collected back to the driver and compared here, so be
     careful about the amount of data returned.
     """
-    _assert_gpu_and_cpu_are_equal(func, True, conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf)
 
 def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     """
@@ -343,8 +346,15 @@ def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
     In this case the data is pulled back to the driver in chunks and compared here
     so any amount of data can work, just be careful about how long it might take.
     """
-    _assert_gpu_and_cpu_are_equal(func, False, conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'ITERATOR', conf=conf)
 
+def assert_gpu_and_cpu_row_counts_equal(func, conf={}):
+    """
+    Assert that the row counts from running the func are the same on both the CPU and GPU.
+    This function runs count() to only get the number of rows and compares that count
+    between the CPU and GPU. It does NOT compare any underlying data.
+    """
+    _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf)
 
 def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
     """
