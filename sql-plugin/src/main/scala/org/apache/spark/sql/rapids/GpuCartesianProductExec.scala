@@ -18,8 +18,10 @@ package org.apache.spark.sql.rapids
 
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel, RapidsBuffer, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
@@ -34,7 +36,7 @@ import org.apache.spark.util.{CompletionIterator, Utils}
 
 @SerialVersionUID(100L)
 class GpuSerializableBatch(batch: ColumnarBatch)
-    extends Serializable with AutoCloseable with Arm {
+  extends Serializable with AutoCloseable with Arm {
 
   assert(batch != null)
   @transient private var internalBatch: ColumnarBatch = batch
@@ -87,11 +89,11 @@ class GpuSerializableBatch(batch: ColumnarBatch)
 }
 
 class GpuCartesianPartition(
-    idx: Int,
-    @transient private val rdd1: RDD[_],
-    @transient private val rdd2: RDD[_],
-    s1Index: Int,
-    s2Index: Int
+  idx: Int,
+  @transient private val rdd1: RDD[_],
+  @transient private val rdd2: RDD[_],
+  s1Index: Int,
+  s2Index: Int
 ) extends Partition {
   var s1: Partition = rdd1.partitions(s1Index)
   var s2: Partition = rdd2.partitions(s2Index)
@@ -107,19 +109,19 @@ class GpuCartesianPartition(
 }
 
 class GpuCartesianRDD(
-    sc: SparkContext,
-    boundCondition: Option[GpuExpression],
-    outputSchema: Array[DataType],
-    joinTime: GpuMetric,
-    joinOutputRows: GpuMetric,
-    numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric,
-    filterTime: GpuMetric,
-    totalTime: GpuMetric,
-    var rdd1 : RDD[GpuSerializableBatch],
-    var rdd2 : RDD[GpuSerializableBatch])
-    extends RDD[ColumnarBatch](sc, Nil)
-        with Serializable with Arm {
+  sc: SparkContext,
+  boundCondition: Option[GpuExpression],
+  outputSchema: Array[DataType],
+  joinTime: GpuMetric,
+  joinOutputRows: GpuMetric,
+  numOutputRows: GpuMetric,
+  numOutputBatches: GpuMetric,
+  filterTime: GpuMetric,
+  totalTime: GpuMetric,
+  var rdd1 : RDD[GpuSerializableBatch],
+  var rdd2 : RDD[GpuSerializableBatch])
+  extends RDD[ColumnarBatch](sc, Nil)
+    with Serializable with Arm {
 
   private val numPartitionsInRdd2 = rdd2.partitions.length
 
@@ -141,15 +143,33 @@ class GpuCartesianRDD(
   override def compute(split: Partition, context: TaskContext):
   Iterator[ColumnarBatch] = {
     val currSplit = split.asInstanceOf[GpuCartesianPartition]
-    rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
+
+    // create a buffer to cache stream-side data in a spillable manner
+    val spillBatchBuffer = mutable.ArrayBuffer[SpillableColumnarBatch]()
+
+    rdd1.iterator(currSplit.s1, context).zipWithIndex.flatMap { case (lhs, index) =>
       val table = withResource(lhs) { lhs =>
         GpuColumnVector.from(lhs.getBatch)
       }
-      // Ideally instead of looping through and recomputing rdd2 for
-      // each batch in rdd1 we would instead cache rdd2 in a way that
-      // it could spill to disk so we can avoid re-computation
+
+      val streamIterator = if (index == 0) {
+        // lazily compute and cache stream-side data
+        rdd2.iterator(currSplit.s2, context).map { serializableBatch =>
+          closeOnExcept(spillBatchBuffer) { buffer =>
+            val batch = SpillableColumnarBatch(serializableBatch.getBatch,
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              RapidsBuffer.defaultSpillCallback)
+            buffer += batch
+            batch.getColumnarBatch()
+          }
+        }
+      } else {
+        // fetch stream-side data directly if they are cached
+        spillBatchBuffer.toIterator.map(_.getColumnarBatch())
+      }
+
       val ret = GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
-        rdd2.iterator(currSplit.s2, context).map(i => i.getBatch),
+        streamIterator,
         table,
         GpuBuildLeft,
         boundCondition,
@@ -161,7 +181,10 @@ class GpuCartesianRDD(
         filterTime,
         totalTime)
 
-      CompletionIterator[ColumnarBatch, Iterator[ColumnarBatch]](ret, table.close())
+      CompletionIterator[ColumnarBatch, Iterator[ColumnarBatch]](ret, {
+        table.close()
+        spillBatchBuffer.safeClose()
+      })
     }
   }
 
@@ -183,10 +206,10 @@ class GpuCartesianRDD(
 
 object GpuNoColumnCrossJoin extends Arm {
   def divideIntoBatches(
-      rowCounts: RDD[Long],
-      targetSizeBytes: Long,
-      numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
+    rowCounts: RDD[Long],
+    targetSizeBytes: Long,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
     // Hash aggregate explodes the rows out, so if we go too large
     // it can blow up. The size of a Long is 8 bytes so we just go with
     // that as our estimate, no nulls.
@@ -211,11 +234,11 @@ object GpuNoColumnCrossJoin extends Arm {
   }
 
   def divideIntoBatches(
-      table: Table,
-      numTimes: Long,
-      outputSchema: Array[DataType],
-      numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric): Iterator[ColumnarBatch] = {
+    table: Table,
+    numTimes: Long,
+    outputSchema: Array[DataType],
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric): Iterator[ColumnarBatch] = {
     // TODO if we hit a point where we need to we can divide the data up into batches
     //  The current use case is likely to be small enough that we are OK without this.
     assert(numTimes < Int.MaxValue)
@@ -228,10 +251,10 @@ object GpuNoColumnCrossJoin extends Arm {
 }
 
 case class GpuCartesianProductExec(
-    left: SparkPlan,
-    right: SparkPlan,
-    condition: Option[Expression],
-    targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+  left: SparkPlan,
+  right: SparkPlan,
+  condition: Option[Expression],
+  targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
   import GpuMetric._
 
   override def output: Seq[Attribute]= left.output ++ right.output
