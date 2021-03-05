@@ -1330,6 +1330,31 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuTimeAdd(lhs, rhs)
       }),
+    expr[DateAddInterval](
+      "Adds interval to date",
+      ExprChecks.binaryProjectNotLambda(TypeSig.DATE, TypeSig.DATE,
+        ("start", TypeSig.DATE, TypeSig.DATE),
+        ("interval", TypeSig.lit(TypeEnum.CALENDAR)
+          .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
+          TypeSig.CALENDAR)),
+      (a, conf, p, r) => new BinaryExprMeta[DateAddInterval](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          GpuOverrides.extractLit(a.interval).foreach { lit =>
+            val intvl = lit.value.asInstanceOf[CalendarInterval]
+            if (intvl.months != 0) {
+              willNotWorkOnGpu("interval months isn't supported")
+            }
+          }
+          a.timeZoneId.foreach {
+            case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
+              willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
+            case _ =>
+          }
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuDateAddInterval(lhs, rhs)
+      }),
     expr[ToUnixTimestamp](
       "Returns the UNIX timestamp of the given time",
       ExprChecks.binaryProjectNotLambda(TypeSig.LONG, TypeSig.LONG,
