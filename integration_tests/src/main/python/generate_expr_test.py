@@ -28,28 +28,6 @@ def four_op_df(spark, gen, length=2048, seed=0):
         ('c', gen),
         ('d', gen)], nullable=False), length=length, seed=seed)
 
-"""
-below tests are temporarily disabled because explode_position has not been supported in cuDF-nightly  
-
-#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
-# After 3.1.0 is the min spark version we can drop this
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-def test_posexplode_makearray(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : four_op_df(spark, data_gen).selectExpr('posexplode(array(b, c, d))', 'a'))
-
-#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
-# After 3.1.0 is the min spark version we can drop this
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-def test_posexplode_litarray(data_gen):
-    array_lit = gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False))
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
-                f.posexplode(array_lit)))
-"""
-
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
@@ -68,33 +46,106 @@ def test_explode_litarray(data_gen):
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
                 f.explode(array_lit)))
 
-#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
-# After 3.1.0 is the min spark version we can drop this
-@ignore_order(local=True)
+@ignore_order
 def test_explode_split_string():
     str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr('a', 'explode(split(b, "_"))'))
+
+@ignore_order
+def test_explode_split_string_nested():
+    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr(
                 'a', 'explode(split(b, "_")) as c').selectExpr(
                 'a', 'explode(split(c, "A"))'))
 
+all_gen_parquet = [TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))
+                   if gen.__class__.__name__ == 'TimestampGen' else gen for gen in all_gen]
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
+def test_explode_from_parquet(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_gen = [int_gen, ArrayGen(data_gen)]
+    with_cpu_session(
+            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                  'spark.sql.parquet.writeLegacyFormat': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).selectExpr('a', 'explode(b)'),
+        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
+def test_explode_from_parquet_nested(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
+    with_cpu_session(
+            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                  'spark.sql.parquet.writeLegacyFormat': 'true'})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).selectExpr(
+            'a', 'explode(b) as c').selectExpr('a', 'explode(c)'),
+        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+
+
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-def test_explode_from_parquet(spark_tmp_path):
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_posexplode_makearray(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : four_op_df(spark, data_gen).selectExpr('posexplode(array(b, c, d))', 'a'))
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_posexplode_litarray(data_gen):
+    array_lit = gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'),
+                f.posexplode(array_lit)))
+
+@ignore_order
+def test_posexplode_split_string():
+    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr('a', 'posexplode(split(b, "_"))'))
+
+@ignore_order
+def test_posexplode_split_string_nested():
+    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr(
+                'a', 'posexplode(split(b, "_")) as (pos, c)').selectExpr(
+                'a', 'pos', 'posexplode(split(c, "A"))'))
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
+def test_posexplode_from_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    data_gen = [int_gen, ArrayGen(long_gen)]
+    data_gen = [int_gen, ArrayGen(data_gen)]
     with_cpu_session(
-            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path))
+            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                  'spark.sql.parquet.writeLegacyFormat': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.read.parquet(data_path).selectExpr('a', 'explode(b)'))
-    # test with nested array
-    data_path1 = spark_tmp_path + '/PARQUET_DATA1'
-    data_gen1 = [int_gen, ArrayGen(ArrayGen(long_gen))]
+        lambda spark: spark.read.parquet(data_path).selectExpr('a', 'posexplode(b)'),
+        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
+def test_posexplode_from_parquet_nested(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
     with_cpu_session(
-            lambda spark: two_col_df(spark, *data_gen1).write.parquet(data_path1))
+            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                  'spark.sql.parquet.writeLegacyFormat': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.read.parquet(data_path1).selectExpr(
-            'a', 'explode(b) as c').selectExpr('a', 'explode(c)'))
+        lambda spark: spark.read.parquet(data_path).selectExpr(
+            'a', 'posexplode(b) as (pos, c)').selectExpr('a', 'pos', 'posexplode(c)'),
+        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})

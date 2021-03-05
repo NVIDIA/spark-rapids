@@ -702,8 +702,7 @@ object GpuOverrides {
       "Holds a static value from the query",
       ExprChecks.projectNotLambda(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR
-          + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL
-          + TypeSig.DECIMAL + TypeSig.CALENDAR),
+          + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](
@@ -2292,11 +2291,26 @@ object GpuOverrides {
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       }),
     expr[Explode](
-      "Given an input array produces a sequence of rows for each value in the array",
+      "Given an input array produces a sequence of rows for each value in the array. "
+        + "Explode with outer Generate is not supported under GPU runtime." ,
       ExprChecks.unaryProject(TypeSig.all, TypeSig.all,
-        TypeSig.ARRAY.nested(TypeSig.all), TypeSig.ARRAY.nested(TypeSig.all)),
+        TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
       (a, conf, p, r) => new UnaryExprMeta[Explode](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuExplode(child)
+      }),
+    expr[PosExplode](
+      "Given an input array produces a sequence of rows for each value in the array. "
+        + "PosExplode with outer Generate is not supported under GPU runtime." ,
+      ExprChecks.unaryProject(TypeSig.all, TypeSig.all,
+        TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
+      (a, conf, p, r) => new UnaryExprMeta[PosExplode](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuPosExplode(child)
       }),
     expr[CollectList](
       "Collect a list of elements, now only supported by windowing.",
