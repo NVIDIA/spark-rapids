@@ -156,9 +156,14 @@ class GpuCartesianRDD(
         // lazily compute and cache stream-side data
         rdd2.iterator(currSplit.s2, context).map { serializableBatch =>
           closeOnExcept(spillBatchBuffer) { buffer =>
+<<<<<<< HEAD
             val batch = SpillableColumnarBatch(serializableBatch.getBatch,
               SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
               RapidsBuffer.defaultSpillCallback)
+=======
+            val batch = SpillableColumnarBatch(
+              serializableBatch.getBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+>>>>>>> 07b2d1585ea918d21c668653f8429096ece21f0b
             buffer += batch
             batch.getColumnarBatch()
           }
