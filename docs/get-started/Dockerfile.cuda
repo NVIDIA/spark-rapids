@@ -35,7 +35,6 @@ RUN set -ex && \
     ln -s /lib /lib64 && \
     mkdir -p /opt/spark && \
     mkdir -p /opt/spark/jars && \
-    mkdir -p /opt/tpch && \
     mkdir -p /opt/spark/examples && \
     mkdir -p /opt/spark/work-dir && \
     mkdir -p /opt/sparkRapidsPlugin && \

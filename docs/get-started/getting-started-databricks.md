@@ -15,10 +15,14 @@ on NVIDIA GPUs on Databricks.
     * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
     * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
 
+[Databricks 7.3 LTS
+ML](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environment) runs CUDA 10.1
+Update 2, and the initialization scripts will install the appropriate cudf version to match.
+
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
 ## Start a Databricks Cluster
-Create a Databricks cluster by going to Clusters, then clicking “+ Create Cluster”.  Ensure the
+Create a Databricks cluster by going to Clusters, then clicking `+ Create Cluster`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:
 1. Select the Databricks Runtime Version from one of the supported runtimes specified in the
    Prerequisites section.
@@ -92,15 +96,17 @@ larger dataset if needed. You can find the links to the datasets at
 
 ```bash
 %sh
+
+USER_ID=<your_user_id>
  
-wget http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000.tgz -P /Users/<your user id>/
+wget http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000.tgz -P /Users/${USER_ID}/
  
 mkdir -p /dbfs/FileStore/tables/mortgage
 mkdir -p /dbfs/FileStore/tables/mortgage_parquet_gpu/perf
 mkdir /dbfs/FileStore/tables/mortgage_parquet_gpu/acq
 mkdir /dbfs/FileStore/tables/mortgage_parquet_gpu/output
  
-tar xfvz /Users/<your user id>/mortgage_2000.tgz --directory /dbfs/FileStore/tables/mortgage
+tar xfvz /Users/${USER_ID}/mortgage_2000.tgz --directory /dbfs/FileStore/tables/mortgage
 ```
 
 In Cell 3, update the data paths if necessary. The example notebook merges the columns and prepares

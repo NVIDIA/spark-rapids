@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -200,10 +200,16 @@ object GpuFileFormatWriter extends Logging {
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
             .map(attr => sparkShims.sortOrder(attr, Ascending)), outputSpec.outputColumns)
+        val sortType = if (RapidsConf.STABLE_SORT.get(plan.conf)) {
+          FullSortSingleBatch
+        } else {
+          OutOfCoreSort
+        }
         GpuSortExec(
           orderingExpr,
           global = false,
-          child = empty2NullPlan).executeColumnar()
+          child = empty2NullPlan,
+          sortType = sortType).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single

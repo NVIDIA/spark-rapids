@@ -81,3 +81,17 @@ def test_orderby_with_processing_and_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
             lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')).limit(100))
+
+# We are not trying all possibilities, just doing a few with numbers so the query works.
+@pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
+def test_single_orderby_with_skew(data_gen):
+    # When doing range partitioning the upstream data is sampled to try and get the bounds for cutoffs.
+    # If the data comes back with skewed partitions then those partitions will be resampled for more data.
+    # This is to try and trigger it to happen.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen)\
+                    .selectExpr('a', 'random(1) > 0.5 as b')\
+                    .repartition(f.col('b'))\
+                    .orderBy(f.col('a'))\
+                    .selectExpr('a'),
+            conf = allow_negative_scale_of_decimal_conf)

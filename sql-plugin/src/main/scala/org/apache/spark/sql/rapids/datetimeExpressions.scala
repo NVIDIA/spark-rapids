@@ -17,8 +17,9 @@
 package org.apache.spark.sql.rapids
 
 import java.time.ZoneId
+import java.util.concurrent.TimeUnit
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
@@ -149,7 +150,7 @@ abstract class GpuTimeMath(
           val usToSub = intvl.days.toLong * 24 * 60 * 60 * 1000 * 1000 + intvl.microseconds
           if (usToSub != 0) {
             withResource(Scalar.fromLong(usToSub)) { us_s =>
-              withResource(l.getBase.castTo(DType.INT64)) { us =>
+              withResource(l.getBase.logicalCastTo(DType.INT64)) { us =>
                 withResource(intervalMath(us_s, us)) { longResult =>
                   GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS), dataType)
                 }
@@ -172,7 +173,7 @@ abstract class GpuTimeMath(
     }
   }
 
-  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector
+  def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector
 }
 
 case class GpuTimeAdd(start: Expression,
@@ -184,7 +185,7 @@ case class GpuTimeAdd(start: Expression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  override def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
     us.add(us_s)
   }
 }
@@ -198,8 +199,64 @@ case class GpuTimeSub(start: Expression,
     copy(timeZoneId = Option(timeZoneId))
   }
 
-  def intervalMath(us_s: Scalar, us: ColumnVector): ColumnVector = {
+  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
     us.sub(us_s)
+  }
+}
+
+case class GpuDateAddInterval(start: Expression,
+    interval: Expression,
+    timeZoneId: Option[String] = None)
+    extends GpuTimeMath(start, interval, timeZoneId) {
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
+    copy(timeZoneId = Option(timeZoneId))
+  }
+
+  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
+    us.add(us_s)
+  }
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(DateType, CalendarIntervalType)
+
+  override def dataType: DataType = DateType
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+        (lhs, rhs) match {
+          case (l: GpuColumnVector, intvl: CalendarInterval) =>
+            if (intvl.months != 0) {
+              throw new UnsupportedOperationException("Months aren't supported at the moment")
+            }
+            val microSecondsInOneDay = TimeUnit.DAYS.toMicros(1)
+            val microSecToDays = if (intvl.microseconds < 0) {
+              // This is to calculate when subtraction is performed. Need to take into account the
+              // interval( which are less than days). Convert it into days which needs to be
+              // subtracted along with intvl.days(if provided).
+              (intvl.microseconds.abs.toDouble / microSecondsInOneDay).ceil.toInt * -1
+            } else {
+              (intvl.microseconds.toDouble / microSecondsInOneDay).toInt
+            }
+            val daysToAdd = intvl.days + microSecToDays
+            if (daysToAdd != 0) {
+              withResource(Scalar.fromInt(daysToAdd)) { us_s =>
+                withResource(l.getBase.logicalCastTo(DType.INT32)) { us =>
+                  withResource(intervalMath(us_s, us)) { intResult =>
+                    GpuColumnVector.from(intResult.castTo(DType.TIMESTAMP_DAYS), dataType)
+                  }
+                }
+              }
+            } else {
+              l.incRefCount()
+            }
+          case _ =>
+            throw new UnsupportedOperationException("GpuDateAddInterval takes column and " +
+              "interval as an argument only")
+        }
+      }
+    }
   }
 }
 

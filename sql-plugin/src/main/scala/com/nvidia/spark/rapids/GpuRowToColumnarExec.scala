@@ -32,7 +32,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
+private class GpuRowToColumnConverter(schema: StructType) extends Serializable with Arm {
   private val converters = schema.fields.map {
     f => GpuRowToColumnConverter.getConverterForType(f.dataType, f.nullable)
   }
@@ -47,6 +47,20 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable {
       bytes += converters(idx).append(row, idx, builders.builder(idx))
     }
     bytes
+  }
+
+  /**
+   * Convert an array of rows into a batch. Please note that this does not do bounds or size
+   * checking so keep the size of the batch small.
+   * @param rows the rows to convert.
+   * @param schema the schema of the rows.
+   * @return The batch on the GPU.
+   */
+  final def convertBatch(rows: Array[InternalRow], schema: StructType): ColumnarBatch = {
+    val numRows = rows.length
+    val builders = new GpuColumnarBatchBuilder(schema, numRows, null)
+    rows.foreach(convert(_, builders))
+    builders.build(numRows)
   }
 }
 
