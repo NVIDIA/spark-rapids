@@ -2349,8 +2349,8 @@ object GpuOverrides {
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
-      (a, conf, p, r) => new UnaryExprMeta[Explode](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuExplode(child)
+      (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuExplode(childExprs(0).convertToGpu())
       }),
     expr[PosExplode](
       "Given an input array produces a sequence of rows for each value in the array. "
@@ -2360,8 +2360,8 @@ object GpuOverrides {
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
-      (a, conf, p, r) => new UnaryExprMeta[PosExplode](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuPosExplode(child)
+      (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs(0).convertToGpu())
       }),
     expr[CollectList](
       "Collect a list of elements, now only supported by windowing.",

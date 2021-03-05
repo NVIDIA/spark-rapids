@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ContiguousTable, HostColumnVector, NvtxColor}
-import com.nvidia.spark.rapids.GpuGenerateExecSparkPlanMeta.isOuterSupported
 import com.nvidia.spark.rapids.GpuMetric.{ESSENTIAL_LEVEL, MODERATE_LEVEL, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
 import org.apache.spark.rdd.RDD
@@ -43,7 +42,8 @@ class GpuGenerateExecSparkPlanMeta(
   }
 
   override def tagPlanForGpu(): Unit = {
-    if (gen.outer && !isOuterSupported(gen.generator)) {
+    if (gen.outer &&
+      !childExprs.head.asInstanceOf[GeneratorExprMeta[Generator]].supportOuter) {
       willNotWorkOnGpu(s"outer is not currently supported with ${gen.generator.nodeName}")
     }
   }
@@ -58,12 +58,13 @@ class GpuGenerateExecSparkPlanMeta(
   }
 }
 
-object GpuGenerateExecSparkPlanMeta {
-  private val OUTER_SUPPORTED_GENERATORS: Set[String] = Set()
-
-  def isOuterSupported(gen: Generator): Boolean = {
-    OUTER_SUPPORTED_GENERATORS.contains(gen.nodeName)
-  }
+abstract class GeneratorExprMeta[INPUT <: Generator](
+    gen: INPUT,
+    conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends ExprMeta[INPUT](gen, conf, p, r) {
+  /* whether supporting outer generate or not */
+  val supportOuter: Boolean = false
 }
 
 /**
