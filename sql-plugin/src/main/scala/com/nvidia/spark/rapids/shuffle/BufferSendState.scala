@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shuffle
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{Cuda, CudaUtil, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsBufferId, ShuffleMetadata, StorageTier}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -96,14 +98,18 @@ class BufferSendState(
 
   private[this] var acquiredBuffs: Seq[RangeBuffer] = Seq.empty
 
-  private[this] var currentRapidsBufferId: Option[RapidsBufferId] = None
-  private[this] var currentMemoryBuffer: Option[MemoryBuffer] = None
+  private[this] var memoryBuffers: mutable.Map[RapidsBufferId, MemoryBuffer] = mutable.Map.empty
 
   def getTransferRequest: TransferRequest = synchronized {
     transferRequest
   }
 
   def hasNext: Boolean = synchronized { hasMoreBlocks }
+
+  private[this] def cleanMemoryBuffers(): Unit = {
+    memoryBuffers.values.foreach(_.close())
+    memoryBuffers.clear()
+  }
 
   private[this] def freeBounceBuffers(): Unit = {
     sendBounceBuffers.close()
@@ -122,7 +128,7 @@ class BufferSendState(
       throw new IllegalStateException("ALREADY CLOSED!")
     }
     isClosed = true
-    currentMemoryBuffer.foreach(_.close())
+    cleanMemoryBuffers()
     freeBounceBuffers()
     request.close()
     releaseAcquiredToCatalog()
@@ -175,14 +181,13 @@ class BufferSendState(
 
         acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
           require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
-          if (!currentRapidsBufferId.contains(rapidsBuffer.id)) {
-            currentMemoryBuffer.foreach(_.close())
-            currentMemoryBuffer = Some(rapidsBuffer.getMemoryBuffer)
-            currentRapidsBufferId = Some(rapidsBuffer.id)
+          if (!memoryBuffers.contains(rapidsBuffer.id)) {
+            memoryBuffers += (rapidsBuffer.id -> rapidsBuffer.getMemoryBuffer)
           }
-          val memBuff = currentMemoryBuffer.get
+          val memBuff = memoryBuffers(rapidsBuffer.id)
           bounceBuffToUse match {
             case _: HostMemoryBuffer =>
+              logDebug(s"copying memory buffer $memBuff to host memory bounce buffer")
               //TODO: HostMemoryBuffer needs the same functionality that
               // DeviceMemoryBuffer has to copy from/to device/host buffers
               CudaUtil.copy(
@@ -195,10 +200,12 @@ class BufferSendState(
               memBuff match {
                 case mh: HostMemoryBuffer =>
                   // host original => device bounce
+                  logDebug(s"copying from host $memBuff to device memory bounce buffer")
                   d.copyFromHostBufferAsync(buffOffset, mh, blockRange.rangeStart,
                     blockRange.rangeSize(), serverStream)
                 case md: DeviceMemoryBuffer =>
                   // device original => device bounce
+                  logDebug(s"copying from device $memBuff to device memory bounce buffer")
                   d.copyFromDeviceBufferAsync(buffOffset, md, blockRange.rangeStart,
                     blockRange.rangeSize(), serverStream)
                 case _ => throw new IllegalStateException("What buffer is this")
