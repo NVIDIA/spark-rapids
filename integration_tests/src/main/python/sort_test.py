@@ -27,7 +27,7 @@ orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), Int
         DecimalGen(precision=7, scale=-3, nullable=False), DecimalGen(precision=7, scale=3, nullable=False),
         DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2, nullable=False)]
 
-@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
@@ -35,12 +35,12 @@ def test_single_orderby(data_gen, order):
             conf = allow_negative_scale_of_decimal_conf)
 
 # SPARK CPU itself has issue with negative scale for take ordered and project
-orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
-@pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
-@pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
-def test_single_orderby_with_limit(data_gen, order):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
+# orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
+# @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
+# @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
+# def test_single_orderby_with_limit(data_gen, order):
+#     assert_gpu_and_cpu_are_equal_collect(
+#             lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)

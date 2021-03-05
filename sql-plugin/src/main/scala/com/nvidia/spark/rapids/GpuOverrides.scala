@@ -412,6 +412,16 @@ object GpuOverrides {
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
+  private[this] val sortOrderTypeSigs = (
+    TypeSig.commonCudfTypes +
+    TypeSig.NULL +
+    TypeSig.DECIMAL +
+    TypeSig.STRUCT.nested(
+      TypeSig.commonCudfTypes +
+      TypeSig.NULL +
+      TypeSig.DECIMAL
+    ))
+
   def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
     val s = strLit.toString
     !regexList.exists(pattern => s.contains(pattern))
@@ -1752,16 +1762,23 @@ object GpuOverrides {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        sortOrderTypeSigs,
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          sortOrderTypeSigs,
           TypeSig.orderable))),
-      (a, conf, p, r) => new BaseExprMeta[SortOrder](a, conf, p, r) {
+      (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
+          if (sortOrder.nullOrdering != directionDefaultNullOrdering) {
+            willNotWorkOnGpu(s"Only default null ordering $directionDefaultNullOrdering " +
+              s"supported. Found: ${sortOrder.nullOrdering}")
+          }
+        }
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
-          a.withNewChildren(childExprs.map(_.convertToGpu()))
+          sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
       }),
     expr[Count](
       "Count aggregate operator",

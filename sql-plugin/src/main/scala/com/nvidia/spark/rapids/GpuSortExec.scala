@@ -45,11 +45,12 @@ class GpuSortMeta(
       willNotWorkOnGpu("string literal values are not supported in a sort")
     }
     val sortOrderDataTypes = sort.sortOrder.map(_.dataType)
-    if (sortOrderDataTypes.exists(dtype =>
-      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
-        || dtype.isInstanceOf[MapType])) {
-      willNotWorkOnGpu("Nested types in Sort Order are not supported")
-    }
+    sortOrderDataTypes.collect {
+      case at: ArrayType => at
+      case mt: MapType => mt
+    }.foreach(mapOrArrayDT => willNotWorkOnGpu(
+      s"Nested type $mapOrArrayDT in Sort Order is not supported")
+    )
   }
 }
 

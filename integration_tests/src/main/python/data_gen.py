@@ -752,6 +752,14 @@ decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_pr
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+# all of the basic types in a single struct
+all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
+
+# Some struct gens, but not all because of nesting
+struct_gens_sample = [all_basic_struct_gen,
+                      StructGen([['child0', byte_gen]]),
+                      StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -783,14 +791,6 @@ nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_len
 
 # Some array gens, but not all because of nesting
 array_gens_sample = single_level_array_gens + nested_array_gens_sample
-
-# all of the basic types in a single struct
-all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
-
-# Some struct gens, but not all because of nesting
-struct_gens_sample = [all_basic_struct_gen,
-        StructGen([['child0', byte_gen]]),
-        StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
         StringGen(), max_length=10)
