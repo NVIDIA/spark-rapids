@@ -235,6 +235,7 @@ abstract class RapidsBufferStore(
         if (lowestTier.exists(_>=spillStore.tier)) {
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
               s"already at tier ${lowestTier.get} total mem=${buffers.getTotalBytes}")
+          catalog.removeBufferTier(buffer.id, buffer.storageTier)
         } else {
           val newBuffer = try {
             logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
@@ -313,13 +314,11 @@ abstract class RapidsBufferStore(
       deviceRapidsBuffer match {
         case Some(rapidsBuffer) => rapidsBuffer.getDeviceMemoryBuffer
         case None =>
-          val headBuffer = catalog.acquireBuffer(id)
-          headBuffer.storageTier match {
-            case DEVICE =>
-              deviceRapidsBuffer = Some(headBuffer)
+          catalog.acquireBuffer(id, DEVICE) match {
+            case Some(acquiredBuffer) =>
+              deviceRapidsBuffer = Some(acquiredBuffer)
               deviceRapidsBuffer.get.getDeviceMemoryBuffer
             case _ =>
-              headBuffer.close()
               val newBuffer = {
                 logDebug(s"Unspilling $this $id to ${devStorage.name}")
                 spillCallback(storageTier, devStorage.tier, size)
@@ -329,10 +328,11 @@ abstract class RapidsBufferStore(
               if (newBuffer.addReference()) {
                 deviceRapidsBuffer = Some(newBuffer)
                 deviceRapidsBuffer.get.getDeviceMemoryBuffer
+              } else {
+                throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
               }
           }
       }
-      throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
     }
 
     override def close(): Unit = synchronized {

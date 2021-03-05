@@ -51,12 +51,33 @@ class RapidsBufferCatalog extends Logging {
       if (buffers == null || buffers.isEmpty) {
         throw new NoSuchElementException(s"Cannot locate buffers associated with ID: $id")
       }
-      val buffer = buffers.head._2
-      if (buffer.addReference()) {
-        return buffer
-      }
+      buffers.values.foreach(buffer =>
+        if (buffer.addReference()) {
+          return buffer
+        }
+      )
     }
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
+  }
+
+  /**
+   * Lookup the buffer that corresponds to the specified buffer ID at the specified storage tier,
+   * and acquire it.
+   * NOTE: It is the responsibility of the caller to close the buffer.
+   * @param id buffer identifier
+   * @return buffer that has been acquired, None if not found
+   */
+  def acquireBuffer(id: RapidsBufferId, tier: StorageTier): Option[RapidsBuffer] = {
+    val buffers = bufferMap.getOrDefault(id, mutable.SortedMap.empty)
+    buffers.get(tier) match {
+      case Some(buffer) =>
+        if (buffer.addReference()) {
+          Some(buffer)
+        } else {
+          None
+        }
+      case _ => None
+    }
   }
 
   /**
@@ -126,6 +147,17 @@ class RapidsBufferCatalog extends Logging {
       }
     }
     bufferMap.compute(buffer.id, updater)
+  }
+
+  def removeBufferTier(id: RapidsBufferId, tier: StorageTier): Unit = {
+    val updater = new BiFunction[RapidsBufferId, mutable.SortedMap[StorageTier, RapidsBuffer],
+        mutable.SortedMap[StorageTier, RapidsBuffer]] {
+      override def apply(key: RapidsBufferId, value: mutable.SortedMap[StorageTier, RapidsBuffer])
+      : mutable.SortedMap[StorageTier, RapidsBuffer] = {
+        value -= tier
+      }
+    }
+    bufferMap.computeIfPresent(id, updater)
   }
 
   /** Remove a buffer ID from the catalog and release the resources of the registered buffers. */
