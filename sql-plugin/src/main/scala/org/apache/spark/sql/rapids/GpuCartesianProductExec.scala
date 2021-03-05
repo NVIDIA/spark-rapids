@@ -21,7 +21,7 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, MetricsLevel, RapidsBuffer, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
@@ -156,8 +156,9 @@ class GpuCartesianRDD(
         // lazily compute and cache stream-side data
         rdd2.iterator(currSplit.s2, context).map { serializableBatch =>
           closeOnExcept(spillBatchBuffer) { buffer =>
-            val batch = SpillableColumnarBatch(
-              serializableBatch.getBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            val batch = SpillableColumnarBatch(serializableBatch.getBatch,
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              RapidsBuffer.defaultSpillCallback)
             buffer += batch
             batch.getColumnarBatch()
           }
