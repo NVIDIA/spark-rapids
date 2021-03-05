@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, MapType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -83,7 +83,7 @@ object GpuParquetFileFormat {
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
     }
 
-    sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE) match {
+    ShimLoader.getSparkShims.parquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" => //Good
       case "CORRECTED" => //Good
       case "LEGACY" =>
@@ -148,8 +148,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
     val conf = ContextUtil.getConfiguration(job)
 
-    val dateTimeRebaseException =
-      "EXCEPTION".equals(conf.get(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key))
+    val dateTimeRebaseException = "EXCEPTION".equals(
+        sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
 
     val committerClass =
       conf.getClass(

@@ -169,26 +169,28 @@ def test_input_meta(spark_tmp_path):
                         'input_file_block_start()',
                         'input_file_block_length()'))
 
-def setup_orc_file_no_column_names(spark):
-    drop_query = "DROP TABLE IF EXISTS test_orc_data"
-    create_query = "CREATE TABLE `test_orc_data` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc"
-    insert_query = "INSERT INTO test_orc_data VALUES(13, '155', 2020)"
+def setup_orc_file_no_column_names(spark, table_name):
+    drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
+    create_query = "CREATE TABLE `{}` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc".format(table_name)
+    insert_query = "INSERT INTO {} VALUES(13, '155', 2020)".format(table_name)
     spark.sql(drop_query).collect
     spark.sql(create_query).collect
     spark.sql(insert_query).collect
 
-def test_missing_column_names():
+def test_missing_column_names(spark_tmp_table_factory):
     if is_spark_300():
         pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
 
-    with_cpu_session(setup_orc_file_no_column_names)
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql("SELECT _col3,_col2 FROM test_orc_data"))
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)))
 
-def test_missing_column_names_filter():
+def test_missing_column_names_filter(spark_tmp_table_factory):
     if is_spark_300():
         pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
 
-    with_cpu_session(setup_orc_file_no_column_names)
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql("SELECT _col3,_col2 FROM test_orc_data WHERE _col2 = '155'"))
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM {} WHERE _col2 = '155'".format(table_name)))

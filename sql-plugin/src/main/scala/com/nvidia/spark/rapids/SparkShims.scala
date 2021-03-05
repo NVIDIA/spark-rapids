@@ -23,7 +23,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
@@ -34,6 +34,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
@@ -69,6 +70,14 @@ case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersio
 
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
+  def parquetRebaseReadKey: String
+  def parquetRebaseWriteKey: String
+  def avroRebaseReadKey: String
+  def avroRebaseWriteKey: String
+  def parquetRebaseRead(conf: SQLConf): String
+  def parquetRebaseWrite(conf: SQLConf): String
+  def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
+
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
