@@ -69,9 +69,9 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
           val path = bufferId.getDiskPath(null)
           assert(path.exists)
           assertResult(bufferSize)(path.length)
-          verify(catalog).updateBufferMap(
+          verify(catalog).swapBufferTiers(
             ArgumentMatchers.eq(StorageTier.DEVICE), ArgumentMatchers.any[RapidsBuffer])
-          verify(catalog).updateBufferMap(
+          verify(catalog).swapBufferTiers(
             ArgumentMatchers.eq(StorageTier.HOST), ArgumentMatchers.any[RapidsBuffer])
           withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             assertResult(StorageTier.DISK)(buffer.storageTier)

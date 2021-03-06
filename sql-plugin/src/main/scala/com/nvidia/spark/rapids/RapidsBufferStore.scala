@@ -231,10 +231,9 @@ abstract class RapidsBufferStore(
     // to return back to the outer loop to see if enough has been freed.
     if (buffer.addReference()) {
       try {
-        val lowestTier = catalog.getLowestStorageTier(buffer.id)
-        if (lowestTier.exists(_>=spillStore.tier)) {
+        if (catalog.isMultiTierBuffer(buffer.id)) {
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
-              s"already at tier ${lowestTier.get} total mem=${buffers.getTotalBytes}")
+              s"already stored in multiple tiers total mem=${buffers.getTotalBytes}")
           catalog.removeBufferTier(buffer.id, buffer.storageTier)
         } else {
           val newBuffer = try {
@@ -244,7 +243,7 @@ abstract class RapidsBufferStore(
             spillStore.copyBuffer(buffer, stream)
           }
           if (newBuffer != null) {
-            catalog.updateBufferMap(buffer.storageTier, newBuffer)
+            catalog.swapBufferTiers(buffer.storageTier, newBuffer)
           }
         }
       } finally {

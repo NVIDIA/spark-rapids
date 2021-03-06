@@ -51,11 +51,10 @@ class RapidsBufferCatalog extends Logging {
       if (buffers == null || buffers.isEmpty) {
         throw new NoSuchElementException(s"Cannot locate buffers associated with ID: $id")
       }
-      buffers.values.foreach(buffer =>
-        if (buffer.addReference()) {
-          return buffer
-        }
-      )
+      val buffer = buffers.head._2
+      if (buffer.addReference()) {
+        return buffer
+      }
     }
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
   }
@@ -81,16 +80,12 @@ class RapidsBufferCatalog extends Logging {
   }
 
   /**
-   * Lookup the lowest storage tier of the buffer that corresponds to the specified buffer ID.
+   * Check if the buffer that corresponds to the specified buffer ID is stored in multiple tiers.
    * @param id buffer identifier
-   * @return the lowest storage tier, or None if not found
+   * @return true if the buffer is stored in multiple tiers
    */
-  def getLowestStorageTier(id: RapidsBufferId): Option[StorageTier] = {
-    val buffers = bufferMap.getOrDefault(id, mutable.SortedMap.empty)
-    buffers.lastOption match {
-      case Some((tier, _)) => Some(tier)
-      case None => None
-    }
+  def isMultiTierBuffer(id: RapidsBufferId): Boolean = {
+    bufferMap.getOrDefault(id, mutable.SortedMap.empty).size >= 2
   }
 
   /** Get the table metadata corresponding to a buffer ID. */
@@ -127,13 +122,11 @@ class RapidsBufferCatalog extends Logging {
   }
 
   /**
-   * Replace the mapping at the specified tier with a specified buffer.
-   * NOTE: The mapping will not be updated if the current mapping is to a higher priority
-   * storage tier.
+   * Swap the mapping at the specified tier with a specified buffer.
    * @param tier the storage tier of the buffer being replaced
    * @param buffer the new buffer to associate
    */
-  def updateBufferMap(tier: StorageTier, buffer: RapidsBuffer): Unit = {
+  def swapBufferTiers(tier: StorageTier, buffer: RapidsBuffer): Unit = {
     val updater = new BiFunction[RapidsBufferId, mutable.SortedMap[StorageTier, RapidsBuffer],
         mutable.SortedMap[StorageTier, RapidsBuffer]] {
       override def apply(key: RapidsBufferId, value: mutable.SortedMap[StorageTier, RapidsBuffer])
