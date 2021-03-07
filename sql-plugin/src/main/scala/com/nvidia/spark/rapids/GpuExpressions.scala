@@ -194,7 +194,7 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
   def outputType(l: BinaryOperable, r: BinaryOperable) : DType = {
     val over = outputTypeOverride
     if (over == null) {
-      BinaryOperable.implicitConversion(l, r)
+      BinaryOperable.implicitConversion(binaryOp, l, r)
     } else {
       over
     }
@@ -203,12 +203,17 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val lBase = lhs.getBase
     val rBase = rhs.getBase
-    val outType = outputType(lBase, rBase)
+    val outType = if (castOutputAtEnd) {
+      BinaryOperable.implicitConversion(binaryOp, lBase, rBase)
+    } else {
+      outputType(lBase, rBase)
+    }
     val tmp = lBase.binaryOp(binaryOp, rBase, outType)
     // In some cases the output type is ignored
-    if (!outType.equals(tmp.getType) && castOutputAtEnd) {
+    val castType = outputType(lBase, rBase)
+    if (!castType.equals(tmp.getType) && castOutputAtEnd) {
       withResource(tmp) { tmp =>
-        tmp.castTo(outType)
+        tmp.castTo(castType)
       }
     } else {
       tmp
@@ -217,12 +222,17 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     val rBase = rhs.getBase
-    val outType = outputType(lhs, rBase)
+    val outType = if (castOutputAtEnd) {
+      BinaryOperable.implicitConversion(binaryOp, lhs, rBase)
+    } else {
+      outputType(lhs, rBase)
+    }
     val tmp = lhs.binaryOp(binaryOp, rBase, outType)
     // In some cases the output type is ignored
-    if (!outType.equals(tmp.getType) && castOutputAtEnd) {
+    val castType = outputType(lhs, rBase)
+    if (!castType.equals(tmp.getType) && castOutputAtEnd) {
       withResource(tmp) { tmp =>
-        tmp.castTo(outType)
+        tmp.castTo(castType)
       }
     } else {
       tmp
@@ -231,12 +241,17 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     val lBase = lhs.getBase
-    val outType = outputType(lBase, rhs)
+    val outType = if (castOutputAtEnd) {
+      BinaryOperable.implicitConversion(binaryOp, lBase, rhs)
+    } else {
+      outputType(lBase, rhs)
+    }
     val tmp = lBase.binaryOp(binaryOp, rhs, outType)
     // In some cases the output type is ignored
-    if (!outType.equals(tmp.getType) && castOutputAtEnd) {
+    val castType = outputType(lBase, rhs)
+    if (!castType.equals(tmp.getType) && castOutputAtEnd) {
       withResource(tmp) { tmp =>
-        tmp.castTo(outType)
+        tmp.castTo(castType)
       }
     } else {
       tmp
