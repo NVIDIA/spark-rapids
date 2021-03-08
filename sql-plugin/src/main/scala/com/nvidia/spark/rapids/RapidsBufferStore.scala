@@ -231,7 +231,7 @@ abstract class RapidsBufferStore(
     // to return back to the outer loop to see if enough has been freed.
     if (buffer.addReference()) {
       try {
-        if (catalog.isMultiTierBuffer(buffer.id)) {
+        if (catalog.isMultiTieredBuffer(buffer.id)) {
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
               s"already stored in multiple tiers total mem=${buffers.getTotalBytes}")
           catalog.removeBufferTier(buffer.id, buffer.storageTier)

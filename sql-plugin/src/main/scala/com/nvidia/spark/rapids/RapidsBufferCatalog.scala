@@ -84,7 +84,7 @@ class RapidsBufferCatalog extends Logging {
    * @param id buffer identifier
    * @return true if the buffer is stored in multiple tiers
    */
-  def isMultiTierBuffer(id: RapidsBufferId): Boolean = {
+  def isMultiTieredBuffer(id: RapidsBufferId): Boolean = {
     bufferMap.getOrDefault(id, mutable.SortedMap.empty).size >= 2
   }
 
