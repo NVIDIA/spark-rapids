@@ -97,6 +97,24 @@ class AdaptiveQueryExecSuite
     collectWithSubqueries(plan)(ShimLoader.getSparkShims.reusedExchangeExecPfn)
   }
 
+  test("get row counts from executed shuffle query stages") {
+    assumeSpark301orLater
+
+    skewJoinTest { spark =>
+      val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
+        spark,
+        "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
+      val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
+      val shuffleExchanges = ShimLoader.getSparkShims
+          .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+          .map(_.asInstanceOf[ShuffleQueryStageExec])
+      assert(shuffleExchanges.length === 2)
+      val shim = ShimLoader.getSparkShims
+      val stats = shuffleExchanges.map(e => shim.getQueryStageRuntimeStatistics(e))
+      assert(stats.forall(_.rowCount.contains(1000)))
+    }
+  }
+
   test("skewed inner join optimization") {
     skewJoinTest { spark =>
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
