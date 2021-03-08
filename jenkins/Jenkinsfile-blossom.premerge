@@ -28,6 +28,8 @@ import ipp.blossom.*
 def pluginPremerge
 
 def githubHelper // blossom github helper
+def IMAGE_PREMERGE // temp image for premerge test
+def PREMERGE_TAG
 def skipped = false
 
 pipeline {
@@ -87,7 +89,7 @@ pipeline {
 
             agent {
                 kubernetes {
-                    label "premerge-prepare-${BUILD_TAG}"
+                    label "premerge-docker-${BUILD_TAG}"
                     cloud 'sc-ipp-blossom-prod'
                     yaml pod.getDockerBuildYAML()
                     workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
@@ -102,13 +104,13 @@ pipeline {
                             changelog: false,
                             poll: true,
                             scm: [
-                                    $class                           : 'GitSCM', branches: [[name: githubHelper.getMergedSHA()]],
+                                    $class: 'GitSCM', branches: [[name: githubHelper.getMergedSHA()]],
                                     doGenerateSubmoduleConfigurations: false,
-                                    submoduleCfg                     : [],
-                                    userRemoteConfigs                : [[
-                                                                                credentialsId: 'github-token',
-                                                                                url          : githubHelper.getCloneUrl(),
-                                                                                refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
+                                    submoduleCfg: [],
+                                    userRemoteConfigs: [[
+                                        credentialsId: 'github-token',
+                                        url: githubHelper.getCloneUrl(),
+                                        refspec: '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
                             ]
                     )
 
@@ -116,8 +118,18 @@ pipeline {
                         def CUDA_NAME = sh(returnStdout: true,
                                 script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
 
-                        def IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu16-$CUDA_NAME-blossom-dev"
-                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '8', '32Gi')
+                        IMAGE_TAG = "dev-ubuntu16-${CUDA_NAME}"
+                        CACHE_IMAGE_NAME = "${ARTIFACTORY_NAME}/sw-spark-docker/plugin:${IMAGE_TAG}"
+
+                        sh "docker pull $CACHE_IMAGE_NAME || true"
+
+                        PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
+                        IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
+                        def CUDA_VER = "$CUDA_NAME" - "cuda"
+                        docker.build(IMAGE_PREMERGE, "-f jenkins/Dockerfile-blossom.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $CACHE_IMAGE_NAME -t $IMAGE_PREMERGE .")
+                        uploadDocker(IMAGE_PREMERGE)
+
+                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     }
                 }
             }
@@ -165,6 +177,7 @@ pipeline {
                     return
                 }
 
+                deleteDockerTempTag(PREMERGE_TAG) // clean premerge temp image
                 if (currentBuild.currentResult == "SUCCESS") {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
                 } else {
@@ -186,4 +199,11 @@ void uploadDocker(String IMAGE_NAME) {
             $DOCKER_CMD logout $ARTIFACTORY_NAME
         """
     }
+}
+
+void deleteDockerTempTag(String tag) {
+    if (!tag?.trim()) { // return if the tag is null or empty
+        return
+    }
+    sh "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
 }
