@@ -36,7 +36,7 @@ import org.apache.spark.util.{CompletionIterator, Utils}
 
 @SerialVersionUID(100L)
 class GpuSerializableBatch(batch: ColumnarBatch)
-  extends Serializable with AutoCloseable with Arm {
+    extends Serializable with AutoCloseable with Arm {
 
   assert(batch != null)
   @transient private var internalBatch: ColumnarBatch = batch
@@ -47,7 +47,7 @@ class GpuSerializableBatch(batch: ColumnarBatch)
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    withResource (new NvtxRange("SerializeBatch", NvtxColor.PURPLE)) { _ =>
+    withResource(new NvtxRange("SerializeBatch", NvtxColor.PURPLE)) { _ =>
       if (internalBatch == null) {
         throw new IllegalStateException("Cannot re-serialize a batch this way...")
       } else {
@@ -69,7 +69,7 @@ class GpuSerializableBatch(batch: ColumnarBatch)
 
   private def readObject(in: ObjectInputStream): Unit = {
     GpuSemaphore.acquireIfNecessary(TaskContext.get())
-    withResource (new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
+    withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
       val schemaArray = in.readObject().asInstanceOf[Array[DataType]]
       withResource(JCudfSerialization.readTableFrom(in)) { tableInfo =>
         val tmp = tableInfo.getTable
@@ -89,11 +89,11 @@ class GpuSerializableBatch(batch: ColumnarBatch)
 }
 
 class GpuCartesianPartition(
-  idx: Int,
-  @transient private val rdd1: RDD[_],
-  @transient private val rdd2: RDD[_],
-  s1Index: Int,
-  s2Index: Int
+    idx: Int,
+    @transient private val rdd1: RDD[_],
+    @transient private val rdd2: RDD[_],
+    s1Index: Int,
+    s2Index: Int
 ) extends Partition {
   var s1: Partition = rdd1.partitions(s1Index)
   var s2: Partition = rdd2.partitions(s2Index)
@@ -109,19 +109,19 @@ class GpuCartesianPartition(
 }
 
 class GpuCartesianRDD(
-  sc: SparkContext,
-  boundCondition: Option[GpuExpression],
-  outputSchema: Array[DataType],
-  joinTime: GpuMetric,
-  joinOutputRows: GpuMetric,
-  numOutputRows: GpuMetric,
-  numOutputBatches: GpuMetric,
-  filterTime: GpuMetric,
-  totalTime: GpuMetric,
-  var rdd1 : RDD[GpuSerializableBatch],
-  var rdd2 : RDD[GpuSerializableBatch])
-  extends RDD[ColumnarBatch](sc, Nil)
-    with Serializable with Arm {
+    sc: SparkContext,
+    boundCondition: Option[GpuExpression],
+    outputSchema: Array[DataType],
+    joinTime: GpuMetric,
+    joinOutputRows: GpuMetric,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    filterTime: GpuMetric,
+    totalTime: GpuMetric,
+    var rdd1: RDD[GpuSerializableBatch],
+    var rdd2: RDD[GpuSerializableBatch])
+    extends RDD[ColumnarBatch](sc, Nil)
+        with Serializable with Arm {
 
   private val numPartitionsInRdd2 = rdd2.partitions.length
 
@@ -146,13 +146,18 @@ class GpuCartesianRDD(
 
     // create a buffer to cache stream-side data in a spillable manner
     val spillBatchBuffer = mutable.ArrayBuffer[SpillableColumnarBatch]()
+    // sentinel variable to label whether stream-side data is cached or not
+    var streamSideCached = false
 
-    rdd1.iterator(currSplit.s1, context).zipWithIndex.flatMap { case (lhs, index) =>
+    rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
       val table = withResource(lhs) { lhs =>
         GpuColumnVector.from(lhs.getBatch)
       }
-
-      val streamIterator = if (index == 0) {
+      // Introduce sentinel `streamSideCached` to record whether stream-side data is cached or
+      // not, because predicate `spillBatchBuffer.isEmpty` will always be true if
+      // `rdd2.iterator` is an empty iterator.
+      val streamIterator = if (!streamSideCached) {
+        streamSideCached = true
         // lazily compute and cache stream-side data
         rdd2.iterator(currSplit.s2, context).map { serializableBatch =>
           closeOnExcept(spillBatchBuffer) { buffer =>
@@ -206,17 +211,17 @@ class GpuCartesianRDD(
 
 object GpuNoColumnCrossJoin extends Arm {
   def divideIntoBatches(
-    rowCounts: RDD[Long],
-    targetSizeBytes: Long,
-    numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
+      rowCounts: RDD[Long],
+      targetSizeBytes: Long,
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
     // Hash aggregate explodes the rows out, so if we go too large
     // it can blow up. The size of a Long is 8 bytes so we just go with
     // that as our estimate, no nulls.
-    val maxRowCount = targetSizeBytes/8
+    val maxRowCount = targetSizeBytes / 8
 
     def divideIntoBatches(rows: Long): Iterable[ColumnarBatch] = {
-      val numBatches = (rows + maxRowCount - 1)/maxRowCount
+      val numBatches = (rows + maxRowCount - 1) / maxRowCount
       (0L until numBatches).map(i => {
         val ret = new ColumnarBatch(new Array[ColumnVector](0))
         if ((i + 1) * maxRowCount > rows) {
@@ -234,11 +239,11 @@ object GpuNoColumnCrossJoin extends Arm {
   }
 
   def divideIntoBatches(
-    table: Table,
-    numTimes: Long,
-    outputSchema: Array[DataType],
-    numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric): Iterator[ColumnarBatch] = {
+      table: Table,
+      numTimes: Long,
+      outputSchema: Array[DataType],
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric): Iterator[ColumnarBatch] = {
     // TODO if we hit a point where we need to we can divide the data up into batches
     //  The current use case is likely to be small enough that we are OK without this.
     assert(numTimes < Int.MaxValue)
@@ -251,13 +256,14 @@ object GpuNoColumnCrossJoin extends Arm {
 }
 
 case class GpuCartesianProductExec(
-  left: SparkPlan,
-  right: SparkPlan,
-  condition: Option[Expression],
-  targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+    left: SparkPlan,
+    right: SparkPlan,
+    condition: Option[Expression],
+    targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+
   import GpuMetric._
 
-  override def output: Seq[Attribute]= left.output ++ right.output
+  override def output: Seq[Attribute] = left.output ++ right.output
 
   override def verboseStringWithOperatorId(): String = {
     val joinCondStr = if (condition.isDefined) s"${condition.get}" else "None"
