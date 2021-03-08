@@ -23,6 +23,7 @@ import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
 
@@ -481,16 +482,19 @@ class Spark300Shims extends SparkShims {
   }
 
   // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
-    vec.getDataBuffer().nioBuffer()
+  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getDataBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
-    vec.getValidityBuffer().nioBuffer()
+  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getValidityBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
-    vec.getOffsetBuffer().nioBuffer()
+  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getOffsetBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   override def replaceWithAlluxioPathIfNeeded(

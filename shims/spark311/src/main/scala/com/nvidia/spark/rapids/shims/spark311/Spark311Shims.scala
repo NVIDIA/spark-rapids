@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.SparkEnv
@@ -424,16 +425,19 @@ class Spark311Shims extends Spark301Shims {
   }
 
   // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
-    vec.getDataBuffer.nioBuffer()
+  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getDataBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
-    vec.getValidityBuffer.nioBuffer()
+  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getValidityBuffer
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
-    vec.getOffsetBuffer.nioBuffer()
+  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getOffsetBuffer
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   /** matches SPARK-33008 fix in 3.1.1 */
