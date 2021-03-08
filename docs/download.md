@@ -13,7 +13,31 @@ CUDA and NVIDIA Driver need to be installed on the machine where CUDA-capable GP
 Spark job needs 2 jars -- "RAPIDS Accelerator For Apache Spark" jar, and "RAPIDS cuDF" jar based on corresponding CUDA&NVIDIA Driver version.
 
 ## Release v0.4.0
+### Download v0.4.0
+* Download [RAPIDS Accelerator For Apache Spark v0.4.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.0/rapids-4-spark_2.12-0.4.0.jar)
+* Download RAPIDS cuDF 0.18 for your system:
+  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda11.jar)
+  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-2.jar)
+  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-1.jar)
 
+### Requirements
+Hardware Requirements: 
+
+	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
+	
+Software Requirements:
+
+	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
+	
+	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	
+	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
+	
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+	
+	Python 3.6+, Scala 2.12, Java 8 
+
+### Release Notes
 New functionality for the release includes
 * Decimal support up to 64 bit, including reading and writing decimal from Parquet (can be enabled
   by setting `spark.rapids.sql.decimalType.enabled` to True)
@@ -37,6 +61,20 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+
+
+
+
+
+## Release v0.3.0
+### Download v0.3.0
+* Download [RAPIDS Accelerator For Apache Spark v0.3.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.3.0/rapids-4-spark_2.12-0.3.0.jar)
+* Download RAPIDS cuDF 0.17 for your system:
+  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.17/cudf-0.17-cuda11.jar)
+  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.17/cudf-0.17-cuda10-2.jar)
+  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.17/cudf-0.17-cuda10-1.jar)
+
+### Requirements
 Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
@@ -47,20 +85,13 @@ Software Requirements:
 	
 	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
-	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
+	Apache Spark 3.0, 3.0.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
 	
 	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 	
 	Python 3.6+, Scala 2.12, Java 8 
 
-### Download v0.4.0
-* Download [RAPIDS Accelerator For Apache Spark v0.4.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.0/rapids-4-spark_2.12-0.4.0.jar)
-* Download RAPIDS cuDF 0.18 for your system:
-  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda11.jar)
-  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-2.jar)
-  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-1.jar)
-
-## Release v0.3.0
+### Release Notes
 This release includes additional performance improvements, including
 * Use of per thread default stream to make more efficient use of the GPU
 * Further supporting Spark's adaptive query execution, with more rewritten query plans now able to
@@ -81,6 +112,20 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+
+
+
+
+
+## Release v0.2.0
+### Download v0.2.0
+* Download [RAPIDS Accelerator For Apache Spark v0.2.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.2.0/rapids-4-spark_2.12-0.2.0.jar)
+* Download RAPIDS cuDF 0.15 for your system:
+  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.15/cudf-0.15-cuda11.jar)
+  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.15/cudf-0.15-cuda10-2.jar)
+  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.15/cudf-0.15-cuda10-1.jar)
+
+### Requirements
 Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
@@ -91,20 +136,13 @@ Software Requirements:
 	
 	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
-	Apache Spark 3.0, 3.0.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
+	Apache Spark 3.0, 3.0.1
 	
 	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 	
-	Python 3.6+, Scala 2.12, Java 8 
-
-### Download v0.3.0
-* Download [RAPIDS Accelerator For Apache Spark v0.3.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.3.0/rapids-4-spark_2.12-0.3.0.jar)
-* Download RAPIDS cuDF 0.17 for your system:
-  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.17/cudf-0.17-cuda11.jar)
-  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.17/cudf-0.17-cuda10-2.jar)
-  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.17/cudf-0.17-cuda10-1.jar)
-  
-## Release v0.2.0
+	Python 3.x, Scala 2.12, Java 8 
+	
+### Release Notes
 This is the second release of the RAPIDS Accelerator for Apache Spark.  Adaptive Query Execution
 [SPARK-31412](https://issues.apache.org/jira/browse/SPARK-31412) is a new enhancement that was
 included in Spark 3.0 that alters the physical execution plan dynamically to improve the performance
@@ -128,32 +166,19 @@ The list of all supported operations is provided
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
-Hardware Requirements: 
 
-	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
-	
-Software Requirements:
 
-	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
-	
-	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
-	
-	Apache Spark 3.0, 3.0.1
-	
-	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-	
-	Python 3.x, Scala 2.12, Java 8 
 
-### Download v0.2.0
-* Download [RAPIDS Accelerator For Apache Spark v0.2.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.2.0/rapids-4-spark_2.12-0.2.0.jar)
-* Download RAPIDS cuDF 0.15 for your system:
-  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.15/cudf-0.15-cuda11.jar)
-  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.15/cudf-0.15-cuda10-2.jar)
-  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.15/cudf-0.15-cuda10-1.jar)
 
 
 ## Release v0.1.0
+### Download v0.1.0
+* Download [RAPIDS Accelerator For Apache Spark v0.1.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.1.0/rapids-4-spark_2.12-0.1.0.jar)
+* Download RAPIDS cuDF 0.14 for your system:
+  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.14/cudf-0.14-cuda10-2.jar)
+  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.14/cudf-0.14-cuda10-1.jar)
 
+### Requirements
 Hardware Requirements: 
    
     GPU Architecture: NVIDIA Pascal™ or better (Tested on V100 and T4 GPU)
@@ -172,10 +197,6 @@ Software Requirements:
     Python 3.x, Scala 2.12, Java 8 
 
 
-### Download v0.1.0
-* Download [RAPIDS Accelerator For Apache Spark v0.1.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.1.0/rapids-4-spark_2.12-0.1.0.jar)
-* Download RAPIDS cuDF 0.14 for your system:
-  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.14/cudf-0.14-cuda10-2.jar)
-  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.14/cudf-0.14-cuda10-1.jar)
+
 
 
