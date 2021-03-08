@@ -247,6 +247,54 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       isInstanceOf[GpuColumnVector.GpuColumnarBatchBuilder])
   }
 
+  test("test GpuArrowColumnarBatchBuilder retains reference of ArrowBuf") {
+    val rootAllocator = new RootAllocator(Long.MaxValue)
+    val allocator = rootAllocator.newChildAllocator("int", 0, Long.MaxValue)
+    val vector1 = toArrowField("int", IntegerType, nullable = true, null)
+      .createVector(allocator).asInstanceOf[IntVector]
+    val vector2 = toArrowField("int", IntegerType, nullable = true, null)
+      .createVector(allocator).asInstanceOf[IntVector]
+    vector1.allocateNew(10)
+    vector2.allocateNew(10)
+    (0 until 10).foreach { i =>
+      vector1.setSafe(i, i)
+      vector2.setSafe(i, i)
+    }
+    val schema = StructType(Seq(StructField("int", IntegerType)))
+    val batches = Seq(
+      new ColumnarBatch(Array(new ArrowColumnVector(vector1)), vector1.getValueCount),
+      new ColumnarBatch(Array(new ArrowColumnVector(vector2)), vector1.getValueCount)
+    )
+    val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(batches.iterator,
+      TargetSize(1024),
+      schema: StructType,
+      WrappedGpuMetric(new SQLMetric("t1", 0)),
+      WrappedGpuMetric(new SQLMetric("t2", 0)),
+      WrappedGpuMetric(new SQLMetric("t3", 0)),
+      WrappedGpuMetric(new SQLMetric("t4", 0)),
+      WrappedGpuMetric(new SQLMetric("t5", 0)),
+      WrappedGpuMetric(new SQLMetric("t6", 0)),
+      WrappedGpuMetric(new SQLMetric("t7", 0)),
+      WrappedGpuMetric(new SQLMetric("t8", 0)),
+      "testcoalesce",
+      useArrowCopyOpt = true)
+
+    val allocatedMemory = allocator.getAllocatedMemory
+    hostToGpuCoalesceIterator.initNewBatch(batches.head)
+    hostToGpuCoalesceIterator.addBatchToConcat(batches.head)
+    hostToGpuCoalesceIterator.addBatchToConcat(batches(1))
+
+    // Close columnar batches
+    batches.foreach(cb => cb.close())
+
+    // Verify that buffers are not deallocated
+    assertResult(allocatedMemory)(allocator.getAllocatedMemory)
+
+    // Verify that buffers are deallocated after concat is done
+    hostToGpuCoalesceIterator.cleanupConcatIsDone()
+    assertResult(0L)(allocator.getAllocatedMemory)
+  }
+
   test("test HostToGpuCoalesceIterator with arrow config off") {
     val (batch, schema) = setupArrowBatch()
     val iter = Iterator.single(batch)
