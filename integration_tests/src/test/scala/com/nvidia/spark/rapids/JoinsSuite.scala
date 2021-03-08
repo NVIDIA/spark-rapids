@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -150,14 +150,9 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
 
       val shuffleExec = TestUtils
           .findOperator(join.queryExecution.executedPlan, _.isInstanceOf[ShuffleExchangeExec])
-          .get
 
-      val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
-      val reasons = shuffleExec.getTagValue(gpuSupportedTag).getOrElse(Set.empty)
-      assert(reasons.contains(
-          "other exchanges that feed the same join are on the CPU, and GPU " +
-          "hashing is not consistent with the CPU version"))
-
+      // We really just want to be sure that not all of the shuffles are on the GPU
+      assert(shuffleExec.isDefined)
     }, conf)
 
   }

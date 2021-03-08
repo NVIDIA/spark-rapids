@@ -401,6 +401,12 @@ class Spark311Shims extends Spark301Shims {
     GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
   }
 
+  override def getCpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan): SparkPlan = {
+    ShuffleExchangeExec(outputPartitioning, child)
+  }
+
   override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
 
   override def sortOrder(

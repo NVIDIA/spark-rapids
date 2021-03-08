@@ -26,6 +26,45 @@ import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Dist
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * This is a metadata operation that is used to indicate that the hash partitioning we are using
+ * for this column does not match the CPU. This lets the CPU planner see that they are different
+ * and insert any needed shuffles to make them match.
+ */
+case class IncompatGpuHash(child: Expression) extends GpuExpression {
+  override def columnarEval(batch: ColumnarBatch): Any = child.columnarEval(batch)
+
+  override def nullable: Boolean = child.nullable
+
+  override def dataType: DataType = child.dataType
+
+  override def children: Seq[Expression] = Seq(child)
+}
+
+object IncompatGpuHashIfNeeded {
+  def apply(keys: Seq[Expression]): Seq[Expression] = {
+    // In the future when we start to support hash partitioning that matches what the
+    // CPU does, then we can look at the data types and decide if we can match the CPU
+    // or not
+    keys.map { key =>
+      if (key.isInstanceOf[IncompatGpuHash]) {
+        key
+      } else {
+        IncompatGpuHash(key)
+      }
+    }
+  }
+
+  def removeFrom(exprs: Seq[Expression]): Seq[Expression] = {
+    exprs.map {
+      case h: IncompatGpuHash =>
+        val exp = h.child
+        exp.withNewChildren(removeFrom(exp.children))
+      case other => other.withNewChildren(removeFrom(other.children))
+    }
+  }
+}
+
 case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
   extends GpuExpression with GpuPartitioning {
 
@@ -41,7 +80,10 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
             case (l, r) => l.semanticEquals(r)
           }
         case ClusteredDistribution(requiredClustering, _) =>
-          expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
+          // For this distribution there is no join so we don't have to make sure that both sides
+          // match, so we should remove the IncompatGpuHash instances
+          val strippedExpressions = IncompatGpuHashIfNeeded.removeFrom(expressions)
+          strippedExpressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
         case _ => false
       }
     }

@@ -112,6 +112,10 @@ trait SparkShims {
   def getGpuShuffleExchangeExec(
       queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase
 
+  def getCpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan): SparkPlan
+
   def getMapSizesByExecutorId(
     shuffleId: Int,
     startMapIndex: Int,

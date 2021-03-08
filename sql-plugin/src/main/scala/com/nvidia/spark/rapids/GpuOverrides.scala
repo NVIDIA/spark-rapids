@@ -31,8 +31,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.ScalarSubquery
+import org.apache.spark.sql.execution.{ScalarSubquery, _}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
@@ -41,9 +40,9 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
-import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
+import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -485,26 +484,29 @@ object GpuOverrides {
   }
 
   /**
-   * Removes unnecessary CPU shuffles that Spark can add to the plan when it does not realize
-   * a GPU partitioning satisfies a CPU distribution because CPU and GPU expressions are not
-   * semantically equal.
+   * Removes unnecessary shuffles that can be added to the plan when it does not realize
+   * that a shuffle satisfies a distribution request because the CPU and GPU expressions are
+   * not semantically equal.
    */
   def removeExtraneousShuffles(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     plan.transformUp {
-      case cpuShuffle: ShuffleExchangeExec =>
-        cpuShuffle.child match {
+      case shuffle: Exchange =>
+        shuffle.child match {
+          case childShuffle: Exchange =>
+            // A shuffle followed by another shuffle is a waste. The last one should win.
+            shuffle.withNewChildren(childShuffle.children)
           case sqse: ShuffleQueryStageExec =>
             GpuTransitionOverrides.getNonQueryStagePlan(sqse) match {
               case gpuShuffle: GpuShuffleExchangeExecBase =>
-                val converted = convertPartToGpuIfPossible(cpuShuffle.outputPartitioning, conf)
+                val converted = convertPartToGpuIfPossible(shuffle.outputPartitioning, conf)
                 if (converted == gpuShuffle.outputPartitioning) {
                   sqse
                 } else {
-                  cpuShuffle
+                  shuffle
                 }
-              case _ => cpuShuffle
+              case _ => shuffle
             }
-          case _ => cpuShuffle
+          case _ => shuffle
         }
     }
   }
@@ -2379,7 +2381,8 @@ object GpuOverrides {
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
         override def convertToGpu(): GpuPartitioning =
-          GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
+          GpuHashPartitioning(IncompatGpuHashIfNeeded(childExprs.map(_.convertToGpu())),
+            hp.numPartitions)
       }),
     part[RangePartitioning](
       "Range partitioning",
@@ -2411,7 +2414,7 @@ object GpuOverrides {
 
             GpuRangePartitioning(gpuOrdering, rp.numPartitions, schema)(new GpuRangePartitioner)
           } else {
-            GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+            GpuSinglePartitioning
           }
         }
       }),
@@ -2427,9 +2430,7 @@ object GpuOverrides {
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
         override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
 
-        override def convertToGpu(): GpuPartitioning = {
-          GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
-        }
+        override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 
@@ -2540,7 +2541,7 @@ object GpuOverrides {
             GpuTopN(takeExec.limit,
               so,
               projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
                 GpuTopN(takeExec.limit,
                   so,
                   takeExec.child.output,
@@ -2768,14 +2769,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
-        // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
-        // distribution expressions are not semantically equal.
-        GpuOverrides.removeExtraneousShuffles(plan, conf)
-      } else {
-        plan
-      }
-      applyOverrides(updatedPlan, conf)
+      applyOverrides(plan, conf)
     } else {
       plan
     }
@@ -2786,7 +2780,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     wrap.tagForGpu()
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     val exp = conf.explain
-    if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
+    val convertedPlan = if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
       if (!exp.equalsIgnoreCase("NONE")) {
         logWarning("Can't replace any part of this plan due to: " +
             s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
@@ -2802,8 +2796,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
       }
       val convertedPlan = wrap.convertIfNeeded()
-      addSortsIfNeeded(convertedPlan, conf)
+      addSortsAndShufflesIfNeeded(convertedPlan, conf)
     }
+    GpuOverrides.removeExtraneousShuffles(convertedPlan, conf)
   }
 
   private final class SortDataFromReplacementRule extends DataFromReplacementRule {
@@ -2813,12 +2808,134 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     override def getChecks: Option[TypeChecks[_]] = None
   }
 
-  // copied from Spark EnsureRequirements but only does the ordering checks and
-  // check to convert any SortExec added to GpuSortExec
-  private def ensureOrdering(operator: SparkPlan, conf: RapidsConf): SparkPlan = {
+  // copied from Spark EnsureRequirements but with some updates for GPU versions of operations
+  private def ensureDistributionAndOrdering(operator: SparkPlan, conf: RapidsConf): SparkPlan = {
+    val sparkConf = operator.conf
+    val requiredChildDistributions: Seq[Distribution] = operator.requiredChildDistribution
     val requiredChildOrderings: Seq[Seq[SortOrder]] = operator.requiredChildOrdering
     var children: Seq[SparkPlan] = operator.children
+    assert(requiredChildDistributions.length == children.length)
     assert(requiredChildOrderings.length == children.length)
+
+    // Ensure that the operator's children satisfy their output distribution requirements.
+    children = children.zip(requiredChildDistributions).map {
+      case (child, distribution) if child.outputPartitioning.satisfies(distribution) =>
+        // Spark proper should have done all of this already, but there are a few cases where
+        // we can run into problems
+        child
+      case (child: CustomShuffleReaderExec, _) =>
+        // AQE messes with things, so we just assume for now that it will fix things up for us
+        child
+      case (child, distribution: HashClusteredDistribution) =>
+        // For our joins we tag them specially so Spark does not mess it up and inserts a shuffle
+        // if needed
+        val numPartitions = distribution.requiredNumPartitions
+            .getOrElse(sparkConf.numShufflePartitions)
+        // Partitioning does not match, so now we need to add in some kind of partitioning to
+        // make it work. Because CPU join must have CPU compatible shuffles feeding it we may need
+        // to insert either GPU or CPU shuffles.
+        val expressions = distribution.expressions
+        if (GpuExpressionsUtils.containsGpuExpression(expressions)) {
+          // This has to be on the GPU, it has GPU expressions in it, including
+          // expressions tagged with requiring GPU shuffle. This should actually be
+          // all of them, because a CPU join will not have any GPU expressions in the
+          // expressions.
+          val gpuPart = GpuHashPartitioning(IncompatGpuHashIfNeeded(expressions), numPartitions)
+          ShimLoader.getSparkShims.getGpuShuffleExchangeExec(gpuPart, child)
+        } else {
+          ShimLoader.getSparkShims.getCpuShuffleExchangeExec(
+            distribution.createPartitioning(numPartitions), child)
+        }
+      case (child, _) =>
+        // There are cases where things don't match. This often happens for broadcasts with
+        // the HashedRelationBroadcastMode, which could use some more debugging why, and for
+        // any operation that has a GpuExpression in it. These happen when a partitioning or a
+        // required distribution is has GpuExpressions in it, but the other does not. This is
+        // okay because we probably moved one of them to the GPU but not both. We will check for
+        // this later and clean it up if needed
+        child
+    }
+
+    // In the Spark equivalent of this code it will now check/adjust the number of shuffle
+    // partitions based on the child's request. We have only modified HashClusteredDistribution
+    // requests for shuffled joins, and have not set any requirement for the number of
+    // partitions, so we don't need that code.
+    // Get the indexes of children which have specified distribution requirements and need to have
+    // same number of partitions.
+    val childrenIndexes = requiredChildDistributions.zipWithIndex.filter {
+      case (_: HashClusteredDistribution, _) => true
+      case _ => false
+    }.map(_._2)
+
+    val childrenNumPartitions =
+      childrenIndexes.map(children(_).outputPartitioning.numPartitions).toSet
+
+    if (childrenNumPartitions.size > 1) {
+      // Get the number of partitions which is explicitly required by the distributions.
+      val requiredNumPartitions = {
+        val numPartitionsSet = childrenIndexes.flatMap {
+          index => requiredChildDistributions(index).requiredNumPartitions
+        }.toSet
+        assert(numPartitionsSet.size <= 1,
+          s"$operator have incompatible requirements of the number of partitions for its children")
+        numPartitionsSet.headOption
+      }
+
+      // If there are non-shuffle children that satisfy the required distribution, we have
+      // some tradeoffs when picking the expected number of shuffle partitions:
+      // 1. We should avoid shuffling these children.
+      // 2. We should have a reasonable parallelism.
+      val nonShuffleChildrenNumPartitions = childrenIndexes
+          .map(children)
+          .filterNot(_.isInstanceOf[ShuffleExchangeExec])
+          .filterNot(_.isInstanceOf[GpuShuffleExchangeExecBase])
+          .map(_.outputPartitioning.numPartitions)
+
+      val expectedChildrenNumPartitions = if (nonShuffleChildrenNumPartitions.nonEmpty) {
+        if (nonShuffleChildrenNumPartitions.length == childrenIndexes.length) {
+          // Here we pick the max number of partitions among these non-shuffle children.
+          nonShuffleChildrenNumPartitions.max
+        } else {
+          // Here we pick the max number of partitions among these non-shuffle children as the
+          // expected number of shuffle partitions. However, if it's smaller than
+          // `conf.numShufflePartitions`, we pick `conf.numShufflePartitions` as the
+          // expected number of shuffle partitions.
+          math.max(nonShuffleChildrenNumPartitions.max,
+            sparkConf.getConf(SQLConf.SHUFFLE_PARTITIONS))
+        }
+      } else {
+        childrenNumPartitions.max
+      }
+
+      val targetNumPartitions = requiredNumPartitions.getOrElse(expectedChildrenNumPartitions)
+
+      children = children.zip(requiredChildDistributions).zipWithIndex.map {
+        case ((child, distribution), index) if childrenIndexes.contains(index) =>
+          if (child.outputPartitioning.numPartitions == targetNumPartitions) {
+            child
+          } else {
+            child match {
+              // If child is an exchange, we replace it with a new one having defaultPartitioning.
+              case ShuffleExchangeExec(_, c, _) =>
+                ShimLoader.getSparkShims.getCpuShuffleExchangeExec(
+                  distribution.createPartitioning(targetNumPartitions), c)
+              case baseShuffle: GpuShuffleExchangeExecBase =>
+                // Spark should have handled everything for us except for the HashPartitioning
+                // that we mucked around with
+                val expressions =
+                  baseShuffle.outputPartitioning.asInstanceOf[GpuHashPartitioning].expressions
+                val part = GpuHashPartitioning(expressions, targetNumPartitions)
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(part, baseShuffle.child)
+              case _ =>
+                throw new IllegalStateException(s"Found unexpected non-shuffle child " +
+                    s"${child.getClass}")
+            }
+          }
+
+        case ((child, _), _) => child
+      }
+    }
+
 
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
@@ -2841,10 +2958,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     operator.withNewChildren(children)
   }
 
-  def addSortsIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+  def addSortsAndShufflesIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     plan.transformUp {
       case operator: SparkPlan =>
-        ensureOrdering(operator, conf)
+        ensureDistributionAndOrdering(operator, conf)
     }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,6 +53,17 @@ object GpuExpressionsUtils extends Arm {
     case _ =>
       throw new IllegalStateException("Internal Error GPU support for this data type is not " +
         "implemented and should have been disabled")
+  }
+
+  def containsGpuExpression(exprs: Seq[Expression]): Boolean = {
+    !exprs.filter(containsGpuExpression).isEmpty
+  }
+
+  def containsGpuExpression(expr: Expression): Boolean = {
+    expr match {
+      case _: GpuExpression => true
+      case other => containsGpuExpression(other.children)
+    }
   }
 }
 

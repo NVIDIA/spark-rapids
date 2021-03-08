@@ -94,7 +94,8 @@ case class GpuShuffledHashJoinExec(
     FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
-    HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
+    HashClusteredDistribution(IncompatGpuHashIfNeeded(leftKeys)) ::
+        HashClusteredDistribution(IncompatGpuHashIfNeeded(rightKeys)) :: Nil
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new UnsupportedOperationException(
@@ -119,7 +120,10 @@ case class GpuShuffledHashJoinExec(
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
-    streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
+    val streamedRdd = streamedPlan.executeColumnar()
+    val buildRdd = buildPlan.executeColumnar()
+    assert(streamedRdd.getNumPartitions == buildRdd.getNumPartitions)
+    streamedRdd.zipPartitions(buildRdd) {
       (streamIter, buildIter) => {
         var combinedSize = 0
 

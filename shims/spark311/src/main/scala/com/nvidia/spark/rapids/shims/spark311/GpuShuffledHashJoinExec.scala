@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
@@ -105,7 +105,8 @@ case class GpuShuffledHashJoinExec(
     FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
-    HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
+    HashClusteredDistribution(IncompatGpuHashIfNeeded(leftKeys)) ::
+        HashClusteredDistribution(IncompatGpuHashIfNeeded(rightKeys)) :: Nil
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new UnsupportedOperationException(
@@ -130,7 +131,10 @@ case class GpuShuffledHashJoinExec(
 
     val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
 
-    streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
+    val streamedRdd = streamedPlan.executeColumnar()
+    val buildRdd = buildPlan.executeColumnar()
+    assert(streamedRdd.getNumPartitions == buildRdd.getNumPartitions)
+    streamedRdd.zipPartitions(buildRdd) {
       (streamIter, buildIter) => {
         var combinedSize = 0
 

@@ -201,3 +201,90 @@ def test_join_bucketed_table(repartition, spark_tmp_table_factory):
                 return testurls.join(resolved, "Url", "inner")
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.autoBroadcastJoinThreshold': '-1'})
 
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@ignore_order
+def test_half_cache_join_cpu_left(join_type):
+    left_gen = [('a', SetValuesGen(LongType(), range(500))), ('b', IntegerGen())]
+    right_gen = [('r_a', SetValuesGen(LongType(), range(500))), ('c', LongGen())]
+    def do_join(spark):
+        # Try to force the shuffle to be split between CPU and GPU for the join
+        # so don't let the shuffle be on the GPU when we repartition and cache
+        # the data
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', 'false')
+        left = gen_df(spark, left_gen, length=500)
+        right = gen_df(spark, right_gen, length=500)
+        cached = left.repartition('a').cache()
+        cached.count() # populate the cache
+        # Now turn it back on so the other half of the shuffle will be on the GPU
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', 'true')
+        return cached.join(right, cached.a == right.r_a, join_type)
+    # Even though Spark does not know the size of an RDD input so it will not do a broadcast join unless
+    # we tell it to, this is just to be safe
+    assert_gpu_and_cpu_are_equal_collect(do_join, {'spark.sql.autoBroadcastJoinThreshold': '1'})
+
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@ignore_order
+def test_half_cache_join_cpu_right(join_type):
+    left_gen = [('a', SetValuesGen(LongType(), range(500))), ('b', IntegerGen())]
+    right_gen = [('r_a', SetValuesGen(LongType(), range(500))), ('c', LongGen())]
+    def do_join(spark):
+        # Try to force the shuffle to be split between CPU and GPU for the join
+        # so don't let the shuffle be on the GPU when we repartition and cache
+        # the data
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', 'false')
+        left = gen_df(spark, left_gen, length=500)
+        right = gen_df(spark, right_gen, length=500)
+        cached = right.repartition('r_a').cache()
+        cached.count() # populate the cache
+        # Now turn it back on so the other half of the shuffle will be on the GPU
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', 'true')
+        return left.join(cached, left.a == cached.r_a, join_type)
+    # Even though Spark does not know the size of an RDD input so it will not do a broadcast join unless
+    # we tell it to, this is just to be safe
+    assert_gpu_and_cpu_are_equal_collect(do_join, {'spark.sql.autoBroadcastJoinThreshold': '1'})
+
+@allow_non_gpu('ColumnarToRowExec')
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@ignore_order
+def test_half_cache_join_gpu_left(join_type):
+    left_gen = [('a', SetValuesGen(LongType(), range(500))), ('b', IntegerGen())]
+    right_gen = [('r_a', SetValuesGen(LongType(), range(500))), ('c', LongGen())]
+    def do_join(spark):
+        left = gen_df(spark, left_gen, length=500)
+        right = gen_df(spark, right_gen, length=500)
+        # Try to force the shuffle to be split between CPU and GPU for the join
+        # by default if the operation after the shuffle is not on the GPU then 
+        # don't do a GPU shuffle, so do something simple after the repartition
+        # to make sure that the GPU shuffle is used.
+        cached = left.repartition('a').selectExpr('b + 1 as b', 'a').cache()
+        cached.count() # populate the cache
+        # Now turn off the shuffle so it has to be on the CPU
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', 'false')
+        return cached.join(right, cached.a == right.r_a, join_type)
+    # Even though Spark does not know the size of an RDD input so it will not do a broadcast join unless
+    # we tell it to, this is just to be safe
+    assert_gpu_and_cpu_are_equal_collect(do_join, {'spark.sql.autoBroadcastJoinThreshold': '1'})
+
+@allow_non_gpu('ColumnarToRowExec')
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@ignore_order
+def test_half_cache_join_gpu_right(join_type):
+    left_gen = [('a', SetValuesGen(LongType(), range(500))), ('b', IntegerGen())]
+    right_gen = [('r_a', SetValuesGen(LongType(), range(500))), ('c', LongGen())]
+    def do_join(spark):
+        left = gen_df(spark, left_gen, length=500)
+        right = gen_df(spark, right_gen, length=500)
+        # Try to force the shuffle to be split between CPU and GPU for the join
+        # by default if the operation after the shuffle is not on the GPU then 
+        # don't do a GPU shuffle, so do something simple after the repartition
+        # to make sure that the GPU shuffle is used.
+        cached = right.repartition('r_a').selectExpr('c + 1 as c', 'r_a').cache()
+        cached.count() # populate the cache
+        # Now turn off the shuffle so it has to be on the CPU
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', 'false')
+        return left.join(cached, left.a == cached.r_a, join_type)
+    # Even though Spark does not know the size of an RDD input so it will not do a broadcast join unless
+    # we tell it to, this is just to be safe
+    assert_gpu_and_cpu_are_equal_collect(do_join, {'spark.sql.autoBroadcastJoinThreshold': '1'})
+
+
