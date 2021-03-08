@@ -2315,6 +2315,16 @@ object GpuOverrides {
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       }).disabledByDefault("for now the GPU collects null values to a list, but Spark does not." +
       " This will be fixed in future releases."),
+    expr[GetJsonObject](
+      "Extracts a json object from path",
+      ExprChecks.projectOnly(
+        TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuGetJsonObject(lhs, rhs)
+      }
+    ),
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
