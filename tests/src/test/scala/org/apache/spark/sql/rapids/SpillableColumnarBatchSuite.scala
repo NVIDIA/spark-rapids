@@ -47,6 +47,7 @@ class SpillableColumnarBatchSuite extends FunSuite with Arm {
     override val storageTier: StorageTier = StorageTier.DEVICE
     override def getMemoryBuffer: MemoryBuffer = null
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = null
+    override def materializeMemoryBuffer: MemoryBuffer = null
     override def addReference(): Boolean = true
     override def free(): Unit = {}
     override def getSpillPriority: Long = 0

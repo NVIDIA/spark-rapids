@@ -34,7 +34,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     val deviceBuffer = {
-      other.getMemoryBuffer match {
+      other.materializeMemoryBuffer match {
         case d: DeviceMemoryBuffer => d
         case h: HostMemoryBuffer =>
           try {
@@ -185,9 +185,9 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer
     }
 
-    override def getMemoryBuffer: MemoryBuffer = {
-      getDeviceMemoryBuffer
-    }
+    override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
+
+    override def materializeMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {

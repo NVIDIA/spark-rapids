@@ -76,7 +76,7 @@ class RapidsHostMemoryStore(
       stream: Cuda.Stream): RapidsBufferBase = {
     val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
     try {
-      val otherBuffer = other.getMemoryBuffer
+      val otherBuffer = other.materializeMemoryBuffer
       try {
         otherBuffer match {
           case devBuffer: DeviceMemoryBuffer =>
@@ -123,7 +123,7 @@ class RapidsHostMemoryStore(
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.HOST
 
-    override def getMemoryBuffer: MemoryBuffer = {
+    override def materializeMemoryBuffer: MemoryBuffer = {
       buffer.incRefCount()
       buffer
     }

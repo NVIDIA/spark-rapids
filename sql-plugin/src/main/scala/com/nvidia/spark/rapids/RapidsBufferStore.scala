@@ -20,7 +20,7 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -308,6 +308,8 @@ abstract class RapidsBufferStore(
         GpuCompressedColumnVector.from(devBuffer, meta)
       }
     }
+
+    override def getMemoryBuffer: MemoryBuffer = materializeMemoryBuffer
 
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
       deviceRapidsBuffer match {

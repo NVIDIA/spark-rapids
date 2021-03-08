@@ -36,7 +36,7 @@ class RapidsDiskStore(
   override def createBuffer(
       incoming: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    val incomingBuffer = incoming.getMemoryBuffer
+    val incomingBuffer = incoming.materializeMemoryBuffer
     try {
       val hostBuffer = incomingBuffer match {
         case h: HostMemoryBuffer => h
@@ -98,7 +98,7 @@ class RapidsDiskStore(
 
     override val storageTier: StorageTier = StorageTier.DISK
 
-    override def getMemoryBuffer: MemoryBuffer = synchronized {
+    override def materializeMemoryBuffer: MemoryBuffer = synchronized {
       if (hostBuffer.isEmpty) {
         val path = id.getDiskPath(diskBlockManager)
         val mappedBuffer = HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE,

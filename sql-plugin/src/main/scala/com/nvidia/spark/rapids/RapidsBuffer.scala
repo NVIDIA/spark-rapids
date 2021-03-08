@@ -107,8 +107,8 @@ trait RapidsBuffer extends AutoCloseable {
   def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
 
   /**
-   * Get the underlying memory buffer. This may be either a HostMemoryBuffer
-   * or a DeviceMemoryBuffer depending on where the buffer currently resides.
+   * Get the underlying memory buffer. This may be either a HostMemoryBuffer or a DeviceMemoryBuffer
+   * depending on where the buffer currently resides.
    * The caller must have successfully acquired the buffer beforehand.
    * @see [[addReference]]
    * @note It is the responsibility of the caller to close the buffer.
@@ -116,13 +116,25 @@ trait RapidsBuffer extends AutoCloseable {
   def getMemoryBuffer: MemoryBuffer
 
   /**
-   * Get the underlying device memory buffer. If the buffer currently resides outside of device
-   * memory, a new DeviceMemoryBuffer is created with the data copied over.
+   * Get the device memory buffer from the underlying storage. If the buffer currently resides
+   * outside of device memory, a new DeviceMemoryBuffer is created with the data copied over.
    * The caller must have successfully acquired the buffer beforehand.
    * @see [[addReference]]
    * @note It is the responsibility of the caller to close the buffer.
    */
   def getDeviceMemoryBuffer: DeviceMemoryBuffer
+
+  /**
+   * Materialize the memory buffer from the underlying storage.
+   *
+   * If the buffer resides in device or host memory, only reference count is incremented.
+   * If the buffer resides in secondary storage, a new host or device memory buffer is created, with
+   * the data copied to the new buffer.
+   * The caller must have successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the buffer.
+   */
+  def materializeMemoryBuffer: MemoryBuffer
 
   /**
    * Try to add a reference to this buffer to acquire it.
@@ -195,6 +207,9 @@ sealed class DegenerateRapidsBuffer(
 
   override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
+
+  override def materializeMemoryBuffer: MemoryBuffer =
+    throw new UnsupportedOperationException("degenerate buffer cannot materialize memory buffer")
 
   override def addReference(): Boolean = true
 
