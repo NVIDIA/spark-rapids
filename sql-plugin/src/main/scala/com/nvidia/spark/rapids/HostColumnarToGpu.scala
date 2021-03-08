@@ -16,8 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.{util => ju}
 import java.nio.ByteBuffer
 
+import scala.collection.JavaConverters._
+import scala.collection.mutable
+
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.TaskContext
@@ -63,7 +68,7 @@ object HostColumnarToGpu extends Logging {
       cv: ColumnVector,
       ab: ai.rapids.cudf.ArrowColumnBuilder,
       nullable: Boolean,
-      rows: Int): Unit = {
+      rows: Int): ju.List[ReferenceManager] = {
     val valVector = cv match {
       case v: ArrowColumnVector =>
         try {
@@ -78,18 +83,28 @@ object HostColumnarToGpu extends Logging {
       case _ =>
         throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
     }
+
+    val referenceManagers = new mutable.ListBuffer[ReferenceManager]
+
+    def getBufferAndAddReference(getter: => (ByteBuffer, ReferenceManager)): ByteBuffer = {
+      val (buf, ref) = getter
+      referenceManagers += ref
+      buf
+    }
+
     val nullCount = valVector.getNullCount()
-    val dataBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
-    val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
+    val dataBuf = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowDataBuf(valVector))
+    val validity = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowValidityBuf(valVector))
     // this is a bit ugly, not all Arrow types have the offsets buffer
     var offsets: ByteBuffer = null
     try {
-      offsets =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
+      offsets = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector))
     } catch {
       case e: UnsupportedOperationException =>
         // swallow the exception and assume no offsets buffer
     }
     ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
+    referenceManagers.result().asJava
   }
 
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
