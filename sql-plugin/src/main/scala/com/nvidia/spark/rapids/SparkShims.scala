@@ -18,24 +18,29 @@ package com.nvidia.spark.rapids
 
 import java.nio.ByteBuffer
 
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types._
@@ -67,10 +72,19 @@ case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersio
 
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
+  def parquetRebaseReadKey: String
+  def parquetRebaseWriteKey: String
+  def avroRebaseReadKey: String
+  def avroRebaseWriteKey: String
+  def parquetRebaseRead(conf: SQLConf): String
+  def parquetRebaseWrite(conf: SQLConf): String
+  def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
+
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
   def isShuffleExchangeLike(plan: SparkPlan): Boolean
+  def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics
   def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
@@ -138,6 +152,8 @@ trait SparkShims {
     readFunction: (PartitionedFile) => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
 
+  def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
+
   def copyParquetBatchScanExec(
       batchScanExec: GpuBatchScanExec,
       queryUsesInputFile: Boolean): GpuBatchScanExec
@@ -173,9 +189,9 @@ trait SparkShims {
 
   def getLegacyComplexTypeToString(): Boolean
 
-  def getArrowDataBuf(vec: ValueVector): ByteBuffer
-  def getArrowValidityBuf(vec: ValueVector): ByteBuffer
-  def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer
+  def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
+  def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
+  def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
 
   def replaceWithAlluxioPathIfNeeded(
       conf: RapidsConf,
@@ -190,4 +206,13 @@ trait SparkShims {
   def shouldFailDivByZero(): Boolean
 
   def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
+
+  def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
+
+  /** dropped by SPARK-34234 */
+  def attachTreeIfSupported[TreeType <: TreeNode[_], A](
+    tree: TreeType,
+    msg: String = "")(
+    f: => A
+  ): A
 }

@@ -6,36 +6,10 @@ parent: Developer Overview
 ---
 # RAPIDS Accelerator for Apache Spark Testing
 
-We have several stand alone examples that you can run in the [integration tests](../integration_tests).
-
-One set is based off of the mortgage dataset you can download 
+We have a stand-alone example that you can run in the [integration tests](../integration_tests).
+The example is based off of the mortgage dataset you can download
 [here](http://www.fanniemae.com/portal/funding-the-market/data/loan-performance-data.html)
-and are in the `com.nvidia.spark.rapids.tests.mortgage` package.
-
-The other is based off of TPCH. You can use the TPCH `dbgen` tool to generate data for them.  They
-are in the `com.nvidia.spark.rapids.tests.tpch` package. `dbgen` has various options to
-generate the data. Please refer to the documentation that comes with dbgen on how to use it, but
-we typically run with the default options and only increase the scale factor depending on the test.
-```shell 
-dbgen -b dists.dss -s 10
-```
-
-You can include the test jar `rapids-4-spark-integration-tests_2.12-0.5.0-SNAPSHOT.jar` with the
-Spark --jars option to get the TPCH tests. To setup for the queries you can run 
-`TpchLikeSpark.setupAllCSV` for CSV formatted data or `TpchLikeSpark.setupAllParquet`
-for parquet formatted data.  Both of those take the Spark session, and a path to the dbgen
-generated data.  After that each query has its own object.
-
-So you can make a call like:
-```scala
-import com.nvidia.spark.rapids.tests.tpch._
-val pathTodbgenoutput = SPECIFY PATH
-TpchLikeSpark.setupAllCSV(spark, pathTodbgenoutput)
-Q1Like(spark).count()
-```
-
-They generally follow TPCH but are not guaranteed to be the same.
-`Q1Like(spark)` will return a DataFrame that can be executed to run the corresponding query.
+and the code is in the `com.nvidia.spark.rapids.tests.mortgage` package.
 
 ## Unit Tests
 
@@ -56,14 +30,16 @@ default version runs against Spark 3.0.0, to run against other versions use one 
  profiles:
    - `-Pspark301tests` (spark 3.0.1)
    - `-Pspark302tests` (spark 3.0.2)
+   - `-Pspark303tests` (spark 3.0.3)
    - `-Pspark311tests` (spark 3.1.1)
+   - `-Pspark312tests` (spark 3.1.2)
 
 Please refer to the [tests project POM](pom.xml) to see the list of test profiles supported.
 Apache Spark specific configurations can be passed in by setting the `SPARK_CONF` environment
 variable.
 
 Examples: 
-- To run tests against Apache Spark 3.1.0, 
+- To run tests against Apache Spark 3.1.1, 
  `mvn -P spark311tests test` 
 - To pass Apache Spark configs `--conf spark.dynamicAllocation.enabled=false --conf spark.task.cpus=1` do something like.
  `SPARK_CONF="spark.dynamicAllocation.enabled=false,spark.task.cpus=1" mvn ...`

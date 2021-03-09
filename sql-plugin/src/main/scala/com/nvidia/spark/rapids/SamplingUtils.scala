@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2021, NVIDIA CORPORATION.
+ *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -20,61 +22,230 @@ package com.nvidia.spark.rapids
 import java.nio.ByteBuffer
 import java.util.{Random => JavaRandom}
 
-import scala.reflect.ClassTag
+import scala.collection.mutable
 import scala.util.Random
 import scala.util.hashing.MurmurHash3
 
-import org.apache.spark.sql.catalyst.expressions.UnsafeRow
+import ai.rapids.cudf.{ColumnVector, Table}
 
-object SamplingUtils {
+import org.apache.spark.TaskContext
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+object SamplingUtils extends Arm {
+  private def selectWithoutReplacementFrom(count: Int, rand: Random, cb: ColumnarBatch): Table = {
+    val rows = cb.numRows()
+    assert(count <= rows)
+    if (rows == count) {
+      GpuColumnVector.from(cb)
+    } else if (count < rows/2) {
+      // Randomly select a gather map, without replacement so use a set
+      val selected = mutable.Set[Int]()
+      while (selected.size < count) {
+        selected += rand.nextInt(rows)
+      }
+      withResource(ColumnVector.fromInts(selected.toSeq: _*)) { gatherMap =>
+        withResource(GpuColumnVector.from(cb)) { tab =>
+          tab.gather(gatherMap)
+        }
+      }
+    } else {
+      // Randomly select rows to remove, without replacement so use a set
+      val toRemove = rows - count;
+      val notSelected = mutable.Set[Int]()
+      while (notSelected.size < toRemove) {
+        notSelected += rand.nextInt(rows)
+      }
+      val selected = (0 until rows).filter(notSelected.contains)
+      withResource(ColumnVector.fromInts(selected: _*)) { gatherMap =>
+        withResource(GpuColumnVector.from(cb)) { tab =>
+          tab.gather(gatherMap)
+        }
+      }
+    }
+  }
+
+  /**
+   * Random sampling without replacement.
+   * @param input iterator to feed batches for sampling.
+   * @param fraction the percentage of rows to randomly select
+   * @param sorter used to add rows needed for sorting on the CPU later. The sorter should be
+   *               setup for the schema of the input data and the output sampled rows will have
+   *               any needed rows added to them as the sorter needs to.
+   * @param converter used to convert a batch of data to rows. This should have been setup to
+   *                  convert to rows based of the expected output for the sorter.
+   * @param seed the seed to the random number generator
+   * @return the sampled rows
+   */
+  def randomResample(
+      input: Iterator[ColumnarBatch],
+      fraction: Double,
+      sorter: GpuSorter,
+      converter: Iterator[ColumnarBatch] => Iterator[InternalRow],
+      seed: Long = Random.nextLong()): Array[InternalRow] = {
+    val jRand = new XORShiftRandom(seed)
+    val rand = new Random(jRand)
+    var runningCb: SpillableColumnarBatch = null
+    var totalRowsSeen = 0L
+    var totalRowsCollected = 0L
+    while (input.hasNext) {
+      withResource(input.next()) { cb =>
+        // For each batch we need to know how many rows to select from it
+        // and how many to throw away from the existing batch
+        val rowsInBatch = cb.numRows()
+        totalRowsSeen += rowsInBatch
+        val totalRowsWanted = (totalRowsSeen * fraction).toLong
+        val numRowsToSelectFromBatch = (totalRowsWanted - totalRowsCollected).toInt
+        withResource(selectWithoutReplacementFrom(numRowsToSelectFromBatch, rand, cb)) { selected =>
+          totalRowsCollected += selected.getRowCount
+          if (runningCb == null) {
+            runningCb = SpillableColumnarBatch(
+              GpuColumnVector.from(selected, GpuColumnVector.extractTypes(cb)),
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              RapidsBuffer.defaultSpillCallback)
+          } else {
+            val concat = withResource(runningCb) { spb =>
+              runningCb = null
+              withResource(spb.getColumnarBatch()) { cb =>
+                withResource(GpuColumnVector.from(cb)) { table =>
+                  Table.concatenate(selected, table)
+                }
+              }
+            }
+            withResource(concat) { concat =>
+              runningCb = SpillableColumnarBatch(
+                GpuColumnVector.from(concat, GpuColumnVector.extractTypes(cb)),
+                SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+                RapidsBuffer.defaultSpillCallback)
+            }
+          }
+        }
+      }
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+    }
+    if (runningCb == null) {
+      return Array.empty
+    }
+    // Getting a spilled batch will acquire the semaphore if needed
+    val cb = withResource(runningCb) { spb =>
+      runningCb = null
+      spb.getColumnarBatch()
+    }
+    val withSortColumns = withResource(cb) { cb =>
+      sorter.appendProjectedColumns(cb)
+    }
+    // The reader will close withSortColumns, but if we want to really be paranoid we should
+    // add in a shutdown handler or something like that.
+    // Might even want to turn this into a utility function for collect etc.
+    val retIterator = converter(new Iterator[ColumnarBatch] {
+      var read = false
+      override def hasNext: Boolean = !read
+
+      override def next(): ColumnarBatch = {
+        read = true
+        withSortColumns
+      }
+    }).map(_.copy())
+    retIterator.toArray
+  }
 
   /**
    * Reservoir sampling implementation that also returns the input size.
-   *
-   * @param input input size
-   * @param k reservoir size
-   * @param seed random seed
+   * @param input iterator to feed batches for sampling.
+   * @param k the number of rows to randomly select.
+   * @param sorter used to add rows needed for sorting on the CPU later. The sorter should be
+   *               setup for the schema of the input data and the output sampled rows will have
+   *               any needed rows added to them as the sorter needs to.
+   * @param converter used to convert a batch of data to rows. This should have been setup to
+   *                  convert to rows based of the expected output for the sorter.
+   * @param seed the seed to the random number generator
    * @return (samples, input size)
    */
-  def reservoirSampleAndCount[T: ClassTag](
-                                            input: Iterator[T],
-                                            k: Int,
-                                            seed: Long = Random.nextLong()) : (Array[T], Long) = {
-    val reservoir = new Array[T](k)
-    // Put the first k elements in the reservoir.
-    var i = 0
-    while (i < k && input.hasNext) {
-      val copyRow = input.next().asInstanceOf[UnsafeRow].copy()
-      reservoir(i) = copyRow.asInstanceOf[T]
-      i += 1
-    }
-
-    // If we have consumed all the elements, return them. Otherwise do the replacement.
-    if (i < k) {
-      // If input size < k, trim the array to return only an array of input size.
-      val trimReservoir = new Array[T](i)
-      System.arraycopy(reservoir, 0, trimReservoir, 0, i)
-      (trimReservoir, i)
-    } else {
-      // If input size > k, continue the sampling process.
-      var l = i.toLong
-      val rand = new XORShiftRandom(seed)
-      while (input.hasNext) {
-        val item = input.next().asInstanceOf[UnsafeRow].copy()
-        l += 1
-        // There are k elements in the reservoir, and the l-th element has been
-        // consumed. It should be chosen with probability k/l. The expression
-        // below is a random long chosen uniformly from [0,l)
-        val replacementIndex = (rand.nextDouble() * l).toLong
-        if (replacementIndex < k) {
-          reservoir(replacementIndex.toInt) = item.asInstanceOf[T]
+  def reservoirSampleAndCount(
+      input: Iterator[ColumnarBatch],
+      k: Int,
+      sorter: GpuSorter,
+      converter: Iterator[ColumnarBatch] => Iterator[InternalRow],
+      seed: Long = Random.nextLong()) : (Array[InternalRow], Long) = {
+    val jRand = new XORShiftRandom(seed)
+    val rand = new Random(jRand)
+    var runningCb: SpillableColumnarBatch = null
+    var numTotalRows = 0L
+    var rowsSaved = 0L
+    while (input.hasNext) {
+      withResource(input.next()) { cb =>
+        // For each batch we need to know how many rows to select from it
+        // and how many to throw away from the existing batch
+        val rowsInBatch = cb.numRows()
+        val (numRowsToSelectFromBatch, rowsToDrop) = if (numTotalRows == 0) {
+          (Math.min(k, rowsInBatch), 0)
+        } else if (numTotalRows + rowsInBatch < k) {
+          (rowsInBatch, 0)
+        } else {
+          val v = (k * rowsInBatch.toDouble / (numTotalRows + rowsInBatch)).toInt
+          (v, v)
+        }
+        numTotalRows += rowsInBatch
+        withResource(selectWithoutReplacementFrom(numRowsToSelectFromBatch, rand, cb)) { selected =>
+          if (runningCb == null) {
+            rowsSaved = selected.getRowCount
+            runningCb = SpillableColumnarBatch(
+              GpuColumnVector.from(selected, GpuColumnVector.extractTypes(cb)),
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              RapidsBuffer.defaultSpillCallback)
+          } else {
+            withResource(runningCb) { spb =>
+              runningCb = null
+              withResource(spb.getColumnarBatch()) { cb =>
+                val filtered = if (rowsToDrop > 0) {
+                  selectWithoutReplacementFrom(cb.numRows() - rowsToDrop, rand, cb)
+                } else {
+                  GpuColumnVector.from(cb)
+                }
+                val concat = withResource(filtered) { filtered =>
+                  Table.concatenate(selected, filtered)
+                }
+                withResource(concat) { concat =>
+                  rowsSaved = concat.getRowCount
+                  runningCb = SpillableColumnarBatch(
+                    GpuColumnVector.from(concat, GpuColumnVector.extractTypes(cb)),
+                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+                    RapidsBuffer.defaultSpillCallback)
+                }
+              }
+            }
+          }
         }
       }
-      (reservoir, l)
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
     }
+    if (runningCb == null) {
+      // Nothing to sort
+      return (Array.empty, numTotalRows)
+    }
+    // Getting a spilled batch will acquire the semaphore if needed
+    val cb = withResource(runningCb) { spb =>
+      runningCb = null
+      spb.getColumnarBatch()
+    }
+    val withSortColumns = withResource(cb) { cb =>
+      sorter.appendProjectedColumns(cb)
+    }
+    // The reader will close withSortColumns, but if we want to really be paranoid we should
+    // add in a shutdown handler or something like that.
+    // Might even want to turn this into a utility function for collect etc.
+    val retIterator = converter(new Iterator[ColumnarBatch] {
+      var read = false
+      override def hasNext: Boolean = !read
+
+      override def next(): ColumnarBatch = {
+        read = true
+        withSortColumns
+      }
+    }).map(_.copy())
+    (retIterator.toArray, numTotalRows)
   }
 }
-
 
 /**
  * This class implements a XORShift random number generator algorithm

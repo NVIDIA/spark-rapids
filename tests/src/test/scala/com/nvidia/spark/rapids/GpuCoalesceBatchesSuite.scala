@@ -68,14 +68,14 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
       .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "1")
+      .set(RapidsConf.STABLE_SORT.key, "true")
       .set("spark.sql.shuffle.partitions", "1")
 
     withGpuSparkSession(spark => {
 
       val df = longsCsvDf(spark)
 
-      // currently, GpuSortExec requires a single batch but this is likely to change in the
-      // future, making this test invalid
+      // GpuSortExec requires a single batch if out of core sore is disabled.
       val df2 = df
         .sort(df.col("longs"))
 
@@ -165,7 +165,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val vector3 = toArrowField("array", ArrayType(IntegerType), nullable = true, null)
       .createVector(allocator).asInstanceOf[ListVector]
     vector3.allocateNew()
-    val elementVector = vector3.getDataVector().asInstanceOf[IntVector]
+    val elementVector = vector3.getDataVector.asInstanceOf[IntVector]
 
     (0 until 10).foreach { i =>
       vector1.setSafe(i, i)
@@ -247,6 +247,54 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       isInstanceOf[GpuColumnVector.GpuColumnarBatchBuilder])
   }
 
+  test("test GpuArrowColumnarBatchBuilder retains reference of ArrowBuf") {
+    val rootAllocator = new RootAllocator(Long.MaxValue)
+    val allocator = rootAllocator.newChildAllocator("int", 0, Long.MaxValue)
+    val vector1 = toArrowField("int", IntegerType, nullable = true, null)
+      .createVector(allocator).asInstanceOf[IntVector]
+    val vector2 = toArrowField("int", IntegerType, nullable = true, null)
+      .createVector(allocator).asInstanceOf[IntVector]
+    vector1.allocateNew(10)
+    vector2.allocateNew(10)
+    (0 until 10).foreach { i =>
+      vector1.setSafe(i, i)
+      vector2.setSafe(i, i)
+    }
+    val schema = StructType(Seq(StructField("int", IntegerType)))
+    val batches = Seq(
+      new ColumnarBatch(Array(new ArrowColumnVector(vector1)), vector1.getValueCount),
+      new ColumnarBatch(Array(new ArrowColumnVector(vector2)), vector1.getValueCount)
+    )
+    val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(batches.iterator,
+      TargetSize(1024),
+      schema: StructType,
+      WrappedGpuMetric(new SQLMetric("t1", 0)),
+      WrappedGpuMetric(new SQLMetric("t2", 0)),
+      WrappedGpuMetric(new SQLMetric("t3", 0)),
+      WrappedGpuMetric(new SQLMetric("t4", 0)),
+      WrappedGpuMetric(new SQLMetric("t5", 0)),
+      WrappedGpuMetric(new SQLMetric("t6", 0)),
+      WrappedGpuMetric(new SQLMetric("t7", 0)),
+      WrappedGpuMetric(new SQLMetric("t8", 0)),
+      "testcoalesce",
+      useArrowCopyOpt = true)
+
+    val allocatedMemory = allocator.getAllocatedMemory
+    hostToGpuCoalesceIterator.initNewBatch(batches.head)
+    hostToGpuCoalesceIterator.addBatchToConcat(batches.head)
+    hostToGpuCoalesceIterator.addBatchToConcat(batches(1))
+
+    // Close columnar batches
+    batches.foreach(cb => cb.close())
+
+    // Verify that buffers are not deallocated
+    assertResult(allocatedMemory)(allocator.getAllocatedMemory)
+
+    // Verify that buffers are deallocated after concat is done
+    hostToGpuCoalesceIterator.cleanupConcatIsDone()
+    assertResult(0L)(allocator.getAllocatedMemory)
+  }
+
   test("test HostToGpuCoalesceIterator with arrow config off") {
     val (batch, schema) = setupArrowBatch()
     val iter = Iterator.single(batch)
@@ -283,6 +331,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // a query stage that runs on the CPU, wrapped in a CPU Exchange, with a ColumnarToRow
       // transition inserted
       .set("spark.sql.adaptive.enabled", "false")
+      // Disable out of core sort so a single batch is required
+      .set(RapidsConf.STABLE_SORT.key, "true")
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
@@ -402,6 +452,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
+      RapidsBuffer.defaultSpillCallback,
       "test concat")
 
     var expected = 0
@@ -483,6 +534,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
+      RapidsBuffer.defaultSpillCallback,
       "test concat")
 
     var expected = 0
@@ -531,7 +583,9 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val codec = TableCompressionCodec.getCodec(CodecType.NVCOMP_LZ4)
     withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
-      GpuCompressedColumnVector.from(compressor.finish().head)
+      withResource(compressor.finish()) { compressed =>
+        GpuCompressedColumnVector.from(compressed.head)
+      }
     }
   }
 }

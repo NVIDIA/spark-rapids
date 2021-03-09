@@ -23,31 +23,36 @@ import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
-import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.python.WindowInPandasExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
@@ -59,6 +64,21 @@ import org.apache.spark.unsafe.types.CalendarInterval
 class Spark300Shims extends SparkShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+  override def parquetRebaseReadKey: String =
+    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
+  override def parquetRebaseWriteKey: String =
+    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key
+  override def avroRebaseReadKey: String =
+    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_READ.key
+  override def avroRebaseWriteKey: String =
+    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_WRITE.key
+  override def parquetRebaseRead(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
+  override def parquetRebaseWrite(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
+
+  override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
+    AlterTableRecoverPartitionsCommand(tableName)
 
   override def getScalaUDFAsExpression(
       function: AnyRef,
@@ -130,6 +150,10 @@ class Spark300Shims extends SparkShims {
 
   override def isShuffleExchangeLike(plan: SparkPlan): Boolean =
     plan.isInstanceOf[ShuffleExchangeExec]
+
+  override def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics = {
+    Statistics(0)
+  }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
@@ -400,6 +424,9 @@ class Spark300Shims extends SparkShims {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
+  // Hardcoded for Spark-3.0.*
+  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int = 100
+
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
     FilePartition(index, files)
   }
@@ -457,16 +484,19 @@ class Spark300Shims extends SparkShims {
   override def getLegacyComplexTypeToString(): Boolean = true
 
   // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
-    vec.getDataBuffer().nioBuffer()
+  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getDataBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
-    vec.getValidityBuffer().nioBuffer()
+  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getValidityBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
-    vec.getOffsetBuffer().nioBuffer()
+  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getOffsetBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   override def replaceWithAlluxioPathIfNeeded(
@@ -581,5 +611,19 @@ class Spark300Shims extends SparkShims {
       accum
     }
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
+
+  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
+  }
+
+  /** dropped by SPARK-34234 */
+  override def attachTreeIfSupported[TreeType <: TreeNode[_], A](
+    tree: TreeType,
+    msg: String)(
+    f: => A
+  ): A = {
+    attachTree(tree, msg)(f)
   }
 }

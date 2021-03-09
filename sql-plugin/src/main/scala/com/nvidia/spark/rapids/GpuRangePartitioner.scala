@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,17 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
-import scala.reflect.ClassTag
 import scala.util.hashing.byteswap32
-
-import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, SortOrder, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.MutablePair
 
-class GpuRangePartitioner extends Serializable {
-  var rangeBounds: Array[InternalRow] = _
+object GpuRangePartitioner {
   /**
    * Sketches the input RDD via reservoir sampling on each partition.
    *
@@ -39,19 +35,35 @@ class GpuRangePartitioner extends Serializable {
    * @param sampleSizePerPartition max sample size per partition
    * @return (total number of items, an array of (partitionId, number of items, sample))
    */
-  def sketch[K: ClassTag](
-                           rdd: RDD[K],
-                           sampleSizePerPartition: Int): (Long, Array[(Int, Long, Array[K])]) = {
+  private[this] def sketch(
+      rdd: RDD[ColumnarBatch],
+      sampleSizePerPartition: Int,
+      sorter: GpuSorter): (Long, Array[(Int, Long, Array[InternalRow])]) = {
     val shift = rdd.id
+    val toRowConverter = GpuColumnarToRowExecParent.makeIteratorFunc(sorter.projectedBatchSchema,
+      NoopMetric, NoopMetric, NoopMetric)
     val sketched = rdd.mapPartitionsWithIndex { (idx, iter) =>
-      iter.map(unsafeRow => unsafeRow.asInstanceOf[InternalRow])
       val seed = byteswap32(idx ^ (shift << 16))
       val (sample, n) = SamplingUtils.reservoirSampleAndCount(
-        iter, sampleSizePerPartition, seed)
+        iter, sampleSizePerPartition, sorter, toRowConverter, seed)
       Iterator((idx, n, sample))
     }.collect()
     val numItems = sketched.map(_._2).sum
     (numItems, sketched)
+  }
+
+  private[this] def randomResample(
+      rdd: RDD[ColumnarBatch],
+      fraction: Double,
+      seed: Int,
+      sorter: GpuSorter): Array[InternalRow] = {
+    val toRowConverter = GpuColumnarToRowExecParent.makeIteratorFunc(sorter.projectedBatchSchema,
+      NoopMetric, NoopMetric, NoopMetric)
+    rdd.mapPartitions { iter =>
+      val sample = SamplingUtils.randomResample(
+        iter, fraction, sorter, toRowConverter, seed)
+      Iterator(sample)
+    }.collect().flatten
   }
 
   /**
@@ -62,19 +74,20 @@ class GpuRangePartitioner extends Serializable {
    * @param partitions number of partitions
    * @return selected bounds
    */
-  def determineBounds[K: Ordering : ClassTag](candidates: ArrayBuffer[(K, Float)],
-                                              partitions: Int): Array[K] = {
-    val ordering = implicitly[Ordering[K]]
-    val ordered = candidates.sortBy(_._1)
+  private[this] def determineBounds(
+      candidates: ArrayBuffer[(InternalRow, Float)],
+      partitions: Int,
+      ordering: Ordering[InternalRow]): Array[InternalRow] = {
+    val ordered = candidates.sortBy(_._1)(ordering)
     val numCandidates = ordered.size
     val sumWeights = ordered.map(_._2.toDouble).sum
     val step = sumWeights / partitions
     var cumWeight = 0.0
     var target = step
-    val bounds = ArrayBuffer.empty[K]
+    val bounds = ArrayBuffer.empty[InternalRow]
     var i = 0
     var j = 0
-    var previousBound = Option.empty[K]
+    var previousBound = Option.empty[InternalRow]
     while ((i < numCandidates) && (j < partitions - 1)) {
       val (key, weight) = ordered(i)
       cumWeight += weight
@@ -92,32 +105,29 @@ class GpuRangePartitioner extends Serializable {
     bounds.toArray
   }
 
-  def createRangeBounds(partitions: Int, gpuOrdering: Seq[SortOrder], rdd: RDD[ColumnarBatch],
-                        outputAttributes: Seq[Attribute],
-                        samplePointsPerPartitionHint: Int): Unit = {
-    val sparkShims = ShimLoader.getSparkShims
-    val orderingAttributes = gpuOrdering.zipWithIndex.map { case (ord, i) =>
-      sparkShims.copySortOrderWithNewChild(ord, BoundReference(i, ord.dataType, ord.nullable))
-    }
-    implicit val ordering: LazilyGeneratedOrdering = new LazilyGeneratedOrdering(orderingAttributes)
-    val rowsRDD = rddForSampling(partitions, gpuOrdering, rdd, outputAttributes)
+  def createRangeBounds(partitions: Int,
+      sorter: GpuSorter,
+      rdd: RDD[ColumnarBatch],
+      samplePointsPerPartitionHint: Int): Array[InternalRow] = {
     // We allow partitions = 0, which happens when sorting an empty RDD under the default settings.
     require(partitions >= 0,
       s"Number of partitions cannot be negative but found $partitions.")
     require(samplePointsPerPartitionHint > 0,
       s"Sample points per partition must be greater than 0 but found $samplePointsPerPartitionHint")
 
+    implicit val ordering: LazilyGeneratedOrdering = new LazilyGeneratedOrdering(sorter.cpuOrdering)
+
     // An array of upper bounds for the first (partitions - 1) partitions
     val rangeBounds : Array[InternalRow] = {
       if (partitions < 1) {
-        Array.empty[InternalRow]
+        Array.empty
       } else {
         // This is the sample size we need to have roughly balanced output partitions, capped at 1M.
         // Cast to double to avoid overflowing ints or longs
         val sampleSize = math.min(samplePointsPerPartitionHint.toDouble * partitions, 1e6)
         // Assume the input partitions are roughly balanced and over-sample a little bit.
-        val sampleSizePerPartition = math.ceil(3.0 * sampleSize / rowsRDD.partitions.length).toInt
-        val (numItems, sketched) = sketch(rowsRDD.map(_._1), sampleSizePerPartition)
+        val sampleSizePerPartition = math.ceil(3.0 * sampleSize / rdd.partitions.length).toInt
+        val (numItems, sketched) = sketch(rdd, sampleSizePerPartition, sorter)
         if (numItems == 0L) {
           Array.empty
         } else {
@@ -140,98 +150,68 @@ class GpuRangePartitioner extends Serializable {
           }
           if (imbalancedPartitions.nonEmpty) {
             // Re-sample imbalanced partitions with the desired sampling probability.
-            val imbalanced = new PartitionPruningRDD(rowsRDD.map(_._1),
-              imbalancedPartitions.contains)
-            val seed = byteswap32(-rowsRDD.id - 1)
-            val reSampled = imbalanced.sample(withReplacement = false, fraction, seed).collect()
+            val imbalanced = new PartitionPruningRDD(rdd, imbalancedPartitions.contains)
+            val seed = byteswap32(-rdd.id - 1)
+            val reSampled = randomResample(imbalanced, fraction, seed, sorter)
             val weight = (1.0 / fraction).toFloat
             candidates ++= reSampled.map(x => (x, weight))
           }
-          determineBounds(candidates, math.min(partitions, candidates.size))
+          determineBounds(candidates, math.min(partitions, candidates.size), ordering)
         }
       }
     }
-    this.rangeBounds = rangeBounds.asInstanceOf[Array[InternalRow]]
+    rangeBounds.asInstanceOf[Array[InternalRow]]
   }
+}
 
-  def rddForSampling(partitions: Int, gpuOrdering: Seq[SortOrder], rdd: RDD[ColumnarBatch],
-                     outputAttributes: Seq[Attribute]) : RDD[MutablePair[InternalRow, Null]] = {
+case class GpuRangePartitioner(
+    rangeBounds: Array[InternalRow],
+    sorter: GpuSorter) extends GpuExpression with GpuPartitioning {
 
-    val sortingExpressions = gpuOrdering
-    lazy val toUnsafe = UnsafeProjection.create(
-      sortingExpressions.map(_.child),
-      outputAttributes)
-    val rowsRDD = rdd.mapPartitions {
-      batches => {
-        new Iterator[InternalRow] {
-          @transient var cb: ColumnarBatch = _
-          var it: java.util.Iterator[InternalRow] = _
+  private lazy val converters = new GpuRowToColumnConverter(
+    TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))
 
-          private def closeCurrentBatch(): Unit = {
-            if (cb != null) {
-              cb.close()
-              cb = null
-            }
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+  override def children: Seq[Expression] = Seq.empty
+  override val numPartitions: Int = rangeBounds.length + 1
+
+  private[this] def computeBoundsAndClose(cb: ColumnarBatch): (Array[Int], ColumnarBatch) = {
+    withResource(cb) { cb =>
+      withResource(
+        sorter.appendProjectedAndSort(cb, NoopMetric)) { sortedTbl =>
+        val parts = withResource(
+          GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)) { sorted =>
+          val retCv = withResource(converters.convertBatch(rangeBounds,
+            TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
+            sorter.upperBound(sorted, ranges)
           }
-
-          def loadNextBatch(): Unit = {
-            closeCurrentBatch()
-            if (batches.hasNext) {
-              val devCb = batches.next()
-              cb = try {
-                new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
-                    devCb.numRows())
-              } finally {
-                devCb.close()
-              }
-              it = cb.rowIterator()
-            }
+          withResource(retCv) { retCv =>
+            // The first entry must always be 0, which upper bound is not doing
+            Array(0) ++ GpuColumnVector.toIntArray(retCv)
           }
-
-          override def hasNext: Boolean = {
-            val itHasNext = it != null && it.hasNext
-            if (!itHasNext) {
-              loadNextBatch()
-              it != null && it.hasNext
-            } else {
-              itHasNext
-            }
-          }
-
-          override def next(): InternalRow = {
-            if (it == null || !it.hasNext) {
-              loadNextBatch()
-            }
-            if (it == null) {
-              throw new NoSuchElementException()
-            }
-            val a = it.next()
-            a
-          }
-        }.map(toUnsafe)
+        }
+        (parts, sorter.removeProjectedColumns(sortedTbl))
       }
     }
-    rowsRDD.mapPartitions(it => it.map(ir => MutablePair(ir, null)))
   }
 
-  def getRangesBatch(schema: StructType, rangeBounds: Array[InternalRow]) : ColumnarBatch = {
-    val rangeBoundsRowsIter = rangeBounds.toIterator
-    if (!rangeBoundsRowsIter.hasNext) {
-      throw new NoSuchElementException("Ranges columnar Batch is empty")
-    }
-    val builders = new GpuColumnarBatchBuilder(schema, rangeBounds.length, null)
-    val converters = new GpuRowToColumnConverter(schema)
-    try {
-      var rowCount = 0
-      while (rangeBoundsRowsIter.hasNext) {
-        val row = rangeBoundsRowsIter.next()
-        converters.convert(row.asInstanceOf[InternalRow], builders)
-        rowCount += 1
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (rangeBounds.nonEmpty) {
+      val (parts, sortedBatch) = computeBoundsAndClose(batch)
+      withResource(sortedBatch) { sortedBatch =>
+        val partitionColumns = GpuColumnVector.extractColumns(sortedBatch)
+        val slicedCb = sliceInternalGpuOrCpu(sortedBatch.numRows(), parts, partitionColumns)
+        slicedCb.zipWithIndex.filter(_._1 != null)
       }
-      // The returned batch will be closed by the consumer of it
-      builders.build(rowCount)
-    } finally {
-      builders.close()
+    } else {
+      withResource(batch) { cb =>
+        // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
+        // slice will produce.
+        val sliced = sliceInternalGpuOrCpu(cb.numRows, Array(0),
+          GpuColumnVector.extractColumns(cb))
+        sliced.zipWithIndex
+      }
     }
   }
 }

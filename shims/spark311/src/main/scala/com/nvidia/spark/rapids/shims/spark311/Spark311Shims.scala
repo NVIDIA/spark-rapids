@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.SparkEnv
@@ -96,6 +97,9 @@ class Spark311Shims extends Spark301Shims {
     }
   }
 
+  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
+    sqlConf.maxMetadataStringLength
+
   def exprs311: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
@@ -135,7 +139,6 @@ class Spark311Shims extends Spark301Shims {
 
         // stringChecks are the same
         // binaryChecks are the same
-
         override val decimalChecks: TypeSig = none
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
@@ -193,8 +196,37 @@ class Spark311Shims extends Spark301Shims {
             childExprs(1).convertToGpu(),
             childExprs(2).convertToGpu())
         }
+      }),
+    // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
+    GpuOverrides.expr[Lead](
+      "Window function that returns N entries ahead of this one",
+      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+          ParamCheck("offset", TypeSig.INT, TypeSig.INT),
+          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+      (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+      }),
+    // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
+    GpuOverrides.expr[Lag](
+      "Window function that returns N entries behind this one",
+      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+          ParamCheck("offset", TypeSig.INT, TypeSig.INT),
+          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+      (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+        }
       })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+ ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     super.exprs301 ++ exprs311
@@ -243,8 +275,7 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
-          TypeSig.all),
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
@@ -398,16 +429,19 @@ class Spark311Shims extends Spark301Shims {
   }
 
   // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
-    vec.getDataBuffer.nioBuffer()
+  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getDataBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
-    vec.getValidityBuffer.nioBuffer()
+  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getValidityBuffer
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
-    vec.getOffsetBuffer.nioBuffer()
+  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getOffsetBuffer
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   /** matches SPARK-33008 fix in 3.1.1 */

@@ -1077,7 +1077,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             // at least a single block
             val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
             val outputFile: OutputFile = new ByteArrayOutputFile(stream)
-            sharedConf.setConfString(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key,
+            sharedConf.setConfString(ShimLoader.getSparkShims.parquetRebaseWriteKey,
               LegacyBehaviorPolicy.CORRECTED.toString)
             val recordWriter = SQLConf.withExistingConf(sharedConf) {
               parquetOutputFileFormat.getRecordWriter(outputFile, sharedHadoopConf)
@@ -1218,7 +1218,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     hadoopConf.setBoolean(SQLConf.PARQUET_BINARY_AS_STRING.key, false)
     hadoopConf.setBoolean(SQLConf.PARQUET_INT96_AS_TIMESTAMP.key, false)
 
-    hadoopConf.set(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key,
+    hadoopConf.set(ShimLoader.getSparkShims.parquetRebaseWriteKey,
       LegacyBehaviorPolicy.CORRECTED.toString)
 
     hadoopConf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key,
