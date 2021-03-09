@@ -39,6 +39,7 @@ class CastExprMeta[INPUT <: CastBase](
   private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
   val fromType = cast.child.dataType
   val toType = cast.dataType
+  var legacyCastToString = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
 
   override def tagExprForGpu(): Unit = {
     if (!conf.isCastFloatToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
@@ -87,7 +88,7 @@ class CastExprMeta[INPUT <: CastBase](
   }
 
   override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, ansiEnabled, cast.timeZoneId)
+    GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString)
 }
 
 object GpuCast {
@@ -135,7 +136,8 @@ case class GpuCast(
     child: Expression,
     dataType: DataType,
     ansiMode: Boolean = false,
-    timeZoneId: Option[String] = None)
+    timeZoneId: Option[String] = None,
+    legacyCastToString: Boolean = false)
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
   import GpuCast._
@@ -242,7 +244,7 @@ case class GpuCast(
       case (TimestampType, StringType) =>
         castTimestampToString(input)
       case (StructType(fields), StringType) =>
-        castStructToString(input)
+        castStructToString(input, legacyCastToString)
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
@@ -488,37 +490,57 @@ case class GpuCast(
     }
   }
 
-  private def castStructToString(input: GpuColumnVector): ColumnVector = {
+  private def castStructToString(input: GpuColumnVector, legacyCastToString: Boolean): ColumnVector = {
+    // val legacyCastToStr = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+    // The brackets that are used in casting structs and maps to strings
+    val (leftBracket, rightBracket) = if (legacyCastToString) ("[", "]") else ("{", "}")
     var separatorColumn: ColumnVector = null
     var spaceColumn: ColumnVector = null
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
     val coreColumns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
 
     try {
-      withResource(GpuScalar.from(",", StringType)) { separatorScalar =>
-        separatorColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
-      }
-      withResource(GpuScalar.from(" ", StringType)) { separatorScalar =>
-        spaceColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
-      }
-      withResource(GpuScalar.from("[", StringType)) { bracketScalar =>
+      withResource(GpuScalar.from(leftBracket, StringType)) { bracketScalar =>
         columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount().toInt)
       }
       withResource(input.getBase().getChildColumnView(0)) { childView =>
         columns += childView.asStrings()
-        coreColumns += childView.asStrings()
+        coreColumns += columns.last
       }
 
-      for(childIndex <- 1 until input.getBase().getNumChildren()) {
-        withResource(input.getBase().getChildColumnView(childIndex)) { childView =>
-          columns += separatorColumn
-          columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, childView)
-          columns += childView.asStrings()
-          coreColumns += columns.last
+      if(legacyCastToString) {
+        withResource(GpuScalar.from(",", StringType)) { separatorScalar =>
+          separatorColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
+        }
+        withResource(GpuScalar.from(" ", StringType)) { separatorScalar =>
+          spaceColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
+        }
+        for(childIndex <- 1 until input.getBase().getNumChildren()) {
+          withResource(input.getBase().getChildColumnView(childIndex)) { childView =>
+            columns += separatorColumn
+            columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, childView)
+            columns += childView.asStrings()
+            coreColumns += columns.last
+          }
+        }
+      } else {
+        withResource(GpuScalar.from(", ", StringType)) { separatorScalar =>
+          separatorColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount().toInt)
+        }
+        withResource(GpuScalar.from("null", StringType)) { separatorScalar =>
+          for(childIndex <- 1 until input.getBase().getNumChildren()) {
+            withResource(input.getBase().getChildColumnView(childIndex)) { childView =>
+              columns += separatorColumn
+              // columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, childView)
+              // coreColumns += columns.last
+              coreColumns += childView.asStrings()
+              columns += coreColumns.last.replaceNulls(separatorScalar)
+            }
+          }
         }
       }
 
-      withResource(GpuScalar.from("]", StringType)) { bracketScalar =>
+      withResource(GpuScalar.from(rightBracket, StringType)) { bracketScalar =>
         columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount().toInt)
       }
       withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
