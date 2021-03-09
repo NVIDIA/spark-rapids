@@ -243,7 +243,7 @@ abstract class GpuDecimalDivide(left: Expression, right: Expression) extends Gpu
   Serializable {
   // Override the output type as a special case for decimal
   override def dataType: DataType = (left.dataType, right.dataType) match {
-    case (l: DecimalType, r: DecimalType) =>  GpuDivideUtil.decimalDataType(l, r)
+    case (l: DecimalType, r: DecimalType) => GpuDivideUtil.decimalDataType(l, r)
     case _ => super.dataType
   }
 
@@ -253,11 +253,10 @@ abstract class GpuDecimalDivide(left: Expression, right: Expression) extends Gpu
     } else {
       l.scale - outputScale
     }
-    val newType = DecimalType(Math.min(18, l.precision + newScale), Math.min(18, newScale))
+    val newType = DecimalType(Math.min(Decimal.MAX_LONG_DIGITS, l.precision + newScale),
+      Math.min(Decimal.MAX_LONG_DIGITS, newScale))
     val raise = newScale - l.scale
-    if (raise > Decimal.MAX_LONG_DIGITS) {
-      throw new IllegalArgumentException(s"$newType  is not supported for GPU processing yet.")
-    }
+    require(raise <= Decimal.MAX_LONG_DIGITS, s"$newType  is not supported for GPU processing yet.")
     newType
   }
 

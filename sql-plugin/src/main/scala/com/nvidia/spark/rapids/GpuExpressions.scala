@@ -200,17 +200,15 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    val lBase = lhs.getBase
-    val rBase = rhs.getBase
+  def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val outType = if (castOutputAtEnd) {
-      BinaryOperable.implicitConversion(binaryOp, lBase, rBase)
+      BinaryOperable.implicitConversion(binaryOp, lhs, rhs)
     } else {
-      outputType(lBase, rBase)
+      outputType(lhs, rhs)
     }
-    val tmp = lBase.binaryOp(binaryOp, rBase, outType)
+    val tmp = lhs.binaryOp(binaryOp, rhs, outType)
     // In some cases the output type is ignored
-    val castType = outputType(lBase, rBase)
+    val castType = outputType(lhs, rhs)
     if (!castType.equals(tmp.getType) && castOutputAtEnd) {
       withResource(tmp) { tmp =>
         tmp.castTo(castType)
@@ -218,44 +216,18 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
     } else {
       tmp
     }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    doColumnar(lhs.getBase, rhs.getBase)
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
-    val rBase = rhs.getBase
-    val outType = if (castOutputAtEnd) {
-      BinaryOperable.implicitConversion(binaryOp, lhs, rBase)
-    } else {
-      outputType(lhs, rBase)
-    }
-    val tmp = lhs.binaryOp(binaryOp, rBase, outType)
-    // In some cases the output type is ignored
-    val castType = outputType(lhs, rBase)
-    if (!castType.equals(tmp.getType) && castOutputAtEnd) {
-      withResource(tmp) { tmp =>
-        tmp.castTo(castType)
-      }
-    } else {
-      tmp
-    }
+    doColumnar(lhs, rhs.getBase)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
-    val lBase = lhs.getBase
-    val outType = if (castOutputAtEnd) {
-      BinaryOperable.implicitConversion(binaryOp, lBase, rhs)
-    } else {
-      outputType(lBase, rhs)
-    }
-    val tmp = lBase.binaryOp(binaryOp, rhs, outType)
-    // In some cases the output type is ignored
-    val castType = outputType(lBase, rhs)
-    if (!castType.equals(tmp.getType) && castOutputAtEnd) {
-      withResource(tmp) { tmp =>
-        tmp.castTo(castType)
-      }
-    } else {
-      tmp
-    }
+    doColumnar(lhs.getBase, rhs)
   }
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
