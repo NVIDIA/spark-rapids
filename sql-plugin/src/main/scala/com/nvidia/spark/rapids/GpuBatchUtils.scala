@@ -113,6 +113,8 @@ object GpuBatchUtils {
    * @return splitting indices
    */
   def generateSplitIndices(rows: Long, numSplits: Int): Array[Int] = {
+    require(rows > 0, s"invalid input rows $rows")
+    require(numSplits > 0, s"invalid numSplits $numSplits")
     val baseIncrement = (rows / numSplits).toInt
     var extraIncrements = (rows % numSplits).toInt
     val indicesBuf = ArrayBuffer[Int]()

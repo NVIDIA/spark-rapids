@@ -5346,31 +5346,31 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S*</td>
-<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 </tr>
 <tr>
 <td>result</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S*</td>
-<td>S*</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="4">Expm1</td>
@@ -10311,24 +10311,24 @@ Accelerator support is described below.
 </tr>
 <tr>
 <td>result</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S*</td>
-<td>S*</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="6">Pow</td>

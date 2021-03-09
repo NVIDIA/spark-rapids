@@ -159,6 +159,8 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
 
     val vectors = GpuColumnVector.extractBases(inputBatch)
     val inputRows = inputBatch.numRows()
+    if (inputRows == 0) return Array()
+
     // Get the output size in bytes of the column that we are going to explode
     // along with an estimate of how many output rows produced by the explode
     val (explodeColOutputSize, estimatedOutputRows) = withResource(
@@ -180,7 +182,8 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     // how may splits will we need to keep exploding working safely
     val numSplits = numSplitsForTargetSize max numSplitsForTargetRow
 
-    GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
+    if (numSplits == 0) Array()
+    else GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
   }
 
   // Infer result schema of GenerateExec from input schema

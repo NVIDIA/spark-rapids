@@ -246,6 +246,7 @@ class LiteralExprMeta(
       // NOTICE: There is a temporary transformation from Literal(ArrayType(BaseType)) into
       // CreateArray(Literal(BaseType):_*). The transformation is a walkaround support for Literal
       // of ArrayData under GPU runtime, because cuDF scalar doesn't support nested types.
+      // related issue: https://github.com/NVIDIA/spark-rapids/issues/1902
       case ArrayType(baseType, _) =>
         val litArray = lit.value.asInstanceOf[ArrayData]
           .array.map(GpuLiteral(_, baseType))

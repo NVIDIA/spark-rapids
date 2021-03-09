@@ -19,7 +19,6 @@ from data_gen import *
 from marks import ignore_order
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session
 
 def four_op_df(spark, gen, length=2048, seed=0):
     return gen_df(spark, StructGen([
@@ -60,44 +59,29 @@ def test_explode_split_string_nested():
                 'a', 'explode(split(b, "_")) as c').selectExpr(
                 'a', 'explode(split(c, "A"))'))
 
-all_gen_parquet = [TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))
-                   if gen.__class__.__name__ == 'TimestampGen' else gen for gen in all_gen]
-
-def gen_parquet_file(data_gen, data_path):
-    with_cpu_session(
-            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-                  'spark.sql.parquet.writeLegacyFormat': 'true'})
-
-# use a small `spark.rapids.sql.batchSizeBytes` to trigger input batches splitting up during explode
-explode_from_parquet_conf = {
-    'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
-    'spark.rapids.sql.batchSizeBytes': '8192'}
+# use a small `spark.rapids.sql.batchSizeBytes` to enforce input batches splitting up during explode
+conf_to_enforce_split_input = {'spark.rapids.sql.batchSizeBytes': '8192'}
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
-def test_explode_from_parquet(spark_tmp_path, data_gen):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_explode_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
-    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).selectExpr('a', 'explode(b)'),
-        conf=explode_from_parquet_conf)
+        lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'explode(b)'),
+        conf=conf_to_enforce_split_input)
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
-def test_explode_from_parquet_nested(spark_tmp_path, data_gen):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_explode_nested_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
-    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).selectExpr(
+        lambda spark: two_col_df(spark, *data_gen).selectExpr(
             'a', 'explode(b) as c').selectExpr('a', 'explode(c)'),
-        conf=explode_from_parquet_conf)
+        conf=conf_to_enforce_split_input)
 
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -135,24 +119,20 @@ def test_posexplode_split_string_nested():
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
-def test_posexplode_from_parquet(spark_tmp_path, data_gen):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_posexplode_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
-    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).selectExpr('a', 'posexplode(b)'),
-        conf=explode_from_parquet_conf)
+        lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'posexplode(b)'),
+        conf=conf_to_enforce_split_input)
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
-def test_posexplode_from_parquet_nested(spark_tmp_path, data_gen):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+def test_posexplode_nested_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
-    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path).selectExpr(
+        lambda spark: two_col_df(spark, *data_gen).selectExpr(
             'a', 'posexplode(b) as (pos, c)').selectExpr('a', 'pos', 'posexplode(c)'),
-        conf=explode_from_parquet_conf)
+        conf=conf_to_enforce_split_input)
