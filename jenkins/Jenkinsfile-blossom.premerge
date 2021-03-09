@@ -29,6 +29,7 @@ def pluginPremerge
 
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
+def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu16'
 def IMAGE_PREMERGE // temp image for premerge test
 def PREMERGE_TAG
 def skipped = false
@@ -123,7 +124,7 @@ pipeline {
                         def dockerfileModified = sh(returnStdout: true,
                                 script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
                                         'git --no-pager diff --name-only HEAD $(git merge-base HEAD $BASE) ' +
-                                        '-- jenkins/Dockerfile-blossom.ubuntu16 || true')
+                                        "-- ${PREMERGE_DOCKERFILE} || true")
                         if (!dockerfileModified?.trim()) {
                             TEMP_IMAGE_BUILD = false
                         }
