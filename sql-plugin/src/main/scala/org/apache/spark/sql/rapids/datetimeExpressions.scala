@@ -345,8 +345,9 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
-    if (ZoneId.of(expr.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-      willNotWorkOnGpu("Only UTC zone id is supported")
+    expr.timeZoneId.foreach {
+      case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
+        willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
     }
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
