@@ -10,7 +10,9 @@ The accelerator is built upon the [RAPIDS cuDF project](https://github.com/rapid
 
 The RAPIDS Accelerator For Apache Spark requires each worker node in the cluster to have [CUDA](https://developer.nvidia.com/cuda-toolkit) installed.
 
-The RAPIDS Accelerator For Apache Spark consists of two jars, a plugin jar along with the RAPIDS cuDF jar, that is either preinstalled in the Spark classpath on all nodes or submitted with each job that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
+The RAPIDS Accelerator For Apache Spark consists of two jars: a plugin jar along with the RAPIDS cuDF jar, 
+that is either preinstalled in the Spark classpath on all nodes or submitted with each job that uses the 
+RAPIDS Accelerator For Apache Spark. See the [getting-started guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
 ## Release v0.4.0
 ### Download v0.4.0
