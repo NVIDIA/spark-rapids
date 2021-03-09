@@ -2344,18 +2344,27 @@ object GpuOverrides {
     expr[Explode](
       "Given an input array produces a sequence of rows for each value in the array. "
         + "Explode with outer Generate is not supported under GPU runtime." ,
-      ExprChecks.unaryProject(TypeSig.all, TypeSig.all,
+      ExprChecks.unaryProject(
+        // Here is a walk-around representation, since multi-level nested type is not supported yet.
+        // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
+        TypeSig.ARRAY.nested(TypeSig.STRUCT
+          + TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(TypeSig.all),
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
-        TypeSig.ARRAY.nested(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuExplode(childExprs(0).convertToGpu())
       }),
     expr[PosExplode](
       "Given an input array produces a sequence of rows for each value in the array. "
         + "PosExplode with outer Generate is not supported under GPU runtime." ,
-      ExprChecks.unaryProject(TypeSig.all, TypeSig.all,
+      ExprChecks.unaryProject(
+        // Here is a walk-around representation, since multi-level nested type is not supported yet.
+        // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
+        TypeSig.ARRAY.nested(TypeSig.STRUCT
+          + TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(TypeSig.all),
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(

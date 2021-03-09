@@ -63,32 +63,41 @@ def test_explode_split_string_nested():
 all_gen_parquet = [TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))
                    if gen.__class__.__name__ == 'TimestampGen' else gen for gen in all_gen]
 
-@ignore_order
+def gen_parquet_file(data_gen, data_path):
+    with_cpu_session(
+            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
+            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                  'spark.sql.parquet.writeLegacyFormat': 'true'})
+
+# use a small `spark.rapids.sql.batchSizeBytes` to trigger input batches splitting up during explode
+explode_from_parquet_conf = {
+    'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+    'spark.rapids.sql.batchSizeBytes': '8192'}
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
 def test_explode_from_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     data_gen = [int_gen, ArrayGen(data_gen)]
-    with_cpu_session(
-            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-                  'spark.sql.parquet.writeLegacyFormat': 'true'})
+    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).selectExpr('a', 'explode(b)'),
-        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        conf=explode_from_parquet_conf)
 
-@ignore_order
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
 def test_explode_from_parquet_nested(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
-    with_cpu_session(
-            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-                  'spark.sql.parquet.writeLegacyFormat': 'true'})
+    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).selectExpr(
             'a', 'explode(b) as c').selectExpr('a', 'explode(c)'),
-        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        conf=explode_from_parquet_conf)
 
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -123,29 +132,27 @@ def test_posexplode_split_string_nested():
                 'a', 'posexplode(split(b, "_")) as (pos, c)').selectExpr(
                 'a', 'pos', 'posexplode(split(c, "A"))'))
 
-@ignore_order
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
 def test_posexplode_from_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     data_gen = [int_gen, ArrayGen(data_gen)]
-    with_cpu_session(
-            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-                  'spark.sql.parquet.writeLegacyFormat': 'true'})
+    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).selectExpr('a', 'posexplode(b)'),
-        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        conf=explode_from_parquet_conf)
 
-@ignore_order
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen_parquet, ids=idfn)
 def test_posexplode_from_parquet_nested(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
-    with_cpu_session(
-            lambda spark: two_col_df(spark, *data_gen).write.parquet(data_path),
-            conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-                  'spark.sql.parquet.writeLegacyFormat': 'true'})
+    gen_parquet_file(data_gen, data_path)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).selectExpr(
             'a', 'posexplode(b) as (pos, c)').selectExpr('a', 'pos', 'posexplode(c)'),
-        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        conf=explode_from_parquet_conf)
