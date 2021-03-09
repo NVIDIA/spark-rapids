@@ -45,20 +45,6 @@ def test_explode_litarray(data_gen):
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
                 f.explode(array_lit)))
 
-@ignore_order
-def test_explode_split_string():
-    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr('a', 'explode(split(b, "_"))'))
-
-@ignore_order
-def test_explode_split_string_nested():
-    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr(
-                'a', 'explode(split(b, "_")) as c').selectExpr(
-                'a', 'explode(split(c, "A"))'))
-
 # use a small `spark.rapids.sql.batchSizeBytes` to enforce input batches splitting up during explode
 conf_to_enforce_split_input = {'spark.rapids.sql.batchSizeBytes': '8192'}
 
@@ -101,20 +87,6 @@ def test_posexplode_litarray(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'),
                 f.posexplode(array_lit)))
-
-@ignore_order
-def test_posexplode_split_string():
-    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr('a', 'posexplode(split(b, "_"))'))
-
-@ignore_order
-def test_posexplode_split_string_nested():
-    str_gen = StringGen('([ABC]{0,3}_?){0,7}').with_special_case('').with_special_pattern('.{0,10}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, int_gen, str_gen).selectExpr(
-                'a', 'posexplode(split(b, "_")) as (pos, c)').selectExpr(
-                'a', 'pos', 'posexplode(split(c, "A"))'))
 
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
