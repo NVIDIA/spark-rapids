@@ -491,8 +491,8 @@ case class GpuCast(
     }
   }
 
-  private def castStructToString(input: GpuColumnVector, legacyCastToString: Boolean): ColumnVector = {
-    // val legacyCastToStr = SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+  private def castStructToString(input: GpuColumnVector,
+    legacyCastToString: Boolean): ColumnVector = {
     // The brackets that are used in casting structs and maps to strings
     val (leftBracket, rightBracket) = if (legacyCastToString) ("[", "]") else ("{", "}")
     var separatorColumn: ColumnVector = null
