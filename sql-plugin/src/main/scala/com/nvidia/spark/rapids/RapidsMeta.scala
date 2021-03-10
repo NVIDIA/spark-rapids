@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
@@ -133,11 +133,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   }
 
   final def costPreventsRunningOnGpu(): Unit = {
-
-    if (wrapped.isInstanceOf[CustomShuffleReaderExec]) {
-      throw new IllegalStateException()
-    }
-
     cannotRunOnGpuBecauseOfCost = true
     willNotWorkOnGpu("Removed by cost-based optimizer")
     childExprs.foreach(_.recursiveCostPreventsRunningOnGpu())
