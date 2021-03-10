@@ -126,7 +126,7 @@ trait TransactionCallback {
 }
 
 trait MemoryRegistrationCallback {
-  def apply(success: Boolean)
+  def apply(error: Option[Throwable] = None)
 }
 
 /**
@@ -336,6 +336,16 @@ trait RapidsShuffleTransport extends AutoCloseable {
    */
   def makeClient(localExecutorId: Long,
                  blockManagerId: BlockManagerId): RapidsShuffleClient
+
+  /**
+   * Connect to peer given a `BlockManagerId`
+   *
+   * This function is used during transport early start, if enabled.
+   *
+   * @param peerBlockManagerId the peer's block manager id
+   * @return a client connection for the peer
+   */
+  def connect(peerBlockManagerId: BlockManagerId): ClientConnection
 
   /**
    * This function should only be needed once. The caller creates *a* server and it is used

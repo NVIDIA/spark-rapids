@@ -34,8 +34,8 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.internal.StaticSQLConf
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.util.QueryExecutionListener
-
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   val overrides: Rule[SparkPlan] = GpuOverrides()
@@ -109,12 +109,32 @@ object RapidsPluginUtils extends Logging {
  * The Spark driver plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
+  var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
+
+  override def receive(msg: Any): AnyRef = {
+    if (rapidsShuffleHeartbeatManager == null) {
+      throw new IllegalStateException(
+        s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
+    }
+    msg match {
+      case RapidsExecutorStartupMsg(id) =>
+        rapidsShuffleHeartbeatManager.registerExecutor(id)
+      case RapidsExecutorHeartbeatMsg(id) =>
+        rapidsShuffleHeartbeatManager.executorHeartbeat(id)
+      case m => throw new IllegalStateException(s"Unknown message $m")
+    }
+  }
+
   override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
     if (conf.shimsProviderOverride.isDefined) {
       ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
+    }
+    if (GpuShuffleEnv.isRapidsShuffleEnabled &&
+        conf.shuffleTransportEarlyStart) {
+      rapidsShuffleHeartbeatManager = new RapidsShuffleHeartbeatManager()
     }
     conf.rapidsConfMap
   }
@@ -124,6 +144,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
  * The Spark executor plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
+  var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
+
   override def init(
       pluginContext: PluginContext,
       extraConf: util.Map[String, String]): Unit = {
@@ -143,6 +165,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+        if (GpuShuffleEnv.isRapidsShuffleEnabled &&
+            conf.shuffleTransportEarlyStart) {
+          logInfo("Initializing shuffle manager heartbeats")
+          rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+        }
       }
 
       val concurrentGpuTasks = conf.concurrentGpuTasks
@@ -211,6 +238,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
+    Some(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
   }
 }
 
