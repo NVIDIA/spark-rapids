@@ -62,7 +62,7 @@ class RapidsShuffleHeartbeatManagerTest extends RapidsShuffleTestHelper {
     // second executor
     hbMgr.registerExecutor(exec2)
 
-    // first executor hearbeat (finding out about executor 2)
+    // first executor heartbeat (finding out about executor 2)
     val firstUpdate = hbMgr.executorHeartbeat(exec1)
     val peerBlockManager = firstUpdate.ids.head
     assertResult(exec2)(peerBlockManager)
