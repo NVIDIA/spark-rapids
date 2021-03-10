@@ -2422,7 +2422,7 @@ object GpuOverrides {
 
             GpuRangePartitioning(gpuOrdering, rp.numPartitions, schema)(new GpuRangePartitioner)
           } else {
-            GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+            GpuSinglePartitioning
           }
         }
       }),
@@ -2436,11 +2436,7 @@ object GpuOverrides {
     part[SinglePartition.type](
       "Single partitioning",
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
-        override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
-
-        override def convertToGpu(): GpuPartitioning = {
-          GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
-        }
+        override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 
@@ -2551,7 +2547,7 @@ object GpuOverrides {
             GpuTopN(takeExec.limit,
               so,
               projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
                 GpuTopN(takeExec.limit,
                   so,
                   takeExec.child.output,

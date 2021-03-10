@@ -269,8 +269,8 @@ object GpuShuffleExchangeExec {
         r.part.createRangeBounds(r.numPartitions, r.gpuOrdering, rdd, outputAttributes,
           SQLConf.get.rangeExchangeSampleSizePerPartition)
         GpuBindReferences.bindReference(r, outputAttributes)
-      case s: GpuSinglePartitioning =>
-        GpuBindReferences.bindReference(s, outputAttributes)
+      case GpuSinglePartitioning =>
+        GpuSinglePartitioning
       case rrp: GpuRoundRobinPartitioning =>
         GpuBindReferences.bindReference(rrp, outputAttributes)
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
