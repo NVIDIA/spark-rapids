@@ -497,30 +497,28 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
       onWorkerThreadAsync(() => {
         var error: Throwable = null
-        try {
-          buffers.foreach { buffer =>
-            val mmapParam = new UcpMemMapParams()
-                .setAddress(buffer.getAddress)
-                .setLength(buffer.getLength)
+        registeredMemory.synchronized {
+          try {
+            buffers.foreach { buffer =>
+              val mmapParam = new UcpMemMapParams()
+                  .setAddress(buffer.getAddress)
+                  .setLength(buffer.getLength)
 
-            //note that this can throw, lets call back and let caller figure out how to handle
-            try {
-              val registered = context.memoryMap(mmapParam)
-              registeredMemory.synchronized {
+              //note that this can throw, lets call back and let caller figure out how to handle
+              try {
+                val registered = context.memoryMap(mmapParam)
                 registeredMemory += registered
+              } catch {
+                case t: Throwable =>
+                  if (error == null) {
+                    error = t
+                  } else {
+                    error.addSuppressed(t)
+                  }
               }
-            } catch {
-              case t: Throwable =>
-                if (error == null) {
-                  error = t
-                } else {
-                  error.addSuppressed(t)
-                }
             }
-          }
-        } finally {
-          mmapCallback(Option(error))
-          registeredMemory.synchronized {
+          } finally {
+            mmapCallback(Option(error))
             pendingRegistration = false
             registeredMemory.notify()
           }
