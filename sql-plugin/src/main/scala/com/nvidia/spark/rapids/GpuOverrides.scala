@@ -2250,14 +2250,15 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
+          // Floating poitn values don't work because of -0.0 is not hashed properly
           TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL,
-          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL))),
+             TypeSig.STRING + TypeSig.NULL,
+          TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-        def convertToGpu(): GpuExpression = GpuMurmur3Hash(childExprs.map(_.convertToGpu()))
+        def convertToGpu(): GpuExpression =
+          GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
       }),
     expr[Contains](
       "Contains",
@@ -2382,7 +2383,7 @@ object GpuOverrides {
           // This needs to match what murmur3 supports. in 0.5 we should make the checks
           // self documenting, and look more like what SparkPlan and Expression support
           val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-              TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL
+              TypeSig.STRING + TypeSig.NULL
           hp.children.foreach { child =>
             sig.tagExprParam(this, child, "hash_key")
           }

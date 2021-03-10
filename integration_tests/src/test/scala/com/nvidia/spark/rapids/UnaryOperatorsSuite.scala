@@ -37,6 +37,6 @@ class UnaryOperatorsSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Test murmur3", mixedDfWithNulls) {
-    frame => frame.selectExpr("hash(longs, doubles, 1, null, 'stock string', ints, strings)")
+    frame => frame.selectExpr("hash(longs, 1, null, 'stock string', ints, strings)")
   }
 }
