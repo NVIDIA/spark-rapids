@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import ignore_order
+import pyspark.sql.functions as f
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_union(data_gen):
@@ -44,4 +45,34 @@ def test_repartion_df(num_parts, length):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen_list, length=length).repartition(num_parts),
+            conf = allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
+@pytest.mark.parametrize('gen', [
+    ([('a', boolean_gen)], ['a']), 
+    ([('a', byte_gen)], ['a']), 
+    ([('a', short_gen)], ['a']),
+    ([('a', int_gen)], ['a']),
+    ([('a', long_gen)], ['a']),
+    ([('a', float_gen)], ['a']),
+    ([('a', double_gen)], ['a']),
+    ([('a', string_gen)], ['a']),
+    ([('a', null_gen)], ['a']),
+    ([('a', byte_gen)], [f.col('a') - 5]), 
+    ([('a', long_gen)], [f.col('a') + 15]), 
+    ([('a', byte_gen), ('b', boolean_gen)], ['a', 'b']),
+    ([('a', short_gen), ('b', string_gen)], ['a', 'b']),
+    ([('a', int_gen), ('b', float_gen)], ['a', 'b']),
+    ([('a', double_gen), ('b', null_gen)], ['a', 'b']),
+    ([('a', long_gen), ('b', long_gen)], ['a', 'b']),
+    ([('a', byte_gen), ('b', boolean_gen), ('c', short_gen)], ['a', 'b', 'c']),
+    ([('a', short_gen), ('b', string_gen), ('c', int_gen)], ['a', 'b', 'c']),
+    ([('a', int_gen), ('b', float_gen), ('c', double_gen)], ['a', 'b', 'c']),
+    ([('a', double_gen), ('b', null_gen), ('c', long_gen)], ['a', 'b', 'c'])
+    ], ids=idfn)
+def test_hash_repartition_exact(gen, num_parts):
+    data_gen = gen[0]
+    part_on = gen[1]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).repartition(num_parts, *part_on).selectExpr('spark_partition_id() as id', '*'),
             conf = allow_negative_scale_of_decimal_conf)
