@@ -348,6 +348,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
     expr.timeZoneId.foreach {
       case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
         willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
+      case _ =>
     }
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
