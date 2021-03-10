@@ -93,6 +93,12 @@ else
     RUN_DIR="$SCRIPTPATH"/target/run_dir
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
+
+    ## Under cloud environment, overwrite the '--rootdir' param to point to the working directory of each excutor
+    LOCAL_ROOTDIR=${LOCAL_ROOTDIR:-"$SCRIPTPATH"}
+    ## Under cloud environment, overwrite the '--std_input_path' param to point to the distributed file path
+    CLOUD_INPUTPATH=${CLOUD_INPUTPATH:-"$SCRIPTPATH"}
+
     if [[ "${TEST_PARALLEL_OPTS}" != "" ]];
     then
         export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
@@ -105,10 +111,10 @@ else
         export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
 
         python \
-          "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+          "$SCRIPTPATH"/runtests.py --rootdir "$LOCAL_ROOTDIR" "$LOCAL_ROOTDIR"/src/main/python \
           $TEST_PARALLEL_OPTS \
           -v -rfExXs "$TEST_TAGS" \
-          --std_input_path="$SCRIPTPATH"/src/test/resources/ \
+          --std_input_path="$CLOUD_INPUTPATH"/src/test/resources/ \
           --color=yes \
           $TEST_TYPE_PARAM \
           "$TEST_ARGS" \
@@ -121,9 +127,9 @@ else
           --conf 'spark.sql.session.timeZone=UTC' \
           --conf 'spark.sql.shuffle.partitions=12' \
           $SPARK_SUBMIT_FLAGS \
-          "$SCRIPTPATH"/runtests.py --rootdir "$SCRIPTPATH" "$SCRIPTPATH"/src/main/python \
+          "$SCRIPTPATH"/runtests.py --rootdir "$LOCAL_ROOTDIR" "$LOCAL_ROOTDIR"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
-          --std_input_path="$SCRIPTPATH"/src/test/resources/ \
+          --std_input_path="$CLOUD_INPUTPATH"/src/test/resources/ \
           --color=yes \
           $TEST_TYPE_PARAM \
           "$TEST_ARGS" \
