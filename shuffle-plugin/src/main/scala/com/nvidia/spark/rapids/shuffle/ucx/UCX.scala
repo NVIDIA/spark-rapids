@@ -35,6 +35,8 @@ import org.apache.spark.internal.Logging
 
 case class WorkerAddress(address: ByteBuffer)
 
+case class Rkeys(rkeys: Seq[ByteBuffer])
+
 /**
  * The UCX class wraps JUCX classes and handles all communication with UCX from other
  * parts of the shuffle code. It manages a `UcpContext` and `UcpWorker`, for the
@@ -108,7 +110,12 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
   // holds memory registered against UCX that should be de-register on exit (used for bounce
   // buffers)
+  // NOTE: callers should hold the `registeredMemory` lock before modifying this array
   val registeredMemory = new ArrayBuffer[UcpMemory]
+
+  // when this flag is set to true, an async call to `register` hasn't completed in
+  // the worker thread. We need this to complete prior to getting the `rkeys`.
+  private var pendingRegistration = false
 
   /**
    * Initializes the UCX context and local worker and starts up the worker progress thread.
@@ -336,18 +343,22 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
    * @param endpointId    presently an executorId, it is used to distinguish between endpoints
    *                      when routing messages outbound
    * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
+   * @param peerRkeys list of UCX rkeys that the peer has sent us for unpacking
    * @return returns a [[UcpEndpoint]] that can later be used to send on (from the
    *         progress thread)
    */
-  private[ucx] def setupEndpoint(endpointId: Long, workerAddress: WorkerAddress): UcpEndpoint = {
+  private[ucx] def setupEndpoint(
+      endpointId: Long, workerAddress: WorkerAddress, peerRkeys: Rkeys): UcpEndpoint = {
     logDebug(s"Starting/reusing an endpoint to $workerAddress with id $endpointId")
     // create an UCX endpoint using workerAddress
     endpoints.computeIfAbsent(endpointId,
       (_: Long) => {
         logInfo(s"No endpoint found for $endpointId. Adding it.")
-        worker.newEndpoint(
+        val ep = worker.newEndpoint(
           new UcpEndpointParams()
             .setUcpAddress(workerAddress.address))
+        peerRkeys.rkeys.foreach(ep.unpackRemoteKey)
+        ep
       })
   }
 
@@ -361,11 +372,15 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   def getConnection(peerExecutorId: Int,
       peerMgmtHost: String,
       peerMgmtPort: Int): ClientConnection = {
-    connectionCache.computeIfAbsent(peerExecutorId, _ => {
+    val getConnectionStartTime = System.currentTimeMillis()
+    val result = connectionCache.computeIfAbsent(peerExecutorId, _ => {
       val connection = new UCXClientConnection(peerExecutorId, peerTag.incrementAndGet(), this)
       startConnection(connection, peerMgmtHost, peerMgmtPort)
       connection
     })
+    logDebug(s"Got connection for executor ${peerExecutorId} in " +
+      s"${System.currentTimeMillis() - getConnectionStartTime} ms")
+    result
   }
 
   private[ucx] def onWorkerThreadAsync(task: () => Unit): Unit = {
@@ -389,11 +404,12 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         val is = socket.getInputStream
 
         // "this executor id will receive on tmpLocalReceiveTag for this Connection"
-        UCXConnection.writeHandshakeHeader(os, ucxWorkerAddress, executorId)
+        UCXConnection.writeHandshakeHeader(
+          os, ucxWorkerAddress, executorId, localRkeys)
 
         // "the remote executor will receive on remoteReceiveTag, and expects this executor to
         // receive on localReceiveTag"
-        val (peerWorkerAddress, remoteExecutorId) = UCXConnection.readHandshakeHeader(is)
+        val (peerWorkerAddress, remoteExecutorId, peerRkeys) = UCXConnection.readHandshakeHeader(is)
 
         val peerExecutorId = connection.getPeerExecutorId
         if (remoteExecutorId != peerExecutorId) {
@@ -402,7 +418,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         }
 
         onWorkerThreadAsync(() => {
-          setupEndpoint(remoteExecutorId, peerWorkerAddress)
+          setupEndpoint(remoteExecutorId, peerWorkerAddress, peerRkeys)
         })
 
         logInfo(s"NEW OUTGOING UCX CONNECTION $connection")
@@ -434,16 +450,17 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         val os = socket.getOutputStream
 
         // get the peer worker address, we need to store this so we can send to this tag
-        val (peerWorkerAddress: WorkerAddress, peerExecutorId: Int) =
+        val (peerWorkerAddress: WorkerAddress, peerExecutorId: Int, peerRkeys: Rkeys) =
           UCXConnection.readHandshakeHeader(is)
 
         logInfo(s"Got peer worker address from executor $peerExecutorId")
 
         // ack what we saw as the local and remote peer tags
-        UCXConnection.writeHandshakeHeader(os, ucxWorkerAddress, executorId)
+        UCXConnection.writeHandshakeHeader(
+          os, ucxWorkerAddress, executorId, localRkeys)
 
         onWorkerThreadAsync(() => {
-          setupEndpoint(peerExecutorId, peerWorkerAddress)
+          setupEndpoint(peerExecutorId, peerWorkerAddress, peerRkeys)
         })
 
         // peer would have established an endpoint peer -> local
@@ -458,31 +475,66 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     }
   }
 
-  def register(rootBuffer: MemoryBuffer, mmapCallback: MemoryRegistrationCallback): Unit = {
-    onWorkerThreadAsync(() => {
-      val mmapParam = new UcpMemMapParams()
-        .setAddress(rootBuffer.getAddress)
-        .setLength(rootBuffer.getLength)
-
-      //note that this can throw, lets call back and let caller figure out how to handle
-      try {
-        registeredMemory += context.memoryMap(mmapParam)
-        mmapCallback(true)
-      } catch {
-        case t: Throwable =>
-          logError(s"There was an issue registering $rootBuffer against UCX", t)
-          mmapCallback(false)
-      }
-    })
+  /**
+   * Return rkeys (if we have registered memory)
+   */
+  private lazy val localRkeys: Seq[ByteBuffer] = registeredMemory.synchronized {
+    while (pendingRegistration) {
+      registeredMemory.wait(100)
+    }
+    registeredMemory.map(_.getRemoteKeyBuffer)
   }
+
+  /**
+   * Register a set of `MemoryBuffers` against UCX.
+   *
+   * @param buffers to register
+   * @param mmapCallback callback invoked when the memory map operation completes or fails
+   */
+  def register(buffers: Seq[MemoryBuffer], mmapCallback: MemoryRegistrationCallback): Unit =
+    registeredMemory.synchronized {
+      pendingRegistration = true
+
+      onWorkerThreadAsync(() => {
+        var error: Throwable = null
+        registeredMemory.synchronized {
+          try {
+            buffers.foreach { buffer =>
+              val mmapParam = new UcpMemMapParams()
+                  .setAddress(buffer.getAddress)
+                  .setLength(buffer.getLength)
+
+              //note that this can throw, lets call back and let caller figure out how to handle
+              try {
+                val registered = context.memoryMap(mmapParam)
+                registeredMemory += registered
+              } catch {
+                case t: Throwable =>
+                  if (error == null) {
+                    error = t
+                  } else {
+                    error.addSuppressed(t)
+                  }
+              }
+            }
+          } finally {
+            mmapCallback(Option(error))
+            pendingRegistration = false
+            registeredMemory.notify()
+          }
+        }
+      })
+    }
 
   def getNextTransactionId: Long = txId.incrementAndGet()
 
   override def close(): Unit = {
     onWorkerThreadAsync(() => {
       logInfo(s"De-registering UCX ${registeredMemory.size} memory buffers.")
-      registeredMemory.foreach(_.deregister())
-      registeredMemory.clear()
+      registeredMemory.synchronized {
+        registeredMemory.foreach(_.deregister())
+        registeredMemory.clear()
+      }
       synchronized {
         initialized = false
         notifyAll()

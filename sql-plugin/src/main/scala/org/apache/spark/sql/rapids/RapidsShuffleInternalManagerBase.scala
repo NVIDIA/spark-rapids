@@ -198,7 +198,13 @@ class RapidsCachingWriter[K, V](
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
 abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boolean)
-    extends ShuffleManager with Logging {
+    extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
+
+  def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
+
+  override def addPeer(peer: BlockManagerId): Unit = {
+    transport.foreach(_.connect(peer))
+  }
 
   private val rapidsConf = new RapidsConf(conf)
 
@@ -208,7 +214,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   }
 
   protected val wrapped = new SortShuffleManager(conf)
-  GpuShuffleEnv.setRapidsShuffleManagerInitialized(true, this.getClass.getCanonicalName)
+  GpuShuffleEnv.setRapidsShuffleManager(Some(this))
 
   private [this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
     "Transport disabled (local cached blocks only)."
