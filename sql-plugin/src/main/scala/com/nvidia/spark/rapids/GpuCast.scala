@@ -498,6 +498,7 @@ case class GpuCast(
     var separatorColumn: ColumnVector = null
     var spaceColumn: ColumnVector = null
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
+    // coreColumns tracks the casted child columns
     val coreColumns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
 
     try {
@@ -521,6 +522,8 @@ case class GpuCast(
         for(childIndex <- 1 until input.getBase().getNumChildren()) {
           withResource(input.getBase().getChildColumnView(childIndex)) { childView =>
             columns += separatorColumn
+            // Copies the whitespace column's validity with the current column's validity.
+            // Mimics the Spark null behavior of consecutive commas with no space between them
             columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, childView)
             withResource(childView.copyToColumnVector()) { childVector =>
               columns += doColumnar(GpuColumnVector.from(childVector,
@@ -532,10 +535,17 @@ case class GpuCast(
         withResource(GpuScalar.from(rightBracket, StringType)) { bracketScalar =>
           columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount().toInt)
         }
+
+        // Merge casted child columns
         withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
           withResource(ColumnVector.stringConcatenate(emptyStrScalar, emptyStrScalar,
             columns.toArray[ColumnView])) { fullResult =>
-            fullResult.mergeAndSetValidity(BinaryOp.BITWISE_OR, coreColumns: _*)
+            // Merge the validity of all child columns, fully null rows are null in the result
+            withResource(fullResult.mergeAndSetValidity(BinaryOp.BITWISE_OR,
+              coreColumns: _*)) { nulledResult =>
+              // Reflect the struct column's validity vector in the result
+              nulledResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase(), nulledResult)
+            }
           }
         }
       } else {
@@ -554,11 +564,14 @@ case class GpuCast(
         withResource(GpuScalar.from(rightBracket, StringType)) { bracketScalar =>
           columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount().toInt)
         }
+
+        // Merge casted child columns
         withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
           withResource(GpuScalar.from("null", StringType)) { nullStringScalar =>
             withResource(ColumnVector.stringConcatenate(emptyStrScalar, nullStringScalar,
               columns.toArray[ColumnView])) { fullResult =>
-              fullResult.mergeAndSetValidity(BinaryOp.BITWISE_OR, input.getBase())
+              // Reflect the struct column's validity vector in the result
+              fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase())
             }
           }
         }
