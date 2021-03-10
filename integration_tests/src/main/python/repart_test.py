@@ -57,6 +57,11 @@ def test_repartion_df(num_parts, length):
     ([('a', long_gen)], ['a']),
     #FLOAT DOES NOT WORK FOR -0.0 ([('a', float_gen)], ['a']),
     #DOUBLE DOES NOT WORK FOR -0.0 ([('a', double_gen)], ['a']),
+    ([('a', decimal_gen_default)], ['a']),
+    ([('a', decimal_gen_neg_scale)], ['a']),
+    ([('a', decimal_gen_scale_precision)], ['a']),
+    ([('a', decimal_gen_same_scale_precision)], ['a']),
+    ([('a', decimal_gen_64bit)], ['a']),
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
     ([('a', byte_gen)], [f.col('a') - 5]), 
@@ -67,13 +72,13 @@ def test_repartion_df(num_parts, length):
     ([('a', long_gen), ('b', null_gen)], ['a', 'b']),
     ([('a', byte_gen), ('b', boolean_gen), ('c', short_gen)], ['a', 'b', 'c']),
     ([('a', short_gen), ('b', string_gen), ('c', int_gen)], ['a', 'b', 'c']),
+    ([('a', decimal_gen_default), ('b', decimal_gen_64bit), ('c', decimal_gen_scale_precision)], ['a', 'b', 'c']),
     ], ids=idfn)
 def test_hash_repartition_exact(gen, num_parts):
     data_gen = gen[0]
     part_on = gen[1]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : debug_df(gen_df(spark, data_gen)\
+            lambda spark : gen_df(spark, data_gen)\
                     .repartition(num_parts, *part_on)\
-                    .selectExpr('spark_partition_id() as id', '*', 'hash(*)', 'pmod(hash(*),{})'.format(num_parts))\
-                    .orderBy(*part_on)),
+                    .selectExpr('spark_partition_id() as id', '*', 'hash(*)', 'pmod(hash(*),{})'.format(num_parts)),
             conf = allow_negative_scale_of_decimal_conf)

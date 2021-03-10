@@ -16,8 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
-import com.nvidia.spark.rapids.{Arm, GpuCast, GpuColumnVector, GpuExpression, GpuIf, GpuIsNan, GpuLiteral, GpuProjectExec, GpuUnaryExpression}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType}
+import com.nvidia.spark.rapids.{Arm, GpuCast, GpuColumnVector, GpuExpression, GpuIf, GpuIsNan, GpuLiteral, GpuProjectExec, GpuUnaryExpression, GpuUnscaledValue}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.types._
@@ -50,6 +50,9 @@ object GpuMurMur3Hash extends Arm {
           // We have to normalize the NaNs, but not zeros
           // however the current cudf code does the wrong thing for -0.0
           GpuIf(GpuIsNan(expr), GpuLiteral(Float.NaN, FloatType), expr)
+        case dt: DecimalType if dt.precision <= DType.DECIMAL64_MAX_PRECISION =>
+          // For these values it is just hashing it as a long
+          GpuUnscaledValue(expr)
         case _ =>
           expr
       }

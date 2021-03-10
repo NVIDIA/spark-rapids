@@ -9545,7 +9545,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
