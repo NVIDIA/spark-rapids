@@ -60,12 +60,6 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
 
-PARQUET_PERF="$WORKSPACE/integration_tests/src/test/resources/parquet_perf"
-PARQUET_ACQ="$WORKSPACE/integration_tests/src/test/resources/parquet_acq"
-OUTPUT="$WORKSPACE/output"
-
-# spark.sql.cache.serializer conf is ignored for versions prior to 3.1.1
-SERIALIZER="--conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
 
 BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
     --master spark://$HOSTNAME:7077 \
@@ -77,9 +71,6 @@ BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
     --conf spark.driver.extraJavaOptions=-Duser.timezone=UTC \
     --conf spark.executor.extraJavaOptions=-Duser.timezone=UTC \
     --conf spark.sql.session.timeZone=UTC"
-MORTGAGE_SPARK_SUBMIT_ARGS=" --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-    --class com.nvidia.spark.rapids.tests.mortgage.Main \
-    $RAPIDS_TEST_JAR"
 
 CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
@@ -87,8 +78,6 @@ CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
     --conf spark.executorEnv.PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
     --conf spark.pyspark.python=/opt/conda/bin/python \
     --py-files ${RAPIDS_PLUGIN_JAR}" # explicitly specify python binary path in env w/ multiple python versions
-
-TEST_PARAMS="$SPARK_VER $PARQUET_PERF $PARQUET_ACQ $OUTPUT"
 
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 
@@ -100,8 +89,6 @@ start-slave.sh spark://$HOSTNAME:7077
 jps
 
 echo "----------------------------START TEST------------------------------------"
-rm -rf $OUTPUT
-spark-submit $BASE_SPARK_SUBMIT_ARGS $SERIALIZER $MORTGAGE_SPARK_SUBMIT_ARGS $TEST_PARAMS
 pushd $RAPIDS_INT_TESTS_HOME
 spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/"
 spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf
