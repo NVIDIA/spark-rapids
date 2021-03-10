@@ -73,8 +73,8 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         devStore.synchronousSpill(0)
         assertResult(bufferSize)(hostStore.currentSize)
         assertResult(hostStoreMaxSize - bufferSize)(hostStore.numBytesFree)
-        verify(catalog).swapBufferTiers(
-          ArgumentMatchers.eq(StorageTier.DEVICE), ArgumentMatchers.any[RapidsBuffer])
+        verify(catalog).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
+        verify(catalog).removeBufferTier(bufferId, ArgumentMatchers.eq(StorageTier.DEVICE))
         withResource(catalog.acquireBuffer(bufferId)) { buffer =>
           assertResult(StorageTier.HOST)(buffer.storageTier)
           assertResult(bufferSize)(buffer.size)

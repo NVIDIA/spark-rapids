@@ -79,20 +79,6 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     assertResult(expectedMeta)(meta)
   }
 
-  test("update buffer map only updates for faster tier") {
-    val catalog = new RapidsBufferCatalog
-    val bufferId = MockBufferId(5)
-    val buffer1 = mockBuffer(bufferId, tier = StorageTier.HOST)
-    catalog.registerNewBuffer(buffer1)
-    val buffer2 = mockBuffer(bufferId, tier = StorageTier.DEVICE)
-    catalog.swapBufferTiers(StorageTier.HOST, buffer2)
-    var resultBuffer = catalog.acquireBuffer(bufferId)
-    assertResult(buffer2)(resultBuffer)
-    catalog.swapBufferTiers(StorageTier.HOST, buffer1)
-    resultBuffer = catalog.acquireBuffer(bufferId)
-    assertResult(buffer2)(resultBuffer)
-  }
-
   test("remove buffer releases buffer resources") {
     val catalog = new RapidsBufferCatalog
     val bufferId = MockBufferId(5)

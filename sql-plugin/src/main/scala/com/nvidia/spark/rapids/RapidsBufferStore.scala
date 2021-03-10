@@ -20,8 +20,8 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, StorageTier}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -35,7 +35,7 @@ object RapidsBufferStore {
 /**
  * Base class for all buffer store types.
  *
- * @param name name of this store
+ * @param tier storage tier of this store
  * @param catalog catalog to register this store
  */
 abstract class RapidsBufferStore(
@@ -131,6 +131,7 @@ abstract class RapidsBufferStore(
   def copyBuffer(buffer: RapidsBuffer, stream: Cuda.Stream): RapidsBufferBase = {
     val newBuffer = createBuffer(buffer, stream)
     buffers.add(newBuffer)
+    catalog.registerNewBuffer(newBuffer)
     newBuffer
   }
 
@@ -231,24 +232,20 @@ abstract class RapidsBufferStore(
     // to return back to the outer loop to see if enough has been freed.
     if (buffer.addReference()) {
       try {
-        if (catalog.isMultiTieredBuffer(buffer.id)) {
+        if (catalog.isBufferBackedUp(buffer.id, buffer.storageTier)) {
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
               s"already stored in multiple tiers total mem=${buffers.getTotalBytes}")
           catalog.removeBufferTier(buffer.id, buffer.storageTier)
         } else {
-          val newBuffer = try {
-            logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
-                s"total mem=${buffers.getTotalBytes}")
-            buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
-            spillStore.copyBuffer(buffer, stream)
-          }
-          if (newBuffer != null) {
-            catalog.swapBufferTiers(buffer.storageTier, newBuffer)
-          }
+          logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
+              s"total mem=${buffers.getTotalBytes}")
+          buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
+          spillStore.copyBuffer(buffer, stream)
         }
       } finally {
         buffer.close()
       }
+      catalog.removeBufferTier(buffer.id, buffer.storageTier)
       buffer.free()
     }
   }
@@ -260,7 +257,6 @@ abstract class RapidsBufferStore(
       override val meta: TableMeta,
       initialSpillPriority: Long,
       override val spillCallback: RapidsBuffer.SpillCallback,
-      devStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
       extends RapidsBuffer with Arm {
     private[this] var isValid = true
@@ -321,11 +317,19 @@ abstract class RapidsBufferStore(
               deviceRapidsBuffer.get.getDeviceMemoryBuffer
             case _ =>
               val newBuffer = {
-                logDebug(s"Unspilling $this $id to ${devStorage.name}")
-                spillCallback(storageTier, devStorage.tier, size)
-                devStorage.copyBuffer(this, null)
+                logDebug(s"Unspilling $this $id to $DEVICE")
+                RapidsBufferCatalog.getDeviceStorage.copyBuffer(this, Cuda.DEFAULT_STREAM)
               }
-              catalog.registerNewBuffer(newBuffer)
+              try {
+                catalog.registerNewBuffer(newBuffer)
+              } catch {
+                case e: IllegalStateException =>
+                  // A device buffer is already registered.
+                  logDebug(s"Error registering new buffer $newBuffer", e)
+                  newBuffer.free()
+                  deviceRapidsBuffer = catalog.acquireBuffer(id, DEVICE)
+                  return deviceRapidsBuffer.get.getDeviceMemoryBuffer
+              }
               if (newBuffer.addReference()) {
                 deviceRapidsBuffer = Some(newBuffer)
                 deviceRapidsBuffer.get.getDeviceMemoryBuffer

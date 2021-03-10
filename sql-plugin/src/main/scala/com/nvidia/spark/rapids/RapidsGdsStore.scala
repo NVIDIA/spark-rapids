@@ -24,8 +24,6 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A buffer store using GPUDirect Storage (GDS). */
 class RapidsGdsStore(

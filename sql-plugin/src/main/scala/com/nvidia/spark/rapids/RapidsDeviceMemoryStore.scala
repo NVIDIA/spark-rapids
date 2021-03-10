@@ -45,7 +45,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
           } finally {
             h.close()
           }
-        case _ => throw new IllegalStateException("What buffer is this")
+        case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
       }
     }
     new RapidsDeviceMemoryBuffer(other.id, other.size, other.meta, None,
