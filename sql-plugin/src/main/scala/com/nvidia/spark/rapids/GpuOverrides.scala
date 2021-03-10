@@ -408,19 +408,6 @@ trait GpuOverridesListener {
       costOptimizations: Seq[Optimization])
 }
 
-/**
- * trait to check if the zone id is in UTC
- */
-trait TimeZoneCheck {
-  def checkTimeZoneId(timeZoneId: Option[String], meta: RapidsMeta[_, _, _]): Unit = {
-    timeZoneId.foreach { zoneId =>
-      if (ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-        meta.willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-      }
-    }
-  }
-}
-
 object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
@@ -1327,7 +1314,7 @@ object GpuOverrides {
         ("interval", TypeSig.lit(TypeEnum.CALENDAR)
           .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
           TypeSig.CALENDAR)),
-      (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) with TimeZoneCheck {
+      (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
             val intvl = lit.value.asInstanceOf[CalendarInterval]
@@ -1335,7 +1322,7 @@ object GpuOverrides {
               willNotWorkOnGpu("interval months isn't supported")
             }
           }
-          checkTimeZoneId(timeAdd.timeZoneId, this)
+          checkTimeZoneId(timeAdd.timeZoneId)
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1349,7 +1336,7 @@ object GpuOverrides {
           .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
           TypeSig.CALENDAR)),
       (dateAddInterval, conf, p, r) =>
-        new BinaryExprMeta[DateAddInterval](dateAddInterval, conf, p, r) with TimeZoneCheck {
+        new BinaryExprMeta[DateAddInterval](dateAddInterval, conf, p, r) {
           override def tagExprForGpu(): Unit = {
             GpuOverrides.extractLit(dateAddInterval.interval).foreach { lit =>
               val intvl = lit.value.asInstanceOf[CalendarInterval]
@@ -1357,7 +1344,7 @@ object GpuOverrides {
                 willNotWorkOnGpu("interval months isn't supported")
               }
             }
-            checkTimeZoneId(dateAddInterval.timeZoneId, this)
+            checkTimeZoneId(dateAddInterval.timeZoneId)
           }
 
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1405,9 +1392,9 @@ object GpuOverrides {
       "Returns the hour component of the string/timestamp",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-      (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) with TimeZoneCheck {
+      (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(hour.timeZoneId, this)
+          checkTimeZoneId(hour.timeZoneId)
         }
 
         override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
@@ -1416,9 +1403,9 @@ object GpuOverrides {
       "Returns the minute component of the string/timestamp",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-      (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) with TimeZoneCheck {
+      (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(minute.timeZoneId, this)
+         checkTimeZoneId(minute.timeZoneId)
         }
 
         override def convertToGpu(expr: Expression): GpuExpression =
@@ -1428,9 +1415,9 @@ object GpuOverrides {
       "Returns the second component of the string/timestamp",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-      (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) with TimeZoneCheck {
+      (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(second.timeZoneId, this)
+          checkTimeZoneId(second.timeZoneId)
         }
 
         override def convertToGpu(expr: Expression): GpuExpression =

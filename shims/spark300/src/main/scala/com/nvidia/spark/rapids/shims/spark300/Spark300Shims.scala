@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark300
 
 import java.nio.ByteBuffer
-import java.time.ZoneId
 
 import scala.collection.mutable.ListBuffer
 
@@ -246,22 +245,21 @@ class Spark300Shims extends SparkShims {
           ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
           ("interval", TypeSig.lit(TypeEnum.CALENDAR)
             .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-        (timeSub, conf, p, r) =>
-          new BinaryExprMeta[TimeSub](timeSub, conf, p, r) with TimeZoneCheck {
-            override def tagExprForGpu(): Unit = {
-              timeSub.interval match {
-                case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                  if (intvl.months != 0) {
-                    willNotWorkOnGpu("interval months isn't supported")
-                  }
-                case _ =>
-              }
-              checkTimeZoneId(timeSub.timeZoneId, this)
+        (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            timeSub.interval match {
+              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+                if (intvl.months != 0) {
+                  willNotWorkOnGpu("interval months isn't supported")
+                }
+              case _ =>
             }
+            checkTimeZoneId(timeSub.timeZoneId)
+          }
 
-            override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-              GpuTimeSub(lhs, rhs)
-          }),
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuTimeSub(lhs, rhs)
+        }),
       GpuOverrides.expr[First](
         "first aggregate operator",
         ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,

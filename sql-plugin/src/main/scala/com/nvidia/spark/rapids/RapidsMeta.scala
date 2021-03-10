@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
+
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
@@ -322,6 +324,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       }
     } else {
       "!"
+    }
+  }
+
+  protected def checkTimeZoneId(timeZoneId: Option[String]): Unit = {
+    timeZoneId.foreach { zoneId =>
+      if (ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+        willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
+      }
     }
   }
 
