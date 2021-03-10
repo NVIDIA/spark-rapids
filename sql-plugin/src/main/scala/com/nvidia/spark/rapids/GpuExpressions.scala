@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,14 +25,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
 object GpuExpressionsUtils extends Arm {
-  def evaluateBoundExpressions[A <: GpuExpression](cb: ColumnarBatch,
-      boundExprs: Seq[A]): Seq[GpuColumnVector] = {
-    withResource(GpuProjectExec.project(cb, boundExprs)) { cb =>
-      (0 until cb.numCols()).map(cb.column(_).asInstanceOf[GpuColumnVector].incRefCount())
-          .toArray.toSeq
-    }
-  }
-
   def getTrimString(trimStr: Option[Expression]): String = trimStr match {
     case Some(GpuLiteral(data, StringType)) =>
       if (data == null) {

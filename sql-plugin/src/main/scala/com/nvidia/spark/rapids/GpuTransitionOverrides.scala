@@ -337,10 +337,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       plan match {
         case _: GpuHashJoin =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
+          GpuSortExec(sortOrder, false, plan, SortEachBatch)
         case _: GpuHashAggregateExec =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
+          GpuSortExec(sortOrder, false, plan, SortEachBatch)
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
