@@ -40,7 +40,7 @@ class RapidsShuffleHeartbeatManagerTest extends RapidsShuffleTestHelper {
     // second executor
     hbMgr.registerExecutor(exec2)
 
-    // first executor hearbeat (finding out about executor 2)
+    // first executor heartbeat (finding out about executor 2)
     hbMgr.executorHeartbeat(exec1)
 
     match {
