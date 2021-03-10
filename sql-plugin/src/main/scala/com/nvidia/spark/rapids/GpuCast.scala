@@ -523,7 +523,8 @@ case class GpuCast(
             columns += separatorColumn
             columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, childView)
             withResource(childView.copyToColumnVector()) { childVector =>
-              columns += doColumnar(GpuColumnVector.from(childVector, inputSchema(childIndex).dataType))
+              columns += doColumnar(GpuColumnVector.from(childVector,
+                inputSchema(childIndex).dataType))
               coreColumns += columns.last
             }
           }
@@ -545,7 +546,8 @@ case class GpuCast(
           withResource(input.getBase().getChildColumnView(childIndex)) { childView =>
             columns += separatorColumn
             withResource(childView.copyToColumnVector()) { childVector =>
-              columns += doColumnar(GpuColumnVector.from(childVector, inputSchema(childIndex).dataType))
+              columns += doColumnar(GpuColumnVector.from(childVector,
+                inputSchema(childIndex).dataType))
             }
           }
         }
