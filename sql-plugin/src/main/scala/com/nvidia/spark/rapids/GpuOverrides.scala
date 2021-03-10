@@ -408,6 +408,19 @@ trait GpuOverridesListener {
       costOptimizations: Seq[Optimization])
 }
 
+/**
+ * trait to check if the zone id is in UTC
+ */
+trait TimeZoneCheck {
+  def checkTimeZoneId(timeZoneId: Option[String], meta: RapidsMeta[_, _, _]): Unit = {
+    timeZoneId.foreach { zoneId =>
+      if (ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+        meta.willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
+      }
+    }
+  }
+}
+
 object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
@@ -1312,25 +1325,22 @@ object GpuOverrides {
       ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-            .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
-            TypeSig.CALENDAR)),
-      (a, conf, p, r) => new BinaryExprMeta[TimeAdd](a, conf, p, r) {
+          .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
+          TypeSig.CALENDAR)),
+      (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) with TimeZoneCheck {
         override def tagExprForGpu(): Unit = {
-          GpuOverrides.extractLit(a.interval).foreach { lit =>
+          GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
             val intvl = lit.value.asInstanceOf[CalendarInterval]
             if (intvl.months != 0) {
               willNotWorkOnGpu("interval months isn't supported")
             }
           }
-          a.timeZoneId.foreach {
-            case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
-              willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-          }
+          checkTimeZoneId(timeAdd.timeZoneId, this)
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuTimeAdd(lhs, rhs)
-      }),
+    }),
     expr[DateAddInterval](
       "Adds interval to date",
       ExprChecks.binaryProjectNotLambda(TypeSig.DATE, TypeSig.DATE,
@@ -1338,24 +1348,21 @@ object GpuOverrides {
         ("interval", TypeSig.lit(TypeEnum.CALENDAR)
           .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
           TypeSig.CALENDAR)),
-      (a, conf, p, r) => new BinaryExprMeta[DateAddInterval](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          GpuOverrides.extractLit(a.interval).foreach { lit =>
-            val intvl = lit.value.asInstanceOf[CalendarInterval]
-            if (intvl.months != 0) {
-              willNotWorkOnGpu("interval months isn't supported")
+      (dateAddInterval, conf, p, r) =>
+        new BinaryExprMeta[DateAddInterval](dateAddInterval, conf, p, r) with TimeZoneCheck {
+          override def tagExprForGpu(): Unit = {
+            GpuOverrides.extractLit(dateAddInterval.interval).foreach { lit =>
+              val intvl = lit.value.asInstanceOf[CalendarInterval]
+              if (intvl.months != 0) {
+                willNotWorkOnGpu("interval months isn't supported")
+              }
             }
+            checkTimeZoneId(dateAddInterval.timeZoneId, this)
           }
-          a.timeZoneId.foreach {
-            case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
-              willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-            case _ =>
-          }
-        }
 
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuDateAddInterval(lhs, rhs)
-      }),
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuDateAddInterval(lhs, rhs)
+        }),
     expr[ToUnixTimestamp](
       "Returns the UNIX timestamp of the given time",
       ExprChecks.binaryProjectNotLambda(TypeSig.LONG, TypeSig.LONG,
@@ -1398,13 +1405,9 @@ object GpuOverrides {
       "Returns the hour component of the string/timestamp",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-      (a, conf, p, r) => new UnaryExprMeta[Hour](a, conf, p, r) {
+      (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) with TimeZoneCheck {
         override def tagExprForGpu(): Unit = {
-          a.timeZoneId.foreach {
-            case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
-              willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-            case _ =>
-          }
+          checkTimeZoneId(hour.timeZoneId, this)
         }
 
         override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
@@ -1413,13 +1416,9 @@ object GpuOverrides {
       "Returns the minute component of the string/timestamp",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-      (a, conf, p, r) => new UnaryExprMeta[Minute](a, conf, p, r) {
+      (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) with TimeZoneCheck {
         override def tagExprForGpu(): Unit = {
-          a.timeZoneId.foreach {
-            case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
-              willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-            case _ =>
-          }
+          checkTimeZoneId(minute.timeZoneId, this)
         }
 
         override def convertToGpu(expr: Expression): GpuExpression =
@@ -1429,13 +1428,9 @@ object GpuOverrides {
       "Returns the second component of the string/timestamp",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-      (a, conf, p, r) => new UnaryExprMeta[Second](a, conf, p, r) {
+      (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) with TimeZoneCheck {
         override def tagExprForGpu(): Unit = {
-          a.timeZoneId.foreach {
-            case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
-              willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-            case _ =>
-          }
+          checkTimeZoneId(second.timeZoneId, this)
         }
 
         override def convertToGpu(expr: Expression): GpuExpression =

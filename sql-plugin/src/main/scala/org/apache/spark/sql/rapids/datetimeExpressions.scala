@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, TimeZoneCheck}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -341,15 +341,13 @@ case class GpuDayOfYear(child: Expression) extends GpuDateUnaryExpression {
 abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpression]
    (expr: A, conf: RapidsConf,
    parent: Option[RapidsMeta[_, _, _]],
-   rule: DataFromReplacementRule) extends BinaryExprMeta[A](expr, conf, parent, rule) {
+   rule: DataFromReplacementRule)
+  extends BinaryExprMeta[A](expr, conf, parent, rule) with TimeZoneCheck {
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
-    expr.timeZoneId.foreach {
-      case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
-        willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-      case _ =>
-    }
+    checkTimeZoneId(expr.timeZoneId, this)
+
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
       try {

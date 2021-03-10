@@ -245,26 +245,23 @@ class Spark300Shims extends SparkShims {
         ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
           ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
           ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-              .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-        (a, conf, p, r) => new BinaryExprMeta[TimeSub](a, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            a.interval match {
-              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _ =>
+            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
+        (timeSub, conf, p, r) =>
+          new BinaryExprMeta[TimeSub](timeSub, conf, p, r) with TimeZoneCheck {
+            override def tagExprForGpu(): Unit = {
+              timeSub.interval match {
+                case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+                  if (intvl.months != 0) {
+                    willNotWorkOnGpu("interval months isn't supported")
+                  }
+                case _ =>
+              }
+              checkTimeZoneId(timeSub.timeZoneId, this)
             }
-            a.timeZoneId.foreach {
-              case zoneId if ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID =>
-                willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
-              case _ =>
-            }
-          }
 
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuTimeSub(lhs, rhs)
-        }),
+            override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+              GpuTimeSub(lhs, rhs)
+          }),
       GpuOverrides.expr[First](
         "first aggregate operator",
         ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
