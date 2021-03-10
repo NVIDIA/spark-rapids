@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
@@ -113,6 +113,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def convertToCpu(): BASE = wrapped
 
   private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
+  private var mustBeReplacedReasons: Option[mutable.Set[String]] = None
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
   protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
@@ -125,13 +126,18 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * is reached that is already on CPU.
    */
   final def recursiveCostPreventsRunningOnGpu(): Unit = {
-    if (canThisBeReplaced) {
+    if (canThisBeReplaced && !mustThisBeReplaced) {
       costPreventsRunningOnGpu()
       childDataWriteCmds.foreach(_.recursiveCostPreventsRunningOnGpu())
     }
   }
 
   final def costPreventsRunningOnGpu(): Unit = {
+
+    if (wrapped.isInstanceOf[CustomShuffleReaderExec]) {
+      throw new IllegalStateException()
+    }
+
     cannotRunOnGpuBecauseOfCost = true
     willNotWorkOnGpu("Removed by cost-based optimizer")
     childExprs.foreach(_.recursiveCostPreventsRunningOnGpu())
@@ -171,6 +177,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     }
   }
 
+  final def mustStayOnGpu(because: String): Unit = {
+    mustBeReplacedReasons.get.add(because)
+  }
+
   /**
    * Call this if there is a condition found that the entire plan is not allowed
    * to run on the GPU.
@@ -191,6 +201,12 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * Returns true iff this could be replaced.
    */
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
+
+  /**
+   * Returns true iff this must be replaced because its children have already been
+   * replaced and this needs to also be replaced for compatibility.
+   */
+  final def mustThisBeReplaced: Boolean = mustBeReplacedReasons.exists(_.nonEmpty)
 
   /**
    * Returns the list of reasons the entire plan can't be replaced. An empty
@@ -230,6 +246,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   def initReasons(): Unit = {
     cannotBeReplacedReasons = Some(mutable.Set[String]())
+    mustBeReplacedReasons = Some(mutable.Set[String]())
     shouldBeRemovedReasons = Some(mutable.Set[String]())
     cannotReplaceAnyOfPlanReasons = Some(mutable.Set[String]())
   }

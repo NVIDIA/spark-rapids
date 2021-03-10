@@ -353,6 +353,37 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     }, conf)
   }
 
+
+  test("keep CustomShuffleReaderExec on GPU") {
+
+    // if we force a GPU CustomShuffleReaderExec back onto CPU due to cost then the query will
+    // fail because the shuffle already happened on GPU and we end up with an invalid plan
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1")
+        .set(SQLConf.PREFER_SORTMERGEJOIN.key, "false")
+        .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0")
+        .set("spark.rapids.sql.optimizer.exec.CustomShuffleReaderExec", "99999999")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortMergeJoinExec,SortExec," +
+              "Alias,Cast,LessThan")
+
+    withGpuSparkSession(spark => {
+      val df1: DataFrame = createQuery(spark).alias("l")
+      val df2: DataFrame = createQuery(spark).alias("r")
+      val df = df1.join(df2,
+        col("l.more_strings_1").equalTo(col("r.more_strings_2")))
+      df.collect()
+
+      df
+    }, conf)
+  }
+
   private def createQuery(spark: SparkSession) = {
     val df1 = nullableStringsDf(spark)
         .repartition(2)

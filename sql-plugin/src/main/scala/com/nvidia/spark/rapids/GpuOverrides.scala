@@ -2714,7 +2714,9 @@ object GpuOverrides {
       (exec, conf, p, r) =>
       new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
         override def tagPlanForGpu(): Unit = {
-          if (!exec.child.supportsColumnar) {
+          if (exec.child.supportsColumnar) {
+            mustStayOnGpu("Reading from a GPU shuffle")
+          } else {
             willNotWorkOnGpu(
               "Unable to replace CustomShuffleReader due to child not being columnar")
           }
