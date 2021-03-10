@@ -742,7 +742,7 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
-    .doc("Enable the Rapids Shuffle Transport for accelerated shuffle. By default, this " +
+    .doc("Enable the RAPIDS Shuffle Transport for accelerated shuffle. By default, this " +
         "requires UCX to be installed in the system. Consider setting to false if running with " +
         "a single executor and UCX is not available, for short-circuit cached shuffle " +
         "(i.e. for testing purposes)")
@@ -751,12 +751,12 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
-    .doc("Enable heartbeats for Rapids Shuffle Transport, for early connection establishment")
+    .doc("Enable early connection establishment for RAPIDS Shuffle")
     .booleanConf
     .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL =
-    conf("spark.rapids.shuffle.transport.earlyStartHeartbeatInterval")
+    conf("spark.rapids.shuffle.transport.earlyStart.heartbeatInterval")
       .doc("Shuffle early start heartbeat interval (milliseconds)")
       .integerConf
       .createWithDefault(5000)

@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.io.File
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVectorCore, Table}
-import org.mockito.Mockito._
 import org.scalatest.Assertions
 
 import org.apache.spark.SparkConf
@@ -27,7 +26,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsShuffleInternalManagerBase}
+import org.apache.spark.sql.rapids.{GpuShuffleEnv}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A collection of utility methods useful in tests. */

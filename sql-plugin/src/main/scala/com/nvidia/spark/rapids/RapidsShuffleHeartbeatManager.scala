@@ -39,14 +39,12 @@ case class RapidsExecutorStartupMsg(id: BlockManagerId)
 /**
  * Executor heartbeat message.
  * This gives the driver an opportunity to respond with `RapidsExecutorUpdateMsg`
- * @param id `BlockManagerId` for the executor
  */
 case class RapidsExecutorHeartbeatMsg(id: BlockManagerId)
 
 /**
  * Driver response to an startup or heartbeat message, with new (to the peer) executors
  * from the last heartbeat.
- * @param ids array of `BlockManagerId
  */
 case class RapidsExecutorUpdateMsg(ids: Array[BlockManagerId])
 
@@ -109,11 +107,7 @@ class RapidsShuffleHeartbeatManager extends Logging {
 }
 
 trait RapidsShuffleHeartbeatHandler {
-  /**
-   * Called when a new peer is seen via heartbeats, for handle to add and potentially
-   * connect early.
-   * @param peer `BlockManagerId`
-   */
+  /** Called when a new peer is seen via heartbeats */
   def addPeer(peer: BlockManagerId): Unit
 }
 
@@ -123,7 +117,11 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
   private[this] val heartbeatIntervalMillis =
     conf.shuffleTransportEarlyStartHeartbeatInterval
 
-  private[this] var executorService: ScheduledExecutorService = _
+  private[this] val executorService: ScheduledExecutorService =
+    Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+      .setNameFormat("rapids-shuffle-hb")
+      .setDaemon(true)
+      .build())
 
   private class InitializeShuffleManager(ctx: PluginContext,
       shuffleManager: RapidsShuffleInternalManagerBase) extends Runnable {
@@ -159,17 +157,13 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
 
   def updatePeers(shuffleManager: RapidsShuffleHeartbeatHandler,
       peers: Seq[BlockManagerId]): Unit = {
-    peers.foreach { case peer =>
+    peers.foreach { peer =>
       logInfo(s"Updating shuffle manager for new executor $peer")
       shuffleManager.addPeer(peer)
     }
   }
 
   GpuShuffleEnv.mgr.foreach { mgr =>
-    executorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-        .setNameFormat("rapids-shuffle-hb")
-        .setDaemon(true)
-        .build())
     executorService.submit(new InitializeShuffleManager(pluginContext, mgr))
   }
 

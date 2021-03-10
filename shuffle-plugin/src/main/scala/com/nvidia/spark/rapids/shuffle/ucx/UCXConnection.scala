@@ -354,7 +354,7 @@ object UCXConnection extends Logging {
     // get the number of rkeys expected next
     val numRkeys = readBytesFromStream(false, is, 4).getInt()
 
-    val rkeys = new ArrayBuffer[ByteBuffer]()
+    val rkeys = new ArrayBuffer[ByteBuffer](numRkeys)
     (0 until numRkeys).foreach { _ =>
       val size = readBytesFromStream(false, is, 4).getInt()
       rkeys.append(readBytesFromStream(true, is, size))
@@ -368,7 +368,8 @@ object UCXConnection extends Logging {
    *  - UCP Worker address length (4 bytes)
    *  - UCP Worker address (variable length)
    *  - Local executor id (4 bytes)
-   *  - Local rkeys. Used for UCX connection establishment.
+   *  - Local rkeys count (4 bytes)
+   *  - Per rkey: rkey length (4 bytes) + rkey payload (variable)
    *
    * @param os OutputStream to write to
    * @param workerAddress byte buffer that holds the local UCX worker address

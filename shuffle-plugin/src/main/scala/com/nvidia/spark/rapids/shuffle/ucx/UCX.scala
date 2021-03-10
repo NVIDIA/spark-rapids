@@ -110,6 +110,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
   // holds memory registered against UCX that should be de-register on exit (used for bounce
   // buffers)
+  // NOTE: callers should hold the `registeredMemory` lock before modifying this array
   val registeredMemory = new ArrayBuffer[UcpMemory]
 
   // when this flag is set to true, an async call to `register` hasn't completed in
@@ -342,12 +343,12 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
    * @param endpointId    presently an executorId, it is used to distinguish between endpoints
    *                      when routing messages outbound
    * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
-   * @param rkeys list of UCX rkeys that the peer has sent us for unpacking
+   * @param peerRkeys list of UCX rkeys that the peer has sent us for unpacking
    * @return returns a [[UcpEndpoint]] that can later be used to send on (from the
    *         progress thread)
    */
   private[ucx] def setupEndpoint(
-    endpointId: Long, workerAddress: WorkerAddress, peerRkeys: Rkeys): UcpEndpoint = {
+      endpointId: Long, workerAddress: WorkerAddress, peerRkeys: Rkeys): UcpEndpoint = {
     logDebug(s"Starting/reusing an endpoint to $workerAddress with id $endpointId")
     // create an UCX endpoint using workerAddress
     endpoints.computeIfAbsent(endpointId,
@@ -496,35 +497,33 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
       onWorkerThreadAsync(() => {
         var error: Throwable = null
-        buffers.foreach { buffer =>
-          val mmapParam = new UcpMemMapParams()
-              .setAddress(buffer.getAddress)
-              .setLength(buffer.getLength)
+        try {
+          buffers.foreach { buffer =>
+            val mmapParam = new UcpMemMapParams()
+                .setAddress(buffer.getAddress)
+                .setLength(buffer.getLength)
 
-          //note that this can throw, lets call back and let caller figure out how to handle
-          try {
-            val registered = context.memoryMap(mmapParam)
-            registeredMemory.synchronized {
-              registeredMemory += registered
-            }
-          } catch {
-            case t: Throwable =>
-              if (error == null) {
-                error = t
-              } else {
-                error.addSuppressed(t)
+            //note that this can throw, lets call back and let caller figure out how to handle
+            try {
+              val registered = context.memoryMap(mmapParam)
+              registeredMemory.synchronized {
+                registeredMemory += registered
               }
+            } catch {
+              case t: Throwable =>
+                if (error == null) {
+                  error = t
+                } else {
+                  error.addSuppressed(t)
+                }
+            }
           }
-        }
-        if (error != null) {
-          mmapCallback(Some(error))
-        } else {
-          mmapCallback()
-        }
-
-        registeredMemory.synchronized {
-          pendingRegistration = false
-          registeredMemory.notify()
+        } finally {
+          mmapCallback(Option(error))
+          registeredMemory.synchronized {
+            pendingRegistration = false
+            registeredMemory.notify()
+          }
         }
       })
     }
@@ -534,8 +533,10 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   override def close(): Unit = {
     onWorkerThreadAsync(() => {
       logInfo(s"De-registering UCX ${registeredMemory.size} memory buffers.")
-      registeredMemory.foreach(_.deregister())
-      registeredMemory.clear()
+      registeredMemory.synchronized {
+        registeredMemory.foreach(_.deregister())
+        registeredMemory.clear()
+      }
       synchronized {
         initialized = false
         notifyAll()
