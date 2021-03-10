@@ -2378,6 +2378,16 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def tagPartForGpu(): Unit = {
+          // This needs to match what murmur3 supports. in 0.5 we should make the checks
+          // self documenting, and look more like what SparkPlan and Expression support
+          val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+              TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL
+          hp.children.foreach { child =>
+            sig.tagExprParam(this, child, "hash_key")
+          }
+        }
+
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
