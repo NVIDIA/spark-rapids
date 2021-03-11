@@ -362,7 +362,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1")
-        .set(SQLConf.PREFER_SORTMERGEJOIN.key, "false")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
         .set(RapidsConf.OPTIMIZER_EXPLAIN.key, "ALL")
         .set(RapidsConf.EXPLAIN.key, "ALL")
@@ -370,8 +369,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0")
         .set("spark.rapids.sql.optimizer.exec.CustomShuffleReaderExec", "99999999")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-          "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortMergeJoinExec,SortExec," +
-              "Alias,Cast,LessThan")
+          "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan")
 
     withGpuSparkSession(spark => {
       val df1: DataFrame = createQuery(spark).alias("l")
