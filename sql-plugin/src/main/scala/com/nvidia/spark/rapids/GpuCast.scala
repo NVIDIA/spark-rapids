@@ -42,15 +42,19 @@ class CastExprMeta[INPUT <: CastBase](
   var legacyCastToString = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
 
   override def tagExprForGpu(): Unit = {
+    recursiveTagExprForGpuCheck(fromType)
+  }
+
+  def recursiveTagExprForGpuCheck(fromDataType: DataType) {
     if (!conf.isCastFloatToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
-      (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
+      (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
         "floating point data types to decimals and this can produce results that slightly " +
         "differ from the default behavior in Spark.  To enable this operation on the GPU, set " +
         s"${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
     }
     if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
-      (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType)) {
+      (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
         "converting floating point data types to strings and this can produce results that " +
         "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
@@ -74,12 +78,16 @@ class CastExprMeta[INPUT <: CastBase](
         "operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_INTEGER} to true.")
     }
-    if (!conf.isCastStringToTimestampEnabled && fromType == DataTypes.StringType
+    if (!conf.isCastStringToTimestampEnabled && fromDataType == DataTypes.StringType
       && toType == DataTypes.TimestampType) {
       willNotWorkOnGpu("the GPU only supports a subset of formats " +
         "when casting strings to timestamps. Refer to the CAST documentation " +
         "for more details. To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+    }
+    if (fromDataType.isInstanceOf[StructType]) {
+      fromDataType.asInstanceOf[StructType].foreach{field =>
+        recursiveTagExprForGpuCheck(field.dataType)}
     }
   }
 
