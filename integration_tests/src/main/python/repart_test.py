@@ -15,16 +15,27 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
+from spark_session import is_before_spark_311
 from data_gen import *
 from marks import ignore_order
 import pyspark.sql.functions as f
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
+@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
+def test_union_by_missing_col_name(data_gen):
+    if (isinstance(data_gen, StructGen)):
+        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/1459")
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : debug_df(debug_df(binary_op_df(spark, data_gen, length=10).withColumnRenamed("a", "x"))
+                                .unionByName(debug_df(binary_op_df(spark, data_gen, length=10).withColumnRenamed("a", "y")), True)))
+
+@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
