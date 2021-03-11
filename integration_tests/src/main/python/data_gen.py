@@ -284,7 +284,7 @@ POS_FLOAT_NAN_MIN_VALUE = struct.unpack('f', struct.pack('I', 0x7f800001))[0]
 POS_FLOAT_NAN_MAX_VALUE = struct.unpack('f', struct.pack('I', 0x7fffffff))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
-    def __init__(self, nullable=True, 
+    def __init__(self, nullable=True,
             no_nans=False, special_cases=None):
         self._no_nans = no_nans
         if special_cases is None:
@@ -319,7 +319,7 @@ POS_DOUBLE_NAN_MIN_VALUE = struct.unpack('d', struct.pack('L', 0x7ff000000000000
 POS_DOUBLE_NAN_MAX_VALUE = struct.unpack('d', struct.pack('L', 0x7fffffffffffffff))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
-    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False, 
+    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False,
             nullable=True, special_cases = None):
         self._min_exp = min_exp
         self._max_exp = max_exp
@@ -432,7 +432,7 @@ class DateGen(DataGen):
 
         self._start_day = self._to_days_since_epoch(start)
         self._end_day = self._to_days_since_epoch(end)
-        
+
         self.with_special_case(start)
         self.with_special_case(end)
 
