@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, Table}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
-import org.apache.spark.sql.rapids.GpuMurMur3Hash
+import org.apache.spark.sql.rapids.GpuMurmur3Hash
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -53,7 +53,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
     withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
       val sortedTable = withResource(batch) { batch =>
         val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
-          withResource(GpuMurMur3Hash.compute(batch, expressions)) { hash =>
+          withResource(GpuMurmur3Hash.compute(batch, expressions)) { hash =>
             withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
               hash.pmod(partsLit, DType.INT32)
             }
@@ -61,7 +61,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
         }
         withResource(new NvtxRange("sort by part", NvtxColor.DARK_GREEN)) { _ =>
           withResource(parts) { parts =>
-            val allColumns = ArrayBuffer.empty[ColumnVector]
+            val allColumns = new ArrayBuffer[ColumnVector](batch.numCols() + 1)
             allColumns += parts
             allColumns ++= GpuColumnVector.extractBases(batch)
             withResource(new Table(allColumns: _*)) { fullTable =>

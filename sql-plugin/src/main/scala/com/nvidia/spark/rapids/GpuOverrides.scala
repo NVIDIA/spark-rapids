@@ -2380,8 +2380,10 @@ object GpuOverrides {
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
         override def tagPartForGpu(): Unit = {
-          // This needs to match what murmur3 supports. in 0.5 we should make the checks
-          // self documenting, and look more like what SparkPlan and Expression support
+          // This needs to match what murmur3 supports.
+          // TODO In 0.5 we should make the checks self documenting, and look more like what
+          //  SparkPlan and Expression support
+          //  https://github.com/NVIDIA/spark-rapids/issues/1915
           val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
               TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL
           hp.children.foreach { child =>

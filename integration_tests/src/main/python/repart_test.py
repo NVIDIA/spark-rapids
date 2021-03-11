@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,8 +55,8 @@ def test_repartion_df(num_parts, length):
     ([('a', short_gen)], ['a']),
     ([('a', int_gen)], ['a']),
     ([('a', long_gen)], ['a']),
-    #FLOAT DOES NOT WORK FOR -0.0 ([('a', float_gen)], ['a']),
-    #DOUBLE DOES NOT WORK FOR -0.0 ([('a', double_gen)], ['a']),
+    pytest.param(([('a', float_gen)], ['a']), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1914')),
+    pytest.param(([('a', double_gen)], ['a']), marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1914')),
     ([('a', decimal_gen_default)], ['a']),
     ([('a', decimal_gen_neg_scale)], ['a']),
     ([('a', decimal_gen_scale_precision)], ['a']),
