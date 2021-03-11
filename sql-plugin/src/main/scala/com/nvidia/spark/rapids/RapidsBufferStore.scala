@@ -232,7 +232,7 @@ abstract class RapidsBufferStore(
     // to return back to the outer loop to see if enough has been freed.
     if (buffer.addReference()) {
       try {
-        if (catalog.isBufferBackedUp(buffer.id, buffer.storageTier)) {
+        if (catalog.isBufferSpilled(buffer.id, buffer.storageTier)) {
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
               s"already stored in multiple tiers total mem=${buffers.getTotalBytes}")
           catalog.removeBufferTier(buffer.id, buffer.storageTier)
@@ -262,7 +262,6 @@ abstract class RapidsBufferStore(
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority
-    private[this] var deviceRapidsBuffer: Option[RapidsBuffer] = None
 
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
@@ -305,39 +304,36 @@ abstract class RapidsBufferStore(
       }
     }
 
-    override def getMemoryBuffer: MemoryBuffer = materializeMemoryBuffer
+    override def getMemoryBuffer: MemoryBuffer = internalGetMemoryBuffer
 
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
-      deviceRapidsBuffer match {
-        case Some(rapidsBuffer) => rapidsBuffer.getDeviceMemoryBuffer
-        case None =>
-          catalog.acquireBuffer(id, DEVICE) match {
-            case Some(acquiredBuffer) =>
-              deviceRapidsBuffer = Some(acquiredBuffer)
-              deviceRapidsBuffer.get.getDeviceMemoryBuffer
-            case _ =>
-              val newBuffer = {
-                logDebug(s"Unspilling $this $id to $DEVICE")
-                RapidsBufferCatalog.getDeviceStorage.copyBuffer(this, Cuda.DEFAULT_STREAM)
+      while (true) {
+        catalog.acquireBuffer(id, DEVICE) match {
+          case Some(buffer) =>
+            withResource(buffer) { buffer =>
+              return buffer.getDeviceMemoryBuffer
+            }
+          case _ =>
+            val newBuffer = {
+              logDebug(s"Unspilling $this $id to $DEVICE")
+              RapidsBufferCatalog.getDeviceStorage.copyBuffer(this, Cuda.DEFAULT_STREAM)
+            }
+            try {
+              catalog.registerNewBuffer(newBuffer)
+            } catch {
+              case e: IllegalStateException =>
+                // A device buffer is already registered.
+                logDebug(s"Error registering new buffer $newBuffer", e)
+                newBuffer.free()
+            }
+            if (newBuffer.addReference()) {
+              withResource(newBuffer) { newBuffer =>
+                return newBuffer.getDeviceMemoryBuffer
               }
-              try {
-                catalog.registerNewBuffer(newBuffer)
-              } catch {
-                case e: IllegalStateException =>
-                  // A device buffer is already registered.
-                  logDebug(s"Error registering new buffer $newBuffer", e)
-                  newBuffer.free()
-                  deviceRapidsBuffer = catalog.acquireBuffer(id, DEVICE)
-                  return deviceRapidsBuffer.get.getDeviceMemoryBuffer
-              }
-              if (newBuffer.addReference()) {
-                deviceRapidsBuffer = Some(newBuffer)
-                deviceRapidsBuffer.get.getDeviceMemoryBuffer
-              } else {
-                throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
-              }
-          }
+            }
+        }
       }
+      throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
     }
 
     override def close(): Unit = synchronized {
@@ -345,8 +341,6 @@ abstract class RapidsBufferStore(
         throw new IllegalStateException("Buffer already closed")
       }
       refcount -= 1
-      deviceRapidsBuffer.foreach(_.close())
-      deviceRapidsBuffer = None
       if (refcount == 0 && !isValid) {
         pendingFreeBuffers.remove(id)
         pendingFreeBytes.addAndGet(-size)

@@ -133,8 +133,9 @@ trait RapidsBuffer extends AutoCloseable {
    * The caller must have successfully acquired the buffer beforehand.
    * @see [[addReference]]
    * @note It is the responsibility of the caller to close the buffer.
+   * @note This is an internal API only used by Rapids buffer stores.
    */
-  def materializeMemoryBuffer: MemoryBuffer
+  def internalGetMemoryBuffer: MemoryBuffer
 
   /**
    * Try to add a reference to this buffer to acquire it.
@@ -208,7 +209,7 @@ sealed class DegenerateRapidsBuffer(
   override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
 
-  override def materializeMemoryBuffer: MemoryBuffer =
+  override def internalGetMemoryBuffer: MemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer cannot materialize memory buffer")
 
   override def addReference(): Boolean = true

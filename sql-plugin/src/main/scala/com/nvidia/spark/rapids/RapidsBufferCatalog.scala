@@ -32,8 +32,8 @@ import org.apache.spark.sql.rapids.RapidsDiskBlockManager
  * `RapidsBufferCatalog.singleton` should be used instead.
  */
 class RapidsBufferCatalog extends Logging {
-  /** Map of buffer IDs to buffers */
-  private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[Option[RapidsBuffer]]]
+  /** Map of buffer IDs to buffers sorted by storage tier */
+  private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
 
   /**
    * Lookup the buffer that corresponds to the specified buffer ID at the highest storage tier,
@@ -44,15 +44,14 @@ class RapidsBufferCatalog extends Logging {
    */
   def acquireBuffer(id: RapidsBufferId): RapidsBuffer = {
     (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
-      val buffers = bufferMap.get(id)
-      if (isEmpty(buffers)) {
+      val buffers = bufferMap.getOrDefault(id, Seq.empty)
+      if (buffers.isEmpty) {
         throw new NoSuchElementException(s"Cannot locate buffers associated with ID: $id")
       }
-      buffers.foreach(_.foreach(buffer =>
-        if (buffer.addReference()) {
-          return buffer
-        }
-      ))
+      val buffer = buffers.head
+      if (buffer.addReference()) {
+        return buffer
+      }
     }
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
   }
@@ -65,14 +64,12 @@ class RapidsBufferCatalog extends Logging {
    * @return buffer that has been acquired, None if not found
    */
   def acquireBuffer(id: RapidsBufferId, tier: StorageTier): Option[RapidsBuffer] = {
-    val buffers = bufferMap.get(id)
-    if (buffers != null) {
-      buffers(tier.id).foreach(buffer =>
-        if (buffer.addReference()) {
-          return Some(buffer)
-        }
-      )
-    }
+    val buffers = bufferMap.getOrDefault(id, Seq.empty)
+    buffers.find(_.storageTier == tier).foreach(buffer =>
+      if (buffer.addReference()) {
+        return Some(buffer)
+      }
+    )
     None
   }
 
@@ -84,17 +81,15 @@ class RapidsBufferCatalog extends Logging {
    * @param tier storage tier to check
    * @return true if the buffer is stored in multiple tiers
    */
-  def isBufferBackedUp(id: RapidsBufferId, tier: StorageTier): Boolean = {
-    val buffers = bufferMap.get(id)
-    buffers != null && buffers.exists(_.exists(_.storageTier > tier))
+  def isBufferSpilled(id: RapidsBufferId, tier: StorageTier): Boolean = {
+    val buffers = bufferMap.getOrDefault(id, Seq.empty)
+    buffers.exists(_.storageTier > tier)
   }
 
   /** Get the table metadata corresponding to a buffer ID. */
   def getBufferMeta(id: RapidsBufferId): TableMeta = {
-    val buffers = bufferMap.get(id)
-    if (buffers != null) {
-      buffers.foreach(_.foreach(buffer => return buffer.meta))
-    }
+    val buffers = bufferMap.getOrDefault(id, Seq.empty)
+    buffers.headOption.foreach(buffer => return buffer.meta)
     throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
   }
 
@@ -103,17 +98,18 @@ class RapidsBufferCatalog extends Logging {
    * existing buffer was registered with the same buffer ID and storage tier.
    */
   def registerNewBuffer(buffer: RapidsBuffer): Unit = {
-    val updater = new BiFunction[RapidsBufferId, Seq[Option[RapidsBuffer]],
-        Seq[Option[RapidsBuffer]]] {
-      override def apply(key: RapidsBufferId, value: Seq[Option[RapidsBuffer]])
-      : Seq[Option[RapidsBuffer]] = {
+    val updater = new BiFunction[RapidsBufferId, Seq[RapidsBuffer], Seq[RapidsBuffer]] {
+      override def apply(key: RapidsBufferId, value: Seq[RapidsBuffer]): Seq[RapidsBuffer] = {
         if (value == null) {
-          newBufferSeq(buffer)
+          Seq(buffer)
         } else {
-          val tier = buffer.storageTier.id
-          value(tier).foreach(old => throw new IllegalStateException(
-            s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered $old"))
-          value.updated(tier, Some(buffer))
+          val(first, second) = value.partition(_.storageTier < buffer.storageTier)
+          second.headOption.foreach(old =>
+            if (old.storageTier == buffer.storageTier) {
+              throw new IllegalStateException(
+                s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered $old")
+            })
+          first ++ Seq(buffer) ++ second
         }
       }
     }
@@ -122,12 +118,10 @@ class RapidsBufferCatalog extends Logging {
 
   /** Remove a buffer ID from the catalog at the specified storage tier. */
   def removeBufferTier(id: RapidsBufferId, tier: StorageTier): Unit = {
-    val updater = new BiFunction[RapidsBufferId, Seq[Option[RapidsBuffer]],
-        Seq[Option[RapidsBuffer]]] {
-      override def apply(key: RapidsBufferId, value: Seq[Option[RapidsBuffer]])
-      : Seq[Option[RapidsBuffer]] = {
-        val updated = value.updated(tier.id, None)
-        if (isEmpty(updated)) {
+    val updater = new BiFunction[RapidsBufferId, Seq[RapidsBuffer], Seq[RapidsBuffer]] {
+      override def apply(key: RapidsBufferId, value: Seq[RapidsBuffer]): Seq[RapidsBuffer] = {
+        val updated = value.filter(_.storageTier != tier)
+        if (updated.isEmpty) {
           null
         } else {
           updated
@@ -141,28 +135,12 @@ class RapidsBufferCatalog extends Logging {
   def removeBuffer(id: RapidsBufferId): Unit = {
     val buffers = bufferMap.remove(id)
     if (buffers != null) {
-      buffers.foreach(_.foreach(_.free()))
+      buffers.foreach(_.free())
     }
   }
 
   /** Return the number of buffers currently in the catalog. */
   def numBuffers: Int = bufferMap.size()
-
-  /** Check if the buffer Seq contains no valid buffer. */
-  private def isEmpty(buffers: Seq[Option[RapidsBuffer]]) = {
-    buffers == null || buffers.count(_.isDefined) == 0
-  }
-
-  /** Construct a new Seq of buffers, slotting the specified buffer at the storage tier position. */
-  private def newBufferSeq(buffer: RapidsBuffer): Seq[Option[RapidsBuffer]] = {
-    StorageTier.values.toSeq.map(tier => {
-      if (tier == buffer.storageTier) {
-        Some(buffer)
-      } else {
-        None
-      }
-    })
-  }
 }
 
 object RapidsBufferCatalog extends Logging with Arm {

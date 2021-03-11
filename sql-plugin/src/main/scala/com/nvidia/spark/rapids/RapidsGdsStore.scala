@@ -35,7 +35,7 @@ class RapidsGdsStore(
   override def createBuffer(
       other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    withResource(other.materializeMemoryBuffer) { otherBuffer =>
+    withResource(other.internalGetMemoryBuffer) { otherBuffer =>
       val deviceBuffer = otherBuffer match {
         case d: DeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
@@ -74,7 +74,7 @@ class RapidsGdsStore(
 
     override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
-    override def materializeMemoryBuffer: DeviceMemoryBuffer = synchronized {
+    override def internalGetMemoryBuffer: DeviceMemoryBuffer = synchronized {
       val path = if (id.canShareDiskPaths) {
         sharedBufferFiles.get(id)
       } else {

@@ -218,7 +218,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       override def getMemoryBuffer: MemoryBuffer =
         throw new UnsupportedOperationException
 
-      override def materializeMemoryBuffer: MemoryBuffer =
+      override def internalGetMemoryBuffer: MemoryBuffer =
         throw new UnsupportedOperationException
     }
   }
