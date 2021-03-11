@@ -1827,6 +1827,7 @@ object GpuOverrides {
               s"supported. Found: ${sortOrder.nullOrdering}")
           }
         }
+
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
           sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
@@ -2574,7 +2575,7 @@ object GpuOverrides {
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.all),
+      ExecChecks(sortOrderTypeSigs, TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =

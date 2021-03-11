@@ -573,6 +573,8 @@
                         <exclude>.git/**</exclude>
                         <exclude>.pytest_cache/**</exclude>
                         <exclude>.github/pull_request_template.md</exclude>
+                        <exclude>.vscode/**</exclude>
+                        <exclude>.metals/**</exclude>
                         <exclude>**/*.md</exclude>
                         <exclude>**/*.iml</exclude>
                         <exclude>NOTICE-binary</exclude>

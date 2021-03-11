@@ -542,18 +542,23 @@ class ExecChecks private(
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val plan = meta.wrapped.asInstanceOf[SparkPlan]
     val allowDecimal = meta.conf.decimalTypeEnabled
-    if (!check.areAllSupportedByPlugin(plan.output.map(_.dataType), allowDecimal)) {
-      val unsupported = plan.output.map(_.dataType)
-          .filter(!check.isSupportedByPlugin(_, allowDecimal))
-          .toSet
-      meta.willNotWorkOnGpu(s"unsupported data types in output: ${unsupported.mkString(", ")}")
+
+    val unsupportedOutputTypes = plan.output
+      .filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+      .toSet
+
+    if (unsupportedOutputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types in output: " +
+        unsupportedOutputTypes.mkString(", "))
     }
-    if (!check.areAllSupportedByPlugin(
-      plan.children.flatMap(_.output.map(_.dataType)),
-      allowDecimal)) {
-      val unsupported = plan.children.flatMap(_.output.map(_.dataType))
-          .filter(!check.isSupportedByPlugin(_, allowDecimal)).toSet
-      meta.willNotWorkOnGpu(s"unsupported data types in input: ${unsupported.mkString(", ")}")
+
+    val unsupportedInputTypes = plan.children.flatMap { childPlan =>
+      childPlan.output.filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+    }.toSet
+
+    if (unsupportedInputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types in input: " +
+        unsupportedInputTypes.mkString(", "))
     }
   }
 

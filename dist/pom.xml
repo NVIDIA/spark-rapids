@@ -186,6 +186,7 @@
           <excludes>
             <exclude>dependency-reduced-pom.xml</exclude>
             <exclude>*pom.xml.asc</exclude>
+            <exclude>.*</exclude>
           </excludes>
         </configuration>
       </plugin>

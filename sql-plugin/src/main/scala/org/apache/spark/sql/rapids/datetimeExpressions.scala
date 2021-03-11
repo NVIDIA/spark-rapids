@@ -135,6 +135,8 @@ abstract class GpuTimeMath(
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
+  protected val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     var lhs: Any = null
     var rhs: Any = null
@@ -147,7 +149,7 @@ abstract class GpuTimeMath(
           if (intvl.months != 0) {
             throw new UnsupportedOperationException("Months aren't supported at the moment")
           }
-          val usToSub = intvl.days.toLong * 24 * 60 * 60 * 1000 * 1000 + intvl.microseconds
+          val usToSub = intvl.days * microSecondsInOneDay + intvl.microseconds
           if (usToSub != 0) {
             withResource(Scalar.fromLong(usToSub)) { us_s =>
               withResource(l.getBase.logicalCastTo(DType.INT64)) { us =>
@@ -230,7 +232,6 @@ case class GpuDateAddInterval(start: Expression,
             if (intvl.months != 0) {
               throw new UnsupportedOperationException("Months aren't supported at the moment")
             }
-            val microSecondsInOneDay = TimeUnit.DAYS.toMicros(1)
             val microSecToDays = if (intvl.microseconds < 0) {
               // This is to calculate when subtraction is performed. Need to take into account the
               // interval( which are less than days). Convert it into days which needs to be
