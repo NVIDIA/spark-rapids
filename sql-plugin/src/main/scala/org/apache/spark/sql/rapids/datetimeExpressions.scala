@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
@@ -341,13 +340,13 @@ case class GpuDayOfYear(child: Expression) extends GpuDateUnaryExpression {
 abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpression]
    (expr: A, conf: RapidsConf,
    parent: Option[RapidsMeta[_, _, _]],
-   rule: DataFromReplacementRule) extends BinaryExprMeta[A](expr, conf, parent, rule) {
+   rule: DataFromReplacementRule)
+  extends BinaryExprMeta[A](expr, conf, parent, rule) {
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
-    if (ZoneId.of(expr.timeZoneId.get).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
-      willNotWorkOnGpu("Only UTC zone id is supported")
-    }
+    checkTimeZoneId(expr.timeZoneId)
+
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
       try {
