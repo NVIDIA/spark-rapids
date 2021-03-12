@@ -148,11 +148,22 @@ class GpuCartesianRDD(
     val spillBatchBuffer = mutable.ArrayBuffer[SpillableColumnarBatch]()
     // sentinel variable to label whether stream-side data is cached or not
     var streamSideCached = false
+    // a pointer to track buildTableOnFlight
+    var buildTableOnFlight: Option[Table] = None
+
+    // Add a taskCompletionListener to ensure the release of GPU memory. This listener will work
+    // if the CompletionIterator does not fully iterate before the task completes, which may
+    // happen if there exists specific plans like `LimitExec`.
+    context.addTaskCompletionListener[Unit]((_: TaskContext) => {
+      spillBatchBuffer.safeClose()
+      if (buildTableOnFlight.isDefined) buildTableOnFlight.get.close()
+    })
 
     rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
       val table = withResource(lhs) { lhs =>
         GpuColumnVector.from(lhs.getBatch)
       }
+      buildTableOnFlight = Some(table)
       // Introduce sentinel `streamSideCached` to record whether stream-side data is cached or
       // not, because predicate `spillBatchBuffer.isEmpty` will always be true if
       // `rdd2.iterator` is an empty iterator.
@@ -187,8 +198,12 @@ class GpuCartesianRDD(
         totalTime)
 
       CompletionIterator[ColumnarBatch, Iterator[ColumnarBatch]](ret, {
-        table.close()
+        // clean up spill batch buffer
         spillBatchBuffer.safeClose()
+        spillBatchBuffer.clear()
+        // clean up build table
+        table.close()
+        buildTableOnFlight = None
       })
     }
   }
