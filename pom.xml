@@ -566,25 +566,21 @@
                 <artifactId>apache-rat-plugin</artifactId>
                 <configuration>
                     <excludes>
-                        <exclude>.docker/**</exclude>
-                        <exclude>.download/**</exclude>
-                        <exclude>.gitattributes</exclude>
-                        <exclude>.gitignore</exclude>
-                        <exclude>.git/**</exclude>
-                        <exclude>.pytest_cache/**</exclude>
-                        <exclude>.github/pull_request_template.md</exclude>
                         <exclude>**/*.md</exclude>
                         <exclude>**/*.iml</exclude>
                         <exclude>NOTICE-binary</exclude>
                         <exclude>docs/dev/idea-code-style-settings.xml</exclude>
-                        <exclude>**/.m2/**</exclude>
-                        <exclude>.gnupg/**</exclude>
                         <exclude>pom.xml.asc</exclude>
                         <exclude>jenkins/databricks/*.patch</exclude>
                         <exclude>*.jar</exclude>
                         <exclude>docs/demo/**/*.ipynb</exclude>
                         <exclude>docs/demo/**/*.zpln</exclude>
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
+                        <exclude>**/src/test/resources/**</exclude>
+                        <exclude>rmm_log.txt</exclude>
+                        <exclude>dependency-reduced-pom.xml</exclude>
+                        <exclude>**/.*/**</exclude>
+                        <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
