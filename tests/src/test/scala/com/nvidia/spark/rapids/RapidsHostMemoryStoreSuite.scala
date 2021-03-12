@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.Mockito.{never, spy, verify, when}
@@ -159,6 +159,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               devStore.addContiguousTable(bigBufferId, bigTable, spillPriority)
               devStore.synchronousSpill(0)
               verify(mockStore, never()).copyBuffer(ArgumentMatchers.any[RapidsBuffer],
+                ArgumentMatchers.any[MemoryBuffer],
                 ArgumentMatchers.any[Cuda.Stream])
               withResource(catalog.acquireBuffer(bigBufferId)) { buffer =>
                 assertResult(StorageTier.HOST)(buffer.storageTier)
@@ -170,7 +171,8 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               devStore.addContiguousTable(smallBufferId, smallTable, spillPriority)
               devStore.synchronousSpill(0)
               val ac: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
-              verify(mockStore).copyBuffer(ac.capture(), ArgumentMatchers.any[Cuda.Stream])
+              verify(mockStore).copyBuffer(ac.capture(), ArgumentMatchers.any[MemoryBuffer],
+                ArgumentMatchers.any[Cuda.Stream])
               assertResult(bigBufferId)(ac.getValue.id)
             }
           }

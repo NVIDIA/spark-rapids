@@ -44,8 +44,8 @@ class RapidsBufferCatalog extends Logging {
    */
   def acquireBuffer(id: RapidsBufferId): RapidsBuffer = {
     (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
-      val buffers = bufferMap.getOrDefault(id, Seq.empty)
-      if (buffers.isEmpty) {
+      val buffers = bufferMap.get(id)
+      if (buffers == null || buffers.isEmpty) {
         throw new NoSuchElementException(s"Cannot locate buffers associated with ID: $id")
       }
       val buffer = buffers.head
@@ -64,12 +64,14 @@ class RapidsBufferCatalog extends Logging {
    * @return buffer that has been acquired, None if not found
    */
   def acquireBuffer(id: RapidsBufferId, tier: StorageTier): Option[RapidsBuffer] = {
-    val buffers = bufferMap.getOrDefault(id, Seq.empty)
-    buffers.find(_.storageTier == tier).foreach(buffer =>
-      if (buffer.addReference()) {
-        return Some(buffer)
-      }
-    )
+    val buffers = bufferMap.get(id)
+    if (buffers != null) {
+      buffers.find(_.storageTier == tier).foreach(buffer =>
+        if (buffer.addReference()) {
+          return Some(buffer)
+        }
+      )
+    }
     None
   }
 
@@ -82,15 +84,17 @@ class RapidsBufferCatalog extends Logging {
    * @return true if the buffer is stored in multiple tiers
    */
   def isBufferSpilled(id: RapidsBufferId, tier: StorageTier): Boolean = {
-    val buffers = bufferMap.getOrDefault(id, Seq.empty)
-    buffers.exists(_.storageTier > tier)
+    val buffers = bufferMap.get(id)
+    buffers != null && buffers.exists(_.storageTier > tier)
   }
 
   /** Get the table metadata corresponding to a buffer ID. */
   def getBufferMeta(id: RapidsBufferId): TableMeta = {
-    val buffers = bufferMap.getOrDefault(id, Seq.empty)
-    buffers.headOption.foreach(buffer => return buffer.meta)
-    throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
+    val buffers = bufferMap.get(id)
+    if (buffers == null || buffers.isEmpty) {
+      throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
+    }
+    buffers.head.meta
   }
 
   /**
@@ -104,11 +108,11 @@ class RapidsBufferCatalog extends Logging {
           Seq(buffer)
         } else {
           val(first, second) = value.partition(_.storageTier < buffer.storageTier)
-          second.headOption.foreach(old =>
-            if (old.storageTier == buffer.storageTier) {
-              throw new IllegalStateException(
-                s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered $old")
-            })
+          if (second.nonEmpty && second.head.storageTier == buffer.storageTier) {
+            throw new IllegalStateException(
+              s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered " +
+                  s"${second.head}")
+          }
           first ++ Seq(buffer) ++ second
         }
       }

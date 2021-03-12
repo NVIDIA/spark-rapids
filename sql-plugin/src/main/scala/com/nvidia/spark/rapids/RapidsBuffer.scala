@@ -125,19 +125,6 @@ trait RapidsBuffer extends AutoCloseable {
   def getDeviceMemoryBuffer: DeviceMemoryBuffer
 
   /**
-   * Materialize the memory buffer from the underlying storage.
-   *
-   * If the buffer resides in device or host memory, only reference count is incremented.
-   * If the buffer resides in secondary storage, a new host or device memory buffer is created, with
-   * the data copied to the new buffer.
-   * The caller must have successfully acquired the buffer beforehand.
-   * @see [[addReference]]
-   * @note It is the responsibility of the caller to close the buffer.
-   * @note This is an internal API only used by Rapids buffer stores.
-   */
-  def internalGetMemoryBuffer: MemoryBuffer
-
-  /**
    * Try to add a reference to this buffer to acquire it.
    * @note The close method must be called for every successfully obtained reference.
    * @return true if the reference was added or false if this buffer is no longer valid
@@ -208,9 +195,6 @@ sealed class DegenerateRapidsBuffer(
 
   override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
-
-  override def internalGetMemoryBuffer: MemoryBuffer =
-    throw new UnsupportedOperationException("degenerate buffer cannot materialize memory buffer")
 
   override def addReference(): Boolean = true
 

@@ -41,7 +41,7 @@ object RapidsBufferStore {
 abstract class RapidsBufferStore(
     val tier: StorageTier,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends AutoCloseable with Logging {
+    extends AutoCloseable with Logging with Arm {
 
   val name: String = tier.toString
 
@@ -128,11 +128,13 @@ abstract class RapidsBufferStore(
    * @param stream CUDA stream to use for copy or null
    * @return new buffer that was created
    */
-  def copyBuffer(buffer: RapidsBuffer, stream: Cuda.Stream): RapidsBufferBase = {
-    val newBuffer = createBuffer(buffer, stream)
-    buffers.add(newBuffer)
-    catalog.registerNewBuffer(newBuffer)
-    newBuffer
+  def copyBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
+  : RapidsBufferBase = {
+    closeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
+      buffers.add(newBuffer)
+      catalog.registerNewBuffer(newBuffer)
+      newBuffer
+    }
   }
 
   /**
@@ -202,7 +204,15 @@ abstract class RapidsBufferStore(
    * @param stream CUDA stream to use or null
    * @return new buffer tracking the data in this store
    */
-  protected def createBuffer(buffer: RapidsBuffer, stream: Cuda.Stream): RapidsBufferBase
+  protected def createBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
+  : RapidsBufferBase
+
+  /**
+   * Get the underlying memory buffer from the specified Rapids buffer.
+   * @param buffer a buffer managed by this store
+   * @return underlying memory buffer
+   */
+  protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer
 
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = synchronized {
@@ -240,7 +250,7 @@ abstract class RapidsBufferStore(
           logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
               s"total mem=${buffers.getTotalBytes}")
           buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
-          spillStore.copyBuffer(buffer, stream)
+          spillStore.copyBuffer(buffer, getMemoryBuffer(buffer), stream)
         }
       } finally {
         buffer.close()
@@ -259,12 +269,26 @@ abstract class RapidsBufferStore(
       override val spillCallback: RapidsBuffer.SpillCallback,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
       extends RapidsBuffer with Arm {
+    private val MAX_UNSPILL_ATTEMPTS = 100
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority
 
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
+
+    /**
+     * Materialize the memory buffer from the underlying storage.
+     *
+     * If the buffer resides in device or host memory, only reference count is incremented.
+     * If the buffer resides in secondary storage, a new host or device memory buffer is created,
+     * with the data copied to the new buffer.
+     * The caller must have successfully acquired the buffer beforehand.
+     * @see [[addReference]]
+     * @note It is the responsibility of the caller to close the buffer.
+     * @note This is an internal API only used by Rapids buffer stores.
+     */
+    protected def materializeMemoryBuffer: MemoryBuffer
 
     /**
      * Determine if a buffer is currently acquired.
@@ -304,10 +328,10 @@ abstract class RapidsBufferStore(
       }
     }
 
-    override def getMemoryBuffer: MemoryBuffer = internalGetMemoryBuffer
+    override def getMemoryBuffer: MemoryBuffer = materializeMemoryBuffer
 
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
-      while (true) {
+      (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
         catalog.acquireBuffer(id, DEVICE) match {
           case Some(buffer) =>
             withResource(buffer) { buffer =>
@@ -316,15 +340,8 @@ abstract class RapidsBufferStore(
           case _ =>
             val newBuffer = {
               logDebug(s"Unspilling $this $id to $DEVICE")
-              RapidsBufferCatalog.getDeviceStorage.copyBuffer(this, Cuda.DEFAULT_STREAM)
-            }
-            try {
-              catalog.registerNewBuffer(newBuffer)
-            } catch {
-              case e: IllegalStateException =>
-                // A device buffer is already registered.
-                logDebug(s"Error registering new buffer $newBuffer", e)
-                newBuffer.free()
+              RapidsBufferCatalog.getDeviceStorage.copyBuffer(this, materializeMemoryBuffer,
+                Cuda.DEFAULT_STREAM)
             }
             if (newBuffer.addReference()) {
               withResource(newBuffer) { newBuffer =>

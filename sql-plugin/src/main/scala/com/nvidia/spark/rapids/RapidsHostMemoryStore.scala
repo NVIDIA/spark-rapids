@@ -71,12 +71,14 @@ class RapidsHostMemoryStore(
     (buffer, true)
   }
 
-  override protected def createBuffer(
-      other: RapidsBuffer,
+  override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
+    buffer.asInstanceOf[RapidsHostMemoryBuffer].materializeMemoryBuffer
+  }
+
+  override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
     try {
-      val otherBuffer = other.internalGetMemoryBuffer
       try {
         otherBuffer match {
           case devBuffer: DeviceMemoryBuffer =>
@@ -123,7 +125,7 @@ class RapidsHostMemoryStore(
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.HOST
 
-    override def internalGetMemoryBuffer: MemoryBuffer = {
+    override def materializeMemoryBuffer: MemoryBuffer = {
       buffer.incRefCount()
       buffer
     }

@@ -28,19 +28,18 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore(StorageTier.DEVICE, catalog) {
+    extends RapidsBufferStore(StorageTier.DEVICE, catalog) with Arm {
 
-  override protected def createBuffer(
-      other: RapidsBuffer,
+  override protected def createBuffer(other: RapidsBuffer, memoryBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     val deviceBuffer = {
-      other.internalGetMemoryBuffer match {
+      withResource(memoryBuffer) {
         case d: DeviceMemoryBuffer => d
         case h: HostMemoryBuffer =>
           try {
             val deviceBuffer = DeviceMemoryBuffer.allocate(other.size)
             logDebug(s"copying from host $h to device $deviceBuffer")
-            deviceBuffer.copyFromHostBuffer(h)
+            deviceBuffer.copyFromHostBuffer(h, stream)
             deviceBuffer
           } finally {
             h.close()
@@ -50,6 +49,10 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
     }
     new RapidsDeviceMemoryBuffer(other.id, other.size, other.meta, None,
       deviceBuffer, other.getSpillPriority, other.spillCallback)
+  }
+
+  override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
+    buffer.asInstanceOf[RapidsDeviceMemoryBuffer].materializeMemoryBuffer
   }
 
   /**
@@ -185,7 +188,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer
     }
 
-    override def internalGetMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
+    override def materializeMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {
