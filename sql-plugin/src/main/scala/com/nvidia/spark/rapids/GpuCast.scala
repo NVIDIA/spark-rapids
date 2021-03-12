@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -86,8 +86,18 @@ class CastExprMeta[INPUT <: CastBase](
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
     }
     if (fromDataType.isInstanceOf[StructType]) {
+      val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
+      val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
       fromDataType.asInstanceOf[StructType].foreach{field =>
-        recursiveTagExprForGpuCheck(field.dataType)}
+        recursiveTagExprForGpuCheck(field.dataType)
+        if (toType == StringType) {
+          if (!checks.gpuCanCast(field.dataType, toType)) {
+            willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
+              s"Casting ${field.dataType} to ${toType} not currently supported. Refer to " +
+              "CAST documentation for more details.")
+          }
+        }
+      }
     }
   }
 

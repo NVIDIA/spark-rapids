@@ -840,8 +840,8 @@ class CastChecks extends ExprChecks {
   }
 
   def gpuCanCast(from: DataType, to: DataType, allowDecimal: Boolean = true): Boolean = {
-    val (_, sparkSig) = getChecksAndSigs(from)
-    sparkSig.isSupportedByPlugin(to, allowDecimal)
+    val (checks, _) = getChecksAndSigs(from)
+    checks.isSupportedByPlugin(to, allowDecimal)
   }
 }
 
