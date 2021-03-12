@@ -255,7 +255,7 @@ object RapidsExecutorPlugin {
     val actSplits = actual.split('.')
     val zipSplits = expSplits.zip(actSplits)
     // major and minor versions must match exactly
-    if (zipSplits.take(2).exists{case (e, a) => e != a}) {
+    if (zipSplits.take(2).exists{ case (e, a) => e != a }) {
       return false
     }
 
