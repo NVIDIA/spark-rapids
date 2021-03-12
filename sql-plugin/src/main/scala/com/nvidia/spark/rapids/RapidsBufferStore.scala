@@ -338,15 +338,20 @@ abstract class RapidsBufferStore(
               return buffer.getDeviceMemoryBuffer
             }
           case _ =>
-            val newBuffer = {
-              logDebug(s"Unspilling $this $id to $DEVICE")
-              RapidsBufferCatalog.getDeviceStorage.copyBuffer(this, materializeMemoryBuffer,
-                Cuda.DEFAULT_STREAM)
-            }
-            if (newBuffer.addReference()) {
-              withResource(newBuffer) { newBuffer =>
-                return newBuffer.getDeviceMemoryBuffer
+            try {
+              val newBuffer = {
+                logDebug(s"Unspilling $this $id to $DEVICE")
+                RapidsBufferCatalog.getDeviceStorage.copyBuffer(
+                  this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
               }
+              if (newBuffer.addReference()) {
+                withResource(newBuffer) { newBuffer =>
+                  return newBuffer.getDeviceMemoryBuffer
+                }
+              }
+            } catch {
+              case e: IllegalStateException =>
+                logDebug("Error unspilling to device", e)
             }
         }
       }

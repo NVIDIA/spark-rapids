@@ -33,7 +33,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
   override protected def createBuffer(other: RapidsBuffer, memoryBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     val deviceBuffer = {
-      withResource(memoryBuffer) {
+      memoryBuffer match {
         case d: DeviceMemoryBuffer => d
         case h: HostMemoryBuffer =>
           try {
