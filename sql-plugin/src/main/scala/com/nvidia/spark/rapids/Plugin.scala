@@ -222,7 +222,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       }
       val expectedCudfVersion = pluginCudfVersion.toString
       // compare cudf version in the classpath with the cudf version expected by plugin
-      if (!cudfVersion.equals(expectedCudfVersion)) {
+      if (!RapidsExecutorPlugin.cudfVersionSatisfied(expectedCudfVersion, cudfVersion)) {
         throw CudfVersionMismatchException(s"Cudf version in the classpath is different. " +
           s"Found $cudfVersion, RAPIDS Accelerator expects $expectedCudfVersion")
       }
@@ -239,6 +239,35 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     Some(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+  }
+}
+
+object RapidsExecutorPlugin {
+  /**
+   * Return true if the expected cudf version is satisfied by the actual version found.
+   * The version is satisfied if the major and minor versions match exactly. If there is a requested
+   * patch version then the actual patch version must be greater than or equal.
+   * For example, version 7.1 is not satisfied by version 7.2, but version 7.1 is satisfied by
+   * version 7.1.1.
+   */
+  def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
+    val expSplits = expected.split('.')
+    val actSplits = actual.split('.')
+    val zipSplits = expSplits.zip(actSplits)
+    // major and minor versions must match exactly
+    if (zipSplits.take(2).exists{case (e, a) => e != a}) {
+      return false
+    }
+
+    // patch and sub-patch versions can match as long as actual is more recent
+    zipSplits.drop(2).forall { case (expStr, actStr) =>
+      val expVal = Integer.parseInt(expStr)
+      try {
+        expVal <= Integer.parseInt(actStr)
+      } catch {
+        case _: IllegalArgumentException => false
+      }
+    }
   }
 }
 
