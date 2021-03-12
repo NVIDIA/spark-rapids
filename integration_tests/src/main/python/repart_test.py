@@ -20,20 +20,27 @@ from data_gen import *
 from marks import ignore_order
 import pyspark.sql.functions as f
 
+nested_scalar=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1459")
+@pytest.mark.parametrize('data_gen', [pytest.param((StructGen([['child0', DecimalGen(7, 2)]]), StructGen([['child1', IntegerGen()]])), marks=nested_scalar),
+                                      (StructGen([['child0', DecimalGen(7, 2)]], nullable=False), StructGen([['child1', IntegerGen()]], nullable=False))], ids=idfn)
+def test_union_struct(data_gen):
+    left_gen, right_gen = data_gen
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, left_gen, length=10).unionByName(binary_op_df(
+            spark, right_gen, length=10), True))
+
 @pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
 
-@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [pytest.param(all_basic_struct_gen, marks=nested_scalar),
+                                      pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]]), marks=nested_scalar)])
 @pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 def test_union_by_missing_col_name(data_gen):
-    if (isinstance(data_gen, StructGen)):
-        pytest.xfail("https://github.com/NVIDIA/spark-rapids/issues/1459")
-
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : debug_df(debug_df(binary_op_df(spark, data_gen, length=10).withColumnRenamed("a", "x"))
-                                .unionByName(debug_df(binary_op_df(spark, data_gen, length=10).withColumnRenamed("a", "y")), True)))
+        lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
+                                .unionByName(debug_df(binary_op_df(spark, data_gen).withColumnRenamed("a", "y")), True))
 
 @pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
 def test_union_by_name(data_gen):
