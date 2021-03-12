@@ -21,8 +21,10 @@ from marks import ignore_order
 import pyspark.sql.functions as f
 
 nested_scalar=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1459")
-@pytest.mark.parametrize('data_gen', [pytest.param((StructGen([['child0', DecimalGen(7, 2)]]), StructGen([['child1', IntegerGen()]])), marks=nested_scalar),
-                                      (StructGen([['child0', DecimalGen(7, 2)]], nullable=False), StructGen([['child1', IntegerGen()]], nullable=False))], ids=idfn)
+@pytest.mark.parametrize('data_gen', [pytest.param((StructGen([['child0', DecimalGen(7, 2)]]),
+                                                    StructGen([['child1', IntegerGen()]])), marks=nested_scalar),
+                                      (StructGen([['child0', DecimalGen(7, 2)]], nullable=False),
+                                       StructGen([['child1', IntegerGen()]], nullable=False))], ids=idfn)
 def test_union_struct(data_gen):
     left_gen, right_gen = data_gen
     assert_gpu_and_cpu_are_equal_collect(
