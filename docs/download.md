@@ -47,9 +47,9 @@ Software Requirements:
 
 ### Download v0.4.0
 * [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.0/rapids-4-spark_2.12-0.4.0.jar)
-* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda11.jar)
-* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-2.jar)
-* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18/cudf-0.18-cuda10-1.jar)
+* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda11.jar)
+* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-2.jar)
+* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
 
 ## Release v0.3.0
 This release includes additional performance improvements, including
