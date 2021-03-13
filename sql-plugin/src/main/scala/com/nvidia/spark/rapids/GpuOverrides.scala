@@ -423,6 +423,7 @@ object GpuOverrides {
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
+  // TODO need a better name since used in multiple contexts
   private[this] val sortOrderTypeSigs = (
     TypeSig.commonCudfTypes +
     TypeSig.NULL +
@@ -2628,7 +2629,7 @@ object GpuOverrides {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(sortOrderTypeSigs, TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
           "of rows in a batch it could help by limiting the number of rows transferred from " +

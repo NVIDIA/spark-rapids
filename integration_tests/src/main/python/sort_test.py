@@ -87,7 +87,7 @@ def test_single_orderby_with_limit(data_gen, order):
 ], ids=idfn)
 def test_single_nested_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : debug_df(unary_op_df(spark, data_gen), 'trouble-input').orderBy(order).limit(100))
+        lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
