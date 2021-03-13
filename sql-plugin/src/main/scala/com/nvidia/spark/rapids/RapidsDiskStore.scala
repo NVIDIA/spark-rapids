@@ -63,7 +63,7 @@ class RapidsDiskStore(
   }
 
   override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.asInstanceOf[RapidsDiskBuffer].materializeMemoryBuffer
+    buffer.getMemoryBuffer
   }
 
   /** Copy a host buffer to a file, returning the file offset at which the data was written. */
@@ -100,7 +100,7 @@ class RapidsDiskStore(
 
     override val storageTier: StorageTier = StorageTier.DISK
 
-    override def materializeMemoryBuffer: MemoryBuffer = synchronized {
+    override def getMemoryBuffer: MemoryBuffer = synchronized {
       if (hostBuffer.isEmpty) {
         val path = id.getDiskPath(diskBlockManager)
         val mappedBuffer = HostMemoryBuffer.mapFile(path, MapMode.READ_WRITE,

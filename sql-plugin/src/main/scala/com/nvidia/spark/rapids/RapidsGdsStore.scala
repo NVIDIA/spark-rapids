@@ -62,12 +62,25 @@ class RapidsGdsStore(
   }
 
   override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.asInstanceOf[RapidsGdsBuffer].materializeMemoryBuffer
+    buffer match {
+      case buf: RapidsGdsBuffer =>
+        val path = if (buf.id.canShareDiskPaths) {
+          sharedBufferFiles.get(buf.id)
+        } else {
+          buf.id.getDiskPath(diskBlockManager)
+        }
+        closeOnExcept(DeviceMemoryBuffer.allocate(buf.size)) { devBuffer =>
+          CuFile.readFileToDeviceBuffer(devBuffer, path, buf.fileOffset)
+          logDebug(s"Created device buffer for $path ${buf.fileOffset}:${buf.size} via GDS")
+          devBuffer
+        }
+      case _ => throw new IllegalArgumentException(s"not a GDS buffer: $buffer")
+    }
   }
 
   class RapidsGdsBuffer(
       id: RapidsBufferId,
-      fileOffset: Long,
+      val fileOffset: Long,
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
@@ -76,19 +89,6 @@ class RapidsGdsStore(
     override val storageTier: StorageTier = StorageTier.GDS
 
     override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
-
-    override def materializeMemoryBuffer: DeviceMemoryBuffer = synchronized {
-      val path = if (id.canShareDiskPaths) {
-        sharedBufferFiles.get(id)
-      } else {
-        id.getDiskPath(diskBlockManager)
-      }
-      closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-        CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
-        logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
-        buffer
-      }
-    }
 
     override protected def releaseResources(): Unit = {
       // Buffers that share paths must be cleaned up elsewhere

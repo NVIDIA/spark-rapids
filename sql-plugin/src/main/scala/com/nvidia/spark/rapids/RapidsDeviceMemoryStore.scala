@@ -52,7 +52,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
   }
 
   override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.asInstanceOf[RapidsDeviceMemoryBuffer].materializeMemoryBuffer
+    buffer.getMemoryBuffer
   }
 
   /**
@@ -188,7 +188,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       contigBuffer
     }
 
-    override def materializeMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
+    override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {

@@ -130,10 +130,15 @@ abstract class RapidsBufferStore(
    */
   def copyBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
   : RapidsBufferBase = {
-    closeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
+    val newBuffer = createBuffer(buffer, memoryBuffer, stream)
+    try {
       buffers.add(newBuffer)
       catalog.registerNewBuffer(newBuffer)
       newBuffer
+    } catch {
+      case e: IllegalStateException =>
+        newBuffer.free()
+        throw e
     }
   }
 
@@ -278,19 +283,6 @@ abstract class RapidsBufferStore(
     protected def releaseResources(): Unit
 
     /**
-     * Materialize the memory buffer from the underlying storage.
-     *
-     * If the buffer resides in device or host memory, only reference count is incremented.
-     * If the buffer resides in secondary storage, a new host or device memory buffer is created,
-     * with the data copied to the new buffer.
-     * The caller must have successfully acquired the buffer beforehand.
-     * @see [[addReference]]
-     * @note It is the responsibility of the caller to close the buffer.
-     * @note This is an internal API only used by Rapids buffer stores.
-     */
-    protected def materializeMemoryBuffer: MemoryBuffer
-
-    /**
      * Determine if a buffer is currently acquired.
      * @note Unless this is called by the thread that currently "owns" an
      * acquired buffer, the acquisition state could be changing
@@ -328,8 +320,6 @@ abstract class RapidsBufferStore(
       }
     }
 
-    override def getMemoryBuffer: MemoryBuffer = materializeMemoryBuffer
-
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
       (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
         catalog.acquireBuffer(id, DEVICE) match {
@@ -342,7 +332,7 @@ abstract class RapidsBufferStore(
               val newBuffer = {
                 logDebug(s"Unspilling $this $id to $DEVICE")
                 RapidsBufferCatalog.getDeviceStorage.copyBuffer(
-                  this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
+                  this, getMemoryBuffer, Cuda.DEFAULT_STREAM)
               }
               if (newBuffer.addReference()) {
                 withResource(newBuffer) { newBuffer =>

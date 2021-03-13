@@ -206,7 +206,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val spilledBuffers = new ArrayBuffer[RapidsBufferId]
 
     override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-      buffer.asInstanceOf[MockRapidsBuffer].materializeMemoryBuffer
+      buffer.getMemoryBuffer
     }
 
     override protected def createBuffer(b: RapidsBuffer, m: MemoryBuffer, s: Cuda.Stream)
@@ -222,9 +222,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       override val storageTier: StorageTier = StorageTier.HOST
 
       override def getMemoryBuffer: MemoryBuffer =
-        throw new UnsupportedOperationException
-
-      override def materializeMemoryBuffer: MemoryBuffer =
         throw new UnsupportedOperationException
     }
   }

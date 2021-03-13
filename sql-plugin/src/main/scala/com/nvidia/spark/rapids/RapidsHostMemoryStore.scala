@@ -72,7 +72,7 @@ class RapidsHostMemoryStore(
   }
 
   override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.asInstanceOf[RapidsHostMemoryBuffer].materializeMemoryBuffer
+    buffer.getMemoryBuffer
   }
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
@@ -125,7 +125,7 @@ class RapidsHostMemoryStore(
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.HOST
 
-    override def materializeMemoryBuffer: MemoryBuffer = {
+    override def getMemoryBuffer: MemoryBuffer = {
       buffer.incRefCount()
       buffer
     }
