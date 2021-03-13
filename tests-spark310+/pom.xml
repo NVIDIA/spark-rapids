@@ -86,12 +86,6 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>src/test/resources/**</exclude>
-                        <exclude>**/*.md</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
         </plugins>
     </build>
