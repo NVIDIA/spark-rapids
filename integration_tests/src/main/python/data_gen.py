@@ -639,6 +639,9 @@ def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
 
 def debug_df(df, path = None, file_format = 'json', num_parts = 1):
     if path is not None:
+        # Save the dataframe and its schema
+        # The schema can be re-created by using DataType.fromJson and used
+        # for loading the dataframe
         file_name = f"{path}.{file_format}"
         schema_file_name = f"{path}.schema.json"
 
