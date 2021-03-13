@@ -251,21 +251,18 @@ object RapidsExecutorPlugin {
    * version 7.1.1.
    */
   def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
-    val expSplits = expected.split('.')
-    val actSplits = actual.split('.')
-    val zipSplits = expSplits.zip(actSplits)
-    // major and minor versions must match exactly
-    if (zipSplits.take(2).exists{ case (e, a) => e != a }) {
+    val (majorMinor, patches) = expected.split('.').zip(actual.split('.')).splitAt(2)
+    if (majorMinor.exists{ case (e, a) => e != a }) {
       return false
     }
 
     // patch and sub-patch versions can match as long as actual is more recent
-    zipSplits.drop(2).forall { case (expStr, actStr) =>
-      val expVal = Integer.parseInt(expStr)
+    patches.forall { case (expStr, actStr) =>
+      val expVal = expStr.toInt
       try {
-        expVal <= Integer.parseInt(actStr)
+        expVal <= actStr.toInt
       } catch {
-        case _: IllegalArgumentException => false
+        case _: NumberFormatException => false
       }
     }
   }
