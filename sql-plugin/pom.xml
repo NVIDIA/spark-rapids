@@ -148,14 +148,6 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>dependency-reduced-pom.xml</exclude>
-                        <exclude>src/main/format/README.md</exclude>
-                        <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
-                        <exclude>src/test/resources/**</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
         </plugins>
     </build>
