@@ -1,0 +1,256 @@
+---
+layout: page
+title: Kubernetes
+nav_order: 1
+parent: Getting-Started
+---
+
+# Getting Started with RAPIDS and Kubernetes
+
+This guide will run through how to set up the RAPIDS Accelerator for Apache Spark in Kubernetes Cluster.
+At the end of this guide, the reader will be able to run a sample Apache Spark application that runs
+on NVIDIA GPUs in Kubernetes Cluster.
+
+Kubernetes requires a Docker image to run Spark.  Generally everything needed is in the Docker
+image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
+[Dockerfile.cuda](Dockerfile.cuda) example.
+
+
+## Prerequisites
+    * Kubernetes Cluster is up and running with NVIDIA GPU support
+    * Docker is installed on a client machine
+    * A Docker repository which is accessible by Kubernetes Cluster
+
+These instructions do not cover how to setup a Kubernetes cluster.
+
+Please refer to [Install Kubernetes](https://docs.nvidia.com/datacenter/cloud-native/kubernetes/install-k8s.html) on 
+how to install a Kubernetes Cluster with NVIDIA GPU support.
+
+## Docker Image Preparation
+
+On a client machine which has access to the Kubernetes Cluster:
+
+1. Download Spark from https://spark.apache.org/downloads.html
+   Supported versions of Spark are listed on the [download](../download.md) page.  Please note that only
+   scala version 2.12 is currently supported by the accelerator. 
+
+   Note that you can download these into a local directory and untar the Spark `.tar.gz` as a directory named `spark`.
+
+2. Download [RAPIDS Accelerator for Spark jars](getting-started-on-prem.md#download-the-rapids-jars), and the
+  [GPU discovery script](getting-started-on-prem.md#install-the-gpu-discovery-script).
+  
+   Put the 2 jars -- `rapids-4-spark_<version>.jar`, `cudf-<version>.jar`  and `getGpusResources.sh` in the same directory as `spark`.
+
+3. Download the sample [Dockerfile.cuda](Dockerfile.cuda) in the same directory as `spark`.
+
+   Basically the sample Dockerfile.cuda will copy the `spark` directory's several sub-directories into `/opt/spark/`, 
+   and copy above 2 jars and `getGpusResources.sh` into `/opt/sparkRapidsPlugin` inside the Docker image.
+   
+   So please look into the Dockerfile.cuda to make sure the file names are correct, and modify if needed.
+   
+   Currently the directory in the local machine should look as below:
+   ```shell 
+   $ ls
+   Dockerfile.cuda   cudf-<version>.jar   getGpusResources.sh   rapids-4-spark_<version>.jar   spark
+   ```
+
+4. Build the Docker image with proper repository name and tag and push to repository
+   ```shell 
+   export IMAGE_NAME=xxx/yyy:tag
+   docker build . -f Dockerfile.cuda -t $IMAGE_NAME
+   docker push $IMAGE_NAME
+   ```
+
+## Run Spark Applications in Kubernetes Cluster
+
+### spark-submit example pi job in `cluster` mode.
+
+This is a good way to test if RAPIDS plugin can be found.
+Because `ClassNotFoundException` is a common error if the Driver can not 
+find the jar for `com.nvidia.spark.SQLPlugin`:
+```
+Exception in thread "main" java.lang.ClassNotFoundException: com.nvidia.spark.SQLPlugin
+```
+
+Here is an example job: 
+
+```shell
+export SPARK_HOME=~/spark
+export IMAGE_NAME=xxx/yyy:tag
+export K8SMASTER=k8s://https://<k8s-apiserver-host>:<k8s-apiserver-port>
+export SPARK_NAMESPACE=default
+export SPARK_DRIVER_NAME=exampledriver
+
+$SPARK_HOME/bin/spark-submit \
+     --master $K8SMASTER \
+     --deploy-mode cluster  \
+     --name examplejob \
+     --class org.apache.spark.examples.SparkPi \
+     --conf spark.rapids.sql.concurrentGpuTasks=1 \
+     --conf spark.executor.instances=1 \
+     --conf spark.executor.resource.gpu.amount=1 \
+     --conf spark.executor.memory=4G \
+     --conf spark.executor.cores=1 \
+     --conf spark.task.cpus=1 \
+     --conf spark.task.resource.gpu.amount=1 \
+     --conf spark.rapids.memory.pinnedPool.size=2G \
+     --conf spark.locality.wait=0s \
+     --conf spark.sql.files.maxPartitionBytes=512m \
+     --conf spark.sql.shuffle.partitions=10 \
+     --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+     --conf spark.kubernetes.namespace=$SPARK_NAMESPACE  \
+     --conf spark.kubernetes.driver.pod.name=$SPARK_DRIVER_NAME  \
+     --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
+     --conf spark.executor.resource.gpu.vendor=nvidia.com \
+     --conf spark.kubernetes.container.image=$IMAGE_NAME \
+     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
+     --conf spark.driver.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
+     --driver-memory 2G \
+     local:///opt/spark/examples/jars/spark-examples_2.12-3.0.2.jar
+```
+
+   Note: `local://` means the jar file location is inside the Docker image.
+   Since this is `cluster` mode, the Driver is running inside a POD in Kubernetes.
+   When the job is running, we could see both Driver POD and Executor POD(s):
+```shell
+$ kubectl get pods
+NAME                               READY   STATUS    RESTARTS   AGE
+spark-pi-d11075782f399fd7-exec-1   1/1     Running   0          9s
+exampledriver                      1/1     Running   0          15s
+```
+
+   To view the Driver log, use below command:
+```shell
+kubectl logs $SPARK_DRIVER_NAME
+```
+
+   To view the Spark Driver UI when the job is running:
+```shell
+kubectl port-forward $SPARK_DRIVER_NAME 4040:4040
+```
+   Then open web browser:
+```shell
+http://localhost:4040
+```
+
+   To kill the Spark job and delete Driver POD:
+```shell
+$SPARK_HOME/bin/spark-submit --kill spark:$SPARK_DRIVER_NAME
+kubectl delete pod $SPARK_DRIVER_NAME
+```
+
+### spark-shell in `client` mode with an interactive shell
+
+If you need an interactive spark-shell with Executor POD(s) running inside Kubernetes:
+```shell
+$SPARK_HOME/bin/spark-shell \
+     --master $K8SMASTER \
+     --name mysparkshell \
+     --deploy-mode client  \
+     --conf spark.rapids.sql.concurrentGpuTasks=1 \
+     --conf spark.executor.instances=1 \
+     --conf spark.executor.resource.gpu.amount=1 \
+     --conf spark.executor.memory=4G \
+     --conf spark.executor.cores=1 \
+     --conf spark.task.cpus=1 \
+     --conf spark.task.resource.gpu.amount=1 \
+     --conf spark.rapids.memory.pinnedPool.size=2G \
+     --conf spark.locality.wait=0s \
+     --conf spark.sql.files.maxPartitionBytes=512m \
+     --conf spark.sql.shuffle.partitions=10 \
+     --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+     --conf spark.kubernetes.namespace=$SPARK_NAMESPACE  \
+     --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
+     --conf spark.executor.resource.gpu.vendor=nvidia.com \
+     --conf spark.kubernetes.container.image=$IMAGE_NAME \
+     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
+     --driver-class-path=./cudf-<version>.jar:./rapids-4-spark_<version>.jar \
+     --driver-memory 2G 
+```
+
+Only `client` mode is applicable. If you specify this as `cluster` mode, you would see below error:
+```shell
+Cluster deploy mode is not applicable to Spark shells.
+```
+And also you notices that here we removed `--conf spark.driver.extraClassPath` but added `--driver-class-path`.
+This is because now the Driver is running on the client machine so the jar paths should be local machine path.
+
+Only the Executor POD(s) are running inside Kubernetes:
+```
+$ kubectl get pods
+NAME                                     READY   STATUS    RESTARTS   AGE
+mysparkshell-bfe52e782f44841c-exec-1     1/1     Running   0          11s
+```
+
+We can run below scala code in `spark-shell` to test if GPU is enabled for our queries:
+```shell
+val df = spark.sparkContext.parallelize(Seq(1)).toDF()
+df.createOrReplaceTempView("df")
+spark.sql("SELECT value FROM df WHERE value <>1").show
+spark.sql("SELECT value FROM df WHERE value <>1").explain
+:quit
+```
+The expected explain plan should contain the GPU related operators:
+```shell
+scala> spark.sql("SELECT value FROM df WHERE value <>1").explain
+== Physical Plan ==
+GpuColumnarToRow false
++- GpuFilter NOT (value#2 = 1)
+   +- GpuRowToColumnar TargetSize(2147483647)
+      +- *(1) SerializeFromObject [input[0, int, false] AS value#2]
+         +- Scan[obj#1]
+```
+
+### spark-submit python code in `client` mode.
+
+Of course, you can `COPY` the python code in the Docker image when building it.
+Then you can spark-submit it using `cluster` mode as previous example pi job.
+
+However if you do not want to re-build the Docker image each time and just want to submit the python code
+from the client machine, you can use `client` mode.
+
+```shell
+$SPARK_HOME/bin/spark-submit \
+     --master $K8SMASTER \
+     --deploy-mode client  \
+     --name mypythonjob \
+     --conf spark.rapids.sql.concurrentGpuTasks=1 \
+     --conf spark.executor.instances=1 \
+     --conf spark.executor.resource.gpu.amount=1 \
+     --conf spark.executor.memory=4G \
+     --conf spark.executor.cores=1 \
+     --conf spark.task.cpus=1 \
+     --conf spark.task.resource.gpu.amount=1 \
+     --conf spark.rapids.memory.pinnedPool.size=2G \
+     --conf spark.locality.wait=0s \
+     --conf spark.sql.files.maxPartitionBytes=512m \
+     --conf spark.sql.shuffle.partitions=10 \
+     --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+     --conf spark.kubernetes.namespace=$SPARK_NAMESPACE  \
+     --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
+     --conf spark.executor.resource.gpu.vendor=nvidia.com \
+     --conf spark.kubernetes.container.image=$IMAGE_NAME \
+     --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
+     --driver-memory 2G \
+     --driver-class-path=./cudf-<version>.jar:./rapids-4-spark_<version>.jar \
+     test.py
+```
+
+A sample `test.py` is as below:
+```shell
+from pyspark.sql import SQLContext
+from pyspark import SparkConf
+from pyspark import SparkContext
+conf = SparkConf()
+sc = SparkContext.getOrCreate()
+sqlContext = SQLContext(sc)
+df=sqlContext.createDataFrame([1,2,3], "int").toDF("value")
+df.createOrReplaceTempView("df")
+sqlContext.sql("SELECT * FROM df WHERE value<>1").explain()
+sqlContext.sql("SELECT * FROM df WHERE value<>1").show()
+sc.stop()
+```
+
+
+Please refer to [Running Spark on Kubernetes](https://spark.apache.org/docs/latest/running-on-kubernetes.html) for more information.
+
