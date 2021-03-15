@@ -42,8 +42,9 @@ On a client machine which has access to the Kubernetes cluster:
 
 3. Download the sample [Dockerfile.cuda](Dockerfile.cuda) in the same directory as `spark`.
 
-   Basically the sample Dockerfile.cuda will copy the `spark` directory's several sub-directories into `/opt/spark/`, 
-   and copy above 2 jars and `getGpusResources.sh` into `/opt/sparkRapidsPlugin` inside the Docker image.
+   The sample Dockerfile.cuda will copy the `spark` directory's several sub-directories into `/opt/spark/` 
+   along with the RAPIDS Accelerator jars and `getGpusResources.sh` into `/opt/sparkRapidsPlugin`
+   inside the Docker image.
    
    So please look into the Dockerfile.cuda to make sure the file names are correct, and modify if needed.
    
