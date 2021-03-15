@@ -18,7 +18,7 @@ image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script. 
 ## Prerequisites
     * Kubernetes cluster is up and running with NVIDIA GPU support
     * Docker is installed on a client machine
-    * A Docker repository which is accessible by Kubernetes Cluster
+    * A Docker repository which is accessible by the Kubernetes cluster
 
 These instructions do not cover how to setup a Kubernetes cluster.
 
