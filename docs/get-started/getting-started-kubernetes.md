@@ -16,7 +16,7 @@ image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script. 
 [Dockerfile.cuda](Dockerfile.cuda) example.
 
 ## Prerequisites
-    * Kubernetes Cluster is up and running with NVIDIA GPU support
+    * Kubernetes cluster is up and running with NVIDIA GPU support
     * Docker is installed on a client machine
     * A Docker repository which is accessible by Kubernetes Cluster
 
