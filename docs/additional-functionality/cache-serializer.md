@@ -15,7 +15,7 @@ nav_order: 2
   utilize disk space to spill over. To read more about what storage levels are available look
   at `StorageLevel.scala` in Spark.
 
-  Starting in Spark 3.1.0 users can add their own cache serializer, if they desire, by
+  Starting in Spark 3.1.1 users can add their own cache serializer, if they desire, by
   setting the `spark.sql.cache.serializer` configuration. This is a static configuration
   that is set once for the duration of a Spark application which means that you can only set the conf
   before starting a Spark application and cannot be changed for that application's Spark
