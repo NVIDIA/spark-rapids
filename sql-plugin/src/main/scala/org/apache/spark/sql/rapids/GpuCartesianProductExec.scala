@@ -156,7 +156,7 @@ class GpuCartesianRDD(
     // happen if there exists specific plans like `LimitExec`.
     context.addTaskCompletionListener[Unit]((_: TaskContext) => {
       spillBatchBuffer.safeClose()
-      if (buildTableOnFlight.isDefined) buildTableOnFlight.get.close()
+      buildTableOnFlight.foreach(_.close())
     })
 
     rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
