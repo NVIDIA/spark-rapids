@@ -15,7 +15,6 @@ Kubernetes requires a Docker image to run Spark.  Generally everything needed is
 image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
 [Dockerfile.cuda](Dockerfile.cuda) example.
 
-
 ## Prerequisites
     * Kubernetes Cluster is up and running with NVIDIA GPU support
     * Docker is installed on a client machine
