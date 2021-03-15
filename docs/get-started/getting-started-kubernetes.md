@@ -214,7 +214,6 @@ $SPARK_HOME/bin/spark-submit \
      --master $K8SMASTER \
      --deploy-mode client  \
      --name mypythonjob \
-     --conf spark.rapids.sql.concurrentGpuTasks=1 \
      --conf spark.executor.instances=1 \
      --conf spark.executor.resource.gpu.amount=1 \
      --conf spark.executor.memory=4G \
