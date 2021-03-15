@@ -28,7 +28,7 @@ build_profiles = 'databricks,!snapshot-shims'
 jar_path = ''
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j',
+    opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:',
                                ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles=', 'jarpath'])
 except getopt.GetoptError:
     print(
