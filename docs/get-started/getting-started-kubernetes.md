@@ -206,7 +206,7 @@ GpuColumnarToRow false
 Of course, you can `COPY` the Python code in the Docker image when building it
 and submit it using the `cluster` deploy mode as showin in the previous example pi job.
 
-However if you do not want to re-build the Docker image each time and just want to submit the python code
+However if you do not want to re-build the Docker image each time and just want to submit the Python code
 from the client machine, you can use `client` mode.
 
 ```shell
