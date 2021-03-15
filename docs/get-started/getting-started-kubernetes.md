@@ -7,7 +7,7 @@ parent: Getting-Started
 
 # Getting Started with RAPIDS and Kubernetes
 
-This guide will run through how to set up the RAPIDS Accelerator for Apache Spark in Kubernetes Cluster.
+This guide will run through how to set up the RAPIDS Accelerator for Apache Spark in a Kubernetes cluster.
 At the end of this guide, the reader will be able to run a sample Apache Spark application that runs
 on NVIDIA GPUs in Kubernetes Cluster.
 
@@ -253,4 +253,3 @@ sc.stop()
 
 
 Please refer to [Running Spark on Kubernetes](https://spark.apache.org/docs/latest/running-on-kubernetes.html) for more information.
-
