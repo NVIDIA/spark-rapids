@@ -68,22 +68,22 @@ def test_single_orderby_with_limit(data_gen, order):
 
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
-    # pytest.param(StructGen([['child0', all_basic_struct_gen]]),
-    #              marks=pytest.mark.xfail(reason='second-level structs are not supported')),
-    # pytest.param(ArrayGen(string_gen),
-    #              marks=pytest.mark.xfail(reason="arrays are not supported")),
-    # pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
-    #              marks=pytest.mark.xfail(reason="maps are not supported")),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
+                 marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(ArrayGen(string_gen),
+                 marks=pytest.mark.xfail(reason="arrays are not supported")),
+    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+                 marks=pytest.mark.xfail(reason="maps are not supported")),
 ], ids=idfn)
 @pytest.mark.parametrize('order', [
-    # pytest.param(f.col('a').asc()),
-    # pytest.param(f.col('a').asc_nulls_first()),
-    # pytest.param(f.col('a').asc_nulls_last(),
-    #              marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').asc()),
+    pytest.param(f.col('a').asc_nulls_first()),
+    pytest.param(f.col('a').asc_nulls_last(),
+                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
     pytest.param(f.col('a').desc()),
-    # pytest.param(f.col('a').desc_nulls_first(),
-    #              marks=pytest.mark.xfail(reason='opposite null order not supported')),
-    # pytest.param(f.col('a').desc_nulls_last()),
+    pytest.param(f.col('a').desc_nulls_first(),
+                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
 def test_single_nested_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
