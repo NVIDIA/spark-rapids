@@ -45,7 +45,7 @@ class GpuGenerateExecSparkPlanMeta(
 
   override def tagPlanForGpu(): Unit = {
     if (gen.outer &&
-        !childExprs.head.asInstanceOf[GeneratorExprMeta[Generator]].supportOuter) {
+      !childExprs.head.asInstanceOf[GeneratorExprMeta[Generator]].supportOuter) {
       willNotWorkOnGpu(s"outer is not currently supported with ${gen.generator.nodeName}")
     }
   }
@@ -101,8 +101,8 @@ trait GpuGenerator extends GpuUnevaluable {
    * @return result ColumnarBatch
    */
   def generate(inputBatch: ColumnarBatch,
-      generatorOffset: Int,
-      outer: Boolean): ColumnarBatch
+    generatorOffset: Int,
+    outer: Boolean): ColumnarBatch
 
   /**
    * Compute split indices for generator's input batches.
@@ -174,22 +174,22 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     case ArrayType(et, containsNull) =>
       if (position) {
         new StructType()
-            .add("pos", IntegerType, nullable = false)
-            .add("col", et, containsNull)
+          .add("pos", IntegerType, nullable = false)
+          .add("col", et, containsNull)
       } else {
         new StructType()
-            .add("col", et, containsNull)
+          .add("col", et, containsNull)
       }
     case MapType(kt, vt, valueContainsNull) =>
       if (position) {
         new StructType()
-            .add("pos", IntegerType, nullable = false)
-            .add("key", kt, nullable = false)
-            .add("value", vt, valueContainsNull)
+          .add("pos", IntegerType, nullable = false)
+          .add("key", kt, nullable = false)
+          .add("value", vt, valueContainsNull)
       } else {
         new StructType()
-            .add("key", kt, nullable = false)
-            .add("value", vt, valueContainsNull)
+          .add("key", kt, nullable = false)
+          .add("value", vt, valueContainsNull)
       }
   }
 
@@ -229,8 +229,8 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
 
   // Infer result schema of GenerateExec from input schema
   protected def resultSchema(inputSchema: Array[DataType],
-      genOffset: Int,
-      includePos: Boolean = false): Array[DataType] = {
+    genOffset: Int,
+    includePos: Boolean = false): Array[DataType] = {
     val outputSchema = ArrayBuffer[DataType]()
     inputSchema.zipWithIndex.foreach {
       // extract output type of explode from input ArrayData
@@ -335,8 +335,8 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
 case class GpuExplode(child: Expression) extends GpuExplodeBase {
 
   override def generate(inputBatch: ColumnarBatch,
-      generatorOffset: Int,
-      outer: Boolean): ColumnarBatch = {
+    generatorOffset: Int,
+    outer: Boolean): ColumnarBatch = {
 
     require(inputBatch.numCols() - 1 == generatorOffset,
       "Internal Error GpuExplode supports one and only one input attribute.")
@@ -354,8 +354,8 @@ case class GpuExplode(child: Expression) extends GpuExplodeBase {
 case class GpuPosExplode(child: Expression) extends GpuExplodeBase {
 
   override def generate(inputBatch: ColumnarBatch,
-      generatorOffset: Int,
-      outer: Boolean): ColumnarBatch = {
+    generatorOffset: Int,
+    outer: Boolean): ColumnarBatch = {
 
     require(inputBatch.numCols() - 1 == generatorOffset,
       "Internal Error GpuPosExplode supports one and only one input attribute.")
