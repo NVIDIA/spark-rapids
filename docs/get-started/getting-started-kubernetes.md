@@ -46,7 +46,7 @@ On a client machine which has access to the Kubernetes cluster:
    along with the RAPIDS Accelerator jars and `getGpusResources.sh` into `/opt/sparkRapidsPlugin`
    inside the Docker image.
    
-   So please look into the Dockerfile.cuda to make sure the file names are correct, and modify if needed.
+   Examine the Dockerfile.cuda file to ensure the file names are correct and modify if needed.
    
    Currently the directory in the local machine should look as below:
    ```shell 
