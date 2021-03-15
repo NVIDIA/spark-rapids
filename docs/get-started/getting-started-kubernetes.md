@@ -97,6 +97,7 @@ $SPARK_HOME/bin/spark-submit \
      --conf spark.task.cpus=1 \
      --conf spark.task.resource.gpu.amount=1 \
      --conf spark.rapids.memory.pinnedPool.size=2G \
+     --conf spark.kubernetes.memoryOverheadFactor=0.6 \
      --conf spark.locality.wait=0s \
      --conf spark.sql.files.maxPartitionBytes=512m \
      --conf spark.sql.shuffle.partitions=10 \
@@ -162,6 +163,7 @@ $SPARK_HOME/bin/spark-shell \
      --conf spark.task.cpus=1 \
      --conf spark.task.resource.gpu.amount=1 \
      --conf spark.rapids.memory.pinnedPool.size=2G \
+     --conf spark.kubernetes.memoryOverheadFactor=0.6 \
      --conf spark.locality.wait=0s \
      --conf spark.sql.files.maxPartitionBytes=512m \
      --conf spark.sql.shuffle.partitions=10 \
@@ -228,6 +230,7 @@ $SPARK_HOME/bin/spark-submit \
      --conf spark.task.cpus=1 \
      --conf spark.task.resource.gpu.amount=1 \
      --conf spark.rapids.memory.pinnedPool.size=2G \
+     --conf spark.kubernetes.memoryOverheadFactor=0.6 \
      --conf spark.locality.wait=0s \
      --conf spark.sql.files.maxPartitionBytes=512m \
      --conf spark.sql.shuffle.partitions=10 \
