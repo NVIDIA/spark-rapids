@@ -2250,14 +2250,15 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
+          // Floating point values don't work because of -0.0 is not hashed properly
           TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL,
-          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL))),
+             TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-        def convertToGpu(): GpuExpression = GpuMurmur3Hash(childExprs.map(_.convertToGpu()))
+        def convertToGpu(): GpuExpression =
+          GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
       }),
     expr[Contains](
       "Contains",
@@ -2378,6 +2379,18 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def tagPartForGpu(): Unit = {
+          // This needs to match what murmur3 supports.
+          // TODO In 0.5 we should make the checks self documenting, and look more like what
+          //  SparkPlan and Expression support
+          //  https://github.com/NVIDIA/spark-rapids/issues/1915
+          val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+              TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL
+          hp.children.foreach { child =>
+            sig.tagExprParam(this, child, "hash_key")
+          }
+        }
+
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
@@ -2411,7 +2424,7 @@ object GpuOverrides {
 
             GpuRangePartitioning(gpuOrdering, rp.numPartitions, schema)(new GpuRangePartitioner)
           } else {
-            GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+            GpuSinglePartitioning
           }
         }
       }),
@@ -2425,11 +2438,7 @@ object GpuOverrides {
     part[SinglePartition.type](
       "Single partitioning",
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
-        override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
-
-        override def convertToGpu(): GpuPartitioning = {
-          GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
-        }
+        override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 
@@ -2540,7 +2549,7 @@ object GpuOverrides {
             GpuTopN(takeExec.limit,
               so,
               projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
                 GpuTopN(takeExec.limit,
                   so,
                   takeExec.child.output,

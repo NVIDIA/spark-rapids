@@ -69,6 +69,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+  private static String hexString(byte[] bytes) {
+    StringBuilder str = new StringBuilder();
+    for (byte b : bytes) {
+      str.append(String.format("%02x", b&0xff));
+    }
+    return str.toString();
+  }
+
   /**
    * Print to standard error the contents of a column. Note that this should never be
    * called from production code, as it is very slow.  Also note that this is not production
@@ -88,8 +96,79 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           System.err.println(i + " " + hostCol.getBigDecimal(i));
         }
       }
+    } else if (DType.STRING.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " \"" + hostCol.getJavaString(i) + "\" " +
+              hexString(hostCol.getUTF8(i)));
+        }
+      }
+    } else if (DType.INT32.equals(type)
+        || DType.INT8.equals(type)
+        || DType.INT16.equals(type)
+        || DType.INT64.equals(type)
+        || DType.TIMESTAMP_DAYS.equals(type)
+        || DType.TIMESTAMP_SECONDS.equals(type)
+        || DType.TIMESTAMP_MICROSECONDS.equals(type)
+        || DType.TIMESTAMP_MILLISECONDS.equals(type)
+        || DType.TIMESTAMP_NANOSECONDS.equals(type)) {
+      debugInteger(hostCol, type);
+    } else if (DType.BOOL8.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getBoolean(i));
+        }
+      }
+    } else if (DType.FLOAT64.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getDouble(i));
+        }
+      }
+    } else if (DType.FLOAT32.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getFloat(i));
+        }
+      }
     } else {
       System.err.println("TYPE " + type + " NOT SUPPORTED FOR DEBUG PRINT");
+    }
+  }
+
+  private static void debugInteger(HostColumnVector hostCol, DType intType) {
+    for (int i = 0; i < hostCol.getRowCount(); i++) {
+      if (hostCol.isNull(i)) {
+        System.err.println(i + " NULL");
+      } else {
+        final int sizeInBytes = intType.getSizeInBytes();
+        final Object value;
+        switch (sizeInBytes) {
+        case Byte.BYTES:
+          value = hostCol.getByte(i);
+          break;
+        case Short.BYTES:
+          value = hostCol.getShort(i);
+          break;
+        case Integer.BYTES:
+          value = hostCol.getInt(i);
+          break;
+        case Long.BYTES:
+          value = hostCol.getLong(i);
+          break;
+        default:
+          throw new IllegalArgumentException("INFEASIBLE: Unsupported integer-like type " + intType);
+        }
+        System.err.println(i + " " + value);
+      }
     }
   }
 
