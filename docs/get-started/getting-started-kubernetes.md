@@ -23,7 +23,7 @@ image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script. 
 These instructions do not cover how to setup a Kubernetes cluster.
 
 Please refer to [Install Kubernetes](https://docs.nvidia.com/datacenter/cloud-native/kubernetes/install-k8s.html) on 
-how to install a Kubernetes Cluster with NVIDIA GPU support.
+how to install a Kubernetes cluster with NVIDIA GPU support.
 
 ## Docker Image Preparation
 
