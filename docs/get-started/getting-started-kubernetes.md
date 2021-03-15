@@ -54,7 +54,7 @@ On a client machine which has access to the Kubernetes cluster:
    Dockerfile.cuda   cudf-<version>.jar   getGpusResources.sh   rapids-4-spark_<version>.jar   spark
    ```
 
-4. Build the Docker image with proper repository name and tag and push to repository
+4. Build the Docker image with a proper repository name and tag and push it to the repository
    ```shell 
    export IMAGE_NAME=xxx/yyy:tag
    docker build . -f Dockerfile.cuda -t $IMAGE_NAME
