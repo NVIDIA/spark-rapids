@@ -9,7 +9,7 @@ parent: Getting-Started
 
 This guide will run through how to set up the RAPIDS Accelerator for Apache Spark in a Kubernetes cluster.
 At the end of this guide, the reader will be able to run a sample Apache Spark application that runs
-on NVIDIA GPUs in Kubernetes Cluster.
+on NVIDIA GPUs in a Kubernetes cluster.
 
 Kubernetes requires a Docker image to run Spark.  Generally everything needed is in the Docker
 image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
