@@ -21,6 +21,7 @@ import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
+import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
@@ -251,19 +252,13 @@ object RapidsExecutorPlugin {
    * version 7.1.1.
    */
   def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
-    val (majorMinor, patches) = expected.split('.').zip(actual.split('.')).splitAt(2)
-    if (majorMinor.exists{ case (e, a) => e != a }) {
-      return false
-    }
-
-    // patch and sub-patch versions can match as long as actual is more recent
-    patches.forall { case (expStr, actStr) =>
-      val expVal = expStr.toInt
-      try {
-        expVal <= actStr.toInt
-      } catch {
-        case _: NumberFormatException => false
-      }
+    val (expMajorMinor, expPatch) = expected.split('.').splitAt(2)
+    val (actMajorMinor, actPatch) = actual.split('.').splitAt(2)
+    actMajorMinor.startsWith(expMajorMinor) && {
+      val expPatchInts = expPatch.map(_.toInt)
+      val actPatchInts = actPatch.map(v => Try(v.toInt).getOrElse(Int.MinValue))
+      val zipped = expPatchInts.zipAll(actPatchInts, 0, 0)
+      zipped.forall { case (e, a) => e <= a }
     }
   }
 }
