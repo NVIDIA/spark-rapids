@@ -31,7 +31,7 @@ On a client machine which has access to the Kubernetes cluster:
 
 1. [Download Apache Spark](https://spark.apache.org/downloads.html).
    Supported versions of Spark are listed on the [RAPIDS Accelerator download page](../download.md).  Please note that only
-   scala version 2.12 is currently supported by the accelerator. 
+   Scala version 2.12 is currently supported by the accelerator. 
 
    Note that you can download these into a local directory and untar the Spark `.tar.gz` as a directory named `spark`.
 
