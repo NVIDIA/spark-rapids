@@ -61,7 +61,7 @@ On a client machine which has access to the Kubernetes cluster:
    docker push $IMAGE_NAME
    ```
 
-## Run Spark Applications in Kubernetes Cluster
+## Running Spark Applications in the Kubernetes Cluster
 
 ### spark-submit example pi job in `cluster` mode.
 
