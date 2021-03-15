@@ -621,4 +621,8 @@ class Spark300Shims extends SparkShims {
   ): A = {
     attachTree(tree, msg)(f)
   }
+
+  override def hasAliasQuoteFix: Boolean = false
+
+  override def hasCastFloatTimestampUpcast: Boolean = false
 }
