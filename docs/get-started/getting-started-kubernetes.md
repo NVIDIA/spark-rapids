@@ -11,9 +11,12 @@ This guide will run through how to set up the RAPIDS Accelerator for Apache Spar
 At the end of this guide, the reader will be able to run a sample Apache Spark application that runs
 on NVIDIA GPUs in a Kubernetes cluster.
 
+This is a quick start guide which uses default settings which may be different from your cluster.
+
 Kubernetes requires a Docker image to run Spark.  Generally everything needed is in the Docker
 image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
 [Dockerfile.cuda](Dockerfile.cuda) example.
+
 
 ## Prerequisites
     * Kubernetes cluster is up and running with NVIDIA GPU support
