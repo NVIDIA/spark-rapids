@@ -133,9 +133,13 @@ kubectl port-forward $SPARK_DRIVER_NAME 4040:4040
 http://localhost:4040
 ```
 
-   To kill the Spark job and delete Driver POD:
+   To kill the Spark job:
 ```shell
 $SPARK_HOME/bin/spark-submit --kill spark:$SPARK_DRIVER_NAME
+```
+
+   To delete the Driver POD:
+```shell
 kubectl delete pod $SPARK_DRIVER_NAME
 ```
 
