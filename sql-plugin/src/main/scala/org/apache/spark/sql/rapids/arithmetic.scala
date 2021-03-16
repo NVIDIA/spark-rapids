@@ -262,7 +262,7 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   private def getIntermediaryType(r: DecimalType): DecimalType = {
     val outType = dataType.asInstanceOf[DecimalType]
     // We should never hit a case where the newType hits precision > Decimal.MAX_LONG_DIGITS
-    // as we have check for it in tagExprForGpu
+    // as we have check for it in tagExprForGpu.
     DecimalType(outType.precision, outType.scale + r.scale)
   }
 

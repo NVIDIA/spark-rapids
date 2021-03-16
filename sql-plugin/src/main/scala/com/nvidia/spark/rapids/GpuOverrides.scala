@@ -1751,6 +1751,8 @@ object GpuOverrides {
               // outputType.scale = 6 + 1
               // To find out if outputType.precision < outputType.scale simplifies to p1 < 0
               // which is never possible
+              //
+              // TODO We should revisit the proof one more time after we support 128-bit decimals
               val intermediateResult = DecimalType(outputType.precision, outputType.scale + r.scale)
               if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the divide is too large" +
