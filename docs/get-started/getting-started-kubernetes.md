@@ -42,6 +42,11 @@ On a client machine which has access to the Kubernetes cluster:
   [GPU discovery script](getting-started-on-prem.md#install-the-gpu-discovery-script).
   
    Put the 2 jars -- `rapids-4-spark_<version>.jar`, `cudf-<version>.jar`  and `getGpusResources.sh` in the same directory as `spark`.
+   
+   Note: If here you decide to put above 2 jars in the `spark/jars` directory which will be copied into 
+   `/opt/spark/jars` directory in Docker image, then in the future you do not need to 
+   specify `spark.driver.extraClassPath` or `spark.executor.extraClassPath` using `cluster` mode.
+   This example just shows you a way to put customized jars or 3rd party jars.
 
 3. Download the sample [Dockerfile.cuda](Dockerfile.cuda) in the same directory as `spark`.
 
