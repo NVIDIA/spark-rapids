@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution}
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuSinglePartitioning(expressions: Seq[Expression])
-  extends GpuExpression with GpuPartitioning {
+case object GpuSinglePartitioning extends GpuExpression with GpuPartitioning {
   /**
    * Returns the result of evaluating this expression on the entire `ColumnarBatch`.
    * The result of calling this may be a single [[GpuColumnVector]] or a scalar value.
@@ -37,7 +37,7 @@ case class GpuSinglePartitioning(expressions: Seq[Expression])
     if (batch.numCols == 0) {
       Array(batch).zipWithIndex
     } else {
-      try {
+      withResource(batch) { batch =>
         // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
         // slice will produce.
         val sliced = sliceInternalGpuOrCpu(
@@ -45,8 +45,6 @@ case class GpuSinglePartitioning(expressions: Seq[Expression])
           Array(0),
           GpuColumnVector.extractColumns(batch))
         sliced.zipWithIndex
-      } finally {
-        batch.close()
       }
     }
   }
@@ -57,5 +55,10 @@ case class GpuSinglePartitioning(expressions: Seq[Expression])
 
   override val numPartitions: Int = 1
 
-  override def children: Seq[Expression] = expressions
+  override def children: Seq[Expression] = Seq.empty
+
+  override def satisfies0(required: Distribution): Boolean = required match {
+    case _: BroadcastDistribution => false
+    case _ => true
+  }
 }
