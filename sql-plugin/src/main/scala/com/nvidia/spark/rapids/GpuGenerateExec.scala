@@ -131,7 +131,8 @@ trait GpuGenerator extends GpuUnevaluable {
    * This is a specialized method for GPU runtime, which is called by GpuGenerateExec to determine
    * whether current generation plan can be executed with optimized lazy array generation or not.
    *
-   * @return fixed length lazy expressions for generation
+   * @return fixed length lazy expressions for generation. Nil value means no lazy expressions to
+   *         extract, which indicates fixed length lazy array generation is unavailable.
    */
   def fixedLenLazyExpressions: Seq[Expression] = Nil
 
@@ -268,7 +269,8 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     val numExplodeColumns = if (position) 2 else 1
 
     new Iterator[ColumnarBatch] {
-
+      // TODO: Perhaps we can make currentBatch spillable in the future
+      // https://github.com/NVIDIA/spark-rapids/issues/1940
       var currentBatch: ColumnarBatch = _
       var indexIntoData = 0
 
@@ -298,9 +300,10 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         if (currentBatch == null || indexIntoData >= numArrayColumns) {
           fetchNextBatch()
         }
+
         withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)) { _ =>
-          val result = new Array[ColumnVector](numExplodeColumns + numOtherColumns)
-          try {
+          withResource(new Array[ColumnVector](numExplodeColumns + numOtherColumns)) { result =>
+
             withResource(GpuProjectExec.project(currentBatch, boundOthersProjectList)) { cb =>
               (0 until cb.numCols()).foreach { i =>
                 result(i) = cb.column(i).asInstanceOf[GpuColumnVector].getBase.incRefCount()
@@ -323,8 +326,6 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
               numOutputRows += table.getRowCount
               GpuColumnVector.from(table, outputSchema)
             }
-          } finally {
-            result.safeClose()
           }
         }
       }
