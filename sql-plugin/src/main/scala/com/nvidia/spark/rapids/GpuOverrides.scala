@@ -423,7 +423,6 @@ object GpuOverrides {
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
-  // TODO need a better name since used in multiple contexts
   private[this] val pluginSupportedOrderableSig = (
     TypeSig.commonCudfTypes +
     TypeSig.NULL +
@@ -1820,7 +1819,7 @@ object GpuOverrides {
           if (isNestedType(sortOrder.dataType) &&
               sortOrder.nullOrdering != directionDefaultNullOrdering) {
             willNotWorkOnGpu(s"Only default null ordering $directionDefaultNullOrdering " +
-              s"supported. Found: ${sortOrder.nullOrdering}")
+              s"supported for nested types. Found: ${sortOrder.nullOrdering}")
           }
         }
 
@@ -2704,8 +2703,7 @@ object GpuOverrides {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
+      ExecChecks(TypeSig.all - TypeSig.UDT, TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
