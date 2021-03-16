@@ -45,6 +45,9 @@ arrow_udf_conf = {
     'spark.rapids.sql.exec.WindowInPandasExec': 'true'
 }
 
+array_gens_for_scalar_udf = [ArrayGen(subGen) for subGen in arrow_common_gen] + \
+        [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
 ####################################################################
 # NOTE: pytest does not play well with pyspark udfs, because pyspark
 # tries to import the dependencies for top level functions and
@@ -76,6 +79,17 @@ def test_iterator_math_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen).select(
                 my_udf(f.col('a'), f.col('b'))),
             conf=arrow_udf_conf)
+
+
+@pytest.mark.parametrize('data_gen', array_gens_for_scalar_udf, ids=idfn)
+def test_pandas_scalar_udf_array_type(data_gen):
+    def nested_size(nested):
+        return pd.Series([nested.size]).repeat(nested.size)
+
+    my_udf = f.pandas_udf(nested_size, returnType=LongType())
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(my_udf(f.col('a'))),
+        conf=arrow_udf_conf)
 
 
 @approximate_float

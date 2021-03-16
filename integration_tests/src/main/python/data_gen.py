@@ -811,6 +811,19 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
            decimal_gen_64bit]
 
+common_cudf_types_gen = all_basic_gens[:-1]
+
+# Pyarrow will complain the error as below if the timestamp is out of range for both CPU and GPU,
+# so reduce the time range to avoid exceptions leading to tests failure.
+#
+#     "pyarrow.lib.ArrowInvalid: Casting from timestamp[us, tz=UTC] to timestamp[ns]
+#      would result in out of bounds timestamp: 51496791452587000"
+#
+# This issue has been fixed in pyarrow by the PR https://github.com/apache/arrow/pull/7169
+# However it still requires PySpark to specify the new argument "timestamp_as_object".
+arrow_common_gen = common_cudf_types_gen[:-1] + [TimestampGen(
+    start=datetime(1970, 1, 1, tzinfo=timezone.utc),
+    end=datetime(2262, 1, 1, tzinfo=timezone.utc))]
 
 # This function adds a new column named uniq_int where each row
 # has a new unique integer value. It just starts at 0 and
