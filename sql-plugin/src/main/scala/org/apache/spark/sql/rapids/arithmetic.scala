@@ -239,87 +239,8 @@ object GpuDivideUtil {
   }
 }
 
-abstract class GpuDecimalDivide(left: Expression, right: Expression) extends GpuDivModLike with
-  Serializable {
-  // Override the output type as a special case for decimal
-  override def dataType: DataType = (left.dataType, right.dataType) match {
-    case (l: DecimalType, r: DecimalType) => GpuDivideUtil.decimalDataType(l, r)
-    case _ => super.dataType
-  }
-
-  def getNewDecimalType(outputScale: Int, l: DecimalType, r: DecimalType): DecimalType = {
-    val newScale = if (outputScale + r.scale > l.scale) {
-      outputScale + r.scale
-    } else {
-      l.scale - outputScale
-    }
-    val newType = DecimalType(Math.min(Decimal.MAX_LONG_DIGITS, l.precision + newScale),
-      Math.min(Decimal.MAX_LONG_DIGITS, newScale))
-    val raise = newScale - l.scale
-    require(raise <= Decimal.MAX_LONG_DIGITS, s"$newType  is not supported for GPU processing yet.")
-    newType
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType) => {
-        val outputScale = dataType.asInstanceOf[DecimalType].scale
-        val newType = getNewDecimalType(outputScale, l, r)
-        if (outputScale + r.scale > l.scale) {
-          withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
-            modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
-          }
-        } else {
-          withResource(rhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
-            modRhs => super.doColumnar(lhs, GpuColumnVector.from(modRhs, newType))
-          }
-        }
-      }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType) => {
-        val outputScale = dataType.asInstanceOf[DecimalType].scale
-        val newType = getNewDecimalType(outputScale, l, r)
-        if (outputScale + r.scale > l.scale) {
-          withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
-            modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
-          }
-        } else {
-          withResource(GpuScalar.from(rhs.getBigDecimal.longValue(), newType)) { modRhs =>
-            super.doColumnar(lhs, modRhs)
-          }
-        }
-      }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (l: DecimalType, r: DecimalType) => {
-        val outputScale = dataType.asInstanceOf[DecimalType].scale
-        val newType = getNewDecimalType(outputScale, l, r)
-        if (outputScale + r.scale > l.scale) {
-          withResource(GpuScalar.from(lhs.getBigDecimal.longValue(), newType)) { modLhs =>
-            super.doColumnar(modLhs, rhs)
-          }
-        } else {
-          withResource(rhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
-            modRhs => super.doColumnar(lhs, GpuColumnVector.from(modRhs, newType))
-          }
-        }
-      }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-}
-
 // This is for doubles and floats...
-case class GpuDivide(left: Expression, right: Expression) extends GpuDecimalDivide(left, right) {
+case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
 
   override def symbol: String = "/"
@@ -331,6 +252,51 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDecimalDivi
 
   override def outputTypeOverride: DType =
     GpuColumnVector.getNonNestedRapidsType(dataType)
+
+  // Override the output type as a special case for decimal
+  override def dataType: DataType = (left.dataType, right.dataType) match {
+    case (l: DecimalType, r: DecimalType) => GpuDivideUtil.decimalDataType(l, r)
+    case _ => super.dataType
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    (left.dataType, right.dataType) match {
+      case (_: DecimalType, r: DecimalType) => {
+        val outType = dataType.asInstanceOf[DecimalType]
+        val newType = DecimalType(outType.precision, outType.scale + r.scale)
+        withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
+          modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+    (left.dataType, right.dataType) match {
+      case (_: DecimalType, r: DecimalType) => {
+        val outType = dataType.asInstanceOf[DecimalType]
+        val newType = DecimalType(outType.precision, outType.scale + r.scale)
+        withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
+          modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+    (left.dataType, right.dataType) match {
+      case (_: DecimalType, r: DecimalType) => {
+        val outType = dataType.asInstanceOf[DecimalType]
+        val newType = DecimalType(outType.precision, outType.scale + r.scale)
+        withResource(GpuScalar.from(lhs.getBigDecimal.longValue(), newType)) { modLhs =>
+          super.doColumnar(modLhs, rhs)
+        }
+      }
+      case _ => super.doColumnar(lhs, rhs)
+    }
+  }
 }
 
 case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
