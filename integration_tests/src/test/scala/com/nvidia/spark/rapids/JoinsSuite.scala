@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,65 +101,4 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
     mixedDfWithNulls, mixedDfWithNulls, sortBeforeRepart = true) {
     (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
   }
-
-  test("fixUpJoinConsistencyIfNeeded AQE on") {
-    // this test is only valid in Spark 3.0.1 and later due to AQE supporting the plugin
-    val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
-      case SparkShimVersion(3, 0, 0) => false
-      case DatabricksShimVersion(3, 0, 0) => false
-      case _ => true
-    }
-    assume(isValidTestForSparkVersion)
-    testFixUpJoinConsistencyIfNeeded(true)
-  }
-
-  test("fixUpJoinConsistencyIfNeeded AQE off") {
-    testFixUpJoinConsistencyIfNeeded(false)
-  }
-
-  private def testFixUpJoinConsistencyIfNeeded(aqe: Boolean) {
-
-    val conf = shuffledJoinConf.clone()
-        .set("spark.sql.adaptive.enabled", String.valueOf(aqe))
-        .set("spark.rapids.sql.test.allowedNonGpu",
-          "BroadcastHashJoinExec,SortMergeJoinExec,SortExec,Upper")
-        .set("spark.rapids.sql.incompatibleOps.enabled", "false") // force UPPER onto CPU
-
-    withGpuSparkSession(spark => {
-      import spark.implicits._
-
-      def createStringDF(name: String, upper: Boolean = false): DataFrame = {
-        val countryNames = (0 until 1000).map(i => s"country_$i")
-        if (upper) {
-          countryNames.map(_.toUpperCase).toDF(name)
-        } else {
-          countryNames.toDF(name)
-        }
-      }
-
-      val left = createStringDF("c1")
-          .join(createStringDF("c2"), col("c1") === col("c2"))
-
-      val right = createStringDF("c3")
-          .join(createStringDF("c4"), col("c3") === col("c4"))
-
-      val join = left.join(right, upper(col("c1")) === col("c4"))
-
-      // call collect so that we get the final executed plan when AQE is on
-      join.collect()
-
-      val shuffleExec = TestUtils
-          .findOperator(join.queryExecution.executedPlan, _.isInstanceOf[ShuffleExchangeExec])
-          .get
-
-      val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
-      val reasons = shuffleExec.getTagValue(gpuSupportedTag).getOrElse(Set.empty)
-      assert(reasons.contains(
-          "other exchanges that feed the same join are on the CPU, and GPU " +
-          "hashing is not consistent with the CPU version"))
-
-    }, conf)
-
-  }
-
 }
