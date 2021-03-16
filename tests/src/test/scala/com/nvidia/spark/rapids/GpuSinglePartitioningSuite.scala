@@ -45,7 +45,7 @@ class GpuSinglePartitioningSuite extends FunSuite with Arm {
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf))
-      val partitioner = GpuSinglePartitioning(Nil)
+      val partitioner = GpuSinglePartitioning
       withResource(buildBatch()) { batch =>
         withResource(GpuColumnVector.from(batch)) { table =>
           withResource(table.contiguousSplit()) { contigTables =>
