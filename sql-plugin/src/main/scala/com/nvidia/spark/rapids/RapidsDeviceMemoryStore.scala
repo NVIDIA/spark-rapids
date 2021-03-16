@@ -36,23 +36,18 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       memoryBuffer match {
         case d: DeviceMemoryBuffer => d
         case h: HostMemoryBuffer =>
-          try {
-            val deviceBuffer = DeviceMemoryBuffer.allocate(other.size)
-            logDebug(s"copying from host $h to device $deviceBuffer")
-            deviceBuffer.copyFromHostBuffer(h, stream)
-            deviceBuffer
-          } finally {
-            h.close()
+          withResource(h) { _ =>
+            closeOnExcept(DeviceMemoryBuffer.allocate(other.size)) { deviceBuffer =>
+              logDebug(s"copying from host $h to device $deviceBuffer")
+              deviceBuffer.copyFromHostBuffer(h, stream)
+              deviceBuffer
+            }
           }
         case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
       }
     }
     new RapidsDeviceMemoryBuffer(other.id, other.size, other.meta, None,
       deviceBuffer, other.getSpillPriority, other.spillCallback)
-  }
-
-  override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.getMemoryBuffer
   }
 
   /**

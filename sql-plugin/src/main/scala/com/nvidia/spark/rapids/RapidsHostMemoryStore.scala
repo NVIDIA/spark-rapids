@@ -71,10 +71,6 @@ class RapidsHostMemoryStore(
     (buffer, true)
   }
 
-  override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.getMemoryBuffer
-  }
-
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     val (hostBuffer, isPinned) = allocateHostBuffer(other.size)

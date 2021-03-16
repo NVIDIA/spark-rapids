@@ -125,6 +125,8 @@ abstract class RapidsBufferStore(
    * (i.e.: this method will not take ownership of the incoming buffer object).
    * This does not need to update the catalog, the caller is responsible for that.
    * @param buffer data from another store
+   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. It will be closed
+   *                     by this method
    * @param stream CUDA stream to use for copy or null
    * @return new buffer that was created
    */
@@ -206,6 +208,8 @@ abstract class RapidsBufferStore(
    * adding a reference to the existing buffer and later closing it when the transfer completes.
    * @note DO NOT close the buffer unless adding a reference!
    * @param buffer data from another store
+   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. It will be closed
+   *                     by this method
    * @param stream CUDA stream to use or null
    * @return new buffer tracking the data in this store
    */
@@ -213,11 +217,13 @@ abstract class RapidsBufferStore(
   : RapidsBufferBase
 
   /**
-   * Get the underlying memory buffer from the specified Rapids buffer.
+   * Materialize the underlying memory buffer from the specified Rapids buffer.
    * @param buffer a buffer managed by this store
    * @return underlying memory buffer
    */
-  protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer
+  protected def materializeMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
+    buffer.getMemoryBuffer
+  }
 
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = synchronized {
@@ -255,7 +261,7 @@ abstract class RapidsBufferStore(
           logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
               s"total mem=${buffers.getTotalBytes}")
           buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
-          spillStore.copyBuffer(buffer, getMemoryBuffer(buffer), stream)
+          spillStore.copyBuffer(buffer, materializeMemoryBuffer(buffer), stream)
         }
       } finally {
         buffer.close()
@@ -281,6 +287,19 @@ abstract class RapidsBufferStore(
 
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
+
+    /**
+     * Materialize the memory buffer from the underlying storage.
+     *
+     * If the buffer resides in device or host memory, only reference count is incremented.
+     * If the buffer resides in secondary storage, a new host or device memory buffer is created,
+     * with the data copied to the new buffer.
+     * The caller must have successfully acquired the buffer beforehand.
+     * @see [[addReference]]
+     * @note It is the responsibility of the caller to close the buffer.
+     * @note This is an internal API only used by Rapids buffer stores.
+     */
+    protected def materializeMemoryBuffer: MemoryBuffer = getMemoryBuffer
 
     /**
      * Determine if a buffer is currently acquired.
@@ -329,19 +348,17 @@ abstract class RapidsBufferStore(
             }
           case _ =>
             try {
-              val newBuffer = {
-                logDebug(s"Unspilling $this $id to $DEVICE")
-                RapidsBufferCatalog.getDeviceStorage.copyBuffer(
-                  this, getMemoryBuffer, Cuda.DEFAULT_STREAM)
-              }
+              logDebug(s"Unspilling $this $id to $DEVICE")
+              val newBuffer = RapidsBufferCatalog.getDeviceStorage.copyBuffer(
+                this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
               if (newBuffer.addReference()) {
                 withResource(newBuffer) { newBuffer =>
                   return newBuffer.getDeviceMemoryBuffer
                 }
               }
             } catch {
-              case e: IllegalStateException =>
-                logDebug("Error unspilling to device", e)
+              case _: Exception =>
+                logDebug(s"Lost device buffer registration race for buffer $id, retrying...")
             }
         }
       }

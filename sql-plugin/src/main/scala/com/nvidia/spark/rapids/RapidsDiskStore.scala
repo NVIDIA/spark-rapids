@@ -62,10 +62,6 @@ class RapidsDiskStore(
     }
   }
 
-  override protected def getMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.getMemoryBuffer
-  }
-
   /** Copy a host buffer to a file, returning the file offset at which the data was written. */
   private def copyBufferToPath(
       buffer: HostMemoryBuffer,
