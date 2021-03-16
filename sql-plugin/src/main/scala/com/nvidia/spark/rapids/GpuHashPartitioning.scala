@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, Table}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
+import org.apache.spark.sql.rapids.GpuMurmur3Hash
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -47,96 +47,67 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
     }
   }
 
-  def getGpuKeyColumns(batch: ColumnarBatch) : Array[GpuColumnVector] = {
-    expressions.map(_.columnarEval(batch)
-        .asInstanceOf[GpuColumnVector]).toArray
-  }
-
-  def getGpuDataColumns(batch: ColumnarBatch) : Array[GpuColumnVector] =
-    GpuColumnVector.extractColumns(batch)
-
-  def insertDedupe(
-      indexesOut: Array[Int],
-      colsIn: Array[GpuColumnVector],
-      dedupedData: ArrayBuffer[ColumnVector]): Unit = {
-    indexesOut.indices.foreach { i =>
-      val b = colsIn(i).getBase
-      val idx = dedupedData.indexOf(b)
-      if (idx < 0) {
-        indexesOut(i) = dedupedData.size
-        dedupedData += b
-      } else {
-        indexesOut(i) = idx
-      }
-    }
-  }
-
-  def dedupe(keyCols: Array[GpuColumnVector], dataCols: Array[GpuColumnVector]):
-  (Array[Int], Array[Int], Table) = {
-    val base = new ArrayBuffer[ColumnVector](keyCols.length + dataCols.length)
-    val keys = new Array[Int](keyCols.length)
-    val data = new Array[Int](dataCols.length)
-
-    insertDedupe(keys, keyCols, base)
-    insertDedupe(data, dataCols, base)
-
-    (keys, data, new Table(base: _*))
-  }
-
-  def partitionInternal(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
-    var gpuKeyColumns : Array[GpuColumnVector] = null
-    var gpuDataColumns : Array[GpuColumnVector] = null
-    try {
-      gpuKeyColumns = getGpuKeyColumns(batch)
-      gpuDataColumns = getGpuDataColumns(batch)
-      val sparkTypes = gpuDataColumns.map(_.dataType())
-
-      val (keys, dataIndexes, table) = dedupe(gpuKeyColumns, gpuDataColumns)
-      // Don't need the batch any more table has all we need in it.
-      // gpuDataColumns did not increment the reference count when we got them,
-      // so don't close them.
-      gpuDataColumns = null
-      gpuKeyColumns.foreach(_.close())
-      gpuKeyColumns = null
-      batch.close()
-
-      val partedTable = table.onColumns(keys: _*).hashPartition(numPartitions)
-      table.close()
-      val parts = partedTable.getPartitions
-      val columns = dataIndexes.zip(sparkTypes).map { case (idx, sparkType) =>
-        GpuColumnVector.from(partedTable.getColumn(idx).incRefCount(), sparkType)
-      }
-      partedTable.close()
-      (parts, columns)
-    } finally {
-      if (gpuDataColumns != null) {
-        gpuDataColumns.safeClose()
-      }
-      if (gpuKeyColumns != null) {
-        gpuKeyColumns.safeClose()
-      }
-    }
-  }
-
   override def columnarEval(batch: ColumnarBatch): Any = {
     //  We are doing this here because the cudf partition command is at this level
-    val totalRange = new NvtxRange("Hash partition", NvtxColor.PURPLE)
-    try {
-      val numRows = batch.numRows
-      val (partitionIndexes, partitionColumns) = {
-        val partitionRange = new NvtxRange("partition", NvtxColor.BLUE)
-        try {
-          partitionInternal(batch)
-        } finally {
-          partitionRange.close()
+    val numRows = batch.numRows
+    withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
+      val sortedTable = withResource(batch) { batch =>
+        val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
+          withResource(GpuMurmur3Hash.compute(batch, expressions)) { hash =>
+            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
+              hash.pmod(partsLit, DType.INT32)
+            }
+          }
+        }
+        withResource(new NvtxRange("sort by part", NvtxColor.DARK_GREEN)) { _ =>
+          withResource(parts) { parts =>
+            val allColumns = new ArrayBuffer[ColumnVector](batch.numCols() + 1)
+            allColumns += parts
+            allColumns ++= GpuColumnVector.extractBases(batch)
+            withResource(new Table(allColumns: _*)) { fullTable =>
+              fullTable.orderBy(Table.asc(0))
+            }
+          }
         }
       }
-      val ret = sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
-      partitionColumns.safeClose()
+      val (partitionIndexes, partitionColumns) = withResource(sortedTable) { sortedTable =>
+        val cutoffs = withResource(new Table(sortedTable.getColumn(0))) { justPartitions =>
+          val partsTable = withResource(GpuScalar.from(0, IntegerType)) { zeroLit =>
+            withResource(ColumnVector.sequence(zeroLit, numPartitions)) { partsColumn =>
+              new Table(partsColumn)
+            }
+          }
+          withResource(partsTable) { partsTable =>
+            justPartitions.upperBound(Array(false), partsTable, Array(false))
+          }
+        }
+        val partitionIndexes = withResource(cutoffs) { cutoffs =>
+          val buffer = new ArrayBuffer[Int](numPartitions)
+          // The first index is always 0
+          buffer += 0
+          withResource(cutoffs.copyToHost()) { hostCutoffs =>
+            (0 until numPartitions).foreach { i =>
+              buffer += hostCutoffs.getInt(i)
+            }
+          }
+          buffer.toArray
+        }
+        val dataTypes = GpuColumnVector.extractTypes(batch)
+        closeOnExcept(new ArrayBuffer[GpuColumnVector]()) { partitionColumns =>
+          (1 until sortedTable.getNumberOfColumns).foreach { index =>
+            partitionColumns +=
+                GpuColumnVector.from(sortedTable.getColumn(index).incRefCount(),
+                  dataTypes(index - 1))
+          }
+
+          (partitionIndexes, partitionColumns.toArray)
+        }
+      }
+      val ret = withResource(partitionColumns) { partitionColumns =>
+        sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
+      }
       // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)
-    } finally {
-      totalRange.close()
     }
   }
 }

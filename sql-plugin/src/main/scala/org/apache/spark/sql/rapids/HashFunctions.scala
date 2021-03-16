@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,12 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType}
+import com.nvidia.spark.rapids.{Arm, GpuCast, GpuColumnVector, GpuExpression, GpuIf, GpuIsNan, GpuLiteral, GpuProjectExec, GpuUnaryExpression, GpuUnscaledValue}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuMd5(child: Expression)
   extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerant {
@@ -40,31 +36,42 @@ case class GpuMd5(child: Expression)
   }
 }
 
-case class GpuMurmur3Hash(child: Seq[Expression]) extends GpuExpression {
-  override def dataType: DataType = IntegerType
-
-  override def toString: String = s"hash($child)"
-  def nullable: Boolean = children.exists(_.nullable)
-  def children: Seq[Expression] = child
-
-  def columnarEval(batch: ColumnarBatch): Any = {
-    val rows = batch.numRows()
-    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
-    try {
-      children.foreach { child => child.columnarEval(batch) match {
-          case vector: GpuColumnVector =>
-            columns += vector.getBase
-          case col => if (col != null) {
-            withResource(GpuScalar.from(col)) { scalarValue =>
-              columns += ai.rapids.cudf.ColumnVector.fromScalar(scalarValue, rows)
-            }
-          }
-        }
+object GpuMurmur3Hash extends Arm {
+  def compute(batch: ColumnarBatch, boundExpr: Seq[Expression], seed: Int = 42): ColumnVector = {
+    val newExprs = boundExpr.map { expr =>
+      expr.dataType match {
+        case ByteType | ShortType =>
+          GpuCast(expr, IntegerType)
+        case DoubleType =>
+          // We have to normalize the NaNs, but not zeros
+          // however the current cudf code does the wrong thing for -0.0
+          // https://github.com/NVIDIA/spark-rapids/issues/1914
+          GpuIf(GpuIsNan(expr), GpuLiteral(Double.NaN, DoubleType), expr)
+        case FloatType =>
+          // We have to normalize the NaNs, but not zeros
+          // however the current cudf code does the wrong thing for -0.0
+          // https://github.com/NVIDIA/spark-rapids/issues/1914
+          GpuIf(GpuIsNan(expr), GpuLiteral(Float.NaN, FloatType), expr)
+        case dt: DecimalType if dt.precision <= DType.DECIMAL64_MAX_PRECISION =>
+          // For these values it is just hashing it as a long
+          GpuUnscaledValue(expr)
+        case _ =>
+          expr
       }
-      GpuColumnVector.from(
-        ColumnVector.spark32BitMurmurHash3(42, columns.toArray[ColumnView]), dataType)
-    } finally {
-      columns.safeClose()
+    }
+    withResource(GpuProjectExec.project(batch, newExprs)) { args =>
+      val bases = GpuColumnVector.extractBases(args)
+      ColumnVector.spark32BitMurmurHash3(seed, bases.toArray[ColumnView])
     }
   }
+}
+
+case class GpuMurmur3Hash(children: Seq[Expression], seed: Int) extends GpuExpression {
+  override def dataType: DataType = IntegerType
+
+  override def toString: String = s"hash($children)"
+  def nullable: Boolean = children.exists(_.nullable)
+
+  def columnarEval(batch: ColumnarBatch): Any =
+    GpuColumnVector.from(GpuMurmur3Hash.compute(batch, children, seed), dataType)
 }
