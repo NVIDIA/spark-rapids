@@ -137,7 +137,7 @@ class GpuCollectLimitMeta(
 
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
-      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
         GpuLocalLimitExec(collectLimit.limit, childPlans(0).convertIfNeeded())))
 
 }

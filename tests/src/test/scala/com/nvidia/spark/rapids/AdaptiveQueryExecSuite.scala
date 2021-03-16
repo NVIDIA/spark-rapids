@@ -106,7 +106,13 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
       val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
-      checkSkewJoin(innerSmj, 2, 1)
+      // Spark changed how skewed joins work and now the numbers are different
+      // depending on the version being used
+      if (cmpSparkVersion(3,1,1) >= 0) {
+        checkSkewJoin(innerSmj, 2, 1)
+      } else {
+        checkSkewJoin(innerSmj, 1, 1)
+      }
     }
   }
 
@@ -116,7 +122,13 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 left outer join skewData2 ON key1 = key2")
       val leftSmj = findTopLevelGpuShuffleHashJoin(leftAdaptivePlan)
-      checkSkewJoin(leftSmj, 2, 0)
+      // Spark changed how skewed joins work and now the numbers are different
+      // depending on the version being used
+      if (cmpSparkVersion(3,1,1) >= 0) {
+        checkSkewJoin(leftSmj, 2, 0)
+      } else {
+        checkSkewJoin(leftSmj, 1, 0)
+      }
     }
   }
 
@@ -439,14 +451,19 @@ class AdaptiveQueryExecSuite
   }
 
   /** most of the AQE tests requires Spark 3.0.1 or later */
-  private def assumeSpark301orLater = {
+  private def assumeSpark301orLater =
+    assume(cmpSparkVersion(3, 0, 1) >= 0)
+
+  private def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
-    val isValidTestForSparkVersion = sparkShimVersion match {
-      case SparkShimVersion(3, 0, 0) => false
-      case DatabricksShimVersion(3, 0, 0) => false
-      case _ => true
+    val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
+      case SparkShimVersion(a, b, c) => (a, b, c)
+      case DatabricksShimVersion(a, b, c) => (a, b, c)
+      case EMRShimVersion(a, b, c) => (a, b, c)
     }
-    assume(isValidTestForSparkVersion)
+    val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
+    val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
+    sparkFullVersion.compareTo(fullVersion)
   }
 
   def checkSkewJoin(
