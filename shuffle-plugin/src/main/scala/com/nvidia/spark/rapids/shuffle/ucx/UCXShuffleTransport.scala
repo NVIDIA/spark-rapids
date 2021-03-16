@@ -22,7 +22,7 @@ import java.util.concurrent._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{GpuDeviceManager, HashedPriorityQueue, RapidsConf}
 import com.nvidia.spark.rapids.shuffle._
@@ -59,7 +59,6 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   private[this] val bounceBufferSize = rapidsConf.shuffleUcxBounceBuffersSize
   private[this] val deviceNumBuffers = rapidsConf.shuffleUcxDeviceBounceBuffersCount
   private[this] val hostNumBuffers = rapidsConf.shuffleUcxHostBounceBuffersCount
-  private[this] var receiveBuffersFree = deviceNumBuffers
 
   private[this] var deviceSendBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = null
   private[this] var hostSendBuffMgr: BounceBufferManager[HostMemoryBuffer] = null
@@ -73,6 +72,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     logWarning("UCX Shuffle Transport Enabled")
     val ucxImpl = new UCX(executorId, rapidsConf.shuffleUcxUseWakeup)
     ucxImpl.init()
+
     initBounceBufferPools(bounceBufferSize,
       deviceNumBuffers, hostNumBuffers)
 
@@ -80,24 +80,10 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     // NOTE: on error we log and close things, which should fail other parts of the job in a bad
     // way in reality we should take a stab at lowering the requirement, and registering a smaller
     // buffer.
-    ucxImpl.register(deviceSendBuffMgr.getRootBuffer(), success => {
-      if (!success) {
-        logError(s"Error registering device send buffer, of size: " +
-          s"${deviceSendBuffMgr.getRootBuffer().getLength}")
-        ucxImpl.close()
-      }
-    })
-    ucxImpl.register(deviceReceiveBuffMgr.getRootBuffer(), success => {
-      if (!success) {
-        logError(s"Error registering device receive buffer, of size: " +
-          s"${deviceReceiveBuffMgr.getRootBuffer().getLength}")
-        ucxImpl.close()
-      }
-    })
-    ucxImpl.register(hostSendBuffMgr.getRootBuffer(), success => {
-      if (!success) {
-        logError(s"Error registering device receive buffer, of size: " +
-          s"${hostSendBuffMgr.getRootBuffer().getLength}")
+    val mgrs = Seq(deviceSendBuffMgr, deviceReceiveBuffMgr, hostSendBuffMgr)
+    ucxImpl.register(mgrs.map(_.getRootBuffer()), ex => {
+      if (ex.isDefined) {
+        logError(s"Error registering bounce buffers", ex.get)
         ucxImpl.close()
       }
     })
@@ -204,7 +190,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     bounceBuffers
   }
 
-  def connect(peerBlockManagerId: BlockManagerId): ClientConnection = {
+  override def connect(peerBlockManagerId: BlockManagerId): ClientConnection = {
     val topo = peerBlockManagerId.topologyInfo
     val connection: ClientConnection = if (topo.isDefined) {
       val topoParts = topo.get.split("=")

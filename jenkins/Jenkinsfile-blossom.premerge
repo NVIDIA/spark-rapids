@@ -28,6 +28,8 @@ import ipp.blossom.*
 def pluginPremerge
 
 def githubHelper // blossom github helper
+def TEMP_IMAGE_BUILD = true
+def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu16'
 def IMAGE_PREMERGE // temp image for premerge test
 def PREMERGE_TAG
 def skipped = false
@@ -118,16 +120,27 @@ pipeline {
                         def CUDA_NAME = sh(returnStdout: true,
                                 script: '. jenkins/version-def.sh>&2 && echo -n $CUDA_CLASSIFIER | sed "s/-/./g"')
 
-                        IMAGE_TAG = "dev-ubuntu16-${CUDA_NAME}"
-                        CACHE_IMAGE_NAME = "${ARTIFACTORY_NAME}/sw-spark-docker/plugin:${IMAGE_TAG}"
+                        // check if pre-merge dockerfile modified
+                        def dockerfileModified = sh(returnStdout: true,
+                                script: 'BASE=$(git --no-pager log --oneline -1 | awk \'{ print $NF }\'); ' +
+                                        'git --no-pager diff --name-only HEAD $(git merge-base HEAD $BASE) ' +
+                                        "-- ${PREMERGE_DOCKERFILE} || true")
+                        if (!dockerfileModified?.trim()) {
+                            TEMP_IMAGE_BUILD = false
+                        }
 
-                        sh "docker pull $CACHE_IMAGE_NAME || true"
+                        if (TEMP_IMAGE_BUILD) {
+                            IMAGE_TAG = "dev-ubuntu16-${CUDA_NAME}"
+                            PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
+                            IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
+                            def CUDA_VER = "$CUDA_NAME" - "cuda"
+                            docker.build(IMAGE_PREMERGE, "-f ${PREMERGE_DOCKERFILE} --build-arg CUDA_VER=$CUDA_VER -t $IMAGE_PREMERGE .")
+                            uploadDocker(IMAGE_PREMERGE)
+                        } else {
+                            // if no pre-merge dockerfile change, use nightly image
+                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu16-$CUDA_NAME-blossom-dev"
+                        }
 
-                        PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
-                        IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
-                        def CUDA_VER = "$CUDA_NAME" - "cuda"
-                        docker.build(IMAGE_PREMERGE, "-f jenkins/Dockerfile-blossom.ubuntu16 --build-arg CUDA_VER=$CUDA_VER --cache-from $CACHE_IMAGE_NAME -t $IMAGE_PREMERGE .")
-                        uploadDocker(IMAGE_PREMERGE)
 
                         pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     }
@@ -177,11 +190,14 @@ pipeline {
                     return
                 }
 
-                deleteDockerTempTag(PREMERGE_TAG) // clean premerge temp image
                 if (currentBuild.currentResult == "SUCCESS") {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
                 } else {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
+                }
+
+                if (TEMP_IMAGE_BUILD) {
+                    deleteDockerTempTag("${PREMERGE_TAG}") // clean premerge temp image
                 }
             }
         }

@@ -24,6 +24,7 @@ import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
 
+import org.apache.arrow.memory.ReferenceManager;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -249,6 +250,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static final class GpuArrowColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private final ai.rapids.cudf.ArrowColumnBuilder[] builders;
 
+    private final ArrowBufReferenceHolder[] referenceHolders;
+
     /**
      * A collection of builders for building up columnar data from Arrow data.
      * @param schema the schema of the batch.
@@ -262,21 +265,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       fields = schema.fields();
       int len = fields.length;
       builders = new ai.rapids.cudf.ArrowColumnBuilder[len];
+      referenceHolders = new ArrowBufReferenceHolder[len];
       boolean success = false;
 
       try {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()));
+          referenceHolders[i] = new ArrowBufReferenceHolder();
         }
         success = true;
       } finally {
         if (!success) {
-          for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
-            if (b != null) {
-              b.close();
-            }
-          }
+          close();
         }
       }
     }
@@ -288,12 +289,15 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     protected ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
       GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      referenceHolders[builderIndex].releaseReferences();
       builders[builderIndex] = null;
       return gcv;
     }
 
     public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
-      HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows);
+      referenceHolders[colNum].addReferences(
+        HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows)
+      );
     }
 
     public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
@@ -306,6 +310,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         if (b != null) {
           b.close();
         }
+      }
+      for (ArrowBufReferenceHolder holder: referenceHolders) {
+        holder.releaseReferences();
       }
     }
   }
@@ -391,6 +398,25 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           b.close();
         }
       }
+    }
+  }
+
+  private static final class ArrowBufReferenceHolder {
+    private List<ReferenceManager> references = new ArrayList<>();
+
+    public void addReferences(List<ReferenceManager> refs) {
+      references.addAll(refs);
+      refs.forEach(ReferenceManager::retain);
+    }
+
+    public void releaseReferences() {
+      if (references.isEmpty()) {
+        return;
+      }
+      for (ReferenceManager ref: references) {
+        ref.release();
+      }
+      references.clear();
     }
   }
 

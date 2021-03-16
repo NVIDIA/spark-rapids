@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.nio.ByteBuffer
 
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
 
@@ -28,12 +29,13 @@ import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
@@ -82,6 +84,7 @@ trait SparkShims {
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isBroadcastExchangeLike(plan: SparkPlan): Boolean
   def isShuffleExchangeLike(plan: SparkPlan): Boolean
+  def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics
   def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
@@ -184,9 +187,9 @@ trait SparkShims {
 
   def shouldIgnorePath(path: String): Boolean
 
-  def getArrowDataBuf(vec: ValueVector): ByteBuffer
-  def getArrowValidityBuf(vec: ValueVector): ByteBuffer
-  def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer
+  def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
+  def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
+  def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
 
   def replaceWithAlluxioPathIfNeeded(
       conf: RapidsConf,
@@ -210,4 +213,8 @@ trait SparkShims {
     msg: String = "")(
     f: => A
   ): A
+
+  def hasAliasQuoteFix: Boolean
+
+  def hasCastFloatTimestampUpcast: Boolean
 }
