@@ -259,11 +259,17 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
     case _ => super.dataType
   }
 
+  private def getIntermediaryType(r: DecimalType): DecimalType = {
+    val outType = dataType.asInstanceOf[DecimalType]
+    // We should never hit a case where the newType hits precision > Decimal.MAX_LONG_DIGITS
+    // as we have check for it in tagExprForGpu
+    DecimalType(outType.precision, outType.scale + r.scale)
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
-        val outType = dataType.asInstanceOf[DecimalType]
-        val newType = DecimalType(outType.precision, outType.scale + r.scale)
+        val newType = getIntermediaryType(r)
         withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
           modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
         }
@@ -275,8 +281,7 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
-        val outType = dataType.asInstanceOf[DecimalType]
-        val newType = DecimalType(outType.precision, outType.scale + r.scale)
+        val newType = getIntermediaryType(r)
         withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
           modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
         }
@@ -288,8 +293,7 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
-        val outType = dataType.asInstanceOf[DecimalType]
-        val newType = DecimalType(outType.precision, outType.scale + r.scale)
+        val newType = getIntermediaryType(r)
         withResource(GpuScalar.from(lhs.getBigDecimal.longValue(), newType)) { modLhs =>
           super.doColumnar(modLhs, rhs)
         }
