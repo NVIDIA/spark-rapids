@@ -424,7 +424,7 @@ object GpuOverrides {
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
   // TODO need a better name since used in multiple contexts
-  private[this] val sortOrderTypeSigs = (
+  private[this] val pluginSupportedOrderableSig = (
     TypeSig.commonCudfTypes +
     TypeSig.NULL +
     TypeSig.DECIMAL +
@@ -433,6 +433,11 @@ object GpuOverrides {
       TypeSig.NULL +
       TypeSig.DECIMAL
     ))
+
+  private[this] def isNestedType(dataType: DataType) = dataType match {
+    case ArrayType(_, _) | MapType(_, _, _) | StructType(_) => true
+    case _ => false
+  }
 
   // this listener mechanism is global and is intended for use by unit tests only
   private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
@@ -1803,16 +1808,17 @@ object GpuOverrides {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        sortOrderTypeSigs,
+        pluginSupportedOrderableSig,
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          sortOrderTypeSigs,
+          pluginSupportedOrderableSig,
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
-          if (sortOrder.nullOrdering != directionDefaultNullOrdering) {
+          if (isNestedType(sortOrder.dataType) &&
+              sortOrder.nullOrdering != directionDefaultNullOrdering) {
             willNotWorkOnGpu(s"Only default null ordering $directionDefaultNullOrdering " +
               s"supported. Found: ${sortOrder.nullOrdering}")
           }
@@ -2565,7 +2571,7 @@ object GpuOverrides {
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
-      ExecChecks(sortOrderTypeSigs, TypeSig.all),
+      ExecChecks(TypeSig.all - TypeSig.UDT, TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =
@@ -2629,7 +2635,7 @@ object GpuOverrides {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks(sortOrderTypeSigs, TypeSig.all),
+      ExecChecks(TypeSig.all - TypeSig.UDT, TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
           "of rows in a batch it could help by limiting the number of rows transferred from " +

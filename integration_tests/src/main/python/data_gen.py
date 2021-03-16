@@ -638,6 +638,8 @@ def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
     return v[0]
 
 def debug_df(df, path = None, file_format = 'json', num_parts = 1):
+    """Print out or save the contents and the schema of a dataframe for debugging."""
+
     if path is not None:
         # Save the dataframe and its schema
         # The schema can be re-created by using DataType.fromJson and used
@@ -645,7 +647,7 @@ def debug_df(df, path = None, file_format = 'json', num_parts = 1):
         file_name = f"{path}.{file_format}"
         schema_file_name = f"{path}.schema.json"
 
-        df.coalesce(1).write.json(file_name)
+        df.coalesce(num_parts).write.format(file_format).save(file_name)
         print(f"SAVED df output for debugging at {file_name}")
 
         schema_json = df.schema.json()
@@ -653,10 +655,7 @@ def debug_df(df, path = None, file_format = 'json', num_parts = 1):
         schema_file.write(schema_json)
         schema_file.close()
         print(f"SAVED df schema for debugging along in the output dir")
-
-
-    if path is None:
-        """print out the contents of a dataframe for debugging."""
+    else:
         print('COLLECTED\n{}'.format(df.collect()))
 
     df.explain()

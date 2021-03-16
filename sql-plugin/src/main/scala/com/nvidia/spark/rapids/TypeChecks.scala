@@ -171,6 +171,19 @@ final class TypeSig private(
   }
 
   /**
+   * Remove a type signature. The reverse of +
+   * @param other what to remove
+   * @return the new signature
+   */
+  def - (other: TypeSig): TypeSig = {
+    val it = initialTypes -- other.initialTypes
+    val nt = nestedTypes -- other.nestedTypes
+    val lt = litOnlyTypes -- other.litOnlyTypes
+    val nts = notes -- other.notes.keySet
+    new TypeSig(it, nt, lt, nts)
+  }
+
+  /**
    * Add nested types to this type signature. Note that these do not stack so if nesting has
    * nested types too they are ignored.
    * @param nesting the basic types to add.
