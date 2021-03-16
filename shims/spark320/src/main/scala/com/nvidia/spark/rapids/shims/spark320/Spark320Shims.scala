@@ -73,4 +73,8 @@ class Spark320Shims extends Spark311Shims {
   ): A = {
     identity(f)
   }
+
+  override def hasAliasQuoteFix: Boolean = true
+
+  override def hasCastFloatTimestampUpcast: Boolean = true
 }

@@ -213,4 +213,8 @@ trait SparkShims {
     msg: String = "")(
     f: => A
   ): A
+
+  def hasAliasQuoteFix: Boolean
+
+  def hasCastFloatTimestampUpcast: Boolean
 }
