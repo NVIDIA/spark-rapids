@@ -255,6 +255,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+       --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -293,6 +294,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.sql.shuffle.partitions=10 \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
+       --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
        --files ${SPARK_RAPIDS_DIR}/getGpusResources.sh \
        --jars ${SPARK_CUDF_JAR},${SPARK_RAPIDS_PLUGIN_JAR}
@@ -339,6 +341,7 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.sql.shuffle.partitions=10 \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+       --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
        --conf spark.executor.resource.gpu.vendor=nvidia.com \
        --conf spark.kubernetes.container.image=$IMAGE_NAME
