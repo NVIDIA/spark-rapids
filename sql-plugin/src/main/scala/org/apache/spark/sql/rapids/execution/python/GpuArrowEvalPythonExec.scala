@@ -26,14 +26,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{AggregationOnColumn, ArrowIPCOptions, ArrowIPCWriterOptions, ColumnVector, HostBufferConsumer, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
-import com.nvidia.spark.rapids.{Arm, ConcatAndConsumeAll, GpuAggregateWindowFunction, GpuBindReferences, GpuColumnVector, GpuColumnVectorFromBuffer, GpuExec, GpuMetric, GpuProjectExec, GpuSemaphore, GpuUnevaluable, RapidsBuffer, SpillableColumnarBatch, SpillPriorities}
+import ai.rapids.cudf._
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions, PythonEvalType, PythonFunction, PythonRDD, SpecialLengths}
+import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.util.toPrettySQL
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -430,19 +430,36 @@ class GpuArrowPythonRunner(
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         val writer = {
+          lazy val buildOneColumnMeta: (String, DataType) => ColumnMetadata = (colName, dType) => {
+            val colMeta = new ColumnMetadata(colName)
+            dType match {
+              case arrayType: ArrayType =>
+                // Array type in cuDF needs a stub metadata for offset column.
+                // It is ok the child metadata uses the same name.
+                colMeta.addChildren(new ColumnMetadata(null),
+                  buildOneColumnMeta(colName, arrayType.elementType))
+              case mapType: MapType =>
+                // MapType is array of struct with two fields(key, value) in cuDF.
+                val structKeyValueMeta = new ColumnMetadata("key_value")
+                structKeyValueMeta.addChildren(buildOneColumnMeta("key", mapType.keyType),
+                  buildOneColumnMeta("value", mapType.valueType))
+                colMeta.addChildren(new ColumnMetadata(null), structKeyValueMeta)
+              case structType: StructType =>
+                val childrenMeta = structType.map(f => buildOneColumnMeta(f.name, f.dataType))
+                colMeta.addChildren(childrenMeta: _*);
+              case _ =>
+            }
+            colMeta
+          }
+          val columnMeta = pythonInSchema.map(f => buildOneColumnMeta(f.name, f.dataType))
+
           val builder = ArrowIPCWriterOptions.builder()
+          builder.withColumnMetadata(columnMeta: _*)
           builder.withMaxChunkSize(batchSize)
           builder.withCallback((table: Table) => {
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
-          pythonInSchema.foreach { field =>
-            if (field.nullable) {
-              builder.withColumnNames(field.name)
-            } else {
-              builder.withNotNullableColumnNames(field.name)
-            }
-          }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
         Utils.tryWithSafeFinally {
