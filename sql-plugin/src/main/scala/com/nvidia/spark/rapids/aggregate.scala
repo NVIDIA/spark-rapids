@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
-import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
@@ -857,7 +857,7 @@ case class GpuHashAggregateExec(
         // reduction merge or update aggregates functions are
         val cvs = ArrayBuffer[GpuColumnVector]()
         aggModeCudfAggregates.foreach { case (mode, aggs) =>
-          aggs.foreach {agg =>
+          aggs.foreach { agg =>
             val aggFn = if ((mode == Partial || mode == Complete) && !merge) {
               agg.updateReductionAggregate
             } else {
@@ -868,6 +868,17 @@ case class GpuHashAggregateExec(
               withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
                 cvs += GpuColumnVector.from(cv.castTo(rapidsType), agg.dataType)
               }
+            }
+          }
+        }
+        // If cvs is empty, we add a single row with zero value.
+        // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
+        // desired result compared to Spark-CPU.
+        // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
+        if (cvs.isEmpty) {
+          withResource(Scalar.fromInt(0)) { ZERO =>
+            withResource(cudf.ColumnVector.fromScalar(ZERO, 1)) { cv =>
+              cvs += GpuColumnVector.from(cv.castTo(DType.INT64), LongType)
             }
           }
         }
