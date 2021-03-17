@@ -134,40 +134,32 @@ abstract class GpuTimeMath(
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var lhs: Any = null
-    var rhs: Any = null
-    try {
-      lhs = left.columnarEval(batch)
-      rhs = right.columnarEval(batch)
+  val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
 
-      (lhs, rhs) match {
-        case (l: GpuColumnVector, intvl: CalendarInterval) =>
-          if (intvl.months != 0) {
-            throw new UnsupportedOperationException("Months aren't supported at the moment")
-          }
-          val usToSub = intvl.days.toLong * 24 * 60 * 60 * 1000 * 1000 + intvl.microseconds
-          if (usToSub != 0) {
-            withResource(Scalar.fromLong(usToSub)) { us_s =>
-              withResource(l.getBase.logicalCastTo(DType.INT64)) { us =>
-                withResource(intervalMath(us_s, us)) { longResult =>
-                  GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS), dataType)
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+        (lhs, rhs) match {
+          case (l: GpuColumnVector, intvl: CalendarInterval) =>
+            if (intvl.months != 0) {
+              throw new UnsupportedOperationException("Months aren't supported at the moment")
+            }
+            val usToSub = intvl.days * microSecondsInOneDay + intvl.microseconds
+            if (usToSub != 0) {
+              withResource(Scalar.fromLong(usToSub)) { us_s =>
+                withResource(l.getBase.bitCastTo(DType.INT64)) { us =>
+                  withResource(intervalMath(us_s, us)) { longResult =>
+                    GpuColumnVector.from(longResult.castTo(DType.TIMESTAMP_MICROSECONDS), dataType)
+                  }
                 }
               }
+            } else {
+              l.incRefCount()
             }
-          } else {
-            l.incRefCount()
-          }
-        case _ =>
-          throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an " +
-            "argument only")
-      }
-    } finally {
-      if (lhs.isInstanceOf[AutoCloseable]) {
-        lhs.asInstanceOf[AutoCloseable].close()
-      }
-      if (rhs.isInstanceOf[AutoCloseable]) {
-        rhs.asInstanceOf[AutoCloseable].close()
+          case _ =>
+            throw new UnsupportedOperationException("GpuTimeSub takes column and interval as an " +
+              "argument only")
+        }
       }
     }
   }
@@ -229,7 +221,6 @@ case class GpuDateAddInterval(start: Expression,
             if (intvl.months != 0) {
               throw new UnsupportedOperationException("Months aren't supported at the moment")
             }
-            val microSecondsInOneDay = TimeUnit.DAYS.toMicros(1)
             val microSecToDays = if (intvl.microseconds < 0) {
               // This is to calculate when subtraction is performed. Need to take into account the
               // interval( which are less than days). Convert it into days which needs to be
@@ -241,7 +232,7 @@ case class GpuDateAddInterval(start: Expression,
             val daysToAdd = intvl.days + microSecToDays
             if (daysToAdd != 0) {
               withResource(Scalar.fromInt(daysToAdd)) { us_s =>
-                withResource(l.getBase.logicalCastTo(DType.INT32)) { us =>
+                withResource(l.getBase.bitCastTo(DType.INT32)) { us =>
                   withResource(intervalMath(us_s, us)) { intResult =>
                     GpuColumnVector.from(intResult.castTo(DType.TIMESTAMP_DAYS), dataType)
                   }
