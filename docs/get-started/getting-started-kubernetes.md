@@ -136,7 +136,7 @@ kubectl logs $SPARK_DRIVER_NAME
 ```shell
 kubectl port-forward $SPARK_DRIVER_NAME 4040:4040
 ```
-   Then open web browser:
+   Then open a web browser to the Spark driver UI page on the exposed port:
 ```shell
 http://localhost:4040
 ```
