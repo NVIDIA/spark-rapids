@@ -202,7 +202,7 @@ spark.sql("SELECT value FROM df WHERE value <>1").show
 spark.sql("SELECT value FROM df WHERE value <>1").explain
 :quit
 ```
-The expected explain plan should contain the GPU related operators:
+The expected `explain` plan should contain the GPU related operators:
 ```shell
 scala> spark.sql("SELECT value FROM df WHERE value <>1").explain
 == Physical Plan ==
