@@ -194,7 +194,7 @@ NAME                                     READY   STATUS    RESTARTS   AGE
 mysparkshell-bfe52e782f44841c-exec-1     1/1     Running   0          11s
 ```
 
-We can run below scala code in `spark-shell` to test if GPU is enabled for our queries:
+The following Scala code can be run in the Spark shell to test if the RAPIDS Accelerator is enabled.
 ```shell
 val df = spark.sparkContext.parallelize(Seq(1)).toDF()
 df.createOrReplaceTempView("df")
