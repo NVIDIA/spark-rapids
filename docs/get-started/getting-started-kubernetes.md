@@ -151,7 +151,7 @@ $SPARK_HOME/bin/spark-submit --kill spark:$SPARK_DRIVER_NAME
 kubectl delete pod $SPARK_DRIVER_NAME
 ```
 
-### spark-shell in `client` mode with an interactive shell
+### Running an Interactive Spark Shell
 
 If you need an interactive spark-shell with Executor POD(s) running inside Kubernetes:
 ```shell
