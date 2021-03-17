@@ -146,7 +146,7 @@ http://localhost:4040
 $SPARK_HOME/bin/spark-submit --kill spark:$SPARK_DRIVER_NAME
 ```
 
-   To delete the Driver POD:
+   To delete the driver POD:
 ```shell
 kubectl delete pod $SPARK_DRIVER_NAME
 ```
