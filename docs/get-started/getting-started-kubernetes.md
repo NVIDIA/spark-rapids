@@ -71,11 +71,11 @@ On a client machine which has access to the Kubernetes cluster:
 
 ## Running Spark Applications in the Kubernetes Cluster
 
-### spark-submit example pi job in `cluster` mode.
+### Submitting a Simple Test Job
 
-This is a good way to test if RAPIDS plugin can be found.
-Because `ClassNotFoundException` is a common error if the Driver can not 
-find the jar for `com.nvidia.spark.SQLPlugin`:
+This simple job will test if the RAPIDS plugin can be found.
+`ClassNotFoundException` is a common error if the Spark driver can not 
+find the RAPIDS Accelerator jar, resulting in an exception like this:
 ```
 Exception in thread "main" java.lang.ClassNotFoundException: com.nvidia.spark.SQLPlugin
 ```
