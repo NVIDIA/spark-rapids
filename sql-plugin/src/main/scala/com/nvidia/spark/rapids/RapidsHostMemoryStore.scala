@@ -73,8 +73,8 @@ class RapidsHostMemoryStore(
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
-    try {
+    withResource(otherBuffer) { _ =>
+      val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
       try {
         otherBuffer match {
           case devBuffer: DeviceMemoryBuffer =>
@@ -85,22 +85,20 @@ class RapidsHostMemoryStore(
             }
           case _ => throw new IllegalStateException("copying from buffer without device memory")
         }
-      } finally {
-        otherBuffer.close()
+      } catch {
+        case e: Exception =>
+          hostBuffer.close()
+          throw e
       }
-    } catch {
-      case e: Exception =>
-        hostBuffer.close()
-        throw e
+      new RapidsHostMemoryBuffer(
+        other.id,
+        other.size,
+        other.meta,
+        other.getSpillPriority,
+        hostBuffer,
+        isPinned,
+        other.spillCallback)
     }
-    new RapidsHostMemoryBuffer(
-      other.id,
-      other.size,
-      other.meta,
-      other.getSpillPriority,
-      hostBuffer,
-      isPinned,
-      other.spillCallback)
   }
 
   def numBytesFree: Long = maxSize - currentSize

@@ -35,7 +35,7 @@ class RapidsDiskStore(
 
   override protected def createBuffer(incoming: RapidsBuffer, incomingBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    try {
+    withResource(incomingBuffer) { _ =>
       val hostBuffer = incomingBuffer match {
         case h: HostMemoryBuffer => h
         case _ => throw new UnsupportedOperationException("buffer without host memory")
@@ -57,8 +57,6 @@ class RapidsDiskStore(
       logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
       new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
         incoming.getSpillPriority, incoming.spillCallback)
-    } finally {
-      incomingBuffer.close()
     }
   }
 

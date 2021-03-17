@@ -334,7 +334,7 @@ abstract class RapidsBufferStore(
       (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
         catalog.acquireBuffer(id, DEVICE) match {
           case Some(buffer) =>
-            withResource(buffer) { buffer =>
+            withResource(buffer) { _ =>
               return buffer.getDeviceMemoryBuffer
             }
           case _ =>
@@ -343,7 +343,7 @@ abstract class RapidsBufferStore(
               val newBuffer = RapidsBufferCatalog.getDeviceStorage.copyBuffer(
                 this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
               if (newBuffer.addReference()) {
-                withResource(newBuffer) { newBuffer =>
+                withResource(newBuffer) { _ =>
                   return newBuffer.getDeviceMemoryBuffer
                 }
               }
