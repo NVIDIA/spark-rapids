@@ -141,7 +141,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
    * Recursively force a section of the plan back onto CPU, stopping once a plan
    * is reached that is already on CPU or cannot be moved back onto CPU.
    */
-  final def recursiveCostPreventsRunningOnGpu(plan: SparkPlanMeta[_]): Unit = {
+  private def recursiveCostPreventsRunningOnGpu(plan: SparkPlanMeta[_]): Unit = {
     if (plan.canThisBeReplaced && !consumesQueryStage(plan)) {
       plan.costPreventsRunningOnGpu()
       plan.childPlans.foreach(recursiveCostPreventsRunningOnGpu)
