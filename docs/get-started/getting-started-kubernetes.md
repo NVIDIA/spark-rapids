@@ -127,7 +127,7 @@ spark-pi-d11075782f399fd7-exec-1   1/1     Running   0          9s
 exampledriver                      1/1     Running   0          15s
 ```
 
-   To view the Driver log, use below command:
+   To view the Spark driver log, use below command:
 ```shell
 kubectl logs $SPARK_DRIVER_NAME
 ```
