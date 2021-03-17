@@ -187,7 +187,7 @@ Cluster deploy mode is not applicable to Spark shells.
 Also notice that `--conf spark.driver.extraClassPath` was removed but `--driver-class-path` was added.
 This is because now the driver is running on the client machine, so the jar paths should be local filesystem paths.
 
-Only the Executor POD(s) are running inside Kubernetes:
+When running the shell you can see only the executor pods are running inside Kubernetes:
 ```
 $ kubectl get pods
 NAME                                     READY   STATUS    RESTARTS   AGE
