@@ -194,7 +194,7 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
   def outputType(l: BinaryOperable, r: BinaryOperable) : DType = {
     val over = outputTypeOverride
     if (over == null) {
-      BinaryOperable.implicitConversion(l, r)
+      BinaryOperable.implicitConversion(binaryOp, l, r)
     } else {
       over
     }
