@@ -180,7 +180,7 @@ $SPARK_HOME/bin/spark-shell \
      --driver-memory 2G 
 ```
 
-Only `client` mode is applicable. If you specify this as `cluster` mode, you would see below error:
+Only the `client` deploy mode should be used. If you specify the `cluster` deploy mode, you would see the following error:
 ```shell
 Cluster deploy mode is not applicable to Spark shells.
 ```
