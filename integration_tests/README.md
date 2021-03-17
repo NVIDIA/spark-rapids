@@ -181,8 +181,8 @@ the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find
 When running the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) under YARN or Kubernetes, the `$SCRIPTPATH` in the python options
 `--rootdir $SCRIPTPATH ...` and `--std_input_path $SCRIPTPATH ...` will not work, as the `$SCRIPTPATH` is a local path, you need to overwrite it to the clould paths.
 Basically, you need first to upload the test resources onto the cloud path `resource-path`, then transfer the test resources onto the working directory
-`root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `CLOUD_INPUTPATH=resource-path`
-to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir CLOUD_INPUTPATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
+`root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `INPUT_PATH=resource-path`
+to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir INPUT_PATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
 
 ### Enabling cudf_udf Tests
 

@@ -97,7 +97,7 @@ else
     ## Under cloud environment, overwrite the '--rootdir' param to point to the working directory of each excutor
     LOCAL_ROOTDIR=${LOCAL_ROOTDIR:-"$SCRIPTPATH"}
     ## Under cloud environment, overwrite the '--std_input_path' param to point to the distributed file path
-    CLOUD_INPUTPATH=${CLOUD_INPUTPATH:-"$SCRIPTPATH"}
+    INPUT_PATH=${INPUT_PATH:-"$SCRIPTPATH"}
 
     if [[ "${TEST_PARALLEL_OPTS}" != "" ]];
     then
@@ -114,7 +114,7 @@ else
           "$SCRIPTPATH"/runtests.py --rootdir "$LOCAL_ROOTDIR" "$LOCAL_ROOTDIR"/src/main/python \
           $TEST_PARALLEL_OPTS \
           -v -rfExXs "$TEST_TAGS" \
-          --std_input_path="$CLOUD_INPUTPATH"/src/test/resources/ \
+          --std_input_path="$INPUT_PATH"/src/test/resources/ \
           --color=yes \
           $TEST_TYPE_PARAM \
           "$TEST_ARGS" \
@@ -129,7 +129,7 @@ else
           $SPARK_SUBMIT_FLAGS \
           "$SCRIPTPATH"/runtests.py --rootdir "$LOCAL_ROOTDIR" "$LOCAL_ROOTDIR"/src/main/python \
           -v -rfExXs "$TEST_TAGS" \
-          --std_input_path="$CLOUD_INPUTPATH"/src/test/resources/ \
+          --std_input_path="$INPUT_PATH"/src/test/resources/ \
           --color=yes \
           $TEST_TYPE_PARAM \
           "$TEST_ARGS" \
