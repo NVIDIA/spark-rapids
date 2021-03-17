@@ -28,6 +28,12 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 
 /**
+ *  Exception thrown when inserting a buffer into the catalog with a duplicate buffer ID
+ *  and storage tier combination.
+ */
+class DuplicateBufferException(s: String) extends RuntimeException(s) {}
+
+/**
  * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
  * `RapidsBufferCatalog.singleton` should be used instead.
  */
@@ -109,7 +115,7 @@ class RapidsBufferCatalog extends Logging {
         } else {
           val(first, second) = value.partition(_.storageTier < buffer.storageTier)
           if (second.nonEmpty && second.head.storageTier == buffer.storageTier) {
-            throw new IllegalStateException(
+            throw new DuplicateBufferException(
               s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered " +
                   s"${second.head}")
           }

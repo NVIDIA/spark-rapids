@@ -61,10 +61,6 @@ class RapidsGdsStore(
     }
   }
 
-  override protected def materializeMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.asInstanceOf[RapidsGdsBuffer].materializeMemoryBuffer
-  }
-
   class RapidsGdsBuffer(
       id: RapidsBufferId,
       val fileOffset: Long,

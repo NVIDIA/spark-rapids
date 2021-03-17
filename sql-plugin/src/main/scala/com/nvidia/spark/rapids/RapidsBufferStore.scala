@@ -138,7 +138,7 @@ abstract class RapidsBufferStore(
       catalog.registerNewBuffer(newBuffer)
       newBuffer
     } catch {
-      case e: IllegalStateException =>
+      case e: Exception =>
         newBuffer.free()
         throw e
     }
@@ -216,15 +216,6 @@ abstract class RapidsBufferStore(
   protected def createBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
   : RapidsBufferBase
 
-  /**
-   * Materialize the underlying memory buffer from the specified Rapids buffer.
-   * @param buffer a buffer managed by this store
-   * @return underlying memory buffer
-   */
-  protected def materializeMemoryBuffer(buffer: RapidsBufferBase): MemoryBuffer = {
-    buffer.getMemoryBuffer
-  }
-
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = synchronized {
     buffers.add(buffer)
@@ -261,7 +252,7 @@ abstract class RapidsBufferStore(
           logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
               s"total mem=${buffers.getTotalBytes}")
           buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
-          spillStore.copyBuffer(buffer, materializeMemoryBuffer(buffer), stream)
+          spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
         }
       } finally {
         buffer.close()
@@ -357,7 +348,7 @@ abstract class RapidsBufferStore(
                 }
               }
             } catch {
-              case _: Exception =>
+              case _: DuplicateBufferException =>
                 logDebug(s"Lost device buffer registration race for buffer $id, retrying...")
             }
         }
