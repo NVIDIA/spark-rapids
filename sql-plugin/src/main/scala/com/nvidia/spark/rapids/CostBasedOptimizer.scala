@@ -79,7 +79,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
         val transitionCost = plan.childPlans.filter(!_.canThisBeReplaced)
             .map(costModel.transitionToGpuCost).sum
         val gpuCost = operatorGpuCost + transitionCost
-        if (gpuCost > operatorCpuCost && !mustThisBeReplaced(plan)) {
+        if (gpuCost > operatorCpuCost && !consumesQueryStage(plan)) {
           optimizations.append(AvoidTransition(plan))
           plan.costPreventsRunningOnGpu()
           // stay on CPU, so costs are same
@@ -94,11 +94,11 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
             val (childCpuCost, childGpuCost) = childCosts
             val transitionCost = costModel.transitionToCpuCost(child)
             val childGpuTotal = childGpuCost + transitionCost
-            if (child.canThisBeReplaced && !mustThisBeReplaced(child)
+            if (child.canThisBeReplaced && !consumesQueryStage(child)
                 && childGpuTotal > childCpuCost) {
               optimizations.append(ReplaceSection(
                 child.asInstanceOf[SparkPlanMeta[SparkPlan]], totalCpuCost, totalGpuCost))
-              child.recursiveCostPreventsRunningOnGpu()
+              recursiveCostPreventsRunningOnGpu(child)
             }
         }
 
@@ -118,18 +118,18 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     if (totalGpuCost > totalCpuCost) {
       // we have reached a point where we have transitioned onto GPU for part of this
       // plan but with no benefit from doing so, so we want to undo this and go back to CPU
-      if (plan.canThisBeReplaced && !mustThisBeReplaced(plan)) {
+      if (plan.canThisBeReplaced && !consumesQueryStage(plan)) {
         // this plan would have been on GPU so we move it and onto CPU and recurse down
         // until we reach a part of the plan that is already on CPU and then stop
         optimizations.append(ReplaceSection(plan, totalCpuCost, totalGpuCost))
-        plan.recursiveCostPreventsRunningOnGpu()
+        recursiveCostPreventsRunningOnGpu(plan)
       }
 
       // reset the costs because this section of the plan was not moved to GPU
       totalGpuCost = totalCpuCost
     }
 
-    if (!plan.canThisBeReplaced || mustThisBeReplaced(plan)) {
+    if (!plan.canThisBeReplaced || consumesQueryStage(plan)) {
       // reset the costs because this section of the plan was not moved to GPU
       totalGpuCost = totalCpuCost
     }
@@ -137,7 +137,21 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     (totalCpuCost, totalGpuCost)
   }
 
-  private def mustThisBeReplaced(plan: SparkPlanMeta[_]): Boolean = {
+  /**
+   * Recursively force a section of the plan back onto CPU, stopping once a plan
+   * is reached that is already on CPU or cannot be moved back onto CPU.
+   */
+  final def recursiveCostPreventsRunningOnGpu(plan: SparkPlanMeta[_]): Unit = {
+    if (plan.canThisBeReplaced && !consumesQueryStage(plan)) {
+      plan.costPreventsRunningOnGpu()
+      plan.childPlans.foreach(recursiveCostPreventsRunningOnGpu)
+    }
+  }
+
+  /**
+   * Determines whether the specified plan will read from a query stage.
+   */
+  private def consumesQueryStage(plan: SparkPlanMeta[_]): Boolean = {
     if (SQLConf.get.adaptiveExecutionEnabled) {
       // if the child query stage already executed on GPU then we need to keep the
       // next operator on GPU in these cases
