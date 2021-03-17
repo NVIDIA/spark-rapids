@@ -213,7 +213,7 @@ GpuColumnarToRow false
          +- Scan[obj#1]
 ```
 
-### spark-submit python code in `client` mode.
+### Running PySpark in Client Mode
 
 Of course, you can `COPY` the Python code in the Docker image when building it
 and submit it using the `cluster` deploy mode as showin in the previous example pi job.
