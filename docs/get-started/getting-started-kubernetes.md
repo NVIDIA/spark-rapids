@@ -132,7 +132,7 @@ exampledriver                      1/1     Running   0          15s
 kubectl logs $SPARK_DRIVER_NAME
 ```
 
-   To view the Spark Driver UI when the job is running:
+   To view the Spark driver UI when the job is running first expose the driver UI port:
 ```shell
 kubectl port-forward $SPARK_DRIVER_NAME 4040:4040
 ```
