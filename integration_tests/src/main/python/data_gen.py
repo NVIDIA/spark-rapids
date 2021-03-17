@@ -276,6 +276,21 @@ class RepeatSeqGen(DataGen):
         self._start(rand, self._loop_values)
         self._vals = [self._child.gen() for _ in range(0, self._length)]
 
+class SetValuesGen(DataGen):
+    """A set of values that are randomly selected"""
+    def __init__(self, data_type, data):
+        super().__init__(data_type, nullable=False)
+        self.nullable = any(x is None for x in data)
+        self._vals = data
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child) + ')'
+
+    def start(self, rand):
+        data = self._vals
+        length = len(data)
+        self._start(rand, lambda : data[rand.randrange(0, length)])
+
 FLOAT_MIN = -3.4028235E38
 FLOAT_MAX = 3.4028235E38
 NEG_FLOAT_NAN_MIN_VALUE = struct.unpack('f', struct.pack('I', 0xffffffff))[0]
