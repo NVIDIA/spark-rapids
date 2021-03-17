@@ -1713,7 +1713,27 @@ object GpuOverrides {
           // decimal place so we can round it in GpuCheckOverflow
           (childExprs.head.dataType, childExprs(1).dataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val intermediateResult = GpuDivideUtil.decimalDataType(l, r)
+              val outputType = GpuDivideUtil.decimalDataType(l, r)
+              // We will never hit a case where outputType.precision < outputType.scale + r.scale.
+              // So there is no need to protect against that.
+              // The only two cases in which there is a possibility of the intermediary scale
+              // exceeding the intermediary precision is when l.precision < l.scale or l
+              // .precision < 0, both of which aren't possible.
+              // Proof:
+              // case 1:
+              // outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
+              // outputType.scale = p1 + s2 + p2 + 1 + 1
+              // To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
+              // which is never possible
+              //
+              // case 2:
+              // outputType.precision = p1 - s1 + s2 + 6 + 1
+              // outputType.scale = 6 + 1
+              // To find out if outputType.precision < outputType.scale simplifies to p1 < 0
+              // which is never possible
+              //
+              // TODO We should revisit the proof one more time after we support 128-bit decimals
+              val intermediateResult = DecimalType(outputType.precision, outputType.scale + r.scale)
               if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the divide is too large" +
                     s" to fit on the GPU $intermediateResult")
