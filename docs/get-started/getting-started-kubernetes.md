@@ -119,7 +119,7 @@ $SPARK_HOME/bin/spark-submit \
 
    Note: `local://` means the jar file location is inside the Docker image.
    Since this is `cluster` mode, the Spark driver is running inside a pod in Kubernetes.
-   When the job is running, we could see both Driver POD and Executor POD(s):
+   The driver and executor pods can be seen when the job is running:
 ```shell
 $ kubectl get pods
 NAME                               READY   STATUS    RESTARTS   AGE
