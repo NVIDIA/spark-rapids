@@ -24,8 +24,9 @@ import ai.rapids.cudf.{DType, Scalar}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils, TimestampFormatter}
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuCreateArray
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -232,4 +233,34 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = value
+}
+
+class LiteralExprMeta(
+    lit: Literal,
+    conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends ExprMeta[Literal](lit, conf, p, r) {
+
+  override def convertToGpu(): GpuExpression = {
+    lit.dataType match {
+      // NOTICE: There is a temporary transformation from Literal(ArrayType(BaseType)) into
+      // CreateArray(Literal(BaseType):_*). The transformation is a walkaround support for Literal
+      // of ArrayData under GPU runtime, because cuDF scalar doesn't support nested types.
+      // related issue: https://github.com/NVIDIA/spark-rapids/issues/1902
+      case ArrayType(baseType, _) =>
+        val litArray = lit.value.asInstanceOf[ArrayData]
+          .array.map(GpuLiteral(_, baseType))
+        GpuCreateArray(litArray, useStringTypeWhenEmpty = false)
+      case _ =>
+        GpuLiteral(lit.value, lit.dataType)
+    }
+  }
+
+  // There are so many of these that we don't need to print them out, unless it
+  // will not work on the GPU
+  override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
+    if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
+      super.print(append, depth, all)
+    }
+  }
 }

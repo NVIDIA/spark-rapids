@@ -17,7 +17,7 @@ It requires cudf, rapids-4-spark and spark jars.
 
 ```
 cd api_validation
-// To run validation script on all version of Spark(3.0.0, 3.0.1 and 3.1.0-SNAPSHOT)
+// To run validation script on all version of Spark(3.0.0, 3.0.1 and 3.1.1)
 sh auditAllVersions.sh
 
 // To run script on particular version we can use profile(spark300, spark301 and spark311)
