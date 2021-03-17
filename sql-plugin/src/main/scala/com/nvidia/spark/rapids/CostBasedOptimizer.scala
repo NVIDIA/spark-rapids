@@ -152,21 +152,16 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
    * Determines whether the specified plan will read from a query stage.
    */
   private def consumesQueryStage(plan: SparkPlanMeta[_]): Boolean = {
-    if (SQLConf.get.adaptiveExecutionEnabled) {
-      // if the child query stage already executed on GPU then we need to keep the
-      // next operator on GPU in these cases
-      plan.wrapped match {
+    // if the child query stage already executed on GPU then we need to keep the
+    // next operator on GPU in these cases
+    SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
         case _: CustomShuffleReaderExec
              | _: ShuffledHashJoinExec
              | _: BroadcastHashJoinExec
              | _: BroadcastNestedLoopJoinExec => true
         case _ => false
-      }
-    } else {
-      false
-    }
+      })
   }
-
 }
 
 /**
