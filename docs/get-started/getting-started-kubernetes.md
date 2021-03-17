@@ -153,7 +153,7 @@ kubectl delete pod $SPARK_DRIVER_NAME
 
 ### Running an Interactive Spark Shell
 
-If you need an interactive spark-shell with Executor POD(s) running inside Kubernetes:
+If you need an interactive Spark shell with executor pods running inside the Kubernetes cluster:
 ```shell
 $SPARK_HOME/bin/spark-shell \
      --master $K8SMASTER \
