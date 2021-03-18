@@ -44,7 +44,7 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     val buffer = mockBuffer(bufferId)
     catalog.registerNewBuffer(buffer)
     val buffer2 = mockBuffer(bufferId)
-    assertThrows[IllegalStateException](catalog.registerNewBuffer(buffer2))
+    assertThrows[DuplicateBufferException](catalog.registerNewBuffer(buffer2))
   }
 
   test("acquire buffer") {
