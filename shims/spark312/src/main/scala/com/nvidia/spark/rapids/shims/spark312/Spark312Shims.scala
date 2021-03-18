@@ -27,4 +27,6 @@ class Spark312Shims extends Spark311Shims {
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
   }
+
+  override def hasCastFloatTimestampUpcast: Boolean = true
 }
