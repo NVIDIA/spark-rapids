@@ -239,7 +239,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
-    Some(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+    Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
   }
 }
 
