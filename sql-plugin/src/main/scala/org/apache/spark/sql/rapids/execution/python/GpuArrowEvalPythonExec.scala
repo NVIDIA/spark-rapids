@@ -430,31 +430,29 @@ class GpuArrowPythonRunner(
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         val writer = {
-          lazy val buildOneColumnMeta: (String, DataType) => ColumnMetadata = (colName, dType) => {
-            val colMeta = new ColumnMetadata(colName)
-            dType match {
+          lazy val flattenColumnNames: (String, DataType) => Seq[String] = (name, dataType) => {
+            val colNames = mutable.ArrayBuffer[String](name)
+            dataType match {
+              case structType: StructType =>
+                colNames.appendAll(structType.flatMap(f => flattenColumnNames(f.name, f.dataType)))
               case arrayType: ArrayType =>
-                // Array type in cuDF needs a stub metadata for offset column.
-                // It is ok the child metadata uses the same name.
-                colMeta.addChildren(new ColumnMetadata(null),
-                  buildOneColumnMeta(colName, arrayType.elementType))
+                // It is ok the child metadata uses the same name for list type column.
+                colNames.appendAll(flattenColumnNames(name, arrayType.elementType))
               case mapType: MapType =>
                 // MapType is array of struct with two fields(key, value) in cuDF.
-                val structKeyValueMeta = new ColumnMetadata("key_value")
-                structKeyValueMeta.addChildren(buildOneColumnMeta("key", mapType.keyType),
-                  buildOneColumnMeta("value", mapType.valueType))
-                colMeta.addChildren(new ColumnMetadata(null), structKeyValueMeta)
-              case structType: StructType =>
-                val childrenMeta = structType.map(f => buildOneColumnMeta(f.name, f.dataType))
-                colMeta.addChildren(childrenMeta: _*);
+                // so first `child` as the child column of array,
+                // then `child_key` and `child_value` for the key and value column respectively.
+                colNames.append(s"${name}_child")
+                colNames.appendAll(flattenColumnNames(s"${name}_child_key", mapType.keyType))
+                colNames.appendAll(flattenColumnNames(s"${name}_child_value", mapType.valueType))
               case _ =>
             }
-            colMeta
+            colNames
           }
-          val columnMeta = pythonInSchema.map(f => buildOneColumnMeta(f.name, f.dataType))
+          val columnNames = pythonInSchema.flatMap(f => flattenColumnNames(f.name, f.dataType))
 
           val builder = ArrowIPCWriterOptions.builder()
-          builder.withColumnMetadata(columnMeta: _*)
+          builder.withColumnNames(columnNames: _*)
           builder.withMaxChunkSize(batchSize)
           builder.withCallback((table: Table) => {
             table.close()
