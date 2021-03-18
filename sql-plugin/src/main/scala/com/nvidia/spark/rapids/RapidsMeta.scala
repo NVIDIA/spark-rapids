@@ -25,14 +25,11 @@ import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression,
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.window.WindowExecBase
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -536,91 +533,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
   }
 
-  private def findShuffleExchanges(): Seq[Either[
-      SparkPlanMeta[QueryStageExec],
-      SparkPlanMeta[ShuffleExchangeExec]]] = wrapped match {
-    case _: ShuffleQueryStageExec =>
-      Left(this.asInstanceOf[SparkPlanMeta[QueryStageExec]]) :: Nil
-    case _: ShuffleExchangeExec =>
-      Right(this.asInstanceOf[SparkPlanMeta[ShuffleExchangeExec]]) :: Nil
-    case bkj: BroadcastHashJoinExec => ShimLoader.getSparkShims.getBuildSide(bkj) match {
-      case GpuBuildLeft => childPlans(1).findShuffleExchanges()
-      case GpuBuildRight => childPlans(0).findShuffleExchanges()
-    }
-    case _ => childPlans.flatMap(_.findShuffleExchanges())
-  }
-
-  private def findBucketedReads(): Seq[Boolean] = wrapped match {
-    case f: FileSourceScanExec =>
-      if (f.bucketedScan) {
-        true :: Nil
-      } else {
-        false :: Nil
-      }
-    case _: ShuffleExchangeExec =>
-      // if we find a shuffle before a scan then it doesn't matter if its
-      // a bucketed read
-      false :: Nil
-    case _ =>
-      childPlans.flatMap(_.findBucketedReads())
-  }
-
-  private def makeShuffleConsistent(): Unit = {
-    // during query execution when AQE is enabled, the plan could consist of a mixture of
-    // ShuffleExchangeExec nodes for exchanges that have not started executing yet, and
-    // ShuffleQueryStageExec nodes for exchanges that have already started executing. This code
-    // attempts to tag ShuffleExchangeExec nodes for CPU if other exchanges (either
-    // ShuffleExchangeExec or ShuffleQueryStageExec nodes) were also tagged for CPU.
-    val shuffleExchanges = findShuffleExchanges()
-    // if any of the table reads are bucketed then we can't do the shuffle on the
-    // GPU because the hashing is different between the CPU and GPU
-    val bucketedReads = findBucketedReads().exists(_ == true)
-
-    def canThisBeReplaced(plan: Either[
-        SparkPlanMeta[QueryStageExec],
-        SparkPlanMeta[ShuffleExchangeExec]]): Boolean = {
-      plan match {
-        case Left(qs) => qs.wrapped.plan match {
-          case _: GpuExec => true
-          case ReusedExchangeExec(_, _: GpuExec) => true
-          case _ => false
-        }
-        case Right(e) => e.canThisBeReplaced
-      }
-    }
-
-    // if we are reading from a bucketed table or if we can't convert all exchanges to GPU
-    // then we need to make sure that all of them run on the CPU instead
-    if (bucketedReads || !shuffleExchanges.forall(canThisBeReplaced)) {
-      val errMsg = if (bucketedReads) {
-        "can't support shuffle on the GPU when doing a join that reads directly from a " +
-          "bucketed table!"
-      } else {
-        "other exchanges that feed the same join are on the CPU, and GPU hashing is " +
-          "not consistent with the CPU version"
-      }
-      // tag any exchanges that have not been converted to query stages yet
-      shuffleExchanges.filter(_.isRight).foreach(_.right.get.willNotWorkOnGpu(errMsg))
-      // verify that no query stages already got converted to GPU
-      if (shuffleExchanges.filter(_.isLeft).exists(canThisBeReplaced)) {
-        throw new IllegalStateException("Join needs to run on CPU but at least one input " +
-            "query stage ran on GPU")
-      }
-    }
-  }
-
   def getReasonsNotToReplaceEntirePlan: Seq[String] = {
     val childReasons = childPlans.flatMap(_.getReasonsNotToReplaceEntirePlan)
     entirePlanExcludedReasons ++ childReasons
-  }
-
-  private def fixUpJoinConsistencyIfNeeded(): Unit = {
-    childPlans.foreach(_.fixUpJoinConsistencyIfNeeded())
-    wrapped match {
-      case _: ShuffledHashJoinExec => makeShuffleConsistent()
-      case _: SortMergeJoinExec => makeShuffleConsistent()
-      case _ => ()
-    }
   }
 
   // For adaptive execution we have to ensure we mark everything properly
@@ -659,19 +574,12 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // have to be very careful to avoid loops in the rules.
 
     // RULES:
-    // 1) BroadcastHashJoin can disable the Broadcast directly feeding it, if the join itself cannot
-    // be translated for some reason.  This is okay because it is the joins immediate parent, so
-    // it can keep everything consistent.
-    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
+    // 1) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
     // feeding them are either all on the GPU or all on the CPU, because the hashing is not
     // consistent between the two implementations. This is okay because it is only impacting
     // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on
     // BroadcastHashJoin, and shuffled exchanges are not used to disable anything downstream.
-    // 3) If a shuffled exchange is not columnar on at least one side don't do it.  This must happen
-    // before the join consistency or we risk running into issues with disabling one exchange that
-    // would make a join inconsistent
     fixUpExchangeOverhead()
-    fixUpJoinConsistencyIfNeeded()
   }
 
   override final def tagSelfForGpu(): Unit = {

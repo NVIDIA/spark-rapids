@@ -727,19 +727,10 @@ object GpuOverrides {
     expr[Literal](
       "Holds a static value from the query",
       ExprChecks.projectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR
+          + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
         TypeSig.all),
-      (lit, conf, p, r) => new ExprMeta[Literal](lit, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
-
-        // There are so many of these that we don't need to print them out, unless it
-        // will not work on the GPU
-        override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
-          if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
-            super.print(append, depth, all)
-          }
-        }
-      }),
+      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
       ExprChecks.mathUnary,
@@ -1722,7 +1713,27 @@ object GpuOverrides {
           // decimal place so we can round it in GpuCheckOverflow
           (childExprs.head.dataType, childExprs(1).dataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val intermediateResult = GpuDivideUtil.decimalDataType(l, r)
+              val outputType = GpuDivideUtil.decimalDataType(l, r)
+              // We will never hit a case where outputType.precision < outputType.scale + r.scale.
+              // So there is no need to protect against that.
+              // The only two cases in which there is a possibility of the intermediary scale
+              // exceeding the intermediary precision is when l.precision < l.scale or l
+              // .precision < 0, both of which aren't possible.
+              // Proof:
+              // case 1:
+              // outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
+              // outputType.scale = p1 + s2 + p2 + 1 + 1
+              // To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
+              // which is never possible
+              //
+              // case 2:
+              // outputType.precision = p1 - s1 + s2 + 6 + 1
+              // outputType.scale = 6 + 1
+              // To find out if outputType.precision < outputType.scale simplifies to p1 < 0
+              // which is never possible
+              //
+              // TODO We should revisit the proof one more time after we support 128-bit decimals
+              val intermediateResult = DecimalType(outputType.precision, outputType.scale + r.scale)
               if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the divide is too large" +
                     s" to fit on the GPU $intermediateResult")
@@ -2290,14 +2301,15 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
+          // Floating point values don't work because of -0.0 is not hashed properly
           TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL,
-          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL))),
+             TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-        def convertToGpu(): GpuExpression = GpuMurmur3Hash(childExprs.map(_.convertToGpu()))
+        def convertToGpu(): GpuExpression =
+          GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
       }),
     expr[Contains](
       "Contains",
@@ -2338,6 +2350,37 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[MakeDecimal](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
+      }),
+    expr[Explode](
+      "Given an input array produces a sequence of rows for each value in the array. "
+        + "Explode with outer Generate is not supported under GPU runtime." ,
+      ExprChecks.unaryProject(
+        // Here is a walk-around representation, since multi-level nested type is not supported yet.
+        // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
+        TypeSig.ARRAY.nested(TypeSig.STRUCT
+          + TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
+      (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuExplode(childExprs(0).convertToGpu())
+      }),
+    expr[PosExplode](
+      "Given an input array produces a sequence of rows for each value in the array. "
+        + "PosExplode with outer Generate is not supported under GPU runtime." ,
+      ExprChecks.unaryProject(
+        // Here is a walk-around representation, since multi-level nested type is not supported yet.
+        // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
+        TypeSig.ARRAY.nested(TypeSig.STRUCT
+          + TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
+      (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs(0).convertToGpu())
       }),
     expr[CollectList](
       "Collect a list of elements, now only supported by windowing.",
@@ -2418,6 +2461,18 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def tagPartForGpu(): Unit = {
+          // This needs to match what murmur3 supports.
+          // TODO In 0.5 we should make the checks self documenting, and look more like what
+          //  SparkPlan and Expression support
+          //  https://github.com/NVIDIA/spark-rapids/issues/1915
+          val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+              TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL
+          hp.children.foreach { child =>
+            sig.tagExprParam(this, child, "hash_key")
+          }
+        }
+
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
@@ -2432,7 +2487,7 @@ object GpuOverrides {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
             GpuRangePartitioning(gpuOrdering, rp.numPartitions)
           } else {
-            GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+            GpuSinglePartitioning
           }
         }
       }),
@@ -2446,11 +2501,7 @@ object GpuOverrides {
     part[SinglePartition.type](
       "Single partitioning",
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
-        override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
-
-        override def convertToGpu(): GpuPartitioning = {
-          GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
-        }
+        override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 
@@ -2484,10 +2535,8 @@ object GpuOverrides {
     exec[GenerateExec] (
       "The backend for operations that generate more output rows than input rows like explode",
       ExecChecks(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL
-            .withPsNote(TypeEnum.ARRAY,
-              "Only literal arrays and the output of the array function are supported")
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY),
         TypeSig.all),
       (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
     exec[ProjectExec](
@@ -2561,7 +2610,7 @@ object GpuOverrides {
             GpuTopN(takeExec.limit,
               so,
               projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
                 GpuTopN(takeExec.limit,
                   so,
                   takeExec.child.output,
