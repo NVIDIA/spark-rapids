@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 
 package com.nvidia.spark.rapids
+
+import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructType}
 
@@ -101,6 +103,32 @@ object GpuBatchUtils {
 
   def calculateOffsetBufferSize(rows: Long): Long = {
     (rows+1) * 4 // 32 bit offsets
+  }
+
+  /**
+   * Generate indices which evenly splitting input batch
+   *
+   * @param rows      number of rows of input batch
+   * @param numSplits desired number of splits
+   * @return splitting indices
+   */
+  def generateSplitIndices(rows: Long, numSplits: Int): Array[Int] = {
+    require(rows > 0, s"invalid input rows $rows")
+    require(numSplits > 0, s"invalid numSplits $numSplits")
+    val baseIncrement = (rows / numSplits).toInt
+    var extraIncrements = (rows % numSplits).toInt
+    val indicesBuf = ArrayBuffer[Int]()
+    (1 until numSplits).foldLeft(0) { case (last, _) =>
+      val current = if (extraIncrements > 0) {
+        extraIncrements -= 1
+        last + baseIncrement + 1
+      } else {
+        last + baseIncrement
+      }
+      indicesBuf += current
+      current
+    }
+    indicesBuf.toArray
   }
 
   def isVariableWidth(dt: DataType): Boolean = !isFixedWidth(dt)

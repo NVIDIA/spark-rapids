@@ -274,8 +274,8 @@ object GpuShuffleExchangeExec {
           rdd, SQLConf.get.rangeExchangeSampleSizePerPartition)
         // No need to bind arguments for the GpuRangePartitioner. The Sorter has already done it
         new GpuRangePartitioner(bounds, sorter)
-      case s: GpuSinglePartitioning =>
-        GpuBindReferences.bindReference(s, outputAttributes)
+      case GpuSinglePartitioning =>
+        GpuSinglePartitioning
       case rrp: GpuRoundRobinPartitioning =>
         GpuBindReferences.bindReference(rrp, outputAttributes)
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
