@@ -1713,7 +1713,27 @@ object GpuOverrides {
           // decimal place so we can round it in GpuCheckOverflow
           (childExprs.head.dataType, childExprs(1).dataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val intermediateResult = GpuDivideUtil.decimalDataType(l, r)
+              val outputType = GpuDivideUtil.decimalDataType(l, r)
+              // We will never hit a case where outputType.precision < outputType.scale + r.scale.
+              // So there is no need to protect against that.
+              // The only two cases in which there is a possibility of the intermediary scale
+              // exceeding the intermediary precision is when l.precision < l.scale or l
+              // .precision < 0, both of which aren't possible.
+              // Proof:
+              // case 1:
+              // outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
+              // outputType.scale = p1 + s2 + p2 + 1 + 1
+              // To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
+              // which is never possible
+              //
+              // case 2:
+              // outputType.precision = p1 - s1 + s2 + 6 + 1
+              // outputType.scale = 6 + 1
+              // To find out if outputType.precision < outputType.scale simplifies to p1 < 0
+              // which is never possible
+              //
+              // TODO We should revisit the proof one more time after we support 128-bit decimals
+              val intermediateResult = DecimalType(outputType.precision, outputType.scale + r.scale)
               if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the divide is too large" +
                     s" to fit on the GPU $intermediateResult")
@@ -2281,14 +2301,15 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
+          // Floating point values don't work because of -0.0 is not hashed properly
           TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL,
-          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-            TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING + TypeSig.NULL))),
+             TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
           .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-        def convertToGpu(): GpuExpression = GpuMurmur3Hash(childExprs.map(_.convertToGpu()))
+        def convertToGpu(): GpuExpression =
+          GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
       }),
     expr[Contains](
       "Contains",
@@ -2440,6 +2461,18 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def tagPartForGpu(): Unit = {
+          // This needs to match what murmur3 supports.
+          // TODO In 0.5 we should make the checks self documenting, and look more like what
+          //  SparkPlan and Expression support
+          //  https://github.com/NVIDIA/spark-rapids/issues/1915
+          val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
+              TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL
+          hp.children.foreach { child =>
+            sig.tagExprParam(this, child, "hash_key")
+          }
+        }
+
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
@@ -2454,7 +2487,7 @@ object GpuOverrides {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
             GpuRangePartitioning(gpuOrdering, rp.numPartitions)
           } else {
-            GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
+            GpuSinglePartitioning
           }
         }
       }),
@@ -2468,11 +2501,7 @@ object GpuOverrides {
     part[SinglePartition.type](
       "Single partitioning",
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
-        override val childExprs: Seq[ExprMeta[_]] = Seq.empty[ExprMeta[_]]
-
-        override def convertToGpu(): GpuPartitioning = {
-          GpuSinglePartitioning(childExprs.map(_.convertToGpu()))
-        }
+        override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Partitioning]), r)).toMap
 
@@ -2581,7 +2610,7 @@ object GpuOverrides {
             GpuTopN(takeExec.limit,
               so,
               projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning(Seq.empty),
+              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
                 GpuTopN(takeExec.limit,
                   so,
                   takeExec.child.output,

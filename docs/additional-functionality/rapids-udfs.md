@@ -132,3 +132,73 @@ to URL-encode strings
 - [StringWordCount](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
 implements a Hive simple UDF using
 [native code](../../udf-examples/src/main/cpp/src) to count words in strings
+
+
+## GPU Scheduling For Pandas UDF
+
+---
+**NOTE**
+
+The _GPU Scheduling for Pandas UDF_ is an experimental feature, and may change at any point it time.
+
+---
+
+_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined
+function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs),
+and has two components:
+
+- **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the
+  same GPU with JVM.
+
+- **Increase Speed**: Make the data transport faster between JVM process and Python process.
+
+
+
+To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job with extra settings.
+
+1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive
+   mode to assign GPUs under spark.
+2. Currently the python files are packed into the spark rapids plugin jar.
+
+    On Yarn, you need to add
+    ```shell
+    ...
+    --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
+    ```
+
+
+    On Standalone, you need to add
+    ```shell
+    ...
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar \
+    --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
+    ```
+
+3. Enable GPU Scheduling for Pandas UDF.
+
+    ```shell
+    ...
+    --conf spark.rapids.python.gpu.enabled=true \
+    --conf spark.rapids.python.memory.gpu.pooling.enabled=false \
+    --conf spark.rapids.sql.exec.ArrowEvalPythonExec=true \
+    --conf spark.rapids.sql.exec.MapInPandasExec=true \
+    --conf spark.rapids.sql.exec.FlatMapGroupsInPandasExec=true \
+    --conf spark.rapids.sql.exec.AggregateInPandasExec=true \
+    --conf spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec=true \
+    --conf spark.rapids.sql.exec.WindowInPandasExec=true
+    ```
+
+Please note the data transfer acceleration only supports scalar UDF and Scalar iterator UDF currently. 
+You could choose the exec you need to enable.
+
+### Other Configuration
+
+Following configuration settings are also for _GPU Scheduling for Pandas UDF_
+```
+spark.rapids.python.concurrentPythonWorkers
+spark.rapids.python.memory.gpu.allocFraction
+spark.rapids.python.memory.gpu.maxAllocFraction
+```
+
+To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
+Apache Spark Configuration Guide](../configs.md).
