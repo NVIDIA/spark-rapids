@@ -50,7 +50,9 @@ double_special_cases = [
 ]
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-           pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]), pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]), BooleanGen(), DateGen(), TimestampGen()]
+           pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
+           pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
+           BooleanGen(), DateGen(), TimestampGen()]
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -152,7 +154,7 @@ def test_cache_expand_exec(data_gen, enableVectorizedConf):
 
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', byte_gen]])], ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(data_gen, enableVectorizedConf):

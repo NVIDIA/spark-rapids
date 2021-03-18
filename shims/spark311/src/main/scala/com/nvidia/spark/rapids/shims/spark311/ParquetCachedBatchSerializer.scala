@@ -272,8 +272,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
   }
 
-  def isSupportedByCudf(schema: Seq[Attribute]): Boolean = {
-    schema.forall(a => GpuColumnVector.isNonNestedSupportedType(a.dataType))
+  def isSchemaSupportedByCudf(schema: Seq[Attribute]): Boolean = {
+    schema.forall(field => isSupportedByCudf(field.dataType))
+  }
+
+  def isSupportedByCudf(dataType: DataType): Boolean = {
+    dataType match {
+      case s: StructType => s.forall(field => isSupportedByCudf(field.dataType))
+      case _ => GpuColumnVector.isNonNestedSupportedType(dataType)
+    }
   }
 
   def isTypeSupportedByParquet(dataType: DataType): Boolean = {
@@ -303,7 +310,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      conf: SQLConf): RDD[CachedBatch] = {
 
     val rapidsConf = new RapidsConf(conf)
-    if (rapidsConf.isSqlEnabled && isSupportedByCudf(schema)) {
+    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schema)) {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
         if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
           val s: StructType = schema.toStructType
@@ -474,7 +481,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       }
     }
     val rapidsConf = new RapidsConf(conf)
-    if (rapidsConf.isSqlEnabled && isSupportedByCudf(cacheAttributes)) {
+    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(cacheAttributes)) {
       val batches = convertCachedBatchToColumnarInternal(input, cacheAttributes,
         selectedAttributes)
       val cbRdd = batches.map(batch => {
@@ -1263,7 +1270,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
     val rapidsConf = new RapidsConf(conf)
 
-    if (rapidsConf.isSqlEnabled && isSupportedByCudf(schema)) {
+    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schema)) {
       val structSchema = schema.toStructType
       val converters = new GpuRowToColumnConverter(structSchema)
       val columnarBatchRdd = input.mapPartitions(iter => {
