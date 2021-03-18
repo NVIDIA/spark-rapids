@@ -430,33 +430,42 @@ class GpuArrowPythonRunner(
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         val writer = {
-          lazy val flattenColumnNames: (String, DataType) => Seq[String] = (name, dataType) => {
-            val colNames = mutable.ArrayBuffer[String](name)
-            dataType match {
+
+          lazy val flattenColumnNames: StructField => Seq[(String, Boolean)] = field => {
+            val colNames = mutable.ArrayBuffer[(String, Boolean)]((field.name, field.nullable))
+            field.dataType match {
               case structType: StructType =>
-                colNames.appendAll(structType.flatMap(f => flattenColumnNames(f.name, f.dataType)))
+                colNames.appendAll(structType.flatMap(flattenColumnNames(_)))
               case arrayType: ArrayType =>
-                colNames.appendAll(flattenColumnNames(s"${name}_child", arrayType.elementType))
+                colNames.appendAll(flattenColumnNames(
+                  StructField(s"${field.name}_child", arrayType.elementType, field.nullable)))
               case mapType: MapType =>
                 // MapType is array of struct with two fields(key, value) in cuDF.
                 // so first `child` as the child column of array,
                 // then `child_key` and `child_value` for the key and value column respectively.
-                colNames.append(s"${name}_child")
-                colNames.appendAll(flattenColumnNames(s"${name}_child_key", mapType.keyType))
-                colNames.appendAll(flattenColumnNames(s"${name}_child_value", mapType.valueType))
+                colNames.append((s"${field.name}_child", field.nullable))
+                colNames.appendAll(flattenColumnNames(
+                  StructField(s"${field.name}_child_key", mapType.keyType, field.nullable)))
+                colNames.appendAll(flattenColumnNames(
+                  StructField(s"${field.name}_child_value", mapType.valueType, field.nullable)))
               case _ =>
             }
             colNames
           }
-          val columnNames = pythonInSchema.flatMap(f => flattenColumnNames(f.name, f.dataType))
 
           val builder = ArrowIPCWriterOptions.builder()
-          builder.withColumnNames(columnNames: _*)
           builder.withMaxChunkSize(batchSize)
           builder.withCallback((table: Table) => {
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
+          pythonInSchema.flatMap(flattenColumnNames(_)).foreach { case (colName, nullable) =>
+              if (nullable) {
+                builder.withColumnNames(colName)
+              } else {
+                builder.withNotNullableColumnNames(colName)
+              }
+          }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
         Utils.tryWithSafeFinally {
