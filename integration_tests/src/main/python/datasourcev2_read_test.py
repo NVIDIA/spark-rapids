@@ -49,5 +49,5 @@ def test_read_all_types_count():
 def test_read_arrow_off():
     assert_gpu_and_cpu_are_equal_collect(
         readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
-            conf={'spark.rapids.arrowCopyOptmizationEnabled': 'false',
+            conf={'spark.rapids.arrowCopyOptimizationEnabled': 'false',
                   'spark.rapids.sql.castFloatToString.enabled': 'true'})
