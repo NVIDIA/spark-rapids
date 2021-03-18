@@ -21,6 +21,7 @@ import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
+import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
@@ -222,7 +223,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       }
       val expectedCudfVersion = pluginCudfVersion.toString
       // compare cudf version in the classpath with the cudf version expected by plugin
-      if (!cudfVersion.equals(expectedCudfVersion)) {
+      if (!RapidsExecutorPlugin.cudfVersionSatisfied(expectedCudfVersion, cudfVersion)) {
         throw CudfVersionMismatchException(s"Cudf version in the classpath is different. " +
           s"Found $cudfVersion, RAPIDS Accelerator expects $expectedCudfVersion")
       }
@@ -239,6 +240,26 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     Some(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+  }
+}
+
+object RapidsExecutorPlugin {
+  /**
+   * Return true if the expected cudf version is satisfied by the actual version found.
+   * The version is satisfied if the major and minor versions match exactly. If there is a requested
+   * patch version then the actual patch version must be greater than or equal.
+   * For example, version 7.1 is not satisfied by version 7.2, but version 7.1 is satisfied by
+   * version 7.1.1.
+   */
+  def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
+    val (expMajorMinor, expPatch) = expected.split('.').splitAt(2)
+    val (actMajorMinor, actPatch) = actual.split('.').splitAt(2)
+    actMajorMinor.startsWith(expMajorMinor) && {
+      val expPatchInts = expPatch.map(_.toInt)
+      val actPatchInts = actPatch.map(v => Try(v.toInt).getOrElse(Int.MinValue))
+      val zipped = expPatchInts.zipAll(actPatchInts, 0, 0)
+      zipped.forall { case (e, a) => e <= a }
+    }
   }
 }
 
