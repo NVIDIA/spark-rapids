@@ -29,8 +29,9 @@ import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 /** A buffer store using files on the local disks. */
 class RapidsDiskStore(
     diskBlockManager: RapidsDiskBlockManager,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore(StorageTier.DISK, catalog) {
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
+    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
+    extends RapidsBufferStore(StorageTier.DISK, catalog, deviceStorage) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override protected def createBuffer(incoming: RapidsBuffer, incomingBuffer: MemoryBuffer,
@@ -56,7 +57,7 @@ class RapidsDiskStore(
       }
       logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
       new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
-        incoming.getSpillPriority, incoming.spillCallback)
+        incoming.getSpillPriority, incoming.spillCallback, deviceStorage)
     }
   }
 
@@ -88,8 +89,9 @@ class RapidsDiskStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback)
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
+      spillCallback: RapidsBuffer.SpillCallback,
+      deviceStorage: RapidsDeviceMemoryStore)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback, deviceStorage) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     override val storageTier: StorageTier = StorageTier.DISK

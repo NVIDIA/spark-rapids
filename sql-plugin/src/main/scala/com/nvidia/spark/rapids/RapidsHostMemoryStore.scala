@@ -29,8 +29,9 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  */
 class RapidsHostMemoryStore(
     maxSize: Long,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore(StorageTier.HOST, catalog) {
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
+    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
+    extends RapidsBufferStore(StorageTier.HOST, catalog, deviceStorage) {
   private[this] val pool = HostMemoryBuffer.allocate(maxSize, false)
   private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
   private[this] var haveLoggedMaxExceeded = false
@@ -97,7 +98,8 @@ class RapidsHostMemoryStore(
         other.getSpillPriority,
         hostBuffer,
         isPinned,
-        other.spillCallback)
+        other.spillCallback,
+        deviceStorage)
     }
   }
 
@@ -115,8 +117,9 @@ class RapidsHostMemoryStore(
       spillPriority: Long,
       buffer: HostMemoryBuffer,
       isInternalPoolAllocated: Boolean,
-      spillCallback: RapidsBuffer.SpillCallback)
-      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
+      spillCallback: RapidsBuffer.SpillCallback,
+      deviceStorage: RapidsDeviceMemoryStore)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback, deviceStorage) {
     override val storageTier: StorageTier = StorageTier.HOST
 
     override def getMemoryBuffer: MemoryBuffer = {

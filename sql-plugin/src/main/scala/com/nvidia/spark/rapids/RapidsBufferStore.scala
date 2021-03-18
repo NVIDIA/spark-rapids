@@ -40,7 +40,8 @@ object RapidsBufferStore {
  */
 abstract class RapidsBufferStore(
     val tier: StorageTier,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
+    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
     extends AutoCloseable with Logging with Arm {
 
   val name: String = tier.toString
@@ -269,6 +270,7 @@ abstract class RapidsBufferStore(
       override val meta: TableMeta,
       initialSpillPriority: Long,
       override val spillCallback: RapidsBuffer.SpillCallback,
+      deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
       extends RapidsBuffer with Arm {
     private val MAX_UNSPILL_ATTEMPTS = 100
@@ -340,7 +342,7 @@ abstract class RapidsBufferStore(
           case _ =>
             try {
               logDebug(s"Unspilling $this $id to $DEVICE")
-              val newBuffer = RapidsBufferCatalog.getDeviceStorage.copyBuffer(
+              val newBuffer = deviceStorage.copyBuffer(
                 this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
               if (newBuffer.addReference()) {
                 withResource(newBuffer) { _ =>

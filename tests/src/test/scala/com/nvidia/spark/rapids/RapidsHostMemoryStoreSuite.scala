@@ -22,7 +22,7 @@ import java.math.RoundingMode
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.Mockito.{never, spy, verify, when}
+import org.mockito.Mockito.{never, spy, times, verify, when}
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
@@ -73,8 +73,9 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         devStore.synchronousSpill(0)
         assertResult(bufferSize)(hostStore.currentSize)
         assertResult(hostStoreMaxSize - bufferSize)(hostStore.numBytesFree)
-        verify(catalog).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
-        verify(catalog).removeBufferTier(bufferId, ArgumentMatchers.eq(StorageTier.DEVICE))
+        verify(catalog, times(2)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
+        verify(catalog).removeBufferTier(
+          ArgumentMatchers.eq(bufferId), ArgumentMatchers.eq(StorageTier.DEVICE))
         withResource(catalog.acquireBuffer(bufferId)) { buffer =>
           assertResult(StorageTier.HOST)(buffer.storageTier)
           assertResult(bufferSize)(buffer.size)
@@ -120,7 +121,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog, devStore)) { hostStore =>
         devStore.setSpillStore(hostStore)
         withResource(buildContiguousTable()) { ct =>
           withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
@@ -149,7 +150,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
       val mockStore = mock[RapidsBufferStore]
       when(mockStore.tier) thenReturn(StorageTier.DISK)
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog, devStore)) { hostStore =>
         devStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         withResource(buildContiguousTable(1024 * 1024)) { bigTable =>
