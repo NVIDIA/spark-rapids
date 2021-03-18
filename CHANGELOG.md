@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-03-16
+Generated on 2021-03-18
 
 ## Release 0.4
 
@@ -104,6 +104,8 @@ Generated on 2021-03-16
 ### PRs
 |||
 |:---|:---|
+|[#1960](https://github.com/NVIDIA/spark-rapids/pull/1960)|Replace sonatype staging link with maven central link|
+|[#1945](https://github.com/NVIDIA/spark-rapids/pull/1945)|Update changelog 0.4 [skip ci]|
 |[#1910](https://github.com/NVIDIA/spark-rapids/pull/1910)|Make hash partitioning match CPU|
 |[#1927](https://github.com/NVIDIA/spark-rapids/pull/1927)|Change cuDF dependency to 0.18.1|
 |[#1934](https://github.com/NVIDIA/spark-rapids/pull/1934)|Update documentation to use cudf version 0.18.1|
