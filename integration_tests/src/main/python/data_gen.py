@@ -829,7 +829,7 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
 common_cudf_types_gen = all_basic_gens[:-1]
 
 # Pyarrow will complain the error as below if the timestamp is out of range for both CPU and GPU,
-# so narrow down the time range to avoid exceptions leading to tests failure.
+# so narrow down the time range to avoid exceptions causing test failures.
 #
 #     "pyarrow.lib.ArrowInvalid: Casting from timestamp[us, tz=UTC] to timestamp[ns]
 #      would result in out of bounds timestamp: 51496791452587000"

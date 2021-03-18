@@ -436,8 +436,7 @@ class GpuArrowPythonRunner(
               case structType: StructType =>
                 colNames.appendAll(structType.flatMap(f => flattenColumnNames(f.name, f.dataType)))
               case arrayType: ArrayType =>
-                // It is ok the child metadata uses the same name for list type column.
-                colNames.appendAll(flattenColumnNames(name, arrayType.elementType))
+                colNames.appendAll(flattenColumnNames(s"${name}_child", arrayType.elementType))
               case mapType: MapType =>
                 // MapType is array of struct with two fields(key, value) in cuDF.
                 // so first `child` as the child column of array,
