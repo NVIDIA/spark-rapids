@@ -876,10 +876,8 @@ case class GpuHashAggregateExec(
         // desired result compared to Spark-CPU.
         // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
         if (cvs.isEmpty) {
-          withResource(Scalar.fromInt(0)) { ZERO =>
-            withResource(cudf.ColumnVector.fromScalar(ZERO, 1)) { cv =>
-              cvs += GpuColumnVector.from(cv.castTo(DType.INT64), LongType)
-            }
+          withResource(Scalar.fromLong(0L)) { ZERO =>
+            cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
           }
         }
         new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)

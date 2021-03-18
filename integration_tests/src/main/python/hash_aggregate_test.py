@@ -274,6 +274,7 @@ def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf):
         'sum(distinct a),' +
         'count(distinct b),' +
         'count(a),' +
+        'count(),' +
         'sum(a),' +
         'min(a),'+
         'max(a) from hash_agg_table group by a',
@@ -292,6 +293,7 @@ def test_hash_query_max_with_multiple_distincts(data_gen, conf):
         "hash_agg_table",
         'select max(c),' +
         'sum(distinct a),' +
+        'count(),' +
         'count(distinct b) from hash_agg_table group by a',
         conf)
 
@@ -341,7 +343,8 @@ def test_hash_agg_with_nan_keys(data_gen):
         lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
         'select a, '
-        'count(*) as count_stars, ' 
+        'count(*) as count_stars, '
+        'count() as count_paramaterless, '
         'count(b) as count_bees, '
         'sum(b) as sum_of_bees, '
         'max(c) as max_seas, '
@@ -391,6 +394,7 @@ def test_generic_reductions(data_gen):
                 'first(a)',
                 'last(a)',
                 'count(a)',
+                'count()',
                 'count(1)'),
             conf = _no_nans_float_conf)
 
