@@ -2336,6 +2336,15 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
       }),
+    expr[Size](
+      "The size of an array or a map",
+      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all),
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
+      (a, conf, p, r) => new UnaryExprMeta[Size](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuSize(child, a.legacySizeOfNull)
+      }),
     expr[UnscaledValue](
       "Convert a Decimal to an unscaled long value for some aggregation optimizations",
       ExprChecks.unaryProject(TypeSig.LONG, TypeSig.LONG,
