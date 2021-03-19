@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.util.NoSuchElementException
 
-import com.nvidia.spark.rapids.StorageTier.StorageTier
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.Mockito._
 import org.scalatest.FunSuite
@@ -47,6 +47,21 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     assertThrows[DuplicateBufferException](catalog.registerNewBuffer(buffer2))
   }
 
+  test("buffer registering slower tier does not hide faster tier") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val buffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(buffer)
+    val buffer2 = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(buffer2)
+    val buffer3 = mockBuffer(bufferId, tier = DISK)
+    catalog.registerNewBuffer(buffer3)
+    val acquired = catalog.acquireBuffer(MockBufferId(5))
+    assertResult(5)(acquired.id.tableId)
+    assertResult(buffer)(acquired)
+    verify(buffer).addReference()
+  }
+
   test("acquire buffer") {
     val catalog = new RapidsBufferCatalog
     val bufferId = MockBufferId(5)
@@ -69,6 +84,28 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     verify(buffer, times(9)).addReference()
   }
 
+  test("acquire buffer at specific tier") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val buffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(buffer)
+    val buffer2 = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(buffer2)
+    val acquired = catalog.acquireBuffer(MockBufferId(5), HOST).get
+    assertResult(5)(acquired.id.tableId)
+    assertResult(buffer2)(acquired)
+    verify(buffer2).addReference()
+  }
+
+  test("acquire buffer at nonexistent tier") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val buffer = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(buffer)
+    assert(catalog.acquireBuffer(MockBufferId(5), DEVICE).isEmpty)
+    assert(catalog.acquireBuffer(MockBufferId(5), DISK).isEmpty)
+  }
+
   test("get buffer meta") {
     val catalog = new RapidsBufferCatalog
     val bufferId = MockBufferId(5)
@@ -79,6 +116,48 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     assertResult(expectedMeta)(meta)
   }
 
+  test("buffer is spilled to slower tier only") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val buffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(buffer)
+    val buffer2 = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(buffer2)
+    val buffer3 = mockBuffer(bufferId, tier = DISK)
+    catalog.registerNewBuffer(buffer3)
+    assert(catalog.isBufferSpilled(bufferId, DEVICE))
+    assert(catalog.isBufferSpilled(bufferId, HOST))
+    assert(!catalog.isBufferSpilled(bufferId, DISK))
+  }
+
+  test("remove buffer tier") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val buffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(buffer)
+    val buffer2 = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(buffer2)
+    val buffer3 = mockBuffer(bufferId, tier = DISK)
+    catalog.registerNewBuffer(buffer3)
+    catalog.removeBufferTier(bufferId, DEVICE)
+    catalog.removeBufferTier(bufferId, DISK)
+    assert(catalog.acquireBuffer(MockBufferId(5), DEVICE).isEmpty)
+    assert(catalog.acquireBuffer(MockBufferId(5), HOST).isDefined)
+    assert(catalog.acquireBuffer(MockBufferId(5), DISK).isEmpty)
+  }
+
+  test("remove nonexistent buffer tier") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val buffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(buffer)
+    catalog.removeBufferTier(bufferId, HOST)
+    catalog.removeBufferTier(bufferId, DISK)
+    assert(catalog.acquireBuffer(MockBufferId(5), DEVICE).isDefined)
+    assert(catalog.acquireBuffer(MockBufferId(5), HOST).isEmpty)
+    assert(catalog.acquireBuffer(MockBufferId(5), DISK).isEmpty)
+  }
+
   test("remove buffer releases buffer resources") {
     val catalog = new RapidsBufferCatalog
     val bufferId = MockBufferId(5)
@@ -86,6 +165,21 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
     catalog.registerNewBuffer(buffer)
     catalog.removeBuffer(bufferId)
     verify(buffer).free()
+  }
+
+  test("remove buffer releases buffer resources at all tiers") {
+    val catalog = new RapidsBufferCatalog
+    val bufferId = MockBufferId(5)
+    val buffer = mockBuffer(bufferId, tier = DEVICE)
+    catalog.registerNewBuffer(buffer)
+    val buffer2 = mockBuffer(bufferId, tier = HOST)
+    catalog.registerNewBuffer(buffer2)
+    val buffer3 = mockBuffer(bufferId, tier = DISK)
+    catalog.registerNewBuffer(buffer3)
+    catalog.removeBuffer(bufferId)
+    verify(buffer).free()
+    verify(buffer2).free()
+    verify(buffer3).free()
   }
 
   private def mockBuffer(
