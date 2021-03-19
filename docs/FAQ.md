@@ -17,14 +17,16 @@ process, we try to stay on top of these changes and release updates as quickly a
 
 ### Which distributions are supported?
 
-The RAPIDS Accelerator for Apache Spark officially supports [Apache
-Spark](get-started/getting-started-on-prem.md), [AWS EMR
-6.2.0](get-started/getting-started-aws-emr.md), [Databricks Runtime
-7.3](get-started/getting-started-databricks.md) and [Google Cloud
-Dataproc](get-started/getting-started-gcp.md).  Most distributions based off of Apache Spark 3.0.0
-should work, but because the plugin replaces parts of the physical plan that Apache Spark considers
-to be internal the code for those plans can change from one distribution to another. We are working
-with most cloud service providers to set up testing and validation on their distributions.
+The RAPIDS Accelerator for Apache Spark officially supports:
+- [Apache Spark](get-started/getting-started-on-prem.md)
+- [AWS EMR 6.2.0](get-started/getting-started-aws-emr.md)
+- [Databricks Runtime 7.3](get-started/getting-started-databricks.md)
+- [Google Cloud Dataproc](get-started/getting-started-gcp.md)
+
+Most distributions based on a supported Apache Spark version should work, but because the plugin
+replaces parts of the physical plan that Apache Spark considers to be internal the code for those
+plans can change from one distribution to another. We are working with most cloud service providers
+to set up testing and validation on their distributions.
 
 ### What CUDA versions are supported?
 
@@ -42,6 +44,19 @@ Currently a limited set of SQL and DataFrame operations are supported, please se
 [configs](configs.md) and [supported operations](supported_ops.md) for a more complete list of what
 is supported. Some of structured streaming is likely to be accelerated, but it has not been an area
 of focus right now. Other areas like MLLib, GraphX or RDDs are not accelerated.
+
+### Is the Spark `Dataset` API supported?
+
+The RAPIDS Accelerator supports the `DataFrame` API which is implemented in Spark as `Dataset[Row]`.
+If you are using `Dataset[Row]` that is equivalent to the `DataFrame` API. However using custom
+classes or types with `Dataset` is not supported.  Such queries should still execute correctly when
+using the RAPIDS Accelerator, but it is likely most query operations will not be performed on the
+GPU.
+
+With custom types the `Dataset` API generates query plans that use opaque lambda expressions to
+access the custom types. The opaque expressions prevent the RAPIDS Accelerator from translating any
+operation with these opaque expressions to the GPU, since the RAPIDS Accelerator cannot determine
+how the expression operates.
 
 ### What is the road-map like?
 
