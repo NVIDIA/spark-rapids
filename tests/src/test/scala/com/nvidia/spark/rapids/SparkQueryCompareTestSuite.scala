@@ -114,7 +114,12 @@ object SparkSessionHolder extends Logging {
       setAllConfs(origConf.toArray)
       val currentKeys = spark.conf.getAll.keys.toSet
       val toRemove = currentKeys -- origConfKeys
-      toRemove.foreach(spark.conf.unset)
+      if (toRemove.contains("spark.shuffle.manager")) {
+        // cannot unset the config so need to reinitialize
+        reinitSession()
+      } else {
+        toRemove.foreach(spark.conf.unset)
+      }
     }
     logDebug(s"RESET CONF TO: ${spark.conf.getAll}")
   }
@@ -1514,6 +1519,19 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       (+0.0f, 70), // Minimum Negative NaN value
       (-0.0f, 80)  // Minimum Negative NaN value
     ).toDF("float", "int")
+  }
+
+  def nullableStringsDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq[(String, String)](
+      ("100.0", "1.0"),
+      (null, "2.0"),
+      ("300.0", "3.0"),
+      ("400.0", null),
+      ("500.0", "5.0"),
+      ("-100.0", null),
+      ("-500.0", "0.0")
+    ).toDF("strings", "more_strings")
   }
 
   def nullableStringsIntsDf(session: SparkSession): DataFrame = {

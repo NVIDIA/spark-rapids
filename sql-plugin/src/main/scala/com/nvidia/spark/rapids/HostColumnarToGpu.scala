@@ -16,8 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.{util => ju}
 import java.nio.ByteBuffer
 
+import scala.collection.JavaConverters._
+import scala.collection.mutable
+
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.TaskContext
@@ -63,7 +68,7 @@ object HostColumnarToGpu extends Logging {
       cv: ColumnVector,
       ab: ai.rapids.cudf.ArrowColumnBuilder,
       nullable: Boolean,
-      rows: Int): Unit = {
+      rows: Int): ju.List[ReferenceManager] = {
     val valVector = cv match {
       case v: ArrowColumnVector =>
         try {
@@ -78,18 +83,28 @@ object HostColumnarToGpu extends Logging {
       case _ =>
         throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
     }
+
+    val referenceManagers = new mutable.ListBuffer[ReferenceManager]
+
+    def getBufferAndAddReference(getter: => (ByteBuffer, ReferenceManager)): ByteBuffer = {
+      val (buf, ref) = getter
+      referenceManagers += ref
+      buf
+    }
+
     val nullCount = valVector.getNullCount()
-    val dataBuf = ShimLoader.getSparkShims.getArrowDataBuf(valVector)
-    val validity =  ShimLoader.getSparkShims.getArrowValidityBuf(valVector)
+    val dataBuf = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowDataBuf(valVector))
+    val validity = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowValidityBuf(valVector))
     // this is a bit ugly, not all Arrow types have the offsets buffer
     var offsets: ByteBuffer = null
     try {
-      offsets =  ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector)
+      offsets = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector))
     } catch {
       case e: UnsupportedOperationException =>
         // swallow the exception and assume no offsets buffer
     }
     ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
+    referenceManagers.result().asJava
   }
 
   def columnarCopy(cv: ColumnVector, b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
@@ -283,8 +298,14 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // when reading host batches it is essential to read the data immediately and pass to a
     // builder and we need to determine how many rows to allocate in the builder based on the
     // schema and desired batch size
-    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
-      GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
+    batchRowLimit = if (batch.numCols() > 0) {
+       GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
+         GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
+    } else {
+      // when there aren't any columns, it generally means user is doing a count() and we don't
+      // need to limit batch size because there isn't any actual data
+      Integer.MAX_VALUE
+    }
 
     // if no columns then probably a count operation so doesn't matter which builder we use
     // as we won't actually copy any data and we can't tell what type of data it is without

@@ -23,7 +23,6 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.StorageTier.StorageTier
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -431,10 +430,8 @@ case class GpuOutOfCoreSortIterator(
           // The data is only fully sorted if there is nothing pending that is smaller than it
           // so get the next "smallest" row that is pending.
           val cutoff = pending.peek().firstRow
-          val builders = new GpuColumnarBatchBuilder(
-            TrampolineUtil.fromAttributes(sorter.projectedBatchSchema), 1, null)
-          converters.convert(cutoff, builders)
-          withResource(builders.build(1)) { cutoffCb =>
+          withResource(converters.convertBatch(Array(cutoff),
+            TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { cutoffCb =>
             withResource(sorter.upperBound(mergedBatch, cutoffCb)) { result =>
               withResource(result.copyToHost()) { hostResult =>
                 assert(hostResult.getRowCount == 1)
@@ -448,7 +445,9 @@ case class GpuOutOfCoreSortIterator(
                 pending.isEmpty)) {
           // This is a special case where we have everything we need to output already so why
           // bother with another contig split just to put it into the queue
-          return Some(GpuColumnVector.incRefCounts(mergedBatch))
+          withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
+            return Some(sorter.removeProjectedColumns(mergedTbl))
+          }
         }
         withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
           splitAfterSortAndSave(mergedTbl, sortSplitOffset)

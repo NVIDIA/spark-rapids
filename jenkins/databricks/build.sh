@@ -21,6 +21,8 @@ SPARKSRCTGZ=$1
 # version of Apache Spark we are building against
 BASE_SPARK_VERSION=$2
 BUILD_PROFILES=$3
+BUILD_PROFILES=${BUILD_PROFILES:-'databricks301,!snapshot-shims'}
+BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.0.1'}
 
 echo "tgz is $SPARKSRCTGZ"
 echo "Base Spark version is $BASE_SPARK_VERSION"
@@ -31,11 +33,14 @@ sudo apt install -y maven
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
 
-rm -rf spark-rapids
-mkdir spark-rapids
-echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
-tar -zxvf $SPARKSRCTGZ -C spark-rapids
-cd spark-rapids
+if [[ -n $SPARKSRCTGZ ]]
+then
+    rm -rf spark-rapids
+    mkdir spark-rapids
+    echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
+    tar -zxvf $SPARKSRCTGZ -C spark-rapids
+    cd spark-rapids
+fi
 export WORKSPACE=`pwd`
 
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
@@ -98,36 +103,5 @@ mvn -B install:install-file \
 
 mvn -B -P${BUILD_PROFILES} clean package -DskipTests
 
-# Copy so we pick up new built jar and latest CuDF jar. Note that the jar names have to be
-# exactly what is in the statically setup Databricks cluster we use.
-echo "Copying rapids jars: dist/target/$RAPIDS_BUILT_JAR udf-examples/target/$RAPIDS_UDF_JAR $DB_JAR_LOC"
-sudo cp dist/target/$RAPIDS_BUILT_JAR udf-examples/target/$RAPIDS_UDF_JAR $DB_JAR_LOC
-echo "Copying cudf jars: $CUDF_JAR $DB_JAR_LOC"
-sudo cp $CUDF_JAR $DB_JAR_LOC
-
-# tests
-export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
-sudo /databricks/conda/envs/databricks-ml-gpu/bin/pip install pytest sre_yield requests pandas \
-	pyarrow findspark pytest-xdist
-cd /home/ubuntu/spark-rapids/integration_tests
-export SPARK_HOME=/databricks/spark
-# change to not point at databricks confs so we don't conflict with their settings
-export SPARK_CONF_DIR=$PWD
-export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip
-sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
-sudo chmod 777 /databricks/data/logs/
-sudo chmod 777 /databricks/data/logs/*
-echo { \"port\":\"15002\" } > ~/.databricks-connect
-if [ `ls $DB_JAR_LOC/rapids* | wc -l` -gt 2 ]; then
-    echo "ERROR: Too many rapids jars in $DB_JAR_LOC"
-    ls $DB_JAR_LOC/rapids*
-    exit 1
-fi
-if [ `ls $DB_JAR_LOC/cudf* | wc -l` -gt 1 ]; then
-    echo "ERROR: Too many cudf jars in $DB_JAR_LOC"
-    ls $DB_JAR_LOC/cudf*
-    exit 1
-fi
-bash run_pyspark_from_build.sh --runtime_env="databricks"
 cd /home/ubuntu
 tar -zcvf spark-rapids-built.tgz spark-rapids

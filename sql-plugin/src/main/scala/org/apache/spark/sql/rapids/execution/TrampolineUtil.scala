@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroa
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.storage.BlockManagerId
 import org.apache.spark.util.Utils
 
 object TrampolineUtil {
@@ -42,6 +43,8 @@ object TrampolineUtil {
   def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
 
   def fromAttributes(attrs: Seq[Attribute]): StructType = StructType.fromAttributes(attrs)
+
+  def toAttributes(structType: StructType): Seq[Attribute] = structType.toAttributes
 
   def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
 
@@ -116,4 +119,12 @@ object TrampolineUtil {
   def getSimpleName(cls: Class[_]): String = {
     Utils.getSimpleName(cls)
   }
+
+  /** Create a `BlockManagerId` instance */
+  def newBlockManagerId(
+      execId: String,
+      host: String,
+      port: Int,
+      topologyInfo: Option[String] = None): BlockManagerId =
+    BlockManagerId(execId, host, port, topologyInfo)
 }

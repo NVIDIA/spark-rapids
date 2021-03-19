@@ -289,9 +289,19 @@ case class GpuCast(
           withResource(input.getBase.nansToNulls()) { inputWithNansToNull =>
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
               inputWithoutNanAndInfinity =>
-                withResource(inputWithoutNanAndInfinity.mul(microsPerSec, DType.INT64)) {
-                  inputTimesMicrosCv =>
-                    inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
+                if (input.dataType() == FloatType &&
+                    ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
+                  withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
+                    withResource(doubles.mul(microsPerSec, DType.INT64)) {
+                      inputTimesMicrosCv =>
+                        inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
+                    }
+                  }
+                } else {
+                  withResource(inputWithoutNanAndInfinity.mul(microsPerSec, DType.INT64)) {
+                    inputTimesMicrosCv =>
+                      inputTimesMicrosCv.castTo(DType.TIMESTAMP_MICROSECONDS)
+                  }
                 }
             }
           }

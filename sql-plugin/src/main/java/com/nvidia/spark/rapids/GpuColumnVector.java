@@ -24,6 +24,7 @@ import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
 
+import org.apache.arrow.memory.ReferenceManager;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
@@ -54,6 +55,20 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     System.err.println("DEBUG " + name + " " + table);
     for (int col = 0; col < table.getNumberOfColumns(); col++) {
       debug(String.valueOf(col), table.getColumn(col));
+    }
+  }
+
+  /**
+   * Print to standard error the contents of a table. Note that this should never be
+   * called from production code, as it is very slow.  Also note that this is not production
+   * code.  You might need/want to update how the data shows up or add in support for more
+   * types as this really is just for debugging.
+   * @param name the name of the table to print out.
+   * @param cb the batch to print out.
+   */
+  public static synchronized void debug(String name, ColumnarBatch cb) {
+    try (Table table = from(cb)) {
+      debug(name, table);
     }
   }
 
@@ -107,23 +122,17 @@ public class GpuColumnVector extends GpuColumnVectorBase {
               hexString(hostCol.getUTF8(i)));
         }
       }
-    } else if (DType.INT32.equals(type)) {
-      for (int i = 0; i < hostCol.getRowCount(); i++) {
-        if (hostCol.isNull(i)) {
-          System.err.println(i + " NULL");
-        } else {
-          System.err.println(i + " " + hostCol.getInt(i));
-        }
-      }
-    } else if (DType.INT8.equals(type)) {
-      for (int i = 0; i < hostCol.getRowCount(); i++) {
-        if (hostCol.isNull(i)) {
-          System.err.println(i + " NULL");
-        } else {
-          System.err.println(i + " " + hostCol.getByte(i));
-        }
-      }
-    } else if (DType.BOOL8.equals(type)) {
+    } else if (DType.INT32.equals(type)
+            || DType.INT8.equals(type)
+            || DType.INT16.equals(type)
+            || DType.INT64.equals(type)
+            || DType.TIMESTAMP_DAYS.equals(type)
+            || DType.TIMESTAMP_SECONDS.equals(type)
+            || DType.TIMESTAMP_MICROSECONDS.equals(type)
+            || DType.TIMESTAMP_MILLISECONDS.equals(type)
+            || DType.TIMESTAMP_NANOSECONDS.equals(type)) {
+      debugInteger(hostCol, type);
+   } else if (DType.BOOL8.equals(type)) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
           System.err.println(i + " NULL");
@@ -131,17 +140,52 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           System.err.println(i + " " + hostCol.getBoolean(i));
         }
       }
-    } else if (DType.TIMESTAMP_MICROSECONDS.equals(type) ||
-        DType.INT64.equals(type)) {
+    } else if (DType.FLOAT64.equals(type)) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
           System.err.println(i + " NULL");
         } else {
-          System.err.println(i + " " + hostCol.getLong(i));
+          System.err.println(i + " " + hostCol.getDouble(i));
+        }
+      }
+    } else if (DType.FLOAT32.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " " + hostCol.getFloat(i));
         }
       }
     } else {
       System.err.println("TYPE " + type + " NOT SUPPORTED FOR DEBUG PRINT");
+    }
+  }
+
+  private static void debugInteger(HostColumnVector hostCol, DType intType) {
+    for (int i = 0; i < hostCol.getRowCount(); i++) {
+      if (hostCol.isNull(i)) {
+        System.err.println(i + " NULL");
+      } else {
+        final int sizeInBytes = intType.getSizeInBytes();
+        final Object value;
+        switch (sizeInBytes) {
+          case Byte.BYTES:
+            value = hostCol.getByte(i);
+            break;
+          case Short.BYTES:
+            value = hostCol.getShort(i);
+            break;
+          case Integer.BYTES:
+            value = hostCol.getInt(i);
+            break;
+          case Long.BYTES:
+            value = hostCol.getLong(i);
+            break;
+          default:
+            throw new IllegalArgumentException("INFEASIBLE: Unsupported integer-like type " + intType);
+        }
+        System.err.println(i + " " + value);
+      }
     }
   }
 
@@ -206,6 +250,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static final class GpuArrowColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private final ai.rapids.cudf.ArrowColumnBuilder[] builders;
 
+    private final ArrowBufReferenceHolder[] referenceHolders;
+
     /**
      * A collection of builders for building up columnar data from Arrow data.
      * @param schema the schema of the batch.
@@ -219,21 +265,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       fields = schema.fields();
       int len = fields.length;
       builders = new ai.rapids.cudf.ArrowColumnBuilder[len];
+      referenceHolders = new ArrowBufReferenceHolder[len];
       boolean success = false;
 
       try {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           builders[i] = new ArrowColumnBuilder(convertFrom(field.dataType(), field.nullable()));
+          referenceHolders[i] = new ArrowBufReferenceHolder();
         }
         success = true;
       } finally {
         if (!success) {
-          for (ai.rapids.cudf.ArrowColumnBuilder b: builders) {
-            if (b != null) {
-              b.close();
-            }
-          }
+          close();
         }
       }
     }
@@ -245,12 +289,15 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     protected ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
       GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
+      referenceHolders[builderIndex].releaseReferences();
       builders[builderIndex] = null;
       return gcv;
     }
 
     public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
-      HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows);
+      referenceHolders[colNum].addReferences(
+        HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), nullable, rows)
+      );
     }
 
     public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
@@ -263,6 +310,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         if (b != null) {
           b.close();
         }
+      }
+      for (ArrowBufReferenceHolder holder: referenceHolders) {
+        holder.releaseReferences();
       }
     }
   }
@@ -348,6 +398,25 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           b.close();
         }
       }
+    }
+  }
+
+  private static final class ArrowBufReferenceHolder {
+    private List<ReferenceManager> references = new ArrayList<>();
+
+    public void addReferences(List<ReferenceManager> refs) {
+      references.addAll(refs);
+      refs.forEach(ReferenceManager::retain);
+    }
+
+    public void releaseReferences() {
+      if (references.isEmpty()) {
+        return;
+      }
+      for (ReferenceManager ref: references) {
+        ref.release();
+      }
+      references.clear();
     }
   }
 

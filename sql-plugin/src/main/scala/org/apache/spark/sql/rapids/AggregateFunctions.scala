@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector}
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -192,10 +192,29 @@ class CudfCount(ref: Expression) extends CudfAggregate(ref) {
 }
 
 class CudfSum(ref: Expression) extends CudfAggregate(ref) {
+  // Up to 3.1.1, analyzed plan widened the input column type before applying
+  // aggregation. Thus even though we did not explicitly pass the output column type
+  // we did not run into integer overflow issues:
+  //
+  // == Analyzed Logical Plan ==
+  // sum(shorts): bigint
+  // Aggregate [sum(cast(shorts#77 as bigint)) AS sum(shorts)#94L]
+  //
+  // In Spark's main branch (3.2.0-SNAPSHOT as of this comment), analyzed logical plan
+  // no longer applies the cast to the input column such that the output column type has to
+  // be passed explicitly into aggregation
+  //
+  // == Analyzed Logical Plan ==
+  // sum(shorts): bigint
+  // Aggregate [sum(shorts#33) AS sum(shorts)#50L]
+  //
+  @transient val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
+
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum
-  override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum
+    (col: cudf.ColumnVector) => col.sum(rapidsSumType)
+
+  override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar = updateReductionAggregate
+
   override lazy val updateAggregate: Aggregation = Aggregation.sum()
   override lazy val mergeAggregate: Aggregation = Aggregation.sum()
   override def toString(): String = "CudfSum"
@@ -329,12 +348,8 @@ case class GpuMax(child: Expression) extends GpuDeclarativeAggregate
     Aggregation.max().onColumn(inputs.head._2)
 }
 
-case class GpuSum(child: Expression)
+case class GpuSum(child: Expression, resultType: DataType)
   extends GpuDeclarativeAggregate with ImplicitCastInputTypes with GpuAggregateWindowFunction {
-  private lazy val resultType = child.dataType match {
-    case _: DoubleType => DoubleType
-    case _ => LongType
-  }
 
   private lazy val cudfSum = AttributeReference("sum", resultType)()
 

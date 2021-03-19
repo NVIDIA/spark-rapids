@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,7 +65,8 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 object GpuShuffleEnv extends Logging {
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
 
-  private var isRapidsShuffleManagerInitialized: Boolean  = false
+  var mgr: Option[RapidsShuffleInternalManagerBase] = None
+
   @volatile private var env: GpuShuffleEnv = _
 
   //
@@ -73,15 +74,19 @@ object GpuShuffleEnv extends Logging {
   //
 
   def isRapidsShuffleEnabled: Boolean = {
-    val isRapidsManager = GpuShuffleEnv.isRapidsShuffleManagerInitialized
+    val isRapidsManager = mgr.isDefined
     val externalShuffle = SparkEnv.get.blockManager.externalShuffleServiceEnabled
     isRapidsManager && !externalShuffle
   }
 
-  def setRapidsShuffleManagerInitialized(initialized: Boolean, className: String): Unit = {
-    assert(className == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
-    logInfo("RapidsShuffleManager is initialized")
-    isRapidsShuffleManagerInitialized = initialized
+  def setRapidsShuffleManager(
+    managerOpt: Option[RapidsShuffleInternalManagerBase] = None): Unit = {
+    if (managerOpt.isDefined) {
+      val manager = managerOpt.get
+      assert(manager.getClass.getCanonicalName == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
+      logInfo("RapidsShuffleManager is initialized")
+    }
+    mgr = managerOpt
   }
 
   def getCatalog: ShuffleBufferCatalog = if (env == null) {

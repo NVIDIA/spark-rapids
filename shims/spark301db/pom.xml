@@ -73,7 +73,6 @@
 
     <properties>
         <parquet.version>1.10.1</parquet.version>
-        <spark301db.version>3.0.1-databricks</spark301db.version>
         <arrow.version>0.15.1</arrow.version>
     </properties>
 
