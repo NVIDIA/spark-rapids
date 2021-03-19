@@ -460,11 +460,11 @@ class GpuArrowPythonRunner(
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
           pythonInSchema.flatMap(flattenColumnNames(_)).foreach { case (colName, nullable) =>
-              if (nullable) {
-                builder.withColumnNames(colName)
-              } else {
-                builder.withNotNullableColumnNames(colName)
-              }
+            if (nullable) {
+              builder.withColumnNames(colName)
+            } else {
+              builder.withNotNullableColumnNames(colName)
+            }
           }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
