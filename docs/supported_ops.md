@@ -402,7 +402,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (unionByName will not optionally fill missing columns with nulls when the col has structs; missing nested BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (unionByName will not optionally fill missing columns with nulls when the col has structs; missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>

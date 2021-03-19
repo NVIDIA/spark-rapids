@@ -37,7 +37,7 @@ def test_union(data_gen):
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
 
 @pytest.mark.parametrize('data_gen', all_gen + [pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
-                                      StructGen([[ 'child0', DecimalGen(7, 2)]], nullable=False)])
+                                                pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]], nullable=False), marks=nested_scalar_mark)])
 @pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 def test_union_by_missing_col_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
