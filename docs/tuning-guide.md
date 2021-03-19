@@ -42,7 +42,7 @@ called [RMM](https://github.com/rapidsai/rmm) to mitigate this overhead. By defa
 the plugin will allocate `90%` (`0.9`) of the memory on the GPU and keep it as a pool that can
 be allocated from. If the pool is exhausted more memory will be allocated and added to the pool.
 Most of the time this is a huge win, but if you need to share the GPU with other 
-[libraries](ml-integration.md) that are not aware of RMM this can lead to memory issues, and you
+[libraries](additional-functionality/ml-integration.md) that are not aware of RMM this can lead to memory issues, and you
 may need to disable pooling.
 
 ## Pinned Memory
@@ -201,13 +201,8 @@ to the resulting output.  By enabling these operations either individually or wi
 `spark.rapids.sql.incompatibleOps.enabled` config it can greatly improve performance of your
 queries. Over time, we expect the number of incompatible operators to reduce.
 
-If you want to understand if an operation is or is not on the GPU and why, you can set 
-`spark.rapids.sql.explain` to `ALL` for the framework to log a message explaining every operator
-in the query plan and why it is or is not on the GPU. If you just want to see the operators
-not on the GPU you may set it to `NOT_ON_GPU`. Be aware that some queries end up being broken down
-into multiple jobs, and in those cases a separate log message might be output for each job. These
-are logged each time a query is compiled into an `RDD`, not just when the job runs. Because of
-this calling `explain` on a DataFrame will also trigger this to be logged. 
+If you want to understand if an operation is or is not on the GPU and why see second on
+[explain in the FAQ](FAQ.md#explain)
 
 The following configs all enable different types of incompatible operations that can improve
 performance.
