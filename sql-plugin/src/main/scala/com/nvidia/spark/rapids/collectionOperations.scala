@@ -36,7 +36,7 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
       return GpuColumnVector.from(GpuScalar.from(0), 0, IntegerType).getBase
     }
 
-    // Compute sizes of each cuDF.ListType to get sizes of each ArrayData and MapData, considering
+    // Compute sizes of cuDF.ListType to get sizes of each ArrayData or MapData, considering
     // MapData is represented as List of Struct in terms of cuDF.
     // We compute list size via subtracting the offset of next element(row) to the current offset.
     val collectionSize = {
