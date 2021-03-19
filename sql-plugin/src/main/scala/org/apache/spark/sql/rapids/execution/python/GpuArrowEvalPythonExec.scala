@@ -431,23 +431,25 @@ class GpuArrowPythonRunner(
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         val writer = {
 
-          lazy val flattenColumnNames: StructField => Seq[(String, Boolean)] = field => {
-            val colNames = mutable.ArrayBuffer[(String, Boolean)]((field.name, field.nullable))
-            field.dataType match {
+          lazy val flattenColumnNames: StructField => Seq[(String, Boolean)] = f => {
+            val colNames = mutable.ArrayBuffer[(String, Boolean)]()
+            if (f.name.nonEmpty) {
+              colNames.append((f.name, f.nullable))
+            }
+            f.dataType match {
               case structType: StructType =>
                 colNames.appendAll(structType.flatMap(flattenColumnNames(_)))
               case arrayType: ArrayType =>
+                // Dig into the child but not append the child itself by passing an empty name
                 colNames.appendAll(flattenColumnNames(
-                  StructField(s"${field.name}_child", arrayType.elementType, field.nullable)))
+                  StructField("", arrayType.elementType, f.nullable)))
               case mapType: MapType =>
-                // MapType is array of struct with two fields(key, value) in cuDF.
-                // so first `child` as the child column of array,
-                // then `child_key` and `child_value` for the key and value column respectively.
-                colNames.append((s"${field.name}_child", field.nullable))
+                // Dig into key and value in sequence, but skip key and value themselves
+                // by passing empty names
                 colNames.appendAll(flattenColumnNames(
-                  StructField(s"${field.name}_child_key", mapType.keyType, field.nullable)))
+                  StructField("", mapType.keyType, f.nullable)))
                 colNames.appendAll(flattenColumnNames(
-                  StructField(s"${field.name}_child_value", mapType.valueType, field.nullable)))
+                  StructField("", mapType.valueType, f.nullable)))
               case _ =>
             }
             colNames
@@ -459,11 +461,11 @@ class GpuArrowPythonRunner(
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
-          pythonInSchema.flatMap(flattenColumnNames(_)).foreach { case (colName, nullable) =>
+          pythonInSchema.flatMap(flattenColumnNames(_)).foreach { case (name, nullable) =>
             if (nullable) {
-              builder.withColumnNames(colName)
+              builder.withColumnNames(name)
             } else {
-              builder.withNotNullableColumnNames(colName)
+              builder.withNotNullableColumnNames(name)
             }
           }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
