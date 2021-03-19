@@ -431,28 +431,29 @@ class GpuArrowPythonRunner(
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         val writer = {
 
-          lazy val flattenColumnNames: StructField => Seq[(String, Boolean)] = f => {
-            val colNames = mutable.ArrayBuffer[(String, Boolean)]()
-            if (f.name.nonEmpty) {
-              colNames.append((f.name, f.nullable))
-            }
-            f.dataType match {
-              case structType: StructType =>
-                colNames.appendAll(structType.flatMap(flattenColumnNames(_)))
-              case arrayType: ArrayType =>
-                // Dig into the child but not append the child itself by passing an empty name
-                colNames.appendAll(flattenColumnNames(
-                  StructField("", arrayType.elementType, f.nullable)))
-              case mapType: MapType =>
-                // Dig into key and value in sequence, but skip key and value themselves
-                // by passing empty names
-                colNames.appendAll(flattenColumnNames(
-                  StructField("", mapType.keyType, f.nullable)))
-                colNames.appendAll(flattenColumnNames(
-                  StructField("", mapType.valueType, f.nullable)))
-              case _ =>
-            }
-            colNames
+          lazy val flattenColumnNames: (StructField, Boolean) => Seq[(String, Boolean)] =
+            (f, appendMe)=> {
+              val colNames = mutable.ArrayBuffer[(String, Boolean)]()
+              if (appendMe) {
+                colNames.append((f.name, f.nullable))
+              }
+              f.dataType match {
+                case structType: StructType =>
+                  colNames.appendAll(structType.flatMap(field => flattenColumnNames(field, true)))
+                case arrayType: ArrayType =>
+                  // Dig into the child but skip itself by specifying `appendMe` to false
+                  colNames.appendAll(flattenColumnNames(
+                    StructField("", arrayType.elementType, f.nullable), false))
+                case mapType: MapType =>
+                  // Dig into key and value in sequence, but skip themselves by
+                  // specifying `appendMe` to false
+                  colNames.appendAll(flattenColumnNames(
+                    StructField("", mapType.keyType, f.nullable), false))
+                  colNames.appendAll(flattenColumnNames(
+                    StructField("", mapType.valueType, f.nullable), false))
+                case _ =>
+              }
+              colNames
           }
 
           val builder = ArrowIPCWriterOptions.builder()
@@ -461,12 +462,13 @@ class GpuArrowPythonRunner(
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
-          pythonInSchema.flatMap(flattenColumnNames(_)).foreach { case (name, nullable) =>
-            if (nullable) {
-              builder.withColumnNames(name)
-            } else {
-              builder.withNotNullableColumnNames(name)
-            }
+          pythonInSchema.flatMap(f => flattenColumnNames(f, true))
+            .foreach { case (name, nullable) =>
+              if (nullable) {
+                builder.withColumnNames(name)
+              } else {
+                builder.withNotNullableColumnNames(name)
+              }
           }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
