@@ -304,7 +304,10 @@ class GpuParquetWriter(
       if (entry.nullable) {
         builder.withColumnNames(entry.name)
       } else {
-        builder.withNotNullableColumnNames(entry.name)
+        builder.withColumnNames(entry.name)
+        // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
+        // setting if the output is nullable or not.
+        //builder.withNotNullableColumnNames(entry.name)
       }
     })
     val options = builder.build()
