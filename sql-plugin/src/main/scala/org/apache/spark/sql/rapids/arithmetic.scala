@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.DecimalUtil.createCudfDecimal
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -110,7 +111,21 @@ object GpuMultiplyUtil {
   }
 }
 
-abstract class CudfDecimalMulDiv extends CudfBinaryArithmetic {
+case class GpuMultiply(
+    left: Expression,
+    right: Expression) extends CudfBinaryArithmetic {
+  override def inputType: AbstractDataType = NumericType
+
+  override def symbol: String = "*"
+
+  override def binaryOp: BinaryOp = BinaryOp.MUL
+
+  // Override the output type as a special case for decimal
+  override def dataType: DataType = (left.dataType, right.dataType) match {
+    case (l: DecimalType, r: DecimalType) =>  GpuMultiplyUtil.decimalDataType(l, r)
+    case _ => super.dataType
+  }
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     import DecimalUtil._
     (left.dataType, right.dataType) match {
@@ -123,7 +138,7 @@ abstract class CudfDecimalMulDiv extends CudfBinaryArithmetic {
         val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
         withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
           withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
-            val tmp = decimalLhs.binaryOp(binaryOp, decimalRhs, cudfOutputType)
+            val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
             if (tmp.getType != cudfOutputType) {
               withResource(tmp) { tmp =>
                 tmp.castTo(cudfOutputType)
@@ -151,7 +166,7 @@ abstract class CudfDecimalMulDiv extends CudfBinaryArithmetic {
         withResource(GpuScalar.from(rhs.getBigDecimal().intValue(), sparkDecimalType)) {
           decimalRhs =>
             withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
-              val tmp = decimalLhs.binaryOp(binaryOp, decimalRhs, cudfOutputType)
+              val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
               if (tmp.getType != cudfOutputType) {
                 withResource(tmp) { tmp =>
                   tmp.castTo(cudfOutputType)
@@ -179,7 +194,7 @@ abstract class CudfDecimalMulDiv extends CudfBinaryArithmetic {
         withResource(GpuScalar.from(lhs.getBigDecimal().intValue(), sparkDecimalType)) {
           decimalLhs =>
             withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
-              val tmp = decimalLhs.binaryOp(binaryOp, decimalRhs, cudfOutputType)
+              val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
               if (tmp.getType != cudfOutputType) {
                 withResource(tmp) { tmp =>
                   tmp.castTo(cudfOutputType)
@@ -192,22 +207,6 @@ abstract class CudfDecimalMulDiv extends CudfBinaryArithmetic {
       }
       case _ => super.doColumnar(lhs, rhs)
     }
-  }
-}
-
-case class GpuMultiply(
-    left: Expression,
-    right: Expression) extends CudfDecimalMulDiv {
-  override def inputType: AbstractDataType = NumericType
-
-  override def symbol: String = "*"
-
-  override def binaryOp: BinaryOp = BinaryOp.MUL
-
-  // Override the output type as a special case for decimal
-  override def dataType: DataType = (left.dataType, right.dataType) match {
-    case (l: DecimalType, r: DecimalType) =>  GpuMultiplyUtil.decimalDataType(l, r)
-    case _ => super.dataType
   }
 }
 
@@ -269,7 +268,7 @@ object GpuDivModLike {
   }
 }
 
-trait GpuDivModLike extends CudfDecimalMulDiv {
+trait GpuDivModLike extends CudfBinaryArithmetic {
   lazy val failOnError: Boolean = ShimLoader.getSparkShims.shouldFailDivByZero()
 
   override def nullable: Boolean = true
@@ -291,14 +290,14 @@ trait GpuDivModLike extends CudfDecimalMulDiv {
       }
     } else {
       withResource(replaceZeroWithNull(rhs)) { replaced =>
-        super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
+        super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
       }
     }
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     withResource(replaceZeroWithNull(rhs)) { replaced =>
-      super.doColumnar(lhs, GpuColumnVector.from(replaced, right.dataType))
+      super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
     }
   }
 
@@ -360,9 +359,23 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
+        val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
+          DecimalType.is32BitDecimalType(r)) {
+          // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+          val decimalType = createCudfDecimal(10, r.scale)
+          (lhs.getBase.castTo(decimalType), rhs.getBase.castTo(decimalType))
+        } else {
+          (lhs.getBase(), rhs.getBase())
+        }
         val newType = getIntermediaryType(r)
-        withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
-          modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
+        withResource(upcastedLhs) { upcastedLhs =>
+          withResource(upcastedRhs) { upcastedRhs =>
+            withResource(upcastedLhs.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
+              modLhs =>
+                super.doColumnar(GpuColumnVector.from(modLhs, newType),
+                  GpuColumnVector.from(upcastedRhs, DecimalType(10, r.scale)))
+            }
+          }
         }
       }
       case _ => super.doColumnar(lhs, rhs)
@@ -372,9 +385,23 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
+        val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
+          DecimalType.is32BitDecimalType(r)) {
+          // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+          val sparkDecimalType = DecimalType(10, r.scale)
+          val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
+          (lhs.getBase.castTo(decimalType),
+            Scalar.fromDecimal(decimalType.getScale(), rhs.getBigDecimal().intValue().toLong))
+        } else {
+          (lhs.getBase(), rhs)
+        }
         val newType = getIntermediaryType(r)
-        withResource(lhs.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
-          modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), rhs)
+        withResource(upcastedLhs) { upcastedLhs =>
+          withResource(upcastedRhs) { upcastedRhs =>
+            withResource(upcastedLhs.castTo(GpuColumnVector.getNonNestedRapidsType(newType))) {
+              modLhs => super.doColumnar(GpuColumnVector.from(modLhs, newType), upcastedRhs)
+            }
+          }
         }
       }
       case _ => super.doColumnar(lhs, rhs)
@@ -384,9 +411,23 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
+        val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
+          DecimalType.is32BitDecimalType(r)) {
+          // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+          val sparkDecimalType = DecimalType(10, r.scale)
+          val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
+          (Scalar.fromDecimal(decimalType.getScale(),
+            lhs.getBigDecimal().intValue().toLong), rhs.getBase.castTo(decimalType))
+        } else {
+          (lhs, rhs.getBase())
+        }
         val newType = getIntermediaryType(r)
-        withResource(GpuScalar.from(lhs.getBigDecimal.longValue(), newType)) { modLhs =>
-          super.doColumnar(modLhs, rhs)
+        withResource(upcastedRhs) { upcastedRhs =>
+          withResource(upcastedLhs) { upcastedLhs =>
+            withResource(GpuScalar.from(upcastedLhs.getBigDecimal.longValue(), newType)) { modLhs =>
+              super.doColumnar(modLhs, upcastedRhs)
+            }
+          }
         }
       }
       case _ => super.doColumnar(lhs, rhs)
