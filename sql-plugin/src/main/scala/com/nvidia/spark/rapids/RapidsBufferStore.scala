@@ -270,8 +270,8 @@ abstract class RapidsBufferStore(
       override val meta: TableMeta,
       initialSpillPriority: Long,
       override val spillCallback: RapidsBuffer.SpillCallback,
-      deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
-      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
+      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
+      deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
       extends RapidsBuffer with Arm {
     private val MAX_UNSPILL_ATTEMPTS = 100
     private[this] var isValid = true
