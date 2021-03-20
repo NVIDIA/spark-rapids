@@ -2690,7 +2690,7 @@ object GpuOverrides {
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
-        .withPsNote(TypeEnum.STRUCT, "unionByName will not optionally fill missing columns with " +
+        .withPsNote(TypeEnum.STRUCT, "unionByName will not optionally impute nulls for missing struct fields  " +
           "nulls when the col has structs"), TypeSig.all),
       (union, conf, p, r) => new SparkPlanMeta[UnionExec](union, conf, p, r) {
         override def convertToGpu(): GpuExec =
