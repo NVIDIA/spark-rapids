@@ -12329,8 +12329,8 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S*</td>
-<td>S*</td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
 <td> </td>
 <td> </td>
 </tr>
