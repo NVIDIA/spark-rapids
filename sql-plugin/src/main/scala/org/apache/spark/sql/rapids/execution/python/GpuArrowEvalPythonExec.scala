@@ -462,6 +462,7 @@ class GpuArrowPythonRunner(
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
+          // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
           pythonInSchema.flatMap(f => flattenColumnNames(f, true))
             .foreach { case (name, nullable) =>
               if (nullable) {
