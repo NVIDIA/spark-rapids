@@ -45,7 +45,7 @@ arrow_udf_conf = {
     'spark.rapids.sql.exec.WindowInPandasExec': 'true'
 }
 
-array_gens_for_scalar_udf = [ArrayGen(subGen) for subGen in arrow_common_gen] + \
+array_gens_for_udf = [ArrayGen(subGen) for subGen in arrow_common_gen] + \
         [ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
 
 ####################################################################
@@ -81,7 +81,7 @@ def test_iterator_math_udf(data_gen):
             conf=arrow_udf_conf)
 
 
-@pytest.mark.parametrize('data_gen', array_gens_for_scalar_udf, ids=idfn)
+@pytest.mark.parametrize('data_gen', array_gens_for_udf, ids=idfn)
 def test_pandas_scalar_udf_array_type(data_gen):
     def nested_size(nested):
         return pd.Series([nested.size]).repeat(nested.size)
