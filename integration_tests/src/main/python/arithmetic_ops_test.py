@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
 from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_310
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311
 import pyspark.sql.functions as f
 
 decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
@@ -524,7 +524,7 @@ def _test_div_by_zero(ansi_mode, expr):
 
 
 @pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
-@pytest.mark.xfail(condition=is_before_spark_310(), reason='https://github.com/apache/spark/pull/29882')
+@pytest.mark.xfail(condition=is_before_spark_311(), reason='https://github.com/apache/spark/pull/29882')
 def test_div_by_zero_ansi(expr):
     _test_div_by_zero(ansi_mode='ansi', expr=expr)
 

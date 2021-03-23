@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat
-from spark_session import with_cpu_session, with_spark_session, is_before_spark_310
+from spark_session import with_cpu_session, with_spark_session
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
