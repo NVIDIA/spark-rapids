@@ -20,6 +20,7 @@ from marks import incompat, approximate_float
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311
 import pyspark.sql.functions as f
+from pyspark.sql.utils import IllegalArgumentException
 
 decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
         decimal_gen_same_scale_precision, decimal_gen_64bit]
@@ -69,7 +70,10 @@ def test_multiplication_mixed(lhs, rhs):
                 f.col('a') * f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_neg_scale, DecimalGen(6, 3), DecimalGen(5, 5), DecimalGen(6, 0)], ids=idfn)
+@pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_neg_scale, DecimalGen(6, 3),
+ DecimalGen(5, 5), DecimalGen(6, 0),
+pytest.param(DecimalGen(38, 21), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU", raises=IllegalArgumentException)),
+pytest.param(DecimalGen(21, 17), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU", raises=IllegalArgumentException))], ids=idfn)
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
