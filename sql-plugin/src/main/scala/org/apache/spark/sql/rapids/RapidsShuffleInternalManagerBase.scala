@@ -56,7 +56,7 @@ class GpuShuffleBlockResolver(
     if (hasActiveShuffle) {
       throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
     }
-    wrapped.getBlockData(blockId)
+    wrapped.getBlockData(blockId, dirs)
   }
 
   override def stop(): Unit = wrapped.stop()
