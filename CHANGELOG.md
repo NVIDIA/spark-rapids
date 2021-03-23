@@ -3,6 +3,11 @@ Generated on 2021-03-23
 
 ## Release 0.4.1
 
+### Bugs Fixed
+|||
+|:---|:---|
+|[#1985](https://github.com/NVIDIA/spark-rapids/issues/1985)|[BUG] broadcast exchange can fail on 0.4|
+
 ### PRs
 |||
 |:---|:---|
