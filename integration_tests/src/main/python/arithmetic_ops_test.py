@@ -69,7 +69,10 @@ def test_multiplication_mixed(lhs, rhs):
                 f.col('a') * f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_neg_scale, DecimalGen(6, 3), DecimalGen(5, 5), DecimalGen(6, 0)], ids=idfn)
+@pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_neg_scale, DecimalGen(6, 3),
+ DecimalGen(5, 5), DecimalGen(6, 0),
+pytest.param(DecimalGen(38, 21), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU")),
+pytest.param(DecimalGen(21, 17), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU"))], ids=idfn)
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
