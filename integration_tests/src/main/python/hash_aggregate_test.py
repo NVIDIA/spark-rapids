@@ -20,7 +20,7 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_spark_session, is_spark_300, is_before_spark_310
+from spark_session import with_spark_session, is_spark_300, is_before_spark_311
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -400,7 +400,7 @@ def test_distinct_count_reductions(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'count(DISTINCT a)'))
 
-@pytest.mark.xfail(condition=is_before_spark_310(),
+@pytest.mark.xfail(condition=is_before_spark_311(),
         reason='Spark fixed distinct count of NaNs in 3.1')
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_distinct_float_count_reductions(data_gen):
