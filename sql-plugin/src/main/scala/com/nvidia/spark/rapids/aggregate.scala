@@ -738,8 +738,8 @@ case class GpuHashAggregateExec(
     val resultingBindAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
 
     val finalProjections = groupingExpressions ++
-        aggregateExpressions.map(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate]
-          .evaluateExpression)
+      aggregateExpressions.flatMap(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate]
+        .evaluateExpression)
 
     // boundInputReferences is used to pick out of the input batch the appropriate columns
     // for aggregation

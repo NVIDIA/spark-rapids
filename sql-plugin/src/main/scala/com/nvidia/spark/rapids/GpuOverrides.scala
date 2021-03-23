@@ -50,7 +50,7 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.{GpuPivotFirst, _}
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, GpuShuffleMeta}
 import org.apache.spark.sql.rapids.execution.python._
@@ -1813,6 +1813,25 @@ object GpuOverrides {
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
           a.withNewChildren(childExprs.map(_.convertToGpu()))
+      }),
+    expr[PivotFirst](
+      "Pivot first operator",
+      ExprChecks.fullAgg(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+        TypeSig.all,
+        Seq(ParamCheck(
+          "aggFunc",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+          TypeSig.all)),
+        Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN + TypeSig.commonCudfTypes,
+          TypeSig.BOOLEAN + TypeSig.commonCudfTypes))),
+      (pivot, conf, p, r) => new ExprMeta[PivotFirst](pivot, conf, p, r) {
+
+        override def convertToGpu(): GpuExpression = GpuPivotFirst(pivot.pivotColumn,
+          pivot.valueColumn, pivot.pivotColumnValues)
+
       }),
     expr[Count](
       "Count aggregate operator",
