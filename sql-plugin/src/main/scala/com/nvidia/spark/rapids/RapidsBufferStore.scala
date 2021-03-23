@@ -56,7 +56,9 @@ abstract class RapidsBufferStore(
 
     def add(buffer: RapidsBufferBase): Unit = synchronized {
       val old = buffers.put(buffer.id, buffer)
-      require(old == null, s"duplicate buffer registered: ${buffer.id}")
+      if (old != null) {
+        throw new DuplicateBufferException(s"duplicate buffer registered: ${buffer.id}")
+      }
       spillable.offer(buffer)
       totalBytesStored += buffer.size
     }
