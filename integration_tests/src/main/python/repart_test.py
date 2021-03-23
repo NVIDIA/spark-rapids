@@ -25,13 +25,17 @@ nested_scalar_mark=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rap
                                                     StructGen([['child1', IntegerGen()]])), marks=nested_scalar_mark),
                                       (StructGen([['child0', DecimalGen(7, 2)]], nullable=False),
                                        StructGen([['child1', IntegerGen()]], nullable=False))], ids=idfn)
-def test_union_struct(data_gen):
+@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
+# This tests the union of DF of structs with different types of cols as long as the struct itself
+# isn't null. This is a limitation in cudf because we don't support nested types as literals
+def test_union_struct_missing_children(data_gen):
     left_gen, right_gen = data_gen
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
 @pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
+# This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
@@ -39,10 +43,12 @@ def test_union(data_gen):
 @pytest.mark.parametrize('data_gen', all_gen + [pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
                                                 pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]], nullable=False), marks=nested_scalar_mark)])
 @pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
+# This tests the union of two DFs of structs with missing child column names. The missing child
+# column will be replaced by nulls in the output DF. This is a feature added in 3.1+
 def test_union_by_missing_col_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
-                                .unionByName(debug_df(binary_op_df(spark, data_gen).withColumnRenamed("a", "y")), True))
+                                .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True))
 
 @pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
 def test_union_by_name(data_gen):
