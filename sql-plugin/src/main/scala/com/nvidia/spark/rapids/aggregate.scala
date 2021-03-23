@@ -871,7 +871,9 @@ case class GpuHashAggregateExec(
             }
           }
         }
-        // If cvs is empty, we add a single row with zero value.
+        // If cvs is empty, we add a single row with zero value. The value in the row is
+        // meaningless as it doesn't matter what we put in it. The projection will add a zero
+        // column to the result set in case of a parameter-less count.
         // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
         // desired result compared to Spark-CPU.
         // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
