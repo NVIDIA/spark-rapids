@@ -440,12 +440,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast float to decimal (include NaN)") {
-    def doublesIncludeNaNs(ss: SparkSession): DataFrame = {
+    def floatsIncludeNaNs(ss: SparkSession): DataFrame = {
       mixedFloatDf(ss).select(col("floats").as("col"))
     }
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.FloatType, scale,
-        customDataGenerator = Some(doublesIncludeNaNs))
+        customDataGenerator = Some(floatsIncludeNaNs))
     }
   }
 

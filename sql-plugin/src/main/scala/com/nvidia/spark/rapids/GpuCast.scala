@@ -1073,7 +1073,9 @@ case class GpuCast(
       // Cast NaN values to nulls
       withResource(casted) { casted =>
         withResource(input.isNan) { inputIsNan =>
-          inputIsNan.ifElse(Scalar.fromNull(targetType), casted)
+          withResource(Scalar.fromNull(targetType)) { nullScalar =>
+            inputIsNan.ifElse(nullScalar, casted)
+          }
         }
       }
     }
