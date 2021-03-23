@@ -34,6 +34,12 @@ def test_single_orderby(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             conf = allow_negative_scale_of_decimal_conf)
 
+@pytest.mark.parametrize('shuffle_parts', [
+    pytest.param(1),
+    # This xfail would normally work but device-side asserts currently lead to memmory
+    # leaks, and they cause persitent bad state and good tests start failing
+    # pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
     pytest.param(StructGen([['child0', all_basic_struct_gen]]),
@@ -53,10 +59,14 @@ def test_single_orderby(data_gen, order):
         marks=pytest.mark.xfail(reason='opposite null order not supported')),
     pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
-def test_single_nested_orderby(data_gen, order):
+def test_single_nested_orderby_plain(data_gen, order, shuffle_parts):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            conf = allow_negative_scale_of_decimal_conf)
+            # TODO no interference with range partition once implemented
+            conf = {
+                **allow_negative_scale_of_decimal_conf,
+                **{'spark.sql.shuffle.partitions': shuffle_parts}
+            })
 
 # SPARK CPU itself has issue with negative scale for take ordered and project
 orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
@@ -66,6 +76,12 @@ def test_single_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
 
+@pytest.mark.parametrize('shuffle_parts', [
+    pytest.param(1),
+    # This xfail would normally work but device-side asserts currently lead to memmory
+    # leaks, and they cause persitent bad state and good tests start failing
+    # pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
     pytest.param(StructGen([['child0', all_basic_struct_gen]]),
@@ -85,9 +101,10 @@ def test_single_orderby_with_limit(data_gen, order):
                  marks=pytest.mark.xfail(reason='opposite null order not supported')),
     pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
-def test_single_nested_orderby_with_limit(data_gen, order):
+def test_single_nested_orderby_with_limit(data_gen, order, shuffle_parts):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
+        lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100),
+        conf = {'spark.sql.shuffle.partitions': shuffle_parts})
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
