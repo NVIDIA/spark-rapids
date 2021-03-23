@@ -1827,11 +1827,11 @@ object GpuOverrides {
           TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN + TypeSig.commonCudfTypes,
           TypeSig.BOOLEAN + TypeSig.commonCudfTypes))),
-      (pivot, conf, p, r) => new ExprMeta[PivotFirst](pivot, conf, p, r) {
-
-        override def convertToGpu(): GpuExpression = GpuPivotFirst(pivot.pivotColumn,
-          pivot.valueColumn, pivot.pivotColumnValues)
-
+      (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
+        override def convertToGpu(
+            pivotColumn: Expression,
+            valueColumn: Expression): GpuExpression = GpuPivotFirst(
+          pivotColumn, valueColumn, pivot.pivotColumnValues)
       }),
     expr[Count](
       "Count aggregate operator",

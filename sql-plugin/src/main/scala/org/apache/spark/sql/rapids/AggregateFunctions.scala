@@ -21,7 +21,7 @@ import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, Literal}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types._
@@ -390,9 +390,14 @@ case class GpuPivotFirst(
 
   val pivotColAttr = pivotColumnValues.map(a => AttributeReference(a.toString, valueDataType)())
 
-  override lazy val inputProjection: Seq[Expression] = pivotColumnValues.map(a =>
-    GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(a, pivotColumn.dataType)) ,
-      GpuLiteral(100, valueDataType), GpuLiteral(null, valueDataType)))
+  override lazy val inputProjection: Seq[Expression] = Seq(pivotColumn) ++ {
+    val expr = pivotColumnValues.map(a =>
+      GpuIf(GpuEqualTo(pivotColumn,
+        GpuLiteral(a.asInstanceOf[Literal].value, pivotColumn.dataType)),
+        valueColumn, GpuLiteral(null, valueDataType)))
+    println(expr)
+    expr
+  }
 
   override lazy val updateExpressions: Seq[GpuExpression] = {
     pivotColAttr.map(a => new CudfSum(a))
