@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark311
 
-import com.nvidia.spark.rapids.{GpuExec, MetricsLevel, RapidsConf}
+import com.nvidia.spark.rapids.{GpuExec, GpuMetric, MetricsLevel, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.DEBUG_LEVEL
 import com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
 
@@ -53,12 +53,7 @@ case class GpuInMemoryTableScanExec(attributes: Seq[Attribute],
     relation.cacheBuilder.serializer.vectorTypes(attributes, conf)
 
   private lazy val columnarInputRDD: RDD[ColumnarBatch] = {
-    val rapidsConf = new RapidsConf(conf)
-    val numOutputRows = if (MetricsLevel(rapidsConf.metricsLevel) == DEBUG_LEVEL) {
-      longMetric("numOutputRows")
-    } else {
-      null
-    }
+    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val buffers = filteredCachedBatches()
     relation.cacheBuilder.serializer.asInstanceOf[ParquetCachedBatchSerializer]
       .gpuConvertCachedBatchToColumnarBatch(
@@ -66,9 +61,7 @@ case class GpuInMemoryTableScanExec(attributes: Seq[Attribute],
         relation.output,
         attributes,
         conf).map { cb =>
-      if (numOutputRows != null) {
-        numOutputRows += cb.numRows()
-      }
+      numOutputRows += cb.numRows()
       cb
     }
   }
