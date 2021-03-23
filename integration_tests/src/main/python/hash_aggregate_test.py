@@ -418,6 +418,7 @@ def test_count(data_gen, parameterless):
             .selectExpr(
             'count(a)',
             'count()',
+            'count()',
             'count(1)'),
         conf = {'spark.sql.legacy.allowParameterlessCount': parameterless})
 
