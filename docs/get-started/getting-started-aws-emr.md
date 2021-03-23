@@ -136,7 +136,6 @@ default settings:
         "spark.rapids.memory.pinnedPool.size":"2G",
         "spark.executor.memoryOverhead":"2G",
         "spark.locality.wait":"0s",
-        "spark.sql.shuffle.partitions":"200",
         "spark.sql.files.maxPartitionBytes":"256m",
         "spark.sql.adaptive.enabled":"false"
         }

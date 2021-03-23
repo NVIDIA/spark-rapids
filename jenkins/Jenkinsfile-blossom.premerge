@@ -58,7 +58,6 @@ pipeline {
         GITHUB_TOKEN = credentials("github-token")
         URM_CREDS = credentials("urm_creds")
         URM_URL = "https://${ArtifactoryConstants.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
-        GPU_TYPE = credentials("pre-merge_gpu_type")
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
     }
@@ -142,7 +141,7 @@ pipeline {
                         }
 
 
-                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${GPU_TYPE}", '8', '32Gi') // cpu: 8, memory: 32Gi
+                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.PRE_MERGE_GPU_TYPE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     }
                 }
             }

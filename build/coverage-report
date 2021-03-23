@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ JVER=${JACOCO_VERSION:-"0.8.5"}
 JDEST=${JACOCO_DEST:-"./target/jacococli.jar"}
 TMP_CLASS=${TEMP_CLASS_LOC:-"./target/jacoco_classes/"}
 HTML_LOC=${HTML_LOCATION:="./target/jacoco-report/"}
+XML_LOC=${XML_LOCATION:="${HTML_LOC}"}
 DIST_JAR=${RAPIDS_DIST_JAR:-$(ls ./dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)}
 SOURCE_DIRS=${SOURCE_DIRS:-"./sql-plugin/src/main/scala/:./sql-plugin/src/main/java/:./shuffle-plugin/src/main/scala/"}
 
@@ -44,7 +45,9 @@ if [ "$#" != "0" ]; then
 else
   ARGS=$(find . -name "jacoco.exec" -printf "%p ")
 fi
+
+mkdir -p $XML_LOC
 # run the report
-java -jar "$JDEST" report --classfiles "$TMP_CLASS" --html "$HTML_LOC" $SOURCE_WITH_ARGS $ARGS
+java -jar "$JDEST" report --classfiles "$TMP_CLASS" --html "$HTML_LOC" --xml "$XML_LOC/jacoco.xml" $SOURCE_WITH_ARGS $ARGS
 
 echo "The report is at file://"$(readlink -f "$HTML_LOC"/index.html)
