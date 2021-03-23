@@ -1979,7 +1979,7 @@ object GpuOverrides {
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "param",
-          TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
         override def replaceMessage: String = "not block GPU acceleration"
@@ -2640,7 +2640,7 @@ object GpuOverrides {
         " Java process and the Python process. It also supports scheduling GPU resources" +
         " for the Python process when enabled",
       ExecChecks(
-        TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.STRUCT),
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all),
       (e, conf, p, r) =>
         new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {

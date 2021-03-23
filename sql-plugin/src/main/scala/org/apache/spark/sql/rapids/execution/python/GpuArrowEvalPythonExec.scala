@@ -430,32 +430,6 @@ class GpuArrowPythonRunner(
 
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         val writer = {
-
-          lazy val flattenColumnNames: (StructField, Boolean) => Seq[(String, Boolean)] =
-            (f, appendMe)=> {
-              val colNames = mutable.ArrayBuffer[(String, Boolean)]()
-              if (appendMe) {
-                colNames.append((f.name, f.nullable))
-              }
-              f.dataType match {
-                case structType: StructType =>
-                  colNames.appendAll(structType.flatMap(field => flattenColumnNames(field, true)))
-                case arrayType: ArrayType =>
-                  // Dig into the child but skip itself by specifying `appendMe` to false
-                  colNames.appendAll(flattenColumnNames(
-                    StructField("", arrayType.elementType, f.nullable), false))
-                case mapType: MapType =>
-                  // Dig into key and value in sequence, but skip themselves by
-                  // specifying `appendMe` to false
-                  colNames.appendAll(flattenColumnNames(
-                    StructField("", mapType.keyType, f.nullable), false))
-                  colNames.appendAll(flattenColumnNames(
-                    StructField("", mapType.valueType, f.nullable), false))
-                case _ =>
-              }
-              colNames
-          }
-
           val builder = ArrowIPCWriterOptions.builder()
           builder.withMaxChunkSize(batchSize)
           builder.withCallback((table: Table) => {
@@ -463,8 +437,7 @@ class GpuArrowPythonRunner(
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
           // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
-          pythonInSchema.flatMap(f => flattenColumnNames(f, true))
-            .foreach { case (name, nullable) =>
+          flattenNames(pythonInSchema).foreach { case (name, nullable) =>
               if (nullable) {
                 builder.withColumnNames(name)
               } else {
@@ -490,6 +463,16 @@ class GpuArrowPythonRunner(
           dataOut.flush()
           if (onDataWriteFinished != null) onDataWriteFinished()
         }
+      }
+
+      private def flattenNames(d: DataType, nullable: Boolean=true): Seq[(String, Boolean)] =
+        d match {
+          case s: StructType =>
+            s.flatMap(sf => Seq((sf.name, sf.nullable)) ++ flattenNames(sf.dataType, sf.nullable))
+          case m: MapType =>
+            flattenNames(m.keyType, nullable) ++ flattenNames(m.valueType, nullable)
+          case a: ArrayType => flattenNames(a.elementType, nullable)
+          case _ => Nil
       }
     }
   }
