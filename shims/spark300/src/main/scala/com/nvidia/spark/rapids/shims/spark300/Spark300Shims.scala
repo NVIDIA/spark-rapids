@@ -52,6 +52,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExc
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.internal.SQLConf.{COALESCE_PARTITIONS_INITIAL_PARTITION_NUM, SHUFFLE_PARTITIONS}
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
@@ -625,4 +626,17 @@ class Spark300Shims extends SparkShims {
   override def hasAliasQuoteFix: Boolean = false
 
   override def hasCastFloatTimestampUpcast: Boolean = false
+
+  // https://github.com/apache/spark/blob/39542bb81f8570219770bb6533c077f44f6cbd2a/
+  // sql/catalyst/src/main/scala/org/apache/spark/sql/internal/SQLConf.scala#L3329
+  override def numShufflePartitions: Int = {
+    val sqlConf = SQLConf.get
+    val defaultPartitions = sqlConf.getConf(SHUFFLE_PARTITIONS)
+    if (sqlConf.adaptiveExecutionEnabled && sqlConf.coalesceShufflePartitionsEnabled) {
+      sqlConf.getConf(COALESCE_PARTITIONS_INITIAL_PARTITION_NUM)
+        .getOrElse(defaultPartitions)
+    } else {
+      defaultPartitions
+    }
+  }
 }

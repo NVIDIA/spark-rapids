@@ -36,9 +36,7 @@ def test_single_orderby(data_gen, order):
 
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
-    # This xfail would normally work but device-side asserts currently lead to memmory
-    # leaks, and they cause persitent bad state and good tests start failing
-    # pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+    pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
 ])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
@@ -78,9 +76,7 @@ def test_single_orderby_with_limit(data_gen, order):
 
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
-    # This xfail would normally work but device-side asserts currently lead to memmory
-    # leaks, and they cause persitent bad state and good tests start failing
-    # pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+    pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
 ])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),

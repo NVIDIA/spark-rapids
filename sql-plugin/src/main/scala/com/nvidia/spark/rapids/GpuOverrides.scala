@@ -1826,11 +1826,17 @@ object GpuOverrides {
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
-          if (isNestedType(sortOrder.dataType) &&
-              sortOrder.nullOrdering != directionDefaultNullOrdering) {
-            willNotWorkOnGpu(s"Only default null ordering $directionDefaultNullOrdering " +
-              s"supported for nested types. Found: ${sortOrder.nullOrdering}")
+          if (isNestedType(sortOrder.dataType)) {
+            val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
+            if (sortOrder.nullOrdering != directionDefaultNullOrdering) {
+              willNotWorkOnGpu(s"Only default null ordering $directionDefaultNullOrdering " +
+                s"supported for nested types. Found: ${sortOrder.nullOrdering}")
+            }
+
+            if (ShimLoader.getSparkShims.numShufflePartitions > 1) {
+              willNotWorkOnGpu(s"Only single partition sort is enabled until " +
+                s"Range Partitioning for structs is implemented")
+            }
           }
         }
 
