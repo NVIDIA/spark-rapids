@@ -387,6 +387,14 @@ case class GpuCast(
               }
           }
         }
+      case (StringType, dt: DecimalType) =>
+        // To apply HALF_UP rounding strategy during casting to decimal, we firstly cast
+        // string to fp64. Then, cast fp64 to target decimal type to enforce HALF_UP rounding.
+        withResource(input.getBase.strip()) { trimmed =>
+          withResource(castStringToFloats(trimmed, ansiMode, DType.FLOAT64)) { fp =>
+            castFloatsToDecimal(fp, dt)
+          }
+        }
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.getBase.asByteList(true)
@@ -531,6 +539,7 @@ case class GpuCast(
               throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
+
         }
         // replace non-boolean values with null
         withResource(Scalar.fromNull(DType.STRING)) { nullString =>
@@ -1050,14 +1059,21 @@ case class GpuCast(
     }
 
     withResource(checkedInput) { checked =>
+      val targetType = DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale)
       // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
-        checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+      val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+        checked.castTo(targetType)
       } else {
         val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -(dt.scale + 1))
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+        }
+      }
+      // Cast NaN values to nulls
+      withResource(casted) { casted =>
+        withResource(input.isNan) { inputIsNan =>
+          inputIsNan.ifElse(Scalar.fromNull(targetType), casted)
         }
       }
     }
