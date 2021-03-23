@@ -22,8 +22,8 @@ import ai.rapids.cudf
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, If, NamedExpression}
@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
+import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate, GpuGetArrayItem}
 import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -516,6 +516,10 @@ case class GpuHashAggregateExec(
           aggregatedCb = null
 
           if (finalCb != null) {
+            // if we are pivoting.. and we are in the Final agg, lets turn our columns into an array
+            //TODO: ai.rapids.cudf.ColumnVector.makeList()
+
+
             // Perform the last project to get the correct shape that Spark expects. Note this will
             // add things like literals, that were not part of the aggregate into the batch.
             resultCvs = boundExpression.boundResultReferences.map { ref =>

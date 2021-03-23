@@ -385,15 +385,14 @@ case class GpuPivotFirst(
 
   val valueDataType = valueColumn.dataType
 
-  override val dataType: DataType = ArrayType(valueDataType)
+  override val dataType: DataType = valueDataType
   override val nullable: Boolean = false
 
   val pivotColAttr = pivotColumnValues.map(a => AttributeReference(a.toString, valueDataType)())
 
-  override lazy val inputProjection: Seq[Expression] = Seq(pivotColumn) ++ {
+  override lazy val inputProjection: Seq[Expression] =  {
     val expr = pivotColumnValues.map(a =>
-      GpuIf(GpuEqualTo(pivotColumn,
-        GpuLiteral(a.asInstanceOf[Literal].value, pivotColumn.dataType)),
+      GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(a, pivotColumn.dataType)),
         valueColumn, GpuLiteral(null, valueDataType)))
     println(expr)
     expr
