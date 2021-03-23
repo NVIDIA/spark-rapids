@@ -539,7 +539,6 @@ case class GpuCast(
               throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
-
         }
         // replace non-boolean values with null
         withResource(Scalar.fromNull(DType.STRING)) { nullString =>
