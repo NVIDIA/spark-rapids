@@ -941,7 +941,7 @@ object RapidsConf {
       .doubleConf
       .createWithDefault(0.15)
 
-  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptmizationEnabled")
+  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
       "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
       "have to turn it off, but its convenient for testing.")
