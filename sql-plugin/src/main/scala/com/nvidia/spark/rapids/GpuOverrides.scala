@@ -1714,29 +1714,39 @@ object GpuOverrides {
           (childExprs.head.dataType, childExprs(1).dataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val outputType = GpuDivideUtil.decimalDataType(l, r)
-              // We will never hit a case where outputType.precision < outputType.scale + r.scale.
-              // So there is no need to protect against that.
-              // The only two cases in which there is a possibility of the intermediary scale
-              // exceeding the intermediary precision is when l.precision < l.scale or l
-              // .precision < 0, both of which aren't possible.
-              // Proof:
-              // case 1:
-              // outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
-              // outputType.scale = p1 + s2 + p2 + 1 + 1
-              // To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
-              // which is never possible
+              // Case 1: OutputType.precision doesn't get truncated
+              //   We will never hit a case where outputType.precision < outputType.scale + r.scale.
+              //   So there is no need to protect against that.
+              //   The only two cases in which there is a possibility of the intermediary scale
+              //   exceeding the intermediary precision is when l.precision < l.scale or l
+              //   .precision < 0, both of which aren't possible.
+              //   Proof:
+              //   case 1:
+              //   outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
+              //   outputType.scale = p1 + s2 + p2 + 1 + 1
+              //   To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
+              //   which is never possible
               //
-              // case 2:
-              // outputType.precision = p1 - s1 + s2 + 6 + 1
-              // outputType.scale = 6 + 1
-              // To find out if outputType.precision < outputType.scale simplifies to p1 < 0
-              // which is never possible
-              //
+              //   case 2:
+              //   outputType.precision = p1 - s1 + s2 + 6 + 1
+              //   outputType.scale = 6 + 1
+              //   To find out if outputType.precision < outputType.scale simplifies to p1 < 0
+              //   which is never possible
+              // Case 2: OutputType.precision gets truncated to 38
+              //   In this case we have to make sure the r.precision + l.scale + r.scale + 1 <= 38
+              //   Otherwise the intermediate result will overflow
               // TODO We should revisit the proof one more time after we support 128-bit decimals
-              val intermediateResult = DecimalType(outputType.precision, outputType.scale + r.scale)
-              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
-                willNotWorkOnGpu("The actual output precision of the divide is too large" +
+              if (l.precision + l.scale + r.scale + 1 > 38) {
+                willNotWorkOnGpu("The intermediate output precision of the divide is too " +
+                  s"large to be supported on the GPU i.e. Decimal(${outputType.precision}, " +
+                  s"${outputType.scale + r.scale})")
+              } else {
+                val intermediateResult =
+                  DecimalType(outputType.precision, outputType.scale + r.scale)
+                if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+                  willNotWorkOnGpu("The actual output precision of the divide is too large" +
                     s" to fit on the GPU $intermediateResult")
+                }
               }
             case _ => // NOOP
           }
@@ -1979,7 +1989,7 @@ object GpuOverrides {
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "param",
-          TypeSig.commonCudfTypes,
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
         override def replaceMessage: String = "not block GPU acceleration"
@@ -2639,7 +2649,9 @@ object GpuOverrides {
       "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
         " for the Python process when enabled",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks(
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
       (e, conf, p, r) =>
         new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
           val udfs: Seq[BaseExprMeta[PythonUDF]] =
@@ -2688,7 +2700,11 @@ object GpuOverrides {
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+        .withPsNote(TypeEnum.STRUCT,
+          "unionByName will not optionally impute nulls for missing struct fields  " +
+          "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
       (union, conf, p, r) => new SparkPlanMeta[UnionExec](union, conf, p, r) {
         override def convertToGpu(): GpuExec =
           GpuUnionExec(childPlans.map(_.convertIfNeeded()))
