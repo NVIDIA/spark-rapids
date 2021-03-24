@@ -99,41 +99,29 @@ else
     ## Under cloud environment, overwrite the '--std_input_path' param to point to the distributed file path
     INPUT_PATH=${INPUT_PATH:-"$SCRIPTPATH"}
 
+    RUN_TESTS_COMMAND="$SCRIPTPATH"/runtests.py\ --rootdir\ "$LOCAL_ROOTDIR"\ "$LOCAL_ROOTDIR"/src/main/python
+    TEST_COMMON_OPTS="-v -rfExXs ""$TEST_TAGS"" \
+          --std_input_path=""$INPUT_PATH""/src/test/resources \
+          --color=yes \
+          ""$TEST_TYPE_PARAM"" \
+          ""$TEST_ARGS"" \
+          ""$RUN_TEST_PARAMS"" \
+          ""$@"
+
+    export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
+    export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
+    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
+    export PYSP_TEST_spark_ui_showConsoleProgress='false'
+    export PYSP_TEST_spark_sql_session_timeZone='UTC'
+    export PYSP_TEST_spark_sql_shuffle_partitions='12'
     if [[ "${TEST_PARALLEL_OPTS}" != "" ]];
     then
-        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
-        export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
-        export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
-        export PYSP_TEST_spark_ui_showConsoleProgress='false'
-        export PYSP_TEST_spark_sql_session_timeZone='UTC'
-        export PYSP_TEST_spark_sql_shuffle_partitions='12'
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
         export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
-
-        python \
-          "$SCRIPTPATH"/runtests.py --rootdir "$LOCAL_ROOTDIR" "$LOCAL_ROOTDIR"/src/main/python \
-          $TEST_PARALLEL_OPTS \
-          -v -rfExXs "$TEST_TAGS" \
-          --std_input_path="$INPUT_PATH"/src/test/resources/ \
-          --color=yes \
-          $TEST_TYPE_PARAM \
-          "$TEST_ARGS" \
-          $RUN_TEST_PARAMS \
-          "$@"
+        python $RUN_TESTS_COMMAND $TEST_PARALLEL_OPTS $TEST_COMMON_OPTS
     else
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-          --conf "spark.driver.extraJavaOptions=-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS" \
-          --conf 'spark.executor.extraJavaOptions=-ea -Duser.timezone=UTC' \
-          --conf 'spark.sql.session.timeZone=UTC' \
-          --conf 'spark.sql.shuffle.partitions=12' \
-          $SPARK_SUBMIT_FLAGS \
-          "$SCRIPTPATH"/runtests.py --rootdir "$LOCAL_ROOTDIR" "$LOCAL_ROOTDIR"/src/main/python \
-          -v -rfExXs "$TEST_TAGS" \
-          --std_input_path="$INPUT_PATH"/src/test/resources/ \
-          --color=yes \
-          $TEST_TYPE_PARAM \
-          "$TEST_ARGS" \
-          $RUN_TEST_PARAMS \
-          "$@"
+            --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
+            $SPARK_SUBMIT_FLAGS $RUN_TESTS_COMMAND $TEST_COMMON_OPTS
     fi
 fi
