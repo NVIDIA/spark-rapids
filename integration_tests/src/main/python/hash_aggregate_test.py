@@ -264,7 +264,7 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
-    condition=not is_before_spark_310(), reason="parameterless count not supported by default in Spark 3.1+"))])
+    condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, parameterless):
     conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_sql(
@@ -290,7 +290,7 @@ def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, paramet
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
                          ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
-    condition=not is_before_spark_310(), reason="parameterless count not supported by default in Spark 3.1+"))])
+    condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_hash_query_max_with_multiple_distincts(data_gen, conf, parameterless):
     conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_sql(
@@ -344,7 +344,7 @@ def test_hash_query_max_bug(data_gen):
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
                                       _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
-    condition=not is_before_spark_310(), reason="parameterless count not supported by default in Spark 3.1+"))])
+    condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_hash_agg_with_nan_keys(data_gen, parameterless):
     _no_nans_float_conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_sql(
@@ -392,7 +392,7 @@ non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
-    condition=not is_before_spark_310(), reason="parameterless count not supported by default in Spark 3.1+"))])
+    condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_generic_reductions(data_gen, parameterless):
     _no_nans_float_conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_collect(
@@ -411,7 +411,7 @@ def test_generic_reductions(data_gen, parameterless):
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
-    condition=not is_before_spark_310(), reason="parameterless count not supported by default in Spark 3.1+"))])
+    condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_count(data_gen, parameterless):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen) \
