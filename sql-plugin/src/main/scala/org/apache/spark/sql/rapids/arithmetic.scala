@@ -391,7 +391,7 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
           (lhs.getBase.castTo(decimalType),
-            Scalar.fromDecimal(decimalType.getScale(), rhs.getBigDecimal().intValue().toLong))
+            GpuScalar.from(rhs.getBigDecimal().intValue().toLong, sparkDecimalType))
         } else {
           (lhs.getBase(), rhs)
         }
@@ -416,8 +416,8 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
           // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
-          (Scalar.fromDecimal(decimalType.getScale(),
-            lhs.getBigDecimal().intValue().toLong), rhs.getBase.castTo(decimalType))
+          (GpuScalar.from(lhs.getBigDecimal().intValue().toLong, sparkDecimalType),
+            rhs.getBase.castTo(decimalType))
         } else {
           (lhs, rhs.getBase())
         }
