@@ -439,7 +439,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("cast float to decimal (include NaN)") {
+  test("cast float to decimal (include NaN/INF/-INF)") {
     def floatsIncludeNaNs(ss: SparkSession): DataFrame = {
       mixedFloatDf(ss).select(col("floats").as("col"))
     }
@@ -456,7 +456,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("cast double to decimal (include NaN)") {
+  test("cast double to decimal (include NaN/INF/-INF)") {
     def doublesIncludeNaNs(ss: SparkSession): DataFrame = {
       mixedDoubleDf(ss).select(col("doubles").as("col"))
     }
@@ -601,7 +601,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("cast string to decimal (include NaN)") {
+  test("cast string to decimal (include NaN/INF/-INF)") {
     def doubleStrings(ss: SparkSession): DataFrame = {
       val df1 = floatsAsStrings(ss).selectExpr("cast(c0 as Double) as col")
       val df2 = doublesAsStrings(ss).select(col("c0").as("col"))
@@ -611,6 +611,23 @@ class CastOpSuite extends GpuExpressionTestSuite {
       testCastToDecimal(DataTypes.StringType, scale = scale,
         customDataGenerator = Some(doubleStrings))
     }
+  }
+
+  test("cast string to decimal (truncated cases)", org.scalatest.Tag("test")) {
+    def specialGenerator(column: Seq[String])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    testCastToDecimal(DataTypes.StringType, scale = 7,
+      customDataGenerator = Some(specialGenerator(Seq("9999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = 2,
+      customDataGenerator = Some(specialGenerator(Seq("999999999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = 0,
+      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = -1,
+      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = -10,
+      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
   }
 
   test("ansi_cast string to decimal exp") {
