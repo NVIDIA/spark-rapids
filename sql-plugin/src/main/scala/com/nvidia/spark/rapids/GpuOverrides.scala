@@ -2402,7 +2402,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs(0).convertToGpu())
       }),
     expr[CollectList](
-      "Collect a list of elements.",
+      "Collect a list of elements, now only supported by windowing.",
       // It should be 'fullAgg' eventually but now only support windowing,
       // so 'aggNotGroupByOrReduction'
       ExprChecks.aggNotGroupByOrReduction(
@@ -2415,7 +2415,7 @@ object GpuOverrides {
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
-      }).disabledByDefault("for now it is only supported by windowing."),
+      }),
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(

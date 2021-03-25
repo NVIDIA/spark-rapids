@@ -16434,8 +16434,8 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="6">CollectList</td>
 <td rowSpan="6">`collect_list`</td>
-<td rowSpan="6">Collect a list of elements.</td>
-<td rowSpan="6">This is disabled by default because for now it is only supported by windowing.</td>
+<td rowSpan="6">Collect a list of elements, now only supported by windowing.</td>
+<td rowSpan="6">None</td>
 <td rowSpan="2">aggregation</td>
 <td>input</td>
 <td><b>NS</b></td>
