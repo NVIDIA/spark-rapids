@@ -18029,7 +18029,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td><b>NS</b></td>
@@ -18433,7 +18433,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td><b>NS</b></td>
