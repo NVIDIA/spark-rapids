@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{ContiguousTable, Table}
+import ai.rapids.cudf.{ContiguousTable, OrderByArg, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.Path
@@ -276,7 +276,7 @@ class GpuDynamicPartitionDataWriter(
     val columnIds = 0 until t.getNumberOfColumns
     val distinct = t.groupBy(columnIds: _*).aggregate()
     try {
-      distinct.orderBy(columnIds.map(Table.asc(_, nullsSmallest)): _*)
+      distinct.orderBy(columnIds.map(OrderByArg.asc(_, nullsSmallest)): _*)
     } finally {
       distinct.close()
     }

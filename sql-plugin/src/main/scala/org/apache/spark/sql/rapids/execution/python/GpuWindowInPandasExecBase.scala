@@ -16,14 +16,15 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, Table}
+import ai.rapids.cudf.{Aggregation, OrderByArg}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -125,7 +126,7 @@ class GroupingIterator(
           }
         }
         val orderedTable = withResource(cntTable) { table =>
-          table.orderBy(partitionIndices.map(id => Table.asc(id, true)): _*)
+          table.orderBy(partitionIndices.map(id => OrderByArg.asc(id, true)): _*)
         }
         val (countHostCol, numRows) = withResource(orderedTable) { table =>
           // Yes copying the data to host, it would be OK since just copying the aggregated
