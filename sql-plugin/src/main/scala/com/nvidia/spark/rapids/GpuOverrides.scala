@@ -2350,7 +2350,8 @@ object GpuOverrides {
     expr[Size](
       "The size of an array or a map",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
-        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all),
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL
+            + TypeSig.DECIMAL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new UnaryExprMeta[Size](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
