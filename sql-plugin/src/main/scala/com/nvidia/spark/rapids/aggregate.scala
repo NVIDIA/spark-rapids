@@ -496,8 +496,27 @@ case class GpuHashAggregateExec(
           //       Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
           finalCb = if (boundExpression.boundFinalProjections.isDefined) {
             if (aggregatedCb != null) {
+
               val finalCvs =
                 boundExpression.boundFinalProjections.get.map { ref =>
+                  // 1. differentiate between pivot and non pivot expressions.
+                  // ref doesn't have this information.
+                  // 2. If "ref"" is not a pivot expr, just execute the current code to create
+                  // GpuColumnVector.
+                  // 3. If "ref" is a pivot expr, append that column to array of ColumnVector.
+                  // So it would basically have non pivot columns(grouping column) + one column
+                  // containing array of pivotValueColumns.
+
+                  println(s"INSIDE finalCb ref is $ref")
+                  // println(s"ref.datatype is ${ref.dataType}")
+                  // val ordinal = ref.asInstanceOf[GpuAlias].
+                  // child.asInstanceOf[GpuGetArrayItem].ordinal
+                  val cv1 = aggregatedCb.column(1).asInstanceOf[GpuColumnVector].getBase
+                  val cv2 = aggregatedCb.column(2).asInstanceOf[GpuColumnVector].getBase
+                  val arrayCV = ai.rapids.cudf.ColumnVector.makeList(cv1, cv2)
+                  val gpuCv = GpuColumnVector.from(arrayCV, ref.dataType)
+                  gpuCv
+
                   // aggregatedCb is made up of ColumnVectors
                   // and the final projections from the aggregates won't change that,
                   // so we can assume they will be vectors after we eval
@@ -517,7 +536,7 @@ case class GpuHashAggregateExec(
 
           if (finalCb != null) {
             // if we are pivoting.. and we are in the Final agg, lets turn our columns into an array
-            //TODO: ai.rapids.cudf.ColumnVector.makeList()
+            // TODO: ai.rapids.cudf.ColumnVector.makeList()
 
 
             // Perform the last project to get the correct shape that Spark expects. Note this will
