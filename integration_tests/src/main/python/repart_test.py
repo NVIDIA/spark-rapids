@@ -92,6 +92,7 @@ def test_repartion_df(num_parts, length):
     ([('a', decimal_gen_64bit)], ['a']),
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
+    ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('cc0', boolean_gen), ('cc1', string_gen)]))]))], ['a']), 
     ([('a', byte_gen)], [f.col('a') - 5]), 
     ([('a', long_gen)], [f.col('a') + 15]), 
     ([('a', byte_gen), ('b', boolean_gen)], ['a', 'b']),
