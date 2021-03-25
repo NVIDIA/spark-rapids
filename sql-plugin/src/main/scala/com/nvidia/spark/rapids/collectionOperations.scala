@@ -32,18 +32,17 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
 
-    val nullScalar = if (legacySizeOfNull) {
-      GpuScalar.from(-1)
-    } else {
-      GpuScalar.from(null, IntegerType)
-    }
     // Compute sizes of cuDF.ListType to get sizes of each ArrayData or MapData, considering
     // MapData is represented as List of Struct in terms of cuDF.
     withResource(input.getBase.countElements()) { collectionSize =>
-      withResource(nullScalar) { nullScalar =>
-        withResource(input.getBase.isNull) { inputIsNull =>
-          inputIsNull.ifElse(nullScalar, collectionSize)
+      if (legacySizeOfNull) {
+        withResource(GpuScalar.from(-1)) { nullScalar =>
+          withResource(input.getBase.isNull) { inputIsNull =>
+            inputIsNull.ifElse(nullScalar, collectionSize)
+          }
         }
+      } else {
+        collectionSize.incRefCount()
       }
     }
   }
