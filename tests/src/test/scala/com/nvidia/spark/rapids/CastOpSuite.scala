@@ -613,7 +613,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("cast string to decimal (truncated cases)", org.scalatest.Tag("test")) {
+  test("cast string to decimal (truncated cases)") {
     def specialGenerator(column: Seq[String])(ss: SparkSession): DataFrame = {
       import ss.sqlContext.implicits._
       column.toDF("col")
@@ -659,6 +659,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val conf = new SparkConf()
         .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)
