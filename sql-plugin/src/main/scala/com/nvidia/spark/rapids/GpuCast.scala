@@ -85,18 +85,17 @@ class CastExprMeta[INPUT <: CastBase](
         "for more details. To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
     }
-    if (fromDataType.isInstanceOf[StructType]) {
-      val checks = rule.getChecks.asInstanceOf[CastChecks]
-      fromDataType.asInstanceOf[StructType].foreach{field =>
-        recursiveTagExprForGpuCheck(field.dataType)
-        if (toType == StringType) {
-          if (!checks.gpuCanCast(field.dataType, toType)) {
-            willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
-              s"Casting ${field.dataType} to ${toType} not currently supported. Refer to " +
-              "CAST documentation for more details.")
-          }
-        }
-      }
+    // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
+    if (!conf.isCastStringToDecimalEnabled && cast.child.dataType == DataTypes.StringType &&
+        cast.dataType.isInstanceOf[DecimalType]) {
+      willNotWorkOnGpu("Currently string to decimal type on the GPU might produce results which " +
+        "slightly differed from the correct results when the string represents any number " +
+        "exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For instance, the GPU " +
+        "returns 99999999999999987 given input string \"99999999999999999\". The cause of " +
+        "divergence is that we can not cast strings containing scientific notation to decimal " +
+        "directly. So, we have to cast strings to floats firstly. Then, cast floats to decimals. " +
+        "The first step may lead to precision loss. To enable this operation on the GPU, set " +
+        s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
     }
   }
 
@@ -408,6 +407,14 @@ case class GpuCast(
                     throw new IllegalStateException("Invalid integral type")
                 }
               }
+          }
+        }
+      case (StringType, dt: DecimalType) =>
+        // To apply HALF_UP rounding strategy during casting to decimal, we firstly cast
+        // string to fp64. Then, cast fp64 to target decimal type to enforce HALF_UP rounding.
+        withResource(input.getBase.strip()) { trimmed =>
+          withResource(castStringToFloats(trimmed, ansiMode, DType.FLOAT64)) { fp =>
+            castFloatsToDecimal(fp, dt)
           }
         }
 
@@ -1206,14 +1213,23 @@ case class GpuCast(
     }
 
     withResource(checkedInput) { checked =>
+      val targetType = DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale)
       // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
-        checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+      val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+        checked.castTo(targetType)
       } else {
         val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -(dt.scale + 1))
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+        }
+      }
+      // Cast NaN values to nulls
+      withResource(casted) { casted =>
+        withResource(input.isNan) { inputIsNan =>
+          withResource(Scalar.fromNull(targetType)) { nullScalar =>
+            inputIsNan.ifElse(nullScalar, casted)
+          }
         }
       }
     }

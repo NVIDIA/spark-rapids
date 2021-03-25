@@ -47,6 +47,7 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.execution.python.rapids.GpuAggregateInPandasExecMeta
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
@@ -1713,10 +1714,40 @@ object GpuOverrides {
           // decimal place so we can round it in GpuCheckOverflow
           (childExprs.head.dataType, childExprs(1).dataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val intermediateResult = GpuDivideUtil.decimalDataType(l, r)
-              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
-                willNotWorkOnGpu("The actual output precision of the divide is too large" +
+              val outputType = GpuDivideUtil.decimalDataType(l, r)
+              // Case 1: OutputType.precision doesn't get truncated
+              //   We will never hit a case where outputType.precision < outputType.scale + r.scale.
+              //   So there is no need to protect against that.
+              //   The only two cases in which there is a possibility of the intermediary scale
+              //   exceeding the intermediary precision is when l.precision < l.scale or l
+              //   .precision < 0, both of which aren't possible.
+              //   Proof:
+              //   case 1:
+              //   outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
+              //   outputType.scale = p1 + s2 + p2 + 1 + 1
+              //   To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
+              //   which is never possible
+              //
+              //   case 2:
+              //   outputType.precision = p1 - s1 + s2 + 6 + 1
+              //   outputType.scale = 6 + 1
+              //   To find out if outputType.precision < outputType.scale simplifies to p1 < 0
+              //   which is never possible
+              // Case 2: OutputType.precision gets truncated to 38
+              //   In this case we have to make sure the r.precision + l.scale + r.scale + 1 <= 38
+              //   Otherwise the intermediate result will overflow
+              // TODO We should revisit the proof one more time after we support 128-bit decimals
+              if (l.precision + l.scale + r.scale + 1 > 38) {
+                willNotWorkOnGpu("The intermediate output precision of the divide is too " +
+                  s"large to be supported on the GPU i.e. Decimal(${outputType.precision}, " +
+                  s"${outputType.scale + r.scale})")
+              } else {
+                val intermediateResult =
+                  DecimalType(outputType.precision, outputType.scale + r.scale)
+                if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+                  willNotWorkOnGpu("The actual output precision of the divide is too large" +
                     s" to fit on the GPU $intermediateResult")
+                }
               }
             case _ => // NOOP
           }
@@ -1959,7 +1990,7 @@ object GpuOverrides {
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "param",
-          TypeSig.commonCudfTypes,
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[PythonUDF](a, conf, p, r) {
         override def replaceMessage: String = "not block GPU acceleration"
@@ -2281,9 +2312,7 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          // Floating point values don't work because of -0.0 is not hashed properly
-          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-             TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
@@ -2315,6 +2344,16 @@ object GpuOverrides {
         TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
+      }),
+    expr[Size](
+      "The size of an array or a map",
+      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL
+            + TypeSig.DECIMAL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
+      (a, conf, p, r) => new UnaryExprMeta[Size](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuSize(child, a.legacySizeOfNull)
       }),
     expr[UnscaledValue](
       "Convert a Decimal to an unscaled long value for some aggregation optimizations",
@@ -2376,8 +2415,7 @@ object GpuOverrides {
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
-      }).disabledByDefault("for now the GPU collects null values to a list, but Spark does not." +
-      " This will be fixed in future releases."),
+      }),
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
@@ -2446,8 +2484,7 @@ object GpuOverrides {
           // TODO In 0.5 we should make the checks self documenting, and look more like what
           //  SparkPlan and Expression support
           //  https://github.com/NVIDIA/spark-rapids/issues/1915
-          val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-              TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL
+          val sig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
           hp.children.foreach { child =>
             sig.tagExprParam(this, child, "hash_key")
           }
@@ -2610,7 +2647,9 @@ object GpuOverrides {
       "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
         " for the Python process when enabled",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      ExecChecks(
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
       (e, conf, p, r) =>
         new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
           val udfs: Seq[BaseExprMeta[PythonUDF]] =
@@ -2659,7 +2698,11 @@ object GpuOverrides {
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+        .withPsNote(TypeEnum.STRUCT,
+          "unionByName will not optionally impute nulls for missing struct fields  " +
+          "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
       (union, conf, p, r) => new SparkPlanMeta[UnionExec](union, conf, p, r) {
         override def convertToGpu(): GpuExec =
           GpuUnionExec(childPlans.map(_.convertIfNeeded()))
