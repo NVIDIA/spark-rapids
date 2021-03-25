@@ -482,6 +482,36 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Create a Scalar for boundary value
+   * @param type the type of order by column
+   * @param value boundary value
+   * @return Scalar holding boundary value
+   */
+  public static Scalar createRangeWindowBoundary(DType type, long value) {
+    if (type.equals(DType.INT32)) {
+      return Scalar.fromInt((int) value);
+    } else if (type.equals(DType.INT64)) {
+      return Scalar.fromLong(value);
+    } else if (type.equals(DType.INT16)) {
+      return Scalar.fromShort((short) value);
+    } else if (type.equals(DType.INT8)) {
+      return Scalar.fromByte((byte) value);
+    } else if (type.equals(DType.TIMESTAMP_DAYS)) {
+      return Scalar.durationFromLong(DType.DURATION_DAYS, value);
+    } else if (type.equals(DType.TIMESTAMP_SECONDS)) {
+      return Scalar.durationFromLong(DType.DURATION_SECONDS, value);
+    } else if (type.equals(DType.TIMESTAMP_MILLISECONDS)) {
+      return Scalar.durationFromLong(DType.DURATION_MILLISECONDS, value);
+    } else if (type.equals(DType.TIMESTAMP_MICROSECONDS)) {
+      return Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value);
+    } else if (type.equals(DType.TIMESTAMP_NANOSECONDS)) {
+      return Scalar.durationFromLong(DType.DURATION_NANOSECONDS, value);
+    } else {
+      return Scalar.fromNull(type);
+    }
+  }
+
+  /**
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
    */

@@ -18,10 +18,9 @@ package com.nvidia.spark.rapids
 
 import scala.language.existentials
 
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, RollingAggregation, WindowOptions}
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
 import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
-import com.nvidia.spark.rapids.GpuWindowExpression.{getRangeBasedLower, getRangeBasedUpper}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
@@ -61,6 +60,44 @@ class GpuWindowExpressionMeta(
       -1
   }
 
+  /**
+   * Check if the boundary is unbounded
+   * @param boundary boundary expression
+   * @return Boolean
+   */
+  private def rangeBoundaryIsUnBounded(boundary: Expression): Boolean = boundary match {
+    case literal: Literal =>
+      literal.dataType match {
+        case IntegerType =>
+          val x = literal.value.asInstanceOf[Int]
+          x == Int.MaxValue || x == Int.MinValue
+        case ByteType =>
+          val x = literal.value.asInstanceOf[Byte]
+          x == Byte.MaxValue || x == Byte.MinValue
+        case ShortType =>
+          val x = literal.value.asInstanceOf[Short]
+          x == Short.MaxValue || x == Short.MinValue
+        case LongType =>
+          val x = literal.value.asInstanceOf[Long]
+          x == Long.MaxValue || x == Long.MinValue
+        case CalendarIntervalType =>
+          val ci = literal.value.asInstanceOf[CalendarInterval]
+          if (ci.months != 0 || ci.microseconds != 0) {
+            willNotWorkOnGpu("only days are supported for window range intervals")
+          }
+          ci.days == Int.MaxValue || ci.days == Int.MinValue
+        case t =>
+          willNotWorkOnGpu(s"unsupported window boundary type $t")
+          false
+      }
+    case UnboundedPreceding => true
+    case UnboundedFollowing => true
+    case CurrentRow => false
+    case _ =>
+      willNotWorkOnGpu(s"unsupported window boundary type ${boundary}")
+      false
+  }
+
   override def tagExprForGpu(): Unit = {
 
     // Must have two children:
@@ -70,11 +107,11 @@ class GpuWindowExpressionMeta(
 
     wrapped.windowSpec.frameSpecification match {
       case spec: SpecifiedWindowFrame =>
-        // Will also verify that the types are what we expect.
-        val lower = getBoundaryValue(spec.lower)
-        val upper = getBoundaryValue(spec.upper)
         spec.frameType match {
           case RowFrame =>
+            // Will also verify that the types are what we expect.
+            val lower = getBoundaryValue(spec.lower)
+            val upper = getBoundaryValue(spec.upper)
             windowFunction match {
               case Lead(_, _, _) | Lag(_, _, _) => // ignored we are good
               case _ =>
@@ -94,25 +131,28 @@ class GpuWindowExpressionMeta(
             // based iff the ranges we are looking at both unbounded. We do this for all range
             // queries because https://github.com/NVIDIA/spark-rapids/issues/1039 makes it so
             // we cannot support nulls in range queries
-            if (lower == Int.MinValue && upper == Int.MaxValue) {
+            // Will also verify that the types are what we expect.
+            val lowerIsUnBounded = rangeBoundaryIsUnBounded(spec.lower)
+            val upperIsUnBounded = rangeBoundaryIsUnBounded(spec.upper)
+            if (lowerIsUnBounded && upperIsUnBounded) {
               // this is okay because we will translate it to be a row query
             } else {
               val orderSpec = wrapped.windowSpec.orderSpec
-              val allTime = orderSpec.forall { so =>
+              if (orderSpec.length > 1) {
+                // We only support a single time column
+                willNotWorkOnGpu("only a single date/time or integral (Boolean exclusive)" +
+                  "based column in window range functions is supported")
+              }
+              val supported = orderSpec.forall { so =>
                 so.dataType match {
+                  case ByteType | ShortType | IntegerType | LongType => true
                   case DateType | TimestampType => true
                   case _ => false
                 }
               }
-              if (allTime) {
-                if (orderSpec.length > 1) {
-                  // We only support a single time column
-                  willNotWorkOnGpu("only a single date/time based column in window" +
-                      " range functions is supported")
-                }
-              } else {
-                willNotWorkOnGpu("a mixture of date/time and non date/time based" +
-                    " columns is not supported in a window range function")
+              if (!supported) {
+                willNotWorkOnGpu(s"the type of orderBy column is not supported in a window" +
+                  s" range function, found ${orderSpec(0).dataType}")
               }
             }
         }
@@ -168,14 +208,18 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     frameType match {
       case RowFrame   => evaluateRowBasedWindowExpression(cb)
       case RangeFrame =>
-        val lower = getRangeBasedLower(windowFrameSpec)
-        val upper = getRangeBasedUpper(windowFrameSpec)
-        if (lower == Int.MinValue && upper == Int.MaxValue) {
+        val orderByType = cb.column(windowSpec.partitionSpec.length).dataType()
+        val (isUnBoundedPreceding, _) = GpuWindowExpression.getRangeBasedLower(
+          GpuColumnVector.getNonNestedRapidsType(orderByType), windowFrameSpec, false)
+        val (isUnBoundedFollowing, _) = GpuWindowExpression.getRangeBasedUpper(
+          GpuColumnVector.getNonNestedRapidsType(orderByType), windowFrameSpec, false)
+        if (isUnBoundedPreceding && isUnBoundedFollowing) {
           // We already verified that this will be okay...
           evaluateRowBasedWindowExpression(cb)
         } else {
           evaluateRangeBasedWindowExpression(cb)
         }
+
       case allElse    =>
         throw new UnsupportedOperationException(
           s"Unsupported window expression frame type: $allElse")
@@ -229,15 +273,30 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     val aggColumn = withResource(GpuProjectExec.project(cb, boundRangeProjectList)) { projected =>
       withResource(GpuColumnVector.from(projected)) { table =>
         val bases = GpuColumnVector.extractBases(projected).zipWithIndex
-            .slice(totalExtraColumns, boundRangeProjectList.length)
-        val agg = windowFunc.windowAggregation(bases)
-            .overWindow(GpuWindowExpression.getRangeBasedWindowOptions(windowFrameSpec,
-              windowSpec.orderSpec,
-              numGroupingColumns))
-        withResource(table
-            .groupBy(0 until numGroupingColumns: _*)
-            .aggregateWindowsOverTimeRanges(agg)) { aggResultTable =>
-          aggResultTable.getColumn(0).incRefCount()
+          .slice(totalExtraColumns, boundRangeProjectList.length)
+
+        // get the preceding/following scalar to construct WindowOptions
+        val orderByType = table.getColumn(numGroupingColumns).getType
+        val (isUnboundedPreceding, preceding) = GpuWindowExpression.getRangeBasedLower(orderByType,
+          windowFrameSpec)
+        val (isUnBoundedFollowing, following) = GpuWindowExpression.getRangeBasedUpper(orderByType,
+          windowFrameSpec)
+
+        withResource(preceding) { preceding =>
+          withResource(following) { following =>
+            val agg = windowFunc.windowAggregation(bases)
+              .overWindow(GpuWindowExpression.getRangeBasedWindowOptions(windowSpec.orderSpec,
+                numGroupingColumns,
+                isUnboundedPreceding,
+                preceding,
+                isUnBoundedFollowing,
+                following))
+            withResource(table
+              .groupBy(0 until numGroupingColumns: _*)
+              .aggregateWindowsOverRanges(agg)) { aggResultTable =>
+              aggResultTable.getColumn(0).incRefCount()
+            }
+          }
         }
       }
     }
@@ -286,67 +345,47 @@ object GpuWindowExpression {
         .window(lower, upper).build()
   }
 
-  def getRangeBasedLower(windowFrameSpec : GpuSpecifiedWindowFrame): Int = {
+  def getRangeBasedLower(orderByType: DType, windowFrameSpec: GpuSpecifiedWindowFrame,
+      constructScalar: Boolean = true): (Boolean, Scalar) = {
     // FIXME: Currently, only negative or 0 values are supported.
-    val lower = getBoundaryValue(windowFrameSpec.lower)
-    if (lower > 0) {
-      throw new IllegalStateException(
-        s"Lower-bounds ahead of current row is not supported. Found: $lower")
-    }
-
-    // Now, translate the lower bound value to CUDF semantics:
-    // Spark's lower_bound (preceding CURRENT ROW) as a negative offset.
-    // CUDF requires a positive offset.
-    // Note: UNBOUNDED PRECEDING implies lower == Int.MinValue, which needs special handling
-    // for negation.
-    if (lower == Int.MinValue) {
-      Int.MaxValue
-    } else {
-      Math.abs(lower)
-    }
+    getRangeBoundaryValue(orderByType, windowFrameSpec.lower, constructScalar)
   }
 
-  def getRangeBasedUpper(windowFrameSpec : GpuSpecifiedWindowFrame): Int = {
-    val upper = getBoundaryValue(windowFrameSpec.upper)
-    if (upper < 0) {
-      throw new IllegalStateException(
-        s"Upper-bounds behind current row is not supported. Found: $upper")
-    }
-    upper
+  def getRangeBasedUpper(orderByType: DType, windowFrameSpec: GpuSpecifiedWindowFrame,
+      constructScalar: Boolean = true): (Boolean, Scalar) = {
+    getRangeBoundaryValue(orderByType, windowFrameSpec.upper, constructScalar)
   }
 
   def getRangeBasedWindowOptions(
-      windowFrameSpec : GpuSpecifiedWindowFrame,
       orderSpec: Seq[SortOrder],
-      timeColumnIndex : Int): WindowOptions = {
-    val lower = getRangeBasedLower(windowFrameSpec)
-    val upper = getRangeBasedUpper(windowFrameSpec)
-
+      orderByColumnIndex : Int,
+      isUnboundedPreceding: Boolean,
+      preceding: Scalar,
+      isUnBoundedFollowing: Boolean,
+      following: Scalar): WindowOptions = {
     val windowOptionBuilder = WindowOptions.builder()
                                 .minPeriods(1)
-                                .timestampColumnIndex(timeColumnIndex)
+                                .orderByColumnIndex(orderByColumnIndex)
 
-    if (lower.equals(Int.MaxValue)) {
+    if (isUnboundedPreceding) {
       windowOptionBuilder.unboundedPreceding()
-    }
-    else {
-      windowOptionBuilder.preceding(lower)
+    } else {
+      windowOptionBuilder.preceding(preceding)
     }
 
-    if (upper.equals(Int.MaxValue)) {
+    if (isUnBoundedFollowing) {
       windowOptionBuilder.unboundedFollowing()
-    }
-    else {
-      windowOptionBuilder.following(upper)
+    } else {
+      windowOptionBuilder.following(following)
     }
 
     // We only support a single time based column to order by right now, so just verify
     // that it is correct.
     assert(orderSpec.length == 1)
     if (orderSpec.head.isAscending) {
-      windowOptionBuilder.timestampAscending()
+      windowOptionBuilder.orderByAscending()
     } else {
-      windowOptionBuilder.timestampDescending()
+      windowOptionBuilder.orderByDescending()
     }
 
     windowOptionBuilder.build()
@@ -359,6 +398,63 @@ object GpuWindowExpression {
       literal.value.asInstanceOf[CalendarInterval].days
     case special: GpuSpecialFrameBoundary =>
       special.value
+    case anythingElse =>
+      throw new UnsupportedOperationException(s"Unsupported window frame expression $anythingElse")
+  }
+
+  /**
+   * Get the range boundary tuple
+   * @param orderByType the type of order by column
+   * @param boundary boundary expression
+   * @param constructScalar specifies if need to create Scalar for boundary
+   * @return ret: (Boolean, Scalar). the first element of tuple specifies if the boundary is
+   *         unBounded, the second element of tuple specifies the Scalar created from boundary
+   */
+  def getRangeBoundaryValue(orderByType: DType, boundary: Expression, constructScalar: Boolean):
+      (Boolean, Scalar) = boundary match {
+    case literal: GpuLiteral if literal.dataType.equals(ByteType) =>
+      val x = literal.value.asInstanceOf[Byte]
+      val isUnbounded = if (x == Byte.MinValue || x == Byte.MaxValue) true else false
+      val scalar = if (constructScalar) {
+        GpuColumnVector.createRangeWindowBoundary(orderByType, Math.abs(x).toByte)
+      } else null
+      (isUnbounded, scalar)
+    case literal: GpuLiteral if literal.dataType.equals(ShortType) =>
+      val x = literal.value.asInstanceOf[Short]
+      val isUnbounded = if (x == Short.MinValue || x == Short.MaxValue) true else false
+      val scalar = if (constructScalar) {
+        GpuColumnVector.createRangeWindowBoundary(orderByType, Math.abs(x).toShort)
+      } else null
+      (isUnbounded, scalar)
+    case literal: GpuLiteral if literal.dataType.equals(IntegerType) =>
+      val x = literal.value.asInstanceOf[Int]
+      val isUnbounded = if (x == Int.MinValue || x == Int.MaxValue) true else false
+      val scalar = if (constructScalar) {
+        GpuColumnVector.createRangeWindowBoundary(orderByType, Math.abs(x))
+      } else null
+      (isUnbounded, scalar)
+    case literal: GpuLiteral if literal.dataType.equals(LongType) =>
+      val x = literal.value.asInstanceOf[Long]
+      val isUnbounded = if (x == Long.MinValue || x == Long.MaxValue) true else false
+      val scalar = if (constructScalar) {
+        GpuColumnVector.createRangeWindowBoundary(orderByType, Math.abs(x))
+      } else null
+      (isUnbounded, scalar)
+    case literal: GpuLiteral if literal.dataType.equals(CalendarIntervalType) =>
+      // TimeStampDays -> DurationDays
+      val x = literal.value.asInstanceOf[CalendarInterval].days
+      val isUnbounded = if (x == Int.MinValue || x == Int.MaxValue) true else false
+      val scalar = if (constructScalar) {
+        GpuColumnVector.createRangeWindowBoundary(orderByType, Math.abs(x))
+      } else null
+      (isUnbounded, scalar)
+    case special: GpuSpecialFrameBoundary =>
+      val x = special.value
+      val isUnbounded = if (x == Int.MinValue || x == Int.MaxValue) true else false
+      val scalar = if (constructScalar) {
+        GpuColumnVector.createRangeWindowBoundary(orderByType, Math.abs(x))
+      } else null
+      (isUnbounded, scalar)
     case anythingElse =>
       throw new UnsupportedOperationException(s"Unsupported window frame expression $anythingElse")
   }
@@ -490,23 +586,22 @@ class GpuSpecifiedWindowFrameMeta(
           return None
         }
 
-        if (!bounds.dataType.equals(CalendarIntervalType)) {
-          return Some(s"Bounds for Range-based window frames must be specified in DAYS. " +
-            s"Found ${bounds.dataType}")
-        }
-
-        val interval = bounds.asInstanceOf[Literal].value.asInstanceOf[CalendarInterval]
-        if (interval.microseconds != 0 || interval.months != 0) { // DAYS == 0 is permitted.
-          return Some(s"Bounds for Range-based window frames must be specified only in DAYS. " +
-            s"Found $interval")
-        }
-
-        if (isLower && interval.days > 0) {
-          Some(s"Lower-bounds ahead of current row is not supported. Found: ${interval.days}")
-        } else if (!isLower && interval.days < 0) {
-          Some(s"Upper-bounds behind current row is not supported. Found: ${interval.days}")
-        } else {
-          None
+        bounds.dataType match {
+          case ByteType | ShortType | IntegerType | LongType => None
+          case CalendarIntervalType =>
+            val interval = bounds.asInstanceOf[Literal].value.asInstanceOf[CalendarInterval]
+            if (interval.microseconds != 0 || interval.months != 0) { // DAYS == 0 is permitted.
+              Some(s"Bounds for Range-based window frames must be specified only in DAYS. " +
+                s"Found $interval")
+            } else if (isLower && interval.days > 0) {
+              Some(s"Lower-bounds ahead of current row is not supported. Found: ${interval.days}")
+            } else if (!isLower && interval.days < 0) {
+              Some(s"Upper-bounds behind current row is not supported. Found: ${interval.days}")
+            } else {
+              None
+            }
+          case _ => Some(s"Bounds for Range-based window frames must be specified in Integral" +
+            s" type (Boolean exclusive) or DAYS. Found ${bounds.dataType}")
         }
       }
 
