@@ -78,6 +78,7 @@ class CastExprMeta[INPUT <: CastBase](
         "for more details. To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
     }
+    // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
     if (!conf.isCastStringToDecimalEnabled && cast.child.dataType == DataTypes.StringType &&
         cast.dataType.isInstanceOf[DecimalType]) {
       willNotWorkOnGpu("Currently string to decimal type on the GPU might produce results which " +
