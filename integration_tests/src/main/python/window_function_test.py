@@ -261,5 +261,4 @@ def test_window_aggs_for_rows_collect_list():
           collect_list(c_struct) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct
         from window_collect_table
-        ''',
-        {'spark.rapids.sql.expression.CollectList': 'true'})
+        ''')
