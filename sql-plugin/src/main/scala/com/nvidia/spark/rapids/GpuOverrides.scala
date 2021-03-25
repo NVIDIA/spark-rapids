@@ -2520,8 +2520,8 @@ object GpuOverrides {
 
         override def tagPartForGpu() {
           val numPartitions = rp.numPartitions
-          if (numPartitions > 1) {
-            willNotWorkOnGpu("only single partition sort is supported, " +
+          if (numPartitions > 1 && rp.ordering.exists(so => isNestedType(so.dataType))) {
+            willNotWorkOnGpu("only single partition sort is supported for nested types, " +
               s"actual partitions: $numPartitions")
           }
         }
@@ -2776,7 +2776,8 @@ object GpuOverrides {
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
         override def tagPlanForGpu() {
           if (!conf.stableSort && sort.sortOrder.exists(so => isNestedType(so.dataType))) {
-            willNotWorkOnGpu(s"it's disabled unless ${RapidsConf.STABLE_SORT.key} is true")
+            willNotWorkOnGpu("it's disabled for nested types " +
+              s"unless ${RapidsConf.STABLE_SORT.key} is true")
           }
         }
       }),
