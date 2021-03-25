@@ -565,8 +565,8 @@ object RapidsConf {
 
   val ENABLE_CAST_STRING_TO_DECIMAL = conf("spark.rapids.sql.castStringToDecimal.enabled")
     .doc("When set to true, enables casting from strings to decimal type on the GPU. Currently " +
-      "string to decimal type on the GPU might results which slightly differed from the correct " +
-      "results when the string represents any number exceeding the max precision that " +
+      "string to decimal type on the GPU might produce results which slightly differed from the " +
+      "correct results when the string represents any number exceeding the max precision that " +
       "CAST_STRING_TO_FLOAT can keep. For instance, the GPU returns 99999999999999987 given " +
       "input string \"99999999999999999\". The cause of divergence is that we can not cast " +
       "strings containing scientific notation to decimal directly. So, we have to cast strings " +

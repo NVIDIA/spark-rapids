@@ -80,8 +80,8 @@ class CastExprMeta[INPUT <: CastBase](
     }
     if (!conf.isCastStringToDecimalEnabled && cast.child.dataType == DataTypes.StringType &&
         cast.dataType.isInstanceOf[DecimalType]) {
-      willNotWorkOnGpu("Currently string to decimal type on the GPU might results which slightly " +
-        "differed from the correct results when the string represents any number " +
+      willNotWorkOnGpu("Currently string to decimal type on the GPU might produce results which " +
+        "slightly differed from the correct results when the string represents any number " +
         "exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For instance, the GPU " +
         "returns 99999999999999987 given input string \"99999999999999999\". The cause of " +
         "divergence is that we can not cast strings containing scientific notation to decimal " +
