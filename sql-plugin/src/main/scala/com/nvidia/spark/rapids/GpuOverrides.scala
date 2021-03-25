@@ -1834,12 +1834,6 @@ object GpuOverrides {
               willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
                 s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
             }
-
-            val numShufflePartitions = ShimLoader.getSparkShims.numShufflePartitions
-            if (numShufflePartitions > 1) {
-              willNotWorkOnGpu("only single partition sort is enabled until Range Partitioning " +
-                s"for structs is implemented, actual partions: $numShufflePartitions")
-            }
           }
         }
 
@@ -2524,6 +2518,14 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def tagPartForGpu() {
+          val numPartitions = rp.numPartitions
+          if (numPartitions > 1) {
+            willNotWorkOnGpu("only single partition sort is supported, " +
+              s"actual partitions: $numPartitions")
+          }
+        }
+
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
@@ -2771,7 +2773,13 @@ object GpuOverrides {
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
       ExecChecks(TypeSig.all - TypeSig.UDT.nested(), TypeSig.all),
-      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
+      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
+        override def tagPlanForGpu() {
+          if (!conf.stableSort && sort.sortOrder.exists(so => isNestedType(so.dataType))) {
+            willNotWorkOnGpu(s"it's disabled unless ${RapidsConf.STABLE_SORT.key} is true")
+          }
+        }
+      }),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),

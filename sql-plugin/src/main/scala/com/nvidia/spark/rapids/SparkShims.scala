@@ -217,6 +217,4 @@ trait SparkShims {
   def hasAliasQuoteFix: Boolean
 
   def hasCastFloatTimestampUpcast: Boolean
-
-  def numShufflePartitions: Int
 }
