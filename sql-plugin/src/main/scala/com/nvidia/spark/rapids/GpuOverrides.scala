@@ -47,6 +47,7 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.execution.python.rapids.GpuAggregateInPandasExecMeta
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
@@ -2311,9 +2312,7 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          // Floating point values don't work because of -0.0 is not hashed properly
-          TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-             TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
@@ -2349,7 +2348,8 @@ object GpuOverrides {
     expr[Size](
       "The size of an array or a map",
       ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
-        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all),
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL
+            + TypeSig.DECIMAL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new UnaryExprMeta[Size](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -2415,8 +2415,7 @@ object GpuOverrides {
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
-      }).disabledByDefault("for now the GPU collects null values to a list, but Spark does not." +
-      " This will be fixed in future releases."),
+      }),
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
@@ -2485,8 +2484,7 @@ object GpuOverrides {
           // TODO In 0.5 we should make the checks self documenting, and look more like what
           //  SparkPlan and Expression support
           //  https://github.com/NVIDIA/spark-rapids/issues/1915
-          val sig = TypeSig.BOOLEAN + TypeSig.BYTE + TypeSig.SHORT + TypeSig.INT + TypeSig.LONG +
-              TypeSig.STRING + TypeSig.NULL + TypeSig.DECIMAL
+          val sig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
           hp.children.foreach { child =>
             sig.tagExprParam(this, child, "hash_key")
           }

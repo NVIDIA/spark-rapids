@@ -9719,10 +9719,10 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
 <td>S</td>
 <td>S*</td>
 <td>S</td>
@@ -12329,8 +12329,8 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S*</td>
-<td>S*</td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
 <td> </td>
 <td> </td>
 </tr>
@@ -16435,7 +16435,7 @@ Accelerator support is described below.
 <td rowSpan="6">CollectList</td>
 <td rowSpan="6">`collect_list`</td>
 <td rowSpan="6">Collect a list of elements, now only supported by windowing.</td>
-<td rowSpan="6">This is disabled by default because for now the GPU collects null values to a list, but Spark does not. This will be fixed in future releases.</td>
+<td rowSpan="6">None</td>
 <td rowSpan="2">aggregation</td>
 <td>input</td>
 <td><b>NS</b></td>
@@ -18029,7 +18029,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td><b>NS</b></td>
@@ -18433,7 +18433,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td><b>NS</b></td>
