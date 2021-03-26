@@ -73,11 +73,6 @@ cluster.
     `spark.sql.adaptive.enabled` should be set to false.  In addition, the plugin does not work with
     the Databricks `spark.databricks.delta.optimizeWrite` option.
 
-   The `spark.python.daemon.module` option is to choose the right daemon module of python for Databricks.
-    And it is only required when you are going to run Pandas UDFs with the plugin. On Databricks, the
-    python runtime requires different parameters than the Spark one, so this dedicated python deamon module
-    'rapids.daemon_databricks' is created and should be specified here.
-
     ```bash
     spark.plugins com.nvidia.spark.SQLPlugin
     spark.task.resource.gpu.amount 0.1
@@ -86,10 +81,22 @@ cluster.
     spark.databricks.delta.optimizeWrite.enabled false
     spark.sql.adaptive.enabled false
     spark.rapids.sql.concurrentGpuTasks 2
-    spark.python.daemon.module rapids.daemon_databricks
     ```
 
     ![Spark Config](../img/Databricks/sparkconfig.png)
+
+   When you are going to run Pandas UDFs with GPU support from the plugin, at least two additional options
+    as below are required. The `spark.python.daemon.module` option is to choose the right daemon module
+    of python for Databricks. On Databricks, the python runtime requires different parameters than the
+    Spark one, so this dedicated python deamon module `rapids.daemon_databricks` is created and should
+    be specified here. Set the config [`spark.rapids.sql.python.gpu.enabled`](../configs.md) to true to
+    enable GPU support for python. More details please go to
+    [**GPU Scheduling For Pandas UDF**](../additional-functionality/rapids-udfs.md#gpu-scheduling-for-pandas-udf)
+
+    ```bash
+    spark.rapids.sql.python.gpu.enabled true
+    spark.python.daemon.module rapids.daemon_databricks
+    ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark with RAPIDS and cuDF.
