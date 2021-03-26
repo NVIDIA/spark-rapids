@@ -766,7 +766,8 @@ class CastChecks extends ExprChecks {
   val mapChecks: TypeSig = none
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
-  val structChecks: TypeSig = STRING
+  val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
+      "being cast to string")
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
 
   val udtChecks: TypeSig = none
