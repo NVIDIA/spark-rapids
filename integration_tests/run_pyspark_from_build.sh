@@ -84,11 +84,11 @@ else
     then
         # With xdist 0 and 1 are the same parallelsm but
         # 0 is more effecient
-        TEST_PARALLEL_OPTS=""
+        TEST_PARALLEL_OPTS=()
         MEMORY_FRACTION='1'
     else
         MEMORY_FRACTION=`python -c "print(1/($TEST_PARALLEL + 1))"`
-        TEST_PARALLEL_OPTS="-n $TEST_PARALLEL"
+        TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
     RUN_DIR="$SCRIPTPATH"/target/run_dir
     mkdir -p "$RUN_DIR"
@@ -99,14 +99,20 @@ else
     ## Under cloud environment, overwrite the '--std_input_path' param to point to the distributed file path
     INPUT_PATH=${INPUT_PATH:-"$SCRIPTPATH"}
 
-    RUN_TESTS_COMMAND="$SCRIPTPATH"/runtests.py\ --rootdir\ "$LOCAL_ROOTDIR"\ "$LOCAL_ROOTDIR"/src/main/python
-    TEST_COMMON_OPTS="-v -rfExXs ""$TEST_TAGS"" \
-          --std_input_path=""$INPUT_PATH""/src/test/resources \
-          --color=yes \
-          ""$TEST_TYPE_PARAM"" \
-          ""$TEST_ARGS"" \
-          ""$RUN_TEST_PARAMS"" \
-          ""$@"
+    RUN_TESTS_COMMAND=("$SCRIPTPATH"/runtests.py
+      --rootdir
+      "$LOCAL_ROOTDIR"
+      "$LOCAL_ROOTDIR"/src/main/python)
+
+    TEST_COMMON_OPTS=(-v
+          -rfExXs
+          "$TEST_TAGS"
+          --std_input_path="$INPUT_PATH"/src/test/resources
+          --color=yes
+          $TEST_TYPE_PARAM
+          "$TEST_ARGS"
+          $RUN_TEST_PARAMS
+          "$@")
 
     export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
@@ -114,14 +120,14 @@ else
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
     export PYSP_TEST_spark_sql_shuffle_partitions='12'
-    if [[ "${TEST_PARALLEL_OPTS}" != "" ]];
+    if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
         export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
-        python $RUN_TESTS_COMMAND $TEST_PARALLEL_OPTS $TEST_COMMON_OPTS
+        python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
-            $SPARK_SUBMIT_FLAGS $RUN_TESTS_COMMAND $TEST_COMMON_OPTS
+            $SPARK_SUBMIT_FLAGS "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
