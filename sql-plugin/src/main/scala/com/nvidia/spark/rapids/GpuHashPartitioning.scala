@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, Table}
+import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Table}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
@@ -65,7 +65,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
             allColumns += parts
             allColumns ++= GpuColumnVector.extractBases(batch)
             withResource(new Table(allColumns: _*)) { fullTable =>
-              fullTable.orderBy(Table.asc(0))
+              fullTable.orderBy(OrderByArg.asc(0))
             }
           }
         }

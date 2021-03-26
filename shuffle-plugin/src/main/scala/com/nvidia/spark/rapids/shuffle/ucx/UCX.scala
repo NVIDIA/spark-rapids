@@ -478,7 +478,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   /**
    * Return rkeys (if we have registered memory)
    */
-  private lazy val localRkeys: Seq[ByteBuffer] = registeredMemory.synchronized {
+  private def localRkeys: Seq[ByteBuffer] = registeredMemory.synchronized {
     while (pendingRegistration) {
       registeredMemory.wait(100)
     }
