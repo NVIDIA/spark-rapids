@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.RangePartitioner
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.RangePartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
@@ -406,8 +408,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: GpuColumnarToRowExecParent => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case _: ShuffleExchangeExec => () // Ignored for now, we don't force it to the GPU if
-                                        // children are not on the gpu
+      case shuffleExchange: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted
+        || !shuffleExchange.outputPartitioning.isInstanceOf[RangePartitioning] => {
+        // Ignored for now, we don't force it to the GPU if
+        // children are not on the gpu
+      }
       case other =>
         if (!plan.supportsColumnar &&
           !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {

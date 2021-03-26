@@ -171,6 +171,19 @@ final class TypeSig private(
   }
 
   /**
+   * Remove a type signature. The reverse of +
+   * @param other what to remove
+   * @return the new signature
+   */
+  def - (other: TypeSig): TypeSig = {
+    val it = initialTypes -- other.initialTypes
+    val nt = nestedTypes -- other.nestedTypes
+    val lt = litOnlyTypes -- other.litOnlyTypes
+    val nts = notes -- other.notes.keySet
+    new TypeSig(it, nt, lt, nts)
+  }
+
+  /**
    * Add nested types to this type signature. Note that these do not stack so if nesting has
    * nested types too they are ignored.
    * @param nesting the basic types to add.
@@ -542,18 +555,23 @@ class ExecChecks private(
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val plan = meta.wrapped.asInstanceOf[SparkPlan]
     val allowDecimal = meta.conf.decimalTypeEnabled
-    if (!check.areAllSupportedByPlugin(plan.output.map(_.dataType), allowDecimal)) {
-      val unsupported = plan.output.map(_.dataType)
-          .filter(!check.isSupportedByPlugin(_, allowDecimal))
-          .toSet
-      meta.willNotWorkOnGpu(s"unsupported data types in output: ${unsupported.mkString(", ")}")
+
+    val unsupportedOutputTypes = plan.output
+      .filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+      .toSet
+
+    if (unsupportedOutputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types in output: " +
+        unsupportedOutputTypes.mkString(", "))
     }
-    if (!check.areAllSupportedByPlugin(
-      plan.children.flatMap(_.output.map(_.dataType)),
-      allowDecimal)) {
-      val unsupported = plan.children.flatMap(_.output.map(_.dataType))
-          .filter(!check.isSupportedByPlugin(_, allowDecimal)).toSet
-      meta.willNotWorkOnGpu(s"unsupported data types in input: ${unsupported.mkString(", ")}")
+
+    val unsupportedInputTypes = plan.children.flatMap { childPlan =>
+      childPlan.output.filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+    }.toSet
+
+    if (unsupportedInputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types in input: " +
+        unsupportedInputTypes.mkString(", "))
     }
   }
 
