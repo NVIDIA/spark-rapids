@@ -34,6 +34,46 @@ def test_single_orderby(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             conf = allow_negative_scale_of_decimal_conf)
 
+@pytest.mark.parametrize('shuffle_parts', [
+    pytest.param(1),
+    pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+])
+@pytest.mark.parametrize('stable_sort', [
+    pytest.param(True),
+    pytest.param(False, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+])
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
+        marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(ArrayGen(string_gen),
+        marks=pytest.mark.xfail(reason="arrays are not supported")),
+    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+        marks=pytest.mark.xfail(reason="maps are not supported")),
+], ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc()),
+    pytest.param(f.col('a').asc_nulls_first()),
+    pytest.param(f.col('a').asc_nulls_last(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc()),
+    pytest.param(f.col('a').desc_nulls_first(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc_nulls_last()),
+], ids=idfn)
+def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            # TODO no interference with range partition once implemented
+            conf = {
+                **allow_negative_scale_of_decimal_conf,
+                **{
+                    'spark.sql.shuffle.partitions': shuffle_parts,
+                    'spark.rapids.sql.stableSort.enabled': stable_sort,
+                    'spark.rapids.allowCpuRangePartitioning': False
+                }
+            })
+
 # SPARK CPU itself has issue with negative scale for take ordered and project
 orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
@@ -41,6 +81,32 @@ orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null
 def test_single_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
+
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
+                 marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(ArrayGen(string_gen),
+                 marks=pytest.mark.xfail(reason="arrays are not supported")),
+    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+                 marks=pytest.mark.xfail(reason="maps are not supported")),
+], ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc()),
+    pytest.param(f.col('a').asc_nulls_first()),
+    pytest.param(f.col('a').asc_nulls_last(),
+                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc()),
+    pytest.param(f.col('a').desc_nulls_first(),
+                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc_nulls_last()),
+], ids=idfn)
+def test_single_nested_orderby_with_limit(data_gen, order):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100),
+        conf = {
+            'spark.rapids.allowCpuRangePartitioning': False
+        })
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)

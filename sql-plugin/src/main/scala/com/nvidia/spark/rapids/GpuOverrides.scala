@@ -424,6 +424,16 @@ object GpuOverrides {
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
+  private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+
+  private[this] val pluginSupportedOrderableSig = _commonTypes +
+    TypeSig.STRUCT.nested(_commonTypes)
+
+  private[this] def isStructType(dataType: DataType) = dataType match {
+    case StructType(_) => true
+    case _ => false
+  }
+
   // this listener mechanism is global and is intended for use by unit tests only
   private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
 
@@ -1814,16 +1824,28 @@ object GpuOverrides {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        pluginSupportedOrderableSig,
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          pluginSupportedOrderableSig,
           TypeSig.orderable))),
-      (a, conf, p, r) => new BaseExprMeta[SortOrder](a, conf, p, r) {
+      (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (isStructType(sortOrder.dataType)) {
+            val nullOrdering = sortOrder.nullOrdering
+            val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
+            val direction = sortOrder.direction.sql
+            if (nullOrdering != directionDefaultNullOrdering) {
+              willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
+                s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
+            }
+          }
+        }
+
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
-          a.withNewChildren(childExprs.map(_.convertToGpu()))
+          sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
       }),
     expr[Count](
       "Count aggregate operator",
@@ -2499,6 +2521,14 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+        override def tagPartForGpu() {
+          val numPartitions = rp.numPartitions
+          if (numPartitions > 1 && rp.ordering.exists(so => isStructType(so.dataType))) {
+            willNotWorkOnGpu("only single partition sort is supported for nested types, " +
+              s"actual partitions: $numPartitions")
+          }
+        }
+
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
@@ -2612,7 +2642,7 @@ object GpuOverrides {
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.all),
+      ExecChecks(pluginSupportedOrderableSig, TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =
@@ -2678,7 +2708,7 @@ object GpuOverrides {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(pluginSupportedOrderableSig, TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
           "of rows in a batch it could help by limiting the number of rows transferred from " +
@@ -2751,9 +2781,16 @@ object GpuOverrides {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
-      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
+      ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
+      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
+        override def tagPlanForGpu() {
+          if (!conf.stableSort && sort.sortOrder.exists(so => isStructType(so.dataType))) {
+            willNotWorkOnGpu("it's disabled for nested types " +
+              s"unless ${RapidsConf.STABLE_SORT.key} is true")
+          }
+        }
+      }),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
