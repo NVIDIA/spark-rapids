@@ -73,6 +73,11 @@ cluster.
     `spark.sql.adaptive.enabled` should be set to false.  In addition, the plugin does not work with
     the Databricks `spark.databricks.delta.optimizeWrite` option.
 
+   The `spark.python.daemon.module` option is to choose the right daemon module of python for Databricks.
+    And it is only required when you are going to run Pandas UDFs with the plugin. On Databricks, the
+    python runtime requires different parameters than the Spark one, so this dedicated python deamon module
+    'rapids.daemon_databricks' is created and should be specified here.
+
     ```bash
     spark.plugins com.nvidia.spark.SQLPlugin
     spark.task.resource.gpu.amount 0.1
@@ -81,6 +86,7 @@ cluster.
     spark.databricks.delta.optimizeWrite.enabled false
     spark.sql.adaptive.enabled false
     spark.rapids.sql.concurrentGpuTasks 2
+    spark.python.daemon.module rapids.daemon_databricks
     ```
 
     ![Spark Config](../img/Databricks/sparkconfig.png)
