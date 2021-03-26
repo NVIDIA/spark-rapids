@@ -2781,7 +2781,8 @@ object GpuOverrides {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks(pluginSupportedOrderableSig + TypeSig.ARRAY.nested(), TypeSig.all),
+      ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
         override def tagPlanForGpu() {
           if (!conf.stableSort && sort.sortOrder.exists(so => isStructType(so.dataType))) {
