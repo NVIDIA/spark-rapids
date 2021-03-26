@@ -38,28 +38,7 @@ case class GpuMd5(child: Expression)
 
 object GpuMurmur3Hash extends Arm {
   def compute(batch: ColumnarBatch, boundExpr: Seq[Expression], seed: Int = 42): ColumnVector = {
-    val newExprs = boundExpr.map { expr =>
-      expr.dataType match {
-        case ByteType | ShortType =>
-          GpuCast(expr, IntegerType)
-        case DoubleType =>
-          // We have to normalize the NaNs, but not zeros
-          // however the current cudf code does the wrong thing for -0.0
-          // https://github.com/NVIDIA/spark-rapids/issues/1914
-          GpuIf(GpuIsNan(expr), GpuLiteral(Double.NaN, DoubleType), expr)
-        case FloatType =>
-          // We have to normalize the NaNs, but not zeros
-          // however the current cudf code does the wrong thing for -0.0
-          // https://github.com/NVIDIA/spark-rapids/issues/1914
-          GpuIf(GpuIsNan(expr), GpuLiteral(Float.NaN, FloatType), expr)
-        case dt: DecimalType if dt.precision <= DType.DECIMAL64_MAX_PRECISION =>
-          // For these values it is just hashing it as a long
-          GpuUnscaledValue(expr)
-        case _ =>
-          expr
-      }
-    }
-    withResource(GpuProjectExec.project(batch, newExprs)) { args =>
+    withResource(GpuProjectExec.project(batch, boundExpr)) { args =>
       val bases = GpuColumnVector.extractBases(args)
       ColumnVector.spark32BitMurmurHash3(seed, bases.toArray[ColumnView])
     }

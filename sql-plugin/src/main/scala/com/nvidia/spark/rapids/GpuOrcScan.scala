@@ -840,7 +840,8 @@ class GpuOrcPartitionReader(
         if (debugDumpPrefix != null) {
           dumpOrcData(dataBuffer, dataSize)
         }
-        val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
+        val fieldNames = ctx.updatedReadSchema.getFieldNames.asScala.toArray
+        val includedColumns = requestedMapping.map(_.map(fieldNames(_))).getOrElse(fieldNames)
         val parseOpts = ORCOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .withNumPyTypes(false)
