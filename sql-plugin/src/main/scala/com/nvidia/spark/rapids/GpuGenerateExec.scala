@@ -342,8 +342,10 @@ case class GpuExplode(child: Expression) extends GpuExplodeBase {
     require(inputBatch.numCols() - 1 == generatorOffset,
       "Internal Error GpuExplode supports one and only one input attribute.")
     val schema = resultSchema(GpuColumnVector.extractTypes(inputBatch), generatorOffset)
+    val explodeFun = (t: Table) =>
+      if (outer) t.explodeOuter(generatorOffset) else t.explode(generatorOffset)
     withResource(GpuColumnVector.from(inputBatch)) { table =>
-      withResource(table.explode(generatorOffset)) { exploded =>
+      withResource(explodeFun(table)) { exploded =>
         GpuColumnVector.from(exploded, schema)
       }
     }
@@ -362,8 +364,10 @@ case class GpuPosExplode(child: Expression) extends GpuExplodeBase {
       "Internal Error GpuPosExplode supports one and only one input attribute.")
     val schema = resultSchema(
       GpuColumnVector.extractTypes(inputBatch), generatorOffset, includePos = true)
+    val explodePosFun = (t: Table) =>
+      if (outer) t.explodeOuterPosition(generatorOffset) else t.explodePosition(generatorOffset)
     withResource(GpuColumnVector.from(inputBatch)) { table =>
-      withResource(table.explodePosition(generatorOffset)) { exploded =>
+      withResource(explodePosFun(table)) { exploded =>
         GpuColumnVector.from(exploded, schema)
       }
     }

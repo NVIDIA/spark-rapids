@@ -2405,6 +2405,7 @@ object GpuOverrides {
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
+        override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuExplode(childExprs(0).convertToGpu())
       }),
     expr[PosExplode](
@@ -2421,6 +2422,7 @@ object GpuOverrides {
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
+        override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs(0).convertToGpu())
       }),
     expr[CollectList](
