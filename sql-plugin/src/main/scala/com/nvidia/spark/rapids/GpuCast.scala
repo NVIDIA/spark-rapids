@@ -97,6 +97,19 @@ class CastExprMeta[INPUT <: CastBase](
         "The first step may lead to precision loss. To enable this operation on the GPU, set " +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
     }
+    if (fromDataType.isInstanceOf[StructType]) {
+      val checks = rule.getChecks.asInstanceOf[CastChecks]
+      fromDataType.asInstanceOf[StructType].foreach{field =>
+        recursiveTagExprForGpuCheck(field.dataType)
+        if (toType == StringType) {
+          if (!checks.gpuCanCast(field.dataType, toType)) {
+            willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
+              s"Casting ${field.dataType} to ${toType} not currently supported. Refer to " +
+              "CAST documentation for more details.")
+          }
+        }
+      }
+    }
   }
 
   def buildTagMessage(entry: ConfEntry[_]): String = {

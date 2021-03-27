@@ -60,7 +60,6 @@ def test_orderby_struct_2(data_gen):
 
 # conf with legacy cast to string on
 legacy_complex_types_to_string = {'spark.sql.legacy.castComplexTypesToString.enabled': 'true'}
-# @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", short_gen], ["fourth", int_gen], ["fifth", long_gen], ["sixth", string_gen], ["seventh", date_gen], ["eighth", float_gen], ], ["ninth", double_gen], ["tenth", timestamp_gen]])], ids=idfn)
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", short_gen], ["fourth", int_gen], ["fifth", long_gen], ["sixth", string_gen], ["seventh", date_gen]])], ids=idfn)
 def test_legacy_cast_struct_to_string(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
