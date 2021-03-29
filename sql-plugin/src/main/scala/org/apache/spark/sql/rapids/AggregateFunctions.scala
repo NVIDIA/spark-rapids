@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType}
+import ai.rapids.cudf.Aggregation.NullPolicy
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -180,13 +181,11 @@ abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable {
 }
 
 class CudfCount(ref: Expression) extends CudfAggregate(ref) {
-  // includeNulls set to false in count aggregate to exclude nulls while calculating count(column)
-  val includeNulls = false
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => cudf.Scalar.fromLong(col.getRowCount - col.getNullCount)
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum
-  override lazy val updateAggregate: Aggregation = Aggregation.count(includeNulls)
+  override lazy val updateAggregate: Aggregation = Aggregation.count(NullPolicy.EXCLUDE)
   override lazy val mergeAggregate: Aggregation = Aggregation.sum()
   override def toString(): String = "CudfCount"
 }
@@ -241,7 +240,7 @@ class CudfMin(ref: Expression) extends CudfAggregate(ref) {
 }
 
 abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
-  val includeNulls: Boolean
+  val includeNulls: NullPolicy
   val offset: Int
 
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
@@ -253,22 +252,22 @@ abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
 }
 
 class CudfFirstIncludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  override val includeNulls: Boolean = true
+  override val includeNulls: NullPolicy = NullPolicy.INCLUDE
   override val offset: Int = 0
 }
 
 class CudfFirstExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  override val includeNulls: Boolean = false
+  override val includeNulls: NullPolicy = NullPolicy.EXCLUDE
   override val offset: Int = 0
 }
 
 class CudfLastIncludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  override val includeNulls: Boolean = true
+  override val includeNulls: NullPolicy = NullPolicy.INCLUDE
   override val offset: Int = -1
 }
 
 class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
-  override val includeNulls: Boolean = false
+  override val includeNulls: NullPolicy = NullPolicy.EXCLUDE
   override val offset: Int = -1
 }
 
@@ -399,7 +398,7 @@ case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate
   // we could support it by doing an `Aggregation.nunique(false)`
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
-    Aggregation.count(false).onColumn(inputs.head._2)
+    Aggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
 }
 
 case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate
