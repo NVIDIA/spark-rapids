@@ -98,7 +98,7 @@ class CastExprMeta[INPUT <: CastBase](
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
     }
     if (fromDataType.isInstanceOf[StructType]) {
-      val checks = rule.getChecks.asInstanceOf[CastChecks]
+      val checks = rule.getChecks.get.asInstanceOf[CastChecks]
       fromDataType.asInstanceOf[StructType].foreach{field =>
         recursiveTagExprForGpuCheck(field.dataType)
         if (toType == StringType) {
