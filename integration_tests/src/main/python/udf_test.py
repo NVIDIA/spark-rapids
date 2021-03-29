@@ -213,6 +213,22 @@ def test_map_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
+@pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
+def test_pandas_map_udf_nested_type(data_gen):
+    # Spark supports limited types as the return type of pandas UDF.
+    # For details please go to
+    #  https://github.com/apache/spark/blob/master/python/pyspark/sql/pandas/types.py#L28
+    # So we return the data frames with one column of integral type for all types of the input.
+    def size_udf(pdf_itr):
+        for pdf in pdf_itr:
+            yield pd.DataFrame({"ret": [i for i in range(len(pdf))]})
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen)\
+            .mapInPandas(size_udf, schema="ret long"),
+        conf=arrow_udf_conf)
+
+
 def create_df(spark, data_gen, left_length, right_length):
     left = binary_op_df(spark, data_gen, length=left_length)
     right = binary_op_df(spark, data_gen, length=right_length)
