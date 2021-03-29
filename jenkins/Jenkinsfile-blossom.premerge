@@ -29,6 +29,7 @@ def pluginPremerge
 
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
+def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
 def PREMERGE_TAG
@@ -126,7 +127,6 @@ pipeline {
                             TEMP_IMAGE_BUILD = false
                         }
 
-                        def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
                         if (TEMP_IMAGE_BUILD) {
                             IMAGE_TAG = "dev-ubuntu18-${CUDA_NAME}"
                             PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
