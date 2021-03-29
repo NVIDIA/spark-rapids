@@ -35,6 +35,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
     openjdk-8-jdk python3.8 python3.8-distutils python3-setuptools tzdata git
 RUN python3.8 -m easy_install pip
+RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
 
 RUN ln -s /usr/bin/python3.8 /usr/bin/python
 RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist
