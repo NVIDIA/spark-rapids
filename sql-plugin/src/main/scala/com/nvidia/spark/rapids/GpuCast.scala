@@ -34,7 +34,6 @@ class CastExprMeta[INPUT <: CastBase](
     rule: DataFromReplacementRule)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
-  private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
   val fromType = cast.child.dataType
   val toType = cast.dataType
 
@@ -367,7 +366,7 @@ case class GpuCast(
               }
               val longStrings = withResource(trimmed.matchesRe(regex)) { regexMatches =>
                 if (ansiMode) {
-                  withResource(regexMatches.all(DType.BOOL8)) { allRegexMatches =>
+                  withResource(regexMatches.all()) { allRegexMatches =>
                     if (!allRegexMatches.getBoolean) {
                       throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                     }
@@ -546,7 +545,7 @@ case class GpuCast(
       withResource(input.contains(boolStrings)) { validBools =>
         // in ansi mode, fail if any values are not valid bool strings
         if (ansiEnabled) {
-          withResource(validBools.all(DType.BOOL8)) { isAllBool =>
+          withResource(validBools.all()) { isAllBool =>
             if (!isAllBool.getBoolean) {
               throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
@@ -964,7 +963,7 @@ case class GpuCast(
             // replace values less than minValue with null
             val gtEqMinOrNull = withResource(values.greaterOrEqualTo(minValue)) { isGtEqMin =>
               if (ansiMode) {
-                withResource(isGtEqMin.all(DType.BOOL8)) { all =>
+                withResource(isGtEqMin.all()) { all =>
                   if (!all.getBoolean) {
                     throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                   }
@@ -977,7 +976,7 @@ case class GpuCast(
             val ltEqMaxOrNull = withResource(gtEqMinOrNull) { gtEqMinOrNull =>
               withResource(gtEqMinOrNull.lessOrEqualTo(maxValue)) { isLtEqMax =>
                 if (ansiMode) {
-                  withResource(isLtEqMax.all(DType.BOOL8)) { all =>
+                  withResource(isLtEqMax.all()) { all =>
                     if (!all.getBoolean) {
                       throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                     }
