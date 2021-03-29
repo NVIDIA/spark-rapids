@@ -23,7 +23,8 @@
 ###
 
 ARG CUDA_VER=11.0
-FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu18.04
+ARG UBUNTU_VER=18.04
+FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 
 #Install java-8, maven, docker image
 RUN apt-get update -y && \

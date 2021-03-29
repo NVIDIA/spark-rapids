@@ -29,7 +29,7 @@ def pluginPremerge
 
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
-def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu16'
+def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
 def PREMERGE_TAG
 def skipped = false
