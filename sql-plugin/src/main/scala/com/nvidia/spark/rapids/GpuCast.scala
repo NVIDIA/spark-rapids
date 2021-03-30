@@ -34,7 +34,6 @@ class CastExprMeta[INPUT <: CastBase](
     rule: DataFromReplacementRule)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
-  private val castExpr = if (ansiEnabled) "ansi_cast" else "cast"
   val fromType = cast.child.dataType
   val toType = cast.dataType
 
@@ -77,6 +76,18 @@ class CastExprMeta[INPUT <: CastBase](
         "when casting strings to timestamps. Refer to the CAST documentation " +
         "for more details. To enable this operation on the GPU, set" +
         s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+    }
+    // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
+    if (!conf.isCastStringToDecimalEnabled && cast.child.dataType == DataTypes.StringType &&
+        cast.dataType.isInstanceOf[DecimalType]) {
+      willNotWorkOnGpu("Currently string to decimal type on the GPU might produce results which " +
+        "slightly differed from the correct results when the string represents any number " +
+        "exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For instance, the GPU " +
+        "returns 99999999999999987 given input string \"99999999999999999\". The cause of " +
+        "divergence is that we can not cast strings containing scientific notation to decimal " +
+        "directly. So, we have to cast strings to floats firstly. Then, cast floats to decimals. " +
+        "The first step may lead to precision loss. To enable this operation on the GPU, set " +
+        s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
     }
   }
 
@@ -355,7 +366,7 @@ case class GpuCast(
               }
               val longStrings = withResource(trimmed.matchesRe(regex)) { regexMatches =>
                 if (ansiMode) {
-                  withResource(regexMatches.all(DType.BOOL8)) { allRegexMatches =>
+                  withResource(regexMatches.all()) { allRegexMatches =>
                     if (!allRegexMatches.getBoolean) {
                       throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                     }
@@ -385,6 +396,14 @@ case class GpuCast(
                     throw new IllegalStateException("Invalid integral type")
                 }
               }
+          }
+        }
+      case (StringType, dt: DecimalType) =>
+        // To apply HALF_UP rounding strategy during casting to decimal, we firstly cast
+        // string to fp64. Then, cast fp64 to target decimal type to enforce HALF_UP rounding.
+        withResource(input.getBase.strip()) { trimmed =>
+          withResource(castStringToFloats(trimmed, ansiMode, DType.FLOAT64)) { fp =>
+            castFloatsToDecimal(fp, dt)
           }
         }
 
@@ -530,7 +549,7 @@ case class GpuCast(
       withResource(input.contains(boolStrings)) { validBools =>
         // in ansi mode, fail if any values are not valid bool strings
         if (ansiEnabled) {
-          withResource(validBools.all(DType.BOOL8)) { isAllBool =>
+          withResource(validBools.all()) { isAllBool =>
             if (!isAllBool.getBoolean) {
               throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
@@ -948,7 +967,7 @@ case class GpuCast(
             // replace values less than minValue with null
             val gtEqMinOrNull = withResource(values.greaterOrEqualTo(minValue)) { isGtEqMin =>
               if (ansiMode) {
-                withResource(isGtEqMin.all(DType.BOOL8)) { all =>
+                withResource(isGtEqMin.all()) { all =>
                   if (!all.getBoolean) {
                     throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                   }
@@ -961,7 +980,7 @@ case class GpuCast(
             val ltEqMaxOrNull = withResource(gtEqMinOrNull) { gtEqMinOrNull =>
               withResource(gtEqMinOrNull.lessOrEqualTo(maxValue)) { isLtEqMax =>
                 if (ansiMode) {
-                  withResource(isLtEqMax.all(DType.BOOL8)) { all =>
+                  withResource(isLtEqMax.all()) { all =>
                     if (!all.getBoolean) {
                       throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
                     }
@@ -1054,14 +1073,23 @@ case class GpuCast(
     }
 
     withResource(checkedInput) { checked =>
+      val targetType = DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale)
       // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
-        checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+      val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+        checked.castTo(targetType)
       } else {
         val containerType = DecimalUtil.createCudfDecimal(dt.precision, (dt.scale + 1))
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+        }
+      }
+      // Cast NaN values to nulls
+      withResource(casted) { casted =>
+        withResource(input.isNan) { inputIsNan =>
+          withResource(Scalar.fromNull(targetType)) { nullScalar =>
+            inputIsNan.ifElse(nullScalar, casted)
+          }
         }
       }
     }

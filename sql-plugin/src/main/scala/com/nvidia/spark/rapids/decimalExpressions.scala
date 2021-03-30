@@ -57,11 +57,11 @@ case class GpuUnscaledValue(child: Expression) extends GpuUnaryExpression {
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     if (input.getBase.getType.isBackedByInt) {
-      withResource(input.getBase.logicalCastTo(DType.INT32)) { int32View =>
+      withResource(input.getBase.bitCastTo(DType.INT32)) { int32View =>
         int32View.castTo(DType.INT64)
       }
     } else {
-      withResource(input.getBase.logicalCastTo(DType.INT64)) { view =>
+      withResource(input.getBase.bitCastTo(DType.INT64)) { view =>
         view.copyToColumnVector()
       }
     }
@@ -91,13 +91,13 @@ case class GpuMakeDecimal(
       }
       withResource(overflowed) { overflowed =>
         withResource(Scalar.fromNull(outputType)) { nullVal =>
-          withResource(base.logicalCastTo(outputType)) { view =>
+          withResource(base.bitCastTo(outputType)) { view =>
             overflowed.ifElse(nullVal, view)
           }
         }
       }
     } else {
-      withResource(base.logicalCastTo(outputType)) { view =>
+      withResource(base.bitCastTo(outputType)) { view =>
         view.copyToColumnVector()
       }
     }

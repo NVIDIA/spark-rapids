@@ -31,40 +31,18 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   override def nullable: Boolean = if (legacySizeOfNull) false else super.nullable
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val inputBase = input.getBase
-    if (inputBase.getRowCount == 0) {
-      return GpuColumnVector.from(GpuScalar.from(0), 0, IntegerType).getBase
-    }
 
     // Compute sizes of cuDF.ListType to get sizes of each ArrayData or MapData, considering
     // MapData is represented as List of Struct in terms of cuDF.
-    // We compute list size via subtracting the offset of next element(row) to the current offset.
-    val collectionSize = {
-      // Here is a hack: using index -1 to fetch the offset column of list.
-      // In terms of cuDF native, the offset is the first (index 0) child of list_column_view.
-      // In JNI layer, we add 1 to the child index when fetching child column of ListType to keep
-      // alignment.
-      // So, in JVM layer, we have to use -1 as index to fetch the real first child of list_column.
-      withResource(inputBase.getChildColumnView(-1)) { offset =>
-        withResource(offset.subVector(1)) { upBound =>
-          withResource(offset.subVector(0, offset.getRowCount.toInt - 1)) { lowBound =>
-            upBound.sub(lowBound)
+    withResource(input.getBase.countElements()) { collectionSize =>
+      if (legacySizeOfNull) {
+        withResource(GpuScalar.from(-1)) { nullScalar =>
+          withResource(input.getBase.isNull) { inputIsNull =>
+            inputIsNull.ifElse(nullScalar, collectionSize)
           }
         }
-      }
-    }
-
-    val nullScalar = if (legacySizeOfNull) {
-      GpuScalar.from(-1)
-    } else {
-      GpuScalar.from(null, IntegerType)
-    }
-
-    withResource(collectionSize) { collectionSize =>
-      withResource(nullScalar) { nullScalar =>
-        withResource(inputBase.isNull) { inputIsNull =>
-          inputIsNull.ifElse(nullScalar, collectionSize)
-        }
+      } else {
+        collectionSize.incRefCount()
       }
     }
   }
