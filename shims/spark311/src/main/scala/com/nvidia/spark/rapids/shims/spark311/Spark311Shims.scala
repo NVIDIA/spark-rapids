@@ -424,6 +424,10 @@ class Spark311Shims extends Spark301Shims {
     HadoopFSUtilsShim.shouldIgnorePath(path)
   }
 
+  override def getLegacyComplexTypeToString(): Boolean = {
+    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+  }
+
   // Arrow version changed between Spark versions
   override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
     val arrowBuf = vec.getDataBuffer()

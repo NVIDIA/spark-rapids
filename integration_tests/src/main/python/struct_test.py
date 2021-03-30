@@ -57,3 +57,63 @@ def test_orderby_struct_2(data_gen):
         lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'struct_table',
         'select struct_table.a, struct_table.uniq_int from struct_table order by uniq_int')
+
+# conf with legacy cast to string on
+legacy_complex_types_to_string = {'spark.sql.legacy.castComplexTypesToString.enabled': 'true'}
+@pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", short_gen], ["fourth", int_gen], ["fifth", long_gen], ["sixth", string_gen], ["seventh", date_gen]])], ids=idfn)
+def test_legacy_cast_struct_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")),
+            conf = legacy_complex_types_to_string)
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", float_gen]])], ids=idfn)
+@pytest.mark.xfail(reason='casting float to string is not an exact match')
+def test_legacy_cast_struct_with_float_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")),
+            conf = legacy_complex_types_to_string)
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", double_gen]])], ids=idfn)
+@pytest.mark.xfail(reason='casting double to string is not an exact match')
+def test_legacy_cast_struct_with_double_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")),
+            conf = legacy_complex_types_to_string)
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", timestamp_gen]])], ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/219')
+def test_legacy_cast_struct_with_timestamp_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")),
+            conf = legacy_complex_types_to_string)
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", short_gen], ["fourth", int_gen], ["fifth", long_gen], ["sixth", string_gen], ["seventh", date_gen]])], ids=idfn)
+def test_cast_struct_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")))
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", float_gen]])], ids=idfn)
+@pytest.mark.xfail(reason='casting float to string is not an exact match')
+def test_cast_struct_with_float_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")))
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", double_gen]])], ids=idfn)
+@pytest.mark.xfail(reason='casting double to string is not an exact match')
+def test_cast_struct_with_double_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")))
+
+@pytest.mark.parametrize('data_gen', [StructGen([["first", timestamp_gen]])], ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/219')
+def test_cast_struct_with_timestamp_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")))

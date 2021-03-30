@@ -478,6 +478,8 @@ class Spark300Shims extends SparkShims {
     InMemoryFileIndex.shouldFilterOut(path)
   }
 
+  override def getLegacyComplexTypeToString(): Boolean = true
+
   // Arrow version changed between Spark versions
   override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
     val arrowBuf = vec.getDataBuffer()
