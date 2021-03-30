@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
@@ -233,7 +232,7 @@ case class GpuCast(
         castFloatsToDecimal(input.getBase, dt)
 
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.getBase, from, to)
+        castDecimalToDecimal(input.getBase, from, to, ansiMode)
 
       case _ =>
         doColumnar(input.getBase, input.dataType())
@@ -463,7 +462,7 @@ case class GpuCast(
         }
 
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.getBase, from, to, ansiMode)
+        castDecimalToDecimal(input.copyToColumnVector(), from, to, ansiMode)
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
