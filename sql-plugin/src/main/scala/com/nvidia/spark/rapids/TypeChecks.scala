@@ -784,7 +784,8 @@ class CastChecks extends ExprChecks {
   val mapChecks: TypeSig = none
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
-  val structChecks: TypeSig = none
+  val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
+      "being cast to string")
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
 
   val udtChecks: TypeSig = none
@@ -858,8 +859,8 @@ class CastChecks extends ExprChecks {
   }
 
   def gpuCanCast(from: DataType, to: DataType, allowDecimal: Boolean = true): Boolean = {
-    val (_, sparkSig) = getChecksAndSigs(from)
-    sparkSig.isSupportedByPlugin(to, allowDecimal)
+    val (checks, _) = getChecksAndSigs(from)
+    checks.isSupportedByPlugin(to, allowDecimal)
   }
 }
 
