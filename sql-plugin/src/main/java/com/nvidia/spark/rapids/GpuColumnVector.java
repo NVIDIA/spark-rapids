@@ -161,9 +161,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
           System.err.println(i + " NULL");
-        } else {
-//          System.err.println(i + " NOT NULL");
-        }
+        } // The struct child columns are printed out later on.
       }
       for (int i = 0; i < hostCol.getNumChildren(); i++) {
         debug(name + ":CHILD_" + i, hostCol.getChildColumnView(i));
