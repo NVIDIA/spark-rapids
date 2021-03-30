@@ -419,6 +419,9 @@ case class GpuCast(
       case (from: DecimalType, to: DecimalType) =>
         castDecimalToDecimal(input.getBase, from, to)
 
+      case (_: DecimalType, StringType) =>
+        input.getBase.castTo(DType.STRING)
+
       case _ =>
         input.getBase.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
     }

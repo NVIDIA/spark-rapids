@@ -229,6 +229,17 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
+  test("cast decimal to string") {
+    SparkSession.getActiveSession.get.sqlContext
+        .setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    Seq(10, 15, 18).foreach { precision =>
+      Seq(-precision, -5, 0, 5, precision).foreach { scale =>
+        testCastToString(DataTypes.createDecimalType(precision, scale),
+          comparisonFunc = Some(compareStringifiedDecimals))
+      }
+    }
+  }
+
   private def testCastToString[T](
       dataType: DataType,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
