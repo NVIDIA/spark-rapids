@@ -24,13 +24,13 @@ import org.scalatest.BeforeAndAfterEach
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffledHashJoinBase}
+import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DecimalType, IntegerType, StructField, StructType}
 
 object AdaptiveQueryExecSuite {
@@ -94,9 +94,24 @@ class AdaptiveQueryExecSuite
   }
 
   private def findReusedExchange(plan: SparkPlan): Seq[ReusedExchangeExec] = {
-    collectWithSubqueries(plan) {
-      case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
-      case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
+    collectWithSubqueries(plan)(ShimLoader.getSparkShims.reusedExchangeExecPfn)
+  }
+
+  test("get row counts from executed shuffle query stages") {
+    assumeSpark301orLater
+
+    skewJoinTest { spark =>
+      val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
+        spark,
+        "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
+      val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
+      val shuffleExchanges = ShimLoader.getSparkShims
+          .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+          .map(_.asInstanceOf[ShuffleQueryStageExec])
+      assert(shuffleExchanges.length === 2)
+      val shim = ShimLoader.getSparkShims
+      val stats = shuffleExchanges.map(e => shim.getQueryStageRuntimeStatistics(e))
+      assert(stats.forall(_.rowCount.contains(1000)))
     }
   }
 
@@ -106,7 +121,13 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
       val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
-      checkSkewJoin(innerSmj, 2, 1)
+      // Spark changed how skewed joins work and now the numbers are different
+      // depending on the version being used
+      if (cmpSparkVersion(3,1,1) >= 0) {
+        checkSkewJoin(innerSmj, 2, 1)
+      } else {
+        checkSkewJoin(innerSmj, 1, 1)
+      }
     }
   }
 
@@ -116,7 +137,13 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 left outer join skewData2 ON key1 = key2")
       val leftSmj = findTopLevelGpuShuffleHashJoin(leftAdaptivePlan)
-      checkSkewJoin(leftSmj, 2, 0)
+      // Spark changed how skewed joins work and now the numbers are different
+      // depending on the version being used
+      if (cmpSparkVersion(3,1,1) >= 0) {
+        checkSkewJoin(leftSmj, 2, 0)
+      } else {
+        checkSkewJoin(leftSmj, 1, 0)
+      }
     }
   }
 
@@ -130,8 +157,9 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  test("Join partitioned tables") {
+  test("Join partitioned tables DPP fallback") {
     assumeSpark301orLater
+    assumePriorToSpark320 // In 3.2.0 AQE works with DPP
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -439,14 +467,22 @@ class AdaptiveQueryExecSuite
   }
 
   /** most of the AQE tests requires Spark 3.0.1 or later */
-  private def assumeSpark301orLater = {
+  private def assumeSpark301orLater =
+    assume(cmpSparkVersion(3, 0, 1) >= 0)
+
+  private def assumePriorToSpark320 =
+    assume(cmpSparkVersion(3, 2, 0) < 0)
+
+  private def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
-    val isValidTestForSparkVersion = sparkShimVersion match {
-      case SparkShimVersion(3, 0, 0) => false
-      case DatabricksShimVersion(3, 0, 0) => false
-      case _ => true
+    val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
+      case SparkShimVersion(a, b, c) => (a, b, c)
+      case DatabricksShimVersion(a, b, c) => (a, b, c)
+      case EMRShimVersion(a, b, c) => (a, b, c)
     }
-    assume(isValidTestForSparkVersion)
+    val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
+    val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
+    sparkFullVersion.compareTo(fullVersion)
   }
 
   def checkSkewJoin(

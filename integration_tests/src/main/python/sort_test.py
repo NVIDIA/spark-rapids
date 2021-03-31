@@ -19,7 +19,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_310
+from spark_session import is_before_spark_311
 
 orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), IntegerGen(nullable=False),
         LongGen(nullable=False), FloatGen(nullable=False), DoubleGen(nullable=False), BooleanGen(nullable=False),
@@ -34,6 +34,46 @@ def test_single_orderby(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             conf = allow_negative_scale_of_decimal_conf)
 
+@pytest.mark.parametrize('shuffle_parts', [
+    pytest.param(1),
+    pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+])
+@pytest.mark.parametrize('stable_sort', [
+    pytest.param(True),
+    pytest.param(False, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+])
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
+        marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(ArrayGen(string_gen),
+        marks=pytest.mark.xfail(reason="arrays are not supported")),
+    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+        marks=pytest.mark.xfail(reason="maps are not supported")),
+], ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc()),
+    pytest.param(f.col('a').asc_nulls_first()),
+    pytest.param(f.col('a').asc_nulls_last(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc()),
+    pytest.param(f.col('a').desc_nulls_first(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc_nulls_last()),
+], ids=idfn)
+def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            # TODO no interference with range partition once implemented
+            conf = {
+                **allow_negative_scale_of_decimal_conf,
+                **{
+                    'spark.sql.shuffle.partitions': shuffle_parts,
+                    'spark.rapids.sql.stableSort.enabled': stable_sort,
+                    'spark.rapids.allowCpuRangePartitioning': False
+                }
+            })
+
 # SPARK CPU itself has issue with negative scale for take ordered and project
 orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
@@ -41,6 +81,32 @@ orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null
 def test_single_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
+
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
+                 marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(ArrayGen(string_gen),
+                 marks=pytest.mark.xfail(reason="arrays are not supported")),
+    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+                 marks=pytest.mark.xfail(reason="maps are not supported")),
+], ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc()),
+    pytest.param(f.col('a').asc_nulls_first()),
+    pytest.param(f.col('a').asc_nulls_last(),
+                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc()),
+    pytest.param(f.col('a').desc_nulls_first(),
+                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc_nulls_last()),
+], ids=idfn)
+def test_single_nested_orderby_with_limit(data_gen, order):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100),
+        conf = {
+            'spark.rapids.allowCpuRangePartitioning': False
+        })
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
@@ -50,9 +116,9 @@ def test_single_sort_in_part(data_gen, order):
             conf = allow_negative_scale_of_decimal_conf)
 
 orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen,
-        pytest.param(float_gen, marks=pytest.mark.xfail(condition=is_before_spark_310(),
+        pytest.param(float_gen, marks=pytest.mark.xfail(condition=is_before_spark_311(),
             reason='Spark has -0.0 < 0.0 before Spark 3.1')),
-        pytest.param(double_gen, marks=pytest.mark.xfail(condition=is_before_spark_310(),
+        pytest.param(double_gen, marks=pytest.mark.xfail(condition=is_before_spark_311(),
             reason='Spark has -0.0 < 0.0 before Spark 3.1')),
         boolean_gen, timestamp_gen, date_gen, string_gen, null_gen] + decimal_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
@@ -81,3 +147,17 @@ def test_orderby_with_processing_and_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column
             lambda spark : unary_op_df(spark, data_gen).orderBy(f.lit(100) - f.col('a'), f.col('a')).limit(100))
+
+# We are not trying all possibilities, just doing a few with numbers so the query works.
+@pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
+def test_single_orderby_with_skew(data_gen):
+    # When doing range partitioning the upstream data is sampled to try and get the bounds for cutoffs.
+    # If the data comes back with skewed partitions then those partitions will be resampled for more data.
+    # This is to try and trigger it to happen.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen)\
+                    .selectExpr('a', 'random(1) > 0.5 as b')\
+                    .repartition(f.col('b'))\
+                    .orderBy(f.col('a'))\
+                    .selectExpr('a'),
+            conf = allow_negative_scale_of_decimal_conf)

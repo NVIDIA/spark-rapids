@@ -431,6 +431,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val STABLE_SORT = conf("spark.rapids.sql.stableSort.enabled")
+      .doc("Enable or disable stable sorting. Apache Spark's sorting is typically a stable " +
+          "sort, but sort stability cannot be guaranteed in distributed work loads because the " +
+          "order in which upstream data arrives to a task is not guaranteed. Sort stability then " +
+          "only matters when reading and sorting data from a file using a single task/partition. " +
+          "Because of limitations in the plugin when you enable stable sorting all of the data " +
+          "for a single task will be combined into a single batch before sorting. This currently " +
+          "disables spilling from GPU memory if the data size is too large.")
+      .booleanConf
+      .createWithDefault(false)
+
   // METRICS
 
   val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
@@ -505,9 +516,8 @@ object RapidsConf {
 
   val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
       .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits and is only supported by a small number of operations currently.  " +
-          "This can result in a lot of data movement to and from the GPU, which can slow down " +
-          "processing in some cases.")
+          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
+          "which can slow down processing in some cases.")
       .booleanConf
       .createWithDefault(false)
 
@@ -550,6 +560,18 @@ object RapidsConf {
       "and \"-1.7976931348623158E308\" >= x > \"-1.7976931348623159E308\" in both these cases " +
       "the GPU returns Double.MaxValue while CPU returns \"+Infinity\" and \"-Infinity\" " +
       "respectively")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_CAST_STRING_TO_DECIMAL = conf("spark.rapids.sql.castStringToDecimal.enabled")
+    .doc("When set to true, enables casting from strings to decimal type on the GPU. Currently " +
+      "string to decimal type on the GPU might produce results which slightly differed from the " +
+      "correct results when the string represents any number exceeding the max precision that " +
+      "CAST_STRING_TO_FLOAT can keep. For instance, the GPU returns 99999999999999987 given " +
+      "input string \"99999999999999999\". The cause of divergence is that we can not cast " +
+      "strings containing scientific notation to decimal directly. So, we have to cast strings " +
+      "to floats firstly. Then, cast floats to decimals. The first step may lead to precision " +
+      "loss.")
     .booleanConf
     .createWithDefault(false)
 
@@ -732,13 +754,24 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
-    .doc("Enable the Rapids Shuffle Transport for accelerated shuffle. By default, this " +
+    .doc("Enable the RAPIDS Shuffle Transport for accelerated shuffle. By default, this " +
         "requires UCX to be installed in the system. Consider setting to false if running with " +
         "a single executor and UCX is not available, for short-circuit cached shuffle " +
         "(i.e. for testing purposes)")
     .internal()
     .booleanConf
     .createWithDefault(true)
+
+  val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
+    .doc("Enable early connection establishment for RAPIDS Shuffle")
+    .booleanConf
+    .createWithDefault(true)
+
+  val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL =
+    conf("spark.rapids.shuffle.transport.earlyStart.heartbeatInterval")
+      .doc("Shuffle early start heartbeat interval (milliseconds)")
+      .integerConf
+      .createWithDefault(5000)
 
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
@@ -879,10 +912,57 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val OPTIMIZER_ENABLED = conf("spark.rapids.sql.optimizer.enabled")
+      .internal()
+      .doc("Enable cost-based optimizer that will attempt to avoid " +
+          "transitions to GPU for operations that will not result in improved performance " +
+          "over CPU")
+      .booleanConf
+      .createWithDefault(false)
+
+  val OPTIMIZER_EXPLAIN = conf("spark.rapids.sql.optimizer.explain")
+      .internal()
+      .doc("Explain why some parts of a query were not placed on a GPU due to " +
+          "optimization rules. Possible values are ALL: print everything, NONE: print nothing")
+      .stringConf
+      .createWithDefault("NONE")
+
+  val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.defaultExecGpuCost")
+      .internal()
+      .doc("Default relative GPU cost of running an operator on the GPU")
+      .doubleConf
+      .createWithDefault(0.8)
+
+  val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.defaultExprGpuCost")
+      .internal()
+      .doc("Default relative GPU cost of running an expression on the GPU")
+      .doubleConf
+      .createWithDefault(0.8)
+
+  val OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST = conf(
+    "spark.rapids.sql.optimizer.defaultTransitionToCpuCost")
+      .internal()
+      .doc("Default cost of transitioning from GPU to CPU")
+      .doubleConf
+      .createWithDefault(0.15)
+
+  val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
+    "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
+      .internal()
+      .doc("Default cost of transitioning from CPU to GPU")
+      .doubleConf
+      .createWithDefault(0.15)
+
   val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
       "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
       "have to turn it off, but its convenient for testing.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val CPU_RANGE_PARTITIONING_ALLOWED = conf("spark.rapids.allowCpuRangePartitioning")
+    .doc("Option to control enforcement of range partitioning on GPU.")
     .internal()
     .booleanConf
     .createWithDefault(true)
@@ -917,7 +997,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,cudf-0.18-SNAPSHOT-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar,cudf-0.19-SNAPSHOT-cuda10-1.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1039,6 +1119,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val exportColumnarRdd: Boolean = get(EXPORT_COLUMNAR_RDD)
 
+  lazy val stableSort: Boolean = get(STABLE_SORT)
+
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
   lazy val incompatDateFormats: Boolean = get(INCOMPATIBLE_DATE_FORMATS)
@@ -1113,6 +1195,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
+  lazy val isCastStringToDecimalEnabled: Boolean = get(ENABLE_CAST_STRING_TO_DECIMAL)
+
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
@@ -1153,6 +1237,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleTransportClassName: String = get(SHUFFLE_TRANSPORT_CLASS_NAME)
 
+  lazy val shuffleTransportEarlyStartHeartbeatInterval: Int = get(
+    SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL)
+
+  lazy val shuffleTransportEarlyStart: Boolean = get(SHUFFLE_TRANSPORT_EARLY_START)
+
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
@@ -1190,10 +1279,41 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
+  lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
+
+  lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
+
+  lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
+
+  lazy val defaultExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
+
+  lazy val defaultTransitionToCpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST)
+
+  lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
+
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+
+  lazy val cpuRangePartitioningPermitted = get(CPU_RANGE_PARTITIONING_ALLOWED)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
     conf.get(key).map(toBoolean(_, key)).getOrElse(default)
   }
+
+  /**
+   * Get the GPU cost of an expression, for use in the cost-based optimizer.
+   */
+  def getExpressionCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.expr.$operatorName"
+    conf.get(key).map(toDouble(_, key))
+  }
+
+  /**
+   * Get the GPU cost of an operator, for use in the cost-based optimizer.
+   */
+  def getOperatorCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.exec.$operatorName"
+    conf.get(key).map(toDouble(_, key))
+  }
+
 }

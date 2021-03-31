@@ -26,8 +26,7 @@ import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.errors._
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
@@ -142,13 +141,14 @@ abstract class GpuShuffleExchangeExecBase(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = attachTree(this, "execute") {
-    // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
-    if (cachedShuffleRDD == null) {
-      cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = ShimLoader.getSparkShims
+    .attachTreeIfSupported(this, "execute") {
+      // Returns the same ShuffleRowRDD if this plan is used by multiple plans.
+      if (cachedShuffleRDD == null) {
+        cachedShuffleRDD = new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics)
+      }
+      cachedShuffleRDD
     }
-    cachedShuffleRDD
-  }
 }
 
 object GpuShuffleExchangeExec {
@@ -176,11 +176,14 @@ object GpuShuffleExchangeExec {
      * task when indeterminate tasks re-run.
      */
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
-      val sorter = new GpuColumnarBatchSorter(Seq.empty[SortOrder],
-        null, false, false)
+      val shim = ShimLoader.getSparkShims
+      val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
+        shim.sortOrder(GpuBoundReference(index, attr.dataType, attr.nullable), Ascending)
+        // Force the sequence to materialize so we don't have issues with serializing too much
+      }.toArray.toSeq
+      val sorter = new GpuSorter(boundReferences, outputAttributes)
       rdd.mapPartitions { cbIter =>
-        val sortedIterator = sorter.sort(cbIter)
-        sortedIterator
+        GpuSortEachBatchIterator(cbIter, sorter)
       }
     } else {
       rdd
@@ -266,11 +269,13 @@ object GpuShuffleExchangeExec {
       case h: GpuHashPartitioning =>
         GpuBindReferences.bindReference(h, outputAttributes)
       case r: GpuRangePartitioning =>
-        r.part.createRangeBounds(r.numPartitions, r.gpuOrdering, rdd, outputAttributes,
-          SQLConf.get.rangeExchangeSampleSizePerPartition)
-        GpuBindReferences.bindReference(r, outputAttributes)
-      case s: GpuSinglePartitioning =>
-        GpuBindReferences.bindReference(s, outputAttributes)
+        val sorter = new GpuSorter(r.gpuOrdering, outputAttributes)
+        val bounds = GpuRangePartitioner.createRangeBounds(r.numPartitions, sorter,
+          rdd, SQLConf.get.rangeExchangeSampleSizePerPartition)
+        // No need to bind arguments for the GpuRangePartitioner. The Sorter has already done it
+        new GpuRangePartitioner(bounds, sorter)
+      case GpuSinglePartitioning =>
+        GpuSinglePartitioning
       case rrp: GpuRoundRobinPartitioning =>
         GpuBindReferences.bindReference(rrp, outputAttributes)
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")

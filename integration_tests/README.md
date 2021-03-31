@@ -107,7 +107,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-0.4.0-SNAPSHOT-tests.jar,rapids-4-spark-udf-examples_2.12-0.4.0-SNAPSHOT,rapids-4-spark-integration-tests_2.12-0.4.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-0.5.0-SNAPSHOT-tests.jar,rapids-4-spark-udf-examples_2.12-0.5.0-SNAPSHOT,rapids-4-spark-integration-tests_2.12-0.5.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -131,7 +131,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 10.1 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.4.0-SNAPSHOT.jar,cudf-0.18-SNAPSHOT-cuda10-1.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.5.0-SNAPSHOT.jar,cudf-0.19-SNAPSHOT-cuda10-1.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -171,25 +171,18 @@ any GPU resources on the cluster. For standalone, Mesos, and Kubernetes you can 
 of executors you want to use per application. The extra core is for the driver. Dynamic allocation can mess with these settings
 under YARN and even though it is off by default you probably want to be sure it is disabled (spark.dynamicAllocation.enabled=false).
 
-### Enabling TPCxBB/TPCH/TPCDS/Mortgage Tests
+### Running with Alternate Paths
 
-The TPCxBB, TPCH, TPCDS, and Mortgage tests in this framework can be enabled by providing a couple of options:
+In case your test jars and resources are downloaded to the `local-path` from dependency Repo, and you want to run tests with them
+using the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh), then the `LOCAL_JAR_PATH=local-path` must be set to point
+to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.By setting `LOCAL_JAR_PATH=local-path`
+the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path.
 
-   * TPCxBB `tpcxbb-format` (optional, defaults to "parquet"), and `tpcxbb-path` (required, path to the TPCxBB data).
-   * TPCH `tpch-format` (optional, defaults to "parquet"), and `tpch-path` (required, path to the TPCH data).
-   * TPCDS `tpcds-format` (optional, defaults to "parquet"), and `tpcds-path` (required, path to the TPCDS data).
-   * Mortgage `mortgage-format` (optional, defaults to "parquet"), and `mortgage-path` (required, path to the Mortgage data).
-
-As an example, here is the `spark-submit` command with the TPCxBB parameters on CUDA 10.1:
-
-```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.4.0-SNAPSHOT.jar,cudf-0.18-SNAPSHOT-cuda10-1.jar,rapids-4-spark-tests_2.12-0.4.0-SNAPSHOT.jar" ./runtests.py --tpcxbb_format="csv" --tpcxbb_path="/path/to/tpcxbb/csv"
-```
-
-Be aware that running these tests with read data requires at least an entire GPU, and preferable several GPUs/executors
-in your cluster so please be careful when enabling these tests.  Also some of these test actually produce non-deterministic
-results when run in a real cluster. If you do see failures when running these tests please contact us so we can investigate
-them and possibly tag the tests appropriately when running on an actual cluster.
+When running the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) under YARN or Kubernetes, the `$SCRIPTPATH` in the python options
+`--rootdir $SCRIPTPATH ...` and `--std_input_path $SCRIPTPATH ...` will not work, as the `$SCRIPTPATH` is a local path, you need to overwrite it to the clould paths.
+Basically, you need first to upload the test resources onto the cloud path `resource-path`, then transfer the test resources onto the working directory
+`root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `INPUT_PATH=resource-path`
+to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir INPUT_PATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
 
 ### Enabling cudf_udf Tests
 
@@ -212,7 +205,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 10.1:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.4.0-SNAPSHOT.jar,cudf-0.18-SNAPSHOT-cuda10-1.jar,rapids-4-spark-tests_2.12-0.4.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.4.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.5.0-SNAPSHOT.jar,cudf-0.19-SNAPSHOT-cuda10-1.jar,rapids-4-spark-tests_2.12-0.5.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests

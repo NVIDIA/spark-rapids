@@ -182,16 +182,16 @@ object GpuParquetScanBase {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
 
-    sqlConf.get(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key) match {
+    sqlConf.get(ShimLoader.getSparkShims.parquetRebaseReadKey) match {
       case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-            s"${SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key} is EXCEPTION")
+            s"${ShimLoader.getSparkShims.parquetRebaseReadKey} is EXCEPTION")
       }
       case "CORRECTED" => // Good
       case "LEGACY" => // really is EXCEPTION for us...
         if (schemaMightNeedNestedRebase) {
           meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-              s"${SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key} is LEGACY")
+              s"${ShimLoader.getSparkShims.parquetRebaseReadKey} is LEGACY")
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
@@ -294,7 +294,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
   private val isCorrectedRebase =
-    "CORRECTED" == sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
+    "CORRECTED" == ShimLoader.getSparkShims.parquetRebaseRead(sqlConf)
 
   def filterBlocks(
       file: PartitionedFile,

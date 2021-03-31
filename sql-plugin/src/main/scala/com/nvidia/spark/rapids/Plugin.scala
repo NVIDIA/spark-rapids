@@ -21,6 +21,7 @@ import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
+import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
@@ -34,8 +35,8 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.internal.StaticSQLConf
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.util.QueryExecutionListener
-
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   val overrides: Rule[SparkPlan] = GpuOverrides()
@@ -109,12 +110,32 @@ object RapidsPluginUtils extends Logging {
  * The Spark driver plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
+  var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
+
+  override def receive(msg: Any): AnyRef = {
+    if (rapidsShuffleHeartbeatManager == null) {
+      throw new IllegalStateException(
+        s"Rpc message $msg received, but shuffle heartbeat manager not configured.")
+    }
+    msg match {
+      case RapidsExecutorStartupMsg(id) =>
+        rapidsShuffleHeartbeatManager.registerExecutor(id)
+      case RapidsExecutorHeartbeatMsg(id) =>
+        rapidsShuffleHeartbeatManager.executorHeartbeat(id)
+      case m => throw new IllegalStateException(s"Unknown message $m")
+    }
+  }
+
   override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
     if (conf.shimsProviderOverride.isDefined) {
       ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
+    }
+    if (GpuShuffleEnv.isRapidsShuffleEnabled &&
+        conf.shuffleTransportEarlyStart) {
+      rapidsShuffleHeartbeatManager = new RapidsShuffleHeartbeatManager()
     }
     conf.rapidsConfMap
   }
@@ -124,6 +145,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
  * The Spark executor plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
+  var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
+
   override def init(
       pluginContext: PluginContext,
       extraConf: util.Map[String, String]): Unit = {
@@ -143,6 +166,11 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+        if (GpuShuffleEnv.isRapidsShuffleEnabled &&
+            conf.shuffleTransportEarlyStart) {
+          logInfo("Initializing shuffle manager heartbeats")
+          rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+        }
       }
 
       val concurrentGpuTasks = conf.concurrentGpuTasks
@@ -195,7 +223,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       }
       val expectedCudfVersion = pluginCudfVersion.toString
       // compare cudf version in the classpath with the cudf version expected by plugin
-      if (!cudfVersion.equals(expectedCudfVersion)) {
+      if (!RapidsExecutorPlugin.cudfVersionSatisfied(expectedCudfVersion, cudfVersion)) {
         throw CudfVersionMismatchException(s"Cudf version in the classpath is different. " +
           s"Found $cudfVersion, RAPIDS Accelerator expects $expectedCudfVersion")
       }
@@ -211,6 +239,27 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
+    Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+  }
+}
+
+object RapidsExecutorPlugin {
+  /**
+   * Return true if the expected cudf version is satisfied by the actual version found.
+   * The version is satisfied if the major and minor versions match exactly. If there is a requested
+   * patch version then the actual patch version must be greater than or equal.
+   * For example, version 7.1 is not satisfied by version 7.2, but version 7.1 is satisfied by
+   * version 7.1.1.
+   */
+  def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
+    val (expMajorMinor, expPatch) = expected.split('.').splitAt(2)
+    val (actMajorMinor, actPatch) = actual.split('.').splitAt(2)
+    actMajorMinor.startsWith(expMajorMinor) && {
+      val expPatchInts = expPatch.map(_.toInt)
+      val actPatchInts = actPatch.map(v => Try(v.toInt).getOrElse(Int.MinValue))
+      val zipped = expPatchInts.zipAll(actPatchInts, 0, 0)
+      zipped.forall { case (e, a) => e <= a }
+    }
   }
 }
 

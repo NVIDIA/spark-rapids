@@ -276,6 +276,21 @@ class RepeatSeqGen(DataGen):
         self._start(rand, self._loop_values)
         self._vals = [self._child.gen() for _ in range(0, self._length)]
 
+class SetValuesGen(DataGen):
+    """A set of values that are randomly selected"""
+    def __init__(self, data_type, data):
+        super().__init__(data_type, nullable=False)
+        self.nullable = any(x is None for x in data)
+        self._vals = data
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self._child) + ')'
+
+    def start(self, rand):
+        data = self._vals
+        length = len(data)
+        self._start(rand, lambda : data[rand.randrange(0, length)])
+
 FLOAT_MIN = -3.4028235E38
 FLOAT_MAX = 3.4028235E38
 NEG_FLOAT_NAN_MIN_VALUE = struct.unpack('f', struct.pack('I', 0xffffffff))[0]
@@ -284,7 +299,7 @@ POS_FLOAT_NAN_MIN_VALUE = struct.unpack('f', struct.pack('I', 0x7f800001))[0]
 POS_FLOAT_NAN_MAX_VALUE = struct.unpack('f', struct.pack('I', 0x7fffffff))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
-    def __init__(self, nullable=True, 
+    def __init__(self, nullable=True,
             no_nans=False, special_cases=None):
         self._no_nans = no_nans
         if special_cases is None:
@@ -319,7 +334,7 @@ POS_DOUBLE_NAN_MIN_VALUE = struct.unpack('d', struct.pack('L', 0x7ff000000000000
 POS_DOUBLE_NAN_MAX_VALUE = struct.unpack('d', struct.pack('L', 0x7fffffffffffffff))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
-    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False, 
+    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False,
             nullable=True, special_cases = None):
         self._min_exp = min_exp
         self._max_exp = max_exp
@@ -432,7 +447,7 @@ class DateGen(DataGen):
 
         self._start_day = self._to_days_since_epoch(start)
         self._end_day = self._to_days_since_epoch(end)
-        
+
         self.with_special_case(start)
         self.with_special_case(end)
 
@@ -637,9 +652,27 @@ def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
     v = list(gen_scalar_values(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
 
-def debug_df(df):
-    """print out the contents of a dataframe for debugging."""
-    print('COLLECTED\n{}'.format(df.collect()))
+def debug_df(df, path = None, file_format = 'json', num_parts = 1):
+    """Print out or save the contents and the schema of a dataframe for debugging."""
+
+    if path is not None:
+        # Save the dataframe and its schema
+        # The schema can be re-created by using DataType.fromJson and used
+        # for loading the dataframe
+        file_name = f"{path}.{file_format}"
+        schema_file_name = f"{path}.schema.json"
+
+        df.coalesce(num_parts).write.format(file_format).save(file_name)
+        print(f"SAVED df output for debugging at {file_name}")
+
+        schema_json = df.schema.json()
+        schema_file = open(schema_file_name , 'w')
+        schema_file.write(schema_json)
+        schema_file.close()
+        print(f"SAVED df schema for debugging along in the output dir")
+    else:
+        print('COLLECTED\n{}'.format(df.collect()))
+
     df.explain()
     df.printSchema()
     return df
@@ -811,6 +844,26 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
            decimal_gen_64bit]
 
+# Pyarrow will complain the error as below if the timestamp is out of range for both CPU and GPU,
+# so narrow down the time range to avoid exceptions causing test failures.
+#
+#     "pyarrow.lib.ArrowInvalid: Casting from timestamp[us, tz=UTC] to timestamp[ns]
+#      would result in out of bounds timestamp: 51496791452587000"
+#
+# This issue has been fixed in pyarrow by the PR https://github.com/apache/arrow/pull/7169
+# However it still requires PySpark to specify the new argument "timestamp_as_object".
+arrow_common_gen = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        string_gen, boolean_gen, date_gen,
+        TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc),
+                     end=datetime(2262, 1, 1, tzinfo=timezone.utc))]
+
+arrow_array_gens = [ArrayGen(subGen) for subGen in arrow_common_gen] + nested_array_gens_sample
+
+arrow_one_level_struct_gen = StructGen([
+        ['child'+str(i), sub_gen] for i, sub_gen in enumerate(arrow_common_gen)])
+
+arrow_struct_gens = [arrow_one_level_struct_gen,
+        StructGen([['child0', ArrayGen(short_gen)], ['child1', arrow_one_level_struct_gen]])]
 
 # This function adds a new column named uniq_int where each row
 # has a new unique integer value. It just starts at 0 and
