@@ -1241,7 +1241,7 @@ case class GpuCast(
     }
 
     withResource(checkedInput) { checked =>
-      val targetType = DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale)
+      val targetType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
       // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
       val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
