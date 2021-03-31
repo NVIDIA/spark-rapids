@@ -230,8 +230,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast decimal to string") {
+    val checks = GpuOverrides.expressions(classOf[Cast]).getChecks.get.asInstanceOf[CastChecks]
+    require(checks.gpuCanCast(DataTypes.createDecimalType(), DataTypes.StringType))
+
     SparkSession.getActiveSession.get.sqlContext
         .setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+
     Seq(10, 15, 18).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),

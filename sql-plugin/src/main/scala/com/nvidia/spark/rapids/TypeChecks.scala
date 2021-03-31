@@ -772,7 +772,7 @@ class CastChecks extends ExprChecks {
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
-  val decimalChecks: TypeSig = DECIMAL
+  val decimalChecks: TypeSig = DECIMAL + STRING
   val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none
