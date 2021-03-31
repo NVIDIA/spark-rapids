@@ -21,6 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation, OrderByArg}
+import ai.rapids.cudf.Aggregation.NullPolicy
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -122,7 +123,7 @@ class GroupingIterator(
           withResource(GpuColumnVector.from(projected)) { table =>
             table
               .groupBy(partitionIndices:_*)
-              .aggregate(Aggregation.count(true).onColumn(0))
+              .aggregate(Aggregation.count(NullPolicy.INCLUDE).onColumn(0))
           }
         }
         val orderedTable = withResource(cntTable) { table =>
