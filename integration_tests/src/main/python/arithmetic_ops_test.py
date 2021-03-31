@@ -77,13 +77,12 @@ pytest.param(DecimalGen(21, 17), marks=pytest.mark.xfail(reason="The precision i
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : debug_df(binary_op_df(spark, data_gen, length=10).select(
-                f.col('a') , f.col('b'),
+            lambda spark : binary_op_df(spark, data_gen, length=10).select(
                 f.col('a') / f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) / f.col('b'),
                 f.lit(None).cast(data_type) / f.col('a'),
                 f.col('b') / f.lit(None).cast(data_type),
-                f.col('a') / f.col('b'))),
+                f.col('a') / f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('lhs', [DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2)], ids=idfn)

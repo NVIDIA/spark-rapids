@@ -133,7 +133,7 @@ case class GpuMultiply(
         if !DecimalType.is32BitDecimalType(dataType) &&
           DecimalType.is32BitDecimalType(l) &&
           DecimalType.is32BitDecimalType(r) => {
-        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
         val decimalType = createCudfDecimal(10, Math.max(l.scale, r.scale))
         val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
         withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
@@ -159,7 +159,7 @@ case class GpuMultiply(
         if !DecimalType.is32BitDecimalType(dataType) &&
           DecimalType.is32BitDecimalType(l) &&
           DecimalType.is32BitDecimalType(r) => {
-        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
         val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
         val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
         val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
@@ -187,7 +187,7 @@ case class GpuMultiply(
         if !DecimalType.is32BitDecimalType(dataType) &&
           DecimalType.is32BitDecimalType(l) &&
           DecimalType.is32BitDecimalType(r) => {
-        // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+        // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
         val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
         val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
         val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
@@ -387,7 +387,7 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
       case (_: DecimalType, r: DecimalType) => {
         val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
           DecimalType.is32BitDecimalType(r)) {
-          // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+          // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
           (lhs.getBase.castTo(decimalType),
@@ -413,7 +413,7 @@ case class GpuDivide(left: Expression, right: Expression) extends GpuDivModLike 
       case (_: DecimalType, r: DecimalType) => {
         val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
           DecimalType.is32BitDecimalType(r)) {
-          // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
+          // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
           (GpuScalar.from(lhs.getBigDecimal().intValue().toLong, sparkDecimalType),

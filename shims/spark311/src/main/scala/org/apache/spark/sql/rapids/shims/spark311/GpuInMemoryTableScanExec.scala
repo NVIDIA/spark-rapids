@@ -53,7 +53,7 @@ case class GpuInMemoryTableScanExec(
       relation.cacheBuilder.serializer.vectorTypes(attributes, conf)
 
     private lazy val columnarInputRDD: RDD[ColumnarBatch] = {
-      val numOutputRows =gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
+      val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
       val buffers = filteredCachedBatches()
       relation.cacheBuilder.serializer.asInstanceOf[ParquetCachedBatchSerializer]
         .gpuConvertCachedBatchToColumnarBatch(

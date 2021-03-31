@@ -31,7 +31,8 @@ object DecimalUtil {
   }
 
   /**
-   * Return the size in bytes of the data type.
+   * Return the size in bytes of the Fixed-width data types.
+   * WARNING: Do not use this method for variable-width data types
    */
   private[rapids] def getDataTypeSize(dt: DataType): Int = {
     dt match {

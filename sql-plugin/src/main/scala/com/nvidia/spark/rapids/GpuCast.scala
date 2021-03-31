@@ -232,7 +232,7 @@ case class GpuCast(
         castFloatsToDecimal(input.getBase, dt)
 
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.getBase, from, to, ansiMode)
+        castDecimalToDecimal(input.getBase, from, to)
 
       case _ =>
         doColumnar(input.getBase, input.dataType())
@@ -462,7 +462,7 @@ case class GpuCast(
         }
 
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.copyToColumnVector(), from, to, ansiMode)
+        castDecimalToDecimal(input.copyToColumnVector(), from, to)
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
@@ -1265,8 +1265,7 @@ case class GpuCast(
 
   private def castDecimalToDecimal(input: ColumnVector,
       from: DecimalType,
-      to: DecimalType,
-      ansiMode: Boolean): ColumnVector = {
+      to: DecimalType): ColumnVector = {
 
     val isFrom32Bit = DecimalType.is32BitDecimalType(from)
     val isTo32Bit = DecimalType.is32BitDecimalType(to)

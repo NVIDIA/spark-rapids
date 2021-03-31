@@ -529,7 +529,7 @@ private object GpuRowToColumnConverter {
       builder.append(row.getDecimal(column, precision, scale).toJavaBigDecimal)
       // We are basing our DType.DECIMAL on precision in GpuColumnVector#toRapidsOrNull so we can
       // safely assume the underlying vector is Int if precision < 10 otherwise Long
-      if (precision < 10) {
+      if (precision <= Decimal.MAX_INT_DIGITS) {
         4
       } else {
         8
@@ -537,7 +537,7 @@ private object GpuRowToColumnConverter {
     }
 
     override def getNullSize: Double = {
-      if (precision < 10) {
+      if (precision <= Decimal.MAX_INT_DIGITS) {
         4
       } else {
         8

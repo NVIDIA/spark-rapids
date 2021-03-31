@@ -688,7 +688,7 @@ abstract class FileParquetPartitionReaderBase(
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
               val col = if (typeCastingNeeded && precisionList.nonEmpty) {
-                val tmp = convertDecimal64ToDecimal32(origCol, precisionList)
+                val tmp = convertDecimal64ToDecimal32(origCol, precisionList.dequeue())
                 if (tmp != origCol) {
                   withResource(tmp) { tmp =>
                     tmp.copyToColumnVector()
@@ -724,20 +724,28 @@ abstract class FileParquetPartitionReaderBase(
     }
   }
 
-  private def convertDecimal64ToDecimal32(cv: ColumnView, precisionList: Queue[Int]): ColumnView = {
+  /**
+   * This method casts the input ColumnView to a new column if it contains Decimal data that
+   * could be stored in smaller data type. e.g. a DecimalType(7,2) stored as 64-bit DecimalType can
+   * easily be stored in a 32-bit DecimalType
+   * @param cv              The column view that could potentially have Decimal64 columns with
+   *                        precision < 10
+   * @param precision   precisions of all the decimal columns in this Column
+   * @return
+   */
+  private def convertDecimal64ToDecimal32(cv: ColumnView, precision: Int): ColumnView = {
     val dt = cv.getType
     if (!dt.isNestedType) {
-      val prec = precisionList.dequeue()
-      if (dt.getTypeId == DTypeEnum.DECIMAL64 && prec <= DType.DECIMAL32_MAX_PRECISION) {
+      if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
         // we want to handle the legacy case where Decimals are written as an array of bytes
         // cudf reads them back as a 64-bit Decimal
-        cv.castTo(DecimalUtil.createCudfDecimal(prec, -dt.getScale()))
+        cv.castTo(DecimalUtil.createCudfDecimal(precision, -dt.getScale()))
       } else {
         cv
       }
     } else if (dt == DType.LIST) {
       val child = cv.getChildColumnView(0)
-      val newChild = convertDecimal64ToDecimal32(child, precisionList)
+      val newChild = convertDecimal64ToDecimal32(child, precision)
       if (child == newChild) {
         cv
       } else {
@@ -752,7 +760,7 @@ abstract class FileParquetPartitionReaderBase(
       newColIndices.sizeHint(cv.getNumChildren)
       (0 until cv.getNumChildren).foreach { i =>
         val child = cv.getChildColumnView(i)
-        val newChild = convertDecimal64ToDecimal32(child, precisionList)
+        val newChild = convertDecimal64ToDecimal32(child, precision)
         if (newChild != child) {
           newColumns += newChild
           newColIndices += i

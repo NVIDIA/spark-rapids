@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -277,7 +277,7 @@ class GpuParquetWriter(
               new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
                 v.castTo(DType.TIMESTAMP_MILLISECONDS)
               })
-            case d: DecimalType if d.precision < 10 =>
+            case d: DecimalType if d.precision <= Decimal.MAX_INT_DIGITS =>
               // There is a bug in Spark that causes a problem if we write Decimals with
               // precision < 10 as Decimal64.
               // https://issues.apache.org/jira/browse/SPARK-34167
