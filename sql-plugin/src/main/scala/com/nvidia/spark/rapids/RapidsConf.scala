@@ -563,6 +563,18 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CAST_STRING_TO_DECIMAL = conf("spark.rapids.sql.castStringToDecimal.enabled")
+    .doc("When set to true, enables casting from strings to decimal type on the GPU. Currently " +
+      "string to decimal type on the GPU might produce results which slightly differed from the " +
+      "correct results when the string represents any number exceeding the max precision that " +
+      "CAST_STRING_TO_FLOAT can keep. For instance, the GPU returns 99999999999999987 given " +
+      "input string \"99999999999999999\". The cause of divergence is that we can not cast " +
+      "strings containing scientific notation to decimal directly. So, we have to cast strings " +
+      "to floats firstly. Then, cast floats to decimals. The first step may lead to precision " +
+      "loss.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
     .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
       "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
@@ -941,10 +953,16 @@ object RapidsConf {
       .doubleConf
       .createWithDefault(0.1)
 
-  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptmizationEnabled")
+  val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
       "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
       "have to turn it off, but its convenient for testing.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val CPU_RANGE_PARTITIONING_ALLOWED = conf("spark.rapids.allowCpuRangePartitioning")
+    .doc("Option to control enforcement of range partitioning on GPU.")
     .internal()
     .booleanConf
     .createWithDefault(true)
@@ -1177,6 +1195,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
+  lazy val isCastStringToDecimalEnabled: Boolean = get(ENABLE_CAST_STRING_TO_DECIMAL)
+
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
@@ -1272,6 +1292,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+
+  lazy val cpuRangePartitioningPermitted = get(CPU_RANGE_PARTITIONING_ALLOWED)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

@@ -183,6 +183,25 @@
                 <module>tests-spark310+</module>
             </modules>
         </profile>
+
+        <profile>
+            <id>cuda10-1</id>
+            <properties>
+                <cuda.version>cuda10-1</cuda.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>cuda10-2</id>
+            <properties>
+                <cuda.version>cuda10-2</cuda.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>cuda11</id>
+            <properties>
+                <cuda.version>cuda11</cuda.version>
+            </properties>
+        </profile>
     </profiles>
 
     <properties>

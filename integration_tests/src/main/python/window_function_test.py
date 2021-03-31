@@ -14,7 +14,6 @@
 
 import pytest
 
-from spark_session import is_before_spark_310
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import *
@@ -262,5 +261,4 @@ def test_window_aggs_for_rows_collect_list():
           collect_list(c_struct) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct
         from window_collect_table
-        ''',
-        {'spark.rapids.sql.expression.CollectList': 'true'})
+        ''')
