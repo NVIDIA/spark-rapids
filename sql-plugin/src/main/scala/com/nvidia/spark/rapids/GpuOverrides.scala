@@ -1858,12 +1858,13 @@ object GpuOverrides {
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
           TypeSig.all)),
-        Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN + TypeSig.commonCudfTypes,
-          TypeSig.BOOLEAN + TypeSig.commonCudfTypes))),
+        Some(RepeatingParamCheck("filter",
+          TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+          TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
         override def convertToGpu(
-            pivotColumn: Expression,
-            valueColumn: Expression): GpuExpression = GpuPivotFirst(
+          pivotColumn: Expression,
+          valueColumn: Expression): GpuExpression = GpuPivotFirst(
           pivotColumn, valueColumn, pivot.pivotColumnValues)
       }),
     expr[Count](

@@ -386,28 +386,36 @@ case class GpuPivotFirst(
 
   override val dataType: DataType = valueDataType
   override val nullable: Boolean = false
+  val pivotColAttr = pivotColumnValues.map(a => {
+    // If `a` is null, then create an AttributeReference for null column.
+    if (a == null) AttributeReference(GpuLiteral(null, valueDataType).toString, valueDataType)()
+    else AttributeReference(a.toString, valueDataType)()
+  })
 
-  val pivotColAttr = pivotColumnValues.map(a => AttributeReference(a.toString, valueDataType)())
-
-  override lazy val inputProjection: Seq[Expression] =  {
+  override lazy val inputProjection: Seq[Expression] = {
     val expr = pivotColumnValues.map(a =>
       GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(a, pivotColumn.dataType)),
         valueColumn, GpuLiteral(null, valueDataType)))
-    println(expr)
     expr
   }
 
   override lazy val updateExpressions: Seq[GpuExpression] = {
-    pivotColAttr.map(a => new CudfSum(a))
+    val updateArray = pivotColAttr.map(a => new CudfLastExcludeNulls(a))
+    GpuCreateArray(updateArray, false) :: Nil
+    updateArray
   }
 
-  override lazy val mergeExpressions: Seq[GpuExpression] = pivotColAttr.map(a => new CudfSum(a))
-  override lazy val evaluateExpression: Seq[Expression] = pivotColAttr
+  override lazy val mergeExpressions: Seq[GpuExpression] = {
+    pivotColAttr.map(a => new CudfLastExcludeNulls(a))
+  }
+
+  override lazy val evaluateExpression: Seq[Expression] = GpuCreateArray(pivotColAttr, false) :: Nil
   override lazy val aggBufferAttributes: Seq[AttributeReference] = pivotColAttr
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, valueDataType))
 
   override def children: Seq[Expression] = pivotColumn :: Nil
+
 }
 
 case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate
