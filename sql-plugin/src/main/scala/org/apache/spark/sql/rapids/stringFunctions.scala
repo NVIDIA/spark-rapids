@@ -575,6 +575,36 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   }
 }
 
+case class GpuRLike(left: Expression, right: Expression)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant with Logging {
+  
+  override def toString: String = s"$left RLIKE $right"
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have two column vectors as input in RLike")
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have a scalar as left side operand in RLike")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+    lhs.getBase.matchesRe(rhs.getJavaString)
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+
+  override def dataType: DataType = BooleanType
+
+}
+
+
 class SubstringIndexMeta(
     expr: SubstringIndex,
     override val conf: RapidsConf,

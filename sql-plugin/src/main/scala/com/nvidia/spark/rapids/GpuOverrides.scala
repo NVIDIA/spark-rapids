@@ -451,7 +451,7 @@ object GpuOverrides {
 
   def canRegexpBeTreatedLikeARegularString(strLit: UTF8String): Boolean = {
     val s = strLit.toString
-    !regexList.exists(pattern => s.contains(pattern))
+    regexList.exists(pattern => s.contains(pattern))
   }
 
   private def convertExprToGpuIfPossible(expr: Expression, conf: RapidsConf): Expression = {
@@ -2359,6 +2359,33 @@ object GpuOverrides {
       (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
+      }),
+    expr[RLike](
+      "RLike",
+      ExprChecks.binaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("src", TypeSig.STRING, TypeSig.STRING),
+        ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+      (a, conf, p, r) => new BinaryExprMeta[RLike](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val regexp = extractLit(a.right)
+          if (regexp.isEmpty) {
+            willNotWorkOnGpu("only literal regexp values are supported")
+          } else {
+            val str = regexp.get.value.asInstanceOf[UTF8String]
+            if (str != null) {
+              if (!canRegexpBeTreatedLikeARegularString(str)) {
+                willNotWorkOnGpu("regular expressions are not supported yet")
+              }
+              if (str.numChars() == 0) {
+                willNotWorkOnGpu("An empty regex is not supported yet")
+              }
+            } else {
+              willNotWorkOnGpu("null regex is not supported yet")
+            }
+          }
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuRLike(lhs, rhs)
       }),
     expr[Length](
       "String character length or binary byte length",
