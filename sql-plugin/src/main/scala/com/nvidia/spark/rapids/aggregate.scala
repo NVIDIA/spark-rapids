@@ -22,8 +22,8 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, If, NamedExpression}
@@ -496,10 +496,8 @@ case class GpuHashAggregateExec(
           //       Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
           finalCb = if (boundExpression.boundFinalProjections.isDefined) {
             if (aggregatedCb != null) {
-
               val finalCvs =
                 boundExpression.boundFinalProjections.get.map { ref =>
-
                   // aggregatedCb is made up of ColumnVectors
                   // and the final projections from the aggregates won't change that,
                   // so we can assume they will be vectors after we eval
@@ -518,7 +516,6 @@ case class GpuHashAggregateExec(
           aggregatedCb = null
 
           if (finalCb != null) {
-
             // Perform the last project to get the correct shape that Spark expects. Note this will
             // add things like literals, that were not part of the aggregate into the batch.
             resultCvs = boundExpression.boundResultReferences.map { ref =>

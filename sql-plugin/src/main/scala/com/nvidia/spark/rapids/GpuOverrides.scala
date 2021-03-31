@@ -51,7 +51,7 @@ import org.apache.spark.sql.execution.python.rapids.GpuAggregateInPandasExecMeta
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuPivotFirst, _}
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, GpuShuffleMeta}
 import org.apache.spark.sql.rapids.execution.python._
