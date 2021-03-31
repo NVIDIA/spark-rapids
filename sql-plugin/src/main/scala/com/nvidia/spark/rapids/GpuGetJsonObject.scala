@@ -21,20 +21,21 @@ import ai.rapids.cudf.{ColumnVector, Scalar}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{DataType, StringType}
 
-case class GpuGetJsonObject(left: Expression, right: Expression) extends GpuBinaryExpression with
+case class GpuGetJsonObject(json: Expression, path: Expression) extends GpuBinaryExpression with
   ExpectsInputTypes {
-
+  override def left: Expression = json
+  override def right: Expression = path
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType)
   override def nullable: Boolean = true
   override def prettyName: String = "get_json_object"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException("We don't support json path variable as a vector")
+    throw new UnsupportedOperationException("JSON path must be a scalar value")
   }
 
   override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new UnsupportedOperationException("We don't support json path variable as a vector")
+    throw new UnsupportedOperationException("JSON path must be a scalar value")
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
