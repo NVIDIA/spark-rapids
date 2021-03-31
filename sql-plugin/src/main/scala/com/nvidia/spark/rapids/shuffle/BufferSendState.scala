@@ -171,32 +171,8 @@ class BufferSendState(
 
         acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
           require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
-          withResource(rapidsBuffer.getMemoryBuffer) { memBuff =>
-            bounceBuffToUse match {
-              case _: HostMemoryBuffer =>
-                //TODO: HostMemoryBuffer needs the same functionality that
-                // DeviceMemoryBuffer has to copy from/to device/host buffers
-                CudaUtil.copy(
-                  memBuff,
-                  blockRange.rangeStart,
-                  bounceBuffToUse,
-                  buffOffset,
-                  blockRange.rangeSize())
-              case d: DeviceMemoryBuffer =>
-                memBuff match {
-                  case mh: HostMemoryBuffer =>
-                    // host original => device bounce
-                    d.copyFromHostBufferAsync(buffOffset, mh, blockRange.rangeStart,
-                      blockRange.rangeSize(), serverStream)
-                  case md: DeviceMemoryBuffer =>
-                    // device original => device bounce
-                    d.copyFromDeviceBufferAsync(buffOffset, md, blockRange.rangeStart,
-                      blockRange.rangeSize(), serverStream)
-                  case _ => throw new IllegalStateException("What buffer is this")
-                }
-              case _ => throw new IllegalStateException("What buffer is this")
-            }
-          }
+          rapidsBuffer.copyToMemoryBuffer(
+            blockRange.rangeStart, bounceBuffToUse, buffOffset, blockRange.rangeSize())
           buffOffset += blockRange.rangeSize()
         }
 

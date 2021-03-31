@@ -116,6 +116,16 @@ trait RapidsBuffer extends AutoCloseable {
   def getMemoryBuffer: MemoryBuffer
 
   /**
+   * Copy the content of this buffer into the specified memory buffer, starting from the given
+   * offset.
+   * @param srcOffset offset to start copying from.
+   * @param dst the memory buffer to copy into.
+   * @param dstOffset offset to copy into.
+   * @param length number of bytes to copy.
+   */
+  def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long)
+
+  /**
    * Try to add a reference to this buffer to acquire it.
    * @note The close method must be called for every successfully obtained reference.
    * @return true if the reference was added or false if this buffer is no longer valid
@@ -183,6 +193,10 @@ sealed class DegenerateRapidsBuffer(
 
   override def getMemoryBuffer: MemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+
+  override def copyToMemoryBuffer(
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long): Unit =
+    throw new UnsupportedOperationException("degenerate buffer cannot copy to memory buffer")
 
   override def addReference(): Boolean = true
 

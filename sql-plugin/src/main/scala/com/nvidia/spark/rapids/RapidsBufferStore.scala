@@ -20,7 +20,7 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, CudaUtil, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -301,6 +301,26 @@ abstract class RapidsBufferStore(
         MetaUtils.getBatchFromMeta(devBuffer, meta, sparkTypes)
       } else {
         GpuCompressedColumnVector.from(devBuffer, meta)
+      }
+    }
+
+    override def copyToMemoryBuffer(
+        srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long): Unit = {
+      withResource(getMemoryBuffer) { memBuff =>
+        dst match {
+          case _: HostMemoryBuffer =>
+            //TODO: HostMemoryBuffer needs the same functionality that
+            // DeviceMemoryBuffer has to copy from/to device/host buffers
+            CudaUtil.copy(
+              memBuff,
+              srcOffset,
+              dst,
+              dstOffset,
+              length)
+          case _: DeviceMemoryBuffer =>
+            CudaUtil.copyAsync(memBuff, srcOffset, dst, dstOffset, length)
+          case _ => throw new IllegalStateException("What buffer is this")
+        }
       }
     }
 

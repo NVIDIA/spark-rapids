@@ -74,7 +74,6 @@ class RapidsGdsStore(
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
-    // TODO(rongou): cache this buffer to avoid repeated reads from disk.
     override def getMemoryBuffer: DeviceMemoryBuffer = synchronized {
       val path = if (id.canShareDiskPaths) {
         sharedBufferFiles.get(id)
@@ -85,6 +84,22 @@ class RapidsGdsStore(
         CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
         logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
         buffer
+      }
+    }
+
+    override def copyToMemoryBuffer(
+        srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long): Unit = {
+      val path = if (id.canShareDiskPaths) {
+        sharedBufferFiles.get(id)
+      } else {
+        id.getDiskPath(diskBlockManager)
+      }
+      dst match {
+        case _: DeviceMemoryBuffer =>
+          val dm = dst.asInstanceOf[DeviceMemoryBuffer].slice(dstOffset, length)
+          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+          logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
+        case _ => throw new IllegalStateException("GDS can only copy to device buffer, not $dst")
       }
     }
 

@@ -37,6 +37,25 @@ object CudaUtil {
   }
 
   /**
+   * Asynchronously copy from `src` buffer, starting at `srcOffset`,
+   * to a destination buffer `dst` starting at `dstOffset`,
+   * `length` bytes, in the default stream.
+   * @param src source buffer
+   * @param srcOffset source offset
+   * @param dst destination buffer
+   * @param dstOffset destination offset
+   * @param length amount to copy
+   */
+  def copyAsync(src: MemoryBuffer, srcOffset: Long, dst: MemoryBuffer,
+      dstOffset: Long, length: Long): Unit = {
+    Cuda.asyncMemcpy(
+      dst.getAddress + dstOffset,
+      src.getAddress + srcOffset,
+      length,
+      CudaMemcpyKind.DEFAULT)
+  }
+
+  /**
    * Allocate a `size` buffer on the device using stream `stream`.
    *
    * This needs to be replaced by `DeviceMemoryBuffer.allocate(size, stream)`
