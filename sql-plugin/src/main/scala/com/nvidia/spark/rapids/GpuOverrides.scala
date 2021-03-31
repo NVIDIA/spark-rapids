@@ -2393,8 +2393,7 @@ object GpuOverrides {
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       }),
     expr[Explode](
-      "Given an input array produces a sequence of rows for each value in the array. "
-        + "Explode with outer Generate is not supported under GPU runtime." ,
+      "Given an input array produces a sequence of rows for each value in the array.",
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
@@ -2409,8 +2408,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuExplode(childExprs(0).convertToGpu())
       }),
     expr[PosExplode](
-      "Given an input array produces a sequence of rows for each value in the array. "
-        + "PosExplode with outer Generate is not supported under GPU runtime." ,
+      "Given an input array produces a sequence of rows for each value in the array.",
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
