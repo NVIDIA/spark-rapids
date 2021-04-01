@@ -582,14 +582,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
-    .doc("When set to true, enables casting from strings to integer types (byte, short, " +
-      "int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
-      "results when the string represents a number larger than Long.MaxValue or smaller than " +
-      "Long.MinValue.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
     .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
       "format for Spark includes a timezone at the end. Anything except the UTC timezone is not " +
@@ -1190,8 +1182,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
-
-  lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
