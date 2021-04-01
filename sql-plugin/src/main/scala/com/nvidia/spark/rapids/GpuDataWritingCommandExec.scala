@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019,2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
@@ -54,7 +54,7 @@ trait GpuDataWritingCommand extends DataWritingCommand {
 }
 
 case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPlan)
-    extends UnaryExecNode with GpuExec {
+    extends GpuUnaryExecNode {
   override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
   private lazy val sideEffectResult: Seq[ColumnarBatch] =

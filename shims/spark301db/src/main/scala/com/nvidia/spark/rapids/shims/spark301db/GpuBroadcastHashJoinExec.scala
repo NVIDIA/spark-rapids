@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
@@ -89,7 +89,7 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+    right: SparkPlan) extends GpuBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

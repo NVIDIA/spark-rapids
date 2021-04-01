@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution,
   Distribution, Partitioning}
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.{ArrowPythonRunner, FlatMapGroupsInPandasExec}
 import org.apache.spark.sql.execution.python.rapids.GpuPandasUtils._
 import org.apache.spark.sql.types.StructType
@@ -70,7 +70,7 @@ case class GpuFlatMapGroupsInPandasExec(
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan)
-  extends SparkPlan with UnaryExecNode with GpuExec {
+  extends GpuUnaryExecNode {
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {

@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeRef
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
 import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, LongType, MapType, StructType}
@@ -306,7 +306,7 @@ case class GpuHashAggregateExec(
     aggregateAttributes: Seq[Attribute],
     initialInputBufferOffset: Int,
     resultExpressions: Seq[NamedExpression],
-    child: SparkPlan) extends UnaryExecNode with GpuExec with Arm {
+    child: SparkPlan) extends GpuUnaryExecNode {
 
   override def verboseStringWithOperatorId(): String = {
     s"""

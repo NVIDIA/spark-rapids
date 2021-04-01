@@ -2183,13 +2183,18 @@ object GpuOverrides {
         ("key", TypeSig.commonCudfTypes, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
+          // avoid using BinaryExpression accessors since hierarchy changed in Spark 3.2
+          val children = in.children
+          val left = children.head
+          val right = children(1)
+
           // do not support literal arrays as LHS
-          if (extractLit(in.left).isDefined) {
+          if (extractLit(left).isDefined) {
             willNotWorkOnGpu("Literal arrays are not supported for array_contains")
           }
 
-          val rhsVal = extractLit(in.right)
-          val mightHaveNans = (in.right.dataType, rhsVal) match {
+          val rhsVal = extractLit(right)
+          val mightHaveNans = (right.dataType, rhsVal) match {
             case (FloatType, Some(f: Literal)) => f.value.asInstanceOf[Float].isNaN
             case (DoubleType, Some(d: Literal)) => d.value.asInstanceOf[Double].isNaN
             case (FloatType | DoubleType, None) => conf.hasNans // RHS is a column

@@ -21,7 +21,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
-import org.apache.spark.sql.execution.BinaryExecNode
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -30,7 +29,7 @@ abstract class GpuShuffledHashJoinBase(
     rightKeys: Seq[Expression],
     buildSide: GpuBuildSide,
     condition: Option[Expression],
-    val isSkewJoin: Boolean) extends BinaryExecNode with GpuHashJoin {
+    val isSkewJoin: Boolean) extends GpuBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

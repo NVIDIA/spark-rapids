@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -34,7 +34,7 @@ trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTy
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 }
 
 trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpression
@@ -43,7 +43,7 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
@@ -118,7 +118,7 @@ abstract class GpuTimeMath(
     start: Expression,
     interval: Expression,
     timeZoneId: Option[String] = None)
-   extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes
+   extends GpuBinaryExpression with TimeZoneAwareExpression with ExpectsInputTypes
    with Serializable {
 
   def this(start: Expression, interval: Expression) = this(start, interval, None)
@@ -163,6 +163,18 @@ abstract class GpuTimeMath(
       }
     }
   }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("columnarEval should be called")
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("columnarEval should be called")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
+    throw new IllegalStateException("columnarEval should be called")
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
+    throw new IllegalStateException("columnarEval should be called")
 
   def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector
 }
@@ -338,10 +350,13 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   override def tagExprForGpu(): Unit = {
     checkTimeZoneId(expr.timeZoneId)
 
+    // avoid using BinaryExpression accessors since the hierarchy changed in Spark 3.2
+    val right = expr.children(1)
+
     // Date and Timestamp work too
-    if (expr.right.dataType == StringType) {
+    if (right.dataType == StringType) {
       try {
-        extractStringLit(expr.right) match {
+        extractStringLit(right) match {
           case Some(rightLit) =>
             sparkFormat = rightLit
             if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {

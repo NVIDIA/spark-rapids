@@ -27,7 +27,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -452,8 +452,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 }
 
-case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
-  extends UnaryExecNode with GpuExec {
+case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal) extends GpuUnaryExecNode {
   import GpuMetric._
 
   private[this] val maxDecompressBatchMemory =

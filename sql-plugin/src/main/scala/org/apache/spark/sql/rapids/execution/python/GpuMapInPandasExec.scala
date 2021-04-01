@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression,
   PythonUDF, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
@@ -69,7 +69,7 @@ case class GpuMapInPandasExec(
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan)
-  extends UnaryExecNode with GpuExec {
+  extends GpuUnaryExecNode {
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {

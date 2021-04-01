@@ -21,7 +21,6 @@ import java.util.{Comparator, LinkedList, PriorityQueue}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetric._
 
 import org.apache.spark.TaskContext
@@ -30,7 +29,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -59,7 +58,7 @@ case class GpuSortExec(
     global: Boolean,
     child: SparkPlan,
     sortType: SortExecType)
-  extends UnaryExecNode with GpuExec {
+  extends GpuUnaryExecNode {
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
     case FullSortSingleBatch => Seq(RequireSingleBatch)

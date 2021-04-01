@@ -26,7 +26,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -235,17 +235,17 @@ object CudfRowTransitions {
     schema.forall(att => isSupportedType(att.dataType))
 }
 
-abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRdd: Boolean)
-    extends UnaryExecNode with GpuExec {
+abstract class GpuColumnarToRowExecParent(val childPlan: SparkPlan, val exportColumnarRdd: Boolean)
+    extends GpuExec {
   import GpuMetric._
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 
-  override def output: Seq[Attribute] = child.output
+  override def output: Seq[Attribute] = childPlan.output
 
-  override def outputPartitioning: Partitioning = child.outputPartitioning
+  override def outputPartitioning: Partitioning = childPlan.outputPartitioning
 
-  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+  override def outputOrdering: Seq[SortOrder] = childPlan.outputOrdering
 
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
@@ -258,9 +258,9 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val totalTime = gpuLongMetric(TOTAL_TIME)
 
-    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, totalTime)
+    val f = makeIteratorFunc(childPlan.output, numOutputRows, numInputBatches, totalTime)
 
-    val cdata = child.executeColumnar()
+    val cdata = childPlan.executeColumnar()
     if (exportColumnarRdd) {
       // If we are exporting columnar rdd we need an easy way for the code that walks the
       // RDDs to know where the columnar to row transition is happening.
@@ -273,7 +273,7 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
 
 object GpuColumnarToRowExecParent {
   def unapply(arg: GpuColumnarToRowExecParent): Option[(SparkPlan, Boolean)] = {
-    Option(Tuple2(arg.child, arg.exportColumnarRdd))
+    Option(Tuple2(arg.children.head, arg.exportColumnarRdd))
   }
 
   def makeIteratorFunc(
@@ -306,4 +306,4 @@ object GpuColumnarToRowExecParent {
 }
 
 case class GpuColumnarToRowExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
-   extends GpuColumnarToRowExecParent(child, exportColumnarRdd)
+   extends GpuColumnarToRowExecParent(child, exportColumnarRdd) with GpuUnaryExecNode

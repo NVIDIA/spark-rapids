@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,18 @@ package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, TaggingExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- * This is a TaggingExpression in spark, which gets matched in NormalizeFloatingNumbers (which is
- * a Rule).
- */
-case class GpuKnownFloatingPointNormalized(child: Expression) extends TaggingExpression
-    with GpuExpression {
+// Avoid deriving from TaggingExpression since it is a UnaryExpression that changed in Spark 3.2
+case class GpuKnownFloatingPointNormalized(child: Expression) extends GpuExpression {
+  override def nullable: Boolean = child.nullable
+
+  override def dataType: DataType = child.dataType
+
+  override def children: Seq[Expression] = child :: Nil
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     child.columnarEval(batch)
   }

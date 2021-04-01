@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,19 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.{GpuLeafExecNode, ShimLoader}
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, LeafExecNode}
+import org.apache.spark.sql.execution.ExplainUtils
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.util.Utils
 
 /** GPU implementation of Spark's `DataSourceScanExec` */
-trait GpuDataSourceScanExec extends LeafExecNode {
+trait GpuDataSourceScanExec extends GpuLeafExecNode {
   def relation: BaseRelation
   def tableIdentifier: Option[TableIdentifier]
 

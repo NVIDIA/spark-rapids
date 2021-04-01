@@ -27,14 +27,17 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{CollectLimitExec, SparkPlan}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
  * Helper trait which defines methods that are shared by both
  * [[GpuLocalLimitExec]] and [[GpuGlobalLimitExec]].
  */
-trait GpuBaseLimitExec extends LimitExec with GpuExec {
+trait GpuBaseLimitExec extends GpuUnaryExecNode {
+  /** Number of element should be taken from child operator */
+  def limit: Int
+
   override def output: Seq[Attribute] = child.output
 
   // The same as what feeds us, even though we might make it smaller
@@ -256,7 +259,7 @@ case class GpuTopN(
     limit: Int,
     sortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan) extends GpuExec with UnaryExecNode {
+    child: SparkPlan) extends GpuUnaryExecNode {
 
   override def output: Seq[Attribute] = {
     projectList.map(_.toAttribute)

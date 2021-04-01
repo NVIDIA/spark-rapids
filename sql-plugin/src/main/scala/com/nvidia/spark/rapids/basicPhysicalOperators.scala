@@ -26,7 +26,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
@@ -60,8 +60,7 @@ object GpuProjectExec extends Arm {
   }
 }
 
-case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan)
-    extends UnaryExecNode with GpuExec {
+case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan) extends GpuUnaryExecNode {
 
   private val sparkProjectList = projectList.asInstanceOf[Seq[NamedExpression]]
 
@@ -129,7 +128,7 @@ object GpuFilter extends Arm {
 }
 
 case class GpuFilterExec(condition: Expression, child: SparkPlan)
-    extends UnaryExecNode with GpuPredicateHelper with GpuExec {
+    extends GpuUnaryExecNode with GpuPredicateHelper {
 
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
@@ -188,7 +187,7 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
  */
 case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range,
     targetSizeBytes: Long)
-    extends LeafExecNode with GpuExec {
+    extends GpuLeafExecNode {
 
   val start: Long = range.start
   val end: Long = range.end
@@ -355,8 +354,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
   }
 }
 
-case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
-    extends UnaryExecNode with GpuExec {
+case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan) extends GpuUnaryExecNode {
   override def output: Seq[Attribute] = child.output
 
   override def outputPartitioning: Partitioning = {

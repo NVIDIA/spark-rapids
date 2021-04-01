@@ -29,7 +29,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.{GroupedIterator, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{GroupedIterator, SparkPlan}
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowPythonRunner, HybridRowQueue}
 import org.apache.spark.sql.rapids.execution.python.GpuPythonHelper
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
@@ -73,7 +73,7 @@ case class GpuAggregateInPandasExec(
     udfExpressions: Seq[PythonUDF],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan)
-  extends UnaryExecNode with GpuExec {
+  extends GpuUnaryExecNode {
 
   override def supportsColumnar = false
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {

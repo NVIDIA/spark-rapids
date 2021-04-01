@@ -98,7 +98,15 @@ abstract class GpuUnevaluableUnaryExpression extends GpuUnaryExpression with Gpu
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
+// Avoid deriving from Spark's UnaryExpression as its hierarchy changed in Spark 3.2
+abstract class GpuUnaryExpression extends GpuExpression {
+  def child: Expression
+
+  override final def children: Seq[Expression] = child :: Nil
+
+  override def foldable: Boolean = child.foldable
+  override def nullable: Boolean = child.nullable
+
   protected def doColumnar(input: GpuColumnVector): ColumnVector
 
   def outputTypeOverride: DType = null
@@ -140,7 +148,16 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
   override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.unaryOp(unaryOp)
 }
 
-trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
+// Avoid deriving from Spark's BinaryExpression as its hierarchy changed in Spark 3.2
+trait GpuBinaryExpression extends GpuExpression {
+  def left: Expression
+  def right: Expression
+
+  override final def children: Seq[Expression] = Seq(left, right)
+
+  override def foldable: Boolean = left.foldable && right.foldable
+
+  override def nullable: Boolean = left.nullable || right.nullable
 
   def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector
   def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector
@@ -183,8 +200,6 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
     }
   }
 }
-
-trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
 
 trait CudfBinaryExpression extends GpuBinaryExpression {
   def binaryOp: BinaryOp
@@ -237,8 +252,6 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
   }
 }
 
-abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpression
-
 trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression {
 
   override def srcStr: Expression
@@ -282,7 +295,11 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
   }
 }
 
-trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
+// Avoid deriving from Spark's TernaryExpression as its hierarchy changed in Spark 3.2
+trait GpuTernaryExpression extends GpuExpression {
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  override def nullable: Boolean = children.exists(_.nullable)
 
   def doColumnar(
       val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): ColumnVector

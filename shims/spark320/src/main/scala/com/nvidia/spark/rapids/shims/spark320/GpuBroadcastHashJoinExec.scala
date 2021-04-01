@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark311
+package com.nvidia.spark.rapids.shims.spark320
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark301.GpuBroadcastExchangeExec
+import com.nvidia.spark.rapids.shims.spark311.GpuJoinUtils
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -32,9 +32,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
+/** Spark 3.2 changed hierarchy of BinaryExecNode and others */
 class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
@@ -116,8 +114,8 @@ case class GpuBroadcastHashJoinExec(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
-    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExec) => gpu
-    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
+    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExec, _) => gpu
+    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec, _) =>
       reused.child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]

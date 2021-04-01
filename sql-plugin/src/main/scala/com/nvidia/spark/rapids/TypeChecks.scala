@@ -833,7 +833,7 @@ class CastChecks extends ExprChecks {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
       val cast = meta.wrapped.asInstanceOf[UnaryExpression]
-      val from = cast.child.dataType
+      val from = cast.children.head.dataType
       val to = cast.dataType
       val (checks, _) = getChecksAndSigs(from)
       if (!checks.isSupportedByPlugin(to, meta.conf.decimalTypeEnabled)) {

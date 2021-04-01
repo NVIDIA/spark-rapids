@@ -16,17 +16,20 @@
 
 package com.nvidia.spark.rapids.shims.spark320
 
-import com.nvidia.spark.rapids.ShimVersion
-import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuColumnarToRowExec, GpuColumnarToRowExecParent, GpuOverrides, ShimVersion, TypeSig}
+import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, Spark311Shims}
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{RepairTableCommand, RunnableCommand}
-import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
+import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuShuffleExchangeExecBase}
 
 class Spark320Shims extends Spark311Shims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
@@ -56,6 +59,38 @@ class Spark320Shims extends Spark311Shims {
     classOf[RapidsShuffleManager].getCanonicalName
   }
 
+  override def getGpuColumnarToRowTransition(plan: SparkPlan,
+      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
+    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+    val serClass = Class.forName(serName)
+    if (serClass == classOf[ParquetCachedBatchSerializer]) {
+      org.apache.spark.sql.rapids.shims.spark320.GpuColumnarToRowTransitionExec(plan)
+    } else {
+      GpuColumnarToRowExec(plan)
+    }
+  }
+
+  override def getGpuBroadcastExchangeExec(
+      mode: BroadcastMode,
+      child: SparkPlan): GpuBroadcastExchangeExecBase = {
+    GpuBroadcastExchangeExec(mode, child)
+  }
+
+  override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
+    plan match {
+      case _: GpuBroadcastHashJoinExec => true
+      case _ => false
+    }
+  }
+
+  override def getGpuShuffleExchangeExec(
+      outputPartitioning: Partitioning,
+      child: SparkPlan,
+      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
+    val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
+    GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
+  }
+
   /**
    * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
    * affecting the unapply method signature
@@ -77,4 +112,13 @@ class Spark320Shims extends Spark311Shims {
   override def hasAliasQuoteFix: Boolean = true
 
   override def hasCastFloatTimestampUpcast: Boolean = true
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    super.getExecs ++ Seq(
+      GpuOverrides.exec[BroadcastHashJoinExec](
+        "Implementation of join using broadcast data",
+        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
+  }
 }

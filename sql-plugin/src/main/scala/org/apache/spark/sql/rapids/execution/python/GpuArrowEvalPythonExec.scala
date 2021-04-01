@@ -38,7 +38,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.toPrettySQL
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -526,7 +526,7 @@ case class GpuArrowEvalPythonExec(
     udfs: Seq[GpuPythonUDF],
     resultAttrs: Seq[Attribute],
     child: SparkPlan,
-    evalType: Int) extends UnaryExecNode with GpuExec {
+    evalType: Int) extends GpuUnaryExecNode {
 
   // We split the input batch up into small pieces when sending to python for compatibility reasons
   override def coalesceAfter: Boolean = true

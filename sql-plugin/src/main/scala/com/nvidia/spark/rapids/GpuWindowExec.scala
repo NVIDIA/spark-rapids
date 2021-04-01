@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -95,7 +95,7 @@ case class GpuWindowExec(
     orderSpec: Seq[SortOrder],
     child: SparkPlan,
     resultColumnsOnly: Boolean
-  ) extends UnaryExecNode with GpuExec {
+  ) extends GpuUnaryExecNode {
 
   override def output: Seq[Attribute] = if (resultColumnsOnly) {
     windowExpressionAliases.map(_.asInstanceOf[NamedExpression].toAttribute)

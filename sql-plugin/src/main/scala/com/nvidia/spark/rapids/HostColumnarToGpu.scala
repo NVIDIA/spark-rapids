@@ -30,7 +30,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
@@ -370,9 +370,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 /**
  * Put columnar formatted data on the GPU.
  */
-case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
-  extends UnaryExecNode
-  with GpuExec {
+case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal) extends GpuUnaryExecNode {
   import GpuMetric._
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL

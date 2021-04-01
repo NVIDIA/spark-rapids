@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark311
 
-import com.nvidia.spark.rapids.GpuExec
+import com.nvidia.spark.rapids.GpuLeafExecNode
 import com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
 
 import org.apache.spark.rdd.RDD
@@ -24,15 +24,14 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.columnar.InMemoryRelation
-import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuInMemoryTableScanExec(
   attributes: Seq[Attribute],
   predicates: Seq[Expression],
-  @transient relation: InMemoryRelation) extends LeafExecNode with GpuExec {
+  @transient relation: InMemoryRelation) extends GpuLeafExecNode {
 
     override val nodeName: String = {
       relation.cacheBuilder.tableName match {

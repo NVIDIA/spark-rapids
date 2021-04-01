@@ -23,6 +23,7 @@ import scala.math.max
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
+import com.nvidia.spark.GpuDataSourceV2ScanExecBase
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -51,7 +52,7 @@ import org.apache.spark.util.SerializableConfiguration
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
-    @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuExec {
+    @transient scan: Scan) extends GpuDataSourceV2ScanExecBase {
   import GpuMetric._
   @transient lazy val batch: Batch = scan.toBatch
 

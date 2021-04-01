@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -776,8 +776,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 /**
  * GPU version of row to columnar transition.
  */
-case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
-  extends UnaryExecNode with GpuExec {
+case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal) extends GpuUnaryExecNode {
   import GpuMetric._
 
   override def output: Seq[Attribute] = child.output

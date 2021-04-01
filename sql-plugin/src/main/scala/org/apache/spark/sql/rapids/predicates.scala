@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.{CudfBinaryOperator, CudfUnaryExpression, GpuColumnVector, GpuScalar}
+import com.nvidia.spark.rapids.{CudfBinaryExpression, CudfUnaryExpression, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType}
 
@@ -33,6 +33,35 @@ trait GpuPredicateHelper {
     }
   }
 }
+
+trait GpuBinaryOperator extends GpuBinaryExpression with ExpectsInputTypes {
+  def inputType: AbstractDataType
+
+  def symbol: String
+
+  def sqlOperator: String = symbol
+
+  override def toString: String = s"($left $sqlOperator $right)"
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(inputType, inputType)
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    // First check whether left and right have the same type, then check if the type is acceptable.
+    if (!left.dataType.sameType(right.dataType)) {
+      TypeCheckResult.TypeCheckFailure(s"differing types in '$sql' " +
+          s"(${left.dataType.catalogString} and ${right.dataType.catalogString}).")
+    } else if (!inputType.acceptsType(left.dataType)) {
+      TypeCheckResult.TypeCheckFailure(s"'$sql' requires ${inputType.simpleString} type," +
+          s" not ${left.dataType.catalogString}")
+    } else {
+      TypeCheckResult.TypeCheckSuccess
+    }
+  }
+
+  override def sql: String = s"(${left.sql} $sqlOperator ${right.sql})"
+}
+
+abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpression
 
 case class GpuNot(child: Expression) extends CudfUnaryExpression
     with Predicate with ImplicitCastInputTypes with NullIntolerant {

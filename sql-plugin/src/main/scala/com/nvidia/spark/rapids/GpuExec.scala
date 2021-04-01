@@ -19,9 +19,9 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, ExprId}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, AttributeSet, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{ExplainUtils, SparkPlan}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
@@ -273,5 +273,82 @@ trait GpuExec extends SparkPlan with Arm {
         ar.withExprId(ExprId(id)).canonicalized
       case other => QueryPlan.normalizeExpressions(other, allAttributes)
     }.withNewChildren(canonicalizedChildren)
+  }
+}
+
+// Avoid deriving from Spark's LeafExecNode as its hierarchy changed in Spark 3.2
+trait GpuLeafExecNode extends GpuExec {
+  override final def children: Seq[SparkPlan] = Nil
+
+  override def producedAttributes: AttributeSet = outputSet
+
+  override def verboseStringWithOperatorId(): String = {
+    val argumentString = argString(conf.maxToStringFields)
+    val outputStr = s"${ExplainUtils.generateFieldString("Output", output)}"
+
+    if (argumentString.nonEmpty) {
+      s"""
+         |$formattedNodeName
+         |$outputStr
+         |Arguments: $argumentString
+         |""".stripMargin
+    } else {
+      s"""
+         |$formattedNodeName
+         |$outputStr
+         |""".stripMargin
+    }
+  }
+}
+
+// Avoid deriving from Spark's UnaryExecNode as its hierarchy changed in Spark 3.2
+trait GpuUnaryExecNode extends GpuExec {
+  def child: SparkPlan
+
+  override final def children: Seq[SparkPlan] = child :: Nil
+  override def verboseStringWithOperatorId(): String = {
+    val argumentString = argString(conf.maxToStringFields)
+    val inputStr = s"${ExplainUtils.generateFieldString("Input", child.output)}"
+
+    if (argumentString.nonEmpty) {
+      s"""
+         |$formattedNodeName
+         |$inputStr
+         |Arguments: $argumentString
+         |""".stripMargin
+    } else {
+      s"""
+         |$formattedNodeName
+         |$inputStr
+         |""".stripMargin
+    }
+  }
+}
+
+// Avoid deriving from Spark's BinaryExecNode as its hierarchy changed in Spark 3.2
+trait GpuBinaryExecNode extends GpuExec {
+  def left: SparkPlan
+  def right: SparkPlan
+
+  override final def children: Seq[SparkPlan] = Seq(left, right)
+  override def verboseStringWithOperatorId(): String = {
+    val argumentString = argString(conf.maxToStringFields)
+    val leftOutputStr = s"${ExplainUtils.generateFieldString("Left output", left.output)}"
+    val rightOutputStr = s"${ExplainUtils.generateFieldString("Right output", right.output)}"
+
+    if (argumentString.nonEmpty) {
+      s"""
+         |$formattedNodeName
+         |$leftOutputStr
+         |$rightOutputStr
+         |Arguments: $argumentString
+         |""".stripMargin
+    } else {
+      s"""
+         |$formattedNodeName
+         |$leftOutputStr
+         |$rightOutputStr
+         |""".stripMargin
+    }
   }
 }

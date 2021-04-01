@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -27,11 +26,10 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftExistence, LeftOuter, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.rapids.GpuNoColumnCrossJoin
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -139,7 +137,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
     condition: Option[Expression],
-    targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+    targetSizeBytes: Long) extends GpuBinaryExecNode {
 
   import GpuMetric._
 

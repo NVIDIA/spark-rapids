@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.RangePartitioner
+import com.nvidia.spark.GpuDataSourceV2ScanExecBase
+
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.RangePartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -146,9 +147,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    *       not unusual.
    */
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
-    case c2r: GpuColumnarToRowExecParent if c2r.child.isInstanceOf[GpuCoalesceBatches] =>
+    case c2r: GpuColumnarToRowExecParent if c2r.childPlan.isInstanceOf[GpuCoalesceBatches] =>
       // Don't build a batch if we are just going to go back to ROWS
-      val co = c2r.child.asInstanceOf[GpuCoalesceBatches]
+      val co = c2r.childPlan.asInstanceOf[GpuCoalesceBatches]
       c2r.withNewChildren(co.children.map(optimizeCoalesce))
     case GpuCoalesceBatches(r2c: GpuRowToColumnarExec, goal: TargetSize) =>
       // TODO in the future we should support this for all goals, but
@@ -195,6 +196,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _: DataSourceScanExec => true
     case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
+    case _: GpuDataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
     case p => p.children.exists(hasDirectLineToInput)
   }
@@ -207,6 +209,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _: DataSourceScanExec => true
     case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
+    case _: GpuDataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
     case _ => false
   }
@@ -454,7 +457,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
     case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExecParent] =>
       val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExecParent]
-      plan.withNewChildren(Seq(getColumnarToRowExec(gpuColumnar.child, true)))
+      plan.withNewChildren(Seq(getColumnarToRowExec(gpuColumnar.childPlan, true)))
     case _ => plan
   }
 
