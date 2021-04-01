@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.lang.reflect.Method
 import java.util.{Date, UUID}
 
 import ai.rapids.cudf.ColumnVector
@@ -30,15 +29,13 @@ import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
-import org.apache.spark.rdd.RDD
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
-import org.apache.spark.sql.execution.{SparkPlan, SQLExecution, UnaryExecNode}
-import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
+import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{WriteJobStatsTracker, WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
 import org.apache.spark.sql.types.{DataType, StringType, StructType}
@@ -127,8 +124,7 @@ object GpuFileFormatWriter extends Logging {
         GpuAlias(GpuEmpty2Null(p), p.name)()
       case other => other
     }
-    val empty2NullPlan = AvoidAdaptiveTransitionToRow(
-      if (needConvert) GpuProjectExec(projectList, plan) else plan)
+    val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
     val bucketIdExpression = bucketSpec.map { spec =>
       val bucketColumns = spec.bucketColumnNames.map(c => dataColumns.find(_.name == c).get)
@@ -345,63 +341,5 @@ object GpuFileFormatWriter extends Logging {
     statsTrackers.zip(statsPerTracker).foreach {
       case (statsTracker, stats) => statsTracker.processStats(stats)
     }
-  }
-}
-
-/**
- * This operator will attempt to optimize the case when we are writing the results of 
- * an adaptive query to disk so that we remove the redundant transitions from columnar 
- * to row within [[org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec]] 
- * followed by a row to columnar transition.
- * 
- * Specifically, this is the plan we see in this case:
- *
- * {{{
- * GpoRowToColumnar(AdaptiveSparkPlanExec(GpuColumnarToRow(child))
- * }}}
- *  
- * We perform this optimization at runtime rather than during planning, because when the adaptive 
- * plan is being planned and executed, we don't know whether it is being called from an operation 
- * that wants rows (such as CollectTailExec) or from an operation that wants columns (such as
- * GpuDataWritingCommandExec).
- *
- * Spark does not provide a mechanism for executing an adaptive plan and retrieving columnar 
- * results and the internal methods that we need to call are private, so we use reflection to 
- * call them.
- *
- * @param child The plan to execute
- */
-case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode with GpuExec {
-
-  override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
-
-  override def output: Seq[Attribute] = child.output
-
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = child match {
-    case GpuRowToColumnarExec(a: AdaptiveSparkPlanExec, _) =>
-      val getFinalPhysicalPlan = getPrivateMethod("getFinalPhysicalPlan")
-      val plan = getFinalPhysicalPlan.invoke(a)
-      val rdd = plan match {
-        case t: GpuColumnarToRowExec =>
-          t.child.executeColumnar()
-        case _ =>
-          child.executeColumnar()
-      }
-
-      // final UI update
-      val finalPlanUpdate = getPrivateMethod("finalPlanUpdate")
-      finalPlanUpdate.invoke(a)
-
-      rdd
-
-    case _ =>
-      child.executeColumnar()
-  }
-
-  private def getPrivateMethod(name: String): Method = {
-    val m = classOf[AdaptiveSparkPlanExec].getDeclaredMethod(name)
-    m.setAccessible(true)
-    m
   }
 }

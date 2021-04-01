@@ -2638,7 +2638,7 @@ object GpuOverrides {
 
         override def convertToGpu(): GpuExec =
           GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
-            childPlans.head.convertIfNeeded())
+            AvoidAdaptiveTransitionToRow(childPlans.head.convertIfNeeded()))
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
