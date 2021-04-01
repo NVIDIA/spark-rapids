@@ -181,13 +181,6 @@ _grpkey_small_decimals = [
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
-_grpkey_small_pivot_decimals = [
-    ('a', RepeatSeqGen(DecimalGen(precision=7, scale=3, nullable=(True, 10.0)), length=50)),
-    ('b', IntegerGen()),
-    ('c', DecimalGen(precision=8, scale=3))]
-
-_init_list_pivot = _init_list_no_nans +  [
-        _grpkey_small_pivot_decimals]
 
 @approximate_float
 @ignore_order
@@ -232,15 +225,17 @@ def test_hash_avg_nulls_partial_only(data_gen):
 
 
 @approximate_float
-@ignore_order
+@ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_pivot, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=5).groupby('a').pivot('b').agg(f.sum('c')),
-        conf=conf
-    )
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .pivot('b')
+            .agg(f.sum('c')),
+            conf=conf)
 
 
 @approximate_float

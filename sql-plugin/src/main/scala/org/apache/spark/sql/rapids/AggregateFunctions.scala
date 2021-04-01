@@ -386,6 +386,7 @@ case class GpuPivotFirst(
 
   override val dataType: DataType = valueDataType
   override val nullable: Boolean = false
+
   val pivotColAttr = pivotColumnValues.map(a => {
     // If `a` is null, then create an AttributeReference for null column.
     if (a == null) AttributeReference(GpuLiteral(null, valueDataType).toString, valueDataType)()
@@ -393,9 +394,14 @@ case class GpuPivotFirst(
   })
 
   override lazy val inputProjection: Seq[Expression] = {
-    val expr = pivotColumnValues.map(a =>
-      GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(a, pivotColumn.dataType)),
-        valueColumn, GpuLiteral(null, valueDataType)))
+    val expr = pivotColumnValues.map(a => {
+      if (a == null) {
+        GpuIf(GpuIsNull(pivotColumn), valueColumn, GpuLiteral(null, valueDataType))
+      } else {
+        GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(a, pivotColumn.dataType)),
+          valueColumn, GpuLiteral(null, valueDataType))
+      }
+    })
     expr
   }
 
