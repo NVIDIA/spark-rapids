@@ -321,7 +321,6 @@ class AdaptiveQueryExecSuite
 
       spark.listenerManager.register(new QueryExecutionListener {
         override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
-          println(qe)
           buffer.synchronized {
             buffer.append(Right(qe))
             buffer.notify()
