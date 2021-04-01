@@ -304,21 +304,14 @@ abstract class RapidsBufferStore(
       }
     }
 
-    override def copyToMemoryBuffer(
-        srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long): Unit = {
+    override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
+        length: Long, stream: Cuda.Stream): Unit = {
       withResource(getMemoryBuffer) { memBuff =>
         dst match {
           case _: HostMemoryBuffer =>
-            //TODO: HostMemoryBuffer needs the same functionality that
-            // DeviceMemoryBuffer has to copy from/to device/host buffers
-            CudaUtil.copy(
-              memBuff,
-              srcOffset,
-              dst,
-              dstOffset,
-              length)
+            dst.copyFromMemoryBuffer(dstOffset, memBuff, srcOffset, length, stream)
           case _: DeviceMemoryBuffer =>
-            CudaUtil.copyAsync(memBuff, srcOffset, dst, dstOffset, length)
+            dst.copyFromMemoryBufferAsync(dstOffset, memBuff, srcOffset, length, stream)
           case _ => throw new IllegalStateException("What buffer is this")
         }
       }

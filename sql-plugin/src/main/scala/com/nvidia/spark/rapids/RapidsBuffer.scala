@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -123,7 +123,8 @@ trait RapidsBuffer extends AutoCloseable {
    * @param dstOffset offset to copy into.
    * @param length number of bytes to copy.
    */
-  def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long)
+  def copyToMemoryBuffer(
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
 
   /**
    * Try to add a reference to this buffer to acquire it.
@@ -194,8 +195,8 @@ sealed class DegenerateRapidsBuffer(
   override def getMemoryBuffer: MemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
 
-  override def copyToMemoryBuffer(
-      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long): Unit =
+  override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long,
+      stream: Cuda.Stream): Unit =
     throw new UnsupportedOperationException("degenerate buffer cannot copy to memory buffer")
 
   override def addReference(): Boolean = true

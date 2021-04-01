@@ -171,8 +171,8 @@ class BufferSendState(
 
         acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
           require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
-          rapidsBuffer.copyToMemoryBuffer(
-            blockRange.rangeStart, bounceBuffToUse, buffOffset, blockRange.rangeSize())
+          rapidsBuffer.copyToMemoryBuffer(blockRange.rangeStart, bounceBuffToUse, buffOffset,
+            blockRange.rangeSize(), serverStream)
           buffOffset += blockRange.rangeSize()
         }
 

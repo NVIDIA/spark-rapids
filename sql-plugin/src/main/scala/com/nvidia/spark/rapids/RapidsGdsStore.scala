@@ -87,8 +87,8 @@ class RapidsGdsStore(
       }
     }
 
-    override def copyToMemoryBuffer(
-        srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long): Unit = {
+    override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
+        length: Long, stream: Cuda.Stream): Unit = {
       val path = if (id.canShareDiskPaths) {
         sharedBufferFiles.get(id)
       } else {
