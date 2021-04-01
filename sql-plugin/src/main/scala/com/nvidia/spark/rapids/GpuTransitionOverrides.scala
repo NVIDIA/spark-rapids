@@ -513,13 +513,12 @@ object GpuTransitionOverrides {
 /**
  * This operator will attempt to optimize the case when we are writing the results of
  * an adaptive query to disk so that we remove the redundant transitions from columnar
- * to row within [[org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec]]
- * followed by a row to columnar transition.
+ * to row within AdaptiveSparkPlanExec followed by a row to columnar transition.
  *
  * Specifically, this is the plan we see in this case:
  *
  * {{{
- * GpoRowToColumnar(AdaptiveSparkPlanExec(GpuColumnarToRow(child))
+ * GpuRowToColumnar(AdaptiveSparkPlanExec(GpuColumnarToRow(child))
  * }}}
  *
  * We perform this optimization at runtime rather than during planning, because when the adaptive
