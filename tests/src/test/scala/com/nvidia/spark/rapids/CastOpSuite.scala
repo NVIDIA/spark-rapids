@@ -230,9 +230,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast decimal to string") {
-    val checks = GpuOverrides.expressions(classOf[Cast]).getChecks.get.asInstanceOf[CastChecks]
-    require(checks.gpuCanCast(DataTypes.createDecimalType(), DataTypes.StringType))
-
     val sqlCtx = SparkSession.getActiveSession.get.sqlContext
     sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
     sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
@@ -489,6 +486,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 2),
       scale = 2,
+      ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
 
     // fromScale > toScale
@@ -497,6 +495,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 10),
       scale = 2,
+      ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 18),
       scale = 15,
