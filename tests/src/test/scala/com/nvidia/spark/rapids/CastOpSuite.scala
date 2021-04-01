@@ -63,7 +63,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
 
@@ -360,6 +359,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("ints").cast(TimestampType),
       col("longs").cast(TimestampType),
       col("doubles").cast(TimestampType))
+  }
+
+  testSparkResultsAreEqual("Test cast from strings to int", doublesAsStrings,
+    conf = sparkConf) {
+    frame => frame.select(
+      col("c0").cast(LongType),
+      col("c0").cast(IntegerType),
+      col("c0").cast(ShortType),
+      col("c0").cast(ByteType))
   }
 
   testSparkResultsAreEqual("Test cast from strings to doubles", doublesAsStrings,
