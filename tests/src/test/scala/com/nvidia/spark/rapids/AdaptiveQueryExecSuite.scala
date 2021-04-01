@@ -317,57 +317,74 @@ class AdaptiveQueryExecSuite
 
       val df = spark.read.parquet(path)
 
-      val buffer = new ListBuffer[Either[Exception, QueryExecution]]()
-
-      spark.listenerManager.register(new QueryExecutionListener {
-        override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
-          buffer.synchronized {
-            buffer.append(Right(qe))
-            buffer.notify()
-          }
-        }
-
-        override def onFailure(funcName: String, qe: QueryExecution, ex: Exception): Unit = {
-          buffer.synchronized {
-            buffer.append(Left(ex))
-            buffer.notify()
-          }
-        }
-      })
+      val listener = new TestExecutionListener
+      spark.listenerManager.register(listener)
 
       val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
       df.write.mode(SaveMode.Overwrite).parquet(outputPath)
 
-      buffer.synchronized {
-        val timeout = System.currentTimeMillis() + 15000
-        while (buffer.isEmpty && System.currentTimeMillis() < timeout) {
-          buffer.wait(100)
-        }
-        buffer.headOption match {
-          case Some(Right(qe)) =>
-            // write should be on GPU
-            val writeCommand = TestUtils.findOperator(qe.executedPlan,
-              _.isInstanceOf[GpuDataWritingCommandExec])
-            assert(writeCommand.isDefined)
+      val qe = listener.get()
 
-            // the read should be an adaptive plan
-            val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
-              _.isInstanceOf[AdaptiveSparkPlanExec])
-                .get.asInstanceOf[AdaptiveSparkPlanExec]
+      // write should be on GPU
+      val writeCommand = TestUtils.findOperator(qe.executedPlan,
+        _.isInstanceOf[GpuDataWritingCommandExec])
+      assert(writeCommand.isDefined)
 
-            val transition = adaptiveSparkPlanExec
-                .executedPlan
-                .asInstanceOf[GpuColumnarToRowExec]
+      // the read should be an adaptive plan
+      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+        _.isInstanceOf[AdaptiveSparkPlanExec])
+          .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-            // although the plan contains a GpuColumnarToRowExec, we bypass it in
-            // AvoidAdaptiveTransitionToRow so the metrics should reflect that
-            assert(transition.metrics("numOutputRows").value === 0)
+      val transition = adaptiveSparkPlanExec
+          .executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
 
-          case Some(Left(ex)) => throw ex
+      // although the plan contains a GpuColumnarToRowExec, we bypass it in
+      // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+      assert(transition.metrics("numOutputRows").value === 0)
 
-          case None => fail("Timed out waiting for metrics")
-        }
-      }
+    }, conf)
+  }
+
+  test("Keep transition to row when collecting results") {
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      // read from a parquet file so we can test reading on GPU
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+          .repartition(2          )
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+
+      val df = spark.read.parquet(path)
+
+      val listener = new TestExecutionListener
+      spark.listenerManager.register(listener)
+
+      df.collect()
+
+      val qe = listener.get()
+
+      // the query should be an adaptive plan
+      val adaptiveSparkPlanExec = TestUtils.findOperator(qe.executedPlan,
+        _.isInstanceOf[AdaptiveSparkPlanExec])
+          .get.asInstanceOf[AdaptiveSparkPlanExec]
+
+      val transition = adaptiveSparkPlanExec
+          .executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
+
+      // because we are calling collect, AvoidAdaptiveTransitionToRow will not bypass
+      // GpuColumnarToRowExec so we should see accurate metrics
+      assert(transition.metrics("numOutputRows").value === 100)
 
     }, conf)
   }
@@ -654,4 +671,37 @@ class AdaptiveQueryExecSuite
     spark.read.parquet(path).createOrReplaceTempView(name)
   }
 
+}
+
+class TestExecutionListener extends QueryExecutionListener {
+
+  private val buffer = new ListBuffer[Either[Exception, QueryExecution]]()
+
+  override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
+    buffer.synchronized {
+      buffer.append(Right(qe))
+      buffer.notify()
+    }
+  }
+
+  override def onFailure(funcName: String, qe: QueryExecution, ex: Exception): Unit = {
+    buffer.synchronized {
+      buffer.append(Left(ex))
+      buffer.notify()
+    }
+  }
+
+  def get(): QueryExecution = {
+    buffer.synchronized {
+      val timeout = System.currentTimeMillis() + 15000
+      while (buffer.isEmpty && System.currentTimeMillis() < timeout) {
+        buffer.wait(100)
+      }
+      buffer.headOption match {
+        case Some(Right(qe)) => qe
+        case Some(Left(ex)) => throw ex
+        case None => throw new IllegalStateException("Timed out waiting for metrics")
+      }
+    }
+  }
 }
