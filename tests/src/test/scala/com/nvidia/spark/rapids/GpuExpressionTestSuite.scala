@@ -172,7 +172,7 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  def compareStringifiedDecimals(expected: String, actual: String): Boolean = {
+  def compareStringifiedDecimalsInSemantic(expected: String, actual: String): Boolean = {
     (expected == null && actual == null) ||
         (expected != null && actual != null && Decimal(expected) == Decimal(actual))
   }
