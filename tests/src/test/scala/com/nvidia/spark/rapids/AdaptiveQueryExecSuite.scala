@@ -335,7 +335,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
@@ -370,7 +369,6 @@ class AdaptiveQueryExecSuite
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
       .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
 
