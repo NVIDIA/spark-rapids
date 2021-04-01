@@ -20,7 +20,7 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -335,29 +335,42 @@ abstract class RapidsBufferStore(
     }
 
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
-      (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
-        catalog.acquireBuffer(id, DEVICE) match {
-          case Some(buffer) =>
-            withResource(buffer) { _ =>
-              return buffer.getDeviceMemoryBuffer
-            }
-          case _ =>
-            try {
-              logDebug(s"Unspilling $this $id to $DEVICE")
-              val newBuffer = deviceStorage.copyBuffer(
-                this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
-              if (newBuffer.addReference()) {
-                withResource(newBuffer) { _ =>
-                  return newBuffer.getDeviceMemoryBuffer
-                }
+      if (RapidsBufferCatalog.shouldUnspill) {
+        (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
+          catalog.acquireBuffer(id, DEVICE) match {
+            case Some(buffer) =>
+              withResource(buffer) { _ =>
+                return buffer.getDeviceMemoryBuffer
               }
-            } catch {
-              case _: DuplicateBufferException =>
-                logDebug(s"Lost device buffer registration race for buffer $id, retrying...")
+            case _ =>
+              try {
+                logDebug(s"Unspilling $this $id to $DEVICE")
+                val newBuffer = deviceStorage.copyBuffer(
+                  this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
+                if (newBuffer.addReference()) {
+                  withResource(newBuffer) { _ =>
+                    return newBuffer.getDeviceMemoryBuffer
+                  }
+                }
+              } catch {
+                case _: DuplicateBufferException =>
+                  logDebug(s"Lost device buffer registration race for buffer $id, retrying...")
+              }
+          }
+        }
+        throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
+      } else {
+        withResource(materializeMemoryBuffer) {
+          case h: HostMemoryBuffer =>
+            closeOnExcept(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
+              logDebug(s"copying from host $h to device $deviceBuffer")
+              deviceBuffer.copyFromHostBuffer(h)
+              deviceBuffer
             }
+          case d: DeviceMemoryBuffer => d
+          case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
         }
       }
-      throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
     }
 
     override def close(): Unit = synchronized {

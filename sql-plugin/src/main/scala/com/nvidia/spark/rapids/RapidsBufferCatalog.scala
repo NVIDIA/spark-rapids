@@ -162,6 +162,7 @@ object RapidsBufferCatalog extends Logging with Arm {
   private var diskStorage: RapidsDiskStore = _
   private var gdsStorage: RapidsGdsStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
+  private var _shouldUnspill: Boolean = _
 
   private lazy val conf: SparkConf = {
     val env = SparkEnv.get
@@ -192,6 +193,8 @@ object RapidsBufferCatalog extends Logging with Arm {
     logInfo("Installing GPU memory handler for spill")
     memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage, rapidsConf.gpuOomDumpDir)
     Rmm.setEventHandler(memoryEventHandler)
+
+    _shouldUnspill = rapidsConf.isUnspillEnabled
   }
 
   def close(): Unit = {
@@ -226,6 +229,8 @@ object RapidsBufferCatalog extends Logging with Arm {
   }
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
+
+  def shouldUnspill: Boolean = _shouldUnspill
 
   /**
    * Adds a contiguous table to the device storage, taking ownership of the table.
