@@ -360,7 +360,7 @@ class AdaptiveQueryExecSuite
                 .asInstanceOf[GpuColumnarToRowExec]
 
             // although the plan contains a GpuColumnarToRowExec, we bypass it in
-            // GpuFileFormatWriter so the metrics should reflect that
+            // AvoidAdaptiveTransitionToRow so the metrics should reflect that
             assert(transition.metrics("numOutputRows").value === 0)
 
           case Some(Left(ex)) => throw ex
