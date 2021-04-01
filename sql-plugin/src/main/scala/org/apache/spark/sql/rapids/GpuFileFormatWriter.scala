@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
+import java.lang.reflect.Method
 import java.util.{Date, UUID}
 
 import ai.rapids.cudf.ColumnVector
@@ -368,10 +369,6 @@ object GpuFileFormatWriter extends Logging {
  * results and the internal methods that we need to call are private, so we use reflection to 
  * call them.
  *
- * TODO look for specific method signatures
- * TODO error handling
- * TODO tests
- *
  * @param child The plan to execute
  */
 case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode with GpuExec {
@@ -381,38 +378,30 @@ case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode 
 
   override def output: Seq[Attribute] = child.output
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = child match {
+    case GpuRowToColumnarExec(a: AdaptiveSparkPlanExec, _) =>
+      val getFinalPhysicalPlan = getPrivateMethod("getFinalPhysicalPlan")
+      val plan = getFinalPhysicalPlan.invoke(a)
+      val rdd = plan match {
+        case t: GpuColumnarToRowExec =>
+          t.child.executeColumnar()
+        case _ =>
+          child.executeColumnar()
+      }
 
-    child match {
-      case GpuRowToColumnarExec(a: AdaptiveSparkPlanExec, _) =>
+      // final UI update
+      val finalPlanUpdate = getPrivateMethod("finalPlanUpdate")
+      finalPlanUpdate.invoke(a)
 
-        val getFinalPhysicalPlan = classOf[AdaptiveSparkPlanExec]
-            .getDeclaredMethods
-            .filter(_.getName == "getFinalPhysicalPlan")
-            .head
-        getFinalPhysicalPlan.setAccessible(true)
+      rdd
 
-        val plan = getFinalPhysicalPlan.invoke(a)
-        val rdd = plan match {
-          case GpuColumnarToRowExec(x, _) =>
-            x.executeColumnar()
-          case _ =>
-            //TODO what else could it be at this point??
-            child.executeColumnar()
-        }
+    case _ =>
+      child.executeColumnar()
+  }
 
-        // final UI update
-        val finalPlanUpdate = classOf[AdaptiveSparkPlanExec]
-            .getDeclaredMethods
-            .filter(_.getName == "finalPlanUpdate")
-            .head
-        finalPlanUpdate.setAccessible(true)
-        finalPlanUpdate.invoke(a)
-
-        rdd
-
-      case _ =>
-        child.executeColumnar()
-    }
+  private def getPrivateMethod(name: String): Method = {
+    val m = classOf[AdaptiveSparkPlanExec].getDeclaredMethod(name)
+    m.setAccessible(true)
+    m
   }
 }
