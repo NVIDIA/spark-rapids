@@ -66,6 +66,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def optimizeAdaptiveTransitions(
       plan: SparkPlan,
       parent: Option[SparkPlan]): SparkPlan = plan match {
+    case HostColumnarToGpu(r2c @ RowToColumnarExec(_: AdaptiveSparkPlanExec), goal) =>
+      // When the input is an adaptive plan we do not get to see the GPU version until
+      // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
+      // final operator and we can bypass this to keep the data columnar by inserting
+      // the [[AvoidAdaptiveTransitionToRow]] operator here
+      AvoidAdaptiveTransitionToRow(
+        GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal))
+
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
       GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
 

@@ -2636,14 +2636,9 @@ object GpuOverrides {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
           Seq(GpuOverrides.wrapDataWriteCmds(p.cmd, conf, Some(this)))
 
-        override def convertToGpu(): GpuExec = {
-          // When the input is an adaptive plan we do not get to see the GPU version until
-          // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
-          // final operator and we can bypass this to keep the data columnar by inserting
-          // the [[AvoidAdaptiveTransitionToRow]] operator here
-          val child = AvoidAdaptiveTransitionToRow(childPlans.head.convertIfNeeded())
-          GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(), child)
-        }
+        override def convertToGpu(): GpuExec =
+          GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
+            childPlans.head.convertIfNeeded())
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
