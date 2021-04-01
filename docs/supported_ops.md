@@ -18198,7 +18198,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (the struct's children must also support being cast to string)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -18602,7 +18602,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (the struct's children must also support being cast to string)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
