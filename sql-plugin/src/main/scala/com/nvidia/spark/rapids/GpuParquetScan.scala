@@ -688,19 +688,9 @@ abstract class FileParquetPartitionReaderBase(
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
               val col = if (typeCastingNeeded && precisionList.nonEmpty) {
-                val tmp = convertDecimal64ToDecimal32(origCol, precisionList.dequeue())
-                if (tmp != origCol) {
-                  withResource(tmp) { tmp =>
-                    tmp.copyToColumnVector()
-                  }
-                } else {
-                  tmp.asInstanceOf[ColumnVector]
-                }
+                convertDecimal64ToDecimal32Wrapper(origCol, precisionList.dequeue())
               } else {
-                origCol
-              }
-              if (origCol == col) {
-                col.incRefCount()
+                origCol.incRefCount()
               }
               newColumns(writeAt) = col
               readAt += 1
@@ -733,50 +723,70 @@ abstract class FileParquetPartitionReaderBase(
    * @param precision   precisions of all the decimal columns in this Column
    * @return
    */
-  private def convertDecimal64ToDecimal32(cv: ColumnView, precision: Int): ColumnView = {
-    val dt = cv.getType
-    if (!dt.isNestedType) {
-      if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
-        // we want to handle the legacy case where Decimals are written as an array of bytes
-        // cudf reads them back as a 64-bit Decimal
-        cv.castTo(DecimalUtil.createCudfDecimal(precision, -dt.getScale()))
-      } else {
-        cv
-      }
-    } else if (dt == DType.LIST) {
-      val child = cv.getChildColumnView(0)
-      val newChild = convertDecimal64ToDecimal32(child, precision)
-      if (child == newChild) {
-        cv
-      } else {
-        withResource(newChild) { newChild =>
+  private def convertDecimal64ToDecimal32Wrapper(cv: ColumnVector, precision: Int): ColumnVector = {
+    def convertDecimal64ToDecimal32(
+       cv: ColumnView,
+       precision: Int,
+       newCols: ArrayBuilder[ColumnView]): ColumnView = {
+      val dt = cv.getType
+      if (!dt.isNestedType) {
+        if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
+          // we want to handle the legacy case where Decimals are written as an array of bytes
+          // cudf reads them back as a 64-bit Decimal
+          // castTo will create a new ColumnVector which we cannot close until we have copied out
+          // the entire nested type. So we store them temporarily in this array and close it after
+          // `copyToColumnVector` is called
+          val col = cv.castTo(DecimalUtil.createCudfDecimal(precision, -dt.getScale()))
+          newCols += col
+          col
+        } else {
+          cv
+        }
+      } else if (dt == DType.LIST) {
+        val child = cv.getChildColumnView(0)
+        val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+        if (child == newChild) {
+          cv
+        } else {
           cv.replaceListChild(newChild)
         }
-      }
-    } else if (dt == DType.STRUCT) {
-      val newColumns = ArrayBuilder.make[ColumnView]()
-      newColumns.sizeHint(cv.getNumChildren)
-      val newColIndices = ArrayBuilder.make[Int]()
-      newColIndices.sizeHint(cv.getNumChildren)
-      (0 until cv.getNumChildren).foreach { i =>
-        val child = cv.getChildColumnView(i)
-        val newChild = convertDecimal64ToDecimal32(child, precision)
-        if (newChild != child) {
-          newColumns += newChild
-          newColIndices += i
+      } else if (dt == DType.STRUCT) {
+        val newColumns = ArrayBuilder.make[ColumnView]()
+        newColumns.sizeHint(cv.getNumChildren)
+        val newColIndices = ArrayBuilder.make[Int]()
+        newColIndices.sizeHint(cv.getNumChildren)
+        (0 until cv.getNumChildren).foreach { i =>
+          val child = cv.getChildColumnView(i)
+          val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+          if (newChild != child) {
+            newColumns += newChild
+            newColIndices += i
+          }
         }
-      }
-      val cols = newColumns.result()
-      if (cols.nonEmpty) {
-        // create a new struct column with the new ones
-        withResource(cols) { newCols =>
-          cv.replaceChildrenWithViews(newColIndices.result(), newCols)
+        val cols = newColumns.result()
+        if (cols.nonEmpty) {
+          // create a new struct column with the new ones
+          cv.replaceChildrenWithViews(newColIndices.result(), cols)
+        } else {
+          cv
         }
-    } else {
-        cv
+      } else {
+        throw new IllegalArgumentException("Unknown data type")
       }
+    }
+
+    val newColumns = ArrayBuilder.make[ColumnView]()
+    val tmp = convertDecimal64ToDecimal32(cv, precision, newColumns)
+    if (tmp != cv) {
+      val result = withResource(newColumns.result()) { _ =>
+        tmp.copyToColumnVector()
+      }
+      if (tmp.getType.isNestedType) {
+        tmp.close()
+      }
+      result
     } else {
-      throw new IllegalArgumentException("Unknown data type")
+      tmp.asInstanceOf[ColumnVector].incRefCount()
     }
   }
 
