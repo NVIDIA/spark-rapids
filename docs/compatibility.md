@@ -309,15 +309,6 @@ Also, the GPU does not support casting from strings containing hex values.
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `true`.
-       
-### String to Integral Types
-
-The GPU will return incorrect results for strings representing values greater than Long.MaxValue or
-less than Long.MinValue. The correct behavior would be to return null for these values, but the GPU
-currently overflows and returns an incorrect integer value.
-
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castStringToInteger.enabled`](configs.md#sql.castStringToInteger.enabled) to `true`.
 
 ### String to Date
 
