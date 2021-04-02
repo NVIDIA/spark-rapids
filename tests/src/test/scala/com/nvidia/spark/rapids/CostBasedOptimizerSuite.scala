@@ -386,8 +386,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         col("l.more_strings_1").equalTo(col("r.more_strings_2")))
       df.collect()
 
-      println(df.queryExecution.executedPlan)
-
       df
     }, conf)
   }
