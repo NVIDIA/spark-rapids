@@ -936,14 +936,14 @@ object RapidsConf {
       .internal()
       .doc("Default cost of transitioning from GPU to CPU")
       .doubleConf
-      .createWithDefault(0.15)
+      .createWithDefault(0.1)
 
   val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
     "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
       .internal()
       .doc("Default cost of transitioning from CPU to GPU")
       .doubleConf
-      .createWithDefault(0.15)
+      .createWithDefault(0.1)
 
   val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
