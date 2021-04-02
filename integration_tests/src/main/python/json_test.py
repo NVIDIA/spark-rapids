@@ -28,7 +28,7 @@ def test_get_json_object(json_str_pattern):
     gen = mk_json_str_gen(json_str_pattern)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
-            'get_json_object(a,\"$.a\")',
-            'get_json_object(a, \"$.owner\")',
-            'get_json_object(a, \"$.store.fruit[0]\")'),
+            'get_json_object(a,"$.a")',
+            'get_json_object(a, "$.owner")',
+            'get_json_object(a, "$.store.fruit[0]")'),
         conf={'spark.sql.parser.escapedStringLiterals': 'true'})
