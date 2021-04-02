@@ -21,9 +21,10 @@ from pyspark.sql.types import *
 def mk_json_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
-@pytest.mark.parametrize('json_str_pattern', ["\\{\"store\": \{\"fruit\": \[\\{" "\"weight\":\d,\"type\":\"[a-z]{1,9}\"\\}\], " \
-                   "\"bicycle\":\\{\"price\":\d\d\.\d\d,\"color\":\"[a-z]{0,4}\"\\}\\},\"email\":\"[" \
-                   "a-z]{1,5}\\@[a-z]{3,10}\.com\",\"owner\":\"[a-z]{3,8}\"\\}", "\\{\"a\": \"[a-z]{1,3}\"\\}"], ids=idfn)
+@pytest.mark.parametrize('json_str_pattern', [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
+                   r'"bicycle":\{"price":\d\d\.\d\d,"color":"[a-z]{0,4}"\}\},' \
+                   r'"email":"[a-z]{1,5}\@[a-z]{3,10}\.com","owner":"[a-z]{3,8}"\}',
+                   r'\{"a": "[a-z]{1,3}"\}'], ids=idfn)
 def test_get_json_object(json_str_pattern):
     gen = mk_json_str_gen(json_str_pattern)
     assert_gpu_and_cpu_are_equal_collect(
