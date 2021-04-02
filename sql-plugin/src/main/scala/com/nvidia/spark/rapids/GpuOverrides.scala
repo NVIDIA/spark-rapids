@@ -2008,8 +2008,15 @@ object GpuOverrides {
       "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated.",
       ExprChecks.fullAggAndProject(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-        TypeSig.all,
+        // Different types of Pandas UDF support different sets of output type. Please refer to
+        //   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
+        // for more details.
+        // It is impossible to specify the exact type signature for each Pandas UDF type in a single
+        // expression 'PythonUDF'.
+        // So use the 'unionOfPandasUdfOut' to cover all types for Spark. The type signature of
+        // plugin is also an union of all the types of Pandas UDF.
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested() + TypeSig.STRUCT,
+        TypeSig.unionOfPandasUdfOut,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "param",
           (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),

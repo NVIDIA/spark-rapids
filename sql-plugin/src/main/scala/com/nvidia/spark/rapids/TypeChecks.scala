@@ -454,6 +454,19 @@ object TypeSig {
   val orderable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING + DECIMAL + NULL + BINARY + CALENDAR + ARRAY + STRUCT + UDT).nested()
 
+  /**
+   * Different types of Pandas UDF support different sets of output type. Please refer to
+   *   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
+   * for more details.
+   *
+   * It is impossible to specify the exact type signature for each Pandas UDF type in a single
+   * expression 'PythonUDF'.
+   *
+   * So here comes the union of all the sets of supported type, to cover all the cases.
+   */
+  val unionOfPandasUdfOut = (commonCudfTypes + BINARY + DECIMAL + NULL + ARRAY + MAP).nested() +
+      STRUCT
+
   def getDataType(expr: Expression): Option[DataType] = {
     try {
       Some(expr.dataType)

@@ -10616,11 +10616,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="2">reduction</td>
@@ -10659,11 +10659,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="2">window</td>
@@ -10702,11 +10702,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="2">project</td>
@@ -10745,11 +10745,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="4">Quarter</td>
