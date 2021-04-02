@@ -17358,7 +17358,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="9">PivotFirst</td>
 <td rowSpan="9"> </td>
-<td rowSpan="9">Pivot first operator</td>
+<td rowSpan="9">PivotFirst operator</td>
 <td rowSpan="9">None</td>
 <td rowSpan="3">aggregation</td>
 <td>aggFunc</td>

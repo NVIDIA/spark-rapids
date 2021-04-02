@@ -69,7 +69,7 @@ trait GpuAggregateFunction extends GpuExpression {
 }
 
 case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: Expression)
-    extends GpuDeclarativeAggregate {
+    extends GpuAggregate {
   override val inputProjection: Seq[GpuExpression] = {
     val caseWhenExpressions = aggregateFunction.inputProjection.map { ip =>
       // special case average with null result from the filter as expected values should be
@@ -97,13 +97,13 @@ case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: E
   override def children: Seq[Expression] = Seq(aggregateFunction, filter)
 
   override val initialValues: Seq[GpuExpression] =
-    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].initialValues
+    aggregateFunction.asInstanceOf[GpuAggregate].initialValues
   override val updateExpressions: Seq[Expression] =
-    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions
+    aggregateFunction.asInstanceOf[GpuAggregate].updateExpressions
   override val mergeExpressions: Seq[GpuExpression] =
-    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions
+    aggregateFunction.asInstanceOf[GpuAggregate].mergeExpressions
   override val evaluateExpression: Seq[Expression] =
-    aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].evaluateExpression
+    aggregateFunction.asInstanceOf[GpuAggregate].evaluateExpression
 }
 
 case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
@@ -271,7 +271,7 @@ class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
   override val offset: Int = -1
 }
 
-abstract class GpuDeclarativeAggregate extends GpuAggregateFunction with GpuUnevaluable {
+abstract class GpuAggregate extends GpuAggregateFunction with GpuUnevaluable {
   // these are values that spark calls initial because it uses
   // them to initialize the aggregation buffer, and returns them in case
   // of an empty aggregate when there are no expressions,
@@ -295,7 +295,7 @@ abstract class GpuDeclarativeAggregate extends GpuAggregateFunction with GpuUnev
     aggBufferAttributes.map(_.newInstance())
 }
 
-case class GpuMin(child: Expression) extends GpuDeclarativeAggregate
+case class GpuMin(child: Expression) extends GpuAggregate
     with GpuAggregateWindowFunction {
   private lazy val cudfMin = AttributeReference("min", child.dataType)()
 
@@ -321,7 +321,7 @@ case class GpuMin(child: Expression) extends GpuDeclarativeAggregate
     Aggregation.min().onColumn(inputs.head._2)
 }
 
-case class GpuMax(child: Expression) extends GpuDeclarativeAggregate
+case class GpuMax(child: Expression) extends GpuAggregate
     with GpuAggregateWindowFunction {
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
 
@@ -348,7 +348,7 @@ case class GpuMax(child: Expression) extends GpuDeclarativeAggregate
 }
 
 case class GpuSum(child: Expression, resultType: DataType)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with GpuAggregateWindowFunction {
+  extends GpuAggregate with ImplicitCastInputTypes with GpuAggregateWindowFunction {
 
   private lazy val cudfSum = AttributeReference("sum", resultType)()
 
@@ -375,30 +375,74 @@ case class GpuSum(child: Expression, resultType: DataType)
     Aggregation.sum().onColumn(inputs.head._2)
 }
 
+/*
+ * GpuPivotFirst is an aggregate function used in the second phase of a two phase pivot to do the
+ * required rearrangement of values into pivoted form.
+ *
+ * For example on an input of
+ * type | A | B
+ * -----+--+--
+ *   b | x | 1
+ *   a | x | 2
+ *   b | y | 3
+ *
+ * with type=groupbyKey, pivotColumn=A, valueColumn=B, and pivotColumnValues=[x,y]
+ *
+ * updateExpressions - In the partial_pivot stage, new columns are created based on
+ * pivotColumnValues one for each of the aggregation. Last aggregation on these columns grouped by
+ * `type` and convert into an array( as per Spark's expectation). Last aggregation(excluding nulls)
+ * works here as there would be atmost one entry in new columns when grouped by `type`.
+ * After CudfLastExcludeNulls, the intermediate result would be
+ *
+ * type | x | y
+ * -----+---+--
+ *   b | 1 | 3
+ *   a | 2 | null
+ *
+ *
+ * mergeExpressions - this is the final pivot aggregation after shuffle. We do another `Last`
+ * aggregation to merge the results. In this example all the data was combined in the
+ * partial_pivot hash aggregation. So it didn't do anything in this stage.
+ *
+ * The final result would be:
+ *
+ * type | x | y
+ * -----+---+--
+ *   b | 1 | 3
+ *   a | 2 | null
+ *
+ * @param pivotColumn column that determines which output position to put valueColumn in.
+ * @param valueColumn the column that is being rearranged.
+ * @param pivotColumnValues the list of pivotColumn values in the order of desired output. Values
+ *                          not listed here will be ignored.
+ */
 case class GpuPivotFirst(
   pivotColumn: Expression,
   valueColumn: Expression,
   pivotColumnValues: Seq[Any],
   mutableAggBufferOffset: Int = 0,
-  inputAggBufferOffset: Int = 0) extends GpuDeclarativeAggregate {
+  inputAggBufferOffset: Int = 0) extends GpuAggregate {
 
   val valueDataType = valueColumn.dataType
 
   override val dataType: DataType = valueDataType
   override val nullable: Boolean = false
 
-  val pivotColAttr = pivotColumnValues.map(a => {
-    // If `a` is null, then create an AttributeReference for null column.
-    if (a == null) AttributeReference(GpuLiteral(null, valueDataType).toString, valueDataType)()
-    else AttributeReference(a.toString, valueDataType)()
+  val pivotColAttr = pivotColumnValues.map(pivotColumnValue => {
+    // If `pivotColumnValue` is null, then create an AttributeReference for null column.
+    if (pivotColumnValue == null) {
+      AttributeReference(GpuLiteral(null, valueDataType).toString, valueDataType)()
+    } else {
+      AttributeReference(pivotColumnValue.toString, valueDataType)()
+    }
   })
 
   override lazy val inputProjection: Seq[Expression] = {
-    val expr = pivotColumnValues.map(a => {
-      if (a == null) {
+    val expr = pivotColumnValues.map(pivotColumnValue => {
+      if (pivotColumnValue == null) {
         GpuIf(GpuIsNull(pivotColumn), valueColumn, GpuLiteral(null, valueDataType))
       } else {
-        GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(a, pivotColumn.dataType)),
+        GpuIf(GpuEqualTo(pivotColumn, GpuLiteral(pivotColumnValue, pivotColumn.dataType)),
           valueColumn, GpuLiteral(null, valueDataType))
       }
     })
@@ -406,13 +450,14 @@ case class GpuPivotFirst(
   }
 
   override lazy val updateExpressions: Seq[GpuExpression] = {
-    val updateArray = pivotColAttr.map(a => new CudfLastExcludeNulls(a))
+    val updateArray = pivotColAttr.map(
+      pivotColumnValue => new CudfLastExcludeNulls(pivotColumnValue))
     GpuCreateArray(updateArray, false) :: Nil
     updateArray
   }
 
   override lazy val mergeExpressions: Seq[GpuExpression] = {
-    pivotColAttr.map(a => new CudfLastExcludeNulls(a))
+    pivotColAttr.map(pivotColumnValue => new CudfLastExcludeNulls(pivotColumnValue))
   }
 
   override lazy val evaluateExpression: Seq[Expression] = GpuCreateArray(pivotColAttr, false) :: Nil
@@ -424,7 +469,7 @@ case class GpuPivotFirst(
 
 }
 
-case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate
+case class GpuCount(children: Seq[Expression]) extends GpuAggregate
     with GpuAggregateWindowFunction {
   // counts are Long
   private lazy val cudfCount = AttributeReference("count", LongType)()
@@ -450,7 +495,7 @@ case class GpuCount(children: Seq[Expression]) extends GpuDeclarativeAggregate
     Aggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
 }
 
-case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate
+case class GpuAverage(child: Expression) extends GpuAggregate
     with GpuAggregateWindowFunction {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = AttributeReference("sum", DoubleType)()
@@ -526,7 +571,7 @@ case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate
  * here).
  */
 abstract class GpuFirstBase(child: Expression)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with Serializable {
+  extends GpuAggregate with ImplicitCastInputTypes with Serializable {
 
   val ignoreNulls: Boolean
 
@@ -563,7 +608,7 @@ abstract class GpuFirstBase(child: Expression)
 }
 
 abstract class GpuLastBase(child: Expression)
-  extends GpuDeclarativeAggregate with ImplicitCastInputTypes with Serializable {
+  extends GpuAggregate with ImplicitCastInputTypes with Serializable {
 
   val ignoreNulls: Boolean
 
@@ -607,7 +652,7 @@ abstract class GpuLastBase(child: Expression)
 case class GpuCollectList(child: Expression,
                           mutableAggBufferOffset: Int = 0,
                           inputAggBufferOffset: Int = 0)
-  extends GpuDeclarativeAggregate with GpuAggregateWindowFunction {
+  extends GpuAggregate with GpuAggregateWindowFunction {
 
   def this(child: Expression) = this(child, 0, 0)
 

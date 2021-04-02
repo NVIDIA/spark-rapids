@@ -810,6 +810,9 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
   def convertToGpu(child: Expression): GpuExpression
 }
 
+/**
+ * Base class for metadata around `ImperativeAggregate`.
+ */
 abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
     expr: INPUT,
     conf: RapidsConf,

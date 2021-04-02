@@ -181,7 +181,6 @@ _grpkey_small_decimals = [
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
-
 @approximate_float
 @ignore_order
 @incompat
@@ -236,7 +235,6 @@ def test_hash_grpby_pivot(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c')),
             conf=conf)
-
 
 @approximate_float
 @ignore_order

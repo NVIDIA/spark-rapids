@@ -1848,7 +1848,7 @@ object GpuOverrides {
           sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
       }),
     expr[PivotFirst](
-      "Pivot first operator",
+      "PivotFirst operator",
       ExprChecks.fullAgg(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
