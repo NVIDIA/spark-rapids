@@ -66,16 +66,20 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def optimizeAdaptiveTransitions(
       plan: SparkPlan,
       parent: Option[SparkPlan]): SparkPlan = plan match {
-    case HostColumnarToGpu(r2c @ RowToColumnarExec(_: AdaptiveSparkPlanExec), goal) =>
-      // When the input is an adaptive plan we do not get to see the GPU version until
-      // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
-      // final operator and we can bypass this to keep the data columnar by inserting
-      // the [[AvoidAdaptiveTransitionToRow]] operator here
-      AvoidAdaptiveTransitionToRow(
-        GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal))
-
+    // HostColumnarToGpu(RowToColumnarExec(..)) => GpuRowToColumnarExec(..)
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-      GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
+      val transition = GpuRowToColumnarExec(
+        optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
+      r2c.child match {
+        case _: AdaptiveSparkPlanExec =>
+          // When the input is an adaptive plan we do not get to see the GPU version until
+          // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
+          // final operator and we can bypass this to keep the data columnar by inserting
+          // the [[AvoidAdaptiveTransitionToRow]] operator here
+          AvoidAdaptiveTransitionToRow(transition)
+        case _ =>
+          transition
+      }
 
     case ColumnarToRowExec(GpuBringBackToHost(
         GpuShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
