@@ -176,6 +176,7 @@ class BufferSendState(
               case _: HostMemoryBuffer =>
                 //TODO: HostMemoryBuffer needs the same functionality that
                 // DeviceMemoryBuffer has to copy from/to device/host buffers
+                logDebug(s"copying to host memory bounce buffer $memBuff")
                 CudaUtil.copy(
                   memBuff,
                   blockRange.rangeStart,
@@ -186,10 +187,12 @@ class BufferSendState(
                 memBuff match {
                   case mh: HostMemoryBuffer =>
                     // host original => device bounce
+                    logDebug(s"copying from host to device memory bounce buffer $memBuff")
                     d.copyFromHostBufferAsync(buffOffset, mh, blockRange.rangeStart,
                       blockRange.rangeSize(), serverStream)
                   case md: DeviceMemoryBuffer =>
                     // device original => device bounce
+                    logDebug(s"copying from device to device memory bounce buffer $memBuff")
                     d.copyFromDeviceBufferAsync(buffOffset, md, blockRange.rangeStart,
                       blockRange.rangeSize(), serverStream)
                   case _ => throw new IllegalStateException("What buffer is this")

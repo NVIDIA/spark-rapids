@@ -20,8 +20,8 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.StorageTier.StorageTier
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -35,13 +35,14 @@ object RapidsBufferStore {
 /**
  * Base class for all buffer store types.
  *
- * @param name name of this store
+ * @param tier storage tier of this store
  * @param catalog catalog to register this store
  */
 abstract class RapidsBufferStore(
     val tier: StorageTier,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends AutoCloseable with Logging {
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
+    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
+    extends AutoCloseable with Logging with Arm {
 
   val name: String = tier.toString
 
@@ -55,7 +56,9 @@ abstract class RapidsBufferStore(
 
     def add(buffer: RapidsBufferBase): Unit = synchronized {
       val old = buffers.put(buffer.id, buffer)
-      require(old == null, s"duplicate buffer registered: ${buffer.id}")
+      if (old != null) {
+        throw new DuplicateBufferException(s"duplicate buffer registered: ${buffer.id}")
+      }
       spillable.offer(buffer)
       totalBytesStored += buffer.size
     }
@@ -125,13 +128,23 @@ abstract class RapidsBufferStore(
    * (i.e.: this method will not take ownership of the incoming buffer object).
    * This does not need to update the catalog, the caller is responsible for that.
    * @param buffer data from another store
+   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. It will be closed
+   *                     by this method
    * @param stream CUDA stream to use for copy or null
    * @return new buffer that was created
    */
-  def copyBuffer(buffer: RapidsBuffer, stream: Cuda.Stream): RapidsBufferBase = {
-    val newBuffer = createBuffer(buffer, stream)
-    buffers.add(newBuffer)
-    newBuffer
+  def copyBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
+  : RapidsBufferBase = {
+    val newBuffer = createBuffer(buffer, memoryBuffer, stream)
+    try {
+      buffers.add(newBuffer)
+      catalog.registerNewBuffer(newBuffer)
+      newBuffer
+    } catch {
+      case e: Exception =>
+        newBuffer.free()
+        throw e
+    }
   }
 
   /**
@@ -198,10 +211,13 @@ abstract class RapidsBufferStore(
    * adding a reference to the existing buffer and later closing it when the transfer completes.
    * @note DO NOT close the buffer unless adding a reference!
    * @param buffer data from another store
+   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. It will be closed
+   *                     by this method
    * @param stream CUDA stream to use or null
    * @return new buffer tracking the data in this store
    */
-  protected def createBuffer(buffer: RapidsBuffer, stream: Cuda.Stream): RapidsBufferBase
+  protected def createBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
+  : RapidsBufferBase
 
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = synchronized {
@@ -230,17 +246,21 @@ abstract class RapidsBufferStore(
     // If we fail to get a reference then this buffer has since been freed and probably best
     // to return back to the outer loop to see if enough has been freed.
     if (buffer.addReference()) {
-      val newBuffer = try {
-        logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
-          s"total mem=${buffers.getTotalBytes}")
-        buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
-        spillStore.copyBuffer(buffer, stream)
+      try {
+        if (catalog.isBufferSpilled(buffer.id, buffer.storageTier)) {
+          logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
+              s"already stored in multiple tiers total mem=${buffers.getTotalBytes}")
+          catalog.removeBufferTier(buffer.id, buffer.storageTier)
+        } else {
+          logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
+              s"total mem=${buffers.getTotalBytes}")
+          buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
+          spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
+        }
       } finally {
         buffer.close()
       }
-      if (newBuffer != null) {
-        catalog.updateBufferMap(buffer.storageTier, newBuffer)
-      }
+      catalog.removeBufferTier(buffer.id, buffer.storageTier)
       buffer.free()
     }
   }
@@ -251,13 +271,30 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: RapidsBuffer.SpillCallback) extends RapidsBuffer with Arm {
+      override val spillCallback: RapidsBuffer.SpillCallback,
+      catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
+      deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
+      extends RapidsBuffer with Arm {
+    private val MAX_UNSPILL_ATTEMPTS = 100
     private[this] var isValid = true
     protected[this] var refcount = 0
     private[this] var spillPriority: Long = initialSpillPriority
 
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
+
+    /**
+     * Materialize the memory buffer from the underlying storage.
+     *
+     * If the buffer resides in device or host memory, only reference count is incremented.
+     * If the buffer resides in secondary storage, a new host or device memory buffer is created,
+     * with the data copied to the new buffer.
+     * The caller must have successfully acquired the buffer beforehand.
+     * @see [[addReference]]
+     * @note It is the responsibility of the caller to close the buffer.
+     * @note This is an internal API only used by Rapids buffer stores.
+     */
+    protected def materializeMemoryBuffer: MemoryBuffer = getMemoryBuffer
 
     /**
      * Determine if a buffer is currently acquired.
@@ -282,14 +319,7 @@ abstract class RapidsBufferStore(
       // allocated. Allocations can trigger synchronous spills which can
       // deadlock if another thread holds the device store lock and is trying
       // to spill to this store.
-      withResource(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
-        withResource(getMemoryBuffer) {
-          case h: HostMemoryBuffer =>
-            logDebug(s"copying from host $h to device $deviceBuffer")
-            deviceBuffer.copyFromHostBuffer(h)
-          case _ => throw new IllegalStateException(
-            "must override getColumnarBatch if not providing a host buffer")
-        }
+      withResource(getDeviceMemoryBuffer) { deviceBuffer =>
         columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
@@ -301,6 +331,45 @@ abstract class RapidsBufferStore(
         MetaUtils.getBatchFromMeta(devBuffer, meta, sparkTypes)
       } else {
         GpuCompressedColumnVector.from(devBuffer, meta)
+      }
+    }
+
+    override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
+      if (RapidsBufferCatalog.shouldUnspill) {
+        (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
+          catalog.acquireBuffer(id, DEVICE) match {
+            case Some(buffer) =>
+              withResource(buffer) { _ =>
+                return buffer.getDeviceMemoryBuffer
+              }
+            case _ =>
+              try {
+                logDebug(s"Unspilling $this $id to $DEVICE")
+                val newBuffer = deviceStorage.copyBuffer(
+                  this, materializeMemoryBuffer, Cuda.DEFAULT_STREAM)
+                if (newBuffer.addReference()) {
+                  withResource(newBuffer) { _ =>
+                    return newBuffer.getDeviceMemoryBuffer
+                  }
+                }
+              } catch {
+                case _: DuplicateBufferException =>
+                  logDebug(s"Lost device buffer registration race for buffer $id, retrying...")
+              }
+          }
+        }
+        throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
+      } else {
+        withResource(materializeMemoryBuffer) {
+          case h: HostMemoryBuffer =>
+            closeOnExcept(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
+              logDebug(s"copying from host $h to device $deviceBuffer")
+              deviceBuffer.copyFromHostBuffer(h)
+              deviceBuffer
+            }
+          case d: DeviceMemoryBuffer => d
+          case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
+        }
       }
     }
 
