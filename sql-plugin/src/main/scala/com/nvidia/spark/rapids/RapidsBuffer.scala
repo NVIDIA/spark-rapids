@@ -107,8 +107,8 @@ trait RapidsBuffer extends AutoCloseable {
   def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
 
   /**
-   * Get the underlying memory buffer. This may be either a HostMemoryBuffer
-   * or a DeviceMemoryBuffer depending on where the buffer currently resides.
+   * Get the underlying memory buffer. This may be either a HostMemoryBuffer or a DeviceMemoryBuffer
+   * depending on where the buffer currently resides.
    * The caller must have successfully acquired the buffer beforehand.
    * @see [[addReference]]
    * @note It is the responsibility of the caller to close the buffer.
@@ -125,6 +125,15 @@ trait RapidsBuffer extends AutoCloseable {
    */
   def copyToMemoryBuffer(
       srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
+
+  /**
+   * Get the device memory buffer from the underlying storage. If the buffer currently resides
+   * outside of device memory, a new DeviceMemoryBuffer is created with the data copied over.
+   * The caller must have successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the buffer.
+   */
+  def getDeviceMemoryBuffer: DeviceMemoryBuffer
 
   /**
    * Try to add a reference to this buffer to acquire it.
@@ -198,6 +207,9 @@ sealed class DegenerateRapidsBuffer(
   override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long,
       stream: Cuda.Stream): Unit =
     throw new UnsupportedOperationException("degenerate buffer cannot copy to memory buffer")
+
+  override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
+    throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
 
   override def addReference(): Boolean = true
 

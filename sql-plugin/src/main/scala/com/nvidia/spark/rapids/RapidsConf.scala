@@ -352,6 +352,15 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1))
 
+  val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
+    .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
+        "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
+        "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
+        "memory usage")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
     .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
       "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
@@ -589,6 +598,14 @@ object RapidsConf {
       "Long.MinValue.")
     .booleanConf
     .createWithDefault(false)
+
+  val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
+      .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
+        "does NOT produce exact same string as spark produces, but producing strings which are " +
+        "semantically equal. For instance, given input BigDecimal(123, -2), the GPU produces " +
+        "\"12300\", which spark produces \"1.23E+4\".")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
     .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
@@ -944,14 +961,14 @@ object RapidsConf {
       .internal()
       .doc("Default cost of transitioning from GPU to CPU")
       .doubleConf
-      .createWithDefault(0.15)
+      .createWithDefault(0.1)
 
   val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
     "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
       .internal()
       .doc("Default cost of transitioning from CPU to GPU")
       .doubleConf
-      .createWithDefault(0.15)
+      .createWithDefault(0.1)
 
   val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
@@ -1155,6 +1172,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
+  lazy val isUnspillEnabled: Boolean = get(UNSPILL)
+
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
@@ -1191,13 +1210,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
 
-  lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
-
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
   lazy val isCastStringToDecimalEnabled: Boolean = get(ENABLE_CAST_STRING_TO_DECIMAL)
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
+
+  lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 

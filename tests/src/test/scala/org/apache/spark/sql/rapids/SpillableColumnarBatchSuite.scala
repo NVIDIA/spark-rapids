@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.UUID
 
-import ai.rapids.cudf.{Cuda, MemoryBuffer}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsBufferCatalog, RapidsBufferId, SpillableColumnarBatchImpl, StorageTier}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -48,6 +48,7 @@ class SpillableColumnarBatchSuite extends FunSuite with Arm {
     override def getMemoryBuffer: MemoryBuffer = null
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
         length: Long, stream: Cuda.Stream): Unit = {}
+    override def getDeviceMemoryBuffer: DeviceMemoryBuffer = null
     override def addReference(): Boolean = true
     override def free(): Unit = {}
     override def getSpillPriority: Long = 0
