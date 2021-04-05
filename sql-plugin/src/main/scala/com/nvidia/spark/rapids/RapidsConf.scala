@@ -352,6 +352,15 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1))
 
+  val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
+    .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
+        "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
+        "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
+        "memory usage")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
     .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
       "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
@@ -1146,6 +1155,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
+
+  lazy val isUnspillEnabled: Boolean = get(UNSPILL)
 
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
