@@ -2438,6 +2438,16 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuCollectList(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       }),
+    expr[GetJsonObject](
+      "Extracts a json object from path",
+      ExprChecks.projectOnly(
+        TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuGetJsonObject(lhs, rhs)
+      }
+    ),
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
