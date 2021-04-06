@@ -294,6 +294,92 @@ class AdaptiveQueryExecSuite
     }, conf)
   }
 
+  test("Avoid transitions to row when writing to Parquet") {
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      // read from a parquet file so we can test reading on GPU
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+          .repartition(2          )
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+
+      val df = spark.read.parquet(path)
+
+      ExecutionPlanCaptureCallback.startCapture()
+
+      val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
+      df.write.mode(SaveMode.Overwrite).parquet(outputPath)
+
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
+
+      // write should be on GPU
+      val writeCommand = TestUtils.findOperator(executedPlan,
+        _.isInstanceOf[GpuDataWritingCommandExec])
+      assert(writeCommand.isDefined)
+
+      // the read should be an adaptive plan
+      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+        _.isInstanceOf[AdaptiveSparkPlanExec])
+          .get.asInstanceOf[AdaptiveSparkPlanExec]
+
+      val transition = adaptiveSparkPlanExec
+          .executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
+
+      // although the plan contains a GpuColumnarToRowExec, we bypass it in
+      // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+      assert(transition.metrics("numOutputRows").value === 0)
+
+    }, conf)
+  }
+
+  test("Keep transition to row when collecting results") {
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      // read from a parquet file so we can test reading on GPU
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+          .repartition(2          )
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+
+      val df = spark.read.parquet(path)
+
+      ExecutionPlanCaptureCallback.startCapture()
+
+      df.collect()
+
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
+
+      val transition = executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
+
+      // because we are calling collect, AvoidAdaptiveTransitionToRow will not bypass
+      // GpuColumnarToRowExec so we should see accurate metrics
+      assert(transition.metrics("numOutputRows").value === 100)
+
+    }, conf)
+  }
+
   test("Exchange reuse") {
 
     assumeSpark301orLater
