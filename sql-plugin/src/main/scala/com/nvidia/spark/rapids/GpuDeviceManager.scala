@@ -33,7 +33,6 @@ case object Initialized extends MemoryState
 case object Uninitialized extends MemoryState
 case object Uninitializable extends MemoryState
 
-
 object GpuDeviceManager extends Logging {
   // This config controls whether RMM/Pinned memory are initialized from the task
   // or from the executor side plugin. The default is to initialize from the
