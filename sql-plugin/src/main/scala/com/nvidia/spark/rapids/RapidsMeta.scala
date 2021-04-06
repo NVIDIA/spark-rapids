@@ -818,12 +818,12 @@ abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends ExprMeta[INPUT](expr, conf, parent, rule) {
+  extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu(),childExprs(1).convertToGpu())
+    convertToGpu(childExprs.map(_.convertToGpu()))
 
-  def convertToGpu(child: Expression, child2: Expression): GpuExpression
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }
 
 /**

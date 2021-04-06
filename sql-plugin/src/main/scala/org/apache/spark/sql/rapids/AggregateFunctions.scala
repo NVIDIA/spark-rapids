@@ -465,7 +465,7 @@ case class GpuPivotFirst(
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, valueDataType))
 
-  override def children: Seq[Expression] = pivotColumn :: Nil
+  override def children: Seq[Expression] = pivotColumn :: valueColumn :: Nil
 
 }
 

@@ -1862,10 +1862,8 @@ object GpuOverrides {
           TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL,
           TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
-        override def convertToGpu(
-          pivotColumn: Expression,
-          valueColumn: Expression): GpuExpression = GpuPivotFirst(
-          pivotColumn, valueColumn, pivot.pivotColumnValues)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuPivotFirst(childExprs(0), childExprs(1), pivot.pivotColumnValues)
       }),
     expr[Count](
       "Count aggregate operator",
