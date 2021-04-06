@@ -339,6 +339,7 @@ abstract class RapidsBufferStore(
       withResource(getMemoryBuffer) { memBuff =>
         dst match {
           case _: HostMemoryBuffer =>
+            // TODO: consider moving to the async version.
             dst.copyFromMemoryBuffer(dstOffset, memBuff, srcOffset, length, stream)
           case _: DeviceMemoryBuffer =>
             dst.copyFromMemoryBufferAsync(dstOffset, memBuff, srcOffset, length, stream)
