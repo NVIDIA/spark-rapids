@@ -1862,6 +1862,15 @@ object GpuOverrides {
           TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL,
           TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (conf.hasNans &&
+            (pivot.pivotColumn.dataType.equals(FloatType) ||
+              pivot.pivotColumn.dataType.equals(DoubleType))) {
+            willNotWorkOnGpu("Pivot expressions over floating point columns " +
+              "that may contain NaN is disabled. You can bypass this by setting " +
+              s"${RapidsConf.HAS_NANS}=false")
+          }
+        }
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuPivotFirst(childExprs(0), childExprs(1), pivot.pivotColumnValues)
       }),
