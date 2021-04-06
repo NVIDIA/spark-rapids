@@ -31,7 +31,7 @@ import org.apache.spark.sql.rapids.GpuShuffleEnv
 sealed trait MemoryState
 private case object Initialized extends MemoryState
 private case object Uninitialized extends MemoryState
-private case object Uninitializable extends MemoryState
+private case object Errored extends MemoryState
 
 object GpuDeviceManager extends Logging {
   // This config controls whether RMM/Pinned memory are initialized from the task
@@ -133,7 +133,7 @@ object GpuDeviceManager extends Logging {
 
   def shutdown(): Unit = synchronized {
     // assume error during shutdown until we complete it
-    singletonMemoryInitialied = Uninitializable
+    singletonMemoryInitialized = Errored
     RapidsBufferCatalog.close()
     Rmm.shutdown()
     singletonMemoryInitialized = Uninitialized
@@ -294,7 +294,7 @@ object GpuDeviceManager extends Logging {
       // Memory or memory related components that only need to be initialized once per executor.
       // This synchronize prevents multiple tasks from trying to initialize these at the same time.
       GpuDeviceManager.synchronized {
-        if (singletonMemoryInitialized == Uninitializable) {
+        if (singletonMemoryInitialized == Errored) {
           throw new IllegalStateException(
             "Cannot initialize memory due to previous shutdown failing")
         } else if (singletonMemoryInitialized == Uninitialized) {
