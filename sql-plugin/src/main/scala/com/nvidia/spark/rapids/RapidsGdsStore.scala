@@ -96,6 +96,7 @@ class RapidsGdsStore(
       dst match {
         case _: DeviceMemoryBuffer =>
           val dm = dst.asInstanceOf[DeviceMemoryBuffer].slice(dstOffset, length)
+          // TODO: switch to async API when it's released, using the passed in CUDA stream.
           CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
           logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
         case _ => throw new IllegalStateException("GDS can only copy to device buffer, not $dst")
