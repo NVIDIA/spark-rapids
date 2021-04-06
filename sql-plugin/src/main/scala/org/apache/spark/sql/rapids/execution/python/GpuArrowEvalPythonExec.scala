@@ -26,14 +26,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{AggregationOnColumn, ArrowIPCOptions, ArrowIPCWriterOptions, ColumnVector, HostBufferConsumer, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
-import com.nvidia.spark.rapids.{Arm, ConcatAndConsumeAll, GpuAggregateWindowFunction, GpuBindReferences, GpuColumnVector, GpuColumnVectorFromBuffer, GpuExec, GpuMetric, GpuProjectExec, GpuSemaphore, GpuUnevaluable, RapidsBuffer, SpillableColumnarBatch, SpillPriorities}
+import ai.rapids.cudf._
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.api.python.{BasePythonRunner, ChainedPythonFunctions, PythonEvalType, PythonFunction, PythonRDD, SpecialLengths}
+import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.util.toPrettySQL
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -436,12 +436,13 @@ class GpuArrowPythonRunner(
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
-          pythonInSchema.foreach { field =>
-            if (field.nullable) {
-              builder.withColumnNames(field.name)
-            } else {
-              builder.withNotNullableColumnNames(field.name)
-            }
+          // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
+          flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+              if (nullable) {
+                builder.withColumnNames(name)
+              } else {
+                builder.withNotNullableColumnNames(name)
+              }
           }
           Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
         }
@@ -462,6 +463,16 @@ class GpuArrowPythonRunner(
           dataOut.flush()
           if (onDataWriteFinished != null) onDataWriteFinished()
         }
+      }
+
+      private def flattenNames(d: DataType, nullable: Boolean=true): Seq[(String, Boolean)] =
+        d match {
+          case s: StructType =>
+            s.flatMap(sf => Seq((sf.name, sf.nullable)) ++ flattenNames(sf.dataType, sf.nullable))
+          case m: MapType =>
+            flattenNames(m.keyType, nullable) ++ flattenNames(m.valueType, nullable)
+          case a: ArrayType => flattenNames(a.elementType, nullable)
+          case _ => Nil
       }
     }
   }

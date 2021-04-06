@@ -24,8 +24,6 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A buffer store using GPUDirect Storage (GDS). */
 class RapidsGdsStore(
@@ -34,10 +32,9 @@ class RapidsGdsStore(
     extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
-  override def createBuffer(
-      other: RapidsBuffer,
+  override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    withResource(other.getMemoryBuffer) { otherBuffer =>
+    withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
         case d: DeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
@@ -66,7 +63,7 @@ class RapidsGdsStore(
 
   class RapidsGdsBuffer(
       id: RapidsBufferId,
-      fileOffset: Long,
+      val fileOffset: Long,
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
@@ -74,8 +71,9 @@ class RapidsGdsStore(
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
-    // TODO(rongou): cache this buffer to avoid repeated reads from disk.
-    override def getMemoryBuffer: DeviceMemoryBuffer = synchronized {
+    override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
+
+    override def materializeMemoryBuffer: MemoryBuffer = {
       val path = if (id.canShareDiskPaths) {
         sharedBufferFiles.get(id)
       } else {
@@ -97,12 +95,6 @@ class RapidsGdsStore(
         if (!path.delete() && path.exists()) {
           logWarning(s"Unable to delete GDS spill path $path")
         }
-      }
-    }
-
-    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
-      withResource(getMemoryBuffer) { deviceBuffer =>
-        columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
   }

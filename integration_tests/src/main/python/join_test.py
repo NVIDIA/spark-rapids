@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat
-from spark_session import with_spark_session, is_before_spark_310
+from spark_session import with_cpu_session, with_spark_session
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
@@ -75,6 +75,20 @@ def test_sortmerge_join(data_gen, join_type):
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
 def test_broadcast_join_right_table(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(broadcast(right), left.a == right.r_a, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+# Not all join types can be translated to a broadcast join, but this tests them to be sure we
+# can handle what spark is doing
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
+def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
+    with_cpu_session(lambda spark : spark.sparkContext.setJobGroup("testjob1", "test", False))
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right), left.a == right.r_a, join_type)
@@ -201,3 +215,40 @@ def test_join_bucketed_table(repartition, spark_tmp_table_factory):
                 return testurls.join(resolved, "Url", "inner")
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.autoBroadcastJoinThreshold': '-1'})
 
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@pytest.mark.parametrize('cache_side', ['cache_left', 'cache_right'], ids=idfn)
+@pytest.mark.parametrize('cpu_side', ['cache', 'not_cache'], ids=idfn)
+@ignore_order
+def test_half_cache_join(join_type, cache_side, cpu_side):
+    left_gen = [('a', SetValuesGen(LongType(), range(500))), ('b', IntegerGen())]
+    right_gen = [('r_a', SetValuesGen(LongType(), range(500))), ('c', LongGen())]
+    def do_join(spark):
+        # Try to force the shuffle to be split between CPU and GPU for the join
+        # so don't let the shuffle be on the GPU/CPU depending on how the test is configured
+        # when we repartition and cache the data
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', cpu_side != 'cache')
+        left = gen_df(spark, left_gen, length=500)
+        right = gen_df(spark, right_gen, length=500)
+
+        if (cache_side == 'cache_left'):
+            # Try to force the shuffle to be split between CPU and GPU for the join
+            # by default if the operation after the shuffle is not on the GPU then 
+            # don't do a GPU shuffle, so do something simple after the repartition
+            # to make sure that the GPU shuffle is used.
+            left = left.repartition('a').selectExpr('b + 1 as b', 'a').cache()
+            left.count() # populate the cache
+        else:
+            #cache_right
+            # Try to force the shuffle to be split between CPU and GPU for the join
+            # by default if the operation after the shuffle is not on the GPU then 
+            # don't do a GPU shuffle, so do something simple after the repartition
+            # to make sure that the GPU shuffle is used.
+            right = right.repartition('r_a').selectExpr('c + 1 as c', 'r_a').cache()
+            right.count() # populate the cache
+        # Now turn it back so the other half of the shuffle will be on the oposite side
+        spark.conf.set('spark.rapids.sql.exec.ShuffleExchangeExec', cpu_side == 'cache')
+        return left.join(right, left.a == right.r_a, join_type)
+
+    # Even though Spark does not know the size of an RDD input so it will not do a broadcast join unless
+    # we tell it to, this is just to be safe
+    assert_gpu_and_cpu_are_equal_collect(do_join, {'spark.sql.autoBroadcastJoinThreshold': '1'})

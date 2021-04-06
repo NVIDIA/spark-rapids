@@ -21,7 +21,7 @@ import java.math.RoundingMode
 
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer, Table}
 import org.mockito.ArgumentMatchers
-import org.mockito.Mockito.{spy, verify}
+import org.mockito.Mockito.{spy, times, verify}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
 
@@ -69,10 +69,9 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
           val path = bufferId.getDiskPath(null)
           assert(path.exists)
           assertResult(bufferSize)(path.length)
-          verify(catalog).updateBufferMap(
-            ArgumentMatchers.eq(StorageTier.DEVICE), ArgumentMatchers.any[RapidsBuffer])
-          verify(catalog).updateBufferMap(
-            ArgumentMatchers.eq(StorageTier.HOST), ArgumentMatchers.any[RapidsBuffer])
+          verify(catalog, times(3)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
+          verify(catalog).removeBufferTier(
+            ArgumentMatchers.eq(bufferId), ArgumentMatchers.eq(StorageTier.DEVICE))
           withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             assertResult(StorageTier.DISK)(buffer.storageTier)
             assertResult(bufferSize)(buffer.size)
@@ -96,23 +95,24 @@ class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm wit
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
         devStore.setSpillStore(hostStore)
-        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
-          hostStore.setSpillStore(diskStore)
-          addTableToStore(devStore, bufferId, spillPriority)
-          val expectedBatch = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-            assertResult(StorageTier.DEVICE)(buffer.storageTier)
-            buffer.getColumnarBatch(sparkTypes)
-          }
-          withResource(expectedBatch) { expectedBatch =>
-            devStore.synchronousSpill(0)
-            hostStore.synchronousSpill(0)
-            withResource(catalog.acquireBuffer(bufferId)) { buffer =>
-              assertResult(StorageTier.DISK)(buffer.storageTier)
-              withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
-                TestUtils.compareBatches(expectedBatch, actualBatch)
+        withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog, devStore)) {
+          diskStore =>
+            hostStore.setSpillStore(diskStore)
+            addTableToStore(devStore, bufferId, spillPriority)
+            val expectedBatch = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+              assertResult(StorageTier.DEVICE)(buffer.storageTier)
+              buffer.getColumnarBatch(sparkTypes)
+            }
+            withResource(expectedBatch) { expectedBatch =>
+              devStore.synchronousSpill(0)
+              hostStore.synchronousSpill(0)
+              withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+                assertResult(StorageTier.DISK)(buffer.storageTier)
+                withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
+                  TestUtils.compareBatches(expectedBatch, actualBatch)
+                }
               }
             }
-          }
         }
       }
     }

@@ -121,7 +121,13 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
       val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
-      checkSkewJoin(innerSmj, 2, 1)
+      // Spark changed how skewed joins work and now the numbers are different
+      // depending on the version being used
+      if (cmpSparkVersion(3,1,1) >= 0) {
+        checkSkewJoin(innerSmj, 2, 1)
+      } else {
+        checkSkewJoin(innerSmj, 1, 1)
+      }
     }
   }
 
@@ -131,7 +137,13 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 left outer join skewData2 ON key1 = key2")
       val leftSmj = findTopLevelGpuShuffleHashJoin(leftAdaptivePlan)
-      checkSkewJoin(leftSmj, 2, 0)
+      // Spark changed how skewed joins work and now the numbers are different
+      // depending on the version being used
+      if (cmpSparkVersion(3,1,1) >= 0) {
+        checkSkewJoin(leftSmj, 2, 0)
+      } else {
+        checkSkewJoin(leftSmj, 1, 0)
+      }
     }
   }
 
@@ -282,6 +294,92 @@ class AdaptiveQueryExecSuite
     }, conf)
   }
 
+  test("Avoid transitions to row when writing to Parquet") {
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      // read from a parquet file so we can test reading on GPU
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+          .repartition(2          )
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+
+      val df = spark.read.parquet(path)
+
+      ExecutionPlanCaptureCallback.startCapture()
+
+      val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
+      df.write.mode(SaveMode.Overwrite).parquet(outputPath)
+
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
+
+      // write should be on GPU
+      val writeCommand = TestUtils.findOperator(executedPlan,
+        _.isInstanceOf[GpuDataWritingCommandExec])
+      assert(writeCommand.isDefined)
+
+      // the read should be an adaptive plan
+      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+        _.isInstanceOf[AdaptiveSparkPlanExec])
+          .get.asInstanceOf[AdaptiveSparkPlanExec]
+
+      val transition = adaptiveSparkPlanExec
+          .executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
+
+      // although the plan contains a GpuColumnarToRowExec, we bypass it in
+      // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+      assert(transition.metrics("numOutputRows").value === 0)
+
+    }, conf)
+  }
+
+  test("Keep transition to row when collecting results") {
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      // read from a parquet file so we can test reading on GPU
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+          .repartition(2          )
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+
+      val df = spark.read.parquet(path)
+
+      ExecutionPlanCaptureCallback.startCapture()
+
+      df.collect()
+
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
+
+      val transition = executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
+
+      // because we are calling collect, AvoidAdaptiveTransitionToRow will not bypass
+      // GpuColumnarToRowExec so we should see accurate metrics
+      assert(transition.metrics("numOutputRows").value === 100)
+
+    }, conf)
+  }
+
   test("Exchange reuse") {
 
     assumeSpark301orLater
@@ -323,7 +421,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
@@ -358,7 +455,6 @@ class AdaptiveQueryExecSuite
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
       .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
 
@@ -455,26 +551,22 @@ class AdaptiveQueryExecSuite
   }
 
   /** most of the AQE tests requires Spark 3.0.1 or later */
-  private def assumeSpark301orLater = {
-    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
-    val isValidTestForSparkVersion = sparkShimVersion match {
-      case SparkShimVersion(3, 0, 0) => false
-      case DatabricksShimVersion(3, 0, 0) => false
-      case _ => true
-    }
-    assume(isValidTestForSparkVersion, "SPARK 3.1.0 or later required")
-  }
+  private def assumeSpark301orLater =
+    assume(cmpSparkVersion(3, 0, 1) >= 0)
 
-  private def assumePriorToSpark320 = {
+  private def assumePriorToSpark320 =
+    assume(cmpSparkVersion(3, 2, 0) < 0)
+
+  private def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
-    val isValidTestForSparkVersion = sparkShimVersion match {
-      case ver: SparkShimVersion =>
-        (ver.major == 3 && ver.minor < 2) || ver.major < 3
-      case ver: DatabricksShimVersion =>
-        (ver.major == 3 && ver.minor < 2) || ver.major < 3
-      case _ => true
+    val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
+      case SparkShimVersion(a, b, c) => (a, b, c)
+      case DatabricksShimVersion(a, b, c) => (a, b, c)
+      case EMRShimVersion(a, b, c) => (a, b, c)
     }
-    assume(isValidTestForSparkVersion, "Prior to SPARK 3.2.0 required")
+    val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
+    val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
+    sparkFullVersion.compareTo(fullVersion)
   }
 
   def checkSkewJoin(

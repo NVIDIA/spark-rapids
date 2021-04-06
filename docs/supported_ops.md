@@ -144,12 +144,12 @@ Accelerator supports are described below.
 <td>S*</td>
 <td>S</td>
 <td>S*</td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -239,7 +239,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (Only literal arrays and the output of the array function are supported; missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -379,7 +379,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -402,7 +402,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (unionByName will not optionally impute nulls for missing struct fields  when the column is a struct and there are non-overlapping fields; missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -699,9 +699,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -5326,6 +5326,53 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="2">Explode</td>
+<td rowSpan="2">`explode`, `explode_outer`</td>
+<td rowSpan="2">Given an input array produces a sequence of rows for each value in the array. Explode with outer Generate is not supported under GPU runtime.</td>
+<td rowSpan="2">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="4">Expm1</td>
 <td rowSpan="4">`expm1`</td>
 <td rowSpan="4">Euler's number e raised to a power minus 1</td>
@@ -5768,6 +5815,74 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+</tr>
+<tr>
+<td rowSpan="3">GetJsonObject</td>
+<td rowSpan="3">`get_json_object`</td>
+<td rowSpan="3">Extracts a json object from path</td>
+<td rowSpan="3">None</td>
+<td rowSpan="3">project</td>
+<td>json</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>path</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS (Literal value only)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="6">GetMapValue</td>
@@ -8554,7 +8669,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -9674,17 +9789,17 @@ Accelerator support is described below.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td> </td>
-<td> </td>
 <td>S</td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td>result</td>
@@ -9717,17 +9832,17 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td> </td>
-<td> </td>
 <td><b>NS</b></td>
-<td> </td>
 <td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td>result</td>
@@ -10237,6 +10352,53 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="2">PosExplode</td>
+<td rowSpan="2">`posexplode_outer`, `posexplode`</td>
+<td rowSpan="2">Given an input array produces a sequence of rows for each value in the array. PosExplode with outer Generate is not supported under GPU runtime.</td>
+<td rowSpan="2">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S*</td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="6">Pow</td>
 <td rowSpan="6">`pow`, `power`</td>
 <td rowSpan="6">lhs ^ rhs</td>
@@ -10479,9 +10641,9 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -10522,9 +10684,9 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -10565,9 +10727,9 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -10608,9 +10770,9 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -12215,6 +12377,96 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="4">Size</td>
+<td rowSpan="4">`size`, `cardinality`</td>
+<td rowSpan="4">The size of an array or a map</td>
+<td rowSpan="4">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="2">lambda</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">SortOrder</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Sort order</td>
@@ -12237,7 +12489,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -12258,7 +12510,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -16251,7 +16503,7 @@ Accelerator support is described below.
 <td rowSpan="6">CollectList</td>
 <td rowSpan="6">`collect_list`</td>
 <td rowSpan="6">Collect a list of elements, now only supported by windowing.</td>
-<td rowSpan="6">This is disabled by default because for now the GPU collects null values to a list, but Spark does not. This will be fixed in future releases.</td>
+<td rowSpan="6">None</td>
 <td rowSpan="2">aggregation</td>
 <td>input</td>
 <td><b>NS</b></td>
@@ -17845,7 +18097,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td><b>NS</b></td>
@@ -17865,7 +18117,7 @@ and the accelerator produces the same result.
 <td><b>NS</b></td>
 <td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td>S*</td>
 <td> </td>
 <td> </td>
@@ -17991,7 +18243,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (the struct's children must also support being cast to string)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -18249,7 +18501,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td><b>NS</b></td>
+<td>S*</td>
 <td> </td>
 <td>S</td>
 <td><b>NS</b></td>
@@ -18269,7 +18521,7 @@ and the accelerator produces the same result.
 <td><b>NS</b></td>
 <td> </td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td>S*</td>
 <td> </td>
 <td> </td>
@@ -18395,7 +18647,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (the struct's children must also support being cast to string)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>

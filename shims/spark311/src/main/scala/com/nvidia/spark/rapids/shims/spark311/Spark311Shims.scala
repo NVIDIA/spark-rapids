@@ -139,7 +139,7 @@ class Spark311Shims extends Spark301Shims {
 
         // stringChecks are the same
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = none
+        override val decimalChecks: TypeSig = DECIMAL + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same
@@ -422,6 +422,10 @@ class Spark311Shims extends Spark301Shims {
 
   override def shouldIgnorePath(path: String): Boolean = {
     HadoopFSUtilsShim.shouldIgnorePath(path)
+  }
+
+  override def getLegacyComplexTypeToString(): Boolean = {
+    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
   }
 
   // Arrow version changed between Spark versions

@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.types.DataType
@@ -33,11 +33,11 @@ object SortUtils extends Arm {
     case _ => None
   }
 
-  def getOrder(order: SortOrder, index: Int): Table.OrderByArg =
+  def getOrder(order: SortOrder, index: Int): OrderByArg =
     if (order.isAscending) {
-      Table.asc(index, order.nullOrdering == NullsFirst)
+      OrderByArg.asc(index, order.nullOrdering == NullsFirst)
     } else {
-      Table.desc(index, order.nullOrdering == NullsLast)
+      OrderByArg.desc(index, order.nullOrdering == NullsLast)
     }
 }
 
@@ -88,7 +88,7 @@ class GpuSorter(
   private[this] lazy val (sortOrdersThatNeedComputation, cudfOrdering, cpuOrderingInternal) = {
     val sortOrdersThatNeedsComputation = mutable.ArrayBuffer[SortOrder]()
     val cpuOrdering = mutable.ArrayBuffer[SortOrder]()
-    val cudfOrdering = mutable.ArrayBuffer[Table.OrderByArg]()
+    val cudfOrdering = mutable.ArrayBuffer[OrderByArg]()
     var newColumnIndex = numInputColumns
     // Remove duplicates in the ordering itself because
     // there is no need to do it twice.

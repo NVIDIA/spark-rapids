@@ -85,6 +85,22 @@ cluster.
 
     ![Spark Config](../img/Databricks/sparkconfig.png)
 
+   If running Pandas UDFs with GPU support from the plugin, at least three additional options
+    as below are required. The `spark.python.daemon.module` option is to choose the right daemon module
+    of python for Databricks. On Databricks, the python runtime requires different parameters than the
+    Spark one, so a dedicated python deamon module `rapids.daemon_databricks` is created and should
+    be specified here. Set the config
+    [`spark.rapids.sql.python.gpu.enabled`](../configs.md#sql.python.gpu.enabled) to `true` to
+    enable GPU support for python. Add the path of the plugin jar (supposing it is placed under
+    `/databricks/jars/`) to the `spark.executorEnv.PYTHONPATH` option. For more details please go to
+    [**GPU Scheduling For Pandas UDF**](../additional-functionality/rapids-udfs.md#gpu-scheduling-for-pandas-udf)
+
+    ```bash
+    spark.rapids.sql.python.gpu.enabled true
+    spark.python.daemon.module rapids.daemon_databricks
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-0.4.1.jar:/databricks/spark/python
+    ```
+
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark with RAPIDS and cuDF.
 

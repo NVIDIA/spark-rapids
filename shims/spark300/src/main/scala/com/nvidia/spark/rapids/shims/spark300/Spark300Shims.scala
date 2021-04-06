@@ -478,6 +478,8 @@ class Spark300Shims extends SparkShims {
     InMemoryFileIndex.shouldFilterOut(path)
   }
 
+  override def getLegacyComplexTypeToString(): Boolean = true
+
   // Arrow version changed between Spark versions
   override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
     val arrowBuf = vec.getDataBuffer()
@@ -621,4 +623,8 @@ class Spark300Shims extends SparkShims {
   ): A = {
     attachTree(tree, msg)(f)
   }
+
+  override def hasAliasQuoteFix: Boolean = false
+
+  override def hasCastFloatTimestampUpcast: Boolean = false
 }
