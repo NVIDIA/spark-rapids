@@ -132,17 +132,11 @@ object GpuDeviceManager extends Logging {
   }
 
   def shutdown(): Unit = synchronized {
-    try {
-      RapidsBufferCatalog.close()
-      Rmm.shutdown()
-      singletonMemoryInitialized = Uninitialized
-    } catch {
-      case e: Throwable =>
-        // flag as Uninitializable so that any future initialization attempts can throw
-        // a helpful error message
-        singletonMemoryInitialized = Uninitializable
-        throw e
-    }
+    // assume error during shutdown until we complete it
+    singletonMemoryInitialied = Uninitializable
+    RapidsBufferCatalog.close()
+    Rmm.shutdown()
+    singletonMemoryInitialized = Uninitialized
   }
 
   def getResourcesFromTaskContext: Map[String, ResourceInformation] = {
