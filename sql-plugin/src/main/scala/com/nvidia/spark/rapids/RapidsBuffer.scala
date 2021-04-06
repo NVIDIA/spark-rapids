@@ -118,10 +118,12 @@ trait RapidsBuffer extends AutoCloseable {
   /**
    * Copy the content of this buffer into the specified memory buffer, starting from the given
    * offset.
+   *
    * @param srcOffset offset to start copying from.
    * @param dst the memory buffer to copy into.
    * @param dstOffset offset to copy into.
    * @param length number of bytes to copy.
+   * @param stream CUDA stream to use
    */
   def copyToMemoryBuffer(
       srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
