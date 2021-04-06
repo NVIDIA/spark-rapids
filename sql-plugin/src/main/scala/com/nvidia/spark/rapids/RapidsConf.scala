@@ -701,10 +701,9 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to false disables orc output acceleration. This has been disabled by " +
-        "default because of https://github.com/NVIDIA/spark-rapids/issues/1550")
+    .doc("When set to false disables orc output acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CSV = conf("spark.rapids.sql.format.csv.enabled")
     .doc("When set to false disables all csv input and output acceleration. " +
