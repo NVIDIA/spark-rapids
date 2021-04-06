@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.GpuDataSourceV2ScanExecBase
-
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.RangePartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -196,7 +194,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _: DataSourceScanExec => true
     case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
-    case _: GpuDataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
     case p => p.children.exists(hasDirectLineToInput)
   }
@@ -209,7 +206,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _: DataSourceScanExec => true
     case _: GpuDataSourceScanExec => true
     case _: DataSourceV2ScanExecBase => true
-    case _: GpuDataSourceV2ScanExecBase => true
     case _: RDDScanExec => true // just in case an RDD was reading in data
     case _ => false
   }
@@ -254,7 +250,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   // we can't support the coalesce file reader optimization when this is used.
   private def updateScansForInput(plan: SparkPlan,
       disableUntilInput: Boolean = false): SparkPlan = plan match {
-    case batchScan: GpuBatchScanExec =>
+    case batchScan: GpuBatchScanExecBase =>
       if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
         (disableUntilInput || disableScanUntilInput(batchScan))) {
         ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, true)

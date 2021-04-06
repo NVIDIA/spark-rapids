@@ -21,7 +21,7 @@ import java.math.RoundingMode
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExec, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
+import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExecBase, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
@@ -293,7 +293,7 @@ class DecimalUnitTest extends GpuUnitTests {
       rootPlan = fromCsvDf("decimal-test.csv", decimalCsvStruct)(ss).queryExecution.executedPlan
       assert(rootPlan.map(p => p).exists(_.isInstanceOf[BatchScanExec]))
       rootPlan = frameFromParquet("decimal-test.parquet")(ss).queryExecution.executedPlan
-      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuBatchScanExec]))
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuBatchScanExecBase]))
     }, conf.set(SQLConf.USE_V1_SOURCE_LIST.key, ""))
   }
 }

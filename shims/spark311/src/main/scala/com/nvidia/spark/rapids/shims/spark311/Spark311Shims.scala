@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shims.spark311
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.spark300.GpuBatchScanExec
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
@@ -363,11 +364,11 @@ class Spark311Shims extends Spark301Shims {
   }
 
   override def copyParquetBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
+      batchScanExec: GpuBatchScanExecBase,
+      queryUsesInputFile: Boolean): GpuBatchScanExecBase = {
     val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
     val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
-    batchScanExec.copy(scan=scanCopy)
+    batchScanExec.asInstanceOf[GpuBatchScanExec].copy(scan=scanCopy)
   }
 
   override def copyFileSourceScanExec(

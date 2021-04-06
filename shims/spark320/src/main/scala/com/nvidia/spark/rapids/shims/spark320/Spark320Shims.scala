@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.spark320
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuColumnarToRowExec, GpuColumnarToRowExecParent, GpuOverrides, ShimVersion, TypeSig}
-import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, Spark311Shims}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuBatchScanExecBase, GpuColumnarToRowExec, GpuColumnarToRowExecParent, GpuExec, GpuOverrides, ScanMeta, ShimVersion, SparkPlanMeta, TypeSig}
+import com.nvidia.spark.rapids.shims.spark311.{GpuParquetScan, ParquetCachedBatchSerializer, Spark311Shims}
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.TableIdentifier
@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{RepairTableCommand, RunnableCommand}
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
@@ -54,6 +55,14 @@ class Spark320Shims extends Spark311Shims {
       enableAddPartitions = true,
       enableDropPartitions = false)
 
+
+  override def copyParquetBatchScanExec(
+      batchScanExec: GpuBatchScanExecBase,
+      queryUsesInputFile: Boolean): GpuBatchScanExecBase = {
+    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
+    val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
+    batchScanExec.asInstanceOf[GpuBatchScanExec].copy(scan=scanCopy)
+  }
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
@@ -115,10 +124,23 @@ class Spark320Shims extends Spark311Shims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     super.getExecs ++ Seq(
+      GpuOverrides.exec[BatchScanExec](
+        "The backend for most file input",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+              TypeSig.DECIMAL).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
+          override val childScans: scala.Seq[ScanMeta[_]] =
+            Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
+
+          override def convertToGpu(): GpuExec =
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+        }),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
         ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
+        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 }

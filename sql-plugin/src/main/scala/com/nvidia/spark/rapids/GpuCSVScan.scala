@@ -23,19 +23,16 @@ import scala.math.max
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.GpuDataSourceV2ScanExecBase
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.CSVOptions
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.PermissiveMode
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.QueryExecutionException
@@ -49,11 +46,11 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
+trait GpuBatchScanExecBase extends GpuExec {
+  import com.nvidia.spark.rapids.GpuMetric._
 
-case class GpuBatchScanExec(
-    output: Seq[AttributeReference],
-    @transient scan: Scan) extends GpuDataSourceV2ScanExecBase {
-  import GpuMetric._
+  def scan: Scan
+
   @transient lazy val batch: Batch = scan.toBatch
 
   override def supportsColumnar = true
@@ -68,18 +65,6 @@ case class GpuBatchScanExec(
   scan match {
     case s: ScanWithMetrics => s.metrics = allMetrics ++ additionalMetrics
     case _ =>
-  }
-
-  override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
-
-  override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
-
-  override lazy val inputRDD: RDD[InternalRow] = {
-    new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
-  }
-
-  override def doCanonicalize(): GpuBatchScanExec = {
-    this.copy(output = output.map(QueryPlan.normalizeExpressions(_, output)))
   }
 }
 

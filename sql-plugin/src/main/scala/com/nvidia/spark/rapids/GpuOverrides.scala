@@ -2184,6 +2184,7 @@ object GpuOverrides {
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // avoid using BinaryExpression accessors since hierarchy changed in Spark 3.2
+          // left and right must match child order in Spark's BinaryExpression
           val children = in.children
           val left = children.head
           val right = children(1)
@@ -2611,19 +2612,6 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec =
             GpuRangeExec(range.range, conf.gpuTargetBatchSizeBytes)
         }
-      }),
-    exec[BatchScanExec](
-      "The backend for most file input",
-      ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL).nested(),
-        TypeSig.all),
-      (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
-        override val childScans: scala.Seq[ScanMeta[_]] =
-          Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
-
-        override def convertToGpu(): GpuExec =
-          GpuBatchScanExec(p.output, childScans(0).convertToGpu())
       }),
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",

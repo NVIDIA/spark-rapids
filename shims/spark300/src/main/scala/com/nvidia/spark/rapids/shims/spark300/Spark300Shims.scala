@@ -46,6 +46,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
@@ -156,6 +157,19 @@ class Spark300Shims extends SparkShims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[BatchScanExec](
+        "The backend for most file input",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+              TypeSig.DECIMAL).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
+          override val childScans: scala.Seq[ScanMeta[_]] =
+            Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
+
+          override def convertToGpu(): GpuExec =
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+        }),
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -429,11 +443,11 @@ class Spark300Shims extends SparkShims {
   }
 
   override def copyParquetBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
+      batchScanExec: GpuBatchScanExecBase,
+      queryUsesInputFile: Boolean): GpuBatchScanExecBase = {
     val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
     val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
-    batchScanExec.copy(scan=scanCopy)
+    batchScanExec.asInstanceOf[GpuBatchScanExec].copy(scan=scanCopy)
   }
 
   override def copyFileSourceScanExec(

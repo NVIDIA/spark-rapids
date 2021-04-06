@@ -16,15 +16,13 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import scala.util.matching.Regex
-
 import org.json4s.JsonAST
 
 import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
-import org.apache.spark.sql.{SQLContext, SparkSession}
+import org.apache.spark.sql.{SparkSession, SQLContext}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
