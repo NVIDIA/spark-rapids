@@ -14,6 +14,7 @@ parent: Getting-Started
   GPUs](#run-pyspark-or-scala-notebook-on-a-dataproc-cluster-accelerated-by-gpus)
 * [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by
   GPUs](#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpus)
+* [Build custom dataproc image to accelerate cluster init time](#build-custom-dataproc-image-to-accelerate-cluster-init-time)
 
 ## Spin up a Dataproc Cluster Accelerated by GPUs
  
@@ -75,10 +76,12 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false"
 ``` 
 
-This may take around 5-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
+This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
 Google Cloud Console to see the progress.
 
 ![Dataproc Cluster](../img/GCP/dataproc-cluster.png)
+
+If you'd like to further accelerate init time to 4-5 minutes, create a custom dataproc image using [this](#build-custom-dataproc-image-to-accelerate-cluster-init-time) guide.
 
 ## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab
@@ -169,3 +172,14 @@ The AI platform will connect to a Dataproc cluster through a yaml configuration.
 
 In the future, users will be able to provision a Dataproc cluster through DataprocHub notebook.  You
 can use example [pyspark notebooks](../demo/GCP/Mortgage-ETL-GPU.ipynb) to experiment.
+
+## Build custom dataproc image to accelerate cluster init time
+In order to accelerate cluster init time to 4-5 minutes, we need to build a custom dataproc image that already has NVIDIA drivers and CUDA toolkit installed. In this section, we will be using [these instructions from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a custom image.
+
+Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) initialization actions:
+1. Configure yarn, yarn node manager, GPU isolation and GPU exclusive mode.
+2. Install GPU drivers.
+
+While step #1 is required at the time of cluster creation, step #2 can be done in advance. Let's write a script `gpu_dataproc_packages.sh` that will be executed at the time of image creation:
+
+<script src="https://gist.github.com/aroraakshit/191f4435c825f89f06f108691e104074.js"></script>
