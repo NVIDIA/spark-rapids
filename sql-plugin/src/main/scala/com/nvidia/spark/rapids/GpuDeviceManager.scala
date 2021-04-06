@@ -29,9 +29,9 @@ import org.apache.spark.resource.ResourceInformation
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 
 sealed trait MemoryState
-case object Initialized extends MemoryState
-case object Uninitialized extends MemoryState
-case object Uninitializable extends MemoryState
+private case object Initialized extends MemoryState
+private case object Uninitialized extends MemoryState
+private case object Uninitializable extends MemoryState
 
 object GpuDeviceManager extends Logging {
   // This config controls whether RMM/Pinned memory are initialized from the task
