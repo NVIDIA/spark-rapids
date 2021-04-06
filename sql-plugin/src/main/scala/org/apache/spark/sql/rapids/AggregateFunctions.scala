@@ -131,6 +131,9 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
       case PartialMerge | Final => aggregateFunction.transform {
         case a: AttributeReference => a.withExprId(ExprId(0))
       }
+      case Partial | Complete if filter.isDefined => aggregateFunction.transform {
+        case a: AttributeReference => a.withExprId(ExprId(0))
+      }
       case Partial | Complete => aggregateFunction
     }
 
