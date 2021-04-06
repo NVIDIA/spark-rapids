@@ -18,14 +18,12 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import scala.collection.mutable.ListBuffer
-
 import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import org.scalatest.BeforeAndAfterEach
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
-import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, QueryExecution, SparkPlan}
+import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
@@ -34,7 +32,6 @@ import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DecimalType, IntegerType, StructField, StructType}
-import org.apache.spark.sql.util.QueryExecutionListener
 
 object AdaptiveQueryExecSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
@@ -317,16 +314,16 @@ class AdaptiveQueryExecSuite
 
       val df = spark.read.parquet(path)
 
-      val listener = new TestExecutionListener
-      spark.listenerManager.register(listener)
+      ExecutionPlanCaptureCallback.startCapture()
 
       val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
       df.write.mode(SaveMode.Overwrite).parquet(outputPath)
 
-      val qe = listener.get()
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
 
       // write should be on GPU
-      val writeCommand = TestUtils.findOperator(qe.executedPlan,
+      val writeCommand = TestUtils.findOperator(executedPlan,
         _.isInstanceOf[GpuDataWritingCommandExec])
       assert(writeCommand.isDefined)
 
@@ -366,20 +363,14 @@ class AdaptiveQueryExecSuite
 
       val df = spark.read.parquet(path)
 
-      val listener = new TestExecutionListener
-      spark.listenerManager.register(listener)
+      ExecutionPlanCaptureCallback.startCapture()
 
       df.collect()
 
-      val qe = listener.get()
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
 
-      // the query should be an adaptive plan
-      val adaptiveSparkPlanExec = TestUtils.findOperator(qe.executedPlan,
-        _.isInstanceOf[AdaptiveSparkPlanExec])
-          .get.asInstanceOf[AdaptiveSparkPlanExec]
-
-      val transition = adaptiveSparkPlanExec
-          .executedPlan
+      val transition = executedPlan
           .asInstanceOf[GpuColumnarToRowExec]
 
       // because we are calling collect, AvoidAdaptiveTransitionToRow will not bypass
@@ -669,37 +660,4 @@ class AdaptiveQueryExecSuite
     spark.read.parquet(path).createOrReplaceTempView(name)
   }
 
-}
-
-class TestExecutionListener extends QueryExecutionListener {
-
-  private val buffer = new ListBuffer[Either[Exception, QueryExecution]]()
-
-  override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit = {
-    buffer.synchronized {
-      buffer.append(Right(qe))
-      buffer.notify()
-    }
-  }
-
-  override def onFailure(funcName: String, qe: QueryExecution, ex: Exception): Unit = {
-    buffer.synchronized {
-      buffer.append(Left(ex))
-      buffer.notify()
-    }
-  }
-
-  def get(): QueryExecution = {
-    buffer.synchronized {
-      val timeout = System.currentTimeMillis() + 15000
-      while (buffer.isEmpty && System.currentTimeMillis() < timeout) {
-        buffer.wait(100)
-      }
-      buffer.headOption match {
-        case Some(Right(qe)) => qe
-        case Some(Left(ex)) => throw ex
-        case None => throw new IllegalStateException("Timed out waiting for metrics")
-      }
-    }
-  }
 }
