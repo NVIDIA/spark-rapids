@@ -343,7 +343,8 @@ abstract class RapidsBufferStore(
             dst.copyFromMemoryBuffer(dstOffset, memBuff, srcOffset, length, stream)
           case _: DeviceMemoryBuffer =>
             dst.copyFromMemoryBufferAsync(dstOffset, memBuff, srcOffset, length, stream)
-          case _ => throw new IllegalStateException("What buffer is this")
+          case _ =>
+            throw new IllegalStateException(s"Infeasible destination buffer type ${dst.getClass}")
         }
       }
     }
