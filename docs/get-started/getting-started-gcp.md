@@ -215,6 +215,7 @@ python2 generate_custom_image.py \
     --accelerator type=$GPU_NAME,count=$GPU_COUNT \
     --disk-size 40
 ```
+
 See [here](https://cloud.google.com/dataproc/docs/guides/dataproc-images#running_the_code) for more details on `generate_custom_image.py` script arguments.
 
 The image `sample-207-ubuntu18-gpu-t4` is now ready and can be viewed in the GCP console under `Compute Engine > Storage > Images`. The next step is to launch the cluster using this new image and new initialization actions (that do not install NVIDIA drivers since we are already past that step).
