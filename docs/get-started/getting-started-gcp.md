@@ -180,6 +180,74 @@ Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initializatio
 1. Configure yarn, yarn node manager, GPU isolation and GPU exclusive mode.
 2. Install GPU drivers.
 
-While step #1 is required at the time of cluster creation, step #2 can be done in advance. Let's write a script `gpu_dataproc_packages.sh` that will be executed at the time of image creation:
+While step #1 is required at the time of cluster creation, step #2 can be done in advance. Let's write a script to do that `gpu_dataproc_packages.sh` that will be used to create the dataproc image:
 
 <script src="https://gist.github.com/aroraakshit/191f4435c825f89f06f108691e104074.js"></script>
+
+Google provides `generate_custom_image.py` script that:
+- Launches a temporary Compute Engine VM instance with the specified Dataproc base image.
+- Then runs the customization script inside the VM instance to install custom packages and/or update configurations. 
+- After the customization script finishes, it shuts down the VM instance and creates a Dataproc custom image from the disk of the VM instance.
+- The temporary VM is deleted after the custom image is created. 
+- The custom image is saved and can be used to create Dataproc clusters.
+
+Let's create the image using our customization script `gpu_dataproc_packages.sh` and image creation script `generate_custom_image.py` by Google (this step may take 20-25 minutes to complete):
+
+```
+git clone https://github.com/GoogleCloudDataproc/custom-images
+cd custom-images
+
+export CUSTOMIZATION_SCRIPT=/path/to/gpu_dataproc_packages.sh
+export ZONE=us-central1-f
+export GCS_BUCKET=sample-bucket
+export IMAGE_NAME=a207-ubuntu18-gpu-t4
+export DATAPROC_VERSION=2.0.7-ubuntu18
+export GPU_NAME=nvidia-tesla-t4
+export GPU_COUNT=2
+
+python2 generate_custom_image.py \
+    --image-name $IMAGE_NAME \
+    --dataproc-version $DATAPROC_VERSION \
+    --customization-script $CUSTOMIZATION_SCRIPT \
+    --zone $ZONE \
+    --gcs-bucket $GCS_BUCKET \
+    --machine-type n1-highmem-32 \
+    --accelerator type=$GPU_NAME,count=$GPU_COUNT \
+    --disk-size 40
+```
+See [here](https://cloud.google.com/dataproc/docs/guides/dataproc-images#running_the_code) for more details on `generate_custom_image.py` script arguments.
+
+The image `sample-207-ubuntu18-gpu-t4` is now ready and can be viewed in the GCP console under `Compute Engine > Storage > Images`. The next step is to launch the cluster using this new image and new initialization actions (that do not install NVIDIA drivers since we are already past that step).
+
+Here is the new custom gpu initialization actions that only configure yarn, yarn node manager, GPU isolation and GPU exclusive mode:
+
+<script src="https://gist.github.com/aroraakshit/57f423836ca8798bdf51518e1800aae6.js"></script>
+
+Move this to a bucket, say, `sample-bucket`. Lets launch the cluster:
+
+```
+export REGION=us-west1
+export GCS_BUCKET=sample-bucket
+export CLUSTER_NAME=sample-cluster
+export NUM_GPUS=2
+export NUM_WORKERS=2
+
+gcloud dataproc clusters create $CLUSTER_NAME  \
+    --region $REGION \
+    --image=sample-207-ubuntu18-gpu-t4 \
+    --master-machine-type n1-highmem-32 \
+    --master-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
+    --num-workers $NUM_WORKERS \
+    --worker-accelerator type=nvidia-tesla-t4,count=$NUM_GPUS \
+    --worker-machine-type n1-highmem-32\
+    --num-worker-local-ssds 4 \
+    --initialization-actions gs://$GCS_BUCKET/custom_gpu_init_actions.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --optional-components=JUPYTER,ZEPPELIN \
+    --metadata gpu-driver-provider="NVIDIA" \
+    --metadata rapids-runtime=SPARK \
+    --bucket $GCS_BUCKET \
+    --enable-component-gateway \
+    --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false"
+```
+
+The new cluster should be up and running within 4-5 minutes!
