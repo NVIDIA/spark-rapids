@@ -70,7 +70,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
   private[this] lazy val ucx = {
     logWarning("UCX Shuffle Transport Enabled")
-    val ucxImpl = new UCX(executorId, rapidsConf.shuffleUcxUseWakeup)
+    val ucxImpl = new UCX(executorId, rapidsConf)
     ucxImpl.init()
 
     initBounceBufferPools(bounceBufferSize,

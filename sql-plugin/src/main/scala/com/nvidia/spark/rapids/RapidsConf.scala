@@ -855,6 +855,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val SHUFFLE_UCX_USE_SOCKADDR = conf("spark.rapids.shuffle.ucx.useSockaddr")
+    .doc("When set to true, start listener and exchange socket address. This allows better detecting " +
+      "remote peer failures.")
+    .booleanConf
+    .createWithDefault(true)
+
   val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
     .doc("The host to be used to start the management server")
     .stringConf
@@ -1327,6 +1333,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
+
+  lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_USE_SOCKADDR)
 
   lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
 

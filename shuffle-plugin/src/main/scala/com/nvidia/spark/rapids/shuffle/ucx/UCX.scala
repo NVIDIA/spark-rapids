@@ -17,20 +17,21 @@
 package com.nvidia.spark.rapids.shuffle.ucx
 
 import java.io._
-import java.net.{InetSocketAddress, ServerSocket, Socket, SocketException}
+import java.net._
 import java.nio.ByteBuffer
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Random
 
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import com.nvidia.spark.rapids.GpuDeviceManager
 import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, ClientConnection, MemoryRegistrationCallback, TransportUtils}
+import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
-
+import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 
 case class WorkerAddress(address: ByteBuffer)
@@ -49,13 +50,12 @@ case class Rkeys(rkeys: Seq[ByteBuffer])
  * this port should be distributed to peers by other means (e.g. via the `BlockManagerId`)
  *
  * @param executorId unique id (int) that identifies the local executor
- * @param usingWakeupFeature (true by default) set to false to use a hot loop, as opposed to
- *                           UCP provided signal/wait
+ * @param rapidsConf rapids configuration
  */
-class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoCloseable with Logging {
+class UCX(executorId: Int, rapidsConf: RapidsConf) extends AutoCloseable with Logging {
   private[this] val context = {
     val contextParams = new UcpParams().requestTagFeature()
-    if (usingWakeupFeature) {
+    if (rapidsConf.shuffleUcxUseWakeup) {
       contextParams.requestWakeupFeature()
     }
     new UcpContext(contextParams)
@@ -70,6 +70,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   private[this] val txId = new AtomicLong(0L)
 
   private var worker: UcpWorker = _
+  private var listener: Option[UcpListener] = None
   private val endpoints = new ConcurrentHashMap[Long, UcpEndpoint]()
   @volatile private var initialized = false
 
@@ -129,7 +130,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
       var workerParams = new UcpWorkerParams()
 
-      if (usingWakeupFeature) {
+      if (rapidsConf.shuffleUcxUseWakeup) {
         workerParams = workerParams
           .requestWakeupTagSend()
           .requestWakeupTagRecv()
@@ -137,6 +138,27 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
       worker = context.newWorker(workerParams)
       logInfo(s"UCX Worker created")
+      if (rapidsConf.shuffleUcxUseSockaddr) {
+        val ucpListenerParams = new UcpListenerParams().setConnectionHandler(
+          (connectionRequest: UcpConnectionRequest) => {
+            logDebug(s"Got connection request from ${connectionRequest.getClientAddress}")
+          })
+        val maxRetries = SparkEnv.get.conf.getInt("spark.port.maxRetries", 16)
+        val startPort = 1024 + Random.nextInt(65535 - 1024)
+        for (i <- 0 until maxRetries) {
+          try {
+            ucpListenerParams.setSockAddr(new InetSocketAddress(startPort + i))
+            listener = Some(worker.newListener(ucpListenerParams))
+          } catch {
+            case ex: UcxException => listener = None
+          }
+        }
+        if (listener.isEmpty) {
+          throw new BindException(s"Couldn't start UcpListener " +
+            s"on port range $startPort-${startPort + maxRetries}")
+        }
+        logInfo(s"Started UcpListener on ${listener.get.getAddress}")
+      }
       initialized = true
     }
 
@@ -157,7 +179,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         try {
           worker.progress()
           // else worker.progress returned 0
-          if (usingWakeupFeature) {
+          if (rapidsConf.shuffleUcxUseWakeup) {
             drainWorker()
             val sleepRange = new NvtxRange("UCX Sleeping", NvtxColor.PURPLE)
             try {
@@ -324,7 +346,6 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
     onWorkerThreadAsync(() => {
       try {
         worker.cancelRequest(request)
-        request.close()
       } catch {
         case e: Throwable =>
           logError("Error while cancelling UCX request: ", e)
@@ -334,7 +355,17 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
   private[ucx] def assignResponseTag(): Long = responseTag.incrementAndGet()
 
-  private def ucxWorkerAddress: ByteBuffer = worker.getAddress
+  private lazy val ucxWorkerAddress: ByteBuffer = if (rapidsConf.shuffleUcxUseSockaddr) {
+    val listenerAddress = new InetSocketAddress(SparkEnv.get.blockManager.blockManagerId.host,
+      listener.get.getAddress.getPort)
+    val hostnameBytes = listenerAddress.getAddress.getAddress
+    val result = ByteBuffer.allocateDirect(4 + hostnameBytes.length)
+    result.putInt(listener.get.getAddress.getPort)
+    result.put(hostnameBytes)
+    result
+  } else {
+    worker.getAddress
+  }
 
   /**
    * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
@@ -350,13 +381,25 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
   private[ucx] def setupEndpoint(
       endpointId: Long, workerAddress: WorkerAddress, peerRkeys: Rkeys): UcpEndpoint = {
     logDebug(s"Starting/reusing an endpoint to $workerAddress with id $endpointId")
-    // create an UCX endpoint using workerAddress
+    // create an UCX endpoint using workerAddress or socket address
     endpoints.computeIfAbsent(endpointId,
       (_: Long) => {
         logInfo(s"No endpoint found for $endpointId. Adding it.")
-        val ep = worker.newEndpoint(
-          new UcpEndpointParams()
-            .setUcpAddress(workerAddress.address))
+        val epParams =  new UcpEndpointParams().setPeerErrorHandlingMode().setErrorHandler(
+          (ucpEndpoint: UcpEndpoint, i: Int, errorString: String) => {
+            logError(s"Endpoint to $endpointId got error: $errorString")
+          })
+        if (rapidsConf.shuffleUcxUseSockaddr) {
+          val port = workerAddress.address.getInt
+          val hostBytes = new Array[Byte](workerAddress.address.remaining())
+          workerAddress.address.get(hostBytes)
+          val hostAddress = InetAddress.getByAddress(hostBytes)
+          val sockAddr = new InetSocketAddress(hostAddress, port)
+          epParams.setSocketAddress(sockAddr)
+        } else {
+          epParams.setUcpAddress(workerAddress.address)
+        }
+        val ep = worker.newEndpoint(epParams)
         peerRkeys.rkeys.foreach(ep.unpackRemoteKey)
         ep
       })
@@ -385,7 +428,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
 
   private[ucx] def onWorkerThreadAsync(task: () => Unit): Unit = {
     workerTasks.add(task)
-    if (usingWakeupFeature) {
+    if (rapidsConf.shuffleUcxUseWakeup) {
       worker.signal()
     }
   }
@@ -404,6 +447,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         val is = socket.getInputStream
 
         // "this executor id will receive on tmpLocalReceiveTag for this Connection"
+        ucxWorkerAddress.rewind()
         UCXConnection.writeHandshakeHeader(
           os, ucxWorkerAddress, executorId, localRkeys)
 
@@ -456,6 +500,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
         logInfo(s"Got peer worker address from executor $peerExecutorId")
 
         // ack what we saw as the local and remote peer tags
+        ucxWorkerAddress.rewind()
         UCXConnection.writeHandshakeHeader(
           os, ucxWorkerAddress, executorId, localRkeys)
 
@@ -553,7 +598,7 @@ class UCX(executorId: Int, usingWakeupFeature: Boolean = true) extends AutoClose
       serverSocket = null
     }
 
-    if (usingWakeupFeature && worker != null) {
+    if (rapidsConf.shuffleUcxUseWakeup && worker != null) {
       worker.signal()
     }
 
