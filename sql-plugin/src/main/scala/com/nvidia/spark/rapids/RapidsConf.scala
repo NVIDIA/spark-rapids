@@ -494,9 +494,11 @@ object RapidsConf {
     .createWithDefault(false)
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
-      .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, " +
-          "setting this to true will force all parsing onto GPU even for formats that can " +
-          "result in incorrect results when parsing invalid inputs.")
+    .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
+      "formats are fully supported on GPU, some are supported but can produce incorrect results " +
+      "for invalid inputs, and others are not supported at all. Setting this to true will force " +
+      "all parsing onto GPU for supported formats, including formats that can result in " +
+      "incorrect results.")
       .booleanConf
       .createWithDefault(false)
 
