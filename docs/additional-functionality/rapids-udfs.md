@@ -134,29 +134,28 @@ implements a Hive simple UDF using
 [native code](../../udf-examples/src/main/cpp/src) to count words in strings
 
 
-## GPU Scheduling For Pandas UDF
+## GPU support for Pandas UDF
 
 ---
 **NOTE**
 
-The _GPU Scheduling for Pandas UDF_ is an experimental feature, and may change at any point it time.
+The _GPU support for Pandas UDF_ is an experimental feature, and may change at any point it time.
 
 ---
 
-_GPU Scheduling for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined
-function)](https://spark.apache.org/docs/3.0.0/sql-pyspark-pandas-with-arrow.html#pandas-udfs-aka-vectorized-udfs),
-and has two components:
+_GPU support for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined
+function)](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#pandas-udfs-a-k-a-vectorized-udfs),
+and has two features:
 
-- **Share GPU with JVM**: Let the Python process share JVM GPU. The Python process could run on the
-  same GPU with JVM.
+- **GPU Assignment(Scheduling) in Python Process**: Let the Python process share the same GPU with Spark executor JVM. Without this feature, some use case in PandasUDF(a.k.a an `independent` process) will likely to use other GPUs other than the one we want it to run on. e.g. user can launch a TensorFlow session inside Pandas UDF and the machine contains 8 GPUs. user launchs 8 Spark executors. Without this GPU sharing feature, TensorFlow will automatically use all 8 GPUs it can detects which will definitly conflict with existing Spark executor JVM processes.
 
-- **Increase Speed**: Make the data transport faster between JVM process and Python process.
-
+- **Increase Speed**: Speed up data transfer between JVM process and Python process.
 
 
-To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job with extra settings.
 
-1. Make sure GPU exclusive mode is disabled. Note that this will not work if you are using exclusive
+To enable _GPU support for Pandas UDF_, you need to configure your spark job with extra settings.
+
+1. Make sure GPU `exclusive` mode is disabled. Note that this will not work if you are using exclusive
    mode to assign GPUs under spark.
 2. Currently the python files are packed into the spark rapids plugin jar.
 
@@ -174,31 +173,51 @@ To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job 
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
     ```
 
-3. Enable GPU Scheduling for Pandas UDF.
+3. Enable GPU Assignment(Scheduling) for Pandas UDF.
 
     ```shell
     ...
     --conf spark.rapids.python.gpu.enabled=true \
-    --conf spark.rapids.python.memory.gpu.pooling.enabled=false \
-    --conf spark.rapids.sql.exec.ArrowEvalPythonExec=true \
-    --conf spark.rapids.sql.exec.MapInPandasExec=true \
-    --conf spark.rapids.sql.exec.FlatMapGroupsInPandasExec=true \
-    --conf spark.rapids.sql.exec.AggregateInPandasExec=true \
-    --conf spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec=true \
-    --conf spark.rapids.sql.exec.WindowInPandasExec=true
     ```
 
-Please note the data transfer acceleration only supports scalar UDF and Scalar iterator UDF currently. 
-You could choose the exec you need to enable.
+Please note the data transfer acceleration only supports `scalar UDF` and `Scalar iterator UDF` currently. 
+You could choose the exec see the section below.
 
 ### Other Configuration
 
 Following configuration settings are also for _GPU Scheduling for Pandas UDF_
-```
-spark.rapids.python.concurrentPythonWorkers
-spark.rapids.python.memory.gpu.allocFraction
-spark.rapids.python.memory.gpu.maxAllocFraction
-```
+
+1. Spark Plan support
+
+    ```
+    --conf spark.rapids.sql.exec.ArrowEvalPythonExec=true \
+    --conf spark.rapids.sql.exec.MapInPandasExec=false \
+    --conf spark.rapids.sql.exec.FlatMapGroupsInPandasExec=false \
+    --conf spark.rapids.sql.exec.AggregateInPandasExec=false \
+    --conf spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec=false \
+    --conf spark.rapids.sql.exec.WindowInPandasExec=true
+    ```
+
+    These configs are the switches for each type of PandasUDF execution plan. Some of theme are set to false by default due to not supported or performance issue.
+
+2. Memory efficiency
+
+    ```
+    --conf spark.rapids.python.memory.gpu.pooling.enabled=false \
+    --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
+    --conf spark.rapids.python.memory.gpu.maxAllocFraction= 0.2 \
+    ```
+    Same to the [RMM pooling for JVM](../tuning-guide.md#pooled-memory), here the pooling serves the same way but for Python process.  `half of the rest GPU memory` will be used by default if it is not specified.
+
+3. Limit of concurrent Python processes
+
+    ```
+    --conf spark.rapids.python.concurrentPythonWorkers=2 \
+    ```
+    This parameter aims to limit the total concurrent running `Python process` in 1 Spark executor. This parameter is set to 0 by default which means there's not limit for concurrent Python workers. Note that for certain cases, setting this value too small may result a `hang` for your Spark job because a PandasUDF may produces multiple python process and each will try to acquire the python GPU process semaphore. This may bring a dead lock situation becasue a Spark job will not preceed until all its tasks are finished. For example, in the Pandas UDF stage, 2 tasks are running and each task launches 3 Python process and we set this parameter to 4.
+    ![Python concurrent worker](/docs/img/concurrentPythonWorker.PNG)
+    Two python process in each task acquired their semaphore but neither of them are able to proceed becasue both of them are waiting for their third semaphore to acutally start the task. 
+
 
 To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
-Apache Spark Configuration Guide](../configs.md).
+Apache Spark Configuration Guide](../configs.md). Search 'pandas' for a quick navigation jump.
