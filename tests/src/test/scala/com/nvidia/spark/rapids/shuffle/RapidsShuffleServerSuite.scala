@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.RapidsBuffer
 import com.nvidia.spark.rapids.format.TableMeta
 import java.util
+import org.mockito.ArgumentMatchers.{any, anyLong}
 import org.mockito.Mockito._
 
 import org.apache.spark.storage.ShuffleBlockBatchId
@@ -36,12 +37,17 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         deviceBuffer.copyFromHostBuffer(hostBuff)
         val mockBuffer = mock[RapidsBuffer]
         val mockMeta = RapidsShuffleTestHelper.mockTableMeta(100000)
-        when(mockBuffer.getMemoryBuffer).thenAnswer { _ =>
-          deviceBuffer.incRefCount()
+        when(mockBuffer.copyToMemoryBuffer(anyLong(), any[MemoryBuffer](), anyLong(), anyLong(),
+          any[Cuda.Stream]())).thenAnswer { invocation =>
           // start at 1 close, since we'll need to close at refcount 0 too
           val newNumCloses = numCloses.getOrDefault(mockBuffer, 1) + 1
           numCloses.put(mockBuffer, newNumCloses)
-          deviceBuffer
+          val srcOffset = invocation.getArgument[Long](0)
+          val dst = invocation.getArgument[MemoryBuffer](1)
+          val dstOffset = invocation.getArgument[Long](2)
+          val length = invocation.getArgument[Long](3)
+          val stream = invocation.getArgument[Cuda.Stream](4)
+          dst.copyFromMemoryBuffer(dstOffset, deviceBuffer, srcOffset, length, stream)
         }
         when(mockBuffer.size).thenReturn(deviceBuffer.getLength)
         when(mockBuffer.meta).thenReturn(mockMeta)

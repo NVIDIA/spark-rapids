@@ -334,6 +334,21 @@ abstract class RapidsBufferStore(
       }
     }
 
+    override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
+        length: Long, stream: Cuda.Stream): Unit = {
+      withResource(getMemoryBuffer) { memBuff =>
+        dst match {
+          case _: HostMemoryBuffer =>
+            // TODO: consider moving to the async version.
+            dst.copyFromMemoryBuffer(dstOffset, memBuff, srcOffset, length, stream)
+          case _: DeviceMemoryBuffer =>
+            dst.copyFromMemoryBufferAsync(dstOffset, memBuff, srcOffset, length, stream)
+          case _ =>
+            throw new IllegalStateException(s"Infeasible destination buffer type ${dst.getClass}")
+        }
+      }
+    }
+
     override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
       if (RapidsBufferCatalog.shouldUnspill) {
         (0 until MAX_UNSPILL_ATTEMPTS).foreach { _ =>
