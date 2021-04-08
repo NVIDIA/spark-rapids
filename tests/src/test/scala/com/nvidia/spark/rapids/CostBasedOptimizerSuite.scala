@@ -390,7 +390,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     }, conf)
   }
 
-  test("Compute estimated row count nested joins") {
+  test("Compute estimated row count nested joins no broadcast") {
     assumeSpark301orLater
 
     val conf = new SparkConf()
@@ -439,6 +439,65 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
       "SortExec" -> 4,
       "SortExec" -> 16,
       "SortMergeJoinExec" -> 16,
+      "SortMergeJoinExec" -> 256))
+  }
+
+  test("Compute estimated row count nested joins with broadcast") {
+    assumeSpark301orLater
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan")
+
+    var plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
+      new ListBuffer[SparkPlanMeta[SparkPlan]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          _: SparkPlan,
+          _: Seq[Optimization]) => {
+        plans += plan
+      })
+
+    withGpuSparkSession(spark => {
+      val df1: DataFrame = createQuery(spark).alias("l")
+      val df2: DataFrame = createQuery(spark).alias("r")
+      val df = df1.join(df2,
+        col("l.more_strings_1").equalTo(col("r.more_strings_2")))
+      df.collect()
+    }, conf)
+
+    val accum = new ListBuffer[SparkPlanMeta[_]]()
+    plans.foreach(collectPlansWithRowCount(_, accum))
+
+    val summary = accum
+        .map(plan => plan.wrapped.getClass.getSimpleName -> plan.estimatedOutputRows.get)
+        .distinct
+        .sorted
+
+    // we expect to see:
+    // 4 rows for the leaf query stages
+    // 16 rows for the nested joins (4 x 4)
+    // 256 rows for the final join (16 x 16)
+
+    // due to the concurrent nature of adaptive execution, the results are not deterministic
+    // so we need to filter out entries that do not happen all the time
+
+    val summaryFiltered = summary
+        .filterNot(x => x._1 == "BroadcastHashJoinExec" && x._2 == 4)
+
+    assert(summaryFiltered === Seq(
+      "BroadcastExchangeExec" -> 4,
+      "BroadcastExchangeExec" -> 16,
+      "BroadcastHashJoinExec" -> 16,
+      "BroadcastHashJoinExec" -> 256,
+      "BroadcastQueryStageExec" -> 4,
+      "ProjectExec" -> 4,
+      "ProjectExec" -> 16,
+      "ShuffleExchangeExec" -> 16,
+      "ShuffleQueryStageExec" -> 4,
+      "SortExec" -> 16,
       "SortMergeJoinExec" -> 256))
   }
 

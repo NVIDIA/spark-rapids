@@ -274,7 +274,8 @@ class DefaultCostModel(conf: RapidsConf) extends CostModel {
 }
 
 /**
- * Estimate the number of rows that an operator will output.
+ * Estimate the number of rows that an operator will output. Note that these row counts are
+ * the aggregate across all partitions.
  *
  * Logic is based on Spark's SizeInBytesOnlyStatsPlanVisitor. which operates on logical plans
  * and only computes data sizes, not row counts.
@@ -295,7 +296,7 @@ object RowCountPlanVisitor {
     case p: BroadcastHashJoinExec =>
       estimateJoin(plan, p.joinType)
     case _: UnionExec =>
-      Some(plan.childPlans.flatMap(c => visit(c)).sum)
+      Some(plan.childPlans.flatMap(visit).sum)
     case _ =>
       default(plan)
   }
@@ -310,6 +311,9 @@ object RowCountPlanVisitor {
     }
   }
 
+  /**
+   * The default row count is the product of the row count of all child plans.
+   */
   private def default(p: SparkPlanMeta[_]): Option[BigInt] = {
     val one = BigInt(1)
     val product = p.childPlans.map(visit)

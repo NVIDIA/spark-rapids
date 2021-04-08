@@ -17,6 +17,8 @@ package com.nvidia.spark.rapids.shims.spark301
 
 import java.util.UUID
 
+import com.nvidia.spark.rapids.GpuMetric
+
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
@@ -30,8 +32,9 @@ case class GpuBroadcastExchangeExec(
   override def runId: UUID = _runId
 
   override def runtimeStatistics: Statistics = {
-    val dataSize = metrics("dataSize").value
-    Statistics(dataSize)
+    Statistics(
+      sizeInBytes = metrics("dataSize").value,
+      rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
   }
 
   override def doCanonicalize(): SparkPlan = {
