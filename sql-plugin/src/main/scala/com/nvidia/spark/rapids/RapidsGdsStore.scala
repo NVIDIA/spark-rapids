@@ -82,7 +82,6 @@ class RapidsGdsStore(
       closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
         CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
         logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
-        buffer.incRefCount()
         buffer
       }
     }
