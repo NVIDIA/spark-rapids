@@ -201,7 +201,7 @@ accelerated at present:
 
 ### Other Configuration
 
-The following configuration settings are also relevant for GPU Scheduling for Pandas UDF.
+The following configuration settings are also relevant for GPU scheduling for Pandas UDF.
 
 1. Memory efficiency
 
