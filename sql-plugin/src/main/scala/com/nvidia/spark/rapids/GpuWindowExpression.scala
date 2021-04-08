@@ -185,8 +185,12 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     val totalExtraColumns = numGroupingColumns
 
     val aggColumn = withResource(GpuProjectExec.project(cb, boundRowProjectList)) { projected =>
-      withResource(GpuColumnVector.from(projected)) { table =>
-        val bases = GpuColumnVector.extractBases(projected).zipWithIndex
+
+      // in case boundRowProjectList is empty
+      val finalCb = if (boundRowProjectList.length > 0) projected else cb
+
+      withResource(GpuColumnVector.from(finalCb)) { table =>
+        val bases = GpuColumnVector.extractBases(finalCb).zipWithIndex
             .slice(totalExtraColumns, boundRowProjectList.length)
 
         val agg = windowFunc.windowAggregation(bases)

@@ -166,6 +166,15 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     rowNumberAggregationTesterForDecimal(rowsWindow, scale = 2)
   }
 
+  testSparkResultsAreEqual(
+    "[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [ROW_NUMBER] [WITHOUT PARTITIONBY]",
+    windowTestDfOrc) {
+    val rowsWindow = Window.orderBy("dateLong")
+      .rowsBetween(Window.unboundedPreceding, 0)
+    rowNumberAggregationTester(rowsWindow)
+    rowNumberAggregationTesterForDecimal(rowsWindow, scale = 2)
+  }
+
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, UNBOUNDED FOLLOWING] ",
       windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
