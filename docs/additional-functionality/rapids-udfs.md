@@ -139,25 +139,30 @@ implements a Hive simple UDF using
 ---
 **NOTE**
 
-The _GPU support for Pandas UDF_ is an experimental feature, and may change at any point it time.
+The GPU Support for Pandas UDF is an experimental feature, and may change at any point it time.
 
 ---
 
-_GPU support for Pandas UDF_ is built on Apache Spark's [Pandas UDF(user defined
+GPU support for Pandas UDF is built on Apache Spark's [Pandas UDF(user defined
 function)](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#pandas-udfs-a-k-a-vectorized-udfs),
 and has two features:
 
-- **GPU Assignment(Scheduling) in Python Process**: Let the Python process share the same GPU with Spark executor JVM. Without this feature, some use case in PandasUDF(a.k.a an `independent` process) will likely to use other GPUs other than the one we want it to run on. e.g. user can launch a TensorFlow session inside Pandas UDF and the machine contains 8 GPUs. user launchs 8 Spark executors. Without this GPU sharing feature, TensorFlow will automatically use all 8 GPUs it can detects which will definitly conflict with existing Spark executor JVM processes.
+- **GPU Assignment(Scheduling) in Python Process**: Let the Python process share the same GPU with
+Spark executor JVM. Without this feature, in a non-isolated environment, some use cases with
+PandasUDF (a.k.a an `independent` process) can try to use GPUs other than the one we want it to
+run on. For example, the user could launch a TensorFlow session inside Pandas UDF and the machine
+contains 8 GPUs. Without this GPU sharing feature, TensorFlow will automatically use all 8 GPUs
+which will conflict with existing Spark executor JVM processes.
 
-- **Increase Speed**: Speed up data transfer between JVM process and Python process.
+- **Increase Speed**: Speeds up data transfer between JVM process and Python process.
 
 
 
 To enable _GPU support for Pandas UDF_, you need to configure your spark job with extra settings.
 
 1. Make sure GPU `exclusive` mode is disabled. Note that this will not work if you are using exclusive
-   mode to assign GPUs under spark.
-2. Currently the python files are packed into the spark rapids plugin jar.
+   mode to assign GPUs under Spark.
+2. Currently the Python files are packed into the RAPIDS Accelerator jar.
 
     On Yarn, you need to add
     ```shell
@@ -180,43 +185,72 @@ To enable _GPU support for Pandas UDF_, you need to configure your spark job wit
     --conf spark.rapids.python.gpu.enabled=true \
     ```
 
-Please note the data transfer acceleration only supports `scalar UDF` and `Scalar iterator UDF` currently. 
-You could choose the exec see the section below.
+Please note: every type of PandasUDF on Spark is run by a specific Spark execution plan. RAPIDS
+Accelerator has a 1-1 mapping support for each of them. Not all PandasUDF types are data-transfer
+accelerated at present:
+
+  | Spark Execution Plan | Use Case | Status |
+  |----------------------|----------|--------|
+  |ArrowEvalPythonExec|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)| supported|
+  |MapInPandasExec| [Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#map)| supported|
+  | WindowInPandasExec | [Window](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)| supported|
+  | FlatMapGroupsInPandasExec| [Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#grouped-map)| not supported|
+  | AggregateInPandasExec| [Aggregate](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)| not supported|
+  |FlatMapCoGroupsInPandasExec| [Co-grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#co-grouped-map)| not supported|
+
 
 ### Other Configuration
 
-Following configuration settings are also for _GPU Scheduling for Pandas UDF_
+Following configuration settings are also relevant for GPU Scheduling for Pandas UDF.
 
-1. Spark Plan support
-
-    ```
-    --conf spark.rapids.sql.exec.ArrowEvalPythonExec=true \
-    --conf spark.rapids.sql.exec.MapInPandasExec=false \
-    --conf spark.rapids.sql.exec.FlatMapGroupsInPandasExec=false \
-    --conf spark.rapids.sql.exec.AggregateInPandasExec=false \
-    --conf spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec=false \
-    --conf spark.rapids.sql.exec.WindowInPandasExec=true
-    ```
-
-    These configs are the switches for each type of PandasUDF execution plan. Some of theme are set to false by default due to not supported or performance issue.
-
-2. Memory efficiency
+1. Memory efficiency
 
     ```
     --conf spark.rapids.python.memory.gpu.pooling.enabled=false \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.maxAllocFraction= 0.2 \
     ```
-    Same to the [RMM pooling for JVM](../tuning-guide.md#pooled-memory), here the pooling serves the same way but for Python process.  `half of the rest GPU memory` will be used by default if it is not specified.
+    Similar to the [RMM pooling for JVM](../tuning-guide.md#pooled-memory) settings like
+    `spark.rapids.memory.gpu.allocFraction` and `spark.rapids.memory.gpu.maxAllocFraction` except
+    these specify the GPU pool size for the `Python process`. Half of the GPU `available` memory
+    will be used by default if it is not specified.
 
-3. Limit of concurrent Python processes
+
+2. Limit of concurrent Python processes
 
     ```
     --conf spark.rapids.python.concurrentPythonWorkers=2 \
     ```
-    This parameter aims to limit the total concurrent running `Python process` in 1 Spark executor. This parameter is set to 0 by default which means there's not limit for concurrent Python workers. Note that for certain cases, setting this value too small may result a `hang` for your Spark job because a PandasUDF may produces multiple python process and each will try to acquire the python GPU process semaphore. This may bring a dead lock situation becasue a Spark job will not preceed until all its tasks are finished. For example, in the Pandas UDF stage, 2 tasks are running and each task launches 3 Python process and we set this parameter to 4.
+    This parameter aims to limit the total concurrent running `Python process` in 1 Spark executor.
+    This parameter is set to 0 by default which means there's not limit for concurrent Python
+    workers. Note that for certain cases, setting this value too small may result a `hang` for
+    your Spark job because a Spark Task may contain multiple PandasUDF(`MapInPandas`) which results
+    multiple python processes and each will try to acquire the python GPU process semaphore. This
+    may bring a dead lock situation becasue a Spark job will not preceed until all its tasks are
+    finished.
+
+    For example, in a specific Spark Stage that contais 3 PandasUDFs, 2 Spark tasks are running and each task launches 3 Python process while we set this `concurrentPythonWorkers` to 4.
+
+    ```python
+    df_1 = df_0.mapInPandas(udf_1, schema_1)
+    df_2 = df_1.mapInPandas(udf_2, schema_2)
+    df_3 = df_2.mapInPandas(udf_3, schema_3)
+    df_3.explain(True)
+    ```
+    The RAPIDS Accelerator query explain:
+    ```
+    ...
+      *Exec <MapInPandasExec> could partially run on GPU
+        *Exec <MapInPandasExec> could partially run on GPU
+          *Exec <MapInPandasExec> could partially run on GPU
+    ...
+    ```
+
     ![Python concurrent worker](/docs/img/concurrentPythonWorker.PNG)
-    Two python process in each task acquired their semaphore but neither of them are able to proceed becasue both of them are waiting for their third semaphore to acutally start the task. 
+
+    In this case, each PandasUDF will launch a Python process. At this moment two python process
+    in each task acquired their semaphore but neither of them are able to proceed becasue both
+    of them are waiting for their third semaphore to acutally start the task.
 
 
 To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
