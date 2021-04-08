@@ -31,6 +31,8 @@ import org.apache.spark.sql.types.DataTypes
 
 class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndAfter {
 
+  val isBeforeSpark32 = ShimLoader.getSparkVersion < "3.2"
+
   before {
     GpuOverrides.removeAllListeners()
   }
@@ -40,6 +42,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Force section of plan back onto CPU, AQE on") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -97,6 +100,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Force section of plan back onto CPU, AQE off") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -155,6 +159,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Force last section of plan back onto CPU, AQE on") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -196,6 +201,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Force last section of plan back onto CPU, AQE off") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -236,6 +242,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Avoid move to GPU for trivial projection, AQE on") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -269,6 +276,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Avoid move to GPU for trivial projection, AQE off") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -314,6 +322,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Avoid move to GPU for shuffle, AQE on") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -338,6 +347,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
   }
 
   test("Avoid move to GPU for shuffle, AQE off") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -363,6 +373,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
 
   test("keep CustomShuffleReaderExec on GPU") {
+    assume(isBeforeSpark32, "test is not stable after Spark 3.2")
 
     // if we force a GPU CustomShuffleReaderExec back onto CPU due to cost then the query will
     // fail because the shuffle already happened on GPU and we end up with an invalid plan
