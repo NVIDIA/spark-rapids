@@ -249,7 +249,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     ![Python concurrent worker](/docs/img/concurrentPythonWorker.PNG)
 
     In this case, each PandasUDF will launch a Python process. At this moment two Python process
-    in each task acquired their semaphore but neither of them are able to proceed becasue both
+    in each task acquired their semaphore but neither of them are able to proceed because both
     of them are waiting for their third semaphore to start the task.
 
 
