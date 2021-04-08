@@ -171,10 +171,15 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
 
               devStore.addContiguousTable(smallBufferId, smallTable, spillPriority)
               devStore.synchronousSpill(0)
-              val ac: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
-              verify(mockStore).copyBuffer(ac.capture(), ArgumentMatchers.any[MemoryBuffer],
-                ArgumentMatchers.any[Cuda.Stream])
-              assertResult(bigBufferId)(ac.getValue.id)
+              val rapidsBufferCaptor: ArgumentCaptor[RapidsBuffer] =
+                ArgumentCaptor.forClass(classOf[RapidsBuffer])
+              val memoryBufferCaptor: ArgumentCaptor[MemoryBuffer] =
+                ArgumentCaptor.forClass(classOf[MemoryBuffer])
+              verify(mockStore).copyBuffer(rapidsBufferCaptor.capture(),
+                memoryBufferCaptor.capture(), ArgumentMatchers.any[Cuda.Stream])
+              withResource(memoryBufferCaptor.getValue) { _ =>
+                assertResult(bigBufferId)(rapidsBufferCaptor.getValue.id)
+              }
             }
           }
         }
