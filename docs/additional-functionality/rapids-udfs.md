@@ -134,7 +134,7 @@ implements a Hive simple UDF using
 [native code](../../udf-examples/src/main/cpp/src) to count words in strings
 
 
-## GPU support for Pandas UDF
+## GPU Support for Pandas UDF
 
 ---
 **NOTE**
@@ -158,7 +158,7 @@ which will conflict with existing Spark executor JVM processes.
 
 
 
-To enable _GPU support for Pandas UDF_, you need to configure your spark job with extra settings.
+To enable GPU support for Pandas UDF, you need to configure your spark job with extra settings.
 
 1. Make sure GPU `exclusive` mode is disabled. Note that this will not work if you are using exclusive
    mode to assign GPUs under Spark.
@@ -229,7 +229,8 @@ Following configuration settings are also relevant for GPU Scheduling for Pandas
     may bring a dead lock situation becasue a Spark job will not preceed until all its tasks are
     finished.
 
-    For example, in a specific Spark Stage that contais 3 PandasUDFs, 2 Spark tasks are running and each task launches 3 Python process while we set this `concurrentPythonWorkers` to 4.
+    For example, in a specific Spark Stage that contais 3 PandasUDFs, 2 Spark tasks are running and
+    each task launches 3 Python process while we set this `concurrentPythonWorkers` to 4.
 
     ```python
     df_1 = df_0.mapInPandas(udf_1, schema_1)
