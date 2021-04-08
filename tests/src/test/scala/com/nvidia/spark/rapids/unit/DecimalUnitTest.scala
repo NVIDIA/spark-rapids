@@ -21,11 +21,11 @@ import java.math.RoundingMode
 import scala.util.Random
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
-import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExecBase, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
+import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExecBase, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf, ShimLoader}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Literal}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Literal, NamedExpression}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.internal.SQLConf
@@ -171,7 +171,7 @@ class DecimalUnitTest extends GpuUnitTests {
   }
 
   test("test Alias with decimal") {
-    val cpuAlias = Alias(lit, "A")()
+    val cpuAlias = ShimLoader.getSparkShims.alias(lit, "A")(NamedExpression.newExprId)
     val wrapperAlias = GpuOverrides.wrapExpr(cpuAlias, rapidsConf, None)
     wrapperAlias.tagForGpu()
     assertResult(true)(wrapperAlias.canExprTreeBeReplaced)
