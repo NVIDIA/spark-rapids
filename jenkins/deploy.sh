@@ -40,7 +40,7 @@ if [ "$DATABRICKS" == true ]; then
     rm -rf deploy
     mkdir -p deploy
     cd deploy
-    tar -zxvf ../spark-rapids-built.tgz
+    tar -zxf ../spark-rapids-built.tgz
     cd spark-rapids
 fi
 
