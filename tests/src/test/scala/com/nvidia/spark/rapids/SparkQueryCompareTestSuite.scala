@@ -66,6 +66,8 @@ object SparkSessionHolder extends Logging {
   }
 
   private def createSparkSession(): SparkSession = {
+    TrampolineUtil.cleanupAnyExistingSession()
+
     // Timezone is fixed to UTC to allow timestamps to work by default
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     // Add Locale setting

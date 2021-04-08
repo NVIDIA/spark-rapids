@@ -26,7 +26,8 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuShuffleEnv}
+import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A collection of utility methods useful in tests. */
@@ -123,7 +124,7 @@ object TestUtils extends Assertions with Arm {
   }
 
   def withGpuSparkSession(conf: SparkConf)(f: SparkSession => Unit): Unit = {
-    SparkSession.getActiveSession.foreach(_.close())
+    TrampolineUtil.cleanupAnyExistingSession()
     val spark = SparkSession.builder()
         .master("local[1]")
         .config(conf)
