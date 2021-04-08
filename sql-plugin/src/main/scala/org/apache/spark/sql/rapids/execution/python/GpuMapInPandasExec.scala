@@ -16,22 +16,23 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
+import ai.rapids.cudf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import scala.collection.JavaConverters._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression,
-  PythonUDF, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, PythonUDF}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
-import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuMapInPandasExecMeta(
     mapPandas: MapInPandasExec,
@@ -44,13 +45,17 @@ class GpuMapInPandasExecMeta(
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
-  // Ignore the udf since columnar way is not supported yet
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+  private val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
+    mapPandas.func.asInstanceOf[PythonUDF], conf, Some(this))
+  private val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+    mapPandas.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = resultAttrs :+ udf
 
   override def convertToGpu(): GpuExec =
     GpuMapInPandasExec(
-      mapPandas.func,
-      mapPandas.output,
+      udf.convertToGpu(),
+      resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       childPlans.head.convertIfNeeded()
     )
 }
@@ -59,10 +64,8 @@ class GpuMapInPandasExecMeta(
  * A relation produced by applying a function that takes an iterator of pandas DataFrames
  * and outputs an iterator of pandas DataFrames.
  *
- * This GpuMapInPandasExec aims at supporting running Pandas functional code
- * on GPU at Python side.
- *
- * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
+ * This GpuMapInPandasExec aims at accelerating the data transfer between
+ * JVM and Python, and scheduling GPU resources for its Python processes.
  *
  */
 case class GpuMapInPandasExec(
@@ -71,13 +74,7 @@ case class GpuMapInPandasExec(
     child: SparkPlan)
   extends UnaryExecNode with GpuExec {
 
-  override def supportsColumnar = false
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
-  }
-
-  // Most code is copied from MapInPandasExec, except two GPU related calls
-  private val pandasFunction = func.asInstanceOf[PythonUDF].func
+  private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
 
   override def producedAttributes: AttributeSet = AttributeSet(output)
 
@@ -85,52 +82,122 @@ case class GpuMapInPandasExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  override protected def doExecute(): RDD[InternalRow] = {
+  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
+  ) ++ spillMetrics
+
+  override protected def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
+    val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
-    child.execute().mapPartitionsInternal { inputIter =>
+    val pyInputTypes = child.schema
+    val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+    val sessionLocalTimeZone = conf.sessionLocalTimeZone
+    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+
+    // Start process
+    child.executeColumnar().mapPartitionsInternal { inputIter =>
+      val queue: BatchQueue = new BatchQueue()
+      val context = TaskContext.get()
+      context.addTaskCompletionListener[Unit](_ => queue.close())
+
       // Single function with one struct.
       val argOffsets = Array(Array(0))
-      val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
-      val sessionLocalTimeZone = conf.sessionLocalTimeZone
-      val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
-      val outputTypes = child.schema
+      val pyInputSchema = StructType(StructField("in_struct", pyInputTypes) :: Nil)
+      val pythonOutputSchema = StructType(StructField("out_struct",
+        StructType.fromAttributes(output)) :: Nil)
 
-      // Here we wrap it via another row so that Python sides understand it
-      // as a DataFrame.
-      val wrappedIter = inputIter.map(InternalRow(_))
-
-      // DO NOT use iter.grouped(). See BatchIterator.
-      val batchIter =
-        if (batchSize > 0) new BatchIterator(wrappedIter, batchSize) else Iterator(wrappedIter)
-
-      val context = TaskContext.get()
-
-      // Start of GPU things
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(context)
       }
-      // End of GPU things
 
-      val columnarBatchIter = new ArrowPythonRunner(
-        chainedFunc,
-        PythonEvalType.SQL_MAP_PANDAS_ITER_UDF,
-        argOffsets,
-        StructType(StructField("struct", outputTypes) :: Nil),
-        sessionLocalTimeZone,
-        pythonRunnerConf).compute(batchIter, context.partitionId(), context)
+      val contextAwareIter = new Iterator[ColumnarBatch] {
+        // This is to implement the same logic of `ContextAwareIterator` involved from 3.0.2 .
+        // Doing this can avoid shim layers for Spark versions before 3.0.2.
+        override def hasNext: Boolean =
+          !context.isCompleted() && !context.isInterrupted() && inputIter.hasNext
 
-      val unsafeProj = UnsafeProjection.create(output, output)
+        override def next(): ColumnarBatch = inputIter.next()
+      }
 
-      columnarBatchIter.flatMap { batch =>
-        // Scalar Iterator UDF returns a StructType column in ColumnarBatch, select
-        // the children here
-        val structVector = batch.column(0).asInstanceOf[ArrowColumnVector]
-        val outputVectors = output.indices.map(structVector.getChild)
-        val flattenedBatch = new ColumnarBatch(outputVectors.toArray)
-        flattenedBatch.setNumRows(batch.numRows())
-        flattenedBatch.rowIterator.asScala
-      }.map(unsafeProj)
-    }
-  }
+      val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
+        batchSize, numInputRows, numInputBatches, spillCallback)
+        .map { batch =>
+          // Here we wrap it via another column so that Python sides understand it
+          // as a DataFrame.
+          val structColumn = cudf.ColumnVector.makeStruct(GpuColumnVector.extractBases(batch): _*)
+          val pyInputBatch = withResource(structColumn) { stColumn =>
+            val gpuColumn = GpuColumnVector.from(stColumn.incRefCount(), pyInputTypes)
+            new ColumnarBatch(Array(gpuColumn), batch.numRows())
+          }
+          // cache the original batches for release later.
+          queue.add(batch, spillCallback)
+          pyInputBatch
+      }
+
+      if (pyInputIterator.hasNext) {
+        val pyRunner = new GpuArrowPythonRunner(
+          chainedFunc,
+          PythonEvalType.SQL_MAP_PANDAS_ITER_UDF,
+          argOffsets,
+          pyInputSchema,
+          sessionLocalTimeZone,
+          pythonRunnerConf,
+          batchSize,
+          () => queue.close(),
+          pythonOutputSchema,
+          Int.MaxValue)
+        val pythonOutputIter = pyRunner.compute(pyInputIterator, context.partitionId(), context)
+
+        new Iterator[ColumnarBatch] {
+
+          override def hasNext: Boolean = pythonOutputIter.hasNext
+
+          override def next(): ColumnarBatch = {
+            // We can not assert the result batch from Python has the same row number with the
+            // input batch. Because Map Pandas UDF allows the output of arbitrary length
+            // and columns.
+            // Then try to read as many as possible by specifying `minReadTargetBatchSize` as
+            // `Int.MaxValue` when creating the `GpuArrowPythonRunner` above.
+            withResource(pythonOutputIter.next()) { cbFromPython =>
+              numOutputBatches += 1
+              numOutputRows += cbFromPython.numRows
+              extractChildren(cbFromPython)
+            }
+          }
+
+          private[this] def extractChildren(batch: ColumnarBatch): ColumnarBatch = {
+            assert(batch.numCols() == 1, "Expect only one struct column")
+            assert(batch.column(0).dataType().isInstanceOf[StructType],
+              "Expect a struct column")
+            // Scalar Iterator UDF returns a StructType column in ColumnarBatch, select
+            // the children here
+            val structColumn = batch.column(0).asInstanceOf[GpuColumnVector].getBase
+            val outputColumns = output.zipWithIndex.safeMap {
+              case (attr, i) =>
+                withResource(structColumn.getChildColumnView(i)) { childView =>
+                  GpuColumnVector.from(childView.copyToColumnVector(), attr.dataType)
+                }
+            }
+            new ColumnarBatch(outputColumns.toArray, batch.numRows())
+          }
+        }
+      } else {
+        // Empty partition, return it directly
+        inputIter
+      }
+    } // end of mapPartitionsInternal
+  } // end of doExecuteColumnar
+
 }

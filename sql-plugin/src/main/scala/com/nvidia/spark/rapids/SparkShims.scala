@@ -187,6 +187,8 @@ trait SparkShims {
 
   def shouldIgnorePath(path: String): Boolean
 
+  def getLegacyComplexTypeToString(): Boolean
+
   def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
   def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)
   def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager)

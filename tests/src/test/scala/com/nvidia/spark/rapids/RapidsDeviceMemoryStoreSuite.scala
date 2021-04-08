@@ -131,7 +131,8 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   test("cannot receive spilled buffers") {
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
-      assertThrows[IllegalStateException](store.copyBuffer(mock[RapidsBuffer], Cuda.DEFAULT_STREAM))
+      assertThrows[IllegalStateException](store.copyBuffer(
+        mock[RapidsBuffer], mock[MemoryBuffer], Cuda.DEFAULT_STREAM))
     }
   }
 
@@ -204,7 +205,8 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       extends RapidsBufferStore(StorageTier.HOST, catalog) {
     val spilledBuffers = new ArrayBuffer[RapidsBufferId]
 
-    override protected def createBuffer(b: RapidsBuffer, s: Cuda.Stream): RapidsBufferBase = {
+    override protected def createBuffer(b: RapidsBuffer, m: MemoryBuffer, s: Cuda.Stream)
+    : RapidsBufferBase = {
       spilledBuffers += b.id
       new MockRapidsBuffer(b.id, b.size, b.meta, b.getSpillPriority)
     }

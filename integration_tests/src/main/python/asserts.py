@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import pytest
 from spark_session import with_cpu_session, with_gpu_session
 import time
 import types as pytypes
+import data_gen
 
 def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
@@ -99,7 +100,7 @@ class _RowCmp(object):
     """Allows for sorting Rows in a consistent way"""
     def __init__(self, wrapped):
         #TODO will need others for maps, etc
-        if isinstance(wrapped, Row):
+        if isinstance(wrapped, Row) or isinstance(wrapped, list):
             self.wrapped = [_RowCmp(c) for c in wrapped]
         else:
             self.wrapped = wrapped
@@ -356,7 +357,7 @@ def assert_gpu_and_cpu_row_counts_equal(func, conf={}):
     """
     _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf)
 
-def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
+def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False):
     """
     Assert that the specified SQL query produces equal results on CPU and GPU.
     :param df_fun: a function that will create the dataframe
@@ -370,7 +371,10 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None):
     def do_it_all(spark):
         df = df_fun(spark)
         df.createOrReplaceTempView(table_name)
-        return spark.sql(sql)
+        if debug:
+            return data_gen.debug_df(spark.sql(sql))
+        else:
+            return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf)
 
 def assert_py4j_exception(func, error_message):

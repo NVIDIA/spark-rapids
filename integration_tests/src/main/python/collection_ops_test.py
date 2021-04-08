@@ -18,7 +18,11 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from pyspark.sql.types import *
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+nested_gens = [ArrayGen(LongGen()),
+               StructGen([("a", LongGen())]),
+               MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen())]
+
+@pytest.mark.parametrize('data_gen', all_gen + nested_gens, ids=idfn)
 @pytest.mark.parametrize('size_of_null', ['true', 'false'], ids=idfn)
 def test_size_of_array(data_gen, size_of_null):
     gen = ArrayGen(data_gen)

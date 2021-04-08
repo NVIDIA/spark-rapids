@@ -171,6 +171,19 @@ final class TypeSig private(
   }
 
   /**
+   * Remove a type signature. The reverse of +
+   * @param other what to remove
+   * @return the new signature
+   */
+  def - (other: TypeSig): TypeSig = {
+    val it = initialTypes -- other.initialTypes
+    val nt = nestedTypes -- other.nestedTypes
+    val lt = litOnlyTypes -- other.litOnlyTypes
+    val nts = notes -- other.notes.keySet
+    new TypeSig(it, nt, lt, nts)
+  }
+
+  /**
    * Add nested types to this type signature. Note that these do not stack so if nesting has
    * nested types too they are ignored.
    * @param nesting the basic types to add.
@@ -441,6 +454,19 @@ object TypeSig {
   val orderable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING + DECIMAL + NULL + BINARY + CALENDAR + ARRAY + STRUCT + UDT).nested()
 
+  /**
+   * Different types of Pandas UDF support different sets of output type. Please refer to
+   *   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
+   * for more details.
+   *
+   * It is impossible to specify the exact type signature for each Pandas UDF type in a single
+   * expression 'PythonUDF'.
+   *
+   * So here comes the union of all the sets of supported type, to cover all the cases.
+   */
+  val unionOfPandasUdfOut = (commonCudfTypes + BINARY + DECIMAL + NULL + ARRAY + MAP).nested() +
+      STRUCT
+
   def getDataType(expr: Expression): Option[DataType] = {
     try {
       Some(expr.dataType)
@@ -542,18 +568,23 @@ class ExecChecks private(
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val plan = meta.wrapped.asInstanceOf[SparkPlan]
     val allowDecimal = meta.conf.decimalTypeEnabled
-    if (!check.areAllSupportedByPlugin(plan.output.map(_.dataType), allowDecimal)) {
-      val unsupported = plan.output.map(_.dataType)
-          .filter(!check.isSupportedByPlugin(_, allowDecimal))
-          .toSet
-      meta.willNotWorkOnGpu(s"unsupported data types in output: ${unsupported.mkString(", ")}")
+
+    val unsupportedOutputTypes = plan.output
+      .filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+      .toSet
+
+    if (unsupportedOutputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types in output: " +
+        unsupportedOutputTypes.mkString(", "))
     }
-    if (!check.areAllSupportedByPlugin(
-      plan.children.flatMap(_.output.map(_.dataType)),
-      allowDecimal)) {
-      val unsupported = plan.children.flatMap(_.output.map(_.dataType))
-          .filter(!check.isSupportedByPlugin(_, allowDecimal)).toSet
-      meta.willNotWorkOnGpu(s"unsupported data types in input: ${unsupported.mkString(", ")}")
+
+    val unsupportedInputTypes = plan.children.flatMap { childPlan =>
+      childPlan.output.filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+    }.toSet
+
+    if (unsupportedInputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types in input: " +
+        unsupportedInputTypes.mkString(", "))
     }
   }
 
@@ -748,13 +779,13 @@ class CastChecks extends ExprChecks {
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
   val sparkTimestampSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
-  val stringChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING + BINARY
+  val stringChecks: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING + BINARY
   val sparkStringSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
-  val decimalChecks: TypeSig = DECIMAL
+  val decimalChecks: TypeSig = DECIMAL + STRING
   val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none
@@ -766,7 +797,8 @@ class CastChecks extends ExprChecks {
   val mapChecks: TypeSig = none
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
-  val structChecks: TypeSig = none
+  val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
+      "being cast to string")
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
 
   val udtChecks: TypeSig = none
@@ -840,8 +872,8 @@ class CastChecks extends ExprChecks {
   }
 
   def gpuCanCast(from: DataType, to: DataType, allowDecimal: Boolean = true): Boolean = {
-    val (_, sparkSig) = getChecksAndSigs(from)
-    sparkSig.isSupportedByPlugin(to, allowDecimal)
+    val (checks, _) = getChecksAndSigs(from)
+    checks.isSupportedByPlugin(to, allowDecimal)
   }
 }
 

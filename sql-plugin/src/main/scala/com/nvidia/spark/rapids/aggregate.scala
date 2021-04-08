@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
-import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
@@ -857,7 +857,7 @@ case class GpuHashAggregateExec(
         // reduction merge or update aggregates functions are
         val cvs = ArrayBuffer[GpuColumnVector]()
         aggModeCudfAggregates.foreach { case (mode, aggs) =>
-          aggs.foreach {agg =>
+          aggs.foreach { agg =>
             val aggFn = if ((mode == Partial || mode == Complete) && !merge) {
               agg.updateReductionAggregate
             } else {
@@ -869,6 +869,17 @@ case class GpuHashAggregateExec(
                 cvs += GpuColumnVector.from(cv.castTo(rapidsType), agg.dataType)
               }
             }
+          }
+        }
+        // If cvs is empty, we add a single row with zero value. The value in the row is
+        // meaningless as it doesn't matter what we put in it. The projection will add a zero
+        // column to the result set in case of a parameter-less count.
+        // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
+        // desired result compared to Spark-CPU.
+        // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
+        if (cvs.isEmpty) {
+          withResource(Scalar.fromLong(0L)) { ZERO =>
+            cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
           }
         }
         new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)

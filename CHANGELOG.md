@@ -1,5 +1,18 @@
 # Change log
-Generated on 2021-03-18
+Generated on 2021-03-23
+
+## Release 0.4.1
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#1985](https://github.com/NVIDIA/spark-rapids/issues/1985)|[BUG] broadcast exchange can fail on 0.4|
+
+### PRs
+|||
+|:---|:---|
+|[#1990](https://github.com/NVIDIA/spark-rapids/pull/1990)|Prepare for v0.4.1 release|
+|[#1988](https://github.com/NVIDIA/spark-rapids/pull/1988)|broadcast exchange can fail when job group set|
 
 ## Release 0.4
 
@@ -53,6 +66,7 @@ Generated on 2021-03-18
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#1885](https://github.com/NVIDIA/spark-rapids/issues/1885)|[BUG] natural join on string key results in a data frame with spurious NULLs|
 |[#1785](https://github.com/NVIDIA/spark-rapids/issues/1785)|[BUG] Rapids pytest integration tests FAILED on Yarn cluster with unrecognized arguments: `--std_input_path=src/test/resources/`|
 |[#999](https://github.com/NVIDIA/spark-rapids/issues/999)|[BUG] test_multi_types_window_aggs_for_rows_lead_lag fails against Spark 3.1.0|
 |[#1818](https://github.com/NVIDIA/spark-rapids/issues/1818)|[BUG] unmoored doc comment warnings in GpuCast|
@@ -104,6 +118,7 @@ Generated on 2021-03-18
 ### PRs
 |||
 |:---|:---|
+|[#1963](https://github.com/NVIDIA/spark-rapids/pull/1963)|Update changelog 0.4 [skip ci]|
 |[#1960](https://github.com/NVIDIA/spark-rapids/pull/1960)|Replace sonatype staging link with maven central link|
 |[#1945](https://github.com/NVIDIA/spark-rapids/pull/1945)|Update changelog 0.4 [skip ci]|
 |[#1910](https://github.com/NVIDIA/spark-rapids/pull/1910)|Make hash partitioning match CPU|
