@@ -41,7 +41,6 @@ from marks import allow_non_gpu, cudf_udf
 
 
 _conf = {
-        'spark.rapids.sql.exec.MapInPandasExec':'true',
         'spark.rapids.sql.exec.FlatMapGroupsInPandasExec': 'true',
         'spark.rapids.sql.exec.AggregateInPandasExec': 'true',
         'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true',
@@ -156,7 +155,6 @@ def test_select(enable_cudf_udf):
 
 
 # ======= Test Flat Map In Pandas =======
-@allow_non_gpu('GpuMapInPandasExec','PythonUDF')
 @cudf_udf
 def test_map_in_pandas(enable_cudf_udf):
     def cpu_run(spark):

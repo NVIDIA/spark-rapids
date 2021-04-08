@@ -19,10 +19,10 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.Mockito.{never, spy, verify}
+import org.mockito.Mockito.{never, spy, times, verify, when}
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
@@ -73,8 +73,9 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         devStore.synchronousSpill(0)
         assertResult(bufferSize)(hostStore.currentSize)
         assertResult(hostStoreMaxSize - bufferSize)(hostStore.numBytesFree)
-        verify(catalog).updateBufferMap(
-          ArgumentMatchers.eq(StorageTier.DEVICE), ArgumentMatchers.any[RapidsBuffer])
+        verify(catalog, times(2)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
+        verify(catalog).removeBufferTier(
+          ArgumentMatchers.eq(bufferId), ArgumentMatchers.eq(StorageTier.DEVICE))
         withResource(catalog.acquireBuffer(bufferId)) { buffer =>
           assertResult(StorageTier.HOST)(buffer.storageTier)
           assertResult(bufferSize)(buffer.size)
@@ -120,7 +121,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog, devStore)) { hostStore =>
         devStore.setSpillStore(hostStore)
         withResource(buildContiguousTable()) { ct =>
           withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
@@ -148,7 +149,8 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
       val mockStore = mock[RapidsBufferStore]
-      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog)) { hostStore =>
+      when(mockStore.tier) thenReturn(StorageTier.DISK)
+      withResource(new RapidsHostMemoryStore(hostStoreMaxSize, catalog, devStore)) { hostStore =>
         devStore.setSpillStore(hostStore)
         hostStore.setSpillStore(mockStore)
         withResource(buildContiguousTable(1024 * 1024)) { bigTable =>
@@ -158,6 +160,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               devStore.addContiguousTable(bigBufferId, bigTable, spillPriority)
               devStore.synchronousSpill(0)
               verify(mockStore, never()).copyBuffer(ArgumentMatchers.any[RapidsBuffer],
+                ArgumentMatchers.any[MemoryBuffer],
                 ArgumentMatchers.any[Cuda.Stream])
               withResource(catalog.acquireBuffer(bigBufferId)) { buffer =>
                 assertResult(StorageTier.HOST)(buffer.storageTier)
@@ -169,7 +172,8 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               devStore.addContiguousTable(smallBufferId, smallTable, spillPriority)
               devStore.synchronousSpill(0)
               val ac: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
-              verify(mockStore).copyBuffer(ac.capture(), ArgumentMatchers.any[Cuda.Stream])
+              verify(mockStore).copyBuffer(ac.capture(), ArgumentMatchers.any[MemoryBuffer],
+                ArgumentMatchers.any[Cuda.Stream])
               assertResult(bigBufferId)(ac.getValue.id)
             }
           }

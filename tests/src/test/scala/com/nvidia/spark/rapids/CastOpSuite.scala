@@ -228,6 +228,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
+  test("cast decimal to string") {
+    val sqlCtx = SparkSession.getActiveSession.get.sqlContext
+    sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
+
+    Seq(10, 15, 18).foreach { precision =>
+      Seq(-precision, -5, 0, 5, precision).foreach { scale =>
+        testCastToString(DataTypes.createDecimalType(precision, scale),
+          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+      }
+    }
+  }
+
   private def testCastToString[T](
       dataType: DataType,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
@@ -481,6 +494,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 2),
       scale = 2,
+      ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
 
     // fromScale > toScale
@@ -489,6 +503,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 10),
       scale = 2,
+      ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 18),
       scale = 15,

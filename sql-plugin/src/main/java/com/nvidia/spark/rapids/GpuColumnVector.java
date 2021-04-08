@@ -20,6 +20,7 @@ import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.ArrowColumnBuilder;
 import ai.rapids.cudf.HostColumnVector;
+import ai.rapids.cudf.HostColumnVectorCore;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
@@ -102,9 +103,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param name the name of the column to print out.
    * @param hostCol the column to print out.
    */
-  public static synchronized void debug(String name, HostColumnVector hostCol) {
+  public static synchronized void debug(String name, HostColumnVectorCore hostCol) {
     DType type = hostCol.getType();
-    System.err.println("COLUMN " + name + " " + type);
+    System.err.println("COLUMN " + name + " - " + type);
     if (type.getTypeId() == DType.DTypeEnum.DECIMAL64) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
@@ -156,12 +157,32 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           System.err.println(i + " " + hostCol.getFloat(i));
         }
       }
+    } else if (DType.STRUCT.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } // The struct child columns are printed out later on.
+      }
+      for (int i = 0; i < hostCol.getNumChildren(); i++) {
+        debug(name + ":CHILD_" + i, hostCol.getChildColumnView(i));
+      }
+    } else if (DType.LIST.equals(type)) {
+      System.err.println("OFFSETS");
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " [" + hostCol.getStartListOffset(i) + " - " +
+              hostCol.getEndListOffset(i) + ")");
+        }
+      }
+      debug(name + ":DATA", hostCol.getChildColumnView(0));
     } else {
       System.err.println("TYPE " + type + " NOT SUPPORTED FOR DEBUG PRINT");
     }
   }
 
-  private static void debugInteger(HostColumnVector hostCol, DType intType) {
+  private static void debugInteger(HostColumnVectorCore hostCol, DType intType) {
     for (int i = 0; i < hostCol.getRowCount(); i++) {
       if (hostCol.isNull(i)) {
         System.err.println(i + " NULL");

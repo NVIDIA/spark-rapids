@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,6 +46,13 @@ class ClusterUtils(object):
         templ['driver_node_type_id'] = driver_node_type
         templ['ssh_public_keys'] = [ sshKey ]
         templ['num_workers'] = num_workers
+        templ['init_scripts'] = [
+            {
+                "dbfs": {
+                     "destination": "dbfs:/databricks/init_scripts/init_cudf_udf.sh"
+                }
+            }
+        ]
         return templ
 
 

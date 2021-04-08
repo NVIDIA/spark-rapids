@@ -201,7 +201,6 @@ def test_group_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
-@allow_non_gpu('MapInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_map_apply_udf(data_gen):
     def pandas_filter(iterator):
@@ -212,6 +211,43 @@ def test_map_apply_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .mapInPandas(pandas_filter, schema="a long, b long"),
             conf=arrow_udf_conf)
+
+
+@pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
+def test_pandas_map_udf_nested_type(data_gen):
+    # Supported UDF output types by plugin: (commonCudfTypes + ARRAY).nested() + STRUCT
+    # STRUCT represents the whole dataframe in Map Pandas UDF, so no struct column in UDF output.
+    # More details is here
+    #   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L119
+    udf_out_schema = 'c_integral long,' \
+                     'c_string string,' \
+                     'c_fp double,' \
+                     'c_bool boolean,' \
+                     'c_date date,' \
+                     'c_time timestamp,' \
+                     'c_array_array array<array<long>>,' \
+                     'c_array_string array<string>'
+
+    def col_types_udf(pdf_itr):
+        for pdf in pdf_itr:
+            # Return a data frame with columns of supported type, and there is only one row.
+            # The values can not be generated randomly because it should return the same data
+            # for both CPU and GPU runs.
+            yield pd.DataFrame({
+                "c_integral": [len(pdf)],
+                "c_string": ["size" + str(len(pdf))],
+                "c_fp": [float(len(pdf))],
+                "c_bool": [False],
+                "c_date": [date(2021, 4, 2)],
+                "c_time": [datetime(2021, 4, 2, tzinfo=timezone.utc)],
+                "c_array_array": [[[len(pdf)]]],
+                "c_array_string": [["size" + str(len(pdf))]]
+            })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen)\
+            .mapInPandas(col_types_udf, schema=udf_out_schema),
+        conf=arrow_udf_conf)
 
 
 def create_df(spark, data_gen, left_length, right_length):
