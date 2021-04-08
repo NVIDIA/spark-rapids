@@ -42,30 +42,28 @@ do
   esac
 done
 
-SPARK_TREE=$SPARK_HOME
-if [ -z "$SPARK_TREE" ]; then
-  echo "SPARK_HOME IS NOT SET. CANNOT RUN THIS SCRIPT"
-  exit 1
-else
-  if [ -f "$lastcommit" ]; then
-      cd ${SPARK_TREE}
-      latestcommit=`cat ${lastcommit}`
-      git checkout $basebranch
-      git log --oneline HEAD...$latestcommit -- sql/core/src/main sql/catalyst/src/main | tee $COMMIT_DIFF_LOG
-      git log HEAD -n 1 --pretty="%h" > ${lastcommit}
+SPARK_TREE="$WORKSPACE/spark-3.0/spark"
+rm -rf $SPARK_TREE && git clone https://github.com/apache/spark.git $SPARK_TREE
 
-      cd $WORKSPACE
-      COMMIT_UPDATE=`git diff ${lastcommit}`
-      if [ -n "$COMMIT_UPDATE" ]; then
-          git config --global user.name blossom
-          git config --global user.email blossom@nvidia.com
-          git add ${lastcommit}
-          git commit -m "Update latest commit-id for org.apache.spark branch ${basebranch}"
-          git push origin HEAD:$REF
-      else
-          echo "No commit update"
-      fi
-  else
+if [ -f "$lastcommit" ]; then
+    cd ${SPARK_TREE}
+    latestcommit=`cat ${lastcommit}`
+    git checkout $basebranch
+    git log --oneline HEAD...$latestcommit -- sql/core/src/main sql/catalyst/src/main | tee $COMMIT_DIFF_LOG
+    git log HEAD -n 1 --pretty="%h" > ${lastcommit}
+
+    cd $WORKSPACE
+    COMMIT_UPDATE=`git diff ${lastcommit}`
+    if [ -n "$COMMIT_UPDATE" ]; then
+        git config --global user.name blossom
+        git config --global user.email blossom@nvidia.com
+        git add ${lastcommit}
+        git commit -m "Update latest commit-id for org.apache.spark branch ${basebranch}"
+        git push origin HEAD:$REF
+    else
+        echo "No commit update"
+    fi
+else
     ## Below sequence of commands were used to get the initial list of commits to audit branch-3.2-SNAPSHOT(which is currently `master` branch)
     ## It filters out all the commits that were audited until 3.1.1-rc3.
     ## There wasn't easy way to get the list of commits to audit for branch-3.2-SNAPSHOT.
@@ -103,5 +101,4 @@ else
     git log --grep="$line" --pretty="%h - %s" >> hashCommitsWithMessage.log
     done < $filename
     git log HEAD -n 1 --pretty="%h" > $lastcommit
-  fi
 fi
