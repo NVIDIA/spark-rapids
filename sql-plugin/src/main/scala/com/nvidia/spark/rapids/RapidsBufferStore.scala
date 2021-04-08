@@ -375,12 +375,14 @@ abstract class RapidsBufferStore(
         }
         throw new IllegalStateException(s"Unable to get device memory buffer for ID: $id")
       } else {
-        withResource(materializeMemoryBuffer) {
+        materializeMemoryBuffer match {
           case h: HostMemoryBuffer =>
-            closeOnExcept(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
-              logDebug(s"copying from host $h to device $deviceBuffer")
-              deviceBuffer.copyFromHostBuffer(h)
-              deviceBuffer
+            withResource(h) { _ =>
+              closeOnExcept(DeviceMemoryBuffer.allocate(size)) { deviceBuffer =>
+                logDebug(s"copying from host $h to device $deviceBuffer")
+                deviceBuffer.copyFromHostBuffer(h)
+                deviceBuffer
+              }
             }
           case d: DeviceMemoryBuffer => d
           case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
