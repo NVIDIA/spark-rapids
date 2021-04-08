@@ -41,7 +41,6 @@ from marks import allow_non_gpu, cudf_udf
 
 
 _conf = {
-        'spark.rapids.sql.exec.FlatMapGroupsInPandasExec': 'true',
         'spark.rapids.sql.exec.AggregateInPandasExec': 'true',
         'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true',
         'spark.rapids.sql.exec.WindowInPandasExec': 'true',
@@ -179,7 +178,6 @@ def test_map_in_pandas(enable_cudf_udf):
 # ======= Test Grouped Map In Pandas =======
 # To solve: Invalid udf: the udf argument must be a pandas_udf of type GROUPED_MAP
 # need to add udf type
-@allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
 @cudf_udf
 def test_group_apply(enable_cudf_udf):
     @pandas_udf("id long, v double", PandasUDFType.GROUPED_MAP)
@@ -205,7 +203,6 @@ def test_group_apply(enable_cudf_udf):
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
 
 
-@allow_non_gpu('GpuFlatMapGroupsInPandasExec','PythonUDF')
 @cudf_udf
 def test_group_apply_in_pandas(enable_cudf_udf):
     def cpu_run(spark):
@@ -279,8 +276,6 @@ def test_sql_group(enable_cudf_udf):
 
 
 # ======= Test Window In Pandas =======
-@allow_non_gpu('GpuWindowInPandasExec','PythonUDF','Alias','WindowExpression','WindowSpecDefinition',
-               'SpecifiedWindowFrame','UnboundedPreceding$', 'UnboundedFollowing$')
 @cudf_udf
 def test_window(enable_cudf_udf):
     @pandas_udf("int")
