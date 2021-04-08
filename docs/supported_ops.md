@@ -705,6 +705,29 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
+<td>MapInPandasExec</td>
+<td>The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
+<td>None</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
+<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
 <td>WindowInPandasExec</td>
 <td>The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled. For now it only supports row based window frame.</td>
 <td>This is disabled by default because it only supports row based frame for now</td>
@@ -10661,11 +10684,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="2">reduction</td>
@@ -10704,11 +10727,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="2">window</td>
@@ -10747,11 +10770,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="2">project</td>
@@ -10790,11 +10813,11 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, MAP)</em></td>
+<td> </td>
 </tr>
 <tr>
 <td rowSpan="4">Quarter</td>
