@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
+import org.apache.spark.sql.catalyst.plans.logical.Command
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
@@ -287,7 +288,7 @@ class DataWritingCommandRule[INPUT <: DataWritingCommand](
         DataFromReplacementRule) => DataWritingCommandMeta[INPUT],
     desc: String,
     tag: ClassTag[INPUT])
-    extends ReplacementRule[INPUT, DataWritingCommand, DataWritingCommandMeta[INPUT]](
+    extends ReplacementRule[INPUT, Command, DataWritingCommandMeta[INPUT]](
       doWrap, desc, None, tag) {
 
   override val confKeyPart: String = "output"

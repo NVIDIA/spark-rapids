@@ -544,7 +544,7 @@ object GpuTransitionOverrides {
  *
  * @param child The plan to execute
  */
-case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode with GpuExec {
+case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends GpuUnaryExecNode {
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")

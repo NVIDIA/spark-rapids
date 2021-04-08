@@ -19,28 +19,49 @@ package com.nvidia.spark.rapids
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.logical.{Command, LogicalPlan}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.execution.datasources.BasicWriteJobStatsTracker
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 /**
- * An extension of `DataWritingCommand` that allows columnar execution.
+ * A GPU implementation of `DataWritingCommand` that allows columnar execution.
+ * Avoids deriving directly from `DataWritingCommand` since `UnaryCommand` changed
+ * class hierarchy in Spark 3.2.
  */
-trait GpuDataWritingCommand extends DataWritingCommand {
+trait GpuDataWritingCommand extends Command {
+  /**
+   * The input query plan that produces the data to be written.
+   * IMPORTANT: the input query plan MUST be analyzed, so that we can carry its output columns
+   *            to [[org.apache.spark.sql.execution.datasources.FileFormatWriter]].
+   */
+  def query: LogicalPlan
+
+  override def children: Seq[LogicalPlan] = query :: Nil
+
+  // Output column names of the analyzed input query plan.
+  def outputColumnNames: Seq[String]
+
+  // Output columns of the analyzed input query plan.
+  def outputColumns: Seq[Attribute] =
+    DataWritingCommand.logicalPlanOutputWithNames(query, outputColumnNames)
+
+  def basicWriteJobStatsTracker(hadoopConf: Configuration): BasicWriteJobStatsTracker = {
+    val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
+    new BasicWriteJobStatsTracker(serializableHadoopConf, metrics)
+  }
+
   lazy val basicMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.basicMetrics
   lazy val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
 
-  override lazy val metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
-
-  override final def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] =
-    throw new UnsupportedOperationException(
-      s"${getClass.getCanonicalName} does not support row-based execution")
+  lazy val metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
 
   def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch]
 
