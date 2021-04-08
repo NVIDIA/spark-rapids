@@ -1850,11 +1850,13 @@ object GpuOverrides {
     expr[PivotFirst](
       "PivotFirst operator",
       ExprChecks.fullAgg(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
         TypeSig.all,
         Seq(ParamCheck(
           "aggFunc",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
           TypeSig.all)),
         Some(RepeatingParamCheck("filter",
           TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL,
