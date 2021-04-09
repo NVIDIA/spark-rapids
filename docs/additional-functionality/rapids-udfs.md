@@ -189,7 +189,7 @@ Please note: every type of PandasUDF on Spark is run by a specific Spark executi
 Accelerator has a 1-1 mapping support for each of them. Not all PandasUDF types are data-transfer
 accelerated at present:
 
-  | Spark Execution Plan|Data Transfer accelerated|Use Case|
+  | Spark Execution Plan|Data Transfer Accelerated|Use Case|
   |----------------------|----------|--------|
   |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)| supported|
   |MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#map)|
@@ -226,7 +226,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     this value too small _may result in  a hang for your Spark job_ because a task may contain
     multiple PandasUDF(`MapInPandas`) instances which results in multiple Python processes.
     Each process will try to acquire the Python GPU process semaphore. This may result in a
-    deadlock situation because a Spark job will not proceed until all its tasks are finished
+    deadlock situation because a Spark job will not proceed until all its tasks are finished.
 
     For example, in a specific Spark Stage that contais 3 PandasUDFs, 2 Spark tasks are running and
     each task launches 3 Python process while we set this `concurrentPythonWorkers` to 4.
@@ -246,12 +246,34 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     ...
     ```
 
-    ![Python concurrent worker](/docs/img/concurrentPythonWorker.PNG)
+    ![Python concurrent worker](../img/concurrentPythonWorker.PNG)
 
     In this case, each PandasUDF will launch a Python process. At this moment two Python process
-    in each task acquired their semaphore but neither of them are able to proceed because both
-    of them are waiting for their third semaphore to start the task.
+    in each task(in light green) acquired their semaphore but neither of them are able to proceed
+    because both of them are waiting for their third semaphore to start the task.
 
+    Another example is to use ArrowEvalPythonExec, with the following code:
+
+    ```
+    import pyspark.sql.functions as F
+    ...
+    df = df.withColumn("c_1",udf_1(F.col("a"), F.col("b")))
+    df = df.withColumn('c_2', F.hash(F.col('c_1')))
+    df = df.withColumn("c_3",udf_2(F.col("c_2")))
+    ...
+    ```
+    The physical plan:
+    ```
+        +- GpuArrowEvalPython
+          +- ...
+            +- ...
+              +- GpuArrowEvalPython
+    ```
+    This means each Spark task will trigger 2 Python processes. In this case, if we set
+    `spark.rapids.sql.concurrentGpuTasks=2` and `concurrentPythonWorkers=2`, it will also probably
+    result in a hang as we allow 2 tasks running and each of them has 2 Python processes. Let's say
+    Task_1_Process_1 and Task_2_Process_1 acquired the semaphore, but neither of them are going to
+    proceed becasue both of them are waiting for their second semaphore.
 
 To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
 Apache Spark Configuration Guide](../configs.md). Search 'pandas' for a quick navigation jump.
