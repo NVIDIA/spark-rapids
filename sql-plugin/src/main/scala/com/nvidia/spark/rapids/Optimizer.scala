@@ -26,11 +26,11 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
-trait CostBasedOptimizer {
+trait Optimizer {
   def optimize(plan: SparkPlanMeta[SparkPlan]): Seq[Optimization]
 }
 
-class DefaultCostBasedOptimizer(conf: RapidsConf) extends CostBasedOptimizer with Logging {
+class CostBasedOptimizer(conf: RapidsConf) extends Optimizer with Logging {
 
   // the intention is to make the cost model pluggable since we are probably going to need to
   // experiment a fair bit with this part
@@ -197,7 +197,7 @@ class DefaultCostBasedOptimizer(conf: RapidsConf) extends CostBasedOptimizer wit
  * @param forceOnCpy Force on CPU if true, or force on GPU if false
  * @return Empty sequence since we're not actually applying real optimizations
  */
-class IsolateOperator(name: String, forceOnCpu: Boolean) extends CostBasedOptimizer {
+class IsolateOperator(name: String, forceOnCpu: Boolean) extends Optimizer {
   def optimize(plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
 
     // recurse down first

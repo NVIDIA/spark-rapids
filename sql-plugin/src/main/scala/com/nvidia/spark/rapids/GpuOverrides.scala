@@ -2951,7 +2951,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // determine which optimizer to use based on config
         val optimizer = conf.optimizerMode.split("=") match {
           case parts if parts.length==1 && parts.head.toUpperCase =="OPTIMIZE" =>
-            new DefaultCostBasedOptimizer(conf)
+            new CostBasedOptimizer(conf)
           case parts if parts.length==2 && parts.head.toUpperCase == "FORCECPU" =>
             new IsolateOperator(parts(1), true)
           case parts if parts.length==2 && parts.head.toUpperCase == "FORCEGPU" =>
