@@ -938,7 +938,12 @@ object RapidsConf {
 
   val OPTIMIZER_MODE = conf("spark.rapids.sql.optimizer.mode")
       .internal()
-      .doc("TBD")
+      .doc("Specify the optimizer mode. The default mode is OPTIMIZE. Experimental modes " +
+          "of FORCECPU=operator and FORCEGPU=operator are provided so that one class of operator " +
+          "can be forced onto CPU or GPU to allow for more detailed metrics to be collected for " +
+          "operators and transitions. The operator name is the simple class name for a Spark " +
+          "operator. For example, FORCECPU=FilterExec will force all filters onto CPU and keep " +
+          "other operators on GPU.")
       .stringConf
       .createWithDefault("OPTIMIZE")
 
