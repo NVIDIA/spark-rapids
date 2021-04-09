@@ -936,6 +936,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val OPTIMIZER_MODE = conf("spark.rapids.sql.optimizer.mode")
+      .internal()
+      .doc("TBD")
+      .stringConf
+      .createWithDefault("OPTIMIZE")
+
   val OPTIMIZER_EXPLAIN = conf("spark.rapids.sql.optimizer.explain")
       .internal()
       .doc("Explain why some parts of a query were not placed on a GPU due to " +
@@ -1298,6 +1304,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
+
+  lazy val optimizerMode: String = get(OPTIMIZER_MODE)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
 

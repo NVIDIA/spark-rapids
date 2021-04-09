@@ -2948,7 +2948,18 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // we need to run these rules both before and after CBO because the cost
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
-        val optimizer = new CostBasedOptimizer(conf)
+        // determine which optimizer to use based on config
+        val optimizer = conf.optimizerMode.split("=") match {
+          case parts if parts.length==1 && parts.head.toUpperCase =="OPTIMIZE" =>
+            new DefaultCostBasedOptimizer(conf)
+          case parts if parts.length==2 && parts.head.toUpperCase == "FORCECPU" =>
+            new IsolateOperator(parts(1), true)
+          case parts if parts.length==2 && parts.head.toUpperCase == "FORCEGPU" =>
+            new IsolateOperator(parts(1), false)
+          case _ =>
+            throw new RuntimeException(s"Invalid configuration value for " +
+                s"${RapidsConf.OPTIMIZER_MODE.key}: ${conf.optimizerMode}")
+        }
         optimizer.optimize(wrap)
       } else {
         Seq.empty

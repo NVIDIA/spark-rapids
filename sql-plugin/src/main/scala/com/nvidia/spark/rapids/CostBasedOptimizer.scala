@@ -26,7 +26,11 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
-class CostBasedOptimizer(conf: RapidsConf) extends Logging {
+trait CostBasedOptimizer {
+  def optimize(plan: SparkPlanMeta[SparkPlan]): Seq[Optimization]
+}
+
+class DefaultCostBasedOptimizer(conf: RapidsConf) extends CostBasedOptimizer with Logging {
 
   // the intention is to make the cost model pluggable since we are probably going to need to
   // experiment a fair bit with this part
@@ -173,6 +177,47 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
              | _: BroadcastNestedLoopJoinExec => true
         case _ => false
       })
+  }
+}
+
+/**
+ * This optimizer forces one class of operator (e.g. FilterExec) onto CPU or GPU so that we can
+ * collect metrics that will help us build a real cost model.
+ *
+ * By forcing operators onto CPU, Spark will create a WholeStageCodegen stage containing a
+ * single operator and we can therefore obtain timing metrics for this operator (because
+ * WholeStageCodegen has timing metrics). Note that the timing metrics are inclusive of the
+ * cost of the InputAdapter, which executes the subtree of operators. Unfortunately, Spark does
+ * not collect timing metrics for InputAdapter so to be able to determine total duration we
+ * need to make sure that the transition to CPU has timing metrics.
+ *
+ * By forcing operators onto GPU, we can measure the cost of the surrounding transitions.
+ *
+ * @param name Simple class name of the CPU operator to isolate, e.g. "FilterExec"
+ * @param forceOnCpy Force on CPU if true, or force on GPU if false
+ * @return Empty sequence since we're not actually applying real optimizations
+ */
+class IsolateOperator(name: String, forceOnCpu: Boolean) extends CostBasedOptimizer {
+  def optimize(plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
+
+    // recurse down first
+    plan.childPlans
+        .foreach(child => optimize(child.asInstanceOf[SparkPlanMeta[SparkPlan]]))
+
+    if (plan.wrapped.getClass.getSimpleName == name) {
+      // force just this class of operator onto CPU, let other operators remain
+      // on GPU (where supported)
+      if (plan.canThisBeReplaced && forceOnCpu) {
+        plan.willNotWorkOnGpu(s"force on CPU to isolate costs for $name")
+      }
+    } else {
+      // force all other operators onto CPU, keeping the operator to be isolated on GPU
+      // so that we can collect metrics for the transitions to/from GPU
+      if (plan.canThisBeReplaced && !forceOnCpu) {
+        plan.willNotWorkOnGpu(s"force on CPU to isolate costs for $name")
+      }
+    }
+    Seq.empty
   }
 }
 

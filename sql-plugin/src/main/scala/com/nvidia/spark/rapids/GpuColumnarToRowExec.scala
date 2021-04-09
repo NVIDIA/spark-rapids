@@ -39,7 +39,8 @@ class AcceleratedColumnarToRowIterator(
     batches: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    totalTime: GpuMetric) extends Iterator[InternalRow] with Arm with Serializable {
+    totalTime: GpuMetric,
+    totalTimeInclusive: GpuMetric) extends Iterator[InternalRow] with Arm with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -119,20 +120,25 @@ class AcceleratedColumnarToRowIterator(
   }
 
   private[this] def loadNextBatch(): Unit = {
-    closeCurrentBatch()
-    if (!pendingCvs.isEmpty) {
-      setCurrentBatch(pendingCvs.dequeue())
-    } else {
-      while (batches.hasNext) {
-        withResource(batches.next()) { cb =>
-          if (setupBatch(cb)) {
-            GpuSemaphore.releaseIfNecessary(TaskContext.get())
-            return
+    val start = System.nanoTime()
+    try {
+      closeCurrentBatch()
+      if (!pendingCvs.isEmpty) {
+        setCurrentBatch(pendingCvs.dequeue())
+      } else {
+        while (batches.hasNext) {
+          withResource(batches.next()) { cb =>
+            if (setupBatch(cb)) {
+              GpuSemaphore.releaseIfNecessary(TaskContext.get())
+              return
+            }
           }
         }
       }
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+    } finally {
+      totalTimeInclusive += System.nanoTime() - start
     }
-    GpuSemaphore.releaseIfNecessary(TaskContext.get())
   }
 
   override def hasNext: Boolean = {
@@ -161,7 +167,8 @@ class AcceleratedColumnarToRowIterator(
 class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    totalTime: GpuMetric) extends Iterator[InternalRow] {
+    totalTime: GpuMetric,
+    totalTimeInclusive: GpuMetric) extends Iterator[InternalRow] {
   // GPU batches read in must be closed by the receiver (us)
   @transient var cb: ColumnarBatch = null
   var it: java.util.Iterator[InternalRow] = null
@@ -176,29 +183,34 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   }
 
   def loadNextBatch(): Unit = {
-    closeCurrentBatch()
-    if (it != null) {
-      it = null
-    }
-    if (batches.hasNext) {
-      val devCb = batches.next()
-      val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
-      try {
-        cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
-          devCb.numRows())
-        it = cb.rowIterator()
-        numInputBatches += 1
-        // In order to match the numOutputRows metric in the generated code we update
-        // numOutputRows for each batch. This is less accurate than doing it at output
-        // because it will over count the number of rows output in the case of a limit,
-        // but it is more efficient.
-        numOutputRows += cb.numRows()
-      } finally {
-        devCb.close()
-        // Leaving the GPU for a while
-        GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        nvtxRange.close()
+    val start = System.nanoTime()
+    try {
+      closeCurrentBatch()
+      if (it != null) {
+        it = null
       }
+      if (batches.hasNext) {
+        val devCb = batches.next()
+        val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
+        try {
+          cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
+            devCb.numRows())
+          it = cb.rowIterator()
+          numInputBatches += 1
+          // In order to match the numOutputRows metric in the generated code we update
+          // numOutputRows for each batch. This is less accurate than doing it at output
+          // because it will over count the number of rows output in the case of a limit,
+          // but it is more efficient.
+          numOutputRows += cb.numRows()
+        } finally {
+          devCb.close()
+          // Leaving the GPU for a while
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          nvtxRange.close()
+        }
+      }
+    } finally {
+      totalTimeInclusive += System.nanoTime() - start
     }
   }
 
@@ -251,14 +263,18 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
     TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    TOTAL_TIME_INCLUSIVE -> createNanoTimingMetric(MODERATE_LEVEL,
+      DESCRIPTION_TOTAL_TIME_INCLUSIVE),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val totalTime = gpuLongMetric(TOTAL_TIME)
+    val totalTimeInclusive = gpuLongMetric(TOTAL_TIME_INCLUSIVE)
 
-    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, totalTime)
+    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, totalTime,
+      totalTimeInclusive)
 
     val cdata = child.executeColumnar()
     if (exportColumnarRdd) {
@@ -280,7 +296,8 @@ object GpuColumnarToRowExecParent {
       output: Seq[Attribute],
       numOutputRows: GpuMetric,
       numInputBatches: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] => Iterator[InternalRow] = {
+      totalTime: GpuMetric,
+      totalTimeInclusive: GpuMetric): Iterator[ColumnarBatch] => Iterator[InternalRow] = {
     if (CudfRowTransitions.areAllSupported(output) &&
         // For a small number of columns it is still best to do it the original way
         output.length > 4 &&
@@ -292,14 +309,14 @@ object GpuColumnarToRowExecParent {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
         new AcceleratedColumnarToRowIterator(output,
-          batches, numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+          batches, numInputBatches, numOutputRows, totalTime, totalTimeInclusive).map(toUnsafe)
       }
     } else {
       (batches: Iterator[ColumnarBatch]) => {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
         new ColumnarToRowIterator(batches,
-          numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+          numInputBatches, numOutputRows, totalTime, totalTimeInclusive).map(toUnsafe)
       }
     }
   }
