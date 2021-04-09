@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -187,7 +187,7 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     val aggColumn = withResource(GpuProjectExec.project(cb, boundRowProjectList)) { projected =>
 
       // in case boundRowProjectList is empty
-      val finalCb = if (boundRowProjectList.length > 0) projected else cb
+      val finalCb = if (boundRowProjectList.nonEmpty) projected else cb
 
       withResource(GpuColumnVector.from(finalCb)) { table =>
         val bases = GpuColumnVector.extractBases(finalCb).zipWithIndex
