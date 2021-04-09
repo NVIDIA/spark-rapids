@@ -64,7 +64,6 @@ def test_single_orderby(data_gen, order):
 def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            # TODO no interference with range partition once implemented
             conf = {
                 **allow_negative_scale_of_decimal_conf,
                 **{
