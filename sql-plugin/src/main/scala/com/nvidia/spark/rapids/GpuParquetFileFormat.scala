@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataTypes, DateType, DecimalType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -97,18 +97,52 @@ object GpuParquetFileFormat {
     }
   }
 
-  def getPrecisionList(schema: StructType): Seq[Int] =  {
-    def precisionsList(t: DataType): Seq[Int] = {
-      t match {
-        case d: DecimalType => List(d.precision)
-        case _: StructType =>
-          throw new IllegalStateException("structs are not supported right now")
-        case _: ArrayType =>
-          throw new IllegalStateException("arrays are not supported right now")
-        case _ => List(0)
-      }
+  def parquetWriterOptionsHelper(schema: StructType): ParquetWriterOptions.Builder = {
+    def func(
+       builder: ParquetWriterOptionsBuilder,
+       schema: StructType): ParquetWriterOptionsBuilder = {
+      schema.foreach(entry => {
+        entry.dataType match {
+          case dt: DecimalType =>
+            builder.withDecimalColumn(entry.name, dt.precision, entry.nullable)
+          case TimestampType =>
+            builder.withTimestampColumn(entry.name, false, entry.nullable)
+          case s: StructType =>
+            builder.withStructColumn(
+              func(ParquetColumnWriterOptions.structBuilder(entry.name, entry.nullable), s).build())
+          case a: ArrayType =>
+            builder.withListColumn(
+              func(ParquetColumnWriterOptions.listBuilder(entry.name, entry.nullable),
+              StructType(Seq(StructField(s"${entry.name}-1", a.elementType, entry.nullable))))
+                .build())
+          case _ =>
+            builder.withColumn(entry.nullable, entry.name)
+        }
+      })
+      builder
     }
-    schema.flatMap(f => precisionsList(f.dataType))
+
+    val builder = ParquetWriterOptions.builder()
+    schema.foreach(entry => {
+      entry.dataType match {
+        case dt: DecimalType =>
+          builder.withDecimalColumn(entry.name, dt.precision, entry.nullable)
+        case TimestampType =>
+          builder.withTimestampColumn(entry.name, false, entry.nullable)
+        case s: StructType =>
+          builder.withStructColumn(
+            func(ParquetColumnWriterOptions.structBuilder(entry.name, entry.nullable), s)
+              .asInstanceOf[ParquetColumnWriterOptions.StructBuilder].build())
+        case a: ArrayType =>
+          builder.withListColumn(func(ParquetColumnWriterOptions.listBuilder(entry.name,
+            entry.nullable),
+            StructType(Seq(StructField(s"${entry.name}-1", a.elementType, entry.nullable))))
+            .build())
+        case _ =>
+          builder.withColumn(entry.nullable, entry.name)
+      }
+    })
+    builder
   }
 
   def parseCompressionType(compressionType: String): Option[CompressionType] = {
@@ -288,25 +322,11 @@ class GpuParquetWriter(
     super.write(newBatch, statsTrackers)
   }
 
-
   override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
-    val builder = ParquetWriterOptions.builder()
+    val builder = GpuParquetFileFormat.parquetWriterOptionsHelper(dataSchema)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
-      .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96)
-      .withDecimalPrecisions(GpuParquetFileFormat.getPrecisionList(dataSchema):_*)
-    dataSchema.foreach(entry => {
-      if (entry.nullable) {
-        builder.withColumnNames(entry.name)
-      } else {
-        builder.withColumnNames(entry.name)
-        // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
-        // setting if the output is nullable or not.
-        //builder.withNotNullableColumnNames(entry.name)
-      }
-    })
-    val options = builder.build()
-    Table.writeParquetChunked(options, this)
+    Table.writeParquetChunked(builder.build(), this)
   }
 }
