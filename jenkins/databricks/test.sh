@@ -15,9 +15,10 @@
 # limitations under the License.
 #
 
-set -e
+set -ex
 
 LOCAL_JAR_PATH=$1
+SPARK_CONF=$2
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
@@ -38,6 +39,17 @@ CUDF_UDF_TEST_ARGS="--conf spark.python.daemon.module=rapids.daemon_databricks \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.concurrentPythonWorkers=2"
 
+## '--conf spark.xxx.xxx=xxx' to 'export PYSP_TEST_spark_xxx_xxx=xxx'
+if [ -n "$SPARK_CONF" ]; then
+    CONF_LIST=${SPARK_CONF//'--conf'/}
+    for CONF in ${CONF_LIST}; do
+        KEY=${CONF%%=*}
+        VALUE=${CONF#*=}
+        ## run_pyspark_from_build.sh requires 'exportPYSP_TEST_spark_xxx_xxx=xxx' as the spark configs
+        export PYSP_TEST_${KEY//./_}=$VALUE
+    done
+fi
+
 TEST_TYPE="nightly"
 if [ -d "$LOCAL_JAR_PATH" ]; then
     ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the denpedency repo
@@ -45,7 +57,7 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
 
     ## Run cudf-udf tests
     CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls $LOCAL_JAR_PATH/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
-    LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS=$CUDF_UDF_TEST_ARGS TEST_PARALLEL=1 \
+    LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
         bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
 else
     ## Run tests with jars building from the spark-rapids source code
@@ -53,6 +65,6 @@ else
 
     ## Run cudf-udf tests
     CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
-    SPARK_SUBMIT_FLAGS=$CUDF_UDF_TEST_ARGS TEST_PARALLEL=1 \
+    SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
         bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
 fi
