@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -116,6 +116,19 @@ trait RapidsBuffer extends AutoCloseable {
   def getMemoryBuffer: MemoryBuffer
 
   /**
+   * Copy the content of this buffer into the specified memory buffer, starting from the given
+   * offset.
+   *
+   * @param srcOffset offset to start copying from.
+   * @param dst the memory buffer to copy into.
+   * @param dstOffset offset to copy into.
+   * @param length number of bytes to copy.
+   * @param stream CUDA stream to use
+   */
+  def copyToMemoryBuffer(
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
+
+  /**
    * Get the device memory buffer from the underlying storage. If the buffer currently resides
    * outside of device memory, a new DeviceMemoryBuffer is created with the data copied over.
    * The caller must have successfully acquired the buffer beforehand.
@@ -192,6 +205,10 @@ sealed class DegenerateRapidsBuffer(
 
   override def getMemoryBuffer: MemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
+
+  override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long,
+      stream: Cuda.Stream): Unit =
+    throw new UnsupportedOperationException("degenerate buffer cannot copy to memory buffer")
 
   override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")

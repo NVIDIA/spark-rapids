@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ set -e
 rm -rf deploy
 mkdir -p deploy
 cd deploy
-tar -zxvf ../spark-rapids-built.tgz
+tar -zxf ../spark-rapids-built.tgz
 cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
