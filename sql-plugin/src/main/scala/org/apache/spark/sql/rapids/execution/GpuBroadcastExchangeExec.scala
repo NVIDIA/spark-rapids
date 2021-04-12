@@ -37,7 +37,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
+import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
@@ -235,9 +235,9 @@ class GpuBroadcastMeta(
 
 }
 
-abstract class GpuBroadcastExchangeExecBase(
-    mode: BroadcastMode,
-    child: SparkPlan) extends Exchange with GpuExec {
+trait GpuBroadcastExchangeExecBase extends GpuExec {
+  def child: SparkPlan
+  def mode: BroadcastMode
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL

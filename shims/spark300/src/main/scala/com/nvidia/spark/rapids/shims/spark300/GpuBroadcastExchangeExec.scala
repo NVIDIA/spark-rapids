@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@ package com.nvidia.spark.rapids.shims.spark300
 
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 
 case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
-    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
+    child: SparkPlan) extends Exchange with GpuBroadcastExchangeExecBase {
 
   override def doCanonicalize(): SparkPlan = {
     GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)

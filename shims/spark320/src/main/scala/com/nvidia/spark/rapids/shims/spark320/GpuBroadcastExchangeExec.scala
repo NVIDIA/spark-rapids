@@ -20,12 +20,13 @@ import java.util.UUID
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.BroadcastExchangeLike
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 
 case class GpuBroadcastExchangeExec(
     mode: BroadcastMode,
-    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) with BroadcastExchangeLike {
+    child: SparkPlan)
+    extends Exchange with GpuBroadcastExchangeExecBase with BroadcastExchangeLike {
 
   override def runId: UUID = _runId
 
@@ -37,4 +38,7 @@ case class GpuBroadcastExchangeExec(
   override def doCanonicalize(): SparkPlan = {
     GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
   }
+
+  override protected def withNewChildInternal(newChild: SparkPlan): SparkPlan =
+    copy(child = newChild)
 }

@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.trees.BinaryLike
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -157,5 +158,10 @@ case class GpuBroadcastHashJoinExec(
     rdd.mapPartitions(it =>
       doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
         numOutputBatches, streamTime, joinTime, filterTime, totalTime))
+  }
+
+  override def withNewChildrenInternal(newChildren: IndexedSeq[SparkPlan]): SparkPlan = {
+    assert(newChildren.size == 2, "Incorrect number of children")
+    copy(left = newChildren(0), right = newChildren(1))
   }
 }

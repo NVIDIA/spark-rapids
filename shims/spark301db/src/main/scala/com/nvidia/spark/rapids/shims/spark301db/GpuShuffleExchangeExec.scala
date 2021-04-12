@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeLike
+import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeLike}
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 
 case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
     canChangeNumPartitions: Boolean)
-  extends GpuShuffleExchangeExecBase(outputPartitioning, child) with ShuffleExchangeLike {
+  extends Exchange with GpuShuffleExchangeExecBase with ShuffleExchangeLike {
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 

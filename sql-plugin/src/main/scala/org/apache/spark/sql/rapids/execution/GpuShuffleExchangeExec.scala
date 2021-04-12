@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
@@ -65,9 +65,9 @@ class GpuShuffleMeta(
 /**
  * Performs a shuffle that will result in the desired partitioning.
  */
-abstract class GpuShuffleExchangeExecBase(
-    override val outputPartitioning: Partitioning,
-    child: SparkPlan) extends Exchange with GpuExec {
+trait GpuShuffleExchangeExecBase extends GpuExec {
+  def child: SparkPlan
+
   import GpuMetric._
 
   // Shuffle produces a lot of small output batches that should be coalesced together.
