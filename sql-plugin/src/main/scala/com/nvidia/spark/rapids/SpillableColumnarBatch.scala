@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.ContiguousTable
+
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.rapids.TempSpillBufferId
 import org.apache.spark.sql.types.DataType
@@ -148,6 +150,25 @@ object SpillableColumnarBatch extends Arm {
       addBatch(id, batch, priority, spillCallback)
       new SpillableColumnarBatchImpl(id, numRows, types)
     }
+  }
+
+  /**
+   * Create a new SpillableColumnarBatch
+   * @note The caller is responsible for closing the contiguous table parameter.
+   * @param ct contiguous table containing the batch GPU data
+   * @param sparkTypes array of Spark types describing the data schema
+   * @param priority the initial spill priority of this batch
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
+   */
+  def apply(
+      ct: ContiguousTable,
+      sparkTypes: Array[DataType],
+      priority: Long,
+      spillCallback: RapidsBuffer.SpillCallback): SpillableColumnarBatch = {
+    val id = TempSpillBufferId()
+    RapidsBufferCatalog.addContiguousTable(id, ct, priority, spillCallback)
+    new SpillableColumnarBatchImpl(id, ct.getRowCount.toInt, sparkTypes)
   }
 
   private[this] def addBatch(
