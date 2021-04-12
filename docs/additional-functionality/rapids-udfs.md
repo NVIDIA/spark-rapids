@@ -276,7 +276,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     ```
     This means each Spark task will trigger 2 Python processes. In this case, if we set
     `spark.rapids.python.concurrentPythonWorkers=2`, it will also probably result in a hang as we
-    allow 2 tasks running and each of them has 2 Python processes. Let's say Task_1_Process_1 and
+    allow 2 tasks running and each of them spawns 2 Python processes. Let's say Task_1_Process_1 and
     Task_2_Process_1 acquired the semaphore, but neither of them are going to proceed becasue both
     of them are waiting for their second semaphore.
 
