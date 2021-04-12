@@ -21,23 +21,24 @@ import java.net.{URI, URISyntaxException}
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale, Optional}
 import java.util.concurrent._
+
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, LinkedHashMap, ListBuffer, Queue}
 import scala.math.max
+
 import ai.rapids.cudf._
 import ai.rapids.cudf.DType.DTypeEnum
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.MultiFileThreadPoolFactory.{initThreadPool, threadPool}
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataInputStream, FileSystem, Path}
+import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.filter2.predicate.FilterApi
@@ -57,7 +58,6 @@ import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, Parqu
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{ArrayType, DataType, DateType, Decimal, DecimalType, MapType, StringType, StructType, TimestampType}
@@ -1388,7 +1388,6 @@ class MultiFileCloudParquetPartitionReader(
     filters: Array[Filter])
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics) with ParquetPartitionReaderBase with MultiFileReaderFunctions {
-
 
   case class HostMemoryBuffersWithMetaData(
     override val partitionedFile: PartitionedFile,
