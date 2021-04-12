@@ -160,8 +160,12 @@ which will conflict with existing Spark executor JVM processes.
 
 To enable GPU support for Pandas UDF, you need to configure your Spark job with extra settings.
 
-1. Make sure GPU `exclusive` mode is disabled. Note that this will not work if you are using exclusive
-   mode to assign GPUs under Spark.
+1. Make sure GPU `exclusive` mode is _disabled_. Note that this will not work if you are using
+exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
+    ```
+    nvidia-smi -i 0 -c Default # Set GPU 0 to default mode, run as root.
+    ```
+
 2. Currently the Python files are packed into the RAPIDS Accelerator jar.
 
     On Yarn, you need to add
@@ -205,7 +209,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
 
 1. Memory efficiency
 
-    ```
+    ```shell
     --conf spark.rapids.python.memory.gpu.pooling.enabled=false \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.maxAllocFraction= 0.2 \
@@ -218,7 +222,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
 
 2. Limit of concurrent Python processes
 
-    ```
+    ```shell
     --conf spark.rapids.python.concurrentPythonWorkers=2 \
     ```
     This parameter limits the total concurrent running `Python process` for a Spark executor.
@@ -254,7 +258,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
 
     Another example is to use ArrowEvalPythonExec, with the following code:
 
-    ```
+    ```python
     import pyspark.sql.functions as F
     ...
     df = df.withColumn("c_1",udf_1(F.col("a"), F.col("b")))
