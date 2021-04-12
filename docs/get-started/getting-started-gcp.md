@@ -14,7 +14,7 @@ parent: Getting-Started
   GPUs](#run-pyspark-or-scala-notebook-on-a-dataproc-cluster-accelerated-by-gpus)
 * [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by
   GPUs](#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpus)
-* [Build custom dataproc image to accelerate cluster init time](#build-custom-dataproc-image-to-accelerate-cluster-init-time)
+* [Build custom Dataproc image to accelerate cluster initialization time](#build-custom-dataproc-image-to-accelerate-cluster-init-time)
 
 ## Spin up a Dataproc Cluster Accelerated by GPUs
  
@@ -73,7 +73,6 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --metadata rapids-runtime=SPARK \
     --bucket $GCS_BUCKET \
     --enable-component-gateway \
-    --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false"
 ``` 
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
@@ -81,7 +80,8 @@ Google Cloud Console to see the progress.
 
 ![Dataproc Cluster](../img/GCP/dataproc-cluster.png)
 
-If you'd like to further accelerate init time to 4-5 minutes, create a custom dataproc image using [this](#build-custom-dataproc-image-to-accelerate-cluster-init-time) guide.
+If you'd like to further accelerate init time to 4-5 minutes, create a custom Dataproc image using
+[this](#build-custom-dataproc-image-to-accelerate-cluster-init-time) guide. 
 
 ## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab
@@ -140,9 +140,9 @@ can either drag and drop files from your local machine into the GCP storage brow
 gsutil cp as shown before to do this from a command line.  We can thereby submit the jar by:
 
 ```bash
-export GCS_BUCKET=<bucket_name>
-export CLUSTER_NAME=<cluster_name>
-export REGION=<region>
+export REGION=[Your Preferred GCP Region]
+export GCS_BUCKET=[Your GCS Bucket]
+export CLUSTER_NAME=[Your Cluster Name]
 export SPARK_NUM_EXECUTORS=20
 export SPARK_EXECUTOR_MEMORY=20G
 export SPARK_EXECUTOR_MEMORYOVERHEAD=16G
@@ -174,32 +174,37 @@ In the future, users will be able to provision a Dataproc cluster through Datapr
 can use example [pyspark notebooks](../demo/GCP/Mortgage-ETL-GPU.ipynb) to experiment.
 
 ## Build custom dataproc image to accelerate cluster init time
-In order to accelerate cluster init time to 4-5 minutes, we need to build a custom dataproc image that already has NVIDIA drivers and CUDA toolkit installed. In this section, we will be using [these instructions from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a custom image.
+In order to accelerate cluster init time to 4-5 minutes, we need to build a custom Dataproc image
+that already has NVIDIA drivers and CUDA toolkit installed. In this section, we will be using [these
+instructions from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a
+custom image. 
 
 Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) initialization actions:
-1. Configure yarn, yarn node manager, GPU isolation and GPU exclusive mode.
+1. Configure YARN, the YARN node manager, GPU isolation and GPU exclusive mode.
 2. Install GPU drivers.
 
-While step #1 is required at the time of cluster creation, step #2 can be done in advance. Let's write a script to do that `gpu_dataproc_packages.sh` that will be used to create the dataproc image:
+While step #1 is required at the time of cluster creation, step #2 can be done in advance. Let's
+write a script to do that. `gpu_dataproc_packages.sh` will be used to create the Dataproc image:
 
 <script src="https://gist.github.com/aroraakshit/191f4435c825f89f06f108691e104074.js"></script>
 
-Google provides `generate_custom_image.py` script that:
+Google provides a `generate_custom_image.py` script that:
 - Launches a temporary Compute Engine VM instance with the specified Dataproc base image.
 - Then runs the customization script inside the VM instance to install custom packages and/or update configurations. 
 - After the customization script finishes, it shuts down the VM instance and creates a Dataproc custom image from the disk of the VM instance.
 - The temporary VM is deleted after the custom image is created. 
 - The custom image is saved and can be used to create Dataproc clusters.
 
-Let's create the image using our customization script `gpu_dataproc_packages.sh` and image creation script `generate_custom_image.py` by Google (this step may take 20-25 minutes to complete):
+Let's create the image using our customization script `gpu_dataproc_packages.sh` and image creation
+script `generate_custom_image.py` by Google (this step may take 20-25 minutes to complete):
 
-```
+```bash
 git clone https://github.com/GoogleCloudDataproc/custom-images
 cd custom-images
 
 export CUSTOMIZATION_SCRIPT=/path/to/gpu_dataproc_packages.sh
-export ZONE=us-central1-f
-export GCS_BUCKET=sample-bucket
+export ZONE=[Your Preferred GCP Zone]
+export GCS_BUCKET=[Your GCS Bucket]
 export IMAGE_NAME=a207-ubuntu18-gpu-t4
 export DATAPROC_VERSION=2.0.7-ubuntu18
 export GPU_NAME=nvidia-tesla-t4
@@ -216,20 +221,24 @@ python2 generate_custom_image.py \
     --disk-size 40
 ```
 
-See [here](https://cloud.google.com/dataproc/docs/guides/dataproc-images#running_the_code) for more details on `generate_custom_image.py` script arguments.
+See [here](https://cloud.google.com/dataproc/docs/guides/dataproc-images#running_the_code) for more
+details on `generate_custom_image.py` script arguments.
 
-The image `sample-207-ubuntu18-gpu-t4` is now ready and can be viewed in the GCP console under `Compute Engine > Storage > Images`. The next step is to launch the cluster using this new image and new initialization actions (that do not install NVIDIA drivers since we are already past that step).
+The image `sample-207-ubuntu18-gpu-t4` is now ready and can be viewed in the GCP console under
+`Compute Engine > Storage > Images`. The next step is to launch the cluster using this new image and
+new initialization actions (that do not install NVIDIA drivers since we are already past that step).
 
-Here is the new custom gpu initialization actions that only configure yarn, yarn node manager, GPU isolation and GPU exclusive mode:
+Here is the new custom GPU initialization action that only configures YARN, the YARN node manager,
+GPU isolation and GPU exclusive mode:
 
 <script src="https://gist.github.com/aroraakshit/57f423836ca8798bdf51518e1800aae6.js"></script>
 
 Move this to a bucket, say, `sample-bucket`. Lets launch the cluster:
 
-```
-export REGION=us-west1
-export GCS_BUCKET=sample-bucket
-export CLUSTER_NAME=sample-cluster
+```bash 
+export REGION=[Your Preferred GCP Region]
+export GCS_BUCKET=[Your GCS Bucket]
+export CLUSTER_NAME=[Your Cluster Name]
 export NUM_GPUS=2
 export NUM_WORKERS=2
 
@@ -248,7 +257,6 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --metadata rapids-runtime=SPARK \
     --bucket $GCS_BUCKET \
     --enable-component-gateway \
-    --properties="^#^spark:spark.yarn.unmanagedAM.enabled=false"
 ```
 
 The new cluster should be up and running within 4-5 minutes!
