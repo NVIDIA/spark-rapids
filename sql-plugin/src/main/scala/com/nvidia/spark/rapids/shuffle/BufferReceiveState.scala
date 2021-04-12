@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shuffle
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, CudaUtil, DeviceMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
 import com.nvidia.spark.rapids.Arm
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.TableMeta
@@ -165,7 +165,7 @@ class BufferReceiveState(
 
         if (fullSize == b.rangeSize()) {
           // we have the full buffer!
-          contigBuffer = CudaUtil.deviceAllocateOnStream(b.rangeSize(), stream)
+          contigBuffer = Rmm.alloc(b.rangeSize(), stream)
           toClose.append(contigBuffer)
 
           contigBuffer.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
@@ -183,7 +183,7 @@ class BufferReceiveState(
             }
           } else {
             // need to keep it around
-            workingOn = CudaUtil.deviceAllocateOnStream(fullSize, stream)
+            workingOn = Rmm.alloc(fullSize, stream)
             toClose.append(workingOn)
 
             workingOn.copyFromDeviceBufferAsync(0, deviceBounceBuffer,

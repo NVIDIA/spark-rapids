@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -161,6 +161,15 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       windowTestDfOrc) {
     val rowsWindow = Window.partitionBy("uid")
       .orderBy("dateLong")
+      .rowsBetween(Window.unboundedPreceding, 0)
+    rowNumberAggregationTester(rowsWindow)
+    rowNumberAggregationTesterForDecimal(rowsWindow, scale = 2)
+  }
+
+  testSparkResultsAreEqual(
+    "[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [ROW_NUMBER] [WITHOUT PARTITIONBY]",
+    windowTestDfOrc) {
+    val rowsWindow = Window.orderBy("dateLong")
       .rowsBetween(Window.unboundedPreceding, 0)
     rowNumberAggregationTester(rowsWindow)
     rowNumberAggregationTesterForDecimal(rowsWindow, scale = 2)
