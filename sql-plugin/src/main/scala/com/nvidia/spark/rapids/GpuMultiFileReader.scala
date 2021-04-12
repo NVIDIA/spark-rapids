@@ -16,12 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future}
+import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostMemoryBuffer, NvtxColor, NvtxRange}
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.GpuMetric.PEAK_DEVICE_MEMORY
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
@@ -43,12 +44,16 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 trait HostMemoryBuffersWithMetaDataBase {
   // PartitionedFile to be read
   def partitionedFile: PartitionedFile
-  // An array of BlockChunk (HostMemoryBuffer and its size)
+  // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
   def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)]
+  // total bytes read
   def bytesRead: Long
 }
 
+// this is a common trait for all kind of file formats
 trait MultiFileReaderFunctions extends Arm {
+
+  // add partitioned columns into the batch
   protected def addPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: InternalRow,
@@ -73,14 +78,46 @@ trait MultiFileReaderFunctions extends Arm {
   }
 }
 
+// A tool to create a ThreadPoolExecutor
+// Please note that the TaskContext is not set in these threads and should not be used.
+object MultiFileThreadPoolUtil {
+
+  // create a thread pool
+  def createThreadPool(
+      threadTag: String,
+      maxThreads: Int = 20,
+      keepAliveSeconds: Long = 60): ThreadPoolExecutor = {
+    val threadFactory = new ThreadFactoryBuilder()
+      .setNameFormat(threadTag + " reader worker-%d")
+      .setDaemon(true)
+      .build()
+
+    val threadPoolExecutor = new ThreadPoolExecutor(
+      maxThreads, // corePoolSize: max number of threads to create before queuing the tasks
+      maxThreads, // maximumPoolSize: because we use LinkedBlockingDeque, this is not used
+      keepAliveSeconds,
+      TimeUnit.SECONDS,
+      new LinkedBlockingQueue[Runnable],
+      threadFactory)
+    threadPoolExecutor.allowCoreThreadTimeOut(true)
+    threadPoolExecutor
+  }
+}
+
 /**
- * The Abstract base class working as multi-file cloud reading framework
- * @param conf
+ * The Abstract multi-file cloud reading framework
+ *
+ * The data driven:
+ * next() -> if (first time) initAndStartReaders -> submit tasks (getBatchRunner)
+ *        -> wait tasks done sequentially -> decode in GPU (readBatch)
+ *
+ * @param conf Configuration parameters
  * @param files PartitionFiles to be read
- * @param numThreads the number of threads to parallelly read files.
- * @param maxNumFileProcessed
+ * @param numThreads the number of threads to read files parallelly.
+ * @param maxNumFileProcessed threshold to control the maximum file number to be
+ *                            submitted to threadpool
  * @param filters push down filters
- * @param execMetrics
+ * @param execMetrics the metrics
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
@@ -112,8 +149,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       val file = files(i)
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
-      tasks.add(MultiFileThreadPoolFactory.submitToThreadPool(
-        getBatchRunner(file, conf, filters), numThreads))
+      tasks.add(getThreadPool(numThreads).submit(getBatchRunner(file, conf, filters)))
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
@@ -125,10 +161,11 @@ abstract class MultiFileCloudPartitionReaderBase(
   }
 
   /**
-   * file reading logic in a Callable which will be running in a thread pool
+   * The sub-class must implement the real file reading logic in a Callable
+   * which will be running in a thread pool
    *
    * @param file file to be read
-   * @param conf
+   * @param conf the Configuration parameters
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
    */
@@ -138,13 +175,28 @@ abstract class MultiFileCloudPartitionReaderBase(
     filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
 
   /**
-   * decode HostMemoryBuffers by GPU
-   * @param fileBufsAndMeta
+   * get ThreadPoolExecutor to run the Callable.
+   *
+   * the rules:
+   * 1. same ThreadPoolExecutor for cloud and coalescing for the same file format
+   * 2. different file formats have different ThreadPoolExecutors
+   *
+   * @return
+   */
+  def getThreadPool(numThreads: Int): ThreadPoolExecutor
+
+  /**
+   * decode HostMemoryBuffers in GPU
+   * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
    * @return
    */
   def readBatch(
     fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Option[ColumnarBatch]
 
+  /**
+   * get the log tag
+   * @return
+   */
   def getLogTag: String
 
   override def next(): Boolean = {
@@ -213,7 +265,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def addNextTaskIfNeeded(): Unit = {
     if (tasksToRun.size > 0 && !isDone) {
       val runner = tasksToRun.dequeue()
-      tasks.add(MultiFileThreadPoolFactory.submitToThreadPool(runner, numThreads))
+      tasks.add(getThreadPool(numThreads).submit(runner))
     }
   }
 
