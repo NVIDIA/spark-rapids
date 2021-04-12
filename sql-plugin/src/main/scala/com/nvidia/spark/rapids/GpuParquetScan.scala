@@ -21,24 +21,23 @@ import java.net.{URI, URISyntaxException}
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale, Optional}
 import java.util.concurrent._
-
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, LinkedHashMap, ListBuffer, Queue}
 import scala.math.max
-
 import ai.rapids.cudf._
 import ai.rapids.cudf.DType.DTypeEnum
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.MultiFileThreadPoolFactory.{initThreadPool, threadPool}
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
+import org.apache.hadoop.fs.{FSDataInputStream, FileSystem, Path}
 import org.apache.parquet.bytes.BytesUtils
 import org.apache.parquet.column.ColumnDescriptor
 import org.apache.parquet.filter2.predicate.FilterApi
@@ -46,7 +45,6 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, Type, Types}
-
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -883,6 +881,25 @@ abstract class FileParquetPartitionReaderBase(
 
 // Singleton threadpool that is used across all the tasks.
 // Please note that the TaskContext is not set in these threads and should not be used.
+object ParquetMultiFileThreadPoolFactory {
+  private var threadPool: Option[ThreadPoolExecutor] = None
+
+  private def initThreadPool(
+      threadTag: String,
+      numThreads: Int): ThreadPoolExecutor = synchronized {
+    if (!threadPool.isDefined) {
+      threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
+    }
+    threadPool.get
+  }
+
+  def getThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
+    threadPool.getOrElse(initThreadPool(threadTag, numThreads))
+  }
+}
+
+// Singleton threadpool that is used across all the tasks.
+// Please note that the TaskContext is not set in these threads and should not be used.
 object MultiFileThreadPoolFactory {
 
   private var threadPool: Option[ThreadPoolExecutor] = None
@@ -1459,8 +1476,19 @@ class MultiFileCloudParquetPartitionReader(
     new ReadBatchRunner(filterHandler, file, conf, filters)
   }
 
+  /**
+   * get ThreadPoolExecutor to run the Callable.
+   *
+   * same ThreadPoolExecutor for cloud and coalescing for same file format
+   * different ThreadPoolExecutors for different file formats
+   *
+   * @return
+   */
+  override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
+    ParquetMultiFileThreadPoolFactory.getThreadPool(getLogTag, numThreads)
+  }
 
-  override def getLogTag: String = "Parquet read"
+  override def getLogTag: String = "Parquet"
 
   /**
    * decode HostMemoryBuffers by GPU
