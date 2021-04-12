@@ -493,8 +493,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
       scale = 0,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 2),
-      precision = 9, scale = 2,
+      scale = 2,
       ansiEnabled = true,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 2),
+      precision = 9, scale = 2,
       customRandGenerator = Some(new scala.util.Random(1234L)))
 
     testCastToDecimal(DataTypes.createDecimalType(8, 0),
@@ -509,8 +512,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
       scale = -1,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 10),
-      precision = 9, scale = 2,
+      scale = 2,
       ansiEnabled = true,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 10),
+      precision = 9, scale = 2,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(8, 4),
       precision = 18, scale = 15,
