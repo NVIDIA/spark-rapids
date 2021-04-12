@@ -149,7 +149,7 @@ and has two features:
 
 - **GPU Assignment(Scheduling) in Python Process**: Let the Python process share the same GPU with
 Spark executor JVM. Without this feature, in a non-isolated environment, some use cases with
-PandasUDF (a.k.a an `independent` process) can try to use GPUs other than the one we want it to
+Pandas UDF (an `independent` Python daemon process) can try to use GPUs other than the one we want it to
 run on. For example, the user could launch a TensorFlow session inside Pandas UDF and the machine
 contains 8 GPUs. Without this GPU sharing feature, TensorFlow will automatically use all 8 GPUs
 which will conflict with existing Spark executor JVM processes.
@@ -178,7 +178,7 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
     On Standalone, you need to add
     ```shell
     ...
-    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.5.0.jar \
+    --conf spark.executorEnv.PYTHONPATH=${SPARK_RAPIDS_PLUGIN_JAR} \
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
     ```
 
@@ -189,13 +189,13 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
     --conf spark.rapids.python.gpu.enabled=true \
     ```
 
-Please note: every type of PandasUDF on Spark is run by a specific Spark execution plan. RAPIDS
-Accelerator has a 1-1 mapping support for each of them. Not all PandasUDF types are data-transfer
+Please note: every type of Pandas UDF on Spark is run by a specific Spark execution plan. RAPIDS
+Accelerator has a 1-1 mapping support for each of them. Not all Pandas UDF types are data-transfer
 accelerated at present:
 
   | Spark Execution Plan|Data Transfer Accelerated|Use Case|
   |----------------------|----------|--------|
-  |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)| supported|
+  |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-series-to-iterator-of-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)| supported|
   |MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#map)|
   | WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)|
   | FlatMapGroupsInPandasExec|no|[Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#grouped-map)|
