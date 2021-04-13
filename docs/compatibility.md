@@ -237,8 +237,8 @@ from one run to another if the ordering is ambiguous on a window function too.
 When converting strings to dates or timestamps using functions like `to_date` and `unix_timestamp`,
 the specified format string will fall into one of three categories:
 
-- Supported on GPU, with compatibility with Spark
-- Supported on GPU, but may produce different results to Spark
+- Supported on GPU and 100% compatible Spark
+- Supported on GPU but may produce different results to Spark
 - Unsupported on GPU
 
 The supported formats are:
