@@ -153,7 +153,7 @@ def test_cache_expand_exec(data_gen, enableVectorizedConf):
 
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', byte_gen]]),
+@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
                                       parquet_decimal_struct_gen] + all_gen, ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
