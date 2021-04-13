@@ -256,7 +256,7 @@ The supported formats are:
 
 Examples of supported formats that may produce different results are:
 
-- Use of two digit years `yy` may use different century on GPU compared to CPU
+- Use of a two digit year, i.e.: `yy`, may use a different century on GPU compared to CPU
 - Trailing characters (including whitespace) may return a non-null value on GPU and Spark will 
   return null 
 
