@@ -271,7 +271,7 @@ Formats that contain any of the following characters are unsupported and will fa
 'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y'
 ```
 
-Formats that contain any of the following characters are unsupported and will fall back to CPU:
+Formats that contain any of the following words are unsupported and will fall back to CPU:
 
 ```
 "u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
