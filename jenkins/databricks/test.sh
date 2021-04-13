@@ -39,7 +39,7 @@ CUDF_UDF_TEST_ARGS="--conf spark.python.daemon.module=rapids.daemon_databricks \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.concurrentPythonWorkers=2"
 
-## 'spark.foo=1,spar.bar=2,...' to 'export PYSP_TEST_spark_foo=1 export PYSP_TEST_spark_bar=2'
+## 'spark.foo=1,spark.bar=2,...' to 'export PYSP_TEST_spark_foo=1 export PYSP_TEST_spark_bar=2'
 if [ -n "$SPARK_CONF" ]; then
     CONF_LIST=${SPARK_CONF//','/' '}
     for CONF in ${CONF_LIST}; do
@@ -50,7 +50,7 @@ if [ -n "$SPARK_CONF" ]; then
     done
 fi
 
-## 'spark.foo=1,spar.bar=2,...' to '--conf spark.foo=1 --conf spar.bar=2 --conf ...'
+## 'spark.foo=1,spark.bar=2,...' to '--conf spark.foo=1 --conf spark.bar=2 --conf ...'
 SPARK_CONF="--conf ${SPARK_CONF/','/' --conf '}"
 
 TEST_TYPE="nightly"
@@ -60,7 +60,7 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
 
     ## Run cudf-udf tests
     CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls $LOCAL_JAR_PATH/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
-    LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_ARGS $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
+    LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
         bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
 else
     ## Run tests with jars building from the spark-rapids source code
