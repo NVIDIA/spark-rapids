@@ -62,7 +62,7 @@ for opt, arg in opts:
     elif opt in ('-j', '--jarpath'):
         jar_path = arg
     elif opt in ('-f', '--sparkconf'):
-        print('\'-f\' can take multiple comma seperated spark configurations, e.g., \'spark.foo=1,spark.bar=2\'')
+        print('can take comma seperated mutiple spark configurations, e.g., spark.foo=1,spark.bar=2,...')
         spark_conf = arg
 
 print('-w is ' + workspace)
