@@ -210,7 +210,7 @@ export DATAPROC_VERSION=2.0.7-ubuntu18
 export GPU_NAME=nvidia-tesla-t4
 export GPU_COUNT=2
 
-python2 generate_custom_image.py \
+python generate_custom_image.py \
     --image-name $IMAGE_NAME \
     --dataproc-version $DATAPROC_VERSION \
     --customization-script $CUSTOMIZATION_SCRIPT \
