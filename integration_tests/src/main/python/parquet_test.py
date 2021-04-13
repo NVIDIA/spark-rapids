@@ -464,12 +464,17 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
-def test_many_column_project(std_input_path):
-    data_path = f"{std_input_path}/issue-2036"
+def test_many_column_project():
+    def _create_wide_data_frame(spark, num_cols):
+        schema_dict = {}
+        for i in range(num_cols):
+            schema_dict[f"c{i}"] = i
+        return spark.createDataFrame([Row(**r) for r in [schema_dict]])
+
     with_gpu_session(
         lambda spark:\
-            spark.read.parquet(data_path)\
-                .withColumn('out', f.col('1')*100)\
+            _create_wide_data_frame(spark, 1000)\
+                .withColumn('out', f.col('c1') * 100)\
                 .collect()
     )
 
