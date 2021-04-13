@@ -526,13 +526,23 @@ private object GpuRowToColumnConverter {
       row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
-      // Because DECIMAL64 is the only supported decimal DType, we can
-      // append unscaledLongValue instead of BigDecimal itself to speedup this conversion.
-      builder.append(row.getDecimal(column, precision, scale).toUnscaledLong)
-      8
+      builder.append(row.getDecimal(column, precision, scale).toJavaBigDecimal)
+      // We are basing our DType.DECIMAL on precision in GpuColumnVector#toRapidsOrNull so we can
+      // safely assume the underlying vector is Int if precision < 10 otherwise Long
+      if (precision <= Decimal.MAX_INT_DIGITS) {
+        4
+      } else {
+        8
+      }
     }
 
-    override def getNullSize: Double = 8 + VALIDITY
+    override def getNullSize: Double = {
+      if (precision <= Decimal.MAX_INT_DIGITS) {
+        4
+      } else {
+        8
+      } + VALIDITY
+    }
   }
 }
 
@@ -653,8 +663,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
       val attr = pair._1
       val colIndex = pair._2
       // This only works on fixed width types
-      // TODO once we support DECIMAL32 we will need a special case in here for it.
-      val length = attr.dataType.defaultSize
+      val length = DecimalUtil.getDataTypeSize(attr.dataType)
       cudfOffset = CudfUnsafeRow.alignOffset(cudfOffset, length)
       val ret = length match {
         case 1 => s"Platform.putByte(null, startAddress + $cudfOffset, Platform.getByte($rowBaseObj, $rowBaseOffset + ${sparkValidityOffset + (colIndex * 8)}));"
