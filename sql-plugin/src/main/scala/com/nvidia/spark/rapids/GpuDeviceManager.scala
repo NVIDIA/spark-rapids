@@ -133,6 +133,7 @@ object GpuDeviceManager extends Logging {
 
   def shutdown(): Unit = synchronized {
     // assume error during shutdown until we complete it
+    Rmm.getMaxTotalBytesAllocated()
     singletonMemoryInitialized = Errored
     RapidsBufferCatalog.close()
     Rmm.shutdown()
