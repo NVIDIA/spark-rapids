@@ -29,15 +29,19 @@ multithreaded_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.
 coalesce_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
         coalesce_parquet_file_reader_conf]
-
+parquet_decimal_gens=[decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit]
+parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_decimal_gens)])
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
+
+parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                    string_gen, boolean_gen, date_gen, timestamp_gen]
+parquet_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)])
+
 parquet_write_gens_list = [
-    [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-     string_gen, boolean_gen, date_gen, timestamp_gen],
-    pytest.param([byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                  string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_default,
+    parquet_basic_gen,
+    pytest.param(parquet_basic_gen + [decimal_gen_default,
                   decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit],
                  marks=pytest.mark.allow_non_gpu("CoalesceExec"))]
 

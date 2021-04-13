@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark311
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric, MetricsLevel, RapidsConf}
-import com.nvidia.spark.rapids.GpuMetric.DEBUG_LEVEL
+import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
 import com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
 
 import org.apache.spark.rdd.RDD

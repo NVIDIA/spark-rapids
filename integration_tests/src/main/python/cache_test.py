@@ -16,12 +16,11 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
-from datetime import date
 import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_spark_300
 from join_test import create_df
-from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
+from parquet_write_test import parquet_decimal_struct_gen
 
 enableVectorizedConf = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "true"},
                         {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "false"}]
@@ -154,7 +153,8 @@ def test_cache_expand_exec(data_gen, enableVectorizedConf):
 
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', byte_gen]])] + all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', byte_gen]]),
+                                      parquet_decimal_struct_gen] + all_gen, ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(data_gen, enableVectorizedConf):
