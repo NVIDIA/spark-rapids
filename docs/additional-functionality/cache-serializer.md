@@ -36,9 +36,33 @@ nav_order: 2
   `spark.sql.legacy.allowNegativeScaleOfDecimal` is set to true ParquetCachedBatchSerializer
   should not be used, if used, it will result in an error resulting from trying to write a
   negative scale to parquet.
-
+  
   To use this serializer please run Spark
   ```
   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
   ```
   To use the default serializer don't set the `spark.sql.cache.serializer` conf
+  
+##           Supported Types                       
+  
+  | Types      | On Gpu | On CPU   |
+  | ---------- | ----------- |--- |
+  | LongType | True | True|
+  | DoubleType | True | True|
+  | ByteType | True | True|
+  | BooleanType | True | True|
+  | ShortType | True | True|
+  | IntegerType | True | True|
+  | FloatType | True | True|
+  | DateType | True | True|
+  | TimestampType | True | True|
+  | StringType | True | True|
+  | NullType | True | True|
+  | DecimalType | True | True|
+  | StructType | True | True|
+  | CalendarIntervalType | True | True |
+  | ArrayType | False | True|
+  | MapType | False | True |
+  | BinaryType | False | True |
+  
+
