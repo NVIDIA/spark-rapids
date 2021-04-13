@@ -2612,7 +2612,7 @@ object GpuOverrides {
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
+            GpuProjectExec(childExprs.map(_.convertToGpu()).toList, childPlans(0).convertIfNeeded())
         }
       }),
     exec[RangeExec](

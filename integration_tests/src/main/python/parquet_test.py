@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -464,4 +463,13 @@ def test_spark_32639(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
+
+def test_many_column_project(std_input_path):
+    data_path = f"{std_input_path}/issue-2036"
+    with_gpu_session(
+        lambda spark:\
+            spark.read.parquet(data_path)\
+                .withColumn('out', f.col('1')*100)\
+                .collect()
+    )
 
