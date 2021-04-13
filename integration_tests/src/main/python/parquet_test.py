@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -464,17 +464,18 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
+
 def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):
         schema_dict = {}
         for i in range(num_cols):
             schema_dict[f"c{i}"] = i
-        return spark.createDataFrame([Row(**r) for r in [schema_dict]])
+        return spark.createDataFrame([Row(**r) for r in [schema_dict]]) \
+            .withColumn('out', f.col('c1') * 100)
 
-    with_gpu_session(
-        lambda spark:\
-            _create_wide_data_frame(spark, 1000)\
-                .withColumn('out', f.col('c1') * 100)\
-                .collect()
-    )
+    # TODO we want to use assert_gpu_and_cpu_are_equal_collect here however
+    # it does not reproduce the original regression
+    from_gpu = with_gpu_session(lambda spark: _create_wide_data_frame(spark, 1000).collect())
+    from_cpu = with_cpu_session(lambda spark: _create_wide_data_frame(spark, 1000).collect())
+    assert_equal(from_gpu, from_cpu)
 
