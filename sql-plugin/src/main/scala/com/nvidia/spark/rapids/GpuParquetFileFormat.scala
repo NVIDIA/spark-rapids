@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataTypes, DateType, DecimalType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -97,28 +97,28 @@ object GpuParquetFileFormat {
     }
   }
 
-  def parquetWriterOptionsHelper(schema: StructType): ParquetWriterOptions.Builder = {
-    def func(
-       builder: ParquetWriterOptionsBuilder,
-       schema: StructType): ParquetWriterOptionsBuilder = {
-      schema.foreach(entry => {
-        entry.dataType match {
-          case dt: DecimalType =>
-            builder.withDecimalColumn(entry.name, dt.precision, entry.nullable)
-          case TimestampType =>
-            builder.withTimestampColumn(entry.name, false, entry.nullable)
-          case s: StructType =>
-            builder.withStructColumn(
-              func(ParquetColumnWriterOptions.structBuilder(entry.name, entry.nullable), s).build())
-          case a: ArrayType =>
-            builder.withListColumn(
-              func(ParquetColumnWriterOptions.listBuilder(entry.name, entry.nullable),
-              StructType(Seq(StructField(s"${entry.name}-1", a.elementType, entry.nullable))))
-                .build())
-          case _ =>
-            builder.withColumn(entry.nullable, entry.name)
-        }
-      })
+  def parquetWriterOptionsHelper(schema: StructType): ParquetWriterOptions.Builder[_] = {
+    def addColumnMeta(name: String, nullable: Boolean,
+                      builder: ParquetWriterOptions.Builder[_],
+                      dt: DataType): ParquetWriterOptions.Builder[_] = {
+      dt match {
+        case dt: DecimalType =>
+          builder.withDecimalColumn(name, dt.precision, nullable)
+        case TimestampType =>
+          builder.withTimestampColumn(name, false, nullable)
+        case s: StructType =>
+          val structBuilder = ParquetWriterOptions.structBuilder(name, nullable)
+          s.foreach { field =>
+            addColumnMeta(field.name, field.nullable, structBuilder, field.dataType)
+          }
+          builder.withStructColumn(structBuilder.build())
+        case a: ArrayType =>
+          val listBuilder = ParquetWriterOptions.listBuilder(name, nullable)
+          addColumnMeta(name, nullable, listBuilder, a.elementType)
+          builder.withListColumn(listBuilder.build())
+        case _ =>
+          builder.withColumn(nullable, name)
+      }
       builder
     }
 
@@ -130,14 +130,16 @@ object GpuParquetFileFormat {
         case TimestampType =>
           builder.withTimestampColumn(entry.name, false, entry.nullable)
         case s: StructType =>
-          builder.withStructColumn(
-            func(ParquetColumnWriterOptions.structBuilder(entry.name, entry.nullable), s)
-              .asInstanceOf[ParquetColumnWriterOptions.StructBuilder].build())
+          val structBuilder = ParquetWriterOptions.structBuilder(entry.name, entry.nullable)
+          s.foreach { field =>
+            addColumnMeta(field.name, field.nullable, structBuilder, field.dataType)
+          }
+          builder.withStructColumn(structBuilder.build())
         case a: ArrayType =>
-          builder.withListColumn(func(ParquetColumnWriterOptions.listBuilder(entry.name,
-            entry.nullable),
-            StructType(Seq(StructField(s"${entry.name}-1", a.elementType, entry.nullable))))
-            .build())
+          val listBuilder = ParquetWriterOptions.listBuilder(entry.name, entry.nullable)
+          // lists have only one child, no name is needed
+          addColumnMeta("", entry.nullable, listBuilder, a.elementType)
+          builder.withListColumn(listBuilder.build())
         case _ =>
           builder.withColumn(entry.nullable, entry.name)
       }
