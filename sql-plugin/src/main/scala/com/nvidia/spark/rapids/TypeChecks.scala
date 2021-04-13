@@ -945,6 +945,19 @@ object ExprChecks {
         ParamCheck(param2._1, param2._2, param2._3)))
 
   /**
+   * Aggregate operation where only group by agg is supported.
+   */
+
+  def groupByAgg(
+      outputCheck: TypeSig,
+      sparkOutputSig: TypeSig,
+      paramCheck: Seq[ParamCheck] = Seq.empty,
+      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
+    ExprChecksImpl(Map(
+      (GroupByAggExprContext,
+          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+
+  /**
    * Aggregate operation where window, reduction, and group by agg are all supported the same.
    */
   def fullAgg(

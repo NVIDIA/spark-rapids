@@ -1849,18 +1849,17 @@ object GpuOverrides {
       }),
     expr[PivotFirst](
       "PivotFirst operator",
-      ExprChecks.fullAgg(
+      ExprChecks.groupByAgg(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
         TypeSig.all,
         Seq(ParamCheck(
-          "aggFunc",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
-          TypeSig.all)),
-        Some(RepeatingParamCheck("filter",
-          TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL,
-          TypeSig.BOOLEAN + TypeSig.commonCudfTypes + TypeSig.DECIMAL))),
+          "pivotColumn",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all),
+          ParamCheck("valueColumn",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (conf.hasNans &&
@@ -1869,6 +1868,10 @@ object GpuOverrides {
             willNotWorkOnGpu("Pivot expressions over floating point columns " +
               "that may contain NaN is disabled. You can bypass this by setting " +
               s"${RapidsConf.HAS_NANS}=false")
+          }
+          // If pivotColumnValues doesn't have distinct values, follow back to CPU
+          if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
+            willNotWorkOnGpu("PivotFirst doesnt work on non distinct")
           }
         }
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
