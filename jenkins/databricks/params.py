@@ -26,6 +26,7 @@ base_spark_pom_version = '3.0.0'
 clusterid = ''
 build_profiles = 'databricks,!snapshot-shims'
 jar_path = ''
+# `spark_conf` can take comma seperated mutiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
 spark_conf = ''
 
 try:
@@ -62,7 +63,6 @@ for opt, arg in opts:
     elif opt in ('-j', '--jarpath'):
         jar_path = arg
     elif opt in ('-f', '--sparkconf'):
-        print('can take comma seperated mutiple spark configurations, e.g., spark.foo=1,spark.bar=2,...')
         spark_conf = arg
 
 print('-w is ' + workspace)
