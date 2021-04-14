@@ -98,7 +98,13 @@ def test_sortmerge_join_struct(data_gen, join_type):
         return left.join(right, left.key == right.r_key, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
-
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
+def test_sortmerge_join_map(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_array_df(spark, short_gen, data_gen, 500, 500)
+        return left.join(right, left.key == right.r_key, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
