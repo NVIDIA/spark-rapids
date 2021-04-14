@@ -30,7 +30,7 @@ to set up testing and validation on their distributions.
 
 ### What CUDA versions are supported?
 
-CUDA 11.0, 11.1 and 11.2 are currently supported, but you need to download the cudf jar that
+CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
 corresponds to the version you are using. Please look [here](download.md) for download 
 links for the latest release.
 
