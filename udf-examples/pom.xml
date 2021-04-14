@@ -45,6 +45,7 @@
     <dependency>
       <groupId>ai.rapids</groupId>
       <artifactId>cudf</artifactId>
+      <classifier>${cuda.version}</classifier>
     </dependency>
     <dependency>
       <groupId>com.nvidia</groupId>

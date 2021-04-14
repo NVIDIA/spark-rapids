@@ -59,6 +59,7 @@
         <dependency>
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>
+            <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -142,6 +143,7 @@
                                 <artifactItem>
                                     <groupId>ai.rapids</groupId>
                                     <artifactId>cudf</artifactId>
+                                    <classifier>${cuda.version}</classifier>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
