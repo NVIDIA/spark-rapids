@@ -57,6 +57,7 @@ class GpuSortMergeJoinMeta(
       dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
         || dtype.isInstanceOf[MapType])) {
       willNotWorkOnGpu("Nested types in join keys are not supported")
+    }
 
     // make sure this is the last check - if this is SortMergeJoin, the children can be Sorts and we
     // want to validate they can run on GPU and remove them before replacing this with a

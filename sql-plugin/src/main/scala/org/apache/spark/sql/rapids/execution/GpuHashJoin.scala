@@ -37,6 +37,7 @@ object GpuHashJoin {
       dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
         || dtype.isInstanceOf[MapType])) {
       meta.willNotWorkOnGpu("Nested types in join keys are not supported")
+    }
     joinType match {
       case _: InnerLike =>
       case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>
