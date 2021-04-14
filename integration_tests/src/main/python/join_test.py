@@ -109,7 +109,6 @@ def test_sortmerge_join_struct(data_gen, join_type):
         return left.join(right, left.key == right.r_key, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
-
 # For spark to insert a shuffled hash join it has to be enabled with
 # "spark.sql.join.preferSortMergeJoin" = "false" and both sides have to
 # be larger than a broadcast hash join would want
@@ -163,19 +162,6 @@ def test_broadcast_join_right_table_array(data_gen, join_type):
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
 def test_broadcast_join_right_table_struct(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
-        return left.join(broadcast(right), left.key == right.r_key, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
-
-# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
-# After 3.1.0 is the min spark version we can drop this
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
-# Not all join types can be translated to a broadcast join, but this tests them to be sure we
-# can handle what spark is doing
-@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
-def test_broadcast_join_right_table_map(data_gen, join_type):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
         return left.join(broadcast(right), left.key == right.r_key, join_type)
