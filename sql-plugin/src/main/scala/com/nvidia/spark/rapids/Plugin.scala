@@ -59,7 +59,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
     val pluginProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
     logInfo(s"RAPIDS Accelerator build: $pluginProps")
     val cudfProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
-    logInfo(s"cudf build: $pluginProps")
+    logInfo(s"cudf build: $cudfProps")
     val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
     val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
