@@ -239,7 +239,7 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, r
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -288,7 +288,7 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen]
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -313,7 +313,7 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -338,7 +338,7 @@ def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -470,12 +470,7 @@ def test_many_column_project():
         schema_dict = {}
         for i in range(num_cols):
             schema_dict[f"c{i}"] = i
-        return spark.createDataFrame([Row(**r) for r in [schema_dict]]) \
+        return spark.createDataFrame([Row(**r) for r in [schema_dict]])\
             .withColumn('out', f.col('c1') * 100)
 
-    # TODO we want to use assert_gpu_and_cpu_are_equal_collect here however
-    # it does not reproduce the original regression
-    from_gpu = with_gpu_session(lambda spark: _create_wide_data_frame(spark, 1000).collect())
-    from_cpu = with_cpu_session(lambda spark: _create_wide_data_frame(spark, 1000).collect())
-    assert_equal(from_gpu, from_cpu)
-
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: _create_wide_data_frame(spark, 1000), False, {})
