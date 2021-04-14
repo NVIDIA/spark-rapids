@@ -313,7 +313,10 @@ class FloatGen(DataGen):
 
     def _fixup_nans(self, v):
         if self._no_nans and (math.isnan(v) or v == math.inf or v == -math.inf):
-            v = None
+            if self.nullable:
+                v = None
+            else:
+                v = 0.0
         return v
 
     def start(self, rand):
@@ -372,7 +375,10 @@ class DoubleGen(DataGen):
 
     def _fixup_nans(self, v):
         if self._no_nans and (math.isnan(v) or v == math.inf or v == -math.inf):
-            v = None
+            if self.nullable:
+                v = None
+            else:
+                v = 0.0
         return v
 
     def start(self, rand):
