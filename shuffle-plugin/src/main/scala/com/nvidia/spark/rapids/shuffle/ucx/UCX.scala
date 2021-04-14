@@ -447,9 +447,10 @@ class UCX(executorId: Int, rapidsConf: RapidsConf) extends AutoCloseable with Lo
         val is = socket.getInputStream
 
         // "this executor id will receive on tmpLocalReceiveTag for this Connection"
-        ucxWorkerAddress.rewind()
+        val localAddress = ucxWorkerAddress.duplicate()
+        localAddress.rewind()
         UCXConnection.writeHandshakeHeader(
-          os, ucxWorkerAddress, executorId, localRkeys)
+          os, localAddress, executorId, localRkeys)
 
         // "the remote executor will receive on remoteReceiveTag, and expects this executor to
         // receive on localReceiveTag"
@@ -500,9 +501,10 @@ class UCX(executorId: Int, rapidsConf: RapidsConf) extends AutoCloseable with Lo
         logInfo(s"Got peer worker address from executor $peerExecutorId")
 
         // ack what we saw as the local and remote peer tags
-        ucxWorkerAddress.rewind()
+        val localAddress = ucxWorkerAddress.duplicate()
+        localAddress.rewind()
         UCXConnection.writeHandshakeHeader(
-          os, ucxWorkerAddress, executorId, localRkeys)
+          os, localAddress, executorId, localRkeys)
 
         onWorkerThreadAsync(() => {
           setupEndpoint(peerExecutorId, peerWorkerAddress, peerRkeys)
