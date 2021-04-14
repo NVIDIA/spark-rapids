@@ -56,8 +56,12 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
  */
 class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
-    val pluginVersion = RapidsPluginUtils.getPluginVersion
-    val cudfVersion = RapidsPluginUtils.getClasspathCudfVersion
+    val pluginProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
+    logInfo(s"RAPIDS Accelerator build: $pluginProps")
+    val cudfProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
+    logInfo(s"cudf build: $pluginProps")
+    val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
+    val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
       s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
     extensions.injectColumnar(_ => ColumnarOverrideRules())
@@ -66,6 +70,9 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
 }
 
 object RapidsPluginUtils extends Logging {
+  val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
+  val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
+
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
   private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
   private val SQL_PLUGIN_CONF_KEY = StaticSQLConf.SPARK_SESSION_EXTENSIONS.key
@@ -74,8 +81,6 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_SERIALIZER_NAME = classOf[KryoSerializer].getName
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
-  private val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
-  private val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
 
   def fixupConfigs(conf: SparkConf): Unit = {
     // First add in the SQL executor plugin because that is what we need at a minimum
@@ -114,20 +119,7 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  /** Gets the plugin version string from the plugin properties file in the classpath */
-  def getPluginVersion: String = {
-    getVersionFromPropsFile(PLUGIN_PROPS_FILENAME)
-  }
-
-  /** Gets the cudf version string from the cudf properties file in the classpath*/
-  def getClasspathCudfVersion: String = {
-    getVersionFromPropsFile(CUDF_PROPS_FILENAME)
-  }
-
-  /** Loads the plugin properties file in the classpath */
-  def getPluginProps: Properties = loadProps(PLUGIN_PROPS_FILENAME)
-
-  private def loadProps(resourceName: String): Properties = {
+  def loadProps(resourceName: String): Properties = {
     val classLoader = RapidsPluginUtils.getClass.getClassLoader
     val resource = classLoader.getResourceAsStream(resourceName)
     if (resource == null) {
@@ -136,13 +128,6 @@ object RapidsPluginUtils extends Logging {
     val props = new Properties
     props.load(resource)
     props
-  }
-
-  private def getVersionFromPropsFile(resourceName: String): String = {
-    val props = loadProps(resourceName)
-    Option(props.get("version")).map(_.toString).getOrElse {
-      throw new PluginException(s"Property name `version` not found in $resourceName file")
-    }
   }
 }
 
@@ -228,23 +213,27 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   private def checkCudfVersion(conf: RapidsConf): Unit = {
     try {
-      val cudfVersion = RapidsPluginUtils.getClasspathCudfVersion
-      val pluginProps = RapidsPluginUtils.getPluginProps
-      val expectedCudfVersion = Option(pluginProps.get("cudf_version")).map(_.toString).getOrElse {
-        throw CudfVersionMismatchException("Could not find cudf version in plugin properties file")
+      val pluginProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
+      logInfo(s"RAPIDS Accelerator build: $pluginProps")
+      val expectedCudfVersion = Option(pluginProps.getProperty("cudf_version")).getOrElse {
+        throw CudfVersionMismatchException("Could not find cudf version in " +
+            RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
+      }
+      val cudfProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
+      logInfo(s"cudf build: $cudfProps")
+      val cudfVersion = Option(cudfProps.getProperty("version")).getOrElse {
+        throw CudfVersionMismatchException("Could not find cudf version in " +
+            RapidsPluginUtils.CUDF_PROPS_FILENAME)
       }
       // compare cudf version in the classpath with the cudf version expected by plugin
       if (!RapidsExecutorPlugin.cudfVersionSatisfied(expectedCudfVersion, cudfVersion)) {
         throw CudfVersionMismatchException(s"Found cudf version $cudfVersion, RAPIDS Accelerator " +
             s"expects $expectedCudfVersion")
       }
-      val pluginVersion = Option(pluginProps.get("version")).map(_.toString).getOrElse {
-        throw new PluginException("No `version` property in plugin properties file")
-      }
-      logInfo(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion")
     } catch {
       case x: PluginException if conf.cudfVersionOverride =>
-        logWarning(s"${x.getMessage}")
+        logWarning(s"Ignoring error due to ${RapidsConf.CUDF_VERSION_OVERRIDE.key}=true: " +
+            s"${x.getMessage}")
     }
   }
 
