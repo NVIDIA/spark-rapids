@@ -311,9 +311,9 @@ def assert_gpu_fallback_collect(func,
     assert_equal(from_cpu, from_gpu)
 
 def _assert_gpu_and_cpu_are_equal(func,
-        mode,
-        is_cpu_first=True,
-        conf={}):
+    mode,
+    conf={},
+    is_cpu_first=True):
     (bring_back, collect_type) = _prep_func_for_compare(func, mode)
     conf = _prep_incompat_conf(conf)
 
@@ -357,7 +357,7 @@ def assert_gpu_and_cpu_are_equal_collect(func, is_cpu_first=True, conf={}):
     In this case the data is collected back to the driver and compared here, so be
     careful about the amount of data returned.
     """
-    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', is_cpu_first, conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first)
 
 def assert_gpu_and_cpu_are_equal_iterator(func, is_cpu_first=True, conf={}):
     """
@@ -365,7 +365,7 @@ def assert_gpu_and_cpu_are_equal_iterator(func, is_cpu_first=True, conf={}):
     In this case the data is pulled back to the driver in chunks and compared here
     so any amount of data can work, just be careful about how long it might take.
     """
-    _assert_gpu_and_cpu_are_equal(func, 'ITERATOR', is_cpu_first, conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'ITERATOR', conf=conf, is_cpu_first=is_cpu_first)
 
 def assert_gpu_and_cpu_row_counts_equal(func, is_cpu_first=True, conf={}):
     """
@@ -373,7 +373,7 @@ def assert_gpu_and_cpu_row_counts_equal(func, is_cpu_first=True, conf={}):
     This function runs count() to only get the number of rows and compares that count
     between the CPU and GPU. It does NOT compare any underlying data.
     """
-    _assert_gpu_and_cpu_are_equal(func, 'COUNT', is_cpu_first, conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf, is_cpu_first=is_cpu_first)
 
 def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, is_cpu_first=True, conf=None, debug=False):
     """

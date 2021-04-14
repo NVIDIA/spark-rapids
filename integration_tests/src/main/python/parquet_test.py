@@ -473,4 +473,6 @@ def test_many_column_project():
         return spark.createDataFrame([Row(**r) for r in [schema_dict]])\
             .withColumn('out', f.col('c1') * 100)
 
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: _create_wide_data_frame(spark, 1000), False, {})
+    assert_gpu_and_cpu_are_equal_collect(
+        func=lambda spark: _create_wide_data_frame(spark, 1000),
+        is_cpu_first=False)

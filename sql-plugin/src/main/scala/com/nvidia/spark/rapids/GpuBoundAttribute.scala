@@ -67,8 +67,10 @@ object GpuBindReferences extends Logging {
    */
   def bindGpuReferences[A <: Expression](
       expressions: Seq[A],
-      input: AttributeSeq): Seq[GpuExpression] =
+      input: AttributeSeq): Seq[GpuExpression] = {
+    // Force list to avoid recursive Java serialization of lazy list Seq implementation
     expressions.map(GpuBindReferences.bindGpuReference(_, input)).toList
+  }
 
   def bindReference[A <: Expression](
       expression: A,
@@ -82,8 +84,10 @@ object GpuBindReferences extends Logging {
    */
   def bindReferences[A <: Expression](
       expressions: Seq[A],
-      input: AttributeSeq): Seq[A] =
+      input: AttributeSeq): Seq[A] = {
+    // Force list to avoid recursive Java serialization of lazy list Seq implementation
     expressions.map(GpuBindReferences.bindReference(_, input)).toList
+  }
 }
 
 case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
