@@ -15,11 +15,11 @@
 #
 
 # A container that can be used to build UDF native code against libcudf
-ARG CUDA_VERSION=10.1
+ARG CUDA_VERSION=11.0
 ARG CUDA_SHORT_VERSION=${CUDA_VERSION}
 ARG LINUX_VERSION=ubuntu18.04
 ARG CUDF_REPO=https://github.com/rapidsai/cudf
-ARG CUDF_TAG=branch-0.19
+ARG CUDF_TAG=branch-0.20
 ARG CC=7
 ARG CXX=7
 
