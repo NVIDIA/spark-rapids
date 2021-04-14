@@ -527,8 +527,7 @@ case class ContextChecks(
     assert (fixedChecks.length <= children.length,
       s"${expr.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
           s"found ${children.length}")
-    fixedChecks.indices.foreach { i =>
-      val check = fixedChecks(i)
+    fixedChecks.zipWithIndex.foreach { case (check, i) =>
       check.cudf.tagExprParam(meta, children(i), check.name)
     }
     if (repeatingParamCheck.isEmpty) {
@@ -618,8 +617,7 @@ case class PartChecksImpl(
     assert (fixedChecks.length <= children.length,
       s"${part.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
           s"found ${children.length}")
-    fixedChecks.indices.foreach { i =>
-      val check = fixedChecks(i)
+    fixedChecks.zipWithIndex.foreach { case (check, i) =>
       check.cudf.tagExprParam(meta, children(i), check.name)
     }
     if (repeatingParamCheck.isEmpty) {
