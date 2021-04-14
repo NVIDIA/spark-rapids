@@ -66,7 +66,7 @@ object GpuScalar {
     case DType.TIMESTAMP_DAYS => v.getInt
     case DType.TIMESTAMP_MICROSECONDS => v.getLong
     case DType.STRING => v.getJavaString
-    case dt: DType if dt.isDecimalType && dt.isBackedByLong => Decimal(v.getBigDecimal)
+    case dt: DType if dt.isDecimalType => Decimal(v.getBigDecimal)
     case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
   }
 
@@ -90,9 +90,12 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
-    // make sure all scalars created are backed by DECIMAL64
     case dec: Decimal =>
-      Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+      if (dec.precision <= Decimal.MAX_INT_DIGITS) {
+        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong.toInt)
+      } else {
+        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+      }
     case dec: BigDecimal =>
       Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
     case _ =>
@@ -117,8 +120,11 @@ object GpuScalar {
       if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
         throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision constraint of $t")
       }
-      // make sure all scalars created are backed by DECIMAL64
-      Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValueExact())
+      if (!DecimalType.is32BitDecimalType(t.asInstanceOf[DecimalType])) {
+        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValue())
+      } else {
+        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().intValue())
+      }
     case l: Long => t match {
       case LongType => Scalar.fromLong(l)
       case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
