@@ -351,7 +351,7 @@ def _assert_gpu_and_cpu_are_equal(func,
 
     assert_equal(from_cpu, from_gpu)
 
-def assert_gpu_and_cpu_are_equal_collect(func, is_cpu_first=True, conf={}):
+def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be
@@ -359,7 +359,7 @@ def assert_gpu_and_cpu_are_equal_collect(func, is_cpu_first=True, conf={}):
     """
     _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_are_equal_iterator(func, is_cpu_first=True, conf={}):
+def assert_gpu_and_cpu_are_equal_iterator(func, conf={}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is pulled back to the driver in chunks and compared here
@@ -367,7 +367,7 @@ def assert_gpu_and_cpu_are_equal_iterator(func, is_cpu_first=True, conf={}):
     """
     _assert_gpu_and_cpu_are_equal(func, 'ITERATOR', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_row_counts_equal(func, is_cpu_first=True, conf={}):
+def assert_gpu_and_cpu_row_counts_equal(func, conf={}, is_cpu_first=True):
     """
     Assert that the row counts from running the func are the same on both the CPU and GPU.
     This function runs count() to only get the number of rows and compares that count
@@ -375,7 +375,7 @@ def assert_gpu_and_cpu_row_counts_equal(func, is_cpu_first=True, conf={}):
     """
     _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, is_cpu_first=True, conf=None, debug=False):
+def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False, is_cpu_first=True):
     """
     Assert that the specified SQL query produces equal results on CPU and GPU.
     :param df_fun: a function that will create the dataframe
@@ -393,7 +393,7 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, is_cpu_first=True,
             return data_gen.debug_df(spark.sql(sql))
         else:
             return spark.sql(sql)
-    assert_gpu_and_cpu_are_equal_collect(do_it_all, is_cpu_first, conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
 
 def assert_py4j_exception(func, error_message):
     """
