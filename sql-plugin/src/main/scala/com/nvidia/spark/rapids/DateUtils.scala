@@ -33,13 +33,13 @@ object DateUtils {
 
   val unsupportedWord = Set(
     "u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
-    "y", "yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+    "y", "yy", "yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
     "D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
     "d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS")
 
   val conversionMap = Map(
     "MM" -> "%m", "LL" -> "%m", "dd" -> "%d", "mm" -> "%M", "ss" -> "%S", "HH" -> "%H",
-    "yy" -> "%y", "yyyy" -> "%Y", "SSSSSS" -> "%f")
+    "yyyy" -> "%Y", "SSSSSS" -> "%f")
 
   val ONE_SECOND_MICROSECONDS = 1000000
 
