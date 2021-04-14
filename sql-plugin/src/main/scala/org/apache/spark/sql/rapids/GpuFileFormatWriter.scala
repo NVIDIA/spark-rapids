@@ -123,7 +123,7 @@ object GpuFileFormatWriter extends Logging {
         needConvert = true
         GpuAlias(GpuEmpty2Null(p), p.name)()
       case other => other
-    }.toList
+    }.toList // Force list to avoid recursive Java serialization of lazy list Seq implementation
 
     val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
