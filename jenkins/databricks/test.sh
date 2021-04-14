@@ -48,10 +48,10 @@ if [ -n "$SPARK_CONF" ]; then
         ## run_pyspark_from_build.sh requires 'export PYSP_TEST_spark_foo=1' as the spark configs
         export PYSP_TEST_${KEY//'.'/'_'}=$VALUE
     done
-fi
 
-## 'spark.foo=1,spark.bar=2,...' to '--conf spark.foo=1 --conf spark.bar=2 --conf ...'
-SPARK_CONF="--conf ${SPARK_CONF/','/' --conf '}"
+    ## 'spark.foo=1,spark.bar=2,...' to '--conf spark.foo=1 --conf spark.bar=2 --conf ...'
+    SPARK_CONF="--conf ${SPARK_CONF/','/' --conf '}"
+fi
 
 TEST_TYPE="nightly"
 if [ -d "$LOCAL_JAR_PATH" ]; then
