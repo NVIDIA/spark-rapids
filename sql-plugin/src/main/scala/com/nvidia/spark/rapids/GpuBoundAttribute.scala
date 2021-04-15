@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,8 +67,10 @@ object GpuBindReferences extends Logging {
    */
   def bindGpuReferences[A <: Expression](
       expressions: Seq[A],
-      input: AttributeSeq): Seq[GpuExpression] =
-    expressions.map(GpuBindReferences.bindGpuReference(_, input))
+      input: AttributeSeq): Seq[GpuExpression] = {
+    // Force list to avoid recursive Java serialization of lazy list Seq implementation
+    expressions.map(GpuBindReferences.bindGpuReference(_, input)).toList
+  }
 
   def bindReference[A <: Expression](
       expression: A,
@@ -82,8 +84,10 @@ object GpuBindReferences extends Logging {
    */
   def bindReferences[A <: Expression](
       expressions: Seq[A],
-      input: AttributeSeq): Seq[A] =
-    expressions.map(GpuBindReferences.bindReference(_, input))
+      input: AttributeSeq): Seq[A] = {
+    // Force list to avoid recursive Java serialization of lazy list Seq implementation
+    expressions.map(GpuBindReferences.bindReference(_, input)).toList
+  }
 }
 
 case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
