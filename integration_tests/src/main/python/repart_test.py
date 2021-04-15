@@ -93,6 +93,8 @@ def test_repartion_df(num_parts, length):
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
     ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('cc0', boolean_gen), ('cc1', string_gen)]))]))], ['a']), 
+    ([('a', long_gen), ('b', StructGen([('b1', long_gen)]))], ['a']),
+    ([('a', long_gen), ('b', ArrayGen(long_gen, max_length=2))], ['a']),
     ([('a', byte_gen)], [f.col('a') - 5]), 
     ([('a', long_gen)], [f.col('a') + 15]), 
     ([('a', byte_gen), ('b', boolean_gen)], ['a', 'b']),
@@ -109,7 +111,9 @@ def test_hash_repartition_exact(gen, num_parts):
     data_gen = gen[0]
     part_on = gen[1]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen)\
+            lambda spark : gen_df(spark, data_gen, length=1024)\
                     .repartition(num_parts, *part_on)\
-                    .selectExpr('spark_partition_id() as id', '*', 'hash(*)', 'pmod(hash(*),{})'.format(num_parts)),
+                    .withColumn('id', f.spark_partition_id())\
+                    .withColumn('hashed', f.hash(*part_on))\
+                    .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)),
             conf = allow_negative_scale_of_decimal_conf)

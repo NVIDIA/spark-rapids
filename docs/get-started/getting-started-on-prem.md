@@ -296,50 +296,7 @@ $SPARK_HOME/bin/spark-shell \
 ```  
 
 ## Running on Kubernetes
-Kubernetes requires a Docker image to run Spark.  Generally everything needed is in the Docker
-image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
-[Dockerfile.cuda](Dockerfile.cuda) example.
-
-Alternatively the jars and discovery script would need to be on a drive that is mounted when your
-Spark application runs.  Here we will assume you have created a Docker image that contains the
-RAPIDS jars, cudf jars and discovery script.
-
-This assumes you have Kubernetes already installed and setup.  These instructions do not cover how
-to setup a Kubernetes cluster.
-
-- Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
-  [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
-  going to build your Docker image.  Note that you can download these into a local directory and
-  untar the Spark `.tar.gz` rather than installing into a location on the machine.
-- Include the RAPIDS Accelerator for Spark jars in the Spark /jars directory
-- Download the sample
-  [Dockerfile.cuda](Dockerfile.cuda) or create
-  your own.
-- Update the Dockerfile with the filenames for Spark and the RAPIDS Accelerator for Spark jars
-  that you downloaded.  Include anything else application-specific that you need.
-- Create your Docker image.
-  - `docker build . -f Dockerfile.cuda -t ubuntu18cuda10-1-sparkrapidsplugin`
-  - Deploy your Dockerfile to the necessary repository to run on your K8S cluster.
-- Use the following configs when you run. Change the executor and task amounts as necessary:
-```shell 
-$SPARK_HOME/bin/spark-shell \
-       --master k8s://https://<k8s-apiserver-host>:<k8s-apiserver-port> \
-       --conf spark.rapids.sql.concurrentGpuTasks=1 \
-       --driver-memory 2G \
-       --conf spark.executor.memory=4G \
-       --conf spark.executor.cores=4 \
-       --conf spark.task.cpus=1 \
-       --conf spark.task.resource.gpu.amount=0.25 \
-       --conf spark.rapids.memory.pinnedPool.size=2G \
-       --conf spark.locality.wait=0s \
-       --conf spark.sql.files.maxPartitionBytes=512m \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-       --conf spark.executor.resource.gpu.amount=1 \
-       --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
-       --conf spark.executor.resource.gpu.vendor=nvidia.com \
-       --conf spark.kubernetes.container.image=$IMAGE_NAME
-```  
+Please refer to [Getting Started with RAPIDS and Kubernetes](./getting-started-kubernetes.md).
 
 ## RAPIDS Accelerator Configuration and Tuning
 Most of what you need you can get from [tuning guide](../tuning-guide.md).

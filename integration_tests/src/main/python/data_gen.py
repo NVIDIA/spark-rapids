@@ -299,7 +299,7 @@ POS_FLOAT_NAN_MIN_VALUE = struct.unpack('f', struct.pack('I', 0x7f800001))[0]
 POS_FLOAT_NAN_MAX_VALUE = struct.unpack('f', struct.pack('I', 0x7fffffff))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
-    def __init__(self, nullable=True, 
+    def __init__(self, nullable=True,
             no_nans=False, special_cases=None):
         self._no_nans = no_nans
         if special_cases is None:
@@ -334,7 +334,7 @@ POS_DOUBLE_NAN_MIN_VALUE = struct.unpack('d', struct.pack('L', 0x7ff000000000000
 POS_DOUBLE_NAN_MAX_VALUE = struct.unpack('d', struct.pack('L', 0x7fffffffffffffff))[0]
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
-    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False, 
+    def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False,
             nullable=True, special_cases = None):
         self._min_exp = min_exp
         self._max_exp = max_exp
@@ -447,7 +447,7 @@ class DateGen(DataGen):
 
         self._start_day = self._to_days_since_epoch(start)
         self._end_day = self._to_days_since_epoch(end)
-        
+
         self.with_special_case(start)
         self.with_special_case(end)
 
@@ -652,9 +652,27 @@ def gen_scalar_value(data_gen, seed=0, force_no_nulls=False):
     v = list(gen_scalar_values(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
     return v[0]
 
-def debug_df(df):
-    """print out the contents of a dataframe for debugging."""
-    print('COLLECTED\n{}'.format(df.collect()))
+def debug_df(df, path = None, file_format = 'json', num_parts = 1):
+    """Print out or save the contents and the schema of a dataframe for debugging."""
+
+    if path is not None:
+        # Save the dataframe and its schema
+        # The schema can be re-created by using DataType.fromJson and used
+        # for loading the dataframe
+        file_name = f"{path}.{file_format}"
+        schema_file_name = f"{path}.schema.json"
+
+        df.coalesce(num_parts).write.format(file_format).save(file_name)
+        print(f"SAVED df output for debugging at {file_name}")
+
+        schema_json = df.schema.json()
+        schema_file = open(schema_file_name , 'w')
+        schema_file.write(schema_json)
+        schema_file.close()
+        print(f"SAVED df schema for debugging along in the output dir")
+    else:
+        print('COLLECTED\n{}'.format(df.collect()))
+
     df.explain()
     df.printSchema()
     return df

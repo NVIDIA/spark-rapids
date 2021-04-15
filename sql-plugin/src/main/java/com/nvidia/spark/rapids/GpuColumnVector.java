@@ -20,6 +20,7 @@ import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.ArrowColumnBuilder;
 import ai.rapids.cudf.HostColumnVector;
+import ai.rapids.cudf.HostColumnVectorCore;
 import ai.rapids.cudf.Scalar;
 import ai.rapids.cudf.Schema;
 import ai.rapids.cudf.Table;
@@ -102,10 +103,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param name the name of the column to print out.
    * @param hostCol the column to print out.
    */
-  public static synchronized void debug(String name, HostColumnVector hostCol) {
+  public static synchronized void debug(String name, HostColumnVectorCore hostCol) {
     DType type = hostCol.getType();
-    System.err.println("COLUMN " + name + " " + type);
-    if (type.getTypeId() == DType.DTypeEnum.DECIMAL64) {
+    System.err.println("COLUMN " + name + " - " + type);
+    if (type.isDecimalType()) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
           System.err.println(i + " NULL");
@@ -156,12 +157,32 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           System.err.println(i + " " + hostCol.getFloat(i));
         }
       }
+    } else if (DType.STRUCT.equals(type)) {
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } // The struct child columns are printed out later on.
+      }
+      for (int i = 0; i < hostCol.getNumChildren(); i++) {
+        debug(name + ":CHILD_" + i, hostCol.getChildColumnView(i));
+      }
+    } else if (DType.LIST.equals(type)) {
+      System.err.println("OFFSETS");
+      for (int i = 0; i < hostCol.getRowCount(); i++) {
+        if (hostCol.isNull(i)) {
+          System.err.println(i + " NULL");
+        } else {
+          System.err.println(i + " [" + hostCol.getStartListOffset(i) + " - " +
+              hostCol.getEndListOffset(i) + ")");
+        }
+      }
+      debug(name + ":DATA", hostCol.getChildColumnView(0));
     } else {
       System.err.println("TYPE " + type + " NOT SUPPORTED FOR DEBUG PRINT");
     }
   }
 
-  private static void debugInteger(HostColumnVector hostCol, DType intType) {
+  private static void debugInteger(HostColumnVectorCore hostCol, DType intType) {
     for (int i = 0; i < hostCol.getRowCount(); i++) {
       if (hostCol.isNull(i)) {
         System.err.println(i + " NULL");
@@ -451,8 +472,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
         return null;
       } else {
-        // Map all DecimalType to DECIMAL64, in case of underlying DType transaction.
-        return DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale());
+        return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
       }
     }
     return null;
@@ -843,7 +863,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   GpuColumnVector(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
     super(type);
-    // TODO need some checks to be sure everything matches
     this.cudfCv = cudfCv;
   }
 

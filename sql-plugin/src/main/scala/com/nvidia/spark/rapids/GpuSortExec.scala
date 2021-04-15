@@ -288,14 +288,12 @@ case class GpuOutOfCoreSortIterator(
       // The entire thing is sorted
       withResource(sortedTbl.contiguousSplit()) { splits =>
         assert(splits.length == 1)
-        memUsed += splits.head.getBuffer.getLength
-        closeOnExcept(
-          GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
-          val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-            spillCallback)
-          sortedSize += sp.sizeInBytes
-          sorted.add(sp)
-        }
+        val ct = splits.head
+        memUsed += ct.getBuffer.getLength
+        val sp = SpillableColumnarBatch(ct, sorter.projectedBatchTypes,
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+        sortedSize += sp.sizeInBytes
+        sorted.add(sp)
       }
     } else {
       val splitIndexes = if (sortedOffset >= 0) {
@@ -326,13 +324,10 @@ case class GpuOutOfCoreSortIterator(
       withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { splits =>
         memUsed += splits.map(_.getBuffer.getLength).sum
         val stillPending = if (sortedOffset >= 0) {
-          closeOnExcept(
-            GpuColumnVectorFromBuffer.from(splits.head, sorter.projectedBatchTypes)) { cb =>
-            val sp = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-              spillCallback)
-            sortedSize += sp.sizeInBytes
-            sorted.add(sp)
-          }
+          val sp = SpillableColumnarBatch(splits.head, sorter.projectedBatchTypes,
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+          sortedSize += sp.sizeInBytes
+          sorted.add(sp)
           splits.slice(1, splits.length)
         } else {
           splits
@@ -342,11 +337,9 @@ case class GpuOutOfCoreSortIterator(
         stillPending.zip(boundaries).foreach {
           case (ct: ContiguousTable, lower: UnsafeRow) =>
             if (ct.getRowCount > 0) {
-              closeOnExcept(
-                GpuColumnVectorFromBuffer.from(ct, sorter.projectedBatchTypes)) { cb =>
-                pending.add(SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                  spillCallback), lower)
-              }
+              val sp = SpillableColumnarBatch(splits.head, sorter.projectedBatchTypes,
+                SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+              pending.add(sp, lower)
             } else {
               ct.close()
             }

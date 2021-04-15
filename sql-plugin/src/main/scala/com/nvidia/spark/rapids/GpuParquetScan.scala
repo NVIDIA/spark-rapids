@@ -19,16 +19,17 @@ package com.nvidia.spark.rapids
 import java.io.{File, OutputStream}
 import java.net.{URI, URISyntaxException}
 import java.nio.charset.StandardCharsets
-import java.util.{Collections, Locale}
+import java.util.{Collections, Locale, Optional}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
+import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, LinkedHashMap, ListBuffer, Queue}
 import scala.math.max
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.DType.DTypeEnum
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
@@ -44,7 +45,7 @@ import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
-import org.apache.parquet.schema.{GroupType, MessageType, Types}
+import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, Type, Types}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -61,9 +62,10 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, DateType, MapType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DateType, Decimal, DecimalType, MapType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
+
 
 /**
  * Base GpuParquetScan used for common code across Spark versions. Gpu version of
@@ -195,33 +197,6 @@ object GpuParquetScanBase {
         }
       case other =>
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
-    }
-  }
-
-  private[rapids] def convertDecimal32Columns(t: Table): Table = {
-    val containDecimal32Column = (0 until t.getNumberOfColumns).exists { i =>
-      t.getColumn(i).getType.getTypeId == DType.DTypeEnum.DECIMAL32
-    }
-    // return input table if there exists no DECIMAL32 columns
-    if (!containDecimal32Column) return t
-
-    val columns = new Array[ColumnVector](t.getNumberOfColumns)
-    try {
-      RebaseHelper.withResource(t) { _ =>
-        (0 until t.getNumberOfColumns).foreach { i =>
-          t.getColumn(i).getType match {
-            case tpe if tpe.getTypeId == DType.DTypeEnum.DECIMAL32 =>
-              columns(i) = t.getColumn(i).castTo(
-                DType.create(DType.DTypeEnum.DECIMAL64, tpe.getScale))
-            case _ =>
-              columns(i) = t.getColumn(i).incRefCount()
-          }
-        }
-      }
-      new Table(columns: _*)
-    } finally {
-      // clean temporary column vectors
-      columns.safeClose()
     }
   }
 }
@@ -680,25 +655,44 @@ abstract class FileParquetPartitionReaderBase(
     }
   }
 
+  def getPrecisionsList(fields: Seq[Type]): Seq[Int] = {
+    fields.filter(field => field.getOriginalType == OriginalType.DECIMAL || !field.isPrimitive())
+      .flatMap { field =>
+        if (!field.isPrimitive) {
+          getPrecisionsList(field.asGroupType().getFields.asScala)
+        } else {
+          Seq(field.asPrimitiveType().getDecimalMetadata.getPrecision)
+        }
+      }
+  }
+
   protected def evolveSchemaIfNeededAndClose(
       inputTable: Table,
       filePath: String,
       clippedSchema: MessageType): Table = {
-    // Convert Decimal32 columns to Decimal64, because spark-rapids only supports Decimal64.
-    val inTable = GpuParquetScanBase.convertDecimal32Columns(inputTable)
 
-    if (readDataSchema.length > inTable.getNumberOfColumns) {
+    val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
+    // check if there are cols with precision that can be stored in an int
+    val typeCastingNeeded = precisions.filter(p => p <= Decimal.MAX_INT_DIGITS).nonEmpty
+    if (readDataSchema.length > inputTable.getNumberOfColumns || typeCastingNeeded) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
+      val precisionList = scala.collection.mutable.Queue(precisions: _*)
       try {
-        withResource(inTable) { table =>
+        withResource(inputTable) { table =>
           var readAt = 0
           (0 until readDataSchema.length).foreach(writeAt => {
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
-              newColumns(writeAt) = table.getColumn(readAt).incRefCount()
+              val origCol = table.getColumn(readAt)
+              val col = if (typeCastingNeeded && precisionList.nonEmpty) {
+                convertDecimal64ToDecimal32Wrapper(origCol, precisionList.dequeue())
+              } else {
+                origCol.incRefCount()
+              }
+              newColumns(writeAt) = col
               readAt += 1
             } else {
               withResource(GpuScalar.from(null, readField.dataType)) { n =>
@@ -716,7 +710,83 @@ abstract class FileParquetPartitionReaderBase(
         newColumns.safeClose()
       }
     } else {
-      inTable
+      inputTable
+    }
+  }
+
+  /**
+   * This method casts the input ColumnView to a new column if it contains Decimal data that
+   * could be stored in smaller data type. e.g. a DecimalType(7,2) stored as 64-bit DecimalType can
+   * easily be stored in a 32-bit DecimalType
+   * @param cv              The column view that could potentially have Decimal64 columns with
+   *                        precision < 10
+   * @param precision   precisions of all the decimal columns in this Column
+   * @return
+   */
+  private def convertDecimal64ToDecimal32Wrapper(cv: ColumnVector, precision: Int): ColumnVector = {
+    def convertDecimal64ToDecimal32(
+       cv: ColumnView,
+       precision: Int,
+       newCols: ArrayBuilder[ColumnView]): ColumnView = {
+      val dt = cv.getType
+      if (!dt.isNestedType) {
+        if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
+          // we want to handle the legacy case where Decimals are written as an array of bytes
+          // cudf reads them back as a 64-bit Decimal
+          // castTo will create a new ColumnVector which we cannot close until we have copied out
+          // the entire nested type. So we store them temporarily in this array and close it after
+          // `copyToColumnVector` is called
+          val col = cv.castTo(DecimalUtil.createCudfDecimal(precision, -dt.getScale()))
+          newCols += col
+          col
+        } else {
+          cv
+        }
+      } else if (dt == DType.LIST) {
+        val child = cv.getChildColumnView(0)
+        val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+        if (child == newChild) {
+          cv
+        } else {
+          cv.replaceListChild(newChild)
+        }
+      } else if (dt == DType.STRUCT) {
+        val newColumns = ArrayBuilder.make[ColumnView]()
+        newColumns.sizeHint(cv.getNumChildren)
+        val newColIndices = ArrayBuilder.make[Int]()
+        newColIndices.sizeHint(cv.getNumChildren)
+        (0 until cv.getNumChildren).foreach { i =>
+          val child = cv.getChildColumnView(i)
+          val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+          if (newChild != child) {
+            newColumns += newChild
+            newColIndices += i
+          }
+        }
+        val cols = newColumns.result()
+        if (cols.nonEmpty) {
+          // create a new struct column with the new ones
+          cv.replaceChildrenWithViews(newColIndices.result(), cols)
+        } else {
+          cv
+        }
+      } else {
+        throw new IllegalArgumentException("Unknown data type")
+      }
+    }
+
+    val newColumns = ArrayBuilder.make[ColumnView]()
+    val tmp = convertDecimal64ToDecimal32(cv, precision, newColumns)
+    if (tmp != cv) {
+      val result = withResource(newColumns.result()) { _ =>
+        tmp.copyToColumnVector()
+      }
+      if (tmp.getType.isNestedType) {
+        tmp.close()
+      }
+      result
+    } else {
+      tmp.asInstanceOf[ColumnVector].incRefCount()
     }
   }
 

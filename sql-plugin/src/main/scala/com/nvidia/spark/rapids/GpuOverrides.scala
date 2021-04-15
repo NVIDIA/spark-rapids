@@ -246,9 +246,10 @@ class PartRule[INPUT <: Partitioning](
         Option[RapidsMeta[_, _, _]],
         DataFromReplacementRule) => PartMeta[INPUT],
     desc: String,
+    checks: Option[PartChecks],
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, Partitioning, PartMeta[INPUT]](
-    doWrap, desc, None, tag) {
+    doWrap, desc, checks, tag) {
 
   override val confKeyPart: String = "partitioning"
   override val operationName: String = "Partitioning"
@@ -423,6 +424,16 @@ object GpuOverrides {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+
+  private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+
+  private[this] val pluginSupportedOrderableSig = _commonTypes +
+    TypeSig.STRUCT.nested(_commonTypes)
+
+  private[this] def isStructType(dataType: DataType) = dataType match {
+    case StructType(_) => true
+    case _ => false
+  }
 
   // this listener mechanism is global and is intended for use by unit tests only
   private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
@@ -671,12 +682,13 @@ object GpuOverrides {
 
   def part[INPUT <: Partitioning](
       desc: String,
+      checks: PartChecks,
       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
           => PartMeta[INPUT])
       (implicit tag: ClassTag[INPUT]): PartRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new PartRule[INPUT](doWrap, desc, tag)
+    new PartRule[INPUT](doWrap, desc, Some(checks), tag)
   }
 
   /**
@@ -1814,16 +1826,28 @@ object GpuOverrides {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        pluginSupportedOrderableSig,
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          pluginSupportedOrderableSig,
           TypeSig.orderable))),
-      (a, conf, p, r) => new BaseExprMeta[SortOrder](a, conf, p, r) {
+      (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (isStructType(sortOrder.dataType)) {
+            val nullOrdering = sortOrder.nullOrdering
+            val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
+            val direction = sortOrder.direction.sql
+            if (nullOrdering != directionDefaultNullOrdering) {
+              willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
+                s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
+            }
+          }
+        }
+
         // One of the few expressions that are not replaced with a GPU version
         override def convertToGpu(): Expression =
-          a.withNewChildren(childExprs.map(_.convertToGpu()))
+          sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
       }),
     expr[Count](
       "Count aggregate operator",
@@ -1986,8 +2010,15 @@ object GpuOverrides {
       "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated.",
       ExprChecks.fullAggAndProject(
-        TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
-        TypeSig.all,
+        // Different types of Pandas UDF support different sets of output type. Please refer to
+        //   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
+        // for more details.
+        // It is impossible to specify the exact type signature for each Pandas UDF type in a single
+        // expression 'PythonUDF'.
+        // So use the 'unionOfPandasUdfOut' to cover all types for Spark. The type signature of
+        // plugin is also an union of all the types of Pandas UDF.
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested() + TypeSig.STRUCT,
+        TypeSig.unionOfPandasUdfOut,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "param",
           (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
@@ -2416,6 +2447,16 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuCollectList(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       }),
+    expr[GetJsonObject](
+      "Extracts a json object from path",
+      ExprChecks.projectOnly(
+        TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuGetJsonObject(lhs, rhs)
+      }
+    ),
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
@@ -2475,30 +2516,34 @@ object GpuOverrides {
   val parts : Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Seq(
     part[HashPartitioning](
       "Hash based partitioning",
+      // This needs to match what murmur3 supports.
+      PartChecks(RepeatingParamCheck("hash_key",
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+        TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-        override def tagPartForGpu(): Unit = {
-          // This needs to match what murmur3 supports.
-          // TODO In 0.5 we should make the checks self documenting, and look more like what
-          //  SparkPlan and Expression support
-          //  https://github.com/NVIDIA/spark-rapids/issues/1915
-          val sig = (TypeSig.commonCudfTypes + TypeSig.NULL +
-              TypeSig.DECIMAL + TypeSig.STRUCT).nested()
-          hp.children.foreach { child =>
-            sig.tagExprParam(this, child, "hash_key")
-          }
-        }
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
     part[RangePartitioning](
       "Range partitioning",
+      PartChecks(RepeatingParamCheck("order_key",
+        pluginSupportedOrderableSig +
+            TypeSig.psNote(TypeEnum.STRUCT, "Only supported for a single partition"),
+        TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def tagPartForGpu() {
+          val numPartitions = rp.numPartitions
+          if (numPartitions > 1 && rp.ordering.exists(so => isStructType(so.dataType))) {
+            willNotWorkOnGpu("only single partition sort is supported for nested types, " +
+              s"actual partitions: $numPartitions")
+          }
+        }
 
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
@@ -2511,6 +2556,7 @@ object GpuOverrides {
       }),
     part[RoundRobinPartitioning](
       "Round robin partitioning",
+      PartChecks(),
       (rrp, conf, p, r) => new PartMeta[RoundRobinPartitioning](rrp, conf, p, r) {
         override def convertToGpu(): GpuPartitioning = {
           GpuRoundRobinPartitioning(rrp.numPartitions)
@@ -2518,6 +2564,7 @@ object GpuOverrides {
       }),
     part[SinglePartition.type](
       "Single partitioning",
+      PartChecks(),
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
         override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
@@ -2565,8 +2612,11 @@ object GpuOverrides {
         TypeSig.all),
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
-          override def convertToGpu(): GpuExec =
-            GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
+          override def convertToGpu(): GpuExec = GpuProjectExec(
+            // Force list to avoid recursive Java serialization of lazy list Seq implementation
+            childExprs.map(_.convertToGpu()).toList,
+            childPlans(0).convertIfNeeded()
+          )
         }
       }),
     exec[RangeExec](
@@ -2613,7 +2663,7 @@ object GpuOverrides {
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL, TypeSig.all),
+      ExecChecks(pluginSupportedOrderableSig, TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =
@@ -2679,7 +2729,7 @@ object GpuOverrides {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(pluginSupportedOrderableSig, TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
           "of rows in a batch it could help by limiting the number of rows transferred from " +
@@ -2752,9 +2802,16 @@ object GpuOverrides {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
-      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
+      ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
+      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
+        override def tagPlanForGpu() {
+          if (!conf.stableSort && sort.sortOrder.exists(so => isStructType(so.dataType))) {
+            willNotWorkOnGpu("it's disabled for nested types " +
+              s"unless ${RapidsConf.STABLE_SORT.key} is true")
+          }
+        }
+      }),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
@@ -2788,11 +2845,12 @@ object GpuOverrides {
         }
       }),
     exec[MapInPandasExec](
-      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports " +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
-      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+      "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled.",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
     exec[FlatMapGroupsInPandasExec](
       "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports " +
         " scheduling GPU resources for the Python process when enabled",
