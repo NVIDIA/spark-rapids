@@ -31,7 +31,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
         .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
         // until we fix https://github.com/NVIDIA/spark-rapids/issues/2118 we need to fall
         // back to CPU when parsing two-digit years
-        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ProjectExec,Alias,Cast,GetTimestamp,Literal")) {
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "ProjectExec,Alias,Cast,GetTimestamp,UnixTimestamp,Literal")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yy"))
   }
 
