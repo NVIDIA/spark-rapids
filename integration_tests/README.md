@@ -131,7 +131,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.6.0-SNAPSHOT.jar,cudf-0.20-SNAPSHOT.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.6.0-SNAPSHOT.jar,cudf-0.20-SNAPSHOT-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
