@@ -168,7 +168,7 @@ def get_params(init_list, marked_params=[]):
 
 
 # Run these tests with in 3 modes, all on the GPU, only partial aggregates on GPU and
-# only final aggregates on the GPU
+# only final aggregates on the GPU with conf for spark.rapids.sql.hasNans set to false/true
 _confs = [_no_nans_float_conf, _no_nans_float_conf_final, _no_nans_float_conf_partial]
 _confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf_final]
 
@@ -249,10 +249,10 @@ def test_hash_avg_nulls_partial_only(data_gen):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(gen_df(spark, data_gen, length=3)
+        lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .pivot('b')
-            .agg(f.sum('c'))),
+            .agg(f.sum('c')),
         conf=conf)
 
 @approximate_float
@@ -262,10 +262,24 @@ def test_hash_grpby_pivot(data_gen, conf):
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_grpby_pivot_with_nans(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(gen_df(spark, data_gen, length=3)
+        lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .pivot('b')
-            .agg(f.sum('c'))),
+            .agg(f.sum('c')),
+        conf=conf)
+
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+def test_hash_reduce_pivot_with_nans(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby()
+            .pivot('b')
+            .agg(f.sum('c')),
         conf=conf)
 
 @approximate_float

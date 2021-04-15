@@ -1849,7 +1849,7 @@ object GpuOverrides {
       }),
     expr[PivotFirst](
       "PivotFirst operator",
-      ExprChecks.groupByAgg(
+      ExprChecks.reductionAndgroupByAgg(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
         TypeSig.all,
@@ -1869,7 +1869,7 @@ object GpuOverrides {
               "that may contain NaN is disabled. You can bypass this by setting " +
               s"${RapidsConf.HAS_NANS}=false")
           }
-          // If pivotColumnValues doesn't have distinct values, follow back to CPU
+          // If pivotColumnValues doesn't have distinct values, fall back to CPU
           if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
             willNotWorkOnGpu("PivotFirst doesnt work on non distinct")
           }
