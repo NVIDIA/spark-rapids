@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 
-FROM nvidia/cuda:10.1-devel-ubuntu18.04 
+FROM nvidia/cuda:11.0-devel-ubuntu18.04
 ARG spark_uid=185
 
 # Install java dependencies 
@@ -52,8 +52,8 @@ COPY spark-3.0.1-bin-hadoop3.2/examples /opt/spark/examples
 COPY spark-3.0.1-bin-hadoop3.2/kubernetes/tests /opt/spark/tests
 COPY spark-3.0.1-bin-hadoop3.2/data /opt/spark/data
 
-COPY cudf-0.19-SNAPSHOT-cuda10-1.jar /opt/sparkRapidsPlugin
-COPY rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar /opt/sparkRapidsPlugin
+COPY cudf-0.20-SNAPSHOT-cuda11.jar /opt/sparkRapidsPlugin
+COPY rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
 
 RUN mkdir /opt/spark/python
