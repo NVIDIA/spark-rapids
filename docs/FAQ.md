@@ -34,6 +34,21 @@ CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the c
 corresponds to the version you are using. Please look [here](download.md) for download 
 links for the latest release.
 
+### How can I check if the RAPIDS Accelerator is installed and which version is running?
+
+On startup the RAPIDS Accelerator will log a warning message on the Spark driver showing the
+version with a message that looks something like this:
+```
+21/04/14 22:14:55 WARN SQLExecPlugin: RAPIDS Accelerator 0.5.0 using cudf 0.19. To disable GPU support set `spark.rapids.sql.enabled` to false
+```
+
+The full RAPIDS Accelerator and cudf build properties are logged at `INFO` level in the
+Spark driver and executor logs with messages that are similar to the following:
+```
+21/04/14 17:20:20 INFO RapidsExecutorPlugin: RAPIDS Accelerator build: {version=0.5.0-SNAPSHOT, user=jlowe, url=, date=2021-04-14T22:12:14Z, revision=79a5cf8acd615587b2c7835072b0d8b0d4604f8b, cudf_version=0.19-SNAPSHOT, branch=branch-0.5}
+21/04/14 17:20:20 INFO RapidsExecutorPlugin: cudf build: {version=0.19-SNAPSHOT, user=, date=2021-04-13T08:42:40Z, revision=a5d2407b93de444a6a7faf9db4b7dbf4ecbfe9ed, branch=HEAD}
+```
+
 ### What is the right hardware setup to run GPU accelerated Spark?
 
 Reference architectures should be available around Q1 2021.
