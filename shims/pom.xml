@@ -40,6 +40,12 @@
             </modules>
         </profile>
         <profile>
+            <id>spark320</id>
+            <modules>
+                <module>spark320</module>
+            </modules>
+        </profile>
+        <profile>
             <id>snapshot-shims</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -47,7 +53,6 @@
             <modules>
                 <module>spark303</module>
                 <module>spark312</module>
-                <module>spark320</module>
             </modules>
         </profile>
     </profiles>
