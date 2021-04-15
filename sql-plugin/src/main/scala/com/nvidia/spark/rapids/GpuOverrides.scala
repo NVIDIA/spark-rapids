@@ -427,8 +427,7 @@ object GpuOverrides {
 
   private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
 
-  private[this] val pluginSupportedOrderableSig = _commonTypes +
-    TypeSig.STRUCT.nested(_commonTypes)
+  val pluginSupportedOrderableSig: TypeSig = _commonTypes + TypeSig.STRUCT.nested(_commonTypes)
 
   private[this] def isStructType(dataType: DataType) = dataType match {
     case StructType(_) => true
@@ -2745,7 +2744,14 @@ object GpuOverrides {
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
+        TypeSig.STRUCT).nested()
+          .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
+              s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
+          .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported for arrays if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
+          .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported for maps if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
+        TypeSig.all),
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
