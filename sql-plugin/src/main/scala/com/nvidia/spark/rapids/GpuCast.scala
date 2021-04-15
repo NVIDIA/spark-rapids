@@ -25,6 +25,7 @@ import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -69,15 +70,7 @@ class CastExprMeta[INPUT <: CastBase](
         "CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this operation on " +
         "the GPU, set" + s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
     }
-    if (!conf.isCastStringToIntegerEnabled && cast.child.dataType == DataTypes.StringType &&
-    Seq(DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType, DataTypes.LongType)
-      .contains(cast.dataType)) {
-      willNotWorkOnGpu("the GPU will return incorrect results for strings representing" +
-        "values greater than Long.MaxValue or less than Long.MinValue.  To enable this " +
-        "operation on the GPU, set" +
-        s" ${RapidsConf.ENABLE_CAST_STRING_TO_INTEGER} to true.")
-    }
-    if (!conf.isCastStringToTimestampEnabled && fromDataType == DataTypes.StringType
+    if (!conf.isCastStringToTimestampEnabled && fromType == DataTypes.StringType
       && toType == DataTypes.TimestampType) {
       willNotWorkOnGpu("the GPU only supports a subset of formats " +
         "when casting strings to timestamps. Refer to the CAST documentation " +
@@ -132,18 +125,6 @@ object GpuCast {
    * as "2020-01-01T12:34:56.123456Z".
    */
   private val FULL_TIMESTAMP_LENGTH = 27
-
-  /**
-   * Regex for identifying strings that contain numeric values that can be casted to integral
-   * types. This includes floating point numbers but not numbers containing exponents.
-   */
-  private val CASTABLE_TO_INT_REGEX = "\\s*[+\\-]?[0-9]*(\\.)?[0-9]+\\s*$"
-
-  /**
-   * Regex for identifying strings that contain numeric values that can be casted to integral
-   * types when ansi is enabled.
-   */
-  private val ANSI_CASTABLE_TO_INT_REGEX = "\\s*[+\\-]?[0-9]+\\s*$"
 
   /**
    * Regex to match timestamps with or without trailing zeros.
@@ -398,44 +379,8 @@ case class GpuCast(
               castStringToFloats(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(dataType))
             case ByteType | ShortType | IntegerType | LongType =>
-              // filter out values that are not valid longs or nulls
-              val regex = if (ansiMode) {
-                GpuCast.ANSI_CASTABLE_TO_INT_REGEX
-              } else {
-                GpuCast.CASTABLE_TO_INT_REGEX
-              }
-              val longStrings = withResource(trimmed.matchesRe(regex)) { regexMatches =>
-                if (ansiMode) {
-                  withResource(regexMatches.all()) { allRegexMatches =>
-                    if (!allRegexMatches.getBoolean) {
-                      throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-                    }
-                  }
-                }
-                withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-                  regexMatches.ifElse(trimmed, nullString)
-                }
-              }
-              // cast to specific integral type after filtering out values that are not in range
-              // for that type. Note that the scalar values here are named parameters so are not
-              // created until they are needed
-              withResource(longStrings) { longStrings =>
-                GpuColumnVector.getNonNestedRapidsType(dataType) match {
-                  case DType.INT8 =>
-                    castStringToIntegralType(longStrings, DType.INT8,
-                      Scalar.fromInt(Byte.MinValue), Scalar.fromInt(Byte.MaxValue))
-                  case DType.INT16 =>
-                    castStringToIntegralType(longStrings, DType.INT16,
-                      Scalar.fromInt(Short.MinValue), Scalar.fromInt(Short.MaxValue))
-                  case DType.INT32 =>
-                    castStringToIntegralType(longStrings, DType.INT32,
-                      Scalar.fromInt(Int.MinValue), Scalar.fromInt(Int.MaxValue))
-                  case DType.INT64 =>
-                    longStrings.castTo(DType.INT64)
-                  case _ =>
-                    throw new IllegalStateException("Invalid integral type")
-                }
-              }
+              castStringToInts(trimmed, ansiMode,
+                GpuColumnVector.getNonNestedRapidsType(dataType))
           }
         }
       case (StringType, dt: DecimalType) =>
@@ -461,9 +406,10 @@ case class GpuCast(
         }
 
       case (from: DecimalType, to: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castDecimalToDecimal(inputVector, from, to)
-        }
+        castDecimalToDecimal(input.copyToColumnVector(), from, to)
+
+      case (_: DecimalType, StringType) =>
+        input.castTo(DType.STRING)
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
@@ -497,16 +443,18 @@ case class GpuCast(
     }
 
     withResource(minValue) { minValue =>
-      throwIfAny(inclusiveMin match {
-        case true => values.lessThan(minValue)
-        case false => values.lessOrEqualTo(minValue)
+      throwIfAny(if (inclusiveMin) {
+        values.lessThan(minValue)
+      } else {
+        values.lessOrEqualTo(minValue)
       })
     }
 
     withResource(maxValue) { maxValue =>
-      throwIfAny(inclusiveMax match {
-        case true => values.greaterThan(maxValue)
-        case false => values.greaterOrEqualTo(maxValue)
+      throwIfAny(if (inclusiveMax) {
+        values.greaterThan(maxValue)
+      } else {
+        values.greaterOrEqualTo(maxValue)
       })
     }
   }
@@ -531,14 +479,16 @@ case class GpuCast(
 
     withResource(minValue) { minValue =>
       withResource(maxValue) { maxValue =>
-        val minPredicate = inclusiveMin match {
-          case true => values.lessThan(minValue)
-          case false => values.lessOrEqualTo(minValue)
+        val minPredicate = if (inclusiveMin) {
+          values.lessThan(minValue)
+        } else {
+          values.lessOrEqualTo(minValue)
         }
         withResource(minPredicate) { minPredicate =>
-          val maxPredicate = inclusiveMax match {
-            case true => values.greaterThan(maxValue)
-            case false => values.greaterOrEqualTo(maxValue)
+          val maxPredicate = if (inclusiveMax) {
+            values.greaterThan(maxValue)
+          } else {
+            values.greaterOrEqualTo(maxValue)
           }
           withResource(maxPredicate) { maxPredicate =>
             withResource(maxPredicate.or(minPredicate)) { rangePredicate =>
@@ -726,6 +676,52 @@ case class GpuCast(
             // return true, false, or null, as appropriate
             withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
               sanitizedInput.contains(cvTrue)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  def castStringToInts(
+      input: ColumnVector,
+      ansiEnabled: Boolean,
+      dType: DType): ColumnVector = {
+    val cleaned = if (!ansiEnabled) {
+      // TODO would be great to get rid of this regex, but the overflow checks don't work
+      //  on the more lenient pattern.
+      // To avoid doing the expensive regex all the time, we will first check to see if we need
+      // to do it. The only time we do need to do it is when we have a '.' in any of the strings.
+      val data = input.getData
+      val hasDot = withResource(
+        ColumnView.fromDeviceBuffer(data, 0, DType.INT8, data.getLength.toInt)) { childData =>
+        withResource(GpuScalar.from('.'.toByte, ByteType)) { dot =>
+          childData.contains(dot)
+        }
+      }
+      if (hasDot) {
+        withResource(input.extractRe("^([+\\-]?[0-9]+)(?:\\.[0-9]*)?$")) { table =>
+          table.getColumn(0).incRefCount()
+        }
+      } else {
+        input.incRefCount()
+      }
+    } else {
+      input.incRefCount()
+    }
+    withResource(cleaned) { cleaned =>
+      withResource(cleaned.isInteger(dType)) { isInt =>
+        if (ansiEnabled) {
+          withResource(isInt.all()) { allInts =>
+            if (!allInts.getBoolean) {
+              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
+          }
+          cleaned.castTo(dType)
+        } else {
+          withResource(cleaned.castTo(dType)) { parsedInt =>
+            withResource(GpuScalar.from(null, dataType)) { nullVal =>
+              isInt.ifElse(parsedInt, nullVal)
             }
           }
         }
@@ -1109,63 +1105,6 @@ case class GpuCast(
     }
   }
 
-  /**
-   * Cast column of long values to a smaller integral type (bytes, short, int).
-   *
-   * @param longStrings Long values in string format
-   * @param castToType Type to cast to
-   * @param minValue Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue Named parameter for function to create Scalar representing range maximum value
-   * @return Values cast to specified integral type
-   */
-  private def castStringToIntegralType(longStrings: ColumnVector,
-      castToType: DType,
-      minValue: => Scalar,
-      maxValue: => Scalar): ColumnVector = {
-
-    // evaluate min and max named parameters once since they are used in multiple places
-    withResource(minValue) { minValue: Scalar =>
-      withResource(maxValue) { maxValue: Scalar =>
-        withResource(Scalar.fromNull(DType.INT64)) { nulls =>
-          withResource(longStrings.castTo(DType.INT64)) { values =>
-
-            // replace values less than minValue with null
-            val gtEqMinOrNull = withResource(values.greaterOrEqualTo(minValue)) { isGtEqMin =>
-              if (ansiMode) {
-                withResource(isGtEqMin.all()) { all =>
-                  if (!all.getBoolean) {
-                    throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-                  }
-                }
-              }
-              isGtEqMin.ifElse(values, nulls)
-            }
-
-            // replace values greater than maxValue with null
-            val ltEqMaxOrNull = withResource(gtEqMinOrNull) { gtEqMinOrNull =>
-              withResource(gtEqMinOrNull.lessOrEqualTo(maxValue)) { isLtEqMax =>
-                if (ansiMode) {
-                  withResource(isLtEqMax.all()) { all =>
-                    if (!all.getBoolean) {
-                      throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-                    }
-                  }
-                }
-                isLtEqMax.ifElse(gtEqMinOrNull, nulls)
-              }
-            }
-
-            // cast the final values
-            withResource(ltEqMaxOrNull) { ltEqMaxOrNull =>
-              ltEqMaxOrNull.castTo(castToType)
-            }
-          }
-        }
-      }
-
-    }
-  }
-
   private def castIntegralsToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
 
     // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
@@ -1191,17 +1130,17 @@ case class GpuCast(
       if (dt.scale < 0) {
         // Rounding is essential when scale is negative,
         // so we apply HALF_UP rounding manually to keep align with CpuCast.
-        withResource(checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, 0))) {
+        withResource(checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
           scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
       } else if (dt.scale > 0) {
         // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
         // before casting it to decimal in case of overflow.
         withResource(checked.castTo(DType.INT64)) { long =>
-          long.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+          long.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
         }
       } else {
-        checked.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))
+        checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
       }
     }
   }
@@ -1238,13 +1177,13 @@ case class GpuCast(
     }
 
     withResource(checkedInput) { checked =>
-      val targetType = DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale)
+      val targetType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
       // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
       val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
         checked.castTo(targetType)
       } else {
-        val containerType = DType.create(DType.DTypeEnum.DECIMAL64, -(dt.scale + 1))
+        val containerType = DecimalUtil.createCudfDecimal(dt.precision, (dt.scale + 1))
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
@@ -1264,42 +1203,118 @@ case class GpuCast(
       from: DecimalType,
       to: DecimalType): ColumnVector = {
 
-    // At first, we conduct overflow check onto input column.
-    // Then, we cast checked input into target decimal type.
-    val checkedInput = if (to.scale <= from.scale) {
-      // No need to promote precision unless target scale is larger than the source one,
-      // which indicates the cast is always valid when to.scale <= from.scale.
-      input.incRefCount()
-    } else {
-      // Check whether there exists overflow during promoting precision or not.
-      // We do NOT use `Scalar.fromDecimal(-to.scale, math.pow(10, 18).toLong)` here, because
-      // cuDF binaryOperation on decimal will rescale right input to fit the left one.
-      // The rescaling may lead to overflow.
-      val absBound = math.pow(10, DType.DECIMAL64_MAX_PRECISION + from.scale - to.scale).toLong
-      if (ansiMode) {
-        assertValuesInRange(input,
-          minValue = Scalar.fromDecimal(-from.scale, -absBound),
-          maxValue = Scalar.fromDecimal(-from.scale, absBound),
-          inclusiveMin = false, inclusiveMax = false)
-        input.incRefCount()
+    val isFrom32Bit = DecimalType.is32BitDecimalType(from)
+    val isTo32Bit = DecimalType.is32BitDecimalType(to)
+    val cudfDecimal = DecimalUtil.createCudfDecimal(to.precision, to.scale)
+
+    def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
+      if (to.scale == from.scale) {
+        if (isFrom32Bit == isTo32Bit) {
+          checkedInput.incRefCount()
+        } else {
+          // the input is already checked, just cast it
+          checkedInput.castTo(cudfDecimal)
+        }
+      } else if (to.scale > from.scale) {
+        checkedInput.castTo(cudfDecimal)
       } else {
-        replaceOutOfRangeValues(input,
-          minValue = Scalar.fromDecimal(-from.scale, -absBound),
-          maxValue = Scalar.fromDecimal(-from.scale, absBound),
-          replaceValue = Scalar.fromNull(input.getType),
-          inclusiveMin = false, inclusiveMax = false)
+          withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
+            rounded => rounded.castTo(cudfDecimal)
+          }
       }
     }
 
-    withResource(checkedInput) { checked =>
-      to.scale - from.scale match {
-        case 0 =>
-          checked.incRefCount()
-        case diff if diff > 0 =>
-          checked.castTo(GpuColumnVector.getNonNestedRapidsType(to))
-        case _ =>
-          checked.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+    if (to.scale <= from.scale) {
+      if (!isFrom32Bit && isTo32Bit) {
+        // check for overflow when 64bit => 32bit
+        withResource(checkForOverflow(input, from, to, isFrom32Bit)) { checkedInput =>
+          castCheckedDecimal(checkedInput)
+        }
+      } else {
+        if (to.scale < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
+          throw new IllegalStateException(s"Negative scale is not allowed: ${to.scale}. " +
+            s"You can use spark.sql.legacy.allowNegativeScaleOfDecimal=true " +
+            s"to enable legacy mode to allow it.")
+        }
+        castCheckedDecimal(input)
+      }
+    } else {
+      //  from.scale > to.scale
+      withResource(checkForOverflow(input, from, to, isFrom32Bit)) { checkedInput =>
+        castCheckedDecimal(checkedInput)
       }
     }
+  }
+
+  def checkForOverflow(
+     input: ColumnVector,
+     from: DecimalType,
+     to: DecimalType,
+     isFrom32Bit: Boolean): ColumnVector = {
+
+    // Decimal numbers in general terms have two parts, a part before decimal (whole number)
+    // and a part after decimal (fractional number)
+    // When moving from a smaller scale to a bigger scale (or 32-bit to 64-bit), the target type is
+    // able to hold much more values on the fractional side which leaves less room for the whole
+    // number. In the following examples we have kept the precision constant to keep it simple.
+    //
+    // Ex:
+    //  999999.999 => from.scale = 3
+    //  9999.99999 => to.scale = 5
+    //
+    // In the above example the source can have a maximum of 4 digits for the whole number and
+    // 3 digits for fractional side. We are not worried about the fractional side as the target can
+    // hold more digits than the source can. What we need to make sure is the source
+    // doesn't have values that are bigger than the destination whole number side can hold.
+    // So we calculate the max number that should be in the input column before we can safely cast
+    // the values without overflowing. If we find values bigger, we handle it depending on if we
+    // are in ANSI mode or not.
+    //
+    // When moving from a bigger scale to a smaller scale (or 64-bit to 32-bit), the target type
+    // is able to have more digits on the whole number side but less on the fractional
+    // side. In this case all we need to do is round the value to the new scale. Only, in case we
+    // are moving from 64-bit to a 32-bit do we need to check for overflow
+    //
+    // Ex:
+    // 9999.99999 => from.scale = 5
+    // 999999.999 => to.scale = 3
+    //
+    // Here you can see the "to.scale" can hold less fractional values but more on the whole
+    // number side so overflow check is unnecessary when the bases are the same i.e. 32-bit to
+    // 32-bit and 64-bit to 64-bit. Only when we go from a 64-bit number to a 32-bit number in this
+    // case we need to check for overflow.
+    //
+    // Therefore the values of absMax and absMin will be calculated based on the absBoundPrecision
+    // value to make sure the source has values that don't exceed the upper and lower bounds
+    val absBoundPrecision = to.precision - to.scale
+
+    // When we support 128 bit Decimals we should add a check for that
+    // if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
+    // !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS)
+    if (isFrom32Bit && absBoundPrecision > Decimal.MAX_INT_DIGITS) {
+      return input.incRefCount()
+    }
+    val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
+      val absBound = math.pow(10, absBoundPrecision).toLong
+      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
+    } else {
+      val absBound = math.pow(10, absBoundPrecision).toInt
+      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
+    }
+    val checkedInput = if (ansiMode) {
+      assertValuesInRange(input,
+        minValue = minValueScalar,
+        maxValue = maxValueScalar,
+        inclusiveMin = false, inclusiveMax = false)
+      input.incRefCount()
+    } else {
+      replaceOutOfRangeValues(input,
+        minValue = minValueScalar,
+        maxValue = maxValueScalar,
+        replaceValue = Scalar.fromNull(input.getType),
+        inclusiveMin = false, inclusiveMax = false)
+    }
+
+    checkedInput
   }
 }

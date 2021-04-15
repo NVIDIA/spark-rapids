@@ -26,19 +26,21 @@ base_spark_pom_version = '3.0.0'
 clusterid = ''
 build_profiles = 'databricks,!snapshot-shims'
 jar_path = ''
+# `spark_conf` can take comma seperated mutiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
+spark_conf = ''
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:',
-                               ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles=', 'jarpath'])
+    opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:',
+                               ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles=', 'jarpath', 'sparkconf'])
 except getopt.GetoptError:
     print(
-        'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -j <jarpath>')
+        'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -j <jarpath> -f <sparkconf>')
     sys.exit(2)
 
 for opt, arg in opts:
     if opt == '-h':
         print(
-            'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles>')
+            'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -f <sparkconf>')
         sys.exit()
     elif opt in ('-w', '--workspace'):
         workspace = arg
@@ -60,6 +62,8 @@ for opt, arg in opts:
         build_profiles = arg
     elif opt in ('-j', '--jarpath'):
         jar_path = arg
+    elif opt in ('-f', '--sparkconf'):
+        spark_conf = arg
 
 print('-w is ' + workspace)
 print('-c is ' + clusterid)
@@ -69,3 +73,4 @@ print('-d is ' + script_dest)
 print('-z is ' + source_tgz)
 print('-v is ' + base_spark_pom_version)
 print('-j is ' + jar_path)
+print('-f is ' + spark_conf)

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -28,11 +28,26 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore(StorageTier.DEVICE, catalog) {
-  override protected def createBuffer(
-      other: RapidsBuffer,
+    extends RapidsBufferStore(StorageTier.DEVICE, catalog) with Arm {
+
+  override protected def createBuffer(other: RapidsBuffer, memoryBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    throw new IllegalStateException("should not be spilling to device memory")
+    val deviceBuffer = {
+      memoryBuffer match {
+        case d: DeviceMemoryBuffer => d
+        case h: HostMemoryBuffer =>
+          withResource(h) { _ =>
+            closeOnExcept(DeviceMemoryBuffer.allocate(other.size)) { deviceBuffer =>
+              logDebug(s"copying from host $h to device $deviceBuffer")
+              deviceBuffer.copyFromHostBuffer(h, stream)
+              deviceBuffer
+            }
+          }
+        case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
+      }
+    }
+    new RapidsDeviceMemoryBuffer(other.id, other.size, other.meta, None,
+      deviceBuffer, other.getSpillPriority, other.spillCallback)
   }
 
   /**
@@ -163,10 +178,12 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table.foreach(_.close())
     }
 
-    override def getMemoryBuffer: MemoryBuffer = {
+    override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
       contigBuffer.incRefCount()
       contigBuffer
     }
+
+    override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {

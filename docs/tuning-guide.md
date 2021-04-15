@@ -209,5 +209,4 @@ performance.
 - [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled) 
 - [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans)
 - [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled)
-- [`spark.rapids.sql.castStringToInteger.enabled`](configs.md#sql.castStringToInteger.enabled)
 - [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled)

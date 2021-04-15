@@ -274,8 +274,13 @@ from one run to another if the ordering is ambiguous on a window function too.
 ## Parsing strings as dates or timestamps
 
 When converting strings to dates or timestamps using functions like `to_date` and `unix_timestamp`,
-only a subset of possible formats are supported on GPU with full compatibility with Spark. The
-supported formats are:
+the specified format string will fall into one of three categories:
+
+- Supported on GPU and 100% compatible with Spark
+- Supported on GPU but may produce different results to Spark
+- Unsupported on GPU
+
+The formats which are supported on GPU and 100% compatible with Spark are :
 
 - `dd/MM/yyyy`
 - `yyyy/MM`
@@ -283,17 +288,36 @@ supported formats are:
 - `yyyy-MM`
 - `yyyy-MM-dd`
 - `yyyy-MM-dd HH:mm:ss`
+- `MM-dd`
+- `MM/dd`
+- `dd-MM`
+- `dd/MM`
 
-Other formats may result in incorrect results and will not run on the GPU by default. Some
-specific issues with other formats are:
+Examples of supported formats that may produce different results are:
 
-- Spark supports partial microseconds but the plugin does not
-- The plugin will produce incorrect results for input data that is not in the correct format in
-some cases
+- Use of a two digit year, i.e.: `yy`, may use a different century on GPU compared to CPU
+- Trailing characters (including whitespace) may return a non-null value on GPU and Spark will 
+  return null 
 
-To enable all formats on GPU, set
+To attempt to use other formats on the GPU, set
 [`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
 to `true`.
+
+Formats that contain any of the following characters are unsupported and will fall back to CPU:
+
+```
+'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N',
+'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y'
+```
+
+Formats that contain any of the following words are unsupported and will fall back to CPU:
+
+```
+"u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
+"y", "yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+"D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
+"d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
+```
 
 ## Casting between types
 
@@ -348,15 +372,6 @@ Also, the GPU does not support casting from strings containing hex values.
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `true`.
-       
-### String to Integral Types
-
-The GPU will return incorrect results for strings representing values greater than Long.MaxValue or
-less than Long.MinValue. The correct behavior would be to return null for these values, but the GPU
-currently overflows and returns an incorrect integer value.
-
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castStringToInteger.enabled`](configs.md#sql.castStringToInteger.enabled) to `true`.
 
 ### String to Date
 

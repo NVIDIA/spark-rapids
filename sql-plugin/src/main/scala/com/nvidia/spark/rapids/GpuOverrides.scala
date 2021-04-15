@@ -246,9 +246,10 @@ class PartRule[INPUT <: Partitioning](
         Option[RapidsMeta[_, _, _]],
         DataFromReplacementRule) => PartMeta[INPUT],
     desc: String,
+    checks: Option[PartChecks],
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, Partitioning, PartMeta[INPUT]](
-    doWrap, desc, None, tag) {
+    doWrap, desc, checks, tag) {
 
   override val confKeyPart: String = "partitioning"
   override val operationName: String = "Partitioning"
@@ -681,12 +682,13 @@ object GpuOverrides {
 
   def part[INPUT <: Partitioning](
       desc: String,
+      checks: PartChecks,
       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
           => PartMeta[INPUT])
       (implicit tag: ClassTag[INPUT]): PartRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new PartRule[INPUT](doWrap, desc, tag)
+    new PartRule[INPUT](doWrap, desc, Some(checks), tag)
   }
 
   /**
@@ -2008,8 +2010,15 @@ object GpuOverrides {
       "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated.",
       ExprChecks.fullAggAndProject(
-        TypeSig.commonCudfTypes + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes),
-        TypeSig.all,
+        // Different types of Pandas UDF support different sets of output type. Please refer to
+        //   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
+        // for more details.
+        // It is impossible to specify the exact type signature for each Pandas UDF type in a single
+        // expression 'PythonUDF'.
+        // So use the 'unionOfPandasUdfOut' to cover all types for Spark. The type signature of
+        // plugin is also an union of all the types of Pandas UDF.
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested() + TypeSig.STRUCT,
+        TypeSig.unionOfPandasUdfOut,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "param",
           (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
@@ -2438,6 +2447,16 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuCollectList(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       }),
+    expr[GetJsonObject](
+      "Extracts a json object from path",
+      ExprChecks.projectOnly(
+        TypeSig.STRING, TypeSig.STRING, Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuGetJsonObject(lhs, rhs)
+      }
+    ),
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
@@ -2497,26 +2516,23 @@ object GpuOverrides {
   val parts : Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Seq(
     part[HashPartitioning](
       "Hash based partitioning",
+      // This needs to match what murmur3 supports.
+      PartChecks(RepeatingParamCheck("hash_key",
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-        override def tagPartForGpu(): Unit = {
-          // This needs to match what murmur3 supports.
-          // TODO In 0.5 we should make the checks self documenting, and look more like what
-          //  SparkPlan and Expression support
-          //  https://github.com/NVIDIA/spark-rapids/issues/1915
-          val sig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-          hp.children.foreach { child =>
-            sig.tagExprParam(this, child, "hash_key")
-          }
-        }
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
     part[RangePartitioning](
       "Range partitioning",
+      PartChecks(RepeatingParamCheck("order_key",
+        pluginSupportedOrderableSig +
+            TypeSig.psNote(TypeEnum.STRUCT, "Only supported for a single partition"),
+        TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -2540,6 +2556,7 @@ object GpuOverrides {
       }),
     part[RoundRobinPartitioning](
       "Round robin partitioning",
+      PartChecks(),
       (rrp, conf, p, r) => new PartMeta[RoundRobinPartitioning](rrp, conf, p, r) {
         override def convertToGpu(): GpuPartitioning = {
           GpuRoundRobinPartitioning(rrp.numPartitions)
@@ -2547,6 +2564,7 @@ object GpuOverrides {
       }),
     part[SinglePartition.type](
       "Single partitioning",
+      PartChecks(),
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
         override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
@@ -2594,8 +2612,11 @@ object GpuOverrides {
         TypeSig.all),
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
-          override def convertToGpu(): GpuExec =
-            GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
+          override def convertToGpu(): GpuExec = GpuProjectExec(
+            // Force list to avoid recursive Java serialization of lazy list Seq implementation
+            childExprs.map(_.convertToGpu()).toList,
+            childPlans(0).convertIfNeeded()
+          )
         }
       }),
     exec[RangeExec](
@@ -2824,11 +2845,12 @@ object GpuOverrides {
         }
       }),
     exec[MapInPandasExec](
-      "The backend for Map Pandas Iterator UDF, it runs on CPU itself now but supports " +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
-      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+      "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled.",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
     exec[FlatMapGroupsInPandasExec](
       "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports " +
         " scheduling GPU resources for the Python process when enabled",

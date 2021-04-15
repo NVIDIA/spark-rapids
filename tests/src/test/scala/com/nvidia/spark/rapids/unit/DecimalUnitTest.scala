@@ -117,11 +117,8 @@ class DecimalUnitTest extends GpuUnitTests {
         GpuColumnVector.from(dcv, DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, 0))
       }
     }
-    // assertion error throws because of unsupported DType DECIMAL32
-    assertThrows[AssertionError] {
-      withResource(ColumnVector.decimalFromInts(0, 1)) { dcv =>
-        GpuColumnVector.from(dcv, DecimalType(1, 0))
-      }
+    withResource(ColumnVector.decimalFromInts(0, 1)) { dcv =>
+      GpuColumnVector.from(dcv, DecimalType(1, 0))
     }
     withResource(GpuScalar.from(dec64Data(0), dt64)) { scalar =>
       withResource(GpuColumnVector.from(scalar, 10, dt64)) { cv =>

@@ -15,18 +15,14 @@ that is either preinstalled in the Spark classpath on all nodes or submitted wit
 RAPIDS Accelerator For Apache Spark. See the [getting-started guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
 ## Release v0.4.1
+### Download v0.4.1
+* Download [RAPIDS Accelerator For Apache Spark v0.4.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.1/rapids-4-spark_2.12-0.4.1.jar)
+* Download RAPIDS cuDF 0.18.1 for your system:
+  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda11.jar)
+  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-2.jar)
+  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
 
-This is a patch release based on version 0.4.0 with the following additional fixes:
-* Broadcast exchange can fail when job group is set
-
-The release is supported on Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS and
-Google Cloud Platform Dataproc 2.0.
-
-The list of all supported operations is provided [here](supported_ops.md).
-
-For a detailed list of changes, please refer to the
-[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
-
+### Requirements
 Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
@@ -43,11 +39,22 @@ Software Requirements:
 	
 	Python 3.6+, Scala 2.12, Java 8 
 
-### Download v0.4.1
-* [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.1/rapids-4-spark_2.12-0.4.1.jar)
-* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda11.jar)
-* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-2.jar)
-* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
+### Release Notes
+This is a patch release based on version 0.4.0 with the following additional fixes:
+* Broadcast exchange can fail when job group is set
+
+The release is supported on Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS and
+Google Cloud Platform Dataproc 2.0.
+
+The list of all supported operations is provided [here](supported_ops.md).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
+
+
+
+
+
 
 ## Release v0.4.0
 ### Download v0.4.0

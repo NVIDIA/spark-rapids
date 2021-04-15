@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.Serializable
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, RoundMode, Scalar, UnaryOp}
-import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, CudfUnaryExpression, FloatUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, CudfUnaryExpression, DecimalUtil, FloatUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
 import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, ImplicitCastInputTypes}
@@ -156,8 +156,7 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        val scale = dt.scale
-        DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+        DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
       case _ =>
         DType.INT64
     }
@@ -216,8 +215,7 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
   override def outputTypeOverride: DType =
     dataType match {
       case dt: DecimalType =>
-        val scale = dt.scale
-        DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+        DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
       case _ =>
         DType.INT64
     }
