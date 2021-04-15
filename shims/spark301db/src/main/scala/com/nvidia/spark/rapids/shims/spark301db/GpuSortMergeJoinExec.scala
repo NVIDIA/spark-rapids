@@ -17,12 +17,13 @@
 package com.nvidia.spark.rapids.shims.spark301db
 
 import com.nvidia.spark.rapids._
+
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
+import org.apache.spark.sql.types.DataType
 
 /**
  * HashJoin changed in Spark 3.1 requiring Shim
@@ -50,13 +51,6 @@ class GpuSortMergeJoinMeta(
     if (!conf.enableReplaceSortMergeJoin) {
       willNotWorkOnGpu(s"Not replacing sort merge join with hash join, " +
         s"see ${RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key}")
-    }
-
-    val keyDataTypes = (join.leftKeys ++ join.rightKeys).map(_.dataType)
-    if (keyDataTypes.exists(dtype =>
-      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
-        || dtype.isInstanceOf[MapType])) {
-      willNotWorkOnGpu("Nested types in join keys are not supported")
     }
 
     // make sure this is the last check - if this is SortMergeJoin, the children can be Sorts and we
