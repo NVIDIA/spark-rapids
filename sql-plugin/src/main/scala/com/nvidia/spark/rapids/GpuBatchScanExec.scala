@@ -182,8 +182,8 @@ object GpuCSVScan {
       meta.willNotWorkOnGpu("GpuCSVScan only supports UTF8 encoded data")
     }
 
-    // TODO parsedOptions.ignoreLeadingWhiteSpaceInRead cudf always do this, but not for strings
-    // TODO parsedOptions.ignoreTrailingWhiteSpaceInRead cudf always do this, but not for strings
+    // TODO parsedOptions.ignoreLeadingWhiteSpaceInRead cudf always does this, but not for strings
+    // TODO parsedOptions.ignoreTrailingWhiteSpaceInRead cudf always does this, but not for strings
     // TODO parsedOptions.multiLine cudf always does this, but it is not the default and it is not
     //  consistent
 

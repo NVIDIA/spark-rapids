@@ -117,11 +117,11 @@ Each data type can be enabled or disabled independently using the following conf
  * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
 
 If you know that your particular data type will be parsed correctly enough, you may enable each
-type you expect to use. Often the performance improvement is so good that it is worth dealing
+type you expect to use. Often the performance improvement is so good that it is worth
 checking if it is parsed correctly.
 
 Spark is generally very strict when reading CSV and if the data does not conform with the 
-expected format exactly it will result in a `null` value. The underlying parser that the SQL plugin
+expected format exactly it will result in a `null` value. The underlying parser that the RAPIDS Accelerator
 uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
 nulls.
 
@@ -165,12 +165,12 @@ Only a limited set of formats are supported when parsing dates.
 The reality is that all of these formats are supported at the same time. The plugin will only
 disable itself if you set a format that it does not support.
 
-As a work around you can parse the column as a timestamp and then cast it to a date.
+As a workaround you can parse the column as a timestamp and then cast it to a date.
 
-Invalid dates, ones that have the correct format, but the numbers produce invalid dates, in Spark
-can result in an exception by default and how they are parsed can be controlled through a config.
-The plugin does not support any of this and will produce an incorrect date.  Typically, one that
-overflowed.
+Invalid dates in Spark, values that have the correct format, but the numbers produce invalid dates,
+can result in an exception by default, and how they are parsed can be controlled through a config.
+The RAPIDS Accelerator does not support any of this and will produce an incorrect date. Typically,
+one that overflowed.
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
@@ -193,10 +193,10 @@ portion followed by one of the following formats:
 Just like with dates all timestamp formats are actually supported at the same time.  The plugin will
 disable itself if it sees a format it cannot support.
 
-Invalid timestamps, ones that have the correct format, but the numbers produce invalid dates or
-times, in Spark can result in an exception by default and how they are parsed can be controlled
-through a config. The plugin does not support any of this and will produce an incorrect date.
-Typically, one that overflowed.
+Invalid timestamps in Spark, ones that have the correct format, but the numbers produce invalid
+dates or times, can result in an exception by default and how they are parsed can be controlled
+through a config. The RAPIDS Accelerator does not support any of this and will produce an incorrect
+date. Typically, one that overflowed.
 
 ### CSV Floating Point
 
@@ -210,8 +210,8 @@ Some floating-point values also appear to overflow but do not for the CPU as des
 Any number that overflows will not be turned into a null value.
 
 Also parsing of some values will not produce bit for bit identical results to what the CPU does.
-they are within round-off errors except when they are close enough to overflow to Inf or -Inf which
-then results in a number being returned when the CPU would have returns null.
+They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
+then results in a number being returned when the CPU would have returned null.
 
 ### CSV Integer
 

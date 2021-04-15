@@ -718,12 +718,12 @@ object RapidsConf {
       .createWithDefault(false)
 
   val ENABLE_READ_CSV_DATES = conf("spark.rapids.sql.csv.read.date.enabled")
-      .doc("Parsing invalid CSV dates produces different results from spark")
+      .doc("Parsing invalid CSV dates produces different results from Spark")
       .booleanConf
       .createWithDefault(false)
 
   val ENABLE_READ_CSV_BOOLS = conf("spark.rapids.sql.csv.read.bool.enabled")
-      .doc("Parsing invalid CSV boolean values produce true instead of null")
+      .doc("Parsing an invalid CSV boolean value produce true instead of null")
       .booleanConf
       .createWithDefault(false)
 
@@ -753,13 +753,13 @@ object RapidsConf {
 
   val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
       .doc("Parsing CSV floats has some issues at the min and max values for floating" +
-          "point numbers also it can be more lenient on parsing inf and -inf values")
+          "point numbers and can be more lenient on parsing inf and -inf values")
       .booleanConf
       .createWithDefault(false)
 
   val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
       .doc("Parsing CSV double has some issues at the min and max values for floating" +
-          "point numbers also it can be more lenient on parsing inf and -inf values")
+          "point numbers and can be more lenient on parsing inf and -inf values")
       .booleanConf
       .createWithDefault(false)
 
