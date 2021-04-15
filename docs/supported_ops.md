@@ -20026,10 +20026,11 @@ dates or timestamps, or for a lack of type coercion support.
 <th>ARRAY</th>
 <th>MAP</th>
 <th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
-<th rowSpan="2">Parquet</th>
-<th>Input</th>
+<th rowSpan="2">CSV</th>
+<th>Read</th>
 <td>S</td>
 <td>S</td>
 <td>S</td>
@@ -20038,39 +20039,41 @@ dates or timestamps, or for a lack of type coercion support.
 <td>S</td>
 <td>S</td>
 <td>S</td>
+<td>S*</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
-<td></td>
 <td><b>NS</b></td>
-<td></td>
-<td><em>PS (missing nested BINARY)</em></td>
-<td><em>PS (missing nested BINARY)</em></td>
-<td><em>PS (missing nested BINARY)</em></td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
-<th>Output</th>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td></td>
-<td><b>NS</b></td>
-<td></td>
+<th>Write</th>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <th rowSpan="2">ORC</th>
-<th>Input</th>
+<th>Read</th>
 <td>S</td>
 <td>S</td>
 <td>S</td>
@@ -20079,39 +20082,19 @@ dates or timestamps, or for a lack of type coercion support.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td>S</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<th>Output</th>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
+<td> </td>
 <td><b>NS</b></td>
+<td> </td>
 <td><b>NS</b></td>
-<td></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
-<th>CSV</th>
-<th>Input</th>
+<th>Write</th>
 <td>S</td>
 <td>S</td>
 <td>S</td>
@@ -20120,11 +20103,55 @@ dates or timestamps, or for a lack of type coercion support.
 <td>S</td>
 <td>S</td>
 <td>S</td>
+<td>S*</td>
 <td>S</td>
-<td>S</td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<th rowSpan="2">Parquet</th>
+<th>Read</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<th>Write</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
