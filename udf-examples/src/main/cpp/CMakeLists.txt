@@ -15,7 +15,7 @@
 #=============================================================================
 cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
 
-project(UDFEXAMPLESJNI VERSION 0.5.0 LANGUAGES C CXX CUDA)
+project(UDFEXAMPLESJNI VERSION 0.6.0 LANGUAGES C CXX CUDA)
 
 ###################################################################################################
 # - build type ------------------------------------------------------------------------------------
