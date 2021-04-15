@@ -443,12 +443,12 @@ case class GpuAverage(child: Expression) extends GpuDeclarativeAggregate
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum),
     new CudfSum(cudfCount))
 
-  // NOTE: this passes an optional boolean to `GpuDivide` to force it not to throw
+  // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark. 
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: GpuExpression = GpuDivide(
     GpuCast(cudfSum, DoubleType),
-    GpuCast(cudfCount, DoubleType), Option(false))
+    GpuCast(cudfCount, DoubleType), failOnErrorOverride = false)
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
     GpuLiteral(0.0, DoubleType),
