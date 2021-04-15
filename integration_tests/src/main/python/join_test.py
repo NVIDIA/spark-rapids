@@ -131,7 +131,8 @@ def test_sortmerge_join_struct_as_key(data_gen, join_type):
 # "spark.sql.autoBroadcastJoinThreshold", but one side has to be smaller
 # than the number of splits * broadcast threshold and also be at least
 # 3 times smaller than the other side.  So it is not likely to happen
-# unless we can give it some help.
+# unless we can give it some help. Parameters are setup to try to make
+# this happen, if test fails something might have changed related to that.
 @validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
