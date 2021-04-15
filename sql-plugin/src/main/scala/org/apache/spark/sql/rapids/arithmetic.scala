@@ -366,7 +366,7 @@ case class GpuDivide(left: Expression, right: Expression,
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
         val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
-            DecimalType.is32BitDecimalType(r)) {
+          DecimalType.is32BitDecimalType(r)) {
           // we are casting to the smallest 64-bit decimal so the answer doesn't exceed 64-bit
           val decimalType = createCudfDecimal(10, r.scale)
           (lhs.getBase.castTo(decimalType), rhs.getBase.castTo(decimalType))
@@ -392,12 +392,12 @@ case class GpuDivide(left: Expression, right: Expression,
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
         val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
-            DecimalType.is32BitDecimalType(r)) {
+          DecimalType.is32BitDecimalType(r)) {
           // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
           (lhs.getBase.castTo(decimalType),
-              GpuScalar.from(rhs.getBigDecimal().intValue().toLong, sparkDecimalType))
+            GpuScalar.from(rhs.getBigDecimal().intValue().toLong, sparkDecimalType))
         } else {
           (lhs.getBase(), rhs)
         }
@@ -418,12 +418,12 @@ case class GpuDivide(left: Expression, right: Expression,
     (left.dataType, right.dataType) match {
       case (_: DecimalType, r: DecimalType) => {
         val (upcastedLhs, upcastedRhs) = if (!DecimalType.is32BitDecimalType(dataType) &&
-            DecimalType.is32BitDecimalType(r)) {
+          DecimalType.is32BitDecimalType(r)) {
           // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
           (GpuScalar.from(lhs.getBigDecimal().intValue().toLong, sparkDecimalType),
-              rhs.getBase.castTo(decimalType))
+            rhs.getBase.castTo(decimalType))
         } else {
           (lhs, rhs.getBase())
         }
