@@ -29,15 +29,18 @@ MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 # maven download SNAPSHOT jars: cudf, rapids-4-spark, spark3.0
 $MVN_GET_CMD -DremoteRepositories=$CUDF_REPO \
-    -DgroupId=ai.rapids -DartifactId=cudf -Dversion=$CUDF_VER
+    -DgroupId=ai.rapids -DartifactId=cudf -Dversion=$CUDF_VER -Dclassifier=$CUDA_CLASSIFIER
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
-
-CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
+if [ "$CUDA_CLASSIFIER"x == x ];then
+    CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
+else
+    CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER-$CUDA_CLASSIFIER.jar"
+fi
 RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"

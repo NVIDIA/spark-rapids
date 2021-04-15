@@ -40,6 +40,11 @@ mvn verify
 
 After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
 
+### Building against different CUDA Toolkit versions
+
+You can build against different versions of the CUDA Toolkit by using one of the following profiles:
+* `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
+
 ## Code contributions
 
 ### Your first issue

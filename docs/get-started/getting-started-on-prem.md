@@ -47,6 +47,14 @@ The [accelerator](https://mvnrepository.com/artifact/com.nvidia/rapids-4-spark_2
 [download](../download.md) section.
 
 Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the version of the cudf
+jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
+CUDA and will not run on other versions. The jars use a maven classifier to keep them separate.
+
+- CUDA 11.0/11.1/11.2 => classifier cuda11
+
+For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
+- cudf-0.20-SNAPSHOT-cuda11.jar
+- rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar
 jar that your version of the accelerator depends on.
 
 
