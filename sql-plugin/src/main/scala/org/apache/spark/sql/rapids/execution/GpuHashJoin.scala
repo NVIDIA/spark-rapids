@@ -32,7 +32,6 @@ object GpuHashJoin {
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = {
-
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
     if (keyDataTypes.exists(dtype =>
       dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
@@ -48,7 +47,6 @@ object GpuHashJoin {
       case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
   }
-
 
   def incRefCount(cb: ColumnarBatch): ColumnarBatch = {
     GpuColumnVector.extractBases(cb).foreach(_.incRefCount())
