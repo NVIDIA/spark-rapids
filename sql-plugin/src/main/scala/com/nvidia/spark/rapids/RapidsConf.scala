@@ -723,7 +723,7 @@ object RapidsConf {
       .createWithDefault(false)
 
   val ENABLE_READ_CSV_BOOLS = conf("spark.rapids.sql.csv.read.bool.enabled")
-      .doc("Parsing an invalid CSV boolean value produce true instead of null")
+      .doc("Parsing an invalid CSV boolean value produces true instead of null")
       .booleanConf
       .createWithDefault(false)
 
