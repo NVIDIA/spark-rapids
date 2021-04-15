@@ -2766,7 +2766,8 @@ object GpuOverrides {
       }),
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+        TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
