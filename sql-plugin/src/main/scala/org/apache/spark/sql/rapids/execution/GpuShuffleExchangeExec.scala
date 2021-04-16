@@ -27,7 +27,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RoundRobinPartitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
@@ -53,6 +53,16 @@ class GpuShuffleMeta(
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this exchange can run on GPU
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
+
+    if (shuffle.outputPartitioning.isInstanceOf[RoundRobinPartitioning] &&
+        shuffle.sqlContext.conf.sortBeforeRepartition) {
+      val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
+      shuffle.output.map(_.dataType)
+          .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
+          .foreach { dataType =>
+            willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType")
+          }
+    }
   }
 
   override def convertToGpu(): GpuExec =

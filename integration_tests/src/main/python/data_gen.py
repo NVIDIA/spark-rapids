@@ -808,6 +808,8 @@ boolean_gens = [boolean_gen]
 
 single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens + [null_gen]]
 
+single_level_array_gens_no_decimal = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + [null_gen]]
+
 # Be careful to not make these too large of data generation takes for ever
 # This is only a few nested array gens, because nesting can be very deep
 nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),

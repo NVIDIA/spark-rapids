@@ -427,8 +427,7 @@ object GpuOverrides {
 
   private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
 
-  private[this] val pluginSupportedOrderableSig = _commonTypes +
-    TypeSig.STRUCT.nested(_commonTypes)
+  val pluginSupportedOrderableSig: TypeSig = _commonTypes + TypeSig.STRUCT.nested(_commonTypes)
 
   private[this] def isStructType(dataType: DataType) = dataType match {
     case StructType(_) => true
@@ -2343,7 +2342,7 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
@@ -2518,7 +2517,7 @@ object GpuOverrides {
       "Hash based partitioning",
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
         TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
@@ -2745,7 +2744,14 @@ object GpuOverrides {
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
+        TypeSig.STRUCT).nested()
+          .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
+              s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
+          .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported for arrays if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
+          .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported for maps if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
+        TypeSig.all),
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
@@ -2760,7 +2766,8 @@ object GpuOverrides {
       }),
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+        TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
