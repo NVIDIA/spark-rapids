@@ -281,9 +281,7 @@ object GpuCSVScan {
     }
     // TODO parsedOptions.emptyValueInRead
 
-    if (readSchema.exists(_.dataType.isInstanceOf[DecimalType])) {
-      meta.willNotWorkOnGpu("DecimalType is not supported")
-    }
+    FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }
 }
 

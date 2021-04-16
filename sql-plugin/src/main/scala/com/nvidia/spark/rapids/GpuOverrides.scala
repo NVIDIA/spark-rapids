@@ -410,6 +410,25 @@ trait GpuOverridesListener {
       costOptimizations: Seq[Optimization])
 }
 
+sealed trait FileFormatType
+object CsvFormatType extends FileFormatType {
+  override def toString = "CSV"
+}
+object ParquetFormatType extends FileFormatType {
+  override def toString = "Parquet"
+}
+object OrcFormatType extends FileFormatType {
+  override def toString = "ORC"
+}
+
+sealed trait FileFormatOp
+object ReadFileOp extends FileFormatOp {
+  override def toString = "read"
+}
+object WriteFileOp extends FileFormatOp {
+  override def toString = "write"
+}
+
 object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
@@ -734,6 +753,22 @@ object GpuOverrides {
     expressions.get(expr.getClass)
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
+
+  val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
+    (CsvFormatType, FileFormatChecks(
+      cudfRead = TypeSig.commonCudfTypes,
+      cudfWrite = TypeSig.none,
+      sparkSig = TypeSig.atomics)),
+    (ParquetFormatType, FileFormatChecks(
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT + TypeSig.ARRAY +
+          TypeSig.MAP).nested(),
+      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT).nested())),
+    (OrcFormatType, FileFormatChecks(
+      cudfReadWrite = TypeSig.commonCudfTypes,
+      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
