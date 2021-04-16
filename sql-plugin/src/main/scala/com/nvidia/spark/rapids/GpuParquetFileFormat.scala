@@ -42,12 +42,6 @@ object GpuParquetFileFormat {
       options: Map[String, String],
       schema: StructType): Option[GpuParquetFileFormat] = {
 
-    val unSupportedTypes =
-      schema.filterNot(field => GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))
-    if (unSupportedTypes.nonEmpty) {
-      meta.willNotWorkOnGpu(s"These types aren't supported for parquet $unSupportedTypes")
-    }
-
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
@@ -60,6 +54,8 @@ object GpuParquetFileFormat {
       meta.willNotWorkOnGpu("Parquet output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET_WRITE} to true")
     }
+
+    FileFormatChecks.tag(meta, schema, ParquetFormatType, WriteFileOp)
 
     parseCompressionType(parquetOptions.compressionCodecClassName)
       .getOrElse(meta.willNotWorkOnGpu(

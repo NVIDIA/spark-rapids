@@ -408,6 +408,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override final def tagSelfForGpu(): Unit = {
+    rule.getChecks.foreach(_.tag(this))
     if (!canExprTreeBeReplaced) {
       willNotWorkOnGpu("not all expressions can be replaced")
     }

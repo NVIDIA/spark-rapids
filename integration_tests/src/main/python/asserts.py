@@ -142,13 +142,13 @@ class _RowCmp(object):
 
     def __gt__(self, other):
         return self.cmp(other) > 0
-           
+
     def __eq__(self, other):
         return self.cmp(other) == 0
 
     def __le__(self, other):
         return self.cmp(other) <= 0
- 
+
     def __ge__(self, other):
         return self.cmp(other) >= 0
 
@@ -214,7 +214,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
     gpu_path = base_path + '/GPU'
     with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
-    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format( 
+    print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
     (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
@@ -302,7 +302,7 @@ def assert_gpu_fallback_collect(func,
             conf=conf)
     gpu_end = time.time()
     jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
-    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
         from_cpu.sort(key=_RowCmp)
@@ -311,21 +311,39 @@ def assert_gpu_fallback_collect(func,
     assert_equal(from_cpu, from_gpu)
 
 def _assert_gpu_and_cpu_are_equal(func,
-        mode,
-        conf={}):
+    mode,
+    conf={},
+    is_cpu_first=True):
     (bring_back, collect_type) = _prep_func_for_compare(func, mode)
     conf = _prep_incompat_conf(conf)
 
-    print('### CPU RUN ###')
-    cpu_start = time.time()
-    from_cpu = with_cpu_session(bring_back, conf=conf)
-    cpu_end = time.time()
-    print('### GPU RUN ###')
-    gpu_start = time.time()
-    from_gpu = with_gpu_session(bring_back,
-            conf=conf)
-    gpu_end = time.time()
-    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type, 
+    def run_on_cpu():
+        print('### CPU RUN ###')
+        global cpu_start
+        cpu_start = time.time()
+        global from_cpu
+        from_cpu = with_cpu_session(bring_back, conf=conf)
+        global cpu_end
+        cpu_end = time.time()
+
+    def run_on_gpu():
+        print('### GPU RUN ###')
+        global gpu_start
+        gpu_start = time.time()
+        global from_gpu
+        from_gpu = with_gpu_session(bring_back,
+                conf=conf)
+        global gpu_end
+        gpu_end = time.time()
+
+    if is_cpu_first:
+        run_on_cpu()
+        run_on_gpu()
+    else:
+        run_on_gpu()
+        run_on_cpu()
+
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
         from_cpu.sort(key=_RowCmp)
@@ -333,31 +351,31 @@ def _assert_gpu_and_cpu_are_equal(func,
 
     assert_equal(from_cpu, from_gpu)
 
-def assert_gpu_and_cpu_are_equal_collect(func, conf={}):
+def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be
     careful about the amount of data returned.
     """
-    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_are_equal_iterator(func, conf={}):
+def assert_gpu_and_cpu_are_equal_iterator(func, conf={}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is pulled back to the driver in chunks and compared here
     so any amount of data can work, just be careful about how long it might take.
     """
-    _assert_gpu_and_cpu_are_equal(func, 'ITERATOR', conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'ITERATOR', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_row_counts_equal(func, conf={}):
+def assert_gpu_and_cpu_row_counts_equal(func, conf={}, is_cpu_first=True):
     """
     Assert that the row counts from running the func are the same on both the CPU and GPU.
     This function runs count() to only get the number of rows and compares that count
     between the CPU and GPU. It does NOT compare any underlying data.
     """
-    _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf)
+    _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False):
+def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False, is_cpu_first=True):
     """
     Assert that the specified SQL query produces equal results on CPU and GPU.
     :param df_fun: a function that will create the dataframe
@@ -375,7 +393,7 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
             return data_gen.debug_df(spark.sql(sql))
         else:
             return spark.sql(sql)
-    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
 
 def assert_py4j_exception(func, error_message):
     """

@@ -63,14 +63,19 @@ def test_coalesce_df(num_parts, length):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts))
 
-@pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
+    pytest.param([('a', ArrayGen(string_gen))]),
+], ids=idfn)
+@pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
-def test_repartion_df(num_parts, length):
-    #This should change eventually to be more than just the basic gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]
+def test_repartition_df(data_gen, num_parts, length):
+    from pyspark.sql.functions import lit
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gen_list, length=length).repartition(num_parts),
+            # Add a computed column to avoid shuffle being optimized back to a CPU shuffle
+            lambda spark : gen_df(spark, data_gen, length=length).withColumn('x', lit(1)).repartition(num_parts),
             conf = allow_negative_scale_of_decimal_conf)
 
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
@@ -92,6 +97,7 @@ def test_repartion_df(num_parts, length):
     ([('a', decimal_gen_64bit)], ['a']),
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
+    ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('cc0', boolean_gen), ('cc1', string_gen)]))]))], ['a']), 
     ([('a', long_gen), ('b', StructGen([('b1', long_gen)]))], ['a']),
     ([('a', long_gen), ('b', ArrayGen(long_gen, max_length=2))], ['a']),
     ([('a', byte_gen)], [f.col('a') - 5]), 

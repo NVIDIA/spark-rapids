@@ -246,9 +246,10 @@ class PartRule[INPUT <: Partitioning](
         Option[RapidsMeta[_, _, _]],
         DataFromReplacementRule) => PartMeta[INPUT],
     desc: String,
+    checks: Option[PartChecks],
     tag: ClassTag[INPUT])
   extends ReplacementRule[INPUT, Partitioning, PartMeta[INPUT]](
-    doWrap, desc, None, tag) {
+    doWrap, desc, checks, tag) {
 
   override val confKeyPart: String = "partitioning"
   override val operationName: String = "Partitioning"
@@ -409,6 +410,25 @@ trait GpuOverridesListener {
       costOptimizations: Seq[Optimization])
 }
 
+sealed trait FileFormatType
+object CsvFormatType extends FileFormatType {
+  override def toString = "CSV"
+}
+object ParquetFormatType extends FileFormatType {
+  override def toString = "Parquet"
+}
+object OrcFormatType extends FileFormatType {
+  override def toString = "ORC"
+}
+
+sealed trait FileFormatOp
+object ReadFileOp extends FileFormatOp {
+  override def toString = "read"
+}
+object WriteFileOp extends FileFormatOp {
+  override def toString = "write"
+}
+
 object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
@@ -426,8 +446,7 @@ object GpuOverrides {
 
   private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
 
-  private[this] val pluginSupportedOrderableSig = _commonTypes +
-    TypeSig.STRUCT.nested(_commonTypes)
+  val pluginSupportedOrderableSig: TypeSig = _commonTypes + TypeSig.STRUCT.nested(_commonTypes)
 
   private[this] def isStructType(dataType: DataType) = dataType match {
     case StructType(_) => true
@@ -681,12 +700,13 @@ object GpuOverrides {
 
   def part[INPUT <: Partitioning](
       desc: String,
+      checks: PartChecks,
       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
           => PartMeta[INPUT])
       (implicit tag: ClassTag[INPUT]): PartRule[INPUT] = {
     assert(desc != null)
     assert(doWrap != null)
-    new PartRule[INPUT](doWrap, desc, tag)
+    new PartRule[INPUT](doWrap, desc, Some(checks), tag)
   }
 
   /**
@@ -733,6 +753,22 @@ object GpuOverrides {
     expressions.get(expr.getClass)
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
+
+  val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
+    (CsvFormatType, FileFormatChecks(
+      cudfRead = TypeSig.commonCudfTypes,
+      cudfWrite = TypeSig.none,
+      sparkSig = TypeSig.atomics)),
+    (ParquetFormatType, FileFormatChecks(
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT + TypeSig.ARRAY +
+          TypeSig.MAP).nested(),
+      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT).nested())),
+    (OrcFormatType, FileFormatChecks(
+      cudfReadWrite = TypeSig.commonCudfTypes,
+      sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
@@ -2341,7 +2377,7 @@ object GpuOverrides {
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Murmur3Hash](a, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] = a.children
@@ -2514,26 +2550,23 @@ object GpuOverrides {
   val parts : Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Seq(
     part[HashPartitioning](
       "Hash based partitioning",
+      // This needs to match what murmur3 supports.
+      PartChecks(RepeatingParamCheck("hash_key",
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+        TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-        override def tagPartForGpu(): Unit = {
-          // This needs to match what murmur3 supports.
-          // TODO In 0.5 we should make the checks self documenting, and look more like what
-          //  SparkPlan and Expression support
-          //  https://github.com/NVIDIA/spark-rapids/issues/1915
-          val sig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-          hp.children.foreach { child =>
-            sig.tagExprParam(this, child, "hash_key")
-          }
-        }
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
       }),
     part[RangePartitioning](
       "Range partitioning",
+      PartChecks(RepeatingParamCheck("order_key",
+        pluginSupportedOrderableSig +
+            TypeSig.psNote(TypeEnum.STRUCT, "Only supported for a single partition"),
+        TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -2557,6 +2590,7 @@ object GpuOverrides {
       }),
     part[RoundRobinPartitioning](
       "Round robin partitioning",
+      PartChecks(),
       (rrp, conf, p, r) => new PartMeta[RoundRobinPartitioning](rrp, conf, p, r) {
         override def convertToGpu(): GpuPartitioning = {
           GpuRoundRobinPartitioning(rrp.numPartitions)
@@ -2564,6 +2598,7 @@ object GpuOverrides {
       }),
     part[SinglePartition.type](
       "Single partitioning",
+      PartChecks(),
       (sp, conf, p, r) => new PartMeta[SinglePartition.type](sp, conf, p, r) {
         override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
       })
@@ -2611,8 +2646,11 @@ object GpuOverrides {
         TypeSig.all),
       (proj, conf, p, r) => {
         new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
-          override def convertToGpu(): GpuExec =
-            GpuProjectExec(childExprs.map(_.convertToGpu()), childPlans(0).convertIfNeeded())
+          override def convertToGpu(): GpuExec = GpuProjectExec(
+            // Force list to avoid recursive Java serialization of lazy list Seq implementation
+            childExprs.map(_.convertToGpu()).toList,
+            childPlans(0).convertIfNeeded()
+          )
         }
       }),
     exec[RangeExec](
@@ -2741,7 +2779,14 @@ object GpuOverrides {
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
+        TypeSig.STRUCT).nested()
+          .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
+              s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
+          .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported for arrays if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
+          .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported for maps if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
+        TypeSig.all),
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
@@ -2756,7 +2801,8 @@ object GpuOverrides {
       }),
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+        TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
