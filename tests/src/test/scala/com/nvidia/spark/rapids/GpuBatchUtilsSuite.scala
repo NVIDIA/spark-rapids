@@ -170,7 +170,7 @@ class GpuBatchUtilsSuite extends FunSuite {
    * verify that the memory calculations are consistent with the numbers reported by CuDF.
    */
   private def calculateGpuMemory(schema: StructType, rows: Array[InternalRow]): Long = {
-    val builders = new GpuColumnarBatchBuilder(schema, rows.length, null)
+    val builders = new GpuColumnarBatchBuilder(schema, rows.length)
     try {
       val converters = new GpuRowToColumnConverter(schema)
       rows.foreach(row => converters.convert(row, builders))

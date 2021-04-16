@@ -67,7 +67,6 @@ object HostColumnarToGpu extends Logging {
   def arrowColumnarCopy(
       cv: ColumnVector,
       ab: ai.rapids.cudf.ArrowColumnBuilder,
-      nullable: Boolean,
       rows: Int): ju.List[ReferenceManager] = {
     val valVector = cv match {
       case v: ArrowColumnVector =>
@@ -79,7 +78,7 @@ object HostColumnarToGpu extends Logging {
               "access its Arrow ValueVector", e)
         }
       case av: AccessibleArrowColumnVector =>
-        av.getArrowValueVector()
+        av.getArrowValueVector
       case _ =>
         throw new IllegalStateException(s"Illegal column vector type: ${cv.getClass}")
     }
@@ -92,7 +91,7 @@ object HostColumnarToGpu extends Logging {
       buf
     }
 
-    val nullCount = valVector.getNullCount()
+    val nullCount = valVector.getNullCount
     val dataBuf = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowDataBuf(valVector))
     val validity = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowValidityBuf(valVector))
     // this is a bit ugly, not all Arrow types have the offsets buffer
@@ -315,10 +314,10 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       (batch.column(0).isInstanceOf[ArrowColumnVector] ||
         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
       logDebug("Using GpuArrowColumnarBatchBuilder")
-      batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
+      batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema)
     } else {
       logDebug("Using GpuColumnarBatchBuilder")
-      batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
+      batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit)
     }
     totalRows = 0
   }

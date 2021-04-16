@@ -15,8 +15,6 @@
  */
 package com.nvidia.spark.rapids.tests.datasourcev2.parquet
 
-import java.util
-
 import scala.collection.JavaConverters._
 
 import org.apache.arrow.memory.RootAllocator
@@ -81,7 +79,7 @@ trait TestingV2Source extends TableProvider {
   override def getTable(
       schema: StructType,
       partitioning: Array[Transform],
-      properties: util.Map[String, String]): Table = {
+      properties: java.util.Map[String, String]): Table = {
     getTable(new CaseInsensitiveStringMap(properties))
   }
 
@@ -106,7 +104,7 @@ abstract class SimpleBatchTable extends Table with SupportsRead  {
 
   override def name(): String = this.getClass.toString
 
-  override def capabilities(): util.Set[TableCapability] = Set(BATCH_READ).asJava
+  override def capabilities(): java.util.Set[TableCapability] = Set(BATCH_READ).asJava
 }
 
 case class ArrowInputPartition(dt: Seq[DataType], numRows: Int, startNum: Int)

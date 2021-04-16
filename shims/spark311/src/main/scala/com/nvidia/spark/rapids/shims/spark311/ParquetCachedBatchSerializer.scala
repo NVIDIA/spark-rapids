@@ -307,7 +307,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
         if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
           val s: StructType = schema.toStructType
-          val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows(), batch).build(batch.numRows())
+          val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows()).build(batch.numRows())
           batch.close()
           gpuCB
         } else {

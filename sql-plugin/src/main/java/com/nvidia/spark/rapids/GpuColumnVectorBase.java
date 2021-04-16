@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids;
 
-import ai.rapids.cudf.DType;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarArray;

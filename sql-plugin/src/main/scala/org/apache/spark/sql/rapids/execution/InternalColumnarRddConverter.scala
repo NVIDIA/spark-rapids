@@ -404,7 +404,7 @@ private class ExternalRowToColumnarIterator(
       }
     }
 
-    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows, null)
+    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows)
     try {
       var rowCount = 0
       var byteCount: Long = variableWidthColumnCount * 4 // offset bytes
