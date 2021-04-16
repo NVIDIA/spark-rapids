@@ -51,7 +51,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
   extends Serializable with Arm with AutoCloseable {
   @transient private val headers = data.map(_.header)
   @transient private val buffers = data.map(_.buffer)
-  @transient private var batchInternal: ColumnarBatch = null
+  @transient private var batchInternal: ColumnarBatch = _
 
   def batch: ColumnarBatch = this.synchronized {
     if (batchInternal == null) {
@@ -91,7 +91,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
         val table = tableInfo.getTable
         if (table == null) {
           val numRows = tableInfo.getNumRows
-          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows.toInt)
+          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
         } else {
           val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
           // This is read as part of the broadcast join so we expect it to leak.
@@ -140,8 +140,8 @@ class SerializeConcatHostBuffersDeserializeBatch(
 class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
   extends Serializable with AutoCloseable {
   @transient private var columns = GpuColumnVector.extractBases(batch).map(_.copyToHost())
-  @transient var header: JCudfSerialization.SerializedTableHeader = null
-  @transient var buffer: HostMemoryBuffer = null
+  @transient var header: JCudfSerialization.SerializedTableHeader = _
+  @transient var buffer: HostMemoryBuffer = _
   @transient private val numRows = batch.numRows()
 
   private def writeObject(out: ObjectOutputStream): Unit = {
@@ -230,7 +230,7 @@ class GpuBroadcastMeta(
 
   override def convertToGpu(): GpuExec = {
     ShimLoader.getSparkShims.getGpuBroadcastExchangeExec(
-      exchange.mode, childPlans(0).convertIfNeeded())
+      exchange.mode, childPlans.head.convertIfNeeded())
   }
 
 }

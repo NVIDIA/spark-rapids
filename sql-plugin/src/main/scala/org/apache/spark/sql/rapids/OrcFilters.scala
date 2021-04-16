@@ -134,7 +134,7 @@ object OrcFilters extends OrcFiltersBase {
         for (_ <- buildLeafSearchArgument(dataTypeMap, other, newBuilder())) yield other
     }
     filters.flatMap { filter =>
-      convertibleFiltersHelper(filter, true)
+      convertibleFiltersHelper(filter, canPartialPushDown = true)
     }
   }
 

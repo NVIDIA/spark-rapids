@@ -229,7 +229,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
       case Opcode.ICONST_M1 |
            Opcode.ICONST_0 | Opcode.ICONST_1 | Opcode.ICONST_2 |
            Opcode.ICONST_3 | Opcode.ICONST_4 | Opcode.ICONST_5 =>
-        const(state, (opcode - Opcode.ICONST_0).asInstanceOf[Int])
+        const(state, (opcode - Opcode.ICONST_0))
       case Opcode.LCONST_0 | Opcode.LCONST_1 =>
         const(state, (opcode - Opcode.LCONST_0).asInstanceOf[Long])
       case Opcode.DADD | Opcode.FADD | Opcode.IADD | Opcode.LADD => binary(state, Add(_, _))
@@ -490,7 +490,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         newState
       }
     } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer") ||
-               ((!args.isEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
+               ((args.nonEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
                 ((declaringClassName.equals("scala.collection.AbstractSeq") &&
                   opcode == Opcode.INVOKEVIRTUAL) ||
                  (declaringClassName.equals("scala.collection.TraversableOnce") &&
@@ -677,22 +677,22 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     // Translate to Catalyst
     methodName match {
       case "Boolean" =>
-        new Repr.ClassTag(scala.reflect.ClassTag.Boolean)
+        Repr.ClassTag(scala.reflect.ClassTag.Boolean)
       case "Byte" =>
-        new Repr.ClassTag(scala.reflect.ClassTag.Byte)
+        Repr.ClassTag(scala.reflect.ClassTag.Byte)
       case "Short" =>
-        new Repr.ClassTag(scala.reflect.ClassTag.Short)
+        Repr.ClassTag(scala.reflect.ClassTag.Short)
       case "Int" =>
-        new Repr.ClassTag(scala.reflect.ClassTag.Int)
+        Repr.ClassTag(scala.reflect.ClassTag.Int)
       case "Long" =>
-        new Repr.ClassTag(scala.reflect.ClassTag.Long)
+        Repr.ClassTag(scala.reflect.ClassTag.Long)
       case "Float" =>
-        new Repr.ClassTag(scala.reflect.ClassTag.Float)
+        Repr.ClassTag(scala.reflect.ClassTag.Float)
       case "Double" =>
-        new Repr.ClassTag(scala.reflect.ClassTag.Double)
+        Repr.ClassTag(scala.reflect.ClassTag.Double)
       case "apply" =>
         checkArgs(methodName, List(StringType), args.tail)
-        new Repr.ClassTag(scala.reflect.ClassTag.apply(
+        Repr.ClassTag(scala.reflect.ClassTag.apply(
           LambdaReflection.getClass(args.last.toString)))
       case _ => throw new SparkException("Unsupported classTag function: " + methodName)
     }
@@ -712,7 +712,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
     // Translate to Catalyst
     methodName match {
       case "canBuildFrom" =>
-        new Repr.CanBuildFrom(args.head.asInstanceOf[Repr.GetStatic])
+        Repr.CanBuildFrom(args.head.asInstanceOf[Repr.GetStatic])
       case _ => throw new SparkException("Unsupported arrayBuffer function: " + methodName)
     }
   }

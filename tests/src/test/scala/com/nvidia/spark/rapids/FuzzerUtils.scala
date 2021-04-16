@@ -345,7 +345,7 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
 
   def nextDate(): Date = {
     val futureDate = 6321706291000L // Upper limit Sunday, April 29, 2170 9:31:31 PM
-    new Date((futureDate * r.nextDouble()).toLong);
+    new Date((futureDate * r.nextDouble()).toLong)
   }
 
   def nextTimestamp(): Timestamp = {

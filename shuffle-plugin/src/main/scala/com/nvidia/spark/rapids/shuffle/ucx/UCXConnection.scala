@@ -340,24 +340,24 @@ object UCXConnection extends Logging {
     val maxLen = 1024 * 1024
 
     // get the length from the stream, it's the first thing sent.
-    val workerAddressLength = readBytesFromStream(false, is, 4).getInt()
+    val workerAddressLength = readBytesFromStream(direct = false, is, 4).getInt()
 
     require(workerAddressLength <= maxLen,
       s"Received an abnormally large (>$maxLen Bytes) WorkerAddress " +
         s"(${workerAddressLength} Bytes), dropping.")
 
-    val workerAddress = readBytesFromStream(true, is, workerAddressLength)
+    val workerAddress = readBytesFromStream(direct = true, is, workerAddressLength)
 
     // get the remote executor Id, that's the last part of the handshake
-    val executorId = readBytesFromStream(false, is, 4).getInt()
+    val executorId = readBytesFromStream(direct = false, is, 4).getInt()
 
     // get the number of rkeys expected next
-    val numRkeys = readBytesFromStream(false, is, 4).getInt()
+    val numRkeys = readBytesFromStream(direct = false, is, 4).getInt()
 
     val rkeys = new ArrayBuffer[ByteBuffer](numRkeys)
     (0 until numRkeys).foreach { _ =>
-      val size = readBytesFromStream(false, is, 4).getInt()
-      rkeys.append(readBytesFromStream(true, is, size))
+      val size = readBytesFromStream(direct = false, is, 4).getInt()
+      rkeys.append(readBytesFromStream(direct = true, is, size))
     }
 
     (WorkerAddress(workerAddress), executorId, Rkeys(rkeys))
@@ -381,7 +381,7 @@ object UCXConnection extends Logging {
                            localExecutorId: Int,
                            rkeys: Seq[ByteBuffer]): Unit = {
     val headerSize = 4 + workerAddress.remaining() + 4 +
-        4 + (4 * rkeys.size) + (rkeys.map(_.capacity).sum)
+        4 + (4 * rkeys.size) + rkeys.map(_.capacity).sum
     val hsBuff = ByteBuffer.allocate(headerSize)
 
     // pack the worker address

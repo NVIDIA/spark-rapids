@@ -120,7 +120,7 @@ class AcceleratedColumnarToRowIterator(
 
   private[this] def loadNextBatch(): Unit = {
     closeCurrentBatch()
-    if (!pendingCvs.isEmpty) {
+    if (pendingCvs.nonEmpty) {
       setCurrentBatch(pendingCvs.dequeue())
     } else {
       while (batches.hasNext) {
@@ -163,8 +163,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     numOutputRows: GpuMetric,
     totalTime: GpuMetric) extends Iterator[InternalRow] {
   // GPU batches read in must be closed by the receiver (us)
-  @transient var cb: ColumnarBatch = null
-  var it: java.util.Iterator[InternalRow] = null
+  @transient var cb: ColumnarBatch = _
+  var it: java.util.Iterator[InternalRow] = _
 
   TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
 

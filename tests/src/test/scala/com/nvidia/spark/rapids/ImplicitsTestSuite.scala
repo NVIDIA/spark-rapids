@@ -75,7 +75,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     } catch {
       case t: Throwable => {
         threw = true
-        assert(t.getSuppressed().size == 5)
+        assert(t.getSuppressed().length == 5)
       }
     }
     assert(threw)
@@ -137,7 +137,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     } catch {
       case t: Throwable => {
         threw = true
-        assert(t.getSuppressed().size == 5)
+        assert(t.getSuppressed().length == 5)
       }
     }
     batch.close()

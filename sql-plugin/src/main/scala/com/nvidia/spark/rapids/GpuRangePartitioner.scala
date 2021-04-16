@@ -160,7 +160,7 @@ object GpuRangePartitioner {
         }
       }
     }
-    rangeBounds.asInstanceOf[Array[InternalRow]]
+    rangeBounds
   }
 }
 

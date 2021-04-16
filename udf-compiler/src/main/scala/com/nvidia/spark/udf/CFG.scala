@@ -95,15 +95,13 @@ case class BB(instructionTable: SortedMap[Int, Instruction]) extends Logging {
         // Update the entry conditions of non-default successors based on the
         // match keys, and combine them to create the entry condition of the
         // default successor.
-        val (defaultCondition, newStates) = (
-            table.foldLeft[(Expression, Map[BB, State])]((Literal.TrueLiteral, states)) {
-              case ((cond: Expression, currentStates: Map[BB, State]),
-              (matchKey: Int, succ: BB)) =>
-                val newState = state.copy(cond = simplify(EqualTo(expr.get, Literal(matchKey))))
-                (And(Not(EqualTo(expr.get, Literal(matchKey))), cond),
-                    currentStates + (succ -> newState.merge(currentStates.get(succ))))
-            }
-            )
+        val (defaultCondition, newStates) = table
+          .foldLeft[(Expression, Map[BB, State])]((Literal.TrueLiteral, states)) {
+            case ((cond: Expression, currentStates: Map[BB, State]), (matchKey: Int, succ: BB)) =>
+              val newState = state.copy(cond = simplify(EqualTo(expr.get, Literal(matchKey))))
+              (And(Not(EqualTo(expr.get, Literal(matchKey))), cond),
+                  currentStates + (succ -> newState.merge(currentStates.get(succ))))
+          }
         // Update the entry condition of the default successor.
         val defaultState = state.copy(cond = simplify(defaultCondition))
         newStates + (defaultSucc -> defaultState.merge(newStates.get(defaultSucc)))
@@ -203,7 +201,7 @@ object CFG {
           } :+ default
           collectLabelsAndEdges(
             codeIterator, constPool,
-            labels ++ table.unzip._2,
+            labels ++ table.map(_._2),
             edges + (offset -> table))
         case Opcode.LOOKUPSWITCH =>
           val defaultOffset = (offset + 4) / 4 * 4
@@ -217,7 +215,7 @@ object CFG {
           } :+ default
           collectLabelsAndEdges(
             codeIterator, constPool,
-            labels ++ table.unzip._2,
+            labels ++ table.map(_._2),
             edges + (offset -> table))
         case Opcode.GOTO | Opcode.GOTO_W =>
           // goto statements have a single address target, we must go there

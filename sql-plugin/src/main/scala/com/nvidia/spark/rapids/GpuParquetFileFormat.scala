@@ -298,7 +298,7 @@ class GpuParquetWriter(
     val builder = ParquetWriterOptions.builder()
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
-      .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96)
+      .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96.toString)
       .withDecimalPrecisions(GpuParquetFileFormat.getPrecisionList(dataSchema):_*)
     dataSchema.foreach(entry => {
       if (entry.nullable) {

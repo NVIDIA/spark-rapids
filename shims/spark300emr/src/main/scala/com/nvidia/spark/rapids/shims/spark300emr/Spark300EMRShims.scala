@@ -40,7 +40,7 @@ class Spark300EMRShims extends Spark300Shims {
   // use reflection here so we don't have to compile against their jars
   override def getFileScanRDD(
       sparkSession: SparkSession,
-      readFunction: (PartitionedFile) => Iterator[InternalRow],
+      readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
 
     val constructor = fileScanRddConstructor.getOrElse {

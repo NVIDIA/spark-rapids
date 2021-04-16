@@ -238,12 +238,12 @@ trait GpuHashJoin extends GpuExec {
           case GpuBuildLeft =>
             // tell `doJoinLeftRight` it is ok to close the `streamedTable`, this can help
             // in order to close temporary/intermediary data after a filter in some scenarios.
-            doJoinLeftRight(builtTable, streamedTable, true)
+            doJoinLeftRight(builtTable, streamedTable, closeRightTable = true)
           case GpuBuildRight =>
             // tell `doJoinLeftRight` to not close `builtTable`, as it is owned by our caller,
             // here we close the left table as that one is never closed by `doJoinLeftRight`.
             withResource(streamedTable) { _ =>
-              doJoinLeftRight(streamedTable, builtTable, false)
+              doJoinLeftRight(streamedTable, builtTable, closeRightTable = false)
             }
         }
       }

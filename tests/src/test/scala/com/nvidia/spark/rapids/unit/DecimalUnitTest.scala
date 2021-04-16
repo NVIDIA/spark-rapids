@@ -222,7 +222,7 @@ class DecimalUnitTest extends GpuUnitTests {
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
-          HostColumnarToGpu.columnarCopy(hostCV, builder, false, cv.getRowCount.toInt)
+          HostColumnarToGpu.columnarCopy(hostCV, builder, nullable = false, cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
             val expected = hostCV.getBase
             assertResult(expected.getType)(actual.getType)
@@ -246,7 +246,7 @@ class DecimalUnitTest extends GpuUnitTests {
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
-          HostColumnarToGpu.columnarCopy(hostCV, builder, true, cv.getRowCount.toInt)
+          HostColumnarToGpu.columnarCopy(hostCV, builder, nullable = true, cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
             val expected = hostCV.getBase
             assertResult(DType.create(DType.DTypeEnum.DECIMAL64, expected.getType.getScale)
@@ -268,12 +268,12 @@ class DecimalUnitTest extends GpuUnitTests {
     val conf = new SparkConf().set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "BatchScanExec,ColumnarToRowExec,FileSourceScanExec")
     val decimalCsvStruct = StructType(Array(
-      StructField("c_0", DecimalType(18, 0), true),
-      StructField("c_1", DecimalType(7, 3), true),
-      StructField("c_2", DecimalType(10, 10), true),
-      StructField("c_3", DecimalType(15, 12), true),
-      StructField("c_4", LongType, true),
-      StructField("c_5", IntegerType, true)))
+      StructField("c_0", DecimalType(18, 0), nullable = true),
+      StructField("c_1", DecimalType(7, 3), nullable = true),
+      StructField("c_2", DecimalType(10, 10), nullable = true),
+      StructField("c_3", DecimalType(15, 12), nullable = true),
+      StructField("c_4", LongType, nullable = true),
+      StructField("c_5", IntegerType, nullable = true)))
 
     withGpuSparkSession((ss: SparkSession) => {
       var rootPlan = frameFromOrc("decimal-test.orc")(ss).queryExecution.executedPlan

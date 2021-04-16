@@ -102,7 +102,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
           optimizations.append(AvoidTransition(plan))
           plan.costPreventsRunningOnGpu()
           // reset GPU cost
-          totalGpuCost = totalCpuCost;
+          totalGpuCost = totalCpuCost
         } else {
           // add transition cost to total GPU cost
           totalGpuCost += transitionCost

@@ -93,7 +93,7 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
     val l = lhs
     val r = rhs.getBase
     withResource(Scalar.fromBool(false)) { falseVal =>
-      if (eqNullAware(l, false)) {
+      if (eqNullAware(l, rhs = false)) {
         ColumnVector.fromScalar(falseVal, r.getRowCount.toInt)
       } else {
         withResource(l.and(r)) { lAndR =>
@@ -109,7 +109,7 @@ case class GpuAnd(left: Expression, right: Expression) extends CudfBinaryOperato
     val l = lhs.getBase
     val r = rhs
     withResource(Scalar.fromBool(false)) { falseVal =>
-      if (eqNullAware(r, false)) {
+      if (eqNullAware(r, rhs = false)) {
         ColumnVector.fromScalar(falseVal, l.getRowCount.toInt)
       } else {
         withResource(l.and(r)) { lAndR =>
@@ -165,7 +165,7 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
     val l = lhs
     val r = rhs.getBase
     withResource(Scalar.fromBool(true)) { trueVal =>
-      if (eqNullAware(l, true)) {
+      if (eqNullAware(l, rhs = true)) {
         ColumnVector.fromScalar(trueVal, r.getRowCount.toInt)
       } else {
         withResource(l.or(r)) { lOrR =>
@@ -181,7 +181,7 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryOperator
     val l = lhs.getBase
     val r = rhs
     withResource(Scalar.fromBool(true)) { trueVal =>
-      if (eqNullAware(r, true)) {
+      if (eqNullAware(r, rhs = true)) {
         ColumnVector.fromScalar(trueVal, l.getRowCount.toInt)
       } else {
         withResource(l.or(r)) { lOrR =>

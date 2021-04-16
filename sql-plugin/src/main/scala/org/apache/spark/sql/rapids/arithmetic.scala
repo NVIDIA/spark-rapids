@@ -644,7 +644,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
 
     val result = children.foldLeft[Any](null) { (r, c) =>
       withResource(
-        convertAndCloseIfNeeded(c.columnarEval(batch), false, numRows)) { cVal =>
+        convertAndCloseIfNeeded(c.columnarEval(batch), expandScalar = false, numRows)) { cVal =>
         withResource(convertAndCloseIfNeeded(r, cVal.isInstanceOf[Scalar], numRows)) { rVal =>
           if (isFp) {
             combineButNoCloseFp(rVal, cVal)

@@ -56,8 +56,8 @@ trait GpuDataSourceScanExec extends LeafExecNode {
 
   override def verboseStringWithOperatorId(): String = {
     val metadataStr = metadata.toSeq.sorted.filterNot {
-      case (_, value) if (value.isEmpty || value.equals("[]")) => true
-      case (key, _) if (key.equals("DataFilters") || key.equals("Format")) => true
+      case (_, value) if value.isEmpty || value.equals("[]") => true
+      case (key, _) if key.equals("DataFilters") || key.equals("Format") => true
       case (_, _) => false
     }.map {
       case (key, value) => s"$key: ${redact(value)}"

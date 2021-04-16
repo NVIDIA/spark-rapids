@@ -176,9 +176,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
       case (DataTypes.StringType, DataTypes.DoubleType) if ansiEnabled => doublesAsStrings(spark)
 
       case (DataTypes.StringType, DataTypes.DateType) =>
-        timestampsAsStrings(spark, false, ansiEnabled)
+        timestampsAsStrings(spark, castStringToTimestamp = false, validOnly = ansiEnabled)
       case (DataTypes.StringType, DataTypes.TimestampType) =>
-        timestampsAsStrings(spark, true, ansiEnabled)
+        timestampsAsStrings(spark, castStringToTimestamp = true, validOnly = ansiEnabled)
 
       case (DataTypes.ShortType, DataTypes.ByteType) if ansiEnabled => bytesAsShorts(spark)
       case (DataTypes.IntegerType, DataTypes.ByteType) if ansiEnabled => bytesAsInts(spark)
@@ -811,13 +811,13 @@ class CastOpSuite extends GpuExpressionTestSuite {
 object CastOpSuite {
 
   def doublesAsStrings(session: SparkSession): DataFrame = {
-    val schema = FuzzerUtils.createSchema(Seq(DoubleType), false)
+    val schema = FuzzerUtils.createSchema(Seq(DoubleType), nullable = false)
     val df = FuzzerUtils.generateDataFrame(session, schema, 2048)
     df.withColumn("c0", col("c0").cast(StringType))
   }
 
   def floatsAsStrings(session: SparkSession): DataFrame = {
-    val schema = FuzzerUtils.createSchema(Seq(FloatType), false)
+    val schema = FuzzerUtils.createSchema(Seq(FloatType), nullable = false)
     val df = FuzzerUtils.generateDataFrame(session, schema, 2048)
     df.withColumn("c0", col("c0").cast(StringType))
   }

@@ -138,7 +138,7 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
     this
   }
 
-  private var confKeyCache: String = null
+  private var confKeyCache: String = _
   protected val confKeyPart: String
 
   override def confKey: String = {
@@ -2961,7 +2961,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       if (!exp.equalsIgnoreCase("NONE")) {
         wrap.tagForExplain()
         val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
-        if (!explain.isEmpty) {
+        if (explain.nonEmpty) {
           logWarning(s"\n$explain")
           if (conf.optimizerExplain.equalsIgnoreCase("ALL") && optimizations.nonEmpty) {
             logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")

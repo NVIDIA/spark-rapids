@@ -75,7 +75,7 @@ class BufferReceiveState(
 
   // if a block overshoots a window, it will be in `workingOn`. This happens if the
   // block is larger than window also.
-  private[this] var workingOn: DeviceMemoryBuffer = null
+  private[this] var workingOn: DeviceMemoryBuffer = _
 
   // offset tracking
   private[this] var workingOnOffset: Long = 0L

@@ -58,7 +58,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     //static seed
     val r = new Random(4135277987418063300L)
 
-    val seq = for (i <- 1 to 100) yield r.nextInt(2) match {
+    val seq = for (_ <- 1 to 100) yield r.nextInt(2) match {
       case 0 => new Timestamp((upperValid * r.nextDouble()).toLong)
       case 1 => new Timestamp((lowerValid * r.nextDouble()).toLong)
     }
@@ -744,13 +744,11 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private def testTimestamps = testData(DataTypes.TimestampType)(_)
   private def testDates = testData(DataTypes.DateType)(_)
 
-  private val HIVE_BOOL_SQL_TYPE = "BOOLEAN"
   private val HIVE_LONG_SQL_TYPE = "BIGINT"
   private val HIVE_INT_SQL_TYPE = "INT"
   private val HIVE_SHORT_SQL_TYPE = "SMALLINT"
   private val HIVE_BYTE_SQL_TYPE = "TINYINT"
   private val HIVE_FLOAT_SQL_TYPE = "FLOAT"
-  private val HIVE_DOUBLE_SQL_TYPE = "DOUBLE"
   private val HIVE_STRING_SQL_TYPE = "STRING"
 
   private def testData(dt: DataType)(spark: SparkSession) = {

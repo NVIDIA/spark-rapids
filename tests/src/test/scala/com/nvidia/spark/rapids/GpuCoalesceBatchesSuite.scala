@@ -201,7 +201,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   }
 
   test("test HostToGpuCoalesceIterator with arrow valid") {
-    val (batch, schema) = setupArrowBatch(false)
+    val (batch, schema) = setupArrowBatch()
     val iter = Iterator.single(batch)
 
     val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(iter,

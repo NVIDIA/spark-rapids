@@ -81,7 +81,7 @@ object GpuBatchUtils {
       case dt: MapType =>
         // The Spark default map size assumes one entry for good or bad
         calculateOffsetBufferSize(rowCount) +
-            estimateGpuMemory(dt.keyType, false, rowCount) +
+            estimateGpuMemory(dt.keyType, nullable = false, rowCount) +
             estimateGpuMemory(dt.valueType, dt.valueContainsNull, rowCount)
       case dt: ArrayType =>
         // The Spark default array size assumes one entry for good or bad

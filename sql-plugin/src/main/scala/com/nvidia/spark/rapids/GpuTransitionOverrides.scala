@@ -39,7 +39,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * These rules insert transitions to and from the GPU, and then optimize various transitions.
  */
 class GpuTransitionOverrides extends Rule[SparkPlan] {
-  var conf: RapidsConf = null
+  var conf: RapidsConf = _
 
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
@@ -176,7 +176,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case GpuCoalesceBatches(co: GpuCoalesceBatches, goal) =>
       GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.max(goal, co.goal))
     case GpuCoalesceBatches(child: GpuExec, goal)
-      if (CoalesceGoal.satisfies(child.outputBatching, goal)) =>
+      if CoalesceGoal.satisfies(child.outputBatching, goal) =>
       // The goal is already satisfied so remove the batching
       child.withNewChildren(child.children.map(optimizeCoalesce))
     case p =>
@@ -270,13 +270,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case batchScan: GpuBatchScanExec =>
       if (batchScan.scan.isInstanceOf[GpuParquetScanBase] &&
         (disableUntilInput || disableScanUntilInput(batchScan))) {
-        ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, true)
+        ShimLoader.getSparkShims.copyParquetBatchScanExec(batchScan, queryUsesInputFile = true)
       } else {
         batchScan
       }
     case fileSourceScan: GpuFileSourceScanExec =>
-      if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, true)
+      if (disableUntilInput || disableScanUntilInput(fileSourceScan)) {
+        ShimLoader.getSparkShims.copyFileSourceScanExec(fileSourceScan, queryUsesInputFile = true)
       } else {
         fileSourceScan
       }
@@ -355,10 +355,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       plan match {
         case _: GpuHashJoin =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          GpuSortExec(sortOrder, global = false, plan, SortEachBatch)
         case _: GpuHashAggregateExec =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          GpuSortExec(sortOrder, global = false, plan, SortEachBatch)
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
@@ -470,7 +470,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def detectAndTagFinalColumnarOutput(plan: SparkPlan): SparkPlan = plan match {
     case d: DeserializeToObjectExec if d.child.isInstanceOf[GpuColumnarToRowExecParent] =>
       val gpuColumnar = d.child.asInstanceOf[GpuColumnarToRowExecParent]
-      plan.withNewChildren(Seq(getColumnarToRowExec(gpuColumnar.child, true)))
+      plan.withNewChildren(Seq(getColumnarToRowExec(gpuColumnar.child, exportColumnRdd = true)))
     case _ => plan
   }
 

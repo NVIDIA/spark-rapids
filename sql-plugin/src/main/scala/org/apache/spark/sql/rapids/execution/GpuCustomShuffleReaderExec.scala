@@ -104,7 +104,7 @@ case class GpuCustomShuffleReaderExec(
   def isLocalReader: Boolean =
     partitionSpecs.exists(_.isInstanceOf[PartialMapperPartitionSpec])
 
-  private var cachedShuffleRDD: RDD[ColumnarBatch] = null
+  private var cachedShuffleRDD: RDD[ColumnarBatch] = _
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new IllegalStateException()

@@ -42,8 +42,10 @@ class DateTimeUnitTest extends GpuUnitTests {
               withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6),
                 IntegerType)) {
                 daysVector =>
-                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
-                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)
+                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType,
+                    nullable = false)
+                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType,
+                    nullable = false)
                   val batch = new ColumnarBatch(List(datesVector, daysVector).toArray,
                      TIMES_DAY.length)
 
@@ -78,8 +80,10 @@ class DateTimeUnitTest extends GpuUnitTests {
               withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6),
                 IntegerType)) {
                 daysVector =>
-                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
-                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)
+                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType,
+                    nullable = false)
+                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType,
+                    nullable = false)
                   val batch = new ColumnarBatch(List(datesVector, daysVector).toArray,
                     TIMES_DAY.length)
 

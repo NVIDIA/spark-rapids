@@ -114,8 +114,8 @@ class RapidsShuffleIterator(
   blocksByAddress.foreach(bba => {
     // expected blocks per address
     if (pendingFetchesByAddress.put(bba._1, bba._2.size).nonEmpty){
-      throw new IllegalStateException(
-        s"Repeated block managers asked to be fetched: $blocksByAddress")
+      throw new IllegalStateException("Repeated block managers asked to be fetched: " +
+        s"${blocksByAddress.mkString("Array(", ", ", ")")}")
     }
   })
 
@@ -153,7 +153,7 @@ class RapidsShuffleIterator(
   case class BlockIdMapIndex(id: ShuffleBlockBatchId, mapIndex: Int)
 
   def start(): Unit = {
-    logInfo(s"Fetching ${blocksByAddress.size} blocks.")
+    logInfo(s"Fetching ${blocksByAddress.length} blocks.")
 
     // issue local fetches first
     val (local, remote) = blocksByAddress.partition(ba => ba._1.host == localHost)

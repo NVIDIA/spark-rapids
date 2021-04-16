@@ -78,7 +78,7 @@ object ConfHelper {
 
   def byteFromString(str: String, unit: ByteUnit, key: String): Long = {
     val (input, multiplier) =
-      if (str.length() > 0 && str.charAt(0) == '-') {
+      if (str.nonEmpty && str.charAt(0) == '-') {
         (str.substring(1), -1)
       } else {
         (str, 1)
@@ -247,7 +247,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   import ConfHelper._
 
-  var doc: String = null
+  var doc: String = _
   var isInternal: Boolean = false
 
   def doc(data: String): ConfBuilder = {

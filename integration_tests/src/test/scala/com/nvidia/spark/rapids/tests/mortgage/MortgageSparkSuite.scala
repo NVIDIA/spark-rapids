@@ -35,13 +35,13 @@ class MortgageSparkSuite extends FunSuite {
       .master("local[2]")
       .appName("MortgageTests")
       .config("spark.sql.adaptive.enabled", adaptiveQueryEnabled)
-      .config("spark.sql.join.preferSortMergeJoin", false)
+      .config("spark.sql.join.preferSortMergeJoin", value = false)
       .config("spark.sql.shuffle.partitions", 2)
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.rapids.sql.explain", true)
-      .config("spark.rapids.sql.test.enabled", false)
-      .config("spark.rapids.sql.incompatibleOps.enabled", true)
-      .config("spark.rapids.sql.hasNans", false)
+      .config("spark.rapids.sql.explain", value = true)
+      .config("spark.rapids.sql.test.enabled", value = false)
+      .config("spark.rapids.sql.incompatibleOps.enabled", value = true)
+      .config("spark.rapids.sql.hasNans", value = false)
     val rapidsShuffle = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
@@ -49,7 +49,7 @@ class MortgageSparkSuite extends FunSuite {
       // configure the cache-only shuffle manager (disable transport)
       builder = builder
           .config("spark.shuffle.manager", rapidsShuffle)
-          .config("spark.rapids.shuffle.transport.enabled", false)
+          .config("spark.rapids.shuffle.transport.enabled", value = false)
     } else {
       println("RAPIDS SHUFFLE MANAGER INACTIVE")
     }

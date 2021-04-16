@@ -24,8 +24,8 @@ import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.internal.Logging
 
 object ShimLoader extends Logging {
-  private var shimProviderClass: String = null
-  private var sparkShims: SparkShims = null
+  private var shimProviderClass: String = _
+  private var sparkShims: SparkShims = _
 
   private def detectShimProvider(): SparkShimServiceProvider = {
     val sparkVersion = getSparkVersion

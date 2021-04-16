@@ -39,7 +39,7 @@ class CastExprMeta[INPUT <: CastBase](
 
   val fromType = cast.child.dataType
   val toType = cast.dataType
-  var legacyCastToString = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
+  val legacyCastToString = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
 
   override def tagExprForGpu(): Unit = {
     recursiveTagExprForGpuCheck(fromType)
@@ -576,7 +576,6 @@ case class GpuCast(
   private def modernStructToString(input: ColumnView,
     inputSchema: Array[StructField]): ColumnVector = {
     var separatorColumn: ColumnVector = null
-    var spaceColumn: ColumnVector = null
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
 
     try {
@@ -617,9 +616,6 @@ case class GpuCast(
             col.close()
           })
         separatorColumn.close()
-      }
-      if (spaceColumn != null) {
-        spaceColumn.close()
       }
     }
   }
@@ -1183,7 +1179,7 @@ case class GpuCast(
       val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
         checked.castTo(targetType)
       } else {
-        val containerType = DecimalUtil.createCudfDecimal(dt.precision, (dt.scale + 1))
+        val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }

@@ -221,10 +221,10 @@ object GpuCSVScan {
       }
       val tsFormat = parsedOptions.timestampFormat
       val parts = tsFormat.split("'T'", 2)
-      if (parts.length == 0) {
+      if (parts.isEmpty) {
         meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
       }
-      if (parts.length > 0 && !supportedDateFormats.contains(parts(0))) {
+      if (parts.nonEmpty && !supportedDateFormats.contains(parts(0))) {
         meta.willNotWorkOnGpu(s"the timestamp format '$tsFormat' is not supported")
       }
       if (parts.length > 1 && !supportedTsPortionFormats.contains(parts(1))) {

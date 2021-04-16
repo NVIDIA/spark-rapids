@@ -40,7 +40,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
      * Method to convert Int vector to another numeric type (DecimalType not supported)
      */
     def convert(to: DataType)(v: ColumnVector): GpuColumnVector = {
-      val cv = v.asInstanceOf[ColumnVector]
+      val cv = v
       // close the vector that was passed in and return a new vector
       withResource(cv) { cv =>
         GpuColumnVector.from(cv.castTo(GpuColumnVector.getNonNestedRapidsType(to)), to)
@@ -58,7 +58,7 @@ class GpuUnitTests extends SparkQueryCompareTestSuite {
         case ShortType =>
           i.toShort
         case IntegerType =>
-          i.toInt
+          i
         case LongType =>
           i.toLong
         case FloatType =>

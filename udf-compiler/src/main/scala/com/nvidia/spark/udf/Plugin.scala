@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpres
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.rules.Rule
 
-class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
+class Plugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     logWarning("Installing rapids UDF compiler extensions to Spark. The compiler is disabled" +
         s" by default. To enable it, set `${RapidsConf.UDF_COMPILER_ENABLED}` to true")
@@ -56,7 +56,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
           exp
         } else {
           try {
-            if (exp.children != null && !exp.children.exists(x => x == null)) {
+            if (exp.children != null && !exp.children.contains(null)) {
               exp.withNewChildren(exp.children.map(c => {
                 if (c != null && c.isInstanceOf[Expression]) {
                   attemptToReplaceExpression(plan, c)

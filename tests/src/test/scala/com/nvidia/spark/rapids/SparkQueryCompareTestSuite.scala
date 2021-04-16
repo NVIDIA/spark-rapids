@@ -376,7 +376,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       fun: (DataFrame, DataFrame) => DataFrame,
       conf: SparkConf = new SparkConf(),
       repart: Integer = 1): (Array[Row], Array[Row]) = {
-    val fromCpu = withCpuSparkSession((session) => {
+    val fromCpu = withCpuSparkSession(session => {
       var dataA = dfA(session)
       var dataB = dfB(session)
       if (repart > 0) {
@@ -388,7 +388,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       fun(dataA, dataB).collect()
     }, conf)
 
-    val fromGpu = withGpuSparkSession((session) => {
+    val fromGpu = withGpuSparkSession(session => {
       var dataA = dfA(session)
       var dataB = dfB(session)
       if (repart > 0) {
@@ -959,8 +959,8 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       sort: Boolean = false,
       decimalTypeEnabled: Boolean = true): Unit = {
     val (testConf, qualifiedTestName) =
-      setupTestConfAndQualifierName(testName, false, sort, conf, Nil,
-        0.0, sortBeforeRepart, decimalTypeEnabled)
+      setupTestConfAndQualifierName(testName, incompat = false, sort = sort, conf, Nil,
+        0.0, sortBeforeRepart = sortBeforeRepart, decimalTypeEnabled = decimalTypeEnabled)
 
     test(qualifiedTestName) {
       val (fromCpu, fromGpu) = writeWithCpuAndGpu(df, writer, reader, testConf)
@@ -1581,19 +1581,19 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def utf8StringsDf(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
-    Seq[(String)](
-      ("Foo"),
-      ("Bar"),
-      ("B\ud720\ud721  "),
-      (" B\u0480\u0481"),
-      (" Baz")
+    Seq[String](
+      "Foo",
+      "Bar",
+      "B\ud720\ud721  ",
+      " B\u0480\u0481",
+      " Baz"
     ).toDF("strings")
   }
 
   def nullableStringsFromCsv = {
     fromCsvDf("strings.csv", StructType(Array(
-      StructField("strings", StringType, true),
-      StructField("more_strings", StringType, true)
+      StructField("strings", StringType, nullable = true),
+      StructField("more_strings", StringType, nullable = true)
     )))(_)
   }
 
@@ -1658,7 +1658,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       StructField("ints_3", IntegerType),
       StructField("ints_4", IntegerType),
       StructField("ints_5", IntegerType)
-    )), true)(_)
+    )), hasHeader = true)(_)
   }
 
   def intsFromPartitionedCsv= {
@@ -1674,14 +1674,14 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def longsFromCSVDf = {
     fromCsvDf("lots_o_longs.csv", StructType(Array(
-      StructField("longs", LongType, true),
-      StructField("more_longs", LongType, true)
+      StructField("longs", LongType, nullable = true),
+      StructField("more_longs", LongType, nullable = true)
     )))(_)
   }
 
   def veryLargeLongsFromCSVDf = {
     fromCsvDf("very_large_longs.csv", StructType(Array(
-      StructField("large_longs", LongType, true)
+      StructField("large_longs", LongType, nullable = true)
     )))(_)
   }
 
@@ -1692,15 +1692,15 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def nullableFloatCsvDf = {
     fromCsvDf("nullable_floats.csv", StructType(Array(
-      StructField("floats", FloatType, true),
-      StructField("more_floats", FloatType, true)
+      StructField("floats", FloatType, nullable = true),
+      StructField("more_floats", FloatType, nullable = true)
     )))(_)
   }
 
   def floatCsvDf = {
     fromCsvDf("floats.csv", StructType(Array(
-      StructField("floats", FloatType, false),
-      StructField("more_floats", FloatType, false)
+      StructField("floats", FloatType, nullable = false),
+      StructField("more_floats", FloatType, nullable = false)
     )))(_)
   }
 
@@ -1719,33 +1719,33 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def intCsvDf= {
     fromCsvDf("ints.csv", StructType(Array(
-      StructField("ints", IntegerType, false),
-      StructField("more_ints", IntegerType, false),
-      StructField("five", IntegerType, false),
-      StructField("six", IntegerType, false)
+      StructField("ints", IntegerType, nullable = false),
+      StructField("more_ints", IntegerType, nullable = false),
+      StructField("five", IntegerType, nullable = false),
+      StructField("six", IntegerType, nullable = false)
     )))(_)
   }
 
   def longsCsvDf= {
     fromCsvDf("ints.csv", StructType(Array(
-      StructField("longs", LongType, false),
-      StructField("more_longs", LongType, false),
-      StructField("five", IntegerType, false),
-      StructField("six", IntegerType, false)
+      StructField("longs", LongType, nullable = false),
+      StructField("more_longs", LongType, nullable = false),
+      StructField("five", IntegerType, nullable = false),
+      StructField("six", IntegerType, nullable = false)
     )))(_)
   }
 
   def doubleCsvDf= {
     fromCsvDf("floats.csv", StructType(Array(
-      StructField("doubles", DoubleType, false),
-      StructField("more_doubles", DoubleType, false)
+      StructField("doubles", DoubleType, nullable = false),
+      StructField("more_doubles", DoubleType, nullable = false)
     )))(_)
   }
 
   def datesCsvDf= {
     fromCsvDf("dates.csv", StructType(Array(
-      StructField("dates", DateType, false),
-      StructField("ints", IntegerType, false)
+      StructField("dates", DateType, nullable = false),
+      StructField("ints", IntegerType, nullable = false)
     )))(_)
   }
 
@@ -1786,7 +1786,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     val path = TestResourceFinder.getResourcePath(filename)
     s: SparkSession => {
       val df = s.read.orc(path)
-      setNullableStateForAllColumns(df, false)
+      setNullableStateForAllColumns(df, nullable = false)
     }
   }
 

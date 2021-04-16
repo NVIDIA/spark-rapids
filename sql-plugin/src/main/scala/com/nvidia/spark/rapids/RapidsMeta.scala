@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.time.ZoneId
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
@@ -564,9 +565,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      childPlans.filter(_.canThisBeReplaced).isEmpty &&
+      !childPlans.exists(_.canThisBeReplaced) &&
         (plan.conf.adaptiveExecutionEnabled ||
-        parent.filter(_.canThisBeReplaced).isEmpty)) {
+        !parent.exists(_.canThisBeReplaced))) {
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
     }
   }
@@ -700,6 +701,7 @@ object WindowAggExprContext extends ExpressionContext  {
 }
 
 object ExpressionContext {
+  @tailrec
   private[this] def findParentPlanMeta(meta: BaseExprMeta[_]): Option[SparkPlanMeta[_]] =
     meta.parent match {
       case Some(p: BaseExprMeta[_]) => findParentPlanMeta(p)
@@ -723,6 +725,7 @@ object ExpressionContext {
     }
   }
 
+  @tailrec
   def getRegularOperatorContext(meta: RapidsMeta[_, _, _]): ExpressionContext = meta.wrapped match {
     case _: LambdaFunction => LambdaExprContext
     case _: Expression if meta.parent.isDefined => getRegularOperatorContext(meta.parent.get)

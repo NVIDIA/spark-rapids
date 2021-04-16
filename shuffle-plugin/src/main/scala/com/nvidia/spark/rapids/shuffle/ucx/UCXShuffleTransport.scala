@@ -60,9 +60,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   private[this] val deviceNumBuffers = rapidsConf.shuffleUcxDeviceBounceBuffersCount
   private[this] val hostNumBuffers = rapidsConf.shuffleUcxHostBounceBuffersCount
 
-  private[this] var deviceSendBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = null
-  private[this] var hostSendBuffMgr: BounceBufferManager[HostMemoryBuffer] = null
-  private[this] var deviceReceiveBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = null
+  private[this] var deviceSendBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = _
+  private[this] var hostSendBuffMgr: BounceBufferManager[HostMemoryBuffer] = _
+  private[this] var deviceReceiveBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = _
 
   private[this] val executorId = shuffleServerId.executorId.toInt
 
@@ -340,9 +340,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       1000,
       (t: PendingTransferRequest, t1: PendingTransferRequest) => {
         if (t.getLength < t1.getLength) {
-          -1;
+          -1
         } else if (t.getLength > t1.getLength) {
-          1;
+          1
         } else {
           0
         }
@@ -390,7 +390,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         while (requestIx < requestsToHandle.size) {
           var hasBounceBuffers = true
           var fitsInFlight = true
-          var perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
+          val perClientReq = mutable.Map[RapidsShuffleClient, PerClientReadyRequests]()
           var reqToHandle: PendingTransferRequest = null
           val putBack = new ArrayBuffer[PendingTransferRequest]()
           //NOTE: If the in-flight limit is high, we will run through every request

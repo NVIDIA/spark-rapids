@@ -570,7 +570,7 @@ case class GpuCollectList(child: Expression,
 
   override def prettyName: String = "collect_list"
 
-  override def dataType: DataType = ArrayType(child.dataType, false)
+  override def dataType: DataType = ArrayType(child.dataType, containsNull = false)
 
   override def children: Seq[Expression] = child :: Nil
 

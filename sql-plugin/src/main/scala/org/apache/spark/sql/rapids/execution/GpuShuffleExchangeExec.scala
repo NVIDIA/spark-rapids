@@ -136,7 +136,7 @@ abstract class GpuShuffleExchangeExecBase(
   /**
    * Caches the created ShuffleBatchRDD so we can reuse that.
    */
-  private var cachedShuffleRDD: ShuffledBatchRDD = null
+  private var cachedShuffleRDD: ShuffledBatchRDD = _
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")

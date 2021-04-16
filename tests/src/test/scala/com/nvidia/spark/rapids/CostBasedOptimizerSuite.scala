@@ -56,9 +56,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-        sparkPlan: SparkPlan,
-        costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
       optimizations += costOptimizations
     })
 
@@ -113,9 +113,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -169,9 +169,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -210,9 +210,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -248,9 +248,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -279,11 +279,11 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
           "Alias,Cast,LessThan")
 
-    var optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
+    val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -409,12 +409,4 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     df
   }
 
-  private def addListener(optimizations: ListBuffer[Optimization]): Unit = {
-    GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
-        optimizations.appendAll(costOptimizations)
-      })
-  }
 }

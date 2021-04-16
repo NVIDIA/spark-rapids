@@ -22,7 +22,7 @@ import org.apache.arrow.vector._
 import org.apache.arrow.vector.complex.{ListVector, MapVector}
 import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
-import org.apache.arrow.vector.util.Text;
+import org.apache.arrow.vector.util.Text
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.catalog._
@@ -314,7 +314,7 @@ class ColumnarReaderFactory(options: CaseInsensitiveStringMap)
       vector.setValueCount(numRows + 1)
     case TimestampType =>
       val vector = vec.asInstanceOf[TimeStampMicroTZVector]
-      val startms = 20145678912L;
+      val startms = 20145678912L
       (0 until numRows).foreach { i =>
         vector.setSafe(i, startms + start + i)
       }

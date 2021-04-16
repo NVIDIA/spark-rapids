@@ -193,8 +193,8 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
 class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {  
   def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column):
       (Array[Row], Array[Row]) = {
-    val (testConf, qualifiedTestName) = setupTestConfAndQualifierName("", true, false,
-      new SparkConf(), Seq.empty, 0.0, false, false)
+    val (testConf, _) = setupTestConfAndQualifierName("", incompat = true, sort = false,
+      new SparkConf(), Seq.empty, 0.0, sortBeforeRepart = false, decimalTypeEnabled = false)
     runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF,
       frame => frame.select(gen(col("strings"))), testConf)
   }
@@ -208,7 +208,7 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
 
     println("\u001b[1;36mSummary of diffs:\u001b[0m")
     println("\u001b[1;36mCodepoint:\u001b[0m ")    
-    for (i <- 0 until fromCpu.length) { 
+    for (i <- fromCpu.indices) {
       if (fromCpu(i) != fromGpu(i)) { 
         val codepoint = TestCodepoints.validCodepointIndices(i)
         print(f"$codepoint%5d, ")  
@@ -218,8 +218,8 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
 
     println("\u001b[1;36mDetails:")
     println("Codepoint       CPU               GPU")
-    println("single -> single mappings\u001b[0m");
-    for (i <- 0 until fromCpu.length) {
+    println("single -> single mappings\u001b[0m")
+    for (i <- fromCpu.indices) {
       if (fromCpu(i) != fromGpu(i) && fromCpu(i).getString(0).length == 1) {
         val codepoint = TestCodepoints.validCodepointIndices(i)
 
@@ -229,11 +229,11 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
         println(f"${fromGpu(i).getString(0)(0).toInt}%5d[${fromGpu(i).getString(0)(0).toInt}%04x])")
       }
     }
-    println("\u001b[1;36msingle -> multi mappings\u001b[0m");
-    for (i <- 0 until fromCpu.length) {
+    println("\u001b[1;36msingle -> multi mappings\u001b[0m")
+    for (i <- fromCpu.indices) {
       if (fromCpu(i) != fromGpu(i) && fromCpu(i).getString(0).length > 1) {
-        var cpu_str = fromCpu(i).getString(0)
-        var gpu_str = fromGpu(i).getString(0)
+        val cpu_str = fromCpu(i).getString(0)
+        val gpu_str = fromGpu(i).getString(0)
 
         val codepoint = TestCodepoints.validCodepointIndices(i)
         print(f"(${codepoint.toChar.toString} $codepoint[$codepoint%04x]) ($cpu_str ")        
@@ -242,9 +242,9 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
         print(f"${cpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
         print(f"]) ($gpu_str ")
         print(f"${gpu_str.map(_.toInt.formatted("%d")).mkString(",")}")        
-        print("[");
+        print("[")
         print(f"${gpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
-        println("])");
+        println("])")
       }
     }
     println("---------------------------------------------")
@@ -264,7 +264,7 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
             
     // upper results
     val (fromCpuUpper, fromGpuUpper) = generateResults(upper)
-    for (i <- 0 until fromCpuUpper.length) {
+    for (i <- fromCpuUpper.indices) {
       if (fromCpuUpper(i) != fromGpuUpper(i) && fromGpuUpper(i).getString(0).length == 1) {
         val codepoint = TestCodepoints.validCodepointIndices(i)
         
@@ -276,7 +276,7 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
 
     // lower results
     val (fromCpuLower, fromGpuLower) = generateResults(lower)
-    for (i <- 0 until fromCpuLower.length) {
+    for (i <- fromCpuLower.indices) {
       if (fromCpuLower(i) != fromGpuLower(i) && fromGpuLower(i).getString(0).length == 1) {
         val codepoint = TestCodepoints.validCodepointIndices(i)
         

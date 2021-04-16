@@ -75,7 +75,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     val options = FuzzerOptions(asciiStringsOnly = true, numbersAsStrings = false,
         maxStringLen = 4)
     val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, DataTypes.IntegerType))
-    FuzzerUtils.generateDataFrame(spark, schema, 100, options, seed = 0)
+    FuzzerUtils.generateDataFrame(spark, schema, 100, options)
       .withColumn("c2", col("c1").mod(lit(10)))
   }
 
@@ -731,11 +731,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("first ignoreNulls=false", intCsvDf) {
-    frame => frame.groupBy(col("more_ints")).agg(first("ints", false))
+    frame => frame.groupBy(col("more_ints")).agg(first("ints", ignoreNulls = false))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("last ignoreNulls=false", intCsvDf) {
-    frame => frame.groupBy(col("more_ints")).agg(last("ints", false))
+    frame => frame.groupBy(col("more_ints")).agg(last("ints", ignoreNulls = false))
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("first/last ints column", intCsvDf) {
@@ -886,8 +886,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
       avg("floats"),
-      first("floats", true),
-      last("floats", true),
+      first("floats", ignoreNulls = true),
+      last("floats", ignoreNulls = true),
       count("*"))
   }
 
@@ -907,8 +907,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
       avg("floats"),
-      first("floats", true),
-      last("floats", true),
+      first("floats", ignoreNulls = true),
+      last("floats", ignoreNulls = true),
       count("*"))
   }
 
@@ -929,8 +929,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       max("more_floats") - min("floats"),
       sum("floats") + sum("more_floats"),
       avg("floats"),
-      first("floats", true),
-      last("floats", true),
+      first("floats", ignoreNulls = true),
+      last("floats", ignoreNulls = true),
       count("*"))
   }
 
@@ -1016,7 +1016,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       conf = floatAggConf,
       repart = 2) {
     frame => frame.groupBy("longs").agg(countDistinct("longs"),
-      last("more_longs", true))
+      last("more_longs", ignoreNulls = true))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
   IGNORE_ORDER_testSparkResultsAreEqualWithCapture(
@@ -1591,7 +1591,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     // verify nothing ran on the gpu
     if (gpuPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
       val execNode = gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec])
-      assert(!execNode.isDefined)
+      assert(execNode.isEmpty)
     }
   }}
 
@@ -1606,7 +1606,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     // verify nothing ran on the gpu
     if (gpuPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
       val execNode = gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec])
-      assert(!execNode.isDefined)
+      assert(execNode.isEmpty)
     }
   }}
 

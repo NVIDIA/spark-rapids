@@ -62,9 +62,7 @@ object AggregateUtils {
     aggExprs.map(e => e.aggregateFunction).exists {
       func => {
         func match {
-          case First(If(_, _, _), _) if validateAggregate(func.references) => {
-            true
-          }
+          case First(If(_, _, _), _) if validateAggregate(func.references) => true
           case _ => false
         }
       }
@@ -161,7 +159,7 @@ class GpuHashAggregateMeta(
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans(0).convertIfNeeded())
+      childPlans.head.convertIfNeeded())
   }
 }
 
@@ -276,7 +274,7 @@ class GpuSortAggregateMeta(
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans(0).convertIfNeeded())
+      childPlans.head.convertIfNeeded())
   }
 }
 
@@ -428,7 +426,7 @@ case class GpuHashAggregateExec(
               //        results with the incoming batch
               //     c) also update total time and aggTime metrics
               aggregatedInputCb = computeAggregate(childCvs, groupingExpressions,
-                boundExpression.aggModeCudfAggregates, false, computeAggTime)
+                boundExpression.aggModeCudfAggregates, merge = false, computeAggTime)
 
               childCvs.safeClose()
               childCvs = null
@@ -457,7 +455,7 @@ case class GpuHashAggregateExec(
                 // 3) Compute aggregate. In subsequent iterations we'll use this result
                 //    to concatenate against incoming batches (step 2)
                 aggregatedCb = computeAggregate(concatCvs, groupingExpressions,
-                  boundExpression.aggModeCudfAggregates, true, computeAggTime)
+                  boundExpression.aggModeCudfAggregates, merge = true, computeAggTime)
                 concatCvs.safeClose()
                 concatCvs = null
               }

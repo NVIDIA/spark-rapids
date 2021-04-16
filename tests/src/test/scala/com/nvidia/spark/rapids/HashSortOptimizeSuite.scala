@@ -57,7 +57,7 @@ class HashSortOptimizeSuite extends FunSuite {
     assert(sortNode.isDefined, "No sort node found")
     val gse = sortNode.get.asInstanceOf[GpuSortExec]
     assert(gse.children.length == 1)
-    assert(gse.global == false)
+    assert(!gse.global)
     assert(gse.sortType == SortEachBatch)
     val sortChild = gse.children.head
     assertResult(joinNode) { sortChild }

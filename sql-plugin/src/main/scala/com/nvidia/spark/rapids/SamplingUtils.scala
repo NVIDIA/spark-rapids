@@ -51,7 +51,7 @@ object SamplingUtils extends Arm {
       }
     } else {
       // Randomly select rows to remove, without replacement so use a set
-      val toRemove = rows - count;
+      val toRemove = rows - count
       val notSelected = mutable.Set[Int]()
       while (notSelected.size < toRemove) {
         notSelected += rand.nextInt(rows)

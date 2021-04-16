@@ -149,7 +149,7 @@ trait SparkShims {
       relation: HadoopFsRelation): Array[PartitionedFile]
   def getFileScanRDD(
     sparkSession: SparkSession,
-    readFunction: (PartitionedFile) => Iterator[InternalRow],
+    readFunction: PartitionedFile => Iterator[InternalRow],
     filePartitions: Seq[FilePartition]): RDD[InternalRow]
 
   def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int

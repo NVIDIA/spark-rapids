@@ -135,7 +135,7 @@ object RapidsPluginUtils extends Logging {
  * The Spark driver plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
-  var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
+  var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = _
 
   override def receive(msg: Any): AnyRef = {
     if (rapidsShuffleHeartbeatManager == null) {
@@ -170,7 +170,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
  * The Spark executor plugin provided by the RAPIDS Spark plugin.
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
-  var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
+  var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = _
 
   override def init(
       pluginContext: PluginContext,

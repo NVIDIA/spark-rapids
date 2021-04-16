@@ -30,7 +30,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 class AutoCloseColumnBatchIterator[U](itr: Iterator[U], nextBatch: Iterator[U] => ColumnarBatch)
     extends Iterator[ColumnarBatch] {
-  var cb: ColumnarBatch = null
+  var cb: ColumnarBatch = _
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {
@@ -39,7 +39,7 @@ class AutoCloseColumnBatchIterator[U](itr: Iterator[U], nextBatch: Iterator[U] =
     }
   }
 
-  TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
+  TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
     closeCurrentBatch()
   })
 
@@ -56,8 +56,8 @@ class AutoCloseColumnBatchIterator[U](itr: Iterator[U], nextBatch: Iterator[U] =
 }
 
 object AutoCloseColumnBatchIterator {
-  def map[U](rdd: RDD[U], f: (U) => ColumnarBatch) : RDD[ColumnarBatch] = {
-    rdd.mapPartitions((itr) => new AutoCloseColumnBatchIterator(itr,
+  def map[U](rdd: RDD[U], f: U => ColumnarBatch) : RDD[ColumnarBatch] = {
+    rdd.mapPartitions(itr => new AutoCloseColumnBatchIterator(itr,
       (batchIter: Iterator[U]) => f(batchIter.next())))
   }
 }

@@ -211,7 +211,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
     }
     // first clear the path determined by the static partition keys (e.g. /table/foo=1)
     val staticPrefixPath = qualifiedOutputPath.suffix(staticPartitionPrefix)
-    if (fs.exists(staticPrefixPath) && !committer.deleteWithJob(fs, staticPrefixPath, true)) {
+    if (fs.exists(staticPrefixPath) &&
+      !committer.deleteWithJob(fs, staticPrefixPath, recursive = true)) {
       throw new IOException(s"Unable to clear output " +
         s"directory $staticPrefixPath prior to writing to it")
     }
@@ -221,7 +222,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
         (staticPartitions.toSet -- spec).isEmpty,
         "Custom partition location did not match static partitioning keys")
       val path = new Path(customLoc)
-      if (fs.exists(path) && !committer.deleteWithJob(fs, path, true)) {
+      if (fs.exists(path) && !committer.deleteWithJob(fs, path, recursive = true)) {
         throw new IOException(s"Unable to clear partition " +
           s"directory $path prior to writing to it")
       }

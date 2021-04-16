@@ -112,7 +112,7 @@ class RapidsShuffleTestHelper extends FunSuite
     }, None)
   }
 
-  var buffersToClose = new ArrayBuffer[DeviceMemoryBuffer]()
+  val buffersToClose = new ArrayBuffer[DeviceMemoryBuffer]()
 
   override def beforeEach(): Unit = {
     assert(buffersToClose.isEmpty)

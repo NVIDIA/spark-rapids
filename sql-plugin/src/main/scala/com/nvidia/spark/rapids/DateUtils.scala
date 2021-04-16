@@ -131,12 +131,12 @@ object DateUtils {
   def identifySupportedFormatsToReplaceElseThrow(
       format: String): ListBuffer[FormatKeywordToReplace] = {
     var sb = new StringBuilder()
-    var index = 0;
+    var index = 0
     val patterns = new ListBuffer[FormatKeywordToReplace]
-    format.map(character => {
+    format.foreach(character => {
       // We are checking to see if this char is a part of a previously read pattern
       // or start of a new one.
-      if (sb.length == 0 || sb.charAt(sb.length - 1) == character) {
+      if (sb.isEmpty || sb.charAt(sb.length - 1) == character) {
         if (unsupportedCharacter(character)) {
           throw TimestampFormatConversionException(s"Unsupported character: $character")
         }
@@ -158,7 +158,7 @@ object DateUtils {
       }
       index = index + 1
     })
-    if (sb.length > 0) {
+    if (sb.nonEmpty) {
       val word = sb.toString()
       if (unsupportedWord(word)) {
         throw TimestampFormatConversionException(s"Unsupported word: $word")

@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.mutable.HashMap
+import scala.collection.mutable
 
 import com.nvidia.spark.rapids.{GpuDataSourceRDD, GpuExec, GpuMetric, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, ShimLoader, SparkPlanMeta}
 import org.apache.hadoop.fs.Path
@@ -78,7 +78,7 @@ case class GpuFileSourceScanExec(
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
 
-  private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
+  private lazy val driverMetrics: mutable.HashMap[String, Long] = mutable.HashMap.empty
 
   /**
    * Send the driver-side metrics. Before calling this function, selectedPartitions has
@@ -100,7 +100,7 @@ case class GpuFileSourceScanExec(
     val ret =
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    setFilesNumAndSizeMetric(ret, true)
+    setFilesNumAndSizeMetric(ret, static = true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
     driverMetrics("metadataTime") = timeTakenMs
@@ -124,7 +124,7 @@ case class GpuFileSourceScanExec(
           BoundReference(index, partitionColumns(index).dataType, nullable = true)
       }, Nil)
       val ret = selectedPartitions.filter(p => boundPredicate.eval(p.values))
-      setFilesNumAndSizeMetric(ret, false)
+      setFilesNumAndSizeMetric(ret, static = false)
       val timeTakenMs = (System.nanoTime() - startTime) / 1000 / 1000
       driverMetrics("pruningTime") = timeTakenMs
       ret
@@ -255,11 +255,11 @@ case class GpuFileSourceScanExec(
 
   override def verboseStringWithOperatorId(): String = {
     val metadataStr = metadata.toSeq.sorted.filterNot {
-      case (_, value) if (value.isEmpty || value.equals("[]")) => true
-      case (key, _) if (key.equals("DataFilters") || key.equals("Format")) => true
+      case (_, value) if value.isEmpty || value.equals("[]") => true
+      case (key, _) if key.equals("DataFilters") || key.equals("Format") => true
       case (_, _) => false
     }.map {
-      case (key, _) if (key.equals("Location")) =>
+      case (key, _) if key.equals("Location") =>
         val location = relation.location
         val numPaths = location.rootPaths.length
         val abbreviatedLoaction = if (numPaths <= 1) {
@@ -284,7 +284,7 @@ case class GpuFileSourceScanExec(
    * at a time.
    */
   lazy val inputRDD: RDD[InternalRow] = {
-    val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
+    val readFile: Option[PartitionedFile => Iterator[InternalRow]] =
       if (isPerFileReadEnabled) {
         val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
         val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
@@ -318,7 +318,7 @@ case class GpuFileSourceScanExec(
   }
 
   /** SQL metrics generated only for scans using dynamic partition pruning. */
-  private lazy val staticMetrics = if (partitionFilters.filter(isDynamicPruningFilter).nonEmpty) {
+  private lazy val staticMetrics = if (partitionFilters.exists(isDynamicPruningFilter)) {
     Map("staticFilesNum" -> createMetric(ESSENTIAL_LEVEL, "static number of files read"),
       "staticFilesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "static size of files read"))
   } else {
@@ -331,7 +331,7 @@ case class GpuFileSourceScanExec(
       static: Boolean): Unit = {
     val filesNum = partitions.map(_.files.size.toLong).sum
     val filesSize = ShimLoader.getSparkShims.getPartitionFileStatusSize(partitions)
-    if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
+    if (!static || !partitionFilters.exists(isDynamicPruningFilter)) {
       driverMetrics("numFiles") = filesNum
       driverMetrics("filesSize") = filesSize
     } else {
@@ -413,7 +413,7 @@ case class GpuFileSourceScanExec(
    */
   private def createBucketedReadRDD(
       bucketSpec: BucketSpec,
-      readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
+      readFile: Option[PartitionedFile => Iterator[InternalRow]],
       selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     logInfo(s"Planning with ${bucketSpec.numBuckets} buckets")
@@ -487,7 +487,7 @@ case class GpuFileSourceScanExec(
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
    */
   private def createNonBucketedReadRDD(
-      readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
+      readFile: Option[PartitionedFile => Iterator[InternalRow]],
       selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
     val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes

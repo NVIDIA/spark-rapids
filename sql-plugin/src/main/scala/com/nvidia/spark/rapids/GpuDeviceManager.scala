@@ -66,7 +66,7 @@ object GpuDeviceManager extends Logging {
         // we may have lost a race trying to acquire this addr or GPU is already busy
         return false
     }
-    return true
+    true
   }
 
   /**
@@ -79,7 +79,7 @@ object GpuDeviceManager extends Logging {
     // loop multiple times to see if a GPU was released or something unexpected happened that
     // we couldn't acquire on first try
     var numRetries = 2
-    val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
+    val addrsToTry = ArrayBuffer.empty ++= (0 until deviceCount)
     while (numRetries > 0) {
       val addr = addrsToTry.find(tryToSetGpuDeviceAndAcquire)
       if (addr.isDefined) {
@@ -92,7 +92,7 @@ object GpuDeviceManager extends Logging {
 
   def setGpuDeviceAndAcquire(addr: Int): Int = {
     logDebug(s"Initializing GPU device ID to $addr")
-    Cuda.setDevice(addr.toInt)
+    Cuda.setDevice(addr)
     // cudaFree(0) to actually allocate the set device - no process exclusive required
     // since we are relying on Spark to schedule it properly and not give it to multiple
     // executors
@@ -103,7 +103,7 @@ object GpuDeviceManager extends Logging {
   def getGPUAddrFromResources(resources: Map[String, ResourceInformation]): Option[Int] = {
     if (resources.contains("gpu")) {
       val addrs = resources("gpu").addresses
-      if (addrs.size > 1) {
+      if (addrs.length > 1) {
         // Throw an exception since we assume one GPU per executor.
         // If multiple GPUs are allocated by spark, then different tasks could get assigned
         // different GPUs but RMM would only be initialized for 1. We could also just get
@@ -150,7 +150,7 @@ object GpuDeviceManager extends Logging {
    * We expect the plugin to be run with 1 task and 1 GPU per executor.
    */
   def initializeFromTask(): Unit = {
-    if (threadGpuInitialized.get() == false) {
+    if (!threadGpuInitialized.get()) {
       val resources = getResourcesFromTaskContext
       if (rmmTaskInitEnabled) {
         initializeGpuAndMemory(resources)

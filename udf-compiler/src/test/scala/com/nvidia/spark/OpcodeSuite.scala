@@ -293,7 +293,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("DSTORE_<n> odd") {
-    val myudf: (Int) => Double = (a) => {
+    val myudf: Int => Double = a => {
       var myDoub : Double = 1.0
       var myDoub2 : Double = 1.0 * myDoub
       myDoub2
@@ -350,7 +350,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("ASTORE_1,2,3") {
-    val myudf: (String) => String = (a) => {
+    val myudf: String => String = a => {
       val myString : String = a
       val myString2 : String = myString
       val myString3 : String = myString2
@@ -364,7 +364,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FSTORE_1,2,3") {
-    val myudf: (Float) => Float = (a) => {
+    val myudf: Float => Float = a => {
       var myFloat : Float = a
       var myFloat2 : Float = myFloat + a
       var myFloat3 : Float = myFloat2 + a
@@ -379,7 +379,7 @@ class OpcodeSuite extends FunSuite {
 
 
   test("LSTORE_2") {
-    val myudf: (Long) => Long = (a) => {
+    val myudf: Long => Long = a => {
       var myLong : Long = a
       myLong
     }
@@ -426,7 +426,7 @@ class OpcodeSuite extends FunSuite {
     // guarantee the generation of ldc.
     object LDCTests {
       def run(): Unit = {
-        val myudf: () => (String) = () => {
+        val myudf: () => String = () => {
           val myString : String = "a"
           myString
         }
@@ -871,7 +871,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("DUP opcode") {
-    val myudf: (Int) => Int = (a) => {
+    val myudf: Int => Int = a => {
       val mine : Int = (a + a)*a
       val mine2 : Int = a*mine + a
       mine2
@@ -1092,12 +1092,10 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("TABLESWITCH TEST") {
-    val myudf: (Int) => Int = a => {
-      a match {
-        case 2 => a+a;
-        case 3 => a*a;
-        case _ => a-a
-      }
+    val myudf: Int => Int = {
+      case a@2 => a + a;
+      case a@3 => a * a;
+      case a => a - a
     }
 
     val u = makeUdf(myudf)
@@ -1116,12 +1114,10 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("LOOKUPSWITCH TEST") {
-    val myudf: (Int) => Int = a => {
-      a match {
-        case 1 => a+a;
-        case 100 => a*a;
-        case _ => a-a
-      }
+    val myudf: Int => Int = {
+      case a@1 => a + a;
+      case a@100 => a * a;
+      case a => a - a
     }
 
     val u = makeUdf(myudf)
@@ -1140,7 +1136,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("float constant in a function call") {
-    val myudf: (Float) => Float = x => {
+    val myudf: Float => Float = x => {
       val myFloat : Float = math.abs(-2.0f)
       myFloat
     }
@@ -1152,7 +1148,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("int constant in a function call") {
-    val myudf: (Int) => Int = x => {
+    val myudf: Int => Int = x => {
       val myInt : Int = math.abs(-2)
       myInt
     }
@@ -1494,7 +1490,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - toUpperCase") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.toUpperCase()
     }
     val u = makeUdf(myudf)
@@ -1505,7 +1501,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - toLowerCase") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.toLowerCase()
     }
     val u = makeUdf(myudf)
@@ -1516,7 +1512,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - trim") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.trim()
     }
     val u = makeUdf(myudf)
@@ -1527,7 +1523,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - subtring - start index") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.substring(2)
     }
     val u = makeUdf(myudf)
@@ -1538,7 +1534,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - subtring - start and end index") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.substring(2,7)
     }
     val u = makeUdf(myudf)
@@ -1549,7 +1545,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - replace character") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.replace("r","s")
     }
     val u = makeUdf(myudf)
@@ -1560,7 +1556,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - replace character sequence") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.replace("r","fr")
     }
     val u = makeUdf(myudf)
@@ -1571,7 +1567,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - startsWith") {
-    val myudf: (String) => Boolean = a => {
+    val myudf: String => Boolean = a => {
       a.startsWith("ro")
     }
     val u = makeUdf(myudf)
@@ -1582,7 +1578,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - endsWith") {
-    val myudf: (String) => Boolean = a => {
+    val myudf: String => Boolean = a => {
       a.endsWith("et")
     }
     val u = makeUdf(myudf)
@@ -1604,7 +1600,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - length") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.length()
     }
     val u = makeUdf(myudf)
@@ -1615,7 +1611,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - isEmpty") {
-    val myudf: (String) => Boolean = a => {
+    val myudf: String => Boolean = a => {
       a.isEmpty()
     }
     val u = makeUdf(myudf)
@@ -1626,7 +1622,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - valueOf - Boolean") {
-    val myudf: (Boolean) => String = a => {
+    val myudf: Boolean => String = a => {
       String.valueOf(a)
     }
     val u = makeUdf(myudf)
@@ -1637,7 +1633,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - valueOf - Char") {
-    val myudf: (Char) => String = a => {
+    val myudf: Char => String = a => {
       String.valueOf(a)
     }
     val u = makeUdf(myudf)
@@ -1648,7 +1644,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - valueOf - Double") {
-    val myudf: (Double) => String = a => {
+    val myudf: Double => String = a => {
       String.valueOf(a)
     }
     val u = makeUdf(myudf)
@@ -1659,7 +1655,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - valueOf - Float") {
-    val myudf: (Float) => String = a => {
+    val myudf: Float => String = a => {
       String.valueOf(a)
     }
     val u = makeUdf(myudf)
@@ -1670,7 +1666,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - valueOf - Int") {
-    val myudf: (Int) => String = a => {
+    val myudf: Int => String = a => {
       String.valueOf(a)
     }
     val u = makeUdf(myudf)
@@ -1681,7 +1677,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - valueOf - Long") {
-    val myudf: (Long) => String = a => {
+    val myudf: Long => String = a => {
       String.valueOf(a)
     }
     val u = makeUdf(myudf)
@@ -1692,7 +1688,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: string test - charAt") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.charAt(2).toInt
     }
     val u = makeUdf(myudf)
@@ -1703,7 +1699,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - contains") {
-    val myudf: (String) => Boolean = a => {
+    val myudf: String => Boolean = a => {
       a.contains("hmmm")
     }
     val u = makeUdf(myudf)
@@ -1714,7 +1710,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - indexOf - case 1 - str,int") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.indexOf("c",1)
     }
     val u = makeUdf(myudf)
@@ -1725,7 +1721,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: string test - indexOf - case 2 - char - single quotes,int") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.indexOf('c',1)
     }
     val u = makeUdf(myudf)
@@ -1736,7 +1732,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: string test - indexOf - case 3 - char - utf value,int") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.indexOf(99,1)
     }
     val u = makeUdf(myudf)
@@ -1747,7 +1743,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: string test - indexOf - case 4 - char - utf value") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.indexOf(99)
     }
     val u = makeUdf(myudf)
@@ -1758,7 +1754,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: string test - indexOf - case 5 - char - single quotes") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.indexOf('c')
     }
     val u = makeUdf(myudf)
@@ -1769,7 +1765,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - indexOf - case 6 - str") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.indexOf("c")
     }
     val u = makeUdf(myudf)
@@ -1782,7 +1778,7 @@ class OpcodeSuite extends FunSuite {
   // this test is an expected fallback to JVM execution due to no support for String.codePointAt
   // method
   test("FALLBACK TO CPU: string test - codePointAt method. ") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       a.codePointAt(2)
     }
     val u = makeUdf(myudf)
@@ -1794,7 +1790,7 @@ class OpcodeSuite extends FunSuite {
 
   // this test is an expected fallback to JVM execution due to no support for String.matches method
   test("FALLBACK TO CPU: string test - matches method. ") {
-    val myudf: (String) => Boolean = a => {
+    val myudf: String => Boolean = a => {
       a.matches("[a-z]*.txt" )
     }
     val u = makeUdf(myudf)
@@ -1805,7 +1801,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - replaceAll method") {
-    val myudf: (String) => String = a => {
+    val myudf: String => String = a => {
       a.replaceAll("m{2}.m{2}","replaced")
     }
     val u = makeUdf(myudf)
@@ -1816,7 +1812,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - split method - case 1") {
-    val myudf: (String) => Array[String] = a => {
+    val myudf: String => Array[String] = a => {
       a.split("l{2}.l{2}")
     }
     val u = makeUdf(myudf)
@@ -1827,7 +1823,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - split method - case 2") {
-    val myudf: (String) => Array[String] = a => {
+    val myudf: String => Array[String] = a => {
       a.split("l{2}.l{2}",3)
     }
     val u = makeUdf(myudf)
@@ -1838,7 +1834,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - getBytes - case 1 - default platform charset") {
-    val myudf: (String) => Array[Byte] = a => {
+    val myudf: String => Array[Byte] = a => {
       a.getBytes()
     }
     val u = makeUdf(myudf)
@@ -1849,7 +1845,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("string test - getBytes - case 2 - charsetName -- string") {
-    val myudf: (String) => Array[Byte] = a => {
+    val myudf: String => Array[Byte] = a => {
       a.getBytes("US-ASCII")
     }
     val u = makeUdf(myudf)
@@ -1860,7 +1856,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Float - isNaN - True") {
-    val myudf: (Float) => Boolean = a => {
+    val myudf: Float => Boolean = a => {
       a.isNaN()
     }
     val u = makeUdf(myudf)
@@ -1871,7 +1867,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Float - isNaN - False") {
-    val myudf: (Float) => Boolean = a => {
+    val myudf: Float => Boolean = a => {
       a.isNaN()
     }
     val u = makeUdf(myudf)
@@ -1882,7 +1878,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Double - isNaN - True") {
-    val myudf: (Double) => Boolean = a => {
+    val myudf: Double => Boolean = a => {
       a.isNaN()
     }
     val u = makeUdf(myudf)
@@ -1893,7 +1889,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Double - isNaN - False") {
-    val myudf: (Float) => Boolean = a => {
+    val myudf: Float => Boolean = a => {
       a.isNaN()
     }
     val u = makeUdf(myudf)
@@ -1918,7 +1914,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: Unsupported date time pattern") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getDayOfMonth
@@ -1931,7 +1927,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Get day of month from LocalDateTime string") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getDayOfMonth
@@ -1944,7 +1940,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Get hour from LocalDateTime string") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("MM-dd-yyyy HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getHour
@@ -1957,7 +1953,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Get minute from LocalDateTime string") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getMinute
@@ -1970,7 +1966,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("get month from LocalDataTime string") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MMM-dd")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getMonthValue
@@ -1983,7 +1979,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("get second from LocalDateTime string") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getSecond
@@ -1996,7 +1992,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("get year from LocalDateTime string") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getYear
@@ -2009,7 +2005,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FALLBACK TO CPU: Get hour from zoned LocalDateTime string") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZZZZZ'['VV']'")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getHour
@@ -2023,7 +2019,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("Get hour from pattern with escaped text") {
-    val myudf: (String) => Int = a => {
+    val myudf: String => Int = a => {
       val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'''VX'HH:mm:ss'''''Z'''")
       val ldt = LocalDateTime.parse(a, formatter)
       ldt.getHour
@@ -2123,7 +2119,7 @@ class OpcodeSuite extends FunSuite {
     def simple_func1(str: String): Int = {
       simple_func2(str) + simple_func2(str)
     }
-    val myudf: (String) => Int = str => {
+    val myudf: String => Int = str => {
       simple_func1(str)
     }
     val u = makeUdf(myudf)
@@ -2138,7 +2134,7 @@ class OpcodeSuite extends FunSuite {
       def simple_func(str: String): Int = {
         str.length
       }
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         simple_func(str)
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2158,7 +2154,7 @@ class OpcodeSuite extends FunSuite {
       def simple_func(str: String): Int = {
         str.length
       }
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         simple_func(str)
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2178,7 +2174,7 @@ class OpcodeSuite extends FunSuite {
       def simple_func(str: String): Int = {
         str.length
       }
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         simple_func(str)
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2197,7 +2193,7 @@ class OpcodeSuite extends FunSuite {
       def simple_func(str: String): Int = {
         str.length
       }
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         simple_func(str)
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2218,7 +2214,7 @@ class OpcodeSuite extends FunSuite {
       }
     }
     class D extends B {
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         simple_func(str)
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2240,7 +2236,7 @@ class OpcodeSuite extends FunSuite {
       }
     }
     final class D extends B {
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         simple_func(str)
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2262,7 +2258,7 @@ class OpcodeSuite extends FunSuite {
       }
     }
     class D extends B {
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         simple_func(str)
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2280,7 +2276,7 @@ class OpcodeSuite extends FunSuite {
   test("FALLBACK TO CPU: capture a var in class") {
     class C {
       var capturedArg: Int = 4
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         str.length + capturedArg
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2298,7 +2294,7 @@ class OpcodeSuite extends FunSuite {
   test("FALLBACK TO CPU: capture a var outside class") {
     var capturedArg: Int = 4
     class C {
-      val myudf: (String) => Int = str => {
+      val myudf: String => Int = str => {
         str.length + capturedArg
       }
       def apply(dataset: Dataset[String]): Dataset[Row] = {
@@ -2315,7 +2311,7 @@ class OpcodeSuite extends FunSuite {
 
   test("Conditional array buffer processing") {
     def cond(s: String): Boolean = {
-      s == null || s.trim.length == 0
+      s == null || s.trim.isEmpty
     }
 
     def transform(str: String): String = {
@@ -2359,7 +2355,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("compile child expresion in explode") {
-    val myudf: (String) => Array[String] = a => {
+    val myudf: String => Array[String] = a => {
       a.split(",")
     }
     val u = makeUdf(myudf)

@@ -21,7 +21,6 @@ import java.util.{Comparator, LinkedList, PriorityQueue}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.GpuMetric._
 
 import org.apache.spark.TaskContext
