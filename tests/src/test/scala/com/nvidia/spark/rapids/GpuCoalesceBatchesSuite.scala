@@ -64,7 +64,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
   test("require single batch") {
 
-    val conf = makeBatchedBytes(1)
+    val conf = makeBatchedBytes(1, enableCsvConf())
       .set(RapidsConf.MAX_READER_BATCH_SIZE_ROWS.key, "1")
       .set(RapidsConf.MAX_READER_BATCH_SIZE_BYTES.key, "1")
       .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "1")

@@ -43,7 +43,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{DateType, DecimalType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -173,26 +173,19 @@ object GpuCSVScan {
       meta.willNotWorkOnGpu("GpuCSVScan does not support modified escape chars")
     }
 
-    // TODO charToEscapeQuoteEscaping???
+    if (parsedOptions.charToEscapeQuoteEscaping.isDefined) {
+      meta.willNotWorkOnGpu("GPU CSV Parsing does not support charToEscapeQuoteEscaping")
+    }
 
     if (StandardCharsets.UTF_8.name() != parsedOptions.charset &&
         StandardCharsets.US_ASCII.name() != parsedOptions.charset) {
       meta.willNotWorkOnGpu("GpuCSVScan only supports UTF8 encoded data")
     }
 
-    if (parsedOptions.ignoreLeadingWhiteSpaceInRead) {
-      // TODO need to fix this (or at least verify that it is doing the right thing)
-      meta.willNotWorkOnGpu("GpuCSVScan does not support ignoring leading white space")
-    }
-
-    if (parsedOptions.ignoreTrailingWhiteSpaceInRead) {
-      // TODO need to fix this (or at least verify that it is doing the right thing)
-      meta.willNotWorkOnGpu("GpuCSVScan does not support ignoring trailing white space")
-    }
-
-    if (parsedOptions.multiLine) {
-      meta.willNotWorkOnGpu("GpuCSVScan does not support multi-line")
-    }
+    // TODO parsedOptions.ignoreLeadingWhiteSpaceInRead cudf always does this, but not for strings
+    // TODO parsedOptions.ignoreTrailingWhiteSpaceInRead cudf always does this, but not for strings
+    // TODO parsedOptions.multiLine cudf always does this, but it is not the default and it is not
+    //  consistent
 
     if (parsedOptions.lineSeparator.getOrElse("\n") != "\n") {
       meta.willNotWorkOnGpu("GpuCSVScan only supports \"\\n\" as a line separator")
@@ -202,17 +195,72 @@ object GpuCSVScan {
       meta.willNotWorkOnGpu("GpuCSVScan only supports Permissive CSV parsing")
     }
 
-    // TODO parsedOptions.nanValue This is here by default so we need to be able to support it
-    // TODO parsedOptions.positiveInf This is here by default so we need to be able to support it
-    // TODO parsedOptions.negativeInf This is here by default so we need to be able to support it
+    // TODO parsedOptions.nanValue This is here by default so we should support it, but cudf
+    // make it null https://github.com/NVIDIA/spark-rapids/issues/125
+    parsedOptions.positiveInf.toLowerCase() match {
+      case "inf" | "+inf" | "infinity" | "+infinity" =>
+      case _ =>
+        meta.willNotWorkOnGpu(s"the positive infinity value '${parsedOptions.positiveInf}'" +
+            s" is not supported'")
+    }
+    parsedOptions.negativeInf.toLowerCase() match {
+      case "-inf" | "-infinity" =>
+      case _ =>
+        meta.willNotWorkOnGpu(s"the positive infinity value '${parsedOptions.positiveInf}'" +
+            s" is not supported'")
+    }
+    // parsedOptions.maxCharsPerColumn does not impact the final output it is a performance
+    // improvement if you know the maximum size
 
-    if (readSchema.map(_.dataType).contains(DateType) &&
-      !supportedDateFormats.contains(parsedOptions.dateFormat)) {
-      meta.willNotWorkOnGpu(s"the date format '${parsedOptions.dateFormat}' is not supported'")
+    // parsedOptions.maxColumns was originally a performance optimization but is not used any more
+
+    if (readSchema.map(_.dataType).contains(DateType)) {
+      if (!meta.conf.isCsvDateReadEnabled) {
+        meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading dates. " +
+            s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DATES} to true.")
+      }
+      if (!supportedDateFormats.contains(parsedOptions.dateFormat)) {
+        meta.willNotWorkOnGpu(s"the date format '${parsedOptions.dateFormat}' is not supported'")
+      }
+    }
+
+    if (!meta.conf.isCsvBoolReadEnabled && readSchema.map(_.dataType).contains(BooleanType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading boolean. " +
+          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BOOLS} to true.")
+    }
+
+    if (!meta.conf.isCsvByteReadEnabled && readSchema.map(_.dataType).contains(ByteType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading bytes. " +
+          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_BYTES} to true.")
+    }
+
+    if (!meta.conf.isCsvShortReadEnabled && readSchema.map(_.dataType).contains(ShortType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading shorts. " +
+          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_SHORTS} to true.")
+    }
+
+    if (!meta.conf.isCsvIntReadEnabled && readSchema.map(_.dataType).contains(IntegerType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading integers. " +
+          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_INTEGERS} to true.")
+    }
+
+    if (!meta.conf.isCsvLongReadEnabled && readSchema.map(_.dataType).contains(LongType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading longs. " +
+          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_LONGS} to true.")
+    }
+
+    if (!meta.conf.isCsvFloatReadEnabled && readSchema.map(_.dataType).contains(FloatType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading floats. " +
+          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_FLOATS} to true.")
+    }
+
+    if (!meta.conf.isCsvDoubleReadEnabled && readSchema.map(_.dataType).contains(DoubleType)) {
+      meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading doubles. " +
+          s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DOUBLES} to true.")
     }
 
     if (readSchema.map(_.dataType).contains(TimestampType)) {
-      if (!meta.conf.isCsvTimestampEnabled) {
+      if (!meta.conf.isCsvTimestampReadEnabled) {
         meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
           s"enable it please set ${RapidsConf.ENABLE_CSV_TIMESTAMPS} to true.")
       }
