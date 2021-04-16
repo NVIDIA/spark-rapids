@@ -32,7 +32,6 @@ Software Requirements:
 	
 	Python 3.6+, Scala 2.12, Java 8 
 
-### Download v0.4.1
 ### Download v0.4.2
 * [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.2/rapids-4-spark_2.12-0.4.2.jar)
 * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda11.jar)
