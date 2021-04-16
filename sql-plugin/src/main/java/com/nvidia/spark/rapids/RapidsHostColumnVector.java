@@ -78,8 +78,4 @@ public final class RapidsHostColumnVector extends RapidsHostColumnVectorCore {
   public final ai.rapids.cudf.HostColumnVector getBase() {
     return cudfCv;
   }
-
-  public GpuColumnVector copyToDevice() {
-    return new GpuColumnVector(type, cudfCv.copyToDevice());
-  }
 }
