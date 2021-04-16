@@ -528,9 +528,13 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
   // average = (0 + 1) and not 2 which is the rowcount of the projected column.
   override lazy val updateExpressions: Seq[GpuExpression] = Seq(new CudfSum(cudfSum),
     new CudfSum(cudfCount))
-  override lazy val evaluateExpressions: Seq[GpuExpression] = GpuDivide(
+
+  // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
+  // divide-by-zero exceptions, even when ansi mode is enabled in Spark. 
+  // This is to conform with Spark's behavior in the Average aggregate function.
+  override lazy val evaluateExpression: GpuExpression = GpuDivide(
     GpuCast(cudfSum, DoubleType),
-    GpuCast(cudfCount, DoubleType)) :: Nil
+    GpuCast(cudfCount, DoubleType), failOnErrorOverride = false)
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
     GpuLiteral(0.0, DoubleType),
