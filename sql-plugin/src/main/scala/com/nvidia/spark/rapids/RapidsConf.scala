@@ -607,13 +607,6 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
-    .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
-      "format for Spark includes a timezone at the end. Anything except the UTC timezone is not " +
-      "supported. Timestamps after 2038 and before 1902 are also not supported.")
-    .booleanConf
-    .createWithDefault(false)
-
   // FILE FORMATS
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -715,6 +708,60 @@ object RapidsConf {
     .doc("When set to false disables csv input acceleration")
     .booleanConf
     .createWithDefault(true)
+
+  // TODO should we change this config?
+  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
+      .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
+          "format for Spark includes a timezone at the end. Anything except the UTC timezone is " +
+          "not supported. Timestamps after 2038 and before 1902 are also not supported.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DATES = conf("spark.rapids.sql.csv.read.date.enabled")
+      .doc("Parsing invalid CSV dates produces different results from Spark")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_BOOLS = conf("spark.rapids.sql.csv.read.bool.enabled")
+      .doc("Parsing an invalid CSV boolean value produces true instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_BYTES = conf("spark.rapids.sql.csv.read.byte.enabled")
+      .doc("Parsing CSV bytes is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_SHORTS = conf("spark.rapids.sql.csv.read.short.enabled")
+      .doc("Parsing CSV shorts is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_INTEGERS = conf("spark.rapids.sql.csv.read.integer.enabled")
+      .doc("Parsing CSV integers is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_LONGS = conf("spark.rapids.sql.csv.read.long.enabled")
+      .doc("Parsing CSV longs is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
+      .doc("Parsing CSV floats has some issues at the min and max values for floating" +
+          "point numbers and can be more lenient on parsing inf and -inf values")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
+      .doc("Parsing CSV double has some issues at the min and max values for floating" +
+          "point numbers and can be more lenient on parsing inf and -inf values")
+      .booleanConf
+      .createWithDefault(false)
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
@@ -1215,9 +1262,25 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
-  lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
+  lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
 
-  lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
+  lazy val isCsvDateReadEnabled: Boolean = get(ENABLE_READ_CSV_DATES)
+
+  lazy val isCsvBoolReadEnabled: Boolean = get(ENABLE_READ_CSV_BOOLS)
+
+  lazy val isCsvByteReadEnabled: Boolean = get(ENABLE_READ_CSV_BYTES)
+
+  lazy val isCsvShortReadEnabled: Boolean = get(ENABLE_READ_CSV_SHORTS)
+
+  lazy val isCsvIntReadEnabled: Boolean = get(ENABLE_READ_CSV_INTEGERS)
+
+  lazy val isCsvLongReadEnabled: Boolean = get(ENABLE_READ_CSV_LONGS)
+
+  lazy val isCsvFloatReadEnabled: Boolean = get(ENABLE_READ_CSV_FLOATS)
+
+  lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
+
+  lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 

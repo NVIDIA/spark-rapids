@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -93,37 +93,150 @@ _bad_str_schema = StructType([
 _good_str_schema = StructType([
     StructField('Something', StringType())])
 
+_three_str_schema = StructType([
+    StructField('a', StringType()),
+    StructField('b', StringType()),
+    StructField('c', StringType())])
 
-_enable_ts_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true'}
+_trucks_schema = StructType([
+    StructField('make', StringType()),
+    StructField('model', StringType()),
+    StructField('year', IntegerType()),
+    StructField('price', StringType()),
+    StructField('comment', StringType())])
 
-def read_csv_df(data_path, schema, header, sep):
-    return lambda spark : spark.read\
-            .schema(schema)\
-            .option('header', header)\
-            .option('sep', sep)\
-            .csv(data_path)
+_bool_schema = StructType([
+    StructField('boolean', BooleanType())])
 
-def read_csv_sql(data_path, schema, header, sep):
+_byte_schema = StructType([
+    StructField('number', ByteType())])
+
+_short_schema = StructType([
+    StructField('number', ShortType())])
+
+_int_schema = StructType([
+    StructField('number', IntegerType())])
+
+_long_schema = StructType([
+    StructField('number', LongType())])
+
+_float_schema = StructType([
+    StructField('number', FloatType())])
+
+_double_schema = StructType([
+    StructField('number', DoubleType())])
+
+_number_as_string_schema = StructType([
+    StructField('number', StringType())])
+
+_empty_byte_schema = StructType([
+    StructField('ignored_a', StringType()),
+    StructField('number', ByteType()),
+    StructField('ignored_b', StringType())])
+
+_empty_short_schema = StructType([
+    StructField('ignored_a', StringType()),
+    StructField('number', ShortType()),
+    StructField('ignored_b', StringType())])
+
+_empty_int_schema = StructType([
+    StructField('ignored_a', StringType()),
+    StructField('number', IntegerType()),
+    StructField('ignored_b', StringType())])
+
+_empty_long_schema = StructType([
+    StructField('ignored_a', StringType()),
+    StructField('number', LongType()),
+    StructField('ignored_b', StringType())])
+
+_empty_float_schema = StructType([
+    StructField('ignored_a', StringType()),
+    StructField('number', FloatType()),
+    StructField('ignored_b', StringType())])
+
+_empty_double_schema = StructType([
+    StructField('ignored_a', StringType()),
+    StructField('number', DoubleType()),
+    StructField('ignored_b', StringType())])
+
+_enable_all_types_conf = {'spark.rapids.sql.csvTimestamps.enabled': 'true',
+        'spark.rapids.sql.csv.read.bool.enabled': 'true',
+        'spark.rapids.sql.csv.read.date.enabled': 'true',
+        'spark.rapids.sql.csv.read.byte.enabled': 'true',
+        'spark.rapids.sql.csv.read.short.enabled': 'true',
+        'spark.rapids.sql.csv.read.integer.enabled': 'true',
+        'spark.rapids.sql.csv.read.long.enabled': 'true',
+        'spark.rapids.sql.csv.read.float.enabled': 'true',
+        'spark.rapids.sql.csv.read.double.enabled': 'true',
+        'spark.sql.legacy.timeParserPolicy': 'Corrected'}
+
+def read_csv_df(data_path, schema, options = {}):
+    def read_impl(spark):
+        reader = spark.read
+        if not schema is None:
+            reader = reader.schema(schema)
+        for key, value in options.items():
+            reader = reader.option(key, value)
+        return debug_df(reader.csv(data_path))
+    return read_impl
+
+def read_csv_sql(data_path, schema, options = {}):
+    if not schema is None:
+        options.update({'schema': schema})
     def read_impl(spark):
         spark.sql('DROP TABLE IF EXISTS `TMP_CSV_TABLE`')
-        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', schema=schema, header=str(header), sep=sep, path=data_path)
+        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', path=data_path, **options)
     return read_impl
 
 @approximate_float
-@pytest.mark.parametrize('name,schema,sep,header', [
-    ('Acquisition_2007Q3.txt', _acq_schema, '|', False),
-    ('Performance_2007Q3.txt_0', _perf_schema, '|', False),
-    pytest.param('ts.csv', _date_schema, ',', False, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/869')),
-    ('ts.csv', _ts_schema, ',', False),
-    ('str.csv', _bad_str_schema, ',', True),
-    ('str.csv', _good_str_schema, ',', True)
-    ])
+@pytest.mark.parametrize('name,schema,options', [
+    ('Acquisition_2007Q3.txt', _acq_schema, {'sep': '|'}),
+    ('Performance_2007Q3.txt_0', _perf_schema, {'sep': '|'}),
+    pytest.param('ts.csv', _date_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1091')),
+    pytest.param('date.csv', _date_schema, {}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1111')),
+    ('ts.csv', _ts_schema, {}),
+    ('str.csv', _bad_str_schema, {'header': 'true'}),
+    ('str.csv', _good_str_schema, {'header': 'true'}),
+    ('no-comments.csv', _three_str_schema, {}),
+    ('empty.csv', _three_str_schema, {}),
+    ('just_comments.csv', _three_str_schema, {'comment': '#'}),
+    ('trucks.csv', _trucks_schema, {'header': 'true'}),
+    ('trucks.tsv', _trucks_schema, {'sep': '\t', 'header': 'true'}),
+    ('trucks-different.csv', _trucks_schema, {'sep': '|', 'header': 'true', 'quote': "'"}),
+    ('trucks-blank-names.csv', _trucks_schema, {'header': 'true'}),
+    ('trucks-windows.csv', _trucks_schema, {'header': 'true'}),
+    ('trucks-empty-values.csv', _trucks_schema, {'header': 'true'}),
+    ('trucks-extra-columns.csv', _trucks_schema, {'header': 'true'}),
+    pytest.param('trucks-comments.csv', _trucks_schema, {'header': 'true', 'comment': '~'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2066')),
+    ('trucks-more-comments.csv', _trucks_schema,  {'header': 'true', 'comment': '#'}),
+    pytest.param('trucks-missing-quotes.csv', _trucks_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/130')),
+    pytest.param('trucks-null.csv', _trucks_schema, {'header': 'true', 'nullValue': 'null'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2068')),
+    pytest.param('trucks-null.csv', _trucks_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('simple_int_values.csv', _byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
+    pytest.param('simple_int_values.csv', _short_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
+    pytest.param('simple_int_values.csv', _int_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
+    pytest.param('simple_int_values.csv', _long_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/126')),
+    ('simple_int_values.csv', _float_schema, {'header': 'true'}),
+    ('simple_int_values.csv', _double_schema, {'header': 'true'}),
+    pytest.param('empty_int_values.csv', _empty_byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('empty_int_values.csv', _empty_short_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('empty_int_values.csv', _empty_int_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('empty_int_values.csv', _empty_long_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('empty_int_values.csv', _empty_float_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('empty_int_values.csv', _empty_double_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/1986')),
+    pytest.param('nan_and_inf.csv', _float_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/125')),
+    pytest.param('simple_float_values.csv', _float_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124, https://github.com/NVIDIA/spark-rapids/issues/125i, https://github.com/NVIDIA/spark-rapids/issues/126')),
+    pytest.param('simple_float_values.csv', _double_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/124, https://github.com/NVIDIA/spark-rapids/issues/125, https://github.com/NVIDIA/spark-rapids/issues/126')),
+    pytest.param('simple_boolean_values.csv', _bool_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2071')),
+    pytest.param('ints_with_whitespace.csv', _number_as_string_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2069')),
+    pytest.param('ints_with_whitespace.csv', _byte_schema, {'header': 'true'}, marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/130'))
+    ], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
-def test_basic_read(std_input_path, name, schema, sep, header, read_func, v1_enabled_list):
-    updated_conf=_enable_ts_conf
+def test_basic_read(std_input_path, name, schema, options, read_func, v1_enabled_list):
+    updated_conf=_enable_all_types_conf.copy()
     updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
-    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, header, sep),
+    assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, options),
             conf=updated_conf)
 
 csv_supported_gens = [
@@ -147,7 +260,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
-    updated_conf=_enable_ts_conf
+    updated_conf=_enable_all_types_conf.copy()
     updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
@@ -167,14 +280,16 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
-    reader = read_func(data_path, schema, False, ',')
+    updated_conf=_enable_all_types_conf.copy()
+    updated_conf[disable_conf]='false'
+ 
+    reader = read_func(data_path, schema)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
             'FileSourceScanExec',
-            conf={disable_conf: 'false',
-                "spark.sql.sources.useV1SourceList": "csv"})
+            conf=updated_conf)
 
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy']
@@ -184,6 +299,8 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
+    updated_conf=_enable_all_types_conf.copy()
+    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write\
                     .option('dateFormat', date_format)\
@@ -193,7 +310,7 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
                     .schema(schema)\
                     .option('dateFormat', date_format)\
                     .csv(data_path),
-            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
+            conf=updated_conf)
 
 csv_supported_ts_parts = ['', # Just the date
         "'T'HH:mm:ss.SSSXXX",
@@ -217,7 +334,7 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_
             lambda spark : gen_df(spark, gen).write\
                     .option('timestampFormat', full_format)\
                     .csv(data_path))
-    updated_conf=_enable_ts_conf
+    updated_conf=_enable_all_types_conf.copy()
     updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
@@ -236,6 +353,8 @@ def test_input_meta(spark_tmp_path, v1_enabled_list):
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(second_data_path))
     data_path = spark_tmp_path + '/CSV_DATA'
+    updated_conf=_enable_all_types_conf.copy()
+    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(gen.data_type)\
                     .csv(data_path)\
@@ -244,7 +363,7 @@ def test_input_meta(spark_tmp_path, v1_enabled_list):
                         'input_file_name()',
                         'input_file_block_start()',
                         'input_file_block_length()'),
-            conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})
+            conf=updated_conf)
 
 @allow_non_gpu('DataWritingCommandExec')
 def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
