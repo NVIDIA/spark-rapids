@@ -4,7 +4,7 @@ title: Download
 nav_order: 3
 ---
 
-## Release v0.4.1
+## Release v0.4.2
 
 This is a patch release based on version 0.4.0 with the following additional fixes:
 * Broadcast exchange can fail when job group is set
@@ -33,11 +33,11 @@ Software Requirements:
 	
 	Python 3.6+, Scala 2.12, Java 8 
 
-### Download v0.4.1
-* [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.1/rapids-4-spark_2.12-0.4.1.jar)
-* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda11.jar)
-* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-2.jar)
-* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
+### Download v0.4.2
+* [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.2/rapids-4-spark_2.12-0.4.2.jar)
+* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda11.jar)
+* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-2.jar)
+* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-1.jar)
 
 ## Release v0.4.0
 
@@ -82,9 +82,9 @@ Software Requirements:
 
 ### Download v0.4.0
 * [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.0/rapids-4-spark_2.12-0.4.0.jar)
-* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda11.jar)
-* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-2.jar)
-* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
+* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda11.jar)
+* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-2.jar)
+* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-1.jar)
 
 ## Release v0.3.0
 This release includes additional performance improvements, including
