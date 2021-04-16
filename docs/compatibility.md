@@ -279,6 +279,31 @@ Formats that contain any of the following words are unsupported and will fall ba
 "d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
 ```
 
+## Formatting dates and timestamps as strings
+
+When formatting dates and timestamps as strings using functions such as `from_unixtime`, only a
+subset of valid format strings are supported on the GPU.
+
+Formats that contain any of the following characters are unsupported and will fall back to CPU:
+
+```
+'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N',
+'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y'
+```
+
+Formats that contain any of the following words are unsupported and will fall back to CPU:
+
+```
+"u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
+"y", yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+"D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
+"d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
+```
+
+Note that this list differs very slightly from the list given in the previous section for parsing
+strings to dates because the two-digit year format `"yy"` is supported when formatting dates as
+strings but not when parsing strings to dates.
+
 ## Casting between types
 
 In general, performing `cast` and `ansi_cast` operations on the GPU is compatible with the same
