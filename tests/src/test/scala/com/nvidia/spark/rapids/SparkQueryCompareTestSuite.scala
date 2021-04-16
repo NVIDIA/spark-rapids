@@ -148,6 +148,17 @@ object SparkSessionHolder extends Logging {
 trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   import SparkSessionHolder.withSparkSession
 
+  def enableCsvConf(): SparkConf = {
+    new SparkConf()
+        .set(RapidsConf.ENABLE_READ_CSV_DATES.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_BYTES.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_SHORTS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_INTEGERS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_LONGS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
+  }
+
   //  @see java.lang.Float#intBitsToFloat
   // <quote>
   // If the argument is any value in the range `0x7f800001` through `0x7fffffff` or

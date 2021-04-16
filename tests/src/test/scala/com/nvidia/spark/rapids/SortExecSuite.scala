@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019, 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,12 +35,12 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("GpuRangePartitioning with numparts > numvalues v1", longsCsvDf,
-    conf=makeBatchedBytes(1)) {
+    conf = makeBatchedBytes(1, enableCsvConf())) {
     df => df.filter(df.col("longs").gt(1)).sort(df.col("longs"))
   }
 
   testSparkResultsAreEqual("GpuRangePartitioning with numparts > numvalues v2", longsCsvDf,
-    conf=new SparkConf().set("spark.sql.shuffle.partitions", "4"), repart = 4) {
+    conf = enableCsvConf().set("spark.sql.shuffle.partitions", "4"), repart = 4) {
     df => df.filter(df.col("longs").lt(-800)).sort(df.col("longs"))
   }
 }

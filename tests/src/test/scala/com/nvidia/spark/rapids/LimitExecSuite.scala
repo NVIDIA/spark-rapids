@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
 
  /** CollectLimitExec is off by default, turn it on for tests */
   def enableCollectLimitExec(conf: SparkConf = new SparkConf()): SparkConf = {
-    conf.set("spark.rapids.sql.exec.CollectLimitExec", "true")
+    enableCsvConf().set("spark.rapids.sql.exec.CollectLimitExec", "true")
   }
 
   testSparkResultsAreEqual("limit more than rows", intCsvDf,
