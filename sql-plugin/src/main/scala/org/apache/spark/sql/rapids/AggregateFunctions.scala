@@ -410,9 +410,7 @@ case class GpuSum(child: Expression, resultType: DataType)
 case class GpuPivotFirst(
   pivotColumn: Expression,
   valueColumn: Expression,
-  pivotColumnValues: Seq[Any],
-  mutableAggBufferOffset: Int = 0,
-  inputAggBufferOffset: Int = 0) extends GpuAggregateFunction {
+  pivotColumnValues: Seq[Any]) extends GpuAggregateFunction {
 
   val valueDataType = valueColumn.dataType
 
@@ -441,9 +439,7 @@ case class GpuPivotFirst(
   }
 
   override lazy val updateExpressions: Seq[GpuExpression] = {
-    val updateArray = pivotColAttr.map(
-      pivotColumnValue => new CudfLastExcludeNulls(pivotColumnValue))
-    updateArray
+    pivotColAttr.map(pivotColumnValue => new CudfLastExcludeNulls(pivotColumnValue))
   }
 
   override lazy val mergeExpressions: Seq[GpuExpression] = {
@@ -532,9 +528,9 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark. 
   // This is to conform with Spark's behavior in the Average aggregate function.
-  override lazy val evaluateExpression: GpuExpression = GpuDivide(
+  override lazy val evaluateExpressions: Seq[GpuExpression] = GpuDivide(
     GpuCast(cudfSum, DoubleType),
-    GpuCast(cudfCount, DoubleType), failOnErrorOverride = false)
+    GpuCast(cudfCount, DoubleType), failOnErrorOverride = false) :: Nil
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
     GpuLiteral(0.0, DoubleType),

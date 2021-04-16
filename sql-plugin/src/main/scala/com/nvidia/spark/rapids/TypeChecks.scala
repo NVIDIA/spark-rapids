@@ -1073,8 +1073,7 @@ object ExprChecks {
    * Aggregate operation where only group by agg and reduction is supported in the plugin and in
    * Spark.
    */
-
-  def reductionAndgroupByAgg(
+  def reductionAndGroupByAgg(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
