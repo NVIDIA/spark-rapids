@@ -103,15 +103,40 @@ will produce a different result compared to the plugin.
 
 ## CSV Reading
 
-Spark is very strict when reading CSV and if the data does not conform with the expected format
-exactly it will result in a `null` value. The underlying parser that the SQL plugin uses is much
-more lenient. If you have badly formatted CSV data you may get data back instead of nulls.  If this
-is a problem you can disable the CSV reader by setting the config
-[`spark.rapids.sql.format.csv.read.enabled`](configs.md#sql.format.csv.read.enabled) to `false`.
-Because the speed up is so large and the issues typically only show up in error conditions we felt
-it was worth having the CSV reader enabled by default.
+Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
+Each data type can be enabled or disabled independently using the following configs.
+
+ * [spark.rapids.sql.csv.read.bool.enabled](configs.md#sql.csv.read.bool.enabled)
+ * [spark.rapids.sql.csv.read.byte.enabled](configs.md#sql.csv.read.byte.enabled)
+ * [spark.rapids.sql.csv.read.date.enabled](configs.md#sql.csv.read.date.enabled)
+ * [spark.rapids.sql.csv.read.double.enabled](configs.md#sql.csv.read.double.enabled)
+ * [spark.rapids.sql.csv.read.float.enabled](configs.md#sql.csv.read.float.enabled)
+ * [spark.rapids.sql.csv.read.integer.enabled](configs.md#sql.csv.read.integer.enabled)
+ * [spark.rapids.sql.csv.read.long.enabled](configs.md#sql.csv.read.long.enabled)
+ * [spark.rapids.sql.csv.read.short.enabled](configs.md#sql.csv.read.short.enabled)
+ * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
+
+If you know that your particular data type will be parsed correctly enough, you may enable each
+type you expect to use. Often the performance improvement is so good that it is worth
+checking if it is parsed correctly.
+
+Spark is generally very strict when reading CSV and if the data does not conform with the 
+expected format exactly it will result in a `null` value. The underlying parser that the RAPIDS Accelerator
+uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
+nulls.
+
+Spark allows for stripping leading and trailing white space using various options that are off by
+default. The plugin will strip leading and trailing space for all values except strings.
 
 There are also discrepancies/issues with specific types that are detailed below.
+
+### CSV Boolean
+
+Invalid values like `BAD` show up as `true` as described by this 
+[issue](https://github.com/NVIDIA/spark-rapids/issues/2071)
+
+This is the same for all other types, but because that is the only issue with boolean parsing
+we have called it out specifically here.
 
 ### CSV Strings
 Writing strings to a CSV file in general for Spark can be problematic unless you can ensure that
@@ -140,7 +165,12 @@ Only a limited set of formats are supported when parsing dates.
 The reality is that all of these formats are supported at the same time. The plugin will only
 disable itself if you set a format that it does not support.
 
-As a work around you can parse the column as a timestamp and then cast it to a date.
+As a workaround you can parse the column as a timestamp and then cast it to a date.
+
+Invalid dates in Spark, values that have the correct format, but the numbers produce invalid dates,
+can result in an exception by default, and how they are parsed can be controlled through a config.
+The RAPIDS Accelerator does not support any of this and will produce an incorrect date. Typically,
+one that overflowed.
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
@@ -163,9 +193,14 @@ portion followed by one of the following formats:
 Just like with dates all timestamp formats are actually supported at the same time.  The plugin will
 disable itself if it sees a format it cannot support.
 
+Invalid timestamps in Spark, ones that have the correct format, but the numbers produce invalid
+dates or times, can result in an exception by default and how they are parsed can be controlled
+through a config. The RAPIDS Accelerator does not support any of this and will produce an incorrect
+date. Typically, one that overflowed.
+
 ### CSV Floating Point
 
-The CSV parser is not able to parse `Infinity`, `-Infinity`, or `NaN` values.  All of these are
+The CSV parser is not able to parse `NaN` values.  These are
 likely to be turned into null values, as described in this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/125).
 
@@ -173,6 +208,10 @@ Some floating-point values also appear to overflow but do not for the CPU as des
 [issue](https://github.com/NVIDIA/spark-rapids/issues/124).
 
 Any number that overflows will not be turned into a null value.
+
+Also parsing of some values will not produce bit for bit identical results to what the CPU does.
+They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
+then results in a number being returned when the CPU would have returned null.
 
 ### CSV Integer
 
