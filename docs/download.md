@@ -5,6 +5,7 @@ nav_order: 3
 ---
 
 ## Release v0.4.2
+
 This is a patch release based on version 0.4.1 with the following change:
 * Depend on cuDF 0.18.2
 
