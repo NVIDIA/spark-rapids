@@ -134,17 +134,7 @@ object GpuParquetScanBase {
         s"${RapidsConf.ENABLE_PARQUET_READ} to true")
     }
 
-    for (field <- readSchema) {
-      if (!GpuOverrides.isSupportedType(
-        field.dataType,
-        allowMaps = true,
-        allowArray = true,
-        allowStruct = true,
-        allowNesting = true,
-        allowDecimal = meta.conf.decimalTypeEnabled)) {
-        meta.willNotWorkOnGpu(s"GpuParquetScan does not support fields of type ${field.dataType}")
-      }
-    }
+    FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
 
     val schemaHasStrings = readSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[StringType])

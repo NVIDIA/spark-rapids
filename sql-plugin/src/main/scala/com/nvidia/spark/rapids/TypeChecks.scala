@@ -443,6 +443,11 @@ object TypeSig {
   val numeric: TypeSig = integral + fp + DECIMAL
 
   /**
+   * All values that correspond to Spark's AtomicType
+   */
+  val atomics: TypeSig = numeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
+
+  /**
    * numeric + CALENDAR
    */
   val numericAndInterval: TypeSig = numeric + CALENDAR
@@ -550,6 +555,65 @@ case class ContextChecks(
     val output = ("result", outputCheck.getSupportLevel(dataType, sparkOutputSig))
 
     (fixed ++ variable ++ Seq(output)).toMap
+  }
+}
+
+/**
+ * Checks for either a read or a write of a given file format.
+ */
+class FileFormatChecks private (
+    sig: TypeSig,
+    sparkSig: TypeSig)
+    extends TypeChecks[SupportLevel] {
+
+  def tag(meta: RapidsMeta[_, _, _],
+      schema: StructType,
+      fileType: FileFormatType,
+      op: FileFormatOp): Unit = {
+    val allowDecimal = meta.conf.decimalTypeEnabled
+
+    val unsupportedOutputTypes = schema.fields
+        .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
+        .toSet
+
+    if (unsupportedOutputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types " +
+          unsupportedOutputTypes.mkString(", ") + s" in $op for $fileType")
+    }
+  }
+
+  override def support(dataType: TypeEnum.Value): SupportLevel =
+    sig.getSupportLevel(dataType, sparkSig)
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit =
+    throw new IllegalStateException("Internal Error not supported")
+}
+
+object FileFormatChecks {
+  /**
+   * File format checks with separate read and write signatures for cudf.
+   */
+  def apply(
+      cudfRead: TypeSig,
+      cudfWrite: TypeSig,
+      sparkSig: TypeSig): Map[FileFormatOp, FileFormatChecks] = Map(
+    (ReadFileOp, new FileFormatChecks(cudfRead, sparkSig)),
+    (WriteFileOp, new FileFormatChecks(cudfWrite, sparkSig))
+  )
+
+  /**
+   * File format checks where read and write have the same signature for cudf.
+   */
+  def apply(
+      cudfReadWrite: TypeSig,
+      sparkSig: TypeSig): Map[FileFormatOp, FileFormatChecks] =
+    apply(cudfReadWrite, cudfReadWrite, sparkSig)
+
+  def tag(meta: RapidsMeta[_, _, _],
+      schema: StructType,
+      fileType: FileFormatType,
+      op: FileFormatOp): Unit = {
+    GpuOverrides.fileFormats(fileType)(op).tag(meta, schema, fileType, op)
   }
 }
 
@@ -777,7 +841,7 @@ object CreateNamedStructCheck extends ExprChecks {
         valueSig.tagExprParam(meta, expr, "value")
       }
       if (!resultSig.isSupportedByPlugin(origExpr.dataType, meta.conf.decimalTypeEnabled)) {
-        meta.willNotWorkOnGpu(s"unsupported data types in output: ${origExpr.dataType}")
+        meta.willNotWorkOnGpu(s"unsupported data type in output: ${origExpr.dataType}")
       }
     }
   }
@@ -1144,6 +1208,16 @@ object SupportedOpsDocs {
     println("</tr>")
   }
 
+  private def ioChecksHeaderLine(): Unit = {
+    println("<tr>")
+    println("<th>Format</th>")
+    println("<th>Direction</th>")
+    TypeEnum.values.foreach { t =>
+      println(s"<th>$t</th>")
+    }
+    println("</tr>")
+  }
+
   def help(): Unit = {
     val headerEveryNLines = 15
     // scalastyle:off line.size.limit
@@ -1458,132 +1532,33 @@ object SupportedOpsDocs {
     println("This table tries to clarify that. Be aware that some types may be disabled in some")
     println("cases for either reads or writes because of processing limitations, like rebasing")
     println("dates or timestamps, or for a lack of type coercion support.")
-    // TODO this should be automatically generated
     println("<table>")
-    println("<tr>")
-    println("<th>Format</th>")
-    println("<th>Direction</th>")
-    println("<th>BOOLEAN</th>")
-    println("<th>BYTE</th>")
-    println("<th>SHORT</th>")
-    println("<th>INT</th>")
-    println("<th>LONG</th>")
-    println("<th>FLOAT</th>")
-    println("<th>DOUBLE</th>")
-    println("<th>DATE</th>")
-    println("<th>TIMESTAMP</th>")
-    println("<th>STRING</th>")
-    println("<th>DECIMAL</th>")
-    println("<th>NULL</th>")
-    println("<th>BINARY</th>")
-    println("<th>CALENDAR</th>")
-    println("<th>ARRAY</th>")
-    println("<th>MAP</th>")
-    println("<th>STRUCT</th>")
-    println("</tr>")
-    println("<tr>")
-    println("<th rowSpan=\"2\">Parquet</th>")
-    println("<th>Input</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td>S</td>") // DECIMAL
-    println("<td></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><em>PS (missing nested BINARY)</em></td>") // ARRAY
-    println("<td><em>PS (missing nested BINARY)</em></td>") // MAP
-    println("<td><em>PS (missing nested BINARY)</em></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>Output</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td>S</td>") // DECIMAL
-    println("<td></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th rowSpan=\"2\">ORC</th>")
-    println("<th>Input</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
-    println("<td><b>NS</b></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>Output</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
-    println("<td><b>NS</b></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>CSV</th>")
-    println("<th>Input</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
-    println("<td><b>NS</b></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td><b>NS</b></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
+    ioChecksHeaderLine()
+    totalCount = 0
+    nextOutputAt = headerEveryNLines
+    GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
+      case (format, ioMap) =>
+        if (totalCount >= nextOutputAt) {
+          ioChecksHeaderLine()
+          nextOutputAt = totalCount + headerEveryNLines
+        }
+        val read = ioMap(ReadFileOp)
+        val write = ioMap(WriteFileOp)
+        println("<tr>")
+        println("<th rowSpan=\"2\">" + s"$format</th>")
+        println("<th>Read</th>")
+        TypeEnum.values.foreach { t =>
+          println(read.support(t).htmlTag)
+        }
+        println("</tr>")
+        println("<tr>")
+        println("<th>Write</th>")
+        TypeEnum.values.foreach { t =>
+          println(write.support(t).htmlTag)
+        }
+        println("</tr>")
+        totalCount += 2
+    }
     println("</table>")
     // scalastyle:on line.size.limit
   }
