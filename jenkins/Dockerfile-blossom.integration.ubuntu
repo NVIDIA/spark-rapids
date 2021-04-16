@@ -16,35 +16,33 @@
 
 ###
 #
+# Build the image for rapids-plugin development environment
+#
 # Arguments:
-#    CUDA_VER=10.1, 10.2 or 11.0
-#    CUDF_VER=0.18 or 0.19
-#    URM_URL=<maven repo url>
+#       CUDA_VER=10.1, 10.2 or 11.0
+#       UBUNTU_VER=18.04 or 20.04
 ###
-ARG CUDA_VER=10.1
-FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
-ARG CUDA_VER
-ARG CUDF_VER
-ARG URM_URL
 
-#Install java-8, maven, docker image
-RUN yum update -y && \
-    yum install -y centos-release-scl && \
-    yum install -y java-1.8.0-openjdk-devel wget expect
+ARG CUDA_VER=11.0
+ARG UBUNTU_VER=18.04
+FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 
-# The default mvn verision is 3.05 on centos7 docker container.
-# The plugin: net.alchim31.maven requires a higher mvn version.
-ENV MAVEN_HOME "/usr/local/apache-maven-3.6.3"
-RUN wget ${URM_URL}/org/apache/maven/apache-maven/3.6.3/apache-maven-3.6.3-bin.tar.gz -P /usr/local && \
-    tar xzvf $MAVEN_HOME-bin.tar.gz -C /usr/local && \
-    rm -f $MAVEN_HOME-bin.tar.gz
+# Install jdk-8, jdk-11, maven, docker image
+RUN apt-get update -y && \
+    apt-get install -y software-properties-common
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update -y && \
+    DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
+    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git wget
+RUN python3.8 -m easy_install pip
+
+# Set default jdk as 1.8.0
+RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
 
 RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
     /bin/bash ~/miniconda.sh -b -p /opt/conda && \
     rm -f ~/miniconda.sh
-
 ENV PATH="/opt/conda/bin:$MAVEN_HOME/bin:${PATH}"
-
 # 'pyarrow' and 'pandas' will be installed as the dependencies of cudf below
 RUN conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=${CUDF_VER} python=3.8 cudatoolkit=${CUDA_VER} && \
     conda install -y spacy && python -m spacy download en_core_web_sm && \
@@ -52,5 +50,4 @@ RUN conda install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c
     conda install -y -c conda-forge sre_yield && \
     conda clean -ay
 
-# Set ENV for mvn
-ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
+RUN apt install -y inetutils-ping expect

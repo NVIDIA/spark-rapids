@@ -28,25 +28,33 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 
 /**
+ *  Exception thrown when inserting a buffer into the catalog with a duplicate buffer ID
+ *  and storage tier combination.
+ */
+class DuplicateBufferException(s: String) extends RuntimeException(s) {}
+
+/**
  * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
  * `RapidsBufferCatalog.singleton` should be used instead.
  */
 class RapidsBufferCatalog extends Logging {
-  /** Map of buffer IDs to buffers */
-  private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, RapidsBuffer]
+  /** Map of buffer IDs to buffers sorted by storage tier */
+  private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
 
   /**
-   * Lookup the buffer that corresponds to the specified buffer ID and acquire it.
+   * Lookup the buffer that corresponds to the specified buffer ID at the highest storage tier,
+   * and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
    * @param id buffer identifier
    * @return buffer that has been acquired
    */
   def acquireBuffer(id: RapidsBufferId): RapidsBuffer = {
     (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
-      val buffer = bufferMap.get(id)
-      if (buffer == null) {
-        throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
+      val buffers = bufferMap.get(id)
+      if (buffers == null || buffers.isEmpty) {
+        throw new NoSuchElementException(s"Cannot locate buffers associated with ID: $id")
       }
+      val buffer = buffers.head
       if (buffer.addReference()) {
         return buffer
       }
@@ -54,51 +62,90 @@ class RapidsBufferCatalog extends Logging {
     throw new IllegalStateException(s"Unable to acquire buffer for ID: $id")
   }
 
+  /**
+   * Lookup the buffer that corresponds to the specified buffer ID at the specified storage tier,
+   * and acquire it.
+   * NOTE: It is the responsibility of the caller to close the buffer.
+   * @param id buffer identifier
+   * @return buffer that has been acquired, None if not found
+   */
+  def acquireBuffer(id: RapidsBufferId, tier: StorageTier): Option[RapidsBuffer] = {
+    val buffers = bufferMap.get(id)
+    if (buffers != null) {
+      buffers.find(_.storageTier == tier).foreach(buffer =>
+        if (buffer.addReference()) {
+          return Some(buffer)
+        }
+      )
+    }
+    None
+  }
+
+  /**
+   * Check if the buffer that corresponds to the specified buffer ID is stored in a slower storage
+   * tier.
+   *
+   * @param id   buffer identifier
+   * @param tier storage tier to check
+   * @return true if the buffer is stored in multiple tiers
+   */
+  def isBufferSpilled(id: RapidsBufferId, tier: StorageTier): Boolean = {
+    val buffers = bufferMap.get(id)
+    buffers != null && buffers.exists(_.storageTier > tier)
+  }
+
   /** Get the table metadata corresponding to a buffer ID. */
   def getBufferMeta(id: RapidsBufferId): TableMeta = {
-    val buffer = bufferMap.get(id)
-    if (buffer == null) {
+    val buffers = bufferMap.get(id)
+    if (buffers == null || buffers.isEmpty) {
       throw new NoSuchElementException(s"Cannot locate buffer associated with ID: $id")
     }
-    buffer.meta
+    buffers.head.meta
   }
 
   /**
    * Register a new buffer with the catalog. An exception will be thrown if an
-   * existing buffer was registered with the same buffer ID.
+   * existing buffer was registered with the same buffer ID and storage tier.
    */
   def registerNewBuffer(buffer: RapidsBuffer): Unit = {
-    val old = bufferMap.putIfAbsent(buffer.id, buffer)
-    if (old != null) {
-      throw new IllegalStateException(s"Buffer ID ${buffer.id} already registered $old")
-    }
-  }
-
-  /**
-   * Replace the mapping at the specified tier with a specified buffer.
-   * NOTE: The mapping will not be updated if the current mapping is to a higher priority
-   * storage tier.
-   * @param tier the storage tier of the buffer being replaced
-   * @param buffer the new buffer to associate
-   */
-  def updateBufferMap(tier: StorageTier, buffer: RapidsBuffer): Unit = {
-    val updater = new BiFunction[RapidsBufferId, RapidsBuffer, RapidsBuffer] {
-      override def apply(key: RapidsBufferId, value: RapidsBuffer): RapidsBuffer = {
-        if (value == null || value.storageTier >= tier) {
-          buffer
+    val updater = new BiFunction[RapidsBufferId, Seq[RapidsBuffer], Seq[RapidsBuffer]] {
+      override def apply(key: RapidsBufferId, value: Seq[RapidsBuffer]): Seq[RapidsBuffer] = {
+        if (value == null) {
+          Seq(buffer)
         } else {
-          value
+          val(first, second) = value.partition(_.storageTier < buffer.storageTier)
+          if (second.nonEmpty && second.head.storageTier == buffer.storageTier) {
+            throw new DuplicateBufferException(
+              s"Buffer ID ${buffer.id} at tier ${buffer.storageTier} already registered " +
+                  s"${second.head}")
+          }
+          first ++ Seq(buffer) ++ second
         }
       }
     }
     bufferMap.compute(buffer.id, updater)
   }
 
-  /** Remove a buffer ID from the catalog and release the resources of the registered buffer. */
+  /** Remove a buffer ID from the catalog at the specified storage tier. */
+  def removeBufferTier(id: RapidsBufferId, tier: StorageTier): Unit = {
+    val updater = new BiFunction[RapidsBufferId, Seq[RapidsBuffer], Seq[RapidsBuffer]] {
+      override def apply(key: RapidsBufferId, value: Seq[RapidsBuffer]): Seq[RapidsBuffer] = {
+        val updated = value.filter(_.storageTier != tier)
+        if (updated.isEmpty) {
+          null
+        } else {
+          updated
+        }
+      }
+    }
+    bufferMap.computeIfPresent(id, updater)
+  }
+
+  /** Remove a buffer ID from the catalog and release the resources of the registered buffers. */
   def removeBuffer(id: RapidsBufferId): Unit = {
-    val buffer = bufferMap.remove(id)
-    if (buffer != null) {
-      buffer.free()
+    val buffers = bufferMap.remove(id)
+    if (buffers != null) {
+      buffers.foreach(_.free())
     }
   }
 
@@ -115,6 +162,7 @@ object RapidsBufferCatalog extends Logging with Arm {
   private var diskStorage: RapidsDiskStore = _
   private var gdsStorage: RapidsGdsStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
+  private var _shouldUnspill: Boolean = _
 
   private lazy val conf: SparkConf = {
     val env = SparkEnv.get
@@ -145,6 +193,8 @@ object RapidsBufferCatalog extends Logging with Arm {
     logInfo("Installing GPU memory handler for spill")
     memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage, rapidsConf.gpuOomDumpDir)
     Rmm.setEventHandler(memoryEventHandler)
+
+    _shouldUnspill = rapidsConf.isUnspillEnabled
   }
 
   def close(): Unit = {
@@ -179,6 +229,8 @@ object RapidsBufferCatalog extends Logging with Arm {
   }
 
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
+
+  def shouldUnspill: Boolean = _shouldUnspill
 
   /**
    * Adds a contiguous table to the device storage, taking ownership of the table.

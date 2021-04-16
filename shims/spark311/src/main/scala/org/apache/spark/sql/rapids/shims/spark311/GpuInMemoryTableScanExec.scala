@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark311
 
-import com.nvidia.spark.rapids.GpuExec
+import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
 import com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
 
 import org.apache.spark.rdd.RDD
@@ -26,7 +26,6 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan}
 import org.apache.spark.sql.execution.columnar.InMemoryRelation
-import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuInMemoryTableScanExec(
@@ -54,7 +53,7 @@ case class GpuInMemoryTableScanExec(
       relation.cacheBuilder.serializer.vectorTypes(attributes, conf)
 
     private lazy val columnarInputRDD: RDD[ColumnarBatch] = {
-      val numOutputRows = longMetric("numOutputRows")
+      val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
       val buffers = filteredCachedBatches()
       relation.cacheBuilder.serializer.asInstanceOf[ParquetCachedBatchSerializer]
         .gpuConvertCachedBatchToColumnarBatch(
