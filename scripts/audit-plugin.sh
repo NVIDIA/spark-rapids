@@ -1,6 +1,5 @@
-#!/bin/bash
 #
-# Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +24,7 @@
 # <Priority (P1 or P?)> <COMMIT-HASH> <COMMIT-MSG>
 # in this the COMMIT-HASH and COMMIT-MSG are the original sha1 and commit message from spark commit
 
+#!/bin/bash
 
 set -ex
 
@@ -33,20 +33,27 @@ nvidia-smi
 #Set env variables
 . jenkins/version-def.sh
 
+ABSOLUTE_PATH=$(cd $(dirname $0) && pwd)
+AUDIT_PLUGIN_LOG=${ABSOLUTE_PATH}/audit-plugin.log
+if [ -e ${AUDIT_PLUGIN_LOG}]; then 
+  rm ${AUDIT_PLUGIN_LOG}
+fi
+
+PROJECT_VER="0.5.0-SNAPSHOT"
 #Get plugin jar
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Dmaven.repo.local=$WORKSPACE/.m2 \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
-rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
+#rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 # maven download SNAPSHOT jars: rapids-4-spark, spark3.0
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 
 RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 # Use jdeps to find the dependencies of the rapids-4-spark jar
-DEPS=$(jdeps -include com\.nvidia\.spark.* -verbose:class -e org.apache.spark.* $RAPIDS_PLUGIN_JAR)
+DEPS=$(jdeps -include "(com\.nvidia\.spark.*|org\.apache\.spark.*)" -v -e org.apache.spark.* $RAPIDS_PLUGIN_JAR)
 
 FOUND=1
 cd ${SPARK_HOME}
@@ -70,7 +77,7 @@ do
     # class name from the file name and store them in LOCAL_CLASSES. We can make this regex better to 
     # focus on only code changes.
     set +ex
-    LOCAL_CLASSES=$(git show $COMMIT_ID -- $i | grep '\sclass\s\|\sobject\s\|\strait\s'|sed 's/.*trait \([[:alnum:]]*\).*/\1/' | sed 's/.*class \([[:alnum:]]*\).*/\1/' | sed 's/.*object \([[:alnum:]]*\).*/\1/')
+    LOCAL_CLASSES=$(git show $COMMIT_ID -- $i | grep '\sclass\s\|\sobject\s\|\strait\s|\sinterface\s'|sed 's/.*trait \([[:alnum:]]*\).*/\1/' | sed 's/.*class \([[:alnum:]]*\).*/\1/' | sed 's/.*object \([[:alnum:]]*\).*/\1/')
     set -ex
     # Figure out the package from the file name
     PACKAGE=$(dirname -- $i | sed 's/.*scala\///g' | sed 's/.*java\///g' | sed 's/\//\./g')
@@ -91,6 +98,7 @@ do
     echo -e "looking for class ${CLASS} and ${FOUND}\n"
     if [ ${FOUND} -ne 0 ]; then 
       printf "%s\t%s\t%s\t%s\n" "P1" "${COMMIT_ID}" "${COMMIT_MSG}" "${CLASS}" >> ${PRIORITIZED_COMMITS}
+      printf "%s\t%s\n" "${COMMIT_ID}" "${CLASS}" >> ${AUDIT_PLUGIN_LOG}
       break
     fi
   fi
@@ -98,5 +106,5 @@ do
   if [ ${FOUND} -eq 0 ]; then
     printf "%s\t%s\t%s\n" "P?" "${COMMIT_ID}" "${COMMIT_MSG}" >> ${PRIORITIZED_COMMITS}
   fi
-done < <(cat ${WORKSPACE}/hashCommitsWithMessage.log)
+done < <(cat ${COMMIT_DIFF_LOG})
 

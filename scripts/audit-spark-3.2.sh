@@ -27,7 +27,7 @@
 
 
 set -ex
-
+ABSOLUTE_PATH=$(cd $(dirname $0) && pwd)
 lastcommit=""
 basebranch="master"
 tag="v3.1.1-rc3"
@@ -42,18 +42,18 @@ do
   esac
 done
 
-SPARK_TREE="$WORKSPACE/spark-3.0/spark"
+SPARK_TREE="$WORKSPACE/spark"
 if [ -e ${SPARK_TREE} ]; then
-  rm -rf $SPARK_TREE 
+ # rm -rf $SPARK_TREE 
   echo $SPARK_TREE
 fi
-git clone https://github.com/apache/spark.git $SPARK_TREE
+#git clone https://github.com/apache/spark.git $SPARK_TREE
 
 if [ -f "$lastcommit" ]; then
     cd ${SPARK_TREE}
     latestcommit=`cat ${lastcommit}`
     git checkout $basebranch
-    git log --oneline HEAD...$latestcommit -- sql/core/src/main sql/catalyst/src/main | tee $COMMIT_DIFF_LOG
+    git log --oneline HEAD...$latestcommit -- sql/core/src/main sql/catalyst/src/main | tee ${COMMIT_DIFF_LOG}
     git log HEAD -n 1 --pretty="%h" > ${lastcommit}
 
     cd $WORKSPACE
@@ -107,10 +107,10 @@ else
     fi
     while read -r line; do
       echo "1"
-      git log --grep="$line" --pretty="%h %s" >> ${WORKSPACE}/hashCommitsWithMessage.log
+      git log --grep="$line" --pretty="%h %s" >> ${COMMIT_DIFF_LOG}
     done < $filename
     git log HEAD -n 1 --pretty="%h" >> lastcommit.log
 fi
-
-$(dirname $0)/audit-plugin.sh
+cd ${ABSOLUTE_PATH}/../ 
+scripts/audit-plugin.sh
 
