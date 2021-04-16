@@ -204,6 +204,30 @@ def test_hash_grpby_avg(data_gen, conf):
         conf=conf
     )
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false']) 
+def test_hash_grpby_avg_nulls(data_gen, conf, ansi_enabled):
+    conf.update({'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a')
+          .agg(f.avg('c')),
+        conf=conf
+    )
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false']) 
+def test_hash_reduction_avg_nulls(data_gen, conf, ansi_enabled):
+    conf.update({'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+          .agg(f.avg('c')),
+        conf=conf
+    )
+
 # tracks https://github.com/NVIDIA/spark-rapids/issues/154
 @approximate_float
 @ignore_order
@@ -301,7 +325,6 @@ def test_hash_query_max_with_multiple_distincts(data_gen, conf, parameterless):
         'count(),' +
         'count(distinct b) from hash_agg_table group by a',
         conf)
-
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
