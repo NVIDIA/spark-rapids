@@ -1,5 +1,13 @@
 # Change log
-Generated on 2021-03-23
+Generated on 2021-04-16
+
+## Release 0.4.2
+
+### PRs
+|||
+|:---|:---|
+|[#2155](https://github.com/NVIDIA/spark-rapids/pull/2155)|Update docs for rapids v0.4.2 release [skip ci]|
+|[#2153](https://github.com/NVIDIA/spark-rapids/pull/2153)|Change version to 0.4.2-SNAPSHOT [skip ci]|
 
 ## Release 0.4.1
 
