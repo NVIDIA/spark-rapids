@@ -16,22 +16,23 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 
-Hardware Requirements:
+Hardware Requirements: 
 
-        GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
-
+	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
+	
 Software Requirements:
 
-        OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
+	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
+	
+	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	
+	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
+	
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+	
+	Python 3.6+, Scala 2.12, Java 8 
 
-        CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
-
-        Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0
-
-        Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
-
-        Python 3.6+, Scala 2.12, Java 8
-
+### Download v0.4.1
 ### Download v0.4.2
 * [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.2/rapids-4-spark_2.12-0.4.2.jar)
 * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda11.jar)
