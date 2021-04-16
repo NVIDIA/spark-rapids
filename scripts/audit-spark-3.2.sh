@@ -33,7 +33,7 @@ basebranch="master"
 tag="v3.1.1-rc3"
 REF=${REF:-"main"}
 REF=main
-while getopts v:a: flag
+while getopts v:b:t: flag
 do
   case "${flag}" in
       v) lastcommit=${OPTARG};;
@@ -43,7 +43,11 @@ do
 done
 
 SPARK_TREE="$WORKSPACE/spark-3.0/spark"
-rm -rf $SPARK_TREE && git clone https://github.com/apache/spark.git $SPARK_TREE
+if [ -e ${SPARK_TREE} ]; then
+  rm -rf $SPARK_TREE 
+  echo $SPARK_TREE
+fi
+git clone https://github.com/apache/spark.git $SPARK_TREE
 
 if [ -f "$lastcommit" ]; then
     cd ${SPARK_TREE}
@@ -53,7 +57,9 @@ if [ -f "$lastcommit" ]; then
     git log HEAD -n 1 --pretty="%h" > ${lastcommit}
 
     cd $WORKSPACE
+    set +ex
     COMMIT_UPDATE=`git diff ${lastcommit}`
+    set -ex
     if [ -n "$COMMIT_UPDATE" ]; then
         git config --global user.name blossom
         git config --global user.email blossom@nvidia.com
@@ -87,18 +93,24 @@ else
     cat b3.1.1.log | awk '{$1 = "";print $0}' > b3.1.1.filter.log
     cat b3.2.log | awk '{$1 = "";print $0}' > b3.2.filter.log
     cat b3.2.filter.log b3.1.1.filter.log | sort | uniq -c | sort  | awk '/^[[:space:]]*1/{$1 = "";print $0}' > uniqcommits.log
-    cat ~/b3.1.1.filter.log | sort > b3.1.1.filter.sorted.log
-    cat ~/b3.2.filter.log | sort > b3.2.filter.sorted.log
-    cat ~/uniqcommits.log | sort > uniqcommits.sorted.log
+    cat b3.1.1.filter.log | sort > b3.1.1.filter.sorted.log
+    cat b3.2.filter.log | sort > b3.2.filter.sorted.log
+    cat uniqcommits.log | sort > uniqcommits.sorted.log
     comm -12 b3.1.1.filter.sorted.log uniqcommits.sorted.log | wc -l
     comm -12 b3.2.filter.sorted.log uniqcommits.sorted.log > commits.to.audit.3.2
     sed -i 's/\[/\\[/g' commits.to.audit.3.2
     sed -i 's/\]/\\]/g' commits.to.audit.3.2
 
     filename=commits.to.audit.3.2
-
+    if [ -f ${WORKSPACE}/hashCommitsWithMessage.log ]; then
+      rm ${WORKSPACE}/hashCommitsWithMessage.log
+    fi
     while read -r line; do
-    git log --grep="$line" --pretty="%h - %s" >> hashCommitsWithMessage.log
+      echo "1"
+      git log --grep="$line" --pretty="%h %s" >> ${WORKSPACE}/hashCommitsWithMessage.log
     done < $filename
-    git log HEAD -n 1 --pretty="%h" > $lastcommit
+    git log HEAD -n 1 --pretty="%h" >> lastcommit.log
 fi
+
+$(dirname $0)/audit-plugin.sh
+
