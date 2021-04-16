@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>0.4.1-SNAPSHOT</version>
+    <version>0.4.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://github.com/NVIDIA</url>
@@ -147,7 +147,7 @@
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark300.version}</spark.version>
         <cuda.version>cuda10-1</cuda.version>
-        <cudf.version>0.18.1</cudf.version>
+        <cudf.version>0.18.2</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
