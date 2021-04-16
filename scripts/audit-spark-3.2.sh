@@ -44,10 +44,9 @@ done
 
 SPARK_TREE="$WORKSPACE/spark"
 if [ -e ${SPARK_TREE} ]; then
- # rm -rf $SPARK_TREE 
-  echo $SPARK_TREE
+ rm -rf $SPARK_TREE 
 fi
-#git clone https://github.com/apache/spark.git $SPARK_TREE
+git clone https://github.com/apache/spark.git $SPARK_TREE
 
 if [ -f "$lastcommit" ]; then
     cd ${SPARK_TREE}
@@ -102,14 +101,11 @@ else
     sed -i 's/\]/\\]/g' commits.to.audit.3.2
 
     filename=commits.to.audit.3.2
-    if [ -f ${WORKSPACE}/hashCommitsWithMessage.log ]; then
-      rm ${WORKSPACE}/hashCommitsWithMessage.log
-    fi
     while read -r line; do
       echo "1"
       git log --grep="$line" --pretty="%h %s" >> ${COMMIT_DIFF_LOG}
     done < $filename
-    git log HEAD -n 1 --pretty="%h" >> lastcommit.log
+    git log HEAD -n 1 --pretty="%h" > $lastcommit
 fi
 cd ${ABSOLUTE_PATH}/../ 
 scripts/audit-plugin.sh

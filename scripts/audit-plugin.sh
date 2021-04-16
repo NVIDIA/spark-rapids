@@ -39,14 +39,14 @@ if [ -e ${AUDIT_PLUGIN_LOG}]; then
   rm ${AUDIT_PLUGIN_LOG}
 fi
 
-PROJECT_VER="0.5.0-SNAPSHOT"
+PRmJECT_VER="0.5.0-SNAPSHOT"
 #Get plugin jar
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Dmaven.repo.local=$WORKSPACE/.m2 \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
-#rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
+rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 # maven download SNAPSHOT jars: rapids-4-spark, spark3.0
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
