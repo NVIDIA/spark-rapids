@@ -196,7 +196,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     val resources = (0 until 10).map(new RefCountTest(_, false))
 
     val out = resources.toArray.zipWithIndex.safeMap {
-      case (res, i) =>
+      case (res, _) =>
         res.incRefCount()
     }
 

@@ -193,7 +193,7 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
 class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {  
   def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column):
       (Array[Row], Array[Row]) = {
-    val (testConf, qualifiedTestName) = setupTestConfAndQualifierName("", true, false,
+    val (testConf, _) = setupTestConfAndQualifierName("", true, false,
       new SparkConf(), Seq.empty, 0.0, false, false)
     runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF,
       frame => frame.select(gen(col("strings"))), testConf)

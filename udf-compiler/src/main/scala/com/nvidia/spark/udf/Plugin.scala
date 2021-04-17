@@ -68,7 +68,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
               exp
             }
           } catch {
-            case npe: NullPointerException => {
+            case _: NullPointerException => {
               exp
             }
           }

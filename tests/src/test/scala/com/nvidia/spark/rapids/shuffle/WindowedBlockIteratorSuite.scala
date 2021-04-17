@@ -42,7 +42,7 @@ class WindowedBlockIteratorSuite extends RapidsShuffleTestHelper {
   }
 
   test ("1024 1-byte blocks all fit in 1 1024-byte window") {
-    val mockBlocks = (0 until 1024).map { i =>
+    val mockBlocks = (0 until 1024).map { _ =>
       val block = mock[BlockWithSize]
       when(block.size).thenReturn(1)
       block

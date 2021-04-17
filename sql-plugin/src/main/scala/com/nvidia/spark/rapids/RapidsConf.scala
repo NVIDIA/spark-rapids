@@ -76,7 +76,7 @@ object ConfHelper {
     v.map(stringConverter).mkString(",")
   }
 
-  def byteFromString(str: String, unit: ByteUnit, key: String): Long = {
+  def byteFromString(str: String, unit: ByteUnit): Long = {
     val (input, multiplier) =
       if (str.length() > 0 && str.charAt(0) == '-') {
         (str.substring(1), -1)
@@ -265,7 +265,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   }
 
   def bytesConf(unit: ByteUnit): TypedConfBuilder[Long] = {
-    new TypedConfBuilder[Long](this, byteFromString(_, unit, key))
+    new TypedConfBuilder[Long](this, byteFromString(_, unit))
   }
 
   def integerConf: TypedConfBuilder[Integer] = {

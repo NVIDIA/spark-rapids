@@ -396,7 +396,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
 
   override def doColumnar(value: GpuColumnVector, scale: Scalar): ColumnVector = {
     val scaleVal = dataType match {
-      case DecimalType.Fixed(p, s) => s
+      case DecimalType.Fixed(_, s) => s
       case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => scale.getInt
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }

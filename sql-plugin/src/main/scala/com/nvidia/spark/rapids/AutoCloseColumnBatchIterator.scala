@@ -39,7 +39,7 @@ class AutoCloseColumnBatchIterator[U](itr: Iterator[U], nextBatch: Iterator[U] =
     }
   }
 
-  TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
+  TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
     closeCurrentBatch()
   })
 

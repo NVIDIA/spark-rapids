@@ -104,7 +104,6 @@ class AdaptiveQueryExecSuite
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
-      val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
       val shuffleExchanges = ShimLoader.getSparkShims
           .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
           .map(_.asInstanceOf[ShuffleQueryStageExec])

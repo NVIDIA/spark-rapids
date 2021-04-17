@@ -46,8 +46,7 @@ case class ShuffleReceivedBufferId(
 
 /** Catalog for lookup of shuffle buffers by block ID */
 class ShuffleReceivedBufferCatalog(
-    catalog: RapidsBufferCatalog,
-    diskBlockManager: RapidsDiskBlockManager) extends Logging {
+    catalog: RapidsBufferCatalog) extends Logging {
   /** Mapping of table ID to shuffle buffer ID */
   private[this] val tableMap = new ConcurrentHashMap[Int, ShuffleReceivedBufferId]
 
