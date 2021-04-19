@@ -34,6 +34,18 @@ _no_nans_float_conf_partial.update(
 _no_nans_float_conf_final = _no_nans_float_conf.copy()
 _no_nans_float_conf_final.update({'spark.rapids.sql.hashAgg.replaceMode': 'final'})
 
+_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                    'spark.rapids.sql.hasNans': 'true',
+                    'spark.rapids.sql.castStringToFloat.enabled': 'true'
+                   }
+
+_nans_float_conf_partial = _nans_float_conf.copy()
+_nans_float_conf_partial.update(
+    {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
+
+_nans_float_conf_final = _nans_float_conf.copy()
+_nans_float_conf_final.update({'spark.rapids.sql.hashAgg.replaceMode': 'final'})
+
 # The input lists or schemas that are used by StructGen.
 
 # grouping longs with nulls
@@ -156,8 +168,9 @@ def get_params(init_list, marked_params=[]):
 
 
 # Run these tests with in 3 modes, all on the GPU, only partial aggregates on GPU and
-# only final aggregates on the GPU
+# only final aggregates on the GPU with conf for spark.rapids.sql.hasNans set to false/true
 _confs = [_no_nans_float_conf, _no_nans_float_conf_final, _no_nans_float_conf_partial]
+_confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf_final]
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
@@ -165,13 +178,19 @@ _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
-    'EqualTo', 'First', 'SortAggregateExec', 'Coalesce')
+    'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
+    'PivotFirst', 'GetArrayItem')
 
 params_markers_for_confs = [
     (_no_nans_float_conf_partial, [_excluded_operators_marker]),
     (_no_nans_float_conf_final, [_excluded_operators_marker])
 ]
 
+params_markers_for_confs_nans = [
+    (_nans_float_conf_partial, [_excluded_operators_marker]),
+    (_nans_float_conf_final, [_excluded_operators_marker]),
+    (_nans_float_conf, [_excluded_operators_marker])
+]
 
 _grpkey_small_decimals = [
     ('a', RepeatSeqGen(DecimalGen(precision=7, scale=3, nullable=(True, 10.0)), length=50)),
@@ -245,6 +264,62 @@ def test_hash_avg_nulls_partial_only(data_gen):
         lambda spark: gen_df(spark, data_gen, length=2).agg(f.avg('b')),
         conf=_no_nans_float_conf_partial
     )
+
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_grpby_pivot(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .pivot('b')
+            .agg(f.sum('c')),
+        conf=conf)
+
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+def test_hash_grpby_pivot_with_nans(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .pivot('b')
+            .agg(f.sum('c')),
+        conf=conf)
+
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_multiple_grpby_pivot(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a','b')
+            .pivot('b')
+            .agg(f.sum('c'), f.max('c')),
+        conf=conf)
+
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+def test_hash_reduction_pivot_with_nans(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby()
+            .pivot('b')
+            .agg(f.sum('c')),
+        conf=conf)
 
 
 @approximate_float
