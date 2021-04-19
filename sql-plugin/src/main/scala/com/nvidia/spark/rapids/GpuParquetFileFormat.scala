@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -41,12 +41,6 @@ object GpuParquetFileFormat {
       spark: SparkSession,
       options: Map[String, String],
       schema: StructType): Option[GpuParquetFileFormat] = {
-
-    val unSupportedTypes =
-      schema.filterNot(field => GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))
-    if (unSupportedTypes.nonEmpty) {
-      meta.willNotWorkOnGpu(s"These types aren't supported for parquet $unSupportedTypes")
-    }
 
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
@@ -60,6 +54,8 @@ object GpuParquetFileFormat {
       meta.willNotWorkOnGpu("Parquet output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET_WRITE} to true")
     }
+
+    FileFormatChecks.tag(meta, schema, ParquetFormatType, WriteFileOp)
 
     parseCompressionType(parquetOptions.compressionCodecClassName)
       .getOrElse(meta.willNotWorkOnGpu(
@@ -277,7 +273,7 @@ class GpuParquetWriter(
               new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
                 v.castTo(DType.TIMESTAMP_MILLISECONDS)
               })
-            case d: DecimalType if d.precision < 10 =>
+            case d: DecimalType if d.precision <= Decimal.MAX_INT_DIGITS =>
               // There is a bug in Spark that causes a problem if we write Decimals with
               // precision < 10 as Decimal64.
               // https://issues.apache.org/jira/browse/SPARK-34167

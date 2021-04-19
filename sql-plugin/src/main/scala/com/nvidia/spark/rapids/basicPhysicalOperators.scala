@@ -60,12 +60,22 @@ object GpuProjectExec extends Arm {
   }
 }
 
-case class GpuProjectExec(projectList: Seq[Expression], child: SparkPlan)
-    extends UnaryExecNode with GpuExec {
+case class GpuProjectExec(
+   // NOTE for Scala 2.12.x and below we enforce usage of (eager) List to prevent running
+   // into a deep recursion during serde of lazy lists. See
+   // https://github.com/NVIDIA/spark-rapids/issues/2036
+   //
+   // Whereas a similar issue https://issues.apache.org/jira/browse/SPARK-27100 is resolved
+   // using an Array, we opt in for List because it implements Seq while having non-recursive
+   // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
+   //   immutable/List.scala#L516
+   projectList: List[Expression],
+   child: SparkPlan
+ ) extends UnaryExecNode with GpuExec {
 
-  private val sparkProjectList = projectList.asInstanceOf[Seq[NamedExpression]]
-
-  override def output: Seq[Attribute] = sparkProjectList.map(_.toAttribute)
+  override def output: Seq[Attribute] = {
+    projectList.collect { case ne: NamedExpression => ne.toAttribute }
+  }
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 

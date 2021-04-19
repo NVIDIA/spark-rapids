@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
@@ -444,6 +443,11 @@ object TypeSig {
   val numeric: TypeSig = integral + fp + DECIMAL
 
   /**
+   * All values that correspond to Spark's AtomicType
+   */
+  val atomics: TypeSig = numeric + BINARY + BOOLEAN + DATE + STRING + TIMESTAMP
+
+  /**
    * numeric + CALENDAR
    */
   val numericAndInterval: TypeSig = numeric + CALENDAR
@@ -528,8 +532,7 @@ case class ContextChecks(
     assert (fixedChecks.length <= children.length,
       s"${expr.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
           s"found ${children.length}")
-    fixedChecks.indices.foreach { i =>
-      val check = fixedChecks(i)
+    fixedChecks.zipWithIndex.foreach { case (check, i) =>
       check.cudf.tagExprParam(meta, children(i), check.name)
     }
     if (repeatingParamCheck.isEmpty) {
@@ -552,6 +555,65 @@ case class ContextChecks(
     val output = ("result", outputCheck.getSupportLevel(dataType, sparkOutputSig))
 
     (fixed ++ variable ++ Seq(output)).toMap
+  }
+}
+
+/**
+ * Checks for either a read or a write of a given file format.
+ */
+class FileFormatChecks private (
+    sig: TypeSig,
+    sparkSig: TypeSig)
+    extends TypeChecks[SupportLevel] {
+
+  def tag(meta: RapidsMeta[_, _, _],
+      schema: StructType,
+      fileType: FileFormatType,
+      op: FileFormatOp): Unit = {
+    val allowDecimal = meta.conf.decimalTypeEnabled
+
+    val unsupportedOutputTypes = schema.fields
+        .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
+        .toSet
+
+    if (unsupportedOutputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu("unsupported data types " +
+          unsupportedOutputTypes.mkString(", ") + s" in $op for $fileType")
+    }
+  }
+
+  override def support(dataType: TypeEnum.Value): SupportLevel =
+    sig.getSupportLevel(dataType, sparkSig)
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit =
+    throw new IllegalStateException("Internal Error not supported")
+}
+
+object FileFormatChecks {
+  /**
+   * File format checks with separate read and write signatures for cudf.
+   */
+  def apply(
+      cudfRead: TypeSig,
+      cudfWrite: TypeSig,
+      sparkSig: TypeSig): Map[FileFormatOp, FileFormatChecks] = Map(
+    (ReadFileOp, new FileFormatChecks(cudfRead, sparkSig)),
+    (WriteFileOp, new FileFormatChecks(cudfWrite, sparkSig))
+  )
+
+  /**
+   * File format checks where read and write have the same signature for cudf.
+   */
+  def apply(
+      cudfReadWrite: TypeSig,
+      sparkSig: TypeSig): Map[FileFormatOp, FileFormatChecks] =
+    apply(cudfReadWrite, cudfReadWrite, sparkSig)
+
+  def tag(meta: RapidsMeta[_, _, _],
+      schema: StructType,
+      fileType: FileFormatType,
+      op: FileFormatOp): Unit = {
+    GpuOverrides.fileFormats(fileType)(op).tag(meta, schema, fileType, op)
   }
 }
 
@@ -599,6 +661,56 @@ object ExecChecks {
   def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = new ExecChecks(check, sparkSig)
 
   def hiddenHack() = new ExecChecks(TypeSig.all, TypeSig.all, shown = false)
+}
+
+/**
+ * Base class all Partition checks must follow
+ */
+abstract class PartChecks extends TypeChecks[Map[String, SupportLevel]]
+
+case class PartChecksImpl(
+    paramCheck: Seq[ParamCheck] = Seq.empty,
+    repeatingParamCheck: Option[RepeatingParamCheck] = None)
+    extends PartChecks {
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val part = meta.wrapped
+    val children = meta.childExprs.map(_.wrapped.asInstanceOf[Expression]).toArray
+
+    val fixedChecks = paramCheck.toArray
+    assert (fixedChecks.length <= children.length,
+      s"${part.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
+          s"found ${children.length}")
+    fixedChecks.zipWithIndex.foreach { case (check, i) =>
+      check.cudf.tagExprParam(meta, children(i), check.name)
+    }
+    if (repeatingParamCheck.isEmpty) {
+      assert(fixedChecks.length == children.length,
+        s"${part.getClass.getSimpleName} expected ${fixedChecks.length} but " +
+            s"found ${children.length}")
+    } else {
+      val check = repeatingParamCheck.get
+      (fixedChecks.length until children.length).foreach { i =>
+        check.cudf.tagExprParam(meta, children(i), check.name)
+      }
+    }
+  }
+
+  override def support(dataType: TypeEnum.Value): Map[String, SupportLevel] = {
+    val fixed = paramCheck.map(check =>
+      (check.name, check.cudf.getSupportLevel(dataType, check.spark)))
+    val variable = repeatingParamCheck.map(check =>
+      (check.name, check.cudf.getSupportLevel(dataType, check.spark)))
+
+    (fixed ++ variable).toMap
+  }
+}
+
+object PartChecks {
+  def apply(repeatingParamCheck: RepeatingParamCheck): PartChecks =
+    PartChecksImpl(Seq.empty, Some(repeatingParamCheck))
+
+  def apply(): PartChecks = PartChecksImpl()
 }
 
 /**
@@ -729,7 +841,7 @@ object CreateNamedStructCheck extends ExprChecks {
         valueSig.tagExprParam(meta, expr, "value")
       }
       if (!resultSig.isSupportedByPlugin(origExpr.dataType, meta.conf.decimalTypeEnabled)) {
-        meta.willNotWorkOnGpu(s"unsupported data types in output: ${origExpr.dataType}")
+        meta.willNotWorkOnGpu(s"unsupported data type in output: ${origExpr.dataType}")
       }
     }
   }
@@ -1059,7 +1171,55 @@ object ExprChecks {
  * Used for generating the support docs.
  */
 object SupportedOpsDocs {
+  private def execChecksHeaderLine(): Unit = {
+    println("<tr>")
+    println("<th>Executor</th>")
+    println("<th>Description</th>")
+    println("<th>Notes</th>")
+    TypeEnum.values.foreach { t =>
+      println(s"<th>$t</th>")
+    }
+    println("</tr>")
+  }
+
+  private def exprChecksHeaderLine(): Unit = {
+    println("<tr>")
+    println("<th>Expression</th>")
+    println("<th>SQL Functions(s)</th>")
+    println("<th>Description</th>")
+    println("<th>Notes</th>")
+    println("<th>Context</th>")
+    println("<th>Param/Output</th>")
+    TypeEnum.values.foreach { t =>
+      println(s"<th>$t</th>")
+    }
+    println("</tr>")
+  }
+
+  private def partChecksHeaderLine(): Unit = {
+    println("<tr>")
+    println("<th>Partition</th>")
+    println("<th>Description</th>")
+    println("<th>Notes</th>")
+    println("<th>Param</th>")
+    TypeEnum.values.foreach { t =>
+      println(s"<th>$t</th>")
+    }
+    println("</tr>")
+  }
+
+  private def ioChecksHeaderLine(): Unit = {
+    println("<tr>")
+    println("<th>Format</th>")
+    println("<th>Direction</th>")
+    TypeEnum.values.foreach { t =>
+      println(s"<th>$t</th>")
+    }
+    println("</tr>")
+  }
+
   def help(): Unit = {
+    val headerEveryNLines = 15
     // scalastyle:off line.size.limit
     println("---")
     println("layout: page")
@@ -1146,17 +1306,16 @@ object SupportedOpsDocs {
     println("level operations like doing a filter or project. The operations that the RAPIDS")
     println("Accelerator supports are described below.")
     println("<table>")
-    println("<tr>")
-    println("<th>Executor</th>")
-    println("<th>Description</th>")
-    println("<th>Notes</th>")
-    TypeEnum.values.foreach { t =>
-      println(s"<th>$t</th>")
-    }
-    println("</tr>")
+    execChecksHeaderLine()
+    var totalCount = 0
+    var nextOutputAt = headerEveryNLines
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
       val checks = rule.getChecks
       if (rule.isVisible && checks.forall(_.shown)) {
+        if (totalCount >= nextOutputAt) {
+          execChecksHeaderLine()
+          nextOutputAt = totalCount + headerEveryNLines
+        }
         println("<tr>")
         println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
         println(s"<td>${rule.description}</td>")
@@ -1172,6 +1331,7 @@ object SupportedOpsDocs {
           }
         }
         println("</tr>")
+        totalCount += 1
       }
     }
     println("</table>")
@@ -1203,20 +1363,16 @@ object SupportedOpsDocs {
     println("functions in SQL.")
     println("Accelerator support is described below.")
     println("<table>")
-    println("<tr>")
-    println("<th>Expression</th>")
-    println("<th>SQL Functions(s)</th>")
-    println("<th>Description</th>")
-    println("<th>Notes</th>")
-    println("<th>Context</th>")
-    println("<th>Param/Output</th>")
-    TypeEnum.values.foreach { t =>
-      println(s"<th>$t</th>")
-    }
-    println("</tr>")
+    exprChecksHeaderLine()
+    totalCount = 0
+    nextOutputAt = headerEveryNLines
     GpuOverrides.expressions.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
       val checks = rule.getChecks
       if (rule.isVisible && checks.isDefined && checks.forall(_.shown)) {
+        if (totalCount >= nextOutputAt) {
+          exprChecksHeaderLine()
+          nextOutputAt = totalCount + headerEveryNLines
+        }
         val sqlFunctions =
           ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
         val exprChecks = checks.get.asInstanceOf[ExprChecks]
@@ -1253,6 +1409,7 @@ object SupportedOpsDocs {
               }
             }
         }
+        totalCount += totalSpan
       }
     }
     println("</table>")
@@ -1307,139 +1464,101 @@ object SupportedOpsDocs {
         case _ => // Nothing
       }
     }
-
+    println()
+    println("# Partitioning")
+    println("When transferring data between different tasks the data is partitioned in")
+    println("specific ways depending on requirements in the plan. Be aware that the types")
+    println("included below are only for rows that impact where the data is partitioned.")
+    println("So for example if we are doing a join on the column `a` the data would be")
+    println("hash partitioned on `a`, but all of the other columns in the same data frame")
+    println("as `a` don't show up in the table. They are controlled by the rules for")
+    println("`ShuffleExchangeExec` which uses the `Partitioning`.")
+    println("<table>")
+    partChecksHeaderLine()
+    totalCount = 0
+    nextOutputAt = headerEveryNLines
+    GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach { rule =>
+      val checks = rule.getChecks
+      if (rule.isVisible && checks.isDefined && checks.forall(_.shown)) {
+        if (totalCount >= nextOutputAt) {
+          partChecksHeaderLine()
+          nextOutputAt = totalCount + headerEveryNLines
+        }
+        val partChecks = checks.get.asInstanceOf[PartChecks]
+        val allData = TypeEnum.values.map { t =>
+          (t, partChecks.support(t))
+        }.toMap
+        // Now we should get the same keys for each type, so we are only going to look at the first
+        // type for now
+        val totalSpan = allData.values.head.size
+        if (totalSpan > 0) {
+          val representative = allData.values.head
+          println("<tr>")
+          println("<td rowSpan=\"" + totalSpan + "\">" +
+              s"${rule.tag.runtimeClass.getSimpleName}</td>")
+          println("<td rowSpan=\"" + totalSpan + "\">" + s"${rule.description}</td>")
+          println("<td rowSpan=\"" + totalSpan + "\">" + s"${rule.notes().getOrElse("None")}</td>")
+          var count = 0
+          representative.keys.foreach { param =>
+            println(s"<td>$param</td>")
+            TypeEnum.values.foreach { t =>
+              println(allData(t)(param).htmlTag)
+            }
+            println("</tr>")
+            count += 1
+            if (count < totalSpan) {
+              println("<tr>")
+            }
+          }
+          totalCount += totalSpan
+        } else {
+          // No arguments...
+          println("<tr>")
+          println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
+          println(s"<td>${rule.description}</td>")
+          println(s"<td>${rule.notes().getOrElse("None")}</td>")
+          println(NotApplicable.htmlTag) // param
+          TypeEnum.values.foreach { _ =>
+            println(NotApplicable.htmlTag)
+          }
+          totalCount += 1
+        }
+      }
+    }
+    println("</table>")
     println()
     println("## Input/Output")
     println("For Input and Output it is not cleanly exposed what types are supported and which are not.")
     println("This table tries to clarify that. Be aware that some types may be disabled in some")
     println("cases for either reads or writes because of processing limitations, like rebasing")
     println("dates or timestamps, or for a lack of type coercion support.")
-    // TODO this should be automatically generated
     println("<table>")
-    println("<tr>")
-    println("<th>Format</th>")
-    println("<th>Direction</th>")
-    println("<th>BOOLEAN</th>")
-    println("<th>BYTE</th>")
-    println("<th>SHORT</th>")
-    println("<th>INT</th>")
-    println("<th>LONG</th>")
-    println("<th>FLOAT</th>")
-    println("<th>DOUBLE</th>")
-    println("<th>DATE</th>")
-    println("<th>TIMESTAMP</th>")
-    println("<th>STRING</th>")
-    println("<th>DECIMAL</th>")
-    println("<th>NULL</th>")
-    println("<th>BINARY</th>")
-    println("<th>CALENDAR</th>")
-    println("<th>ARRAY</th>")
-    println("<th>MAP</th>")
-    println("<th>STRUCT</th>")
-    println("</tr>")
-    println("<tr>")
-    println("<th rowSpan=\"2\">Parquet</th>")
-    println("<th>Input</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td>S</td>") // DECIMAL
-    println("<td></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><em>PS (missing nested BINARY)</em></td>") // ARRAY
-    println("<td><em>PS (missing nested BINARY)</em></td>") // MAP
-    println("<td><em>PS (missing nested BINARY)</em></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>Output</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td>S</td>") // DECIMAL
-    println("<td></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th rowSpan=\"2\">ORC</th>")
-    println("<th>Input</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
-    println("<td><b>NS</b></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>Output</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
-    println("<td><b>NS</b></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
-    println("<tr>")
-    println("<th>CSV</th>")
-    println("<th>Input</th>")
-    println("<td>S</td>") // BOOLEAN
-    println("<td>S</td>") // BYTE
-    println("<td>S</td>") // SHORT
-    println("<td>S</td>") // INT
-    println("<td>S</td>") // LONG
-    println("<td>S</td>") // FLOAT
-    println("<td>S</td>") // DOUBLE
-    println("<td>S</td>") // DATE
-    println("<td>S</td>") // TIMESTAMP
-    println("<td>S</td>") // STRING
-    println("<td><b>NS</b></td>") // DECIMAL
-    println("<td><b>NS</b></td>") // NULL
-    println("<td><b>NS</b></td>") // BINARY
-    println("<td><b>NS</b></td>") // CALENDAR
-    println("<td><b>NS</b></td>") // ARRAY
-    println("<td><b>NS</b></td>") // MAP
-    println("<td><b>NS</b></td>") // STRUCT
-    println("</tr>")
+    ioChecksHeaderLine()
+    totalCount = 0
+    nextOutputAt = headerEveryNLines
+    GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
+      case (format, ioMap) =>
+        if (totalCount >= nextOutputAt) {
+          ioChecksHeaderLine()
+          nextOutputAt = totalCount + headerEveryNLines
+        }
+        val read = ioMap(ReadFileOp)
+        val write = ioMap(WriteFileOp)
+        println("<tr>")
+        println("<th rowSpan=\"2\">" + s"$format</th>")
+        println("<th>Read</th>")
+        TypeEnum.values.foreach { t =>
+          println(read.support(t).htmlTag)
+        }
+        println("</tr>")
+        println("<tr>")
+        println("<th>Write</th>")
+        TypeEnum.values.foreach { t =>
+          println(write.support(t).htmlTag)
+        }
+        println("</tr>")
+        totalCount += 2
+    }
     println("</table>")
     // scalastyle:on line.size.limit
   }

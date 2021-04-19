@@ -22,7 +22,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.{ ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.types.{DoubleType, FloatType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {

@@ -10,7 +10,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar,cudf-0.19-SNAPSHOT-cuda10-1.jar' \
+${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,cudf-0.20-SNAPSHOT-cuda11.jar' \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.incompatibleOps.enabled=true
 ```
@@ -60,6 +60,14 @@ Name | Description | Default Value
 <a name="sql.castStringToInteger.enabled"></a>spark.rapids.sql.castStringToInteger.enabled|When set to true, enables casting from strings to integer types (byte, short, int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect results when the string represents a number larger than Long.MaxValue or smaller than Long.MinValue.|false
 <a name="sql.castStringToTimestamp.enabled"></a>spark.rapids.sql.castStringToTimestamp.enabled|When set to true, casting from string to timestamp is supported on the GPU. The GPU only supports a subset of formats when casting strings to timestamps. Refer to the CAST documentation for more details.|false
 <a name="sql.concurrentGpuTasks"></a>spark.rapids.sql.concurrentGpuTasks|Set the number of tasks that can execute concurrently per GPU. Tasks may temporarily block when the number of concurrent tasks in the executor exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to GPU out of memory errors.|1
+<a name="sql.csv.read.bool.enabled"></a>spark.rapids.sql.csv.read.bool.enabled|Parsing an invalid CSV boolean value produces true instead of null|false
+<a name="sql.csv.read.byte.enabled"></a>spark.rapids.sql.csv.read.byte.enabled|Parsing CSV bytes is much more lenient and will return 0 for some malformed values instead of null|false
+<a name="sql.csv.read.date.enabled"></a>spark.rapids.sql.csv.read.date.enabled|Parsing invalid CSV dates produces different results from Spark|false
+<a name="sql.csv.read.double.enabled"></a>spark.rapids.sql.csv.read.double.enabled|Parsing CSV double has some issues at the min and max values for floatingpoint numbers and can be more lenient on parsing inf and -inf values|false
+<a name="sql.csv.read.float.enabled"></a>spark.rapids.sql.csv.read.float.enabled|Parsing CSV floats has some issues at the min and max values for floatingpoint numbers and can be more lenient on parsing inf and -inf values|false
+<a name="sql.csv.read.integer.enabled"></a>spark.rapids.sql.csv.read.integer.enabled|Parsing CSV integers is much more lenient and will return 0 for some malformed values instead of null|false
+<a name="sql.csv.read.long.enabled"></a>spark.rapids.sql.csv.read.long.enabled|Parsing CSV longs is much more lenient and will return 0 for some malformed values instead of null|false
+<a name="sql.csv.read.short.enabled"></a>spark.rapids.sql.csv.read.short.enabled|Parsing CSV shorts is much more lenient and will return 0 for some malformed values instead of null|false
 <a name="sql.csvTimestamps.enabled"></a>spark.rapids.sql.csvTimestamps.enabled|When set to true, enables the CSV parser to read timestamps. The default output format for Spark includes a timezone at the end. Anything except the UTC timezone is not supported. Timestamps after 2038 and before 1902 are also not supported.|false
 <a name="sql.decimalType.enabled"></a>spark.rapids.sql.decimalType.enabled|Enable decimal type support on the GPU.  Decimal support on the GPU is limited to less than 18 digits.  This can result in a lot of data movement to and from the GPU, which can slow down processing in some cases.|false
 <a name="sql.enabled"></a>spark.rapids.sql.enabled|Enable (true) or disable (false) sql operations on the GPU|true

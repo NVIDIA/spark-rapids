@@ -14,8 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from datetime import date, datetime, timezone
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_equal
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -200,8 +199,9 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             lambda spark : readParquetCatchException(spark, data_path),
             conf=all_confs)
 
-
-@pytest.mark.parametrize('parquet_gens', [decimal_gens], ids=idfn)
+@pytest.mark.parametrize('parquet_gens', [decimal_gens,
+                                          [ArrayGen(DecimalGen(7,2), max_length=10)],
+                                          [StructGen([['child0', DecimalGen(7, 2)]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -240,7 +240,7 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, r
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -289,7 +289,7 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen]
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -314,7 +314,7 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -339,7 +339,7 @@ def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed 
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -465,3 +465,15 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
+
+def test_many_column_project():
+    def _create_wide_data_frame(spark, num_cols):
+        schema_dict = {}
+        for i in range(num_cols):
+            schema_dict[f"c{i}"] = i
+        return spark.createDataFrame([Row(**r) for r in [schema_dict]])\
+            .withColumn('out', f.col('c1') * 100)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        func=lambda spark: _create_wide_data_frame(spark, 1000),
+        is_cpu_first=False)
