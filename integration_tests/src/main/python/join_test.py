@@ -33,12 +33,30 @@ all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         pytest.param(FloatGen(nullable=False), marks=[incompat]),
         pytest.param(DoubleGen(nullable=False), marks=[incompat])]
 
+basic_struct_gen = StructGen([
+    ['child' + str(ind), sub_gen]
+    for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
+    nullable=False)
+
+basic_struct_gen_with_no_null_child = StructGen([
+    ['child' + str(ind), sub_gen]
+    for ind, sub_gen in enumerate([StringGen(nullable=False), ByteGen(nullable=False),
+                                   ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
+                                   BooleanGen(nullable=False), DateGen(nullable=False), TimestampGen(nullable=False)])],
+    nullable=False)
+
+basic_struct_gen_with_floats = StructGen([['child0', FloatGen()], ['child1', DoubleGen()]], nullable=False)
+
+struct_gens = [basic_struct_gen, basic_struct_gen_with_no_null_child]
+
 double_gen = [pytest.param(DoubleGen(), marks=[incompat])]
 
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
                         'spark.sql.join.preferSortMergeJoin': 'True',
                         'spark.sql.shuffle.partitions': '2',
-                        'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
+                        'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                        'spark.rapids.sql.stableSort.enabled': 'true'
                        }
 
 _cartesean_join_conf = {'spark.rapids.sql.exec.CartesianProductExec': 'true',
@@ -252,3 +270,74 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
     # Even though Spark does not know the size of an RDD input so it will not do a broadcast join unless
     # we tell it to, this is just to be safe
     assert_gpu_and_cpu_are_equal_collect(do_join, {'spark.sql.autoBroadcastJoinThreshold': '1'})
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross'], ids=idfn)
+def test_sortmerge_join_struct(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(right, left.a == right.r_a, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross'], ids=idfn)
+def test_sortmerge_join_struct_and_atomic(data_gen, join_type):
+    def do_join(spark):
+        left = two_col_df(spark, data_gen, int_gen, length=500)
+        right = two_col_df(spark, data_gen, int_gen, length=500)
+        return left.join(right, (left.a == right.a) & (left.b == right.b), join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross'], ids=idfn)
+def test_sortmerge_join_struct_and_atomic_with_null_filtering(data_gen, join_type):
+    def do_join(spark):
+        left = two_col_df(spark, data_gen, int_gen, length=500)
+        right = two_col_df(spark, data_gen, int_gen, length=500)
+        return left.join(right, (left.a == right.a) & (left.b == right.b), join_type)
+    conf = {'spark.sql.constraintPropagation.enabled': 'false', **_sortmerge_join_conf}
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'Cross'], ids=idfn)
+def test_broadcast_join_struct(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(broadcast(right), left.a == right.r_a, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'Cross'], ids=idfn)
+def test_broadcast_join_struct_and_atomic(data_gen, join_type):
+    def do_join(spark):
+        left = two_col_df(spark, data_gen, int_gen, length=500)
+        right = two_col_df(spark, data_gen, int_gen, length=250)
+        return left.join(broadcast(right), (left.a == right.a) & (left.b == right.b), join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
+
+# local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/2140')
+@pytest.mark.parametrize('data_gen', [basic_struct_gen_with_floats], ids=idfn)
+@pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross'], ids=idfn)
+def test_sortmerge_join_struct_with_floats(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 250)
+        return left.join(right, left.a == right.r_a, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
