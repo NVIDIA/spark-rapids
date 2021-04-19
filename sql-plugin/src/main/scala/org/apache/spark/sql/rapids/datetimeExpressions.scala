@@ -348,7 +348,8 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
               willNotWorkOnGpu("legacyTimeParserPolicy LEGACY is not supported")
             } else if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat) ||
                 conf.incompatDateFormats) {
-              strfFormat = DateUtils.toStrf(sparkFormat)
+              strfFormat = DateUtils.toStrf(sparkFormat,
+                expr.left.dataType == DataTypes.StringType)
             } else {
               willNotWorkOnGpu(s"incompatible format '$sparkFormat'. Set " +
                   s"spark.rapids.sql.incompatibleDateFormats.enabled=true to force onto GPU.")
