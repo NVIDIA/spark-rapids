@@ -1907,7 +1907,8 @@ object GpuOverrides {
           }
           // If pivotColumnValues doesn't have distinct values, fall back to CPU
           if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
-            willNotWorkOnGpu("PivotFirst does not work on non-distinct values")
+            willNotWorkOnGpu("PivotFirst does not work on the GPU when there are duplicate" +
+                " pivot values provided")
           }
         }
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
