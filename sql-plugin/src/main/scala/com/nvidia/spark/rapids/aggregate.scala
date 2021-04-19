@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
+import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression}
 import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -478,7 +478,7 @@ case class GpuHashAggregateExec(
           if (aggregatedCb == null && groupingExpressions.isEmpty) {
             val aggregateFunctions = aggregateExpressions.map(_.aggregateFunction)
             val defaultValues =
-              aggregateFunctions.asInstanceOf[Seq[GpuDeclarativeAggregate]].flatMap(_.initialValues)
+              aggregateFunctions.flatMap(_.initialValues)
             val vecs = defaultValues.map { ref =>
               val scalar = GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType)
               try {
@@ -660,14 +660,14 @@ case class GpuHashAggregateExec(
     //
     val updateExpressionsSeq =
       aggregateExpressions.map(
-        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions)
+        _.aggregateFunction.updateExpressions)
     //
     // merge expressions are used while merging multiple batches, or while on final mode
     // e.g. for count it's sum, and for average it's sum and sum.
     //
     val mergeExpressionsSeq =
       aggregateExpressions.map(
-        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
+        _.aggregateFunction.mergeExpressions)
 
     val aggModeCudfAggregates = aggregateExpressions.zipWithIndex.map { case (expr, modeIndex) =>
       val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
@@ -688,7 +688,7 @@ case class GpuHashAggregateExec(
       _.isDistinct)
     val updateExpressionsDistinct =
       distinctAggExpressions.flatMap(
-        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions)
+        _.aggregateFunction.updateExpressions)
     val updateAttributesDistinct =
       distinctAggExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val inputProjectionsDistinct =
@@ -697,7 +697,7 @@ case class GpuHashAggregateExec(
     // Pick merge non-distinct for PartialMerge
     val mergeExpressionsNonDistinct =
       nonDistinctAggExpressions
-        .flatMap(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
+        .flatMap(_.aggregateFunction.mergeExpressions)
         .map(_.asInstanceOf[CudfAggregate].ref)
     val mergeAttributesNonDistinct =
       nonDistinctAggExpressions.flatMap(
@@ -738,8 +738,7 @@ case class GpuHashAggregateExec(
     val resultingBindAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
 
     val finalProjections = groupingExpressions ++
-        aggregateExpressions.map(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate]
-          .evaluateExpression)
+      aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
 
     // boundInputReferences is used to pick out of the input batch the appropriate columns
     // for aggregation
