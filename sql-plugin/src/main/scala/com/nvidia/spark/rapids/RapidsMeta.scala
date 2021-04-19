@@ -21,7 +21,7 @@ import java.time.ZoneId
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
@@ -821,6 +821,22 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
     convertToGpu(childExprs(0).convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
+}
+
+/**
+ * Base class for metadata around `ImperativeAggregate`.
+ */
+abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends ExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override final def convertToGpu(): GpuExpression =
+    convertToGpu(childExprs.map(_.convertToGpu()))
+
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }
 
 /**
