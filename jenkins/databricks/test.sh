@@ -22,6 +22,9 @@ SPARK_CONF=$2
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
+## cuda toolkit has been installed into conda envs via 'init_cudf_udf.sh'
+export LD_LIBRARY_PATH=/databricks/conda/envs/databricks-ml-gpu/lib
+
 sudo /databricks/conda/envs/databricks-ml-gpu/bin/pip install pytest sre_yield requests pandas \
 	pyarrow findspark pytest-xdist
 
