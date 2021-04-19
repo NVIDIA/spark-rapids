@@ -1067,6 +1067,7 @@ class MultiFileParquetPartitionReader(
         BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
         footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
         val amountWritten = offset + footerOut.getPos
+        footerOut.close()
         // triple check we didn't go over memory
         if (amountWritten > totalBufferSize) {
            throw new QueryExecutionException(s"Calculated buffer size $totalBufferSize is to " +
