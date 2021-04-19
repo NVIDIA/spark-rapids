@@ -142,6 +142,8 @@ class UCX(executorId: Int, rapidsConf: RapidsConf) extends AutoCloseable with Lo
         val ucpListenerParams = new UcpListenerParams().setConnectionHandler(
           (connectionRequest: UcpConnectionRequest) => {
             logDebug(s"Got connection request from ${connectionRequest.getClientAddress}")
+            worker.newEndpoint(new UcpEndpointParams().setPeerErrorHandlingMode()
+              .setConnectionRequest(connectionRequest))
           })
         val maxRetries = SparkEnv.get.conf.getInt("spark.port.maxRetries", 16)
         val startPort = 1024 + Random.nextInt(65535 - 1024)
@@ -437,7 +439,7 @@ class UCX(executorId: Int, rapidsConf: RapidsConf) extends AutoCloseable with Lo
   private def startConnection(connection: UCXClientConnection,
       peerMgmtHost: String,
       peerMgmtPort: Int) = {
-    logInfo(s"Connecting to $peerMgmtHost to $peerMgmtPort")
+    logInfo(s"Connecting to $peerMgmtHost:$peerMgmtPort")
     val nvtx = new NvtxRange(s"UCX Connect to $peerMgmtHost:$peerMgmtPort", NvtxColor.RED)
     try {
       val socket = new Socket(peerMgmtHost, peerMgmtPort)
