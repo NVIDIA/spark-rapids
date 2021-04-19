@@ -19,13 +19,13 @@ package com.nvidia.spark.rapids
 import java.io.{File, OutputStream}
 import java.net.{URI, URISyntaxException}
 import java.nio.charset.StandardCharsets
-import java.util.{Collections, Locale, Optional}
+import java.util.{Collections, Locale}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
-import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, LinkedHashMap, ListBuffer, Queue}
+import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, LinkedHashMap}
 import scala.math.max
 
 import ai.rapids.cudf._
@@ -46,6 +46,7 @@ import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, Type, Types}
+
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -60,7 +61,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, DateType, Decimal, DecimalType, MapType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -1770,8 +1771,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
   def calculateParquetFooterSize(
-    currentChunkedBlocks: Seq[BlockMetaData],
-    schema: MessageType): Long = {
+      currentChunkedBlocks: Seq[BlockMetaData],
+      schema: MessageType): Long = {
     // Calculate size of the footer metadata.
     // This uses the column metadata from the original file, but that should
     // always be at least as big as the updated metadata in the output.
@@ -1781,9 +1782,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def calculateParquetOutputSize(
-    currentChunkedBlocks: Seq[BlockMetaData],
-    schema: MessageType,
-    handleCoalesceFiles: Boolean): Long = {
+      currentChunkedBlocks: Seq[BlockMetaData],
+      schema: MessageType,
+      handleCoalesceFiles: Boolean): Long = {
     // start with the size of Parquet magic (at start+end) and footer length values
     var size: Long = 4 + 4 + 4
 
@@ -1811,9 +1812,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def writeFooter(
-    out: OutputStream,
-    blocks: Seq[BlockMetaData],
-    schema: MessageType): Unit = {
+      out: OutputStream,
+      blocks: Seq[BlockMetaData],
+      schema: MessageType): Unit = {
     val fileMeta = new FileMetaData(schema, Collections.emptyMap[String, String],
       ParquetPartitionReader.PARQUET_CREATOR)
     val metadataConverter = new ParquetMetadataConverter
@@ -1823,10 +1824,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def copyDataRange(
-    range: CopyRange,
-    in: FSDataInputStream,
-    out: OutputStream,
-    copyBuffer: Array[Byte]): Unit = {
+      range: CopyRange,
+      in: FSDataInputStream,
+      out: OutputStream,
+      copyBuffer: Array[Byte]): Unit = {
     if (in.getPos != range.offset) {
       in.seek(range.offset)
     }
@@ -1851,10 +1852,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * @return updated block metadata corresponding to the output
    */
   def copyBlocksData(
-    in: FSDataInputStream,
-    out: HostMemoryOutputStream,
-    blocks: Seq[BlockMetaData],
-    realStartOffset: Long): Seq[BlockMetaData] = {
+      in: FSDataInputStream,
+      out: HostMemoryOutputStream,
+      blocks: Seq[BlockMetaData],
+      realStartOffset: Long): Seq[BlockMetaData] = {
     var totalRows: Long = 0
     val outputBlocks = new ArrayBuffer[BlockMetaData](blocks.length)
     val copyRanges = new ArrayBuffer[CopyRange]
@@ -1910,7 +1911,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def areNamesEquiv(groups: GroupType, index: Int, otherName: String,
-    isCaseSensitive: Boolean): Boolean = {
+      isCaseSensitive: Boolean): Boolean = {
     if (groups.getFieldCount > index) {
       if (isCaseSensitive) {
         groups.getFieldName(index) == otherName
@@ -1922,25 +1923,120 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     }
   }
 
-  def evolveSchemaIfNeededAndClose(
-    inputTable: Table,
-    filePath: String,
-    clippedSchema: MessageType): Table = {
-    // Convert Decimal32 columns to Decimal64, because spark-rapids only supports Decimal64.
-    val inTable = GpuParquetScanBase.convertDecimal32Columns(inputTable)
+  def getPrecisionsList(fields: Seq[Type]): Seq[Int] = {
+    fields.filter(field => field.getOriginalType == OriginalType.DECIMAL || !field.isPrimitive())
+      .flatMap { field =>
+        if (!field.isPrimitive) {
+          getPrecisionsList(field.asGroupType().getFields.asScala)
+        } else {
+          Seq(field.asPrimitiveType().getDecimalMetadata.getPrecision)
+        }
+      }
+  }
 
-    if (readDataSchema.length > inTable.getNumberOfColumns) {
+  /**
+   * This method casts the input ColumnView to a new column if it contains Decimal data that
+   * could be stored in smaller data type. e.g. a DecimalType(7,2) stored as 64-bit DecimalType can
+   * easily be stored in a 32-bit DecimalType
+   * @param cv              The column view that could potentially have Decimal64 columns with
+   *                        precision < 10
+   * @param precision   precisions of all the decimal columns in this Column
+   * @return
+   */
+  private def convertDecimal64ToDecimal32Wrapper(cv: ColumnVector, precision: Int): ColumnVector = {
+    def convertDecimal64ToDecimal32(
+      cv: ColumnView,
+      precision: Int,
+      newCols: ArrayBuilder[ColumnView]): ColumnView = {
+      val dt = cv.getType
+      if (!dt.isNestedType) {
+        if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
+          // we want to handle the legacy case where Decimals are written as an array of bytes
+          // cudf reads them back as a 64-bit Decimal
+          // castTo will create a new ColumnVector which we cannot close until we have copied out
+          // the entire nested type. So we store them temporarily in this array and close it after
+          // `copyToColumnVector` is called
+          val col = cv.castTo(DecimalUtil.createCudfDecimal(precision, -dt.getScale()))
+          newCols += col
+          col
+        } else {
+          cv
+        }
+      } else if (dt == DType.LIST) {
+        val child = cv.getChildColumnView(0)
+        val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+        if (child == newChild) {
+          cv
+        } else {
+          cv.replaceListChild(newChild)
+        }
+      } else if (dt == DType.STRUCT) {
+        val newColumns = ArrayBuilder.make[ColumnView]()
+        newColumns.sizeHint(cv.getNumChildren)
+        val newColIndices = ArrayBuilder.make[Int]()
+        newColIndices.sizeHint(cv.getNumChildren)
+        (0 until cv.getNumChildren).foreach { i =>
+          val child = cv.getChildColumnView(i)
+          val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+          if (newChild != child) {
+            newColumns += newChild
+            newColIndices += i
+          }
+        }
+        val cols = newColumns.result()
+        if (cols.nonEmpty) {
+          // create a new struct column with the new ones
+          cv.replaceChildrenWithViews(newColIndices.result(), cols)
+        } else {
+          cv
+        }
+      } else {
+        throw new IllegalArgumentException("Unknown data type")
+      }
+    }
+
+    val newColumns = ArrayBuilder.make[ColumnView]()
+    val tmp = convertDecimal64ToDecimal32(cv, precision, newColumns)
+    if (tmp != cv) {
+      val result = withResource(newColumns.result()) { _ =>
+        tmp.copyToColumnVector()
+      }
+      if (tmp.getType.isNestedType) {
+        tmp.close()
+      }
+      result
+    } else {
+      tmp.asInstanceOf[ColumnVector].incRefCount()
+    }
+  }
+
+  def evolveSchemaIfNeededAndClose(
+      inputTable: Table,
+      filePath: String,
+      clippedSchema: MessageType): Table = {
+
+    val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
+    // check if there are cols with precision that can be stored in an int
+    val typeCastingNeeded = precisions.filter(p => p <= Decimal.MAX_INT_DIGITS).nonEmpty
+    if (readDataSchema.length > inputTable.getNumberOfColumns || typeCastingNeeded) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
+      val precisionList = scala.collection.mutable.Queue(precisions: _*)
       try {
-        withResource(inTable) { table =>
+        withResource(inputTable) { table =>
           var readAt = 0
           (0 until readDataSchema.length).foreach(writeAt => {
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
-              newColumns(writeAt) = table.getColumn(readAt).incRefCount()
+              val origCol = table.getColumn(readAt)
+              val col = if (typeCastingNeeded && precisionList.nonEmpty) {
+                convertDecimal64ToDecimal32Wrapper(origCol, precisionList.dequeue())
+              } else {
+                origCol.incRefCount()
+              }
+              newColumns(writeAt) = col
               readAt += 1
             } else {
               withResource(GpuScalar.from(null, readField.dataType)) { n =>
@@ -1958,15 +2054,15 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
         newColumns.safeClose()
       }
     } else {
-      inTable
+      inputTable
     }
   }
 
   def dumpParquetData(
-    hmb: HostMemoryBuffer,
-    dataLength: Long,
-    splits: Array[PartitionedFile],
-    debugDumpPrefix: String): Unit = {
+      hmb: HostMemoryBuffer,
+      dataLength: Long,
+      splits: Array[PartitionedFile],
+      debugDumpPrefix: String): Unit = {
     val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix, ".parquet")
     try {
       logInfo(s"Writing Parquet split data for $splits to $path")
@@ -1978,9 +2074,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def readPartFile(
-    blocks: Seq[BlockMetaData],
-    clippedSchema: MessageType,
-    filePath: Path): (HostMemoryBuffer, Long) = {
+      blocks: Seq[BlockMetaData],
+      clippedSchema: MessageType,
+      filePath: Path): (HostMemoryBuffer, Long) = {
     withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))) { _ =>
       withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
@@ -2006,9 +2102,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   def populateCurrentBlockChunk(
-    blockIter: BufferedIterator[BlockMetaData],
-    maxReadBatchSizeRows: Int,
-    maxReadBatchSizeBytes: Long): Seq[BlockMetaData] = {
+      blockIter: BufferedIterator[BlockMetaData],
+      maxReadBatchSizeRows: Int,
+      maxReadBatchSizeBytes: Long): Seq[BlockMetaData] = {
     val currentChunk = new ArrayBuffer[BlockMetaData]
     var numRows: Long = 0
     var numBytes: Long = 0
