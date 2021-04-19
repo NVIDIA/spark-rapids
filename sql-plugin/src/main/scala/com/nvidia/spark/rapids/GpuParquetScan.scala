@@ -476,6 +476,7 @@ abstract class FileParquetPartitionReaderBase(
   protected var isDone: Boolean = false
   protected var maxDeviceMemory: Long = 0
   protected var batch: Option[ColumnarBatch] = None
+  metrics = execMetrics
 
   override def get(): ColumnarBatch = {
     val ret = batch.getOrElse(throw new NoSuchElementException)
