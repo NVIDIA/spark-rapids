@@ -726,9 +726,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    */
   private def convertDecimal64ToDecimal32Wrapper(cv: ColumnVector, precision: Int): ColumnVector = {
     def convertDecimal64ToDecimal32(
-      cv: ColumnView,
-      precision: Int,
-      newCols: ArrayBuilder[ColumnView]): ColumnView = {
+        cv: ColumnView,
+        precision: Int,
+        newCols: ArrayBuilder[ColumnView]): ColumnView = {
       val dt = cv.getType
       if (!dt.isNestedType) {
         if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
@@ -792,10 +792,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   protected def dumpParquetData(
-        hmb: HostMemoryBuffer,
-        dataLength: Long,
-        splits: Array[PartitionedFile],
-        debugDumpPrefix: String): Unit = {
+      hmb: HostMemoryBuffer,
+      dataLength: Long,
+      splits: Array[PartitionedFile],
+      debugDumpPrefix: String): Unit = {
     val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix, ".parquet")
     try {
       logInfo(s"Writing Parquet split data for $splits to $path")
