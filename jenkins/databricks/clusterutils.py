@@ -23,7 +23,7 @@ class ClusterUtils(object):
 
     @staticmethod
     def generate_create_templ(sshKey, cluster_name, runtime, idle_timeout,
-            num_workers, driver_node_type, worker_node_type, cloud_provider, init_script,
+            num_workers, driver_node_type, worker_node_type, cloud_provider, init_scripts,
             printLoc=sys.stdout):
         timeStr = str(int(time.time()))
         uniq_name = cluster_name + "-" + timeStr
@@ -46,9 +46,9 @@ class ClusterUtils(object):
         templ['driver_node_type_id'] = driver_node_type
         templ['ssh_public_keys'] = [ sshKey ]
         templ['num_workers'] = num_workers
-        if (init_script != ''):
+        if (init_scripts != ''):
             templ['init_scripts']=[]
-            path_list = init_script.split(',')
+            path_list = init_scripts.split(',')
             for path in path_list:
                 templ['init_scripts'].append(
                     {
