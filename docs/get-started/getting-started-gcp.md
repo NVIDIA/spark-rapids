@@ -186,17 +186,84 @@ Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initializatio
 While step #1 is required at the time of cluster creation, step #2 can be done in advance. Let's
 write a script to do that. `gpu_dataproc_packages.sh` will be used to create the Dataproc image:
 
-<script src="https://gist.github.com/aroraakshit/191f4435c825f89f06f108691e104074.js"></script>
+```bash
+#!/bin/bash
+
+OS_NAME=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
+readonly OS_NAME
+OS_DIST=$(lsb_release -cs)
+readonly OS_DIST
+CUDA_VERSION='10.2'
+readonly CUDA_VERSION
+
+readonly DEFAULT_NVIDIA_DEBIAN_GPU_DRIVER_VERSION='460.56'
+readonly DEFAULT_NVIDIA_DEBIAN_GPU_DRIVER_URL="https://us.download.nvidia.com/XFree86/Linux-x86_64/${DEFAULT_NVIDIA_DEBIAN_GPU_DRIVER_VERSION}/NVIDIA-Linux-x86_64-${DEFAULT_NVIDIA_DEBIAN_GPU_DRIVER_VERSION}.run"
+
+readonly NVIDIA_BASE_DL_URL='https://developer.download.nvidia.com/compute'
+
+# Parameters for NVIDIA-provided Ubuntu GPU driver
+readonly NVIDIA_UBUNTU_REPOSITORY_URL="${NVIDIA_BASE_DL_URL}/cuda/repos/ubuntu1804/x86_64"
+readonly NVIDIA_UBUNTU_REPOSITORY_KEY="${NVIDIA_UBUNTU_REPOSITORY_URL}/7fa2af80.pub"
+readonly NVIDIA_UBUNTU_REPOSITORY_CUDA_PIN="${NVIDIA_UBUNTU_REPOSITORY_URL}/cuda-ubuntu1804.pin"
+
+function execute_with_retries() {
+  local -r cmd=$1
+  for ((i = 0; i < 10; i++)); do
+    if eval "$cmd"; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+
+function install_nvidia_gpu_driver() {
+  curl -fsSL --retry-connrefused --retry 10 --retry-max-time 30 \
+    "${NVIDIA_UBUNTU_REPOSITORY_KEY}" | apt-key add -
+
+  curl -fsSL --retry-connrefused --retry 10 --retry-max-time 30 \
+    "${NVIDIA_UBUNTU_REPOSITORY_CUDA_PIN}" -o /etc/apt/preferences.d/cuda-repository-pin-600
+
+  add-apt-repository "deb ${NVIDIA_UBUNTU_REPOSITORY_URL} /"
+  execute_with_retries "apt-get update"
+
+  if [[ -n "${CUDA_VERSION}" ]]; then
+    local -r cuda_package=cuda-${CUDA_VERSION//./-}
+  else
+    local -r cuda_package=cuda
+  fi
+  # Without --no-install-recommends this takes a very long time.
+  execute_with_retries "apt-get install -y -q --no-install-recommends ${cuda_package}"
+
+  echo "NVIDIA GPU driver provided by NVIDIA was installed successfully"
+}
+
+function main() {
+
+    # updates
+    export DEBIAN_FRONTEND=noninteractive
+    execute_with_retries "apt-get update"
+    execute_with_retries "apt-get install -y -q pciutils"
+
+    execute_with_retries "apt-get install -y -q 'linux-headers-$(uname -r)'"
+
+    install_nvidia_gpu_driver
+}
+
+main
+```
 
 Google provides a `generate_custom_image.py` script that:
 - Launches a temporary Compute Engine VM instance with the specified Dataproc base image.
-- Then runs the customization script inside the VM instance to install custom packages and/or update configurations. 
-- After the customization script finishes, it shuts down the VM instance and creates a Dataproc custom image from the disk of the VM instance.
+- Then runs the customization script inside the VM instance to install custom packages and/or update
+  configurations.
+- After the customization script finishes, it shuts down the VM instance and creates a Dataproc
+  custom image from the disk of the VM instance.
 - The temporary VM is deleted after the custom image is created. 
 - The custom image is saved and can be used to create Dataproc clusters.
 
-Let's create the image using our customization script `gpu_dataproc_packages.sh` and image creation
-script `generate_custom_image.py` by Google (this step may take 20-25 minutes to complete):
+Copy the customization script below to a file called `gpu_dataproc_packages.sh`.  The script uses
+Google's `generate_custom_image.py` script.  This step may take 20-25 minutes to complete.
 
 ```bash
 git clone https://github.com/GoogleCloudDataproc/custom-images
@@ -231,9 +298,117 @@ new initialization actions (that do not install NVIDIA drivers since we are alre
 Here is the new custom GPU initialization action that only configures YARN, the YARN node manager,
 GPU isolation and GPU exclusive mode:
 
-<script src="https://gist.github.com/aroraakshit/57f423836ca8798bdf51518e1800aae6.js"></script>
+```bash
+#!/bin/bash
 
-Move this to a bucket, say, `sample-bucket`. Lets launch the cluster:
+# Dataproc configurations
+readonly HADOOP_CONF_DIR='/etc/hadoop/conf'
+readonly HIVE_CONF_DIR='/etc/hive/conf'
+readonly SPARK_CONF_DIR='/etc/spark/conf'
+
+function execute_with_retries() {
+  local -r cmd=$1
+  for ((i = 0; i < 10; i++)); do
+    if eval "$cmd"; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+
+function set_hadoop_property() {
+  local -r config_file=$1
+  local -r property=$2
+  local -r value=$3
+  bdconfig set_property \
+    --configuration_file "${HADOOP_CONF_DIR}/${config_file}" \
+    --name "${property}" --value "${value}" \
+    --clobber
+}
+
+function configure_yarn() {
+  if [[ ! -f ${HADOOP_CONF_DIR}/resource-types.xml ]]; then
+    printf '<?xml version="1.0" ?>\n<configuration/>' >"${HADOOP_CONF_DIR}/resource-types.xml"
+  fi
+  set_hadoop_property 'resource-types.xml' 'yarn.resource-types' 'yarn.io/gpu'
+
+  set_hadoop_property 'capacity-scheduler.xml' \
+    'yarn.scheduler.capacity.resource-calculator' \
+    'org.apache.hadoop.yarn.util.resource.DominantResourceCalculator'
+
+  set_hadoop_property 'yarn-site.xml' 'yarn.resource-types' 'yarn.io/gpu'
+}
+
+function configure_yarn_nodemanager() {
+  set_hadoop_property 'yarn-site.xml' 'yarn.nodemanager.resource-plugins' 'yarn.io/gpu'
+  set_hadoop_property 'yarn-site.xml' \
+    'yarn.nodemanager.resource-plugins.gpu.allowed-gpu-devices' 'auto'
+  set_hadoop_property 'yarn-site.xml' \
+    'yarn.nodemanager.resource-plugins.gpu.path-to-discovery-executables' '/usr/bin'
+  set_hadoop_property 'yarn-site.xml' \
+    'yarn.nodemanager.linux-container-executor.cgroups.mount' 'true'
+  set_hadoop_property 'yarn-site.xml' \
+    'yarn.nodemanager.linux-container-executor.cgroups.mount-path' '/sys/fs/cgroup'
+  set_hadoop_property 'yarn-site.xml' \
+    'yarn.nodemanager.linux-container-executor.cgroups.hierarchy' 'yarn'
+  set_hadoop_property 'yarn-site.xml' \
+    'yarn.nodemanager.container-executor.class' \
+    'org.apache.hadoop.yarn.server.nodemanager.LinuxContainerExecutor'
+  set_hadoop_property 'yarn-site.xml' 'yarn.nodemanager.linux-container-executor.group' 'yarn'
+
+  # Fix local dirs access permissions
+  local yarn_local_dirs=()
+  readarray -d ',' yarn_local_dirs < <(bdconfig get_property_value \
+    --configuration_file "${HADOOP_CONF_DIR}/yarn-site.xml" \
+    --name "yarn.nodemanager.local-dirs" 2>/dev/null | tr -d '\n')
+  chown yarn:yarn -R "${yarn_local_dirs[@]/,/}"
+}
+
+function configure_gpu_exclusive_mode() {
+  # check if running spark 3, if not, enable GPU exclusive mode
+  local spark_version
+  spark_version=$(spark-submit --version 2>&1 | sed -n 's/.*version[[:blank:]]\+\([0-9]\+\.[0-9]\).*/\1/p' | head -n1)
+  if [[ ${spark_version} != 3.* ]]; then
+    # include exclusive mode on GPU
+    nvidia-smi -c EXCLUSIVE_PROCESS
+  fi
+}
+
+function configure_gpu_isolation() {
+  # Download GPU discovery script
+  local -r spark_gpu_script_dir='/usr/lib/spark/scripts/gpu'
+  mkdir -p ${spark_gpu_script_dir}
+  local -r gpu_resources_url=https://raw.githubusercontent.com/apache/spark/master/examples/src/main/scripts/getGpusResources.sh
+  curl -fsSL --retry-connrefused --retry 10 --retry-max-time 30 \
+    "${gpu_resources_url}" -o ${spark_gpu_script_dir}/getGpusResources.sh
+  chmod a+rwx -R ${spark_gpu_script_dir}
+
+  # enable GPU isolation
+  sed -i "s/yarn.nodemanager\.linux\-container\-executor\.group\=/yarn\.nodemanager\.linux\-container\-executor\.group\=yarn/g" "${HADOOP_CONF_DIR}/container-executor.cfg"
+  printf '\n[gpu]\nmodule.enabled=true\n[cgroups]\nroot=/sys/fs/cgroup\nyarn-hierarchy=yarn\n' >>"${HADOOP_CONF_DIR}/container-executor.cfg"
+
+  chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
+  chmod a+rwx -R /sys/fs/cgroup/devices
+}
+
+function main() {
+
+    # This configuration should run on all nodes regardless of attached GPUs
+    configure_yarn
+
+    configure_yarn_nodemanager
+
+    configure_gpu_isolation
+
+    configure_gpu_exclusive_mode
+
+}
+
+main
+```
+
+Move this to your own bucket. Lets launch the cluster:
 
 ```bash 
 export REGION=[Your Preferred GCP Region]
