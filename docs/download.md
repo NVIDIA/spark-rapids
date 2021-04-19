@@ -51,7 +51,7 @@ Software Requirements:
 New functionality for this release includes:
 * Additional support for structs, including casting structs to string, hashing structs, unioning
   structs, and allowing array types and structs to pass through when doing joins
-* Support for `get_json_object`, `pivot`, `explode`
+* Support for `get_json_object`, `pivot`, `explode` operators
 * Casting string to decimal and decimal to string
 
 Performance improvements for this release include: 
@@ -59,7 +59,6 @@ Performance improvements for this release include:
 * Supporting out of core sorts
 * Initial support for cost based optimization
 * Decimal32 support
-* Allowing spilled buffers to be unspilled
 * Accelerate data transfer for map Pandas UDF
 * Allow spilled buffers to be unspilled
 
