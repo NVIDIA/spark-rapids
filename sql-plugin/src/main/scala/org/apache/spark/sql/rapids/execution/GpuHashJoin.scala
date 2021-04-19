@@ -20,9 +20,9 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{ ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{ArrayType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
@@ -32,13 +32,18 @@ object GpuHashJoin {
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = {
+    val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
+    if (keyDataTypes.exists(dType =>
+      dType.isInstanceOf[ArrayType] || dType.isInstanceOf[MapType])) {
+      meta.willNotWorkOnGpu("ArrayType or MapType in join keys are not supported")
+    }
+
     val unSupportNonEqualCondition = () => if (condition.isDefined) {
       meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
     }
-    val unSupportStructKeys = () =>
-      if (leftKeys.exists(_.dataType.isInstanceOf[StructType])) {
-        meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-      }
+    val unSupportStructKeys = () => if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+      meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
+    }
     joinType match {
       case _: InnerLike =>
       case RightOuter | LeftOuter =>
