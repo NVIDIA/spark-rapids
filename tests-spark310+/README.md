@@ -1,8 +1,3 @@
----
-layout: page
-title: Testing
-nav_order: 1
----
 # RAPIDS Accelerator for Testing against the upcoming version of Apache Spark
 
 While writing unit-tests, we can run into situations where we depend on classes that are only 
@@ -12,7 +7,7 @@ those tests in this module.
 Example: 
 
 As of writing of this document this module contains tests that are strongly tied to classes in 
-Spark-3.1.0-SNAPSHOT.
+Spark-3.1.1+.
   
 These tests can be executed by choosing profile `spark311tests` like so, 
   
