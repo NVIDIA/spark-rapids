@@ -30,9 +30,11 @@ abstract class GpuShuffledHashJoinBase(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     buildSide: GpuBuildSide,
-    condition: Option[Expression],
+    override val condition: Option[Expression],
     val isSkewJoin: Boolean) extends BinaryExecNode with GpuHashJoin {
   import GpuMetric._
+
+  private [this] lazy val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -42,7 +44,7 @@ abstract class GpuShuffledHashJoinBase(
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
-    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
+    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME)) ++ spillMetrics
 
   override def requiredChildDistribution: Seq[Distribution] =
     HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
@@ -68,37 +70,24 @@ abstract class GpuShuffledHashJoinBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val filterTime = gpuLongMetric(FILTER_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-
-    val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
-        var combinedSize = 0
-
         val startTime = System.nanoTime()
-        val builtTable = withResource(ConcatAndConsumeAll.getSingleBatchWithVerification(
-          buildIter, localBuildOutput)) { buildBatch: ColumnarBatch =>
-          withResource(GpuProjectExec.project(buildBatch, gpuBuildKeys)) { keys =>
-            val combined = GpuHashJoin.incRefCount(combine(keys, buildBatch))
-            withResource(combined) { combined =>
-              combinedSize =
-                  GpuColumnVector.extractColumns(combined)
-                      .map(_.getBase.getDeviceMemorySize).sum.toInt
-              GpuColumnVector.from(combined)
-            }
-          }
+
+        withResource(ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter,
+          localBuildOutput)) { builtBatch =>
+          // doJoin will increment the reference counts as needed for the builtBatch
+          val delta = System.nanoTime() - startTime
+          buildTime += delta
+          totalTime += delta
+          buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
+
+          doJoin(builtBatch, streamIter, targetSize, spillCallback,
+            numOutputRows, joinOutputRows, numOutputBatches,
+            streamTime, joinTime, filterTime, totalTime)
         }
-
-        val delta = System.nanoTime() - startTime
-        buildTime += delta
-        totalTime += delta
-        buildDataSize += combinedSize
-        val context = TaskContext.get()
-        context.addTaskCompletionListener[Unit](_ => builtTable.close())
-
-        doJoin(builtTable, streamIter, boundCondition,
-          numOutputRows, joinOutputRows, numOutputBatches,
-          streamTime, joinTime, filterTime, totalTime)
       }
     }
   }

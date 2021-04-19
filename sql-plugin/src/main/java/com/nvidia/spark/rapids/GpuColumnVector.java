@@ -81,7 +81,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param name the name of the column to print out.
    * @param col the column to print out.
    */
-  public static synchronized void debug(String name, ai.rapids.cudf.ColumnVector col) {
+  public static synchronized void debug(String name, ai.rapids.cudf.ColumnView col) {
     try (HostColumnVector hostCol = col.copyToHost()) {
       debug(name, hostCol);
     }
