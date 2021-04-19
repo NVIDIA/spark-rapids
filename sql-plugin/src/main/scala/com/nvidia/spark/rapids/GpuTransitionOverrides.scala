@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastColumnarToRowExec, GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -135,7 +135,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // in future query stages. Note that because these query stages have already executed, we
     // don't need to recurse down and optimize them again
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
-      getColumnarToRowExec(e)
+      e.plan match {
+        case ReusedExchangeExec(_, b: GpuBroadcastExchangeExecBase) =>
+          GpuBroadcastColumnarToRowExec(b)
+        case _ => getColumnarToRowExec(e)
+      }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       getColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 

@@ -236,7 +236,7 @@ class GpuBroadcastMeta(
 }
 
 abstract class GpuBroadcastExchangeExecBase(
-    mode: BroadcastMode,
+    val mode: BroadcastMode,
     child: SparkPlan) extends Exchange with GpuExec {
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

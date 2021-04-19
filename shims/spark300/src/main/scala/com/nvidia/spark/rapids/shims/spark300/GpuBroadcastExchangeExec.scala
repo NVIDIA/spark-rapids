@@ -20,7 +20,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 
 case class GpuBroadcastExchangeExec(
-    mode: BroadcastMode,
+    override val mode: BroadcastMode,
     child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
 
   override def doCanonicalize(): SparkPlan = {

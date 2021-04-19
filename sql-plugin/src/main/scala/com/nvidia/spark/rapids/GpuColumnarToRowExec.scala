@@ -166,7 +166,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   @transient var cb: ColumnarBatch = null
   var it: java.util.Iterator[InternalRow] = null
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {
