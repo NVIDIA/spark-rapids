@@ -15,14 +15,16 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import java.util.UUID
+import java.util.{Optional, UUID}
 import java.util.concurrent.{Callable, Future, TimeoutException, TimeUnit}
 
+import scala.collection.JavaConverters._
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{GpuColumnarToRowExecParent, GpuExec, GpuMetric, MetricRange, NoopMetric, NvtxWithMetrics}
+import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExecParent, GpuColumnVector, GpuExec, GpuMetric, MetricRange, NoopMetric, NvtxWithMetrics, RapidsHostColumnVector}
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -35,6 +37,8 @@ import org.apache.spark.sql.execution.{SparkPlan, SQLExecution, UnaryExecNode}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.util.KnownSizeEstimation
 
 /**
@@ -104,25 +108,41 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
               interruptOnCancel = true)
 
             val broadcastChild = child.child
-            val f = GpuColumnarToRowExecParent
-                .makeIteratorFunc(broadcastChild.output, numOutputRows, NoopMetric, totalTime)
 
+            // run code on executors to serialize batches
             val collectRange = new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
               collectTime)
-            val serializedBatch: SerializeConcatHostBuffersDeserializeBatch = try {
+            val serializedBatches: Array[SerializeBatchDeserializeHostBuffer] = try {
               val data = broadcastChild.executeColumnar().map(cb => try {
                 new SerializeBatchDeserializeHostBuffer(cb)
               } finally {
                 cb.close()
               })
-              val d = data.collect()
-              new SerializeConcatHostBuffersDeserializeBatch(d, output)
+              data.collect()
             } finally {
               collectRange.close()
             }
 
-            val batch = serializedBatch.batch
-            val numRows = batch.numRows
+            // deserialize to host buffers in the driver and then convert to rows
+            val rows = new ListBuffer[InternalRow]()
+            val dataTypes = broadcastChild.output.map(_.dataType)
+            serializedBatches.foreach { cb =>
+              val hostColumns = (0 until cb.header.getNumColumns).map { i =>
+                val columnHeader = cb.header.getColumnHeader(i)
+                val hcv = new HostColumnVector(
+                  columnHeader.getType,
+                  columnHeader.rowCount,
+                  Optional.of(columnHeader.nullCount),
+                  cb.buffer,
+                  null, null, List.empty.asJava)
+                new RapidsHostColumnVector(dataTypes(i), hcv)
+              }
+              val rowCount = hostColumns.headOption.map(_.getRowCount.toInt).getOrElse(0)
+              val hostColumnBatch = new ColumnarBatch(hostColumns.toArray, rowCount)
+              hostColumnBatch.rowIterator().asScala.foreach(row => rows += row)
+            }
+
+            val numRows = rows.length
             if (numRows >= 512000000) {
               throw new SparkException(
                 s"Cannot broadcast the table with 512 million or more rows: $numRows rows")
@@ -131,10 +151,7 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
 
             val buildRange = new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN, buildTime)
             val relation = try {
-
-              // Convert batches to rows and create a broadcast relation
-              val rows = f(Seq(batch).iterator).toArray
-              val relation = child.mode.transform(rows)
+              val relation = child.mode.transform(rows.toArray)
 
               val dataSize = relation match {
                 case map: KnownSizeEstimation =>
