@@ -279,52 +279,34 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
             case (v0: GpuColumnVector, v1: GpuColumnVector, v2: GpuColumnVector) =>
               doColumnar(v0, v1, v2)
             case (v0, v1: GpuColumnVector, v2: GpuColumnVector) =>
-              val scalar0 = GpuScalar.from(v0, children(0).dataType)
-              try {
+              withResource(GpuScalar.from(v0, children(0).dataType)) { scalar0 =>
                 GpuColumnVector.from(doColumnar(scalar0, v1, v2), dataType)
-              } finally {
-                scalar0.close()
               }
             case (v0: GpuColumnVector, v1, v2: GpuColumnVector) =>
-              val scalar1 = GpuScalar.from(v1, children(1).dataType)
-              try {
+              withResource(GpuScalar.from(v1, children(1).dataType)) { scalar1 =>
                 GpuColumnVector.from(doColumnar(v0, scalar1, v2), dataType)
-              } finally {
-                scalar1.close()
               }
             case (v0: GpuColumnVector, v1: GpuColumnVector, v2) =>
-              val scalar2 = GpuScalar.from(v2, children(2).dataType)
-              try {
+              withResource(GpuScalar.from(v2, children(2).dataType)) { scalar2 =>
                 GpuColumnVector.from(doColumnar(v0, v1, scalar2), dataType)
-              } finally {
-                scalar2.close()
               }
             case (v0, v1, v2: GpuColumnVector) =>
-              val scalar0 = GpuScalar.from(v0, children(0).dataType)
-              val scalar1 = GpuScalar.from(v1, children(1).dataType)
-              try {
-                GpuColumnVector.from(doColumnar(scalar0, scalar1, v2), dataType)
-              } finally {
-                scalar0.close()
-                scalar1.close()
+              withResource(GpuScalar.from(v0, children(0).dataType)) { scalar0 =>
+                withResource(GpuScalar.from(v1, children(1).dataType)) { scalar1 =>
+                  GpuColumnVector.from(doColumnar(scalar0, scalar1, v2), dataType)
+                }
               }
             case (v0, v1: GpuColumnVector, v2) =>
-              val scalar0 = GpuScalar.from(v0, children(0).dataType)
-              val scalar2 = GpuScalar.from(v2, children(2).dataType)
-              try {
-                GpuColumnVector.from(doColumnar(scalar0, v1, scalar2), dataType)
-              } finally {
-                scalar0.close()
-                scalar2.close()
+              withResource(GpuScalar.from(v0, children(0).dataType)) { scalar0 =>
+                withResource(GpuScalar.from(v2, children(2).dataType)) { scalar2 =>
+                  GpuColumnVector.from(doColumnar(scalar0, v1, scalar2), dataType)
+                }
               }
             case (v0: GpuColumnVector, v1, v2) =>
-              val scalar1 = GpuScalar.from(v1, children(1).dataType)
-              val scalar2 = GpuScalar.from(v2, children(2).dataType)
-              try {
-                GpuColumnVector.from(doColumnar(v0, scalar1, scalar2), dataType)
-              } finally {
-                scalar1.close()
-                scalar2.close()
+              withResource(GpuScalar.from(v1, children(1).dataType)) { scalar1 =>
+                withResource(GpuScalar.from(v2, children(2).dataType)) { scalar2 =>
+                  GpuColumnVector.from(doColumnar(v0, scalar1, scalar2), dataType)
+                }
               }
             case (v0, v1, v2) if v0 != null && v1 != null && v2 != null =>
               withResource(GpuScalar.from(v0, children(0).dataType)) { v0Scalar =>
