@@ -1883,6 +1883,37 @@ object GpuOverrides {
         override def convertToGpu(): Expression =
           sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
       }),
+    expr[PivotFirst](
+      "PivotFirst operator",
+      ExprChecks.reductionAndGroupByAgg(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+        TypeSig.all,
+        Seq(ParamCheck(
+          "pivotColumn",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all),
+          ParamCheck("valueColumn",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          TypeSig.all))),
+      (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (conf.hasNans &&
+            (pivot.pivotColumn.dataType.equals(FloatType) ||
+              pivot.pivotColumn.dataType.equals(DoubleType))) {
+            willNotWorkOnGpu("Pivot expressions over floating point columns " +
+              "that may contain NaN is disabled. You can bypass this by setting " +
+              s"${RapidsConf.HAS_NANS}=false")
+          }
+          // If pivotColumnValues doesn't have distinct values, fall back to CPU
+          if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
+            willNotWorkOnGpu("PivotFirst does not work on the GPU when there are duplicate" +
+                " pivot values provided")
+          }
+        }
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuPivotFirst(childExprs(0), childExprs(1), pivot.pivotColumnValues)
+      }),
     expr[Count](
       "Count aggregate operator",
       ExprChecks.fullAgg(
