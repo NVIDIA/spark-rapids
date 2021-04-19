@@ -29,19 +29,16 @@ nav_order: 2
   `spark.sql.inMemoryColumnarStorage.enableVectorizedReader` will not be honored as the GPU
   data is always read in as columnar. If `spark.rapids.sql.enabled` is set to false
   the cached objects will still be compressed on the CPU as a part of the caching process.
-  Please note that Parquet doesn't support columns of type CalendarIntervalType or NullType out of
-  the box, but ParquetCachedBatchSerializer does by decomposing intervals to struct containing the
-  months, days and microseconds and NullType to Int column containing nulls. Also note that
-  ParquetCachedBatchSerializer doesn't support negative decimal scale, so if 
+  Please note that ParquetCachedBatchSerializer doesn't support negative decimal scale, so if 
   `spark.sql.legacy.allowNegativeScaleOfDecimal` is set to true ParquetCachedBatchSerializer
-  should not be used, if used, it will result in an error resulting from trying to write a
-  negative scale to parquet.
+  should not be used.  Using the serializer with negative decimal scales will generate
+  an error at runtime.
   
-  To use this serializer please run Spark
+  To use this serializer, set the `spark.sql.cache.serializer` config to the serializer class as in 
+  this example:
   ```
   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
   ```
-  To use the default serializer don't set the `spark.sql.cache.serializer` conf
   
 ##           Supported Types                       
   

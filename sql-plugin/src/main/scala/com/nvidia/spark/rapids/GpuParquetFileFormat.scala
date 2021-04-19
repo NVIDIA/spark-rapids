@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.ParquetColumnWriterOptions._
 import com.nvidia.spark.RebaseHelper
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
@@ -32,7 +33,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -97,54 +98,27 @@ object GpuParquetFileFormat {
     }
   }
 
-  def parquetWriterOptionsHelper(schema: StructType): ParquetWriterOptions.Builder[_] = {
-    def addColumnMeta(name: String, nullable: Boolean,
-                      builder: ParquetWriterOptions.Builder[_],
-                      dt: DataType): ParquetWriterOptions.Builder[_] = {
-      dt match {
+  def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions]
+  (builder: ParquetColumnWriterOptions.NestedBuilder[T, V], schema: StructType): T = {
+    schema.foreach(field =>
+      field.dataType match {
         case dt: DecimalType =>
-          builder.withDecimalColumn(name, dt.precision, nullable)
+          builder.withDecimalColumn(field.name, dt.precision, field.nullable)
         case TimestampType =>
-          builder.withTimestampColumn(name, false, nullable)
+          builder.withTimestampColumn(field.name, false, field.nullable)
         case s: StructType =>
-          val structBuilder = ParquetWriterOptions.structBuilder(name, nullable)
-          s.foreach { field =>
-            addColumnMeta(field.name, field.nullable, structBuilder, field.dataType)
-          }
-          builder.withStructColumn(structBuilder.build())
+          builder.withStructColumn(
+            parquetWriterOptionsFromSchema(structBuilder(field.name), s).build())
         case a: ArrayType =>
-          val listBuilder = ParquetWriterOptions.listBuilder(name, nullable)
-          addColumnMeta(name, nullable, listBuilder, a.elementType)
-          builder.withListColumn(listBuilder.build())
+          builder.withListColumn(
+            parquetWriterOptionsFromSchema(listBuilder(field.name),
+              StructType(Array(StructField(field.name, a.elementType, field.nullable))))
+              .build())
         case _ =>
-          builder.withColumn(nullable, name)
+          builder.withColumn(field.nullable, field.name)
       }
-      builder
-    }
-
-    val builder = ParquetWriterOptions.builder()
-    schema.foreach(entry => {
-      entry.dataType match {
-        case dt: DecimalType =>
-          builder.withDecimalColumn(entry.name, dt.precision, entry.nullable)
-        case TimestampType =>
-          builder.withTimestampColumn(entry.name, false, entry.nullable)
-        case s: StructType =>
-          val structBuilder = ParquetWriterOptions.structBuilder(entry.name, entry.nullable)
-          s.foreach { field =>
-            addColumnMeta(field.name, field.nullable, structBuilder, field.dataType)
-          }
-          builder.withStructColumn(structBuilder.build())
-        case a: ArrayType =>
-          val listBuilder = ParquetWriterOptions.listBuilder(entry.name, entry.nullable)
-          // lists have only one child, no name is needed
-          addColumnMeta("", entry.nullable, listBuilder, a.elementType)
-          builder.withListColumn(listBuilder.build())
-        case _ =>
-          builder.withColumn(entry.nullable, entry.name)
-      }
-    })
-    builder
+    )
+    builder.asInstanceOf[T]
   }
 
   def parseCompressionType(compressionType: String): Option[CompressionType] = {
@@ -326,7 +300,8 @@ class GpuParquetWriter(
 
   override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
-    val builder = GpuParquetFileFormat.parquetWriterOptionsHelper(dataSchema)
+    val builder = GpuParquetFileFormat
+      .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
     Table.writeParquetChunked(builder.build(), this)

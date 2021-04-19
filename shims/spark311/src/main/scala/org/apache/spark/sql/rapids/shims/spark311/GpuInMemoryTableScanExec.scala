@@ -29,8 +29,8 @@ import org.apache.spark.sql.execution.columnar.InMemoryRelation
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuInMemoryTableScanExec(attributes: Seq[Attribute],
-   predicates: Seq[Expression],
-   @transient relation: InMemoryRelation) extends LeafExecNode with GpuExec {
+  predicates: Seq[Expression],
+  @transient relation: InMemoryRelation) extends LeafExecNode with GpuExec {
 
   override val nodeName: String = {
     relation.cacheBuilder.tableName match {
