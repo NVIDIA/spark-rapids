@@ -170,7 +170,7 @@ To enable _GPU Scheduling for Pandas UDF_, you need to configure your spark job 
     On Standalone, you need to add
     ```shell
     ...
-    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar \
+    --conf spark.executorEnv.PYTHONPATH=rapids-4-spark_2.12-0.5.0.jar \
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
     ```
 

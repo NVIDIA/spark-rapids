@@ -4,15 +4,64 @@ title: Download
 nav_order: 3
 ---
 
-[RAPIDS Accelerator For Apache Spark](https://github.com/NVIDIA/spark-rapids) provides a set of plugins for Apache Spark that leverage GPUs to accelerate Dataframe and SQL processing. 
+[RAPIDS Accelerator For Apache Spark](https://github.com/NVIDIA/spark-rapids) provides a set of
+plugins for Apache Spark that leverage GPUs to accelerate Dataframe and SQL processing.
 
-The accelerator is built upon the [RAPIDS cuDF project](https://github.com/rapidsai/cudf) and [UCX](https://github.com/openucx/ucx/).
+The accelerator is built upon the [RAPIDS cuDF project](https://github.com/rapidsai/cudf) and
+[UCX](https://github.com/openucx/ucx/).
 
-The RAPIDS Accelerator For Apache Spark requires each worker node in the cluster to have [CUDA](https://developer.nvidia.com/cuda-toolkit) installed.
+The RAPIDS Accelerator For Apache Spark requires each worker node in the cluster to have
+[CUDA](https://developer.nvidia.com/cuda-toolkit) installed.
 
-The RAPIDS Accelerator For Apache Spark consists of two jars: a plugin jar along with the RAPIDS cuDF jar, 
-that is either preinstalled in the Spark classpath on all nodes or submitted with each job that uses the 
-RAPIDS Accelerator For Apache Spark. See the [getting-started guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
+The RAPIDS Accelerator For Apache Spark consists of two jars: a plugin jar along with the RAPIDS
+cuDF jar, that is either preinstalled in the Spark classpath on all nodes or submitted with each job
+that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
+guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
+
+
+## Release v0.5.0
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+Hardware Requirements: 
+
+	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
+	
+Software Requirements:
+
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS8
+	
+	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	
+	Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
+	
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+	
+	Python 3.6+, Scala 2.12, Java 8 
+
+### Download v0.5.0
+* Download [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.5.0/rapids-4-spark_2.12-0.5.0.jar)
+* Download RAPIDS cuDF 0.19.0 for your system: 
+  * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.19.0-cuda11.jar)
+  * [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.19.0-cuda10-2.jar)
+  * [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.19.0-cuda10-1.jar)
+
+### Release Notes
+New functionality for this release includes:
+* Additional support for structs, including casting structs to string, hashing structs, unioning
+  structs, and allowing array types and structs to pass through when doing joins
+* Support for `get_json_object`, `pivot`, `explode` operators
+* Casting string to decimal and decimal to string
+
+Performance improvements for this release include: 
+* Optimizing unnecessary columnar->row->columnar transitions with AQE
+* Supporting out of core sorts
+* Initial support for cost based optimization
+* Decimal32 support
+* Accelerate data transfer for map Pandas UDF
+* Allow spilled buffers to be unspilled
+
 
 ## Release v0.4.2
 
@@ -44,10 +93,12 @@ Software Requirements:
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Download v0.4.2
-* [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.2/rapids-4-spark_2.12-0.4.2.jar)
-* [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda11.jar)
-* [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-2.jar)
-* [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-1.jar)
+* Download [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.2/rapids-4-spark_2.12-0.4.2.jar)
+* Download RAPIDS cuDF 0.18.2 for your system: 
+  * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda11.jar)
+  * [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-2.jar)
+  * [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.2/cudf-0.18.2-cuda10-1.jar)
+
 
 ## Release v0.4.1
 ### Download v0.4.1
@@ -85,10 +136,6 @@ The list of all supported operations is provided [here](supported_ops.md).
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
-
-
-
-
 
 
 ## Release v0.4.0
@@ -141,10 +188,6 @@ For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
 
-
-
-
-
 ## Release v0.3.0
 ### Download v0.3.0
 * Download [RAPIDS Accelerator For Apache Spark v0.3.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.3.0/rapids-4-spark_2.12-0.3.0.jar)
@@ -190,10 +233,6 @@ The list of all supported operations is provided [here](supported_ops.md).
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
-
-
-
-
 
 
 ## Release v0.2.0
@@ -244,10 +283,6 @@ The list of all supported operations is provided
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
-
-
-
-
 
 
 ## Release v0.1.0
