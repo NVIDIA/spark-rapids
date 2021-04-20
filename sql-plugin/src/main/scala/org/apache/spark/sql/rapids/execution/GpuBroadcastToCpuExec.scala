@@ -23,11 +23,11 @@ import scala.collection.mutable.ListBuffer
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor}
-import com.nvidia.spark.rapids.{GpuColumnarToRowExecParent, GpuColumnVector, GpuExec, GpuMetric, MetricRange, NoopMetric, NvtxWithMetrics, RapidsHostColumnVector}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray, AutoCloseableProducingSeq, AutoCloseableSeq}
-import org.apache.spark.SparkException
+import ai.rapids.cudf.{HostColumnVector, NvtxColor}
+import com.nvidia.spark.rapids.{GpuExec, GpuMetric, MetricRange, NvtxWithMetrics, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 
+import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
@@ -38,8 +38,7 @@ import org.apache.spark.sql.execution.{SparkPlan, SQLExecution, UnaryExecNode}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.DataTypes
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.KnownSizeEstimation
 
 /**
@@ -49,7 +48,7 @@ import org.apache.spark.util.KnownSizeEstimation
  *
  * @param child Input to broadcast
  */
-case class GpuBroadcastColumnarToRowExec(mode: BroadcastMode, child: SparkPlan)
+case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
     extends UnaryExecNode with GpuExec {
 
   import GpuMetric._
