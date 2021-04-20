@@ -175,15 +175,16 @@ def test_broadcast_join_right_table_array(data_gen, join_type):
         return left.join(broadcast(right), left.key == right.r_key, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
-@allow_non_gpu('BroadcastHashJoinExec', 'BroadcastExchangeExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction', 'NamedLambdaVariable', 'NormalizeNaNAndZero')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-def test_broadcast_join_right_array_as_key(data_gen, join_type):
+@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
+# Not all join types can be translated to a broadcast join, but this tests them to be sure we
+# can handle what spark is doing
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
+def test_broadcast_join_right_table_struct(data_gen, join_type):
     def do_join(spark):
-        left, right = create_df(spark, data_gen, 500, 50)
-        return left.join(broadcast(right), left.a == right.r_a, join_type)
-    assert_gpu_fallback_collect(do_join, 'BroadcastHashJoinExec', conf=allow_negative_scale_of_decimal_conf)
+        left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
+        return left.join(broadcast(right), left.key == right.r_key, join_type)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -363,7 +364,7 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross'], ids=idfn)
-def test_sortmerge_join_struct_key(data_gen, join_type):
+def test_sortmerge_join_struct_as_key(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(right, left.a == right.r_a, join_type)
@@ -386,11 +387,12 @@ def test_sortmerge_join_struct_mixed_key(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross'], ids=idfn)
-def test_sortmerge_join_struct_mixed_key_with_null_filtering(data_gen, join_type):
+def test_sortmerge_join_struct_mixed_key_with_null_filter(data_gen, join_type):
     def do_join(spark):
         left = two_col_df(spark, data_gen, int_gen, length=500)
         right = two_col_df(spark, data_gen, int_gen, length=500)
         return left.join(right, (left.a == right.a) & (left.b == right.b), join_type)
+    # Disable constraintPropagation to test null filter on built table with nullable structures.
     conf = {'spark.sql.constraintPropagation.enabled': 'false', **_sortmerge_join_conf}
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
@@ -398,24 +400,28 @@ def test_sortmerge_join_struct_mixed_key_with_null_filtering(data_gen, join_type
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'Cross'], ids=idfn)
-def test_broadcast_join_struct_key(data_gen, join_type):
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'Cross'], ids=idfn)
+def test_broadcast_join_right_struct_as_key(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right), left.a == right.r_a, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
+    # StableSort is necessary for right outer join, because Spark will plan SortMergeJoin instead BroadcastHashJoin.
+    conf = {'spark.rapids.sql.stableSort.enabled': 'true', **allow_negative_scale_of_decimal_conf}
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
-@pytest.mark.parametrize('join_type', ['Left', 'Inner', 'Cross'], ids=idfn)
-def test_broadcast_join_struct_mixed_key(data_gen, join_type):
+@pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'Cross'], ids=idfn)
+def test_broadcast_join_right_struct_mixed_key(data_gen, join_type):
     def do_join(spark):
         left = two_col_df(spark, data_gen, int_gen, length=500)
         right = two_col_df(spark, data_gen, int_gen, length=250)
         return left.join(broadcast(right), (left.a == right.a) & (left.b == right.b), join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
+    # StableSort is necessary for right outer join, because Spark will plan SortMergeJoin instead BroadcastHashJoin.
+    conf = {'spark.rapids.sql.stableSort.enabled': 'true', **allow_negative_scale_of_decimal_conf}
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -428,3 +434,23 @@ def test_sortmerge_join_struct_with_floats_key(data_gen, join_type):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(right, left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
+
+@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'CreateNamedStruct', 'GetStructField', 'Literal', 'If', 'IsNull')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [basic_struct_gen_with_floats], ids=idfn)
+@pytest.mark.parametrize('join_type', ['LeftSemi', 'LeftAnti', 'FullOuter'], ids=idfn)
+def test_sortmerge_join_struct_as_key_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 500)
+        return left.join(right, left.a == right.r_a, join_type)
+    assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=_sortmerge_join_conf)
+
+@allow_non_gpu('BroadcastHashJoinExec', 'BroadcastExchangeExec', 'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'CreateNamedStruct', 'GetStructField', 'Literal', 'If', 'IsNull')
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [basic_struct_gen_with_floats], ids=idfn)
+@pytest.mark.parametrize('join_type', ['LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_join_right_struct_as_key_fallback(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 500, 50)
+        return left.join(broadcast(right), left.a == right.r_a, join_type)
+    assert_gpu_fallback_collect(do_join, 'BroadcastHashJoinExec', conf=allow_negative_scale_of_decimal_conf)

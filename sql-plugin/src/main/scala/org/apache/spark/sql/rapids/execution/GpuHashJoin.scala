@@ -136,6 +136,7 @@ trait GpuHashJoin extends GpuExec {
   // For join types other than FullOuter, we simply set compareNullsEqual as true to adapt
   // struct keys with nullable children. Non-nested keys can also be correctly processed with
   // compareNullsEqual = true, because we filter all null records from build table before join.
+  // For some details, please refer the issue: https://github.com/NVIDIA/spark-rapids/issues/2126
   protected lazy val compareNullsEqual: Boolean = (joinType != FullOuter) &&
       anyNullableStructChild(gpuBuildKeys)
 
@@ -376,8 +377,10 @@ trait GpuHashJoin extends GpuExec {
     }
   }
 
-  // Filter null values for build-side keys, so as to ensure no nullable join column included in
-  // built table if compareNullsEqual is true.
+  /**
+   * Filter null values for build-side keys, so as to ensure no nullable join column included in
+   * built table if compareNullsEqual is true.
+   */
   protected def filterBuiltNullsIfNecessary(table: Table): Table = closeOnExcept(table) { t =>
     if (compareNullsEqual && gpuBuildKeys.exists(_.nullable)) {
       filterNulls(t, joinKeyIndices, closeTable = true)
@@ -386,6 +389,13 @@ trait GpuHashJoin extends GpuExec {
     }
   }
 
+  /**
+   * Given sequence of GPU expressions, detect whether there exists any StructType expressions
+   * who contains nullable child columns.
+   * Since cuDF can not match nullable children as Spark during join, we detect them before join
+   * to apply some walking around strategies. For some details, please refer the issue:
+   * https://github.com/NVIDIA/spark-rapids/issues/2126.
+   */
   private[this] def anyNullableStructChild(expressions: Seq[GpuExpression]): Boolean = {
     def anyNullableChild(struct: StructType): Boolean = struct.fields.exists { field =>
       if (field.nullable) {
