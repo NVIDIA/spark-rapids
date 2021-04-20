@@ -69,7 +69,7 @@ class RapidsShuffleHeartbeatManager extends Logging {
 
     executors.append(ExecutorRegistration(id, System.nanoTime))
 
-    lastRegistrationSeen.put(id, new MutableLong(allExecutors.size))
+    lastRegistrationSeen.put(id, new MutableLong(allExecutors.length))
     RapidsExecutorUpdateMsg(allExecutors)
   }
 

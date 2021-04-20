@@ -2313,7 +2313,7 @@ class OpcodeSuite extends FunSuite {
 
   test("Conditional array buffer processing") {
     def cond(s: String): Boolean = {
-      s == null || s.trim.length == 0
+      s == null || s.trim.isEmpty
     }
 
     def transform(str: String): String = {

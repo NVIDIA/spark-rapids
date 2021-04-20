@@ -120,7 +120,7 @@ class AcceleratedColumnarToRowIterator(
 
   private[this] def loadNextBatch(): Unit = {
     closeCurrentBatch()
-    if (!pendingCvs.isEmpty) {
+    if (pendingCvs.nonEmpty) {
       setCurrentBatch(pendingCvs.dequeue())
     } else {
       while (batches.hasNext) {
