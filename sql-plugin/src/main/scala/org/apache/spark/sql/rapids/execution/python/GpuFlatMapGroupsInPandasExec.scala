@@ -118,10 +118,11 @@ case class GpuFlatMapGroupsInPandasExec(
     val localChildOutput = child.output
     // Python wraps the resulting columns in a single struct column.
     val pythonOutputSchema = StructType(
-      StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
+        StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
 
     // Resolve the argument offsets and related attributes.
-    val (dedupAttrs, argOffsets, groupingOffsets) = resolveArgOffsets(child, groupingAttributes)
+    val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
+        resolveArgOffsets(child, groupingAttributes)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>

@@ -30,6 +30,19 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
 /**
+ * A helper class to pack the group related items for the Python input.
+ *
+ * @param dedupAttrs the deduplicated attributes for the output of a Spark plan.
+ * @param argOffsets the argument offsets which will be used to distinguish grouping columns
+ *                   and data columns by the Python workers.
+ * @param groupingOffsets the grouping offsets(aka column indices) in the deduplicated attributes.
+ */
+case class GroupArgs(
+    dedupAttrs: Seq[Attribute],
+    argOffsets: Array[Int],
+    groupingOffsets: Seq[Int])
+
+/**
  * Basic functionality to deal with groups in a batch.
  *
  * It plays the similar role to the Spark 'PandasGroupUtils', but dealing with 'ColumnarBatch',
@@ -38,26 +51,53 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 private[python] object BatchGroupUtils extends Arm {
 
   /**
-   * Returns the deduplicated attributes of the Spark plan, and the argument offsets of the
-   * keys and values.
+   * It mainly does 2 things:
    *
-   * The deduplicated attributes are needed because the Spark plan may contain an attribute
-   * twice; once in the key and once in the value. For any such attribute we need to
-   * deduplicate.
+   * 1) Drops the duplicated attributes for the output of the Spark plan.
    *
-   * The argument offsets are used to distinguish grouping attributes and data attributes
-   * as following:
+   * Doing this is because the Spark plan may contain an attribute twice; once in the
+   * key and once in the value. For any such attribute we need to deduplicate.
    *
-   * argOffsets[0] is the length of the argOffsets array
-   * argOffsets[1] is the length of grouping attribute
-   * argOffsets[2 .. argOffsets[1]+2] is the argument offsets for grouping attributes
-   * argOffsets[argOffsets[1]+2 .. ] is the argument offsets for data attributes
+   * For example, assuming there is a DataFrame 'df' with two columns 'a' and 'b'.
+   *     +---+---+
+   *     |  a|  b|
+   *     +---+---+
+   *     | s1|  1|
+   *     +---+---+
+   *
+   * When executes a groupby operations, e.g. `df.groupBy('a').agg(count('b')).show()`, the
+   * output attributes of the child plan will be
+   *     ['a', 'a', 'b'],
+   * and the grouping attributes will be
+   *     ['a'].
+   * After deduplication, the result will be
+   *     ['a', 'b'].
+   *
+   * 2) Resolves the argument offsets which will be used to distinguish grouping attributes and
+   *    data attributes. All the offsets are actually the column indices in the duplicated
+   *    attributes.
+   * The following is the details of the array of the argument offsets.
+   *
+   *  `argOffsets[0]` is the length of the `argOffsets` array.
+   *  `argOffsets[1]` is the length of grouping attribute.
+   *  `argOffsets[2.. argOffsets[1]+2)` is the grouping column indices in deduplicated attributes.
+   *  `argOffsets[argOffsets[1]+2 .. )` is the data column indices in deduplicated attributes.
+   *
+   *   This is the argument protocol which will be used by the Python workers to parse the key
+   *   and value columns.
+   *   (Python code: https://github.com/apache/spark/blob/master/python/pyspark/worker.py#L386)
+   *
+   * For the example above, the argument offsets will be
+   *     Array(5, 1, 0, 0, 1)
+   *
+   * @param plan The input plan to be resolved for the output attributes.
+   * @param groupingAttrs The grouping attributes.
+   * @return a GroupArgs consisting of the deduplicated attributes, the argument offsets
+   *         and the grouping offsets in the deduplicated attributes.
    */
-  def resolveArgOffsets(
-      child: SparkPlan,
-      groupingAttrs: Seq[Attribute]): (Seq[Attribute], Array[Int], Seq[Int]) = {
+  def resolveArgOffsets(plan: SparkPlan, groupingAttrs: Seq[Attribute]): GroupArgs = {
 
-    val dataAttrs = child.output.drop(groupingAttrs.length)
+    val dataAttrs = plan.output.drop(groupingAttrs.length)
     val dedupGroupingAttrs = new mutable.ArrayBuffer[Attribute]
 
     val groupingArgOffsets = groupingAttrs.map { gpAttr =>
@@ -86,15 +126,24 @@ private[python] object BatchGroupUtils extends Arm {
     val argOffsets = Array(argOffsetLen, groupingAttrs.length) ++
       groupingArgOffsets ++ dataAttrs.indices
 
-    (dedupAttrs, argOffsets, groupingArgOffsets)
+    GroupArgs(dedupAttrs, argOffsets, groupingArgOffsets)
   }
 
   /**
+   *
    * Projects each input batch into the deduplicated schema, and splits
    * into separate group batches.
    *
    * BatchGroupedIterator will probably return more batches than input, so projecting
    * first, then grouping. Doing this is likely to save time.
+   *
+   * @param inputIter the input iterator.
+   * @param inputAttrs the schema of the batches in the `inputIter`.
+   * @param dedupAttrs the deduplicated attributes for the `inputAttrs`.
+   * @param groupingOffsetsInDedup the grouping column indices in the 'dedupAttrs'
+   * @param inputRows a metric to record the input rows.
+   * @param inputBatches a metric to record the input batches.
+   * @return an iterator of the group batches, meaning each batch contains only one group.
    */
   def projectAndGroup(
       inputIter: Iterator[ColumnarBatch],
@@ -118,9 +167,17 @@ private[python] object BatchGroupUtils extends Arm {
   }
 
   /**
+   *
    * Passes the data to the python runner. After that extracts the children columns from
    * each resulting ColumnarBatch returned from Python, since the resulting columns are
    * put in a struct column, not top-level columns.
+   *
+   * @param pyInputIterator the batch iterator for python input
+   * @param output the output attributes of the plan
+   * @param pyRunner the Python runner to execute the Python UDF.
+   * @param outputRows a metric to record the output rows.
+   * @param outputBatches a metric to record the output batches.
+   * @return an iterator of the resulting batches from the Python runner.
    */
   def executePython(
       pyInputIterator: Iterator[ColumnarBatch],
@@ -215,7 +272,12 @@ private[python] class BatchGroupedIterator private(
         val groupTables = withResource(batch) { b =>
           withResource(GpuColumnVector.from(b)) { table =>
             // In Spark, the rows in a batch are already sorted by grouping keys in
-            // the order of `Ascending & NullsFirst` for Pandas UDF plans.
+            // the order of `Ascending & NullsFirst` for Pandas UDF plans. This is ensured by
+            // overriding the 'requiredChildOrdering' in each plan.
+            //   '''
+            //   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
+            //     Seq(groupingAttributes.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
+            //   '''
             // So passes the info to cudf for better performance on `groupBy` operation.
             val builder = cudf.GroupByOptions.builder()
             builder.withIgnoreNullKeys(false)
