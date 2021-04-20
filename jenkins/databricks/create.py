@@ -41,7 +41,7 @@ def main():
   try:
       opts, args = getopt.getopt(sys.argv[1:], 'hw:t:k:n:i:r:o:d:e:s:f:',
                                  ['workspace=', 'token=', 'sshkey=', 'clustername=', 'idletime=',
-                                     'runtime=', 'workertype=', 'drivertype=', 'numworkers=', 'cloudprovider=, initscripts='])
+                                     'runtime=', 'workertype=', 'drivertype=', 'numworkers=', 'cloudprovider=', 'initscripts='])
   except getopt.GetoptError:
       print(
           'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider> -f <initscripts>')
