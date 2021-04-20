@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastColumnarToRowExec, GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -142,7 +142,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           // https://issues.apache.org/jira/browse/SPARK-35093 for more information) so we
           // need to convert the output to rows in the driver before broadcasting the data
           // to the executors
-          GpuBroadcastColumnarToRowExec(b)
+          GpuBroadcastToRowExec(b.mode, b.child)
         case _ => getColumnarToRowExec(e)
       }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
