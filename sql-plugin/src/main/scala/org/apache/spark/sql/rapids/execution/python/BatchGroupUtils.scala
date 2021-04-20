@@ -65,7 +65,7 @@ private[python] object BatchGroupUtils extends Arm {
    *     | s1|  1|
    *     +---+---+
    *
-   * When executes a groupby operations, e.g. `df.groupBy('a').agg(count('b')).show()`, the
+   * When executes a groupby operation, e.g. `df.groupBy('a').agg(count('b')).show()`, the
    * output attributes of the child plan will be
    *     ['a', 'a', 'b'],
    * and the grouping attributes will be
@@ -73,24 +73,29 @@ private[python] object BatchGroupUtils extends Arm {
    * After deduplication, the result will be
    *     ['a', 'b'].
    *
-   * 2) Resolves the argument offsets which will be used to distinguish grouping attributes and
-   *    data attributes. All the offsets are actually the column indices in the duplicated
+   * 2) Resolves the argument offsets which will be used to distinguish grouping columns and
+   *    data columns. All the offsets are actually the column indices in the deduplicated
    *    attributes.
    * The following is the details of the array of the argument offsets.
    *
-   *  `argOffsets[0]` is the length of the `argOffsets` array.
+   *  `argOffsets[0]` is the length of the `argOffsets` array (excludes itself).
    *  `argOffsets[1]` is the length of grouping attribute.
    *  `argOffsets[2.. argOffsets[1]+2)` is the grouping column indices in deduplicated attributes.
    *  `argOffsets[argOffsets[1]+2 .. )` is the data column indices in deduplicated attributes.
    *
-   *   This is the argument protocol which will be used by the Python workers to parse the key
-   *   and value columns.
+   *   This is the argument protocol which will be used by the Python workers to separate the key
+   *   columns from value columns.
    *   (Python code: https://github.com/apache/spark/blob/master/python/pyspark/worker.py#L386)
    *
    * For the example above, the argument offsets will be
-   *     Array(5, 1, 0, 0, 1)
+   *   Array(
+   *     4,   // The length of the following offsets (1 for grouping length and 3 column indices)
+   *     1,   // There is only one grouping column 'a'
+   *     0,   // The single grouping column ('a') index in the deduplicated attributes['a', 'b']
+   *     0,1  // The data column('a', 'b') indices in the deduplicated attributes.
+   *   )
    *
-   * @param plan The input plan to be resolved for the output attributes.
+   * @param plan The input plan whose output attributes will be deduplicated.
    * @param groupingAttrs The grouping attributes.
    * @return a GroupArgs consisting of the deduplicated attributes, the argument offsets
    *         and the grouping offsets in the deduplicated attributes.
@@ -118,7 +123,7 @@ private[python] object BatchGroupUtils extends Arm {
     val dedupAttrs = dataAttrs ++ dedupGroupingAttrs
 
     // Layout of argument offsets:
-    //   Array(length of `argOffsets`,
+    //   Array(length of `argOffsets` without itself,
     //         length of `groupingAttrs`,
     //         group 1 arg offset, group 2 arg offset, ... ,
     //         data 1 arg offset,  data 2 arg offset, ...)
