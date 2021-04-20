@@ -16,62 +16,55 @@
 
 # A container that can be used to build UDF native code against libcudf
 ARG CUDA_VERSION=11.0
-ARG CUDA_SHORT_VERSION=${CUDA_VERSION}
 ARG LINUX_VERSION=ubuntu18.04
-ARG CUDF_REPO=https://github.com/rapidsai/cudf
-ARG CUDF_TAG=branch-0.20
-ARG CC=7
-ARG CXX=7
 
 FROM nvidia/cuda:${CUDA_VERSION}-devel-${LINUX_VERSION}
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64:/usr/local/lib
-# Needed for cudf.concat(), avoids "OSError: library nvvm not found"
-ENV NUMBAPRO_NVVM=/usr/local/cuda/nvvm/lib64/libnvvm.so
-ENV NUMBAPRO_LIBDEVICE=/usr/local/cuda/nvvm/libdevice/
-ENV DEBIAN_FRONTEND=noninteractive
 
-ARG CC
-ARG CXX
-RUN apt update -y --fix-missing && \
-    apt upgrade -y && \
-    apt install -y --no-install-recommends \
-      git \
-      gcc-${CC} \
-      g++-${CXX} \
-      libboost-all-dev \
-      openjdk-8-jdk \
-      maven \
-      tzdata && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PARALLEL_LEVEL=10
+ENV PARALLEL_LEVEL=10
 
-# Install conda
-ADD https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh /miniconda.sh
-RUN sh /miniconda.sh -b -p /conda && /conda/bin/conda update -n base conda
-ENV PATH=${PATH}:/conda/bin
-# Enables "source activate conda"
-SHELL ["/bin/bash", "-c"]
+RUN GCC_VERSION=$(bash -c '\
+CUDA_VERSION=$(nvcc --version | head -n4 | tail -n1 | cut -d" " -f5 | cut -d"," -f1); \
+CUDA_VERSION_MAJOR=$(echo $CUDA_VERSION | tr -d '.' | cut -c 1-2); \
+CUDA_VERSION_MINOR=$(echo $CUDA_VERSION | tr -d '.' | cut -c 3); \
+  if [[ "$CUDA_VERSION_MAJOR" == 9 ]]; then echo "7"; \
+  elif [[ "$CUDA_VERSION_MAJOR" == 10 ]]; then echo "8"; \
+  elif [[ "$CUDA_VERSION_MAJOR" == 11 ]]; then echo "9"; \
+  else echo "10"; \
+  fi') \
+&& apt update -y \
+&& apt install -y software-properties-common \
+&& add-apt-repository -y ppa:git-core/ppa \
+&& add-apt-repository -y ppa:ubuntu-toolchain-r/test \
+&& add-apt-repository ppa:deadsnakes/ppa \
+&& apt update -y \
+&& apt install -y \
+   build-essential git wget \
+   gcc-${GCC_VERSION} g++-${GCC_VERSION} \
+   openjdk-8-jdk maven tzdata \
+   # CMake dependencies
+   curl libssl-dev libcurl4-openssl-dev zlib1g-dev \
+   # cuDF dependencies
+   libboost-filesystem-dev \
+&& apt autoremove -y \
+&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+&& update-alternatives \
+   --install /usr/bin/gcc gcc /usr/bin/gcc-${GCC_VERSION} 100 \
+# Set gcc-${GCC_VERSION} as the default gcc
+&& update-alternatives --set gcc /usr/bin/gcc-${GCC_VERSION}  \
+# Set JDK8 as the default Java
+&& update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-# Pull the cudf source at the specified branch or tag
-ARG CUDF_TAG
-RUN git clone --recurse-submodules --depth 1 --single-branch --branch ${CUDF_TAG} https://github.com/rapidsai/cudf.git /cudf
+ARG CMAKE_VERSION=3.18.5
 
-# Create the cudf conda environment
-ARG CUDA_SHORT_VERSION
-RUN conda env create --name cudf --file /cudf/conda/environments/cudf_dev_cuda${CUDA_SHORT_VERSION}.yml
+# Install CMake
+RUN cd /tmp \
+ && curl -fsSLO --compressed "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION.tar.gz" -o /tmp/cmake-$CMAKE_VERSION.tar.gz \
+ && tar -xvzf /tmp/cmake-$CMAKE_VERSION.tar.gz && cd /tmp/cmake-$CMAKE_VERSION \
+ && /tmp/cmake-$CMAKE_VERSION/bootstrap \
+    --system-curl \
+    --parallel=${PARALLEL_LEVEL} \
+ && make install -j${PARALLEL_LEVEL} \
+ && cd /tmp && rm -rf /tmp/cmake-$CMAKE_VERSION*
 
-# libcudf build/install
-ARG CC
-ARG CXX
-ENV CC=/usr/bin/gcc-${CC}
-ENV CXX=/usr/bin/g++-${CXX}
-RUN source activate cudf && \
-    mkdir -p /cudf/cpp/build && \
-    cd /cudf/cpp/build && \
-    cmake .. -DCMAKE_INSTALL_PREFIX=${CONDA_PREFIX} && \
-    make -j"$(nproc)" install
-
-# Default to cudf conda environment
-RUN echo "source activate cudf" > /.bash-init.sh
-ENTRYPOINT /bin/bash --init-file /.bash-init.sh
