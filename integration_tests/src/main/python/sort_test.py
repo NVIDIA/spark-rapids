@@ -163,7 +163,7 @@ def test_single_orderby_with_skew(data_gen):
             conf = allow_negative_scale_of_decimal_conf)
 
 # This is primarily to test the out of core sort with multiple batches. For this we set the data size to
-# be realatively large (1 MiB accross all tasks) and the target size to be small 16 KiB. This means we
+# be relatively large (1 MiB across all tasks) and the target size to be small (16 KiB). This means we
 # should see around 64 batches of data. So this is the most valid if there are less than 64 tasks
 # in the cluster, but it should still work even then.
 def test_large_orderby():
