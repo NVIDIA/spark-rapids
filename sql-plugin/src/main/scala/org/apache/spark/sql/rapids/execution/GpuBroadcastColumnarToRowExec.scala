@@ -122,11 +122,10 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
             }
 
             // deserialize to host buffers in the driver and then convert to rows
-            val rows = new ListBuffer[InternalRow]()
             val dataTypes = broadcastChild.output.map(_.dataType)
 
-            serializedBatches.foreach { cb =>
-              val hostColumns = (0 until cb.header.getNumColumns).safeMap { i =>
+            val gpuBatches = serializedBatches.map { cb =>
+              val hostColumns = (0 until cb.header.getNumColumns).map { i =>
                 val columnHeader = cb.header.getColumnHeader(i)
                 val hcv = new HostColumnVector(
                   columnHeader.getType,
@@ -136,15 +135,12 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
                   null, null, List.empty.asJava)
                 new RapidsHostColumnVector(dataTypes(i), hcv)
               }
-              try {
-                val rowCount = hostColumns.headOption.map(_.getRowCount.toInt).getOrElse(0)
-                withResource(new ColumnarBatch(hostColumns.toArray, rowCount)) { cb =>
-                  rows.appendAll(cb.rowIterator().asScala)
-                }
-              } finally {
-                hostColumns.safeClose()
-              }
+              val rowCount = hostColumns.headOption.map(_.getRowCount.toInt).getOrElse(0)
+              new ColumnarBatch(hostColumns.toArray, rowCount)
             }
+
+            val rows = new ListBuffer[InternalRow]()
+            gpuBatches.foreach(cb => rows.appendAll(cb.rowIterator().asScala))
 
             val numRows = rows.length
             if (numRows >= 512000000) {
@@ -181,6 +177,8 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
               // Broadcast the relation
               _ => sparkContext.broadcast(relation)
             }
+
+            gpuBatches.foreach(_.close())
 
             val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
             SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
