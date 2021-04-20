@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -193,7 +193,7 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
 class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {  
   def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column):
       (Array[Row], Array[Row]) = {
-    val (testConf, qualifiedTestName) = setupTestConfAndQualifierName("", true, false,
+    val (testConf, _) = setupTestConfAndQualifierName("", true, false,
       new SparkConf(), Seq.empty, 0.0, false, false)
     runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF,
       frame => frame.select(gen(col("strings"))), testConf)

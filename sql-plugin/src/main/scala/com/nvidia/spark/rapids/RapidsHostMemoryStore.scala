@@ -31,7 +31,7 @@ class RapidsHostMemoryStore(
     maxSize: Long,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
     deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
-    extends RapidsBufferStore(StorageTier.HOST, catalog, deviceStorage) {
+    extends RapidsBufferStore(StorageTier.HOST, catalog) {
   private[this] val pool = HostMemoryBuffer.allocate(maxSize, false)
   private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
   private[this] var haveLoggedMaxExceeded = false

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,12 +65,11 @@ object FuzzerUtils {
   def createColumnarBatch(
       schema: StructType,
       rowCount: Int,
-      maxStringLen: Int = 64,
       options: FuzzerOptions = DEFAULT_OPTIONS,
       seed: Long = 0): ColumnarBatch = {
     val rand = new Random(seed)
     val r = new EnhancedRandom(rand, options)
-    val builders = new GpuColumnarBatchBuilder(schema, rowCount, null)
+    val builders = new GpuColumnarBatchBuilder(schema, rowCount)
     schema.fields.zipWithIndex.foreach {
       case (field, i) =>
         val builder = builders.builder(i)
@@ -147,7 +146,7 @@ object FuzzerUtils {
   def createColumnarBatch(values: Seq[Option[Any]], dataType: DataType): ColumnarBatch = {
     val schema = createSchema(Seq(dataType))
     val rowCount = values.length
-    val builders = new GpuColumnarBatchBuilder(schema, rowCount, null)
+    val builders = new GpuColumnarBatchBuilder(schema, rowCount)
     schema.fields.zipWithIndex.foreach {
       case (field, i) =>
         val builder = builders.builder(i)
