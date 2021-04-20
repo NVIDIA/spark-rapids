@@ -211,22 +211,28 @@ object HostColumnarToGpu extends Logging {
           b.appendNull()
         }
       case (dt: DecimalType, nullable) =>
-        // Because DECIMAL64 is the only supported decimal DType, we can
-        // append unscaledLongValue instead of BigDecimal itself to speedup this conversion.
-        // If we know that the value is WritableColumnVector we could
-        // speed this up even more by getting the unscaled long or int directly.
         if (nullable) {
           for (i <- 0 until rows) {
             if (cv.isNullAt(i)) {
               b.appendNull()
             } else {
               // The precision here matters for cpu column vectors (such as OnHeapColumnVector).
-              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+              if (DecimalType.is32BitDecimalType(dt)) {
+                b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
+              } else {
+                b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+              }
             }
           }
         } else {
-          for (i <- 0 until rows) {
-            b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+          if (DecimalType.is32BitDecimalType(dt)) {
+            for (i <- 0 until rows) {
+              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
+            }
+          } else {
+            for (i <- 0 until rows) {
+              b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+            }
           }
         }
       case (t, _) =>

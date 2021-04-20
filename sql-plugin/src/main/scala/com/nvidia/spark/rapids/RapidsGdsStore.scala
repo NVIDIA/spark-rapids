@@ -86,6 +86,24 @@ class RapidsGdsStore(
       }
     }
 
+    override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
+        length: Long, stream: Cuda.Stream): Unit = {
+      val path = if (id.canShareDiskPaths) {
+        sharedBufferFiles.get(id)
+      } else {
+        id.getDiskPath(diskBlockManager)
+      }
+      dst match {
+        case dmOriginal: DeviceMemoryBuffer =>
+          val dm = dmOriginal.slice(dstOffset, length)
+          // TODO: switch to async API when it's released, using the passed in CUDA stream.
+          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+          logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
+        case _ => throw new IllegalStateException(
+          s"GDS can only copy to device buffer, not ${dst.getClass}")
+      }
+    }
+
     override protected def releaseResources(): Unit = {
       // Buffers that share paths must be cleaned up elsewhere
       if (id.canShareDiskPaths) {

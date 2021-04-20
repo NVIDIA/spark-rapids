@@ -106,7 +106,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static synchronized void debug(String name, HostColumnVectorCore hostCol) {
     DType type = hostCol.getType();
     System.err.println("COLUMN " + name + " - " + type);
-    if (type.getTypeId() == DType.DTypeEnum.DECIMAL64) {
+    if (type.isDecimalType()) {
       for (int i = 0; i < hostCol.getRowCount(); i++) {
         if (hostCol.isNull(i)) {
           System.err.println(i + " NULL");
@@ -472,8 +472,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
         return null;
       } else {
-        // Map all DecimalType to DECIMAL64, in case of underlying DType transaction.
-        return DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale());
+        return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
       }
     }
     return null;
@@ -864,7 +863,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   GpuColumnVector(DataType type, ai.rapids.cudf.ColumnVector cudfCv) {
     super(type);
-    // TODO need some checks to be sure everything matches
     this.cudfCv = cudfCv;
   }
 

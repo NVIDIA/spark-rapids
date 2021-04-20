@@ -37,6 +37,10 @@ object DateUtils {
     "D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
     "d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS")
 
+  // we support "yy" in some cases, but not when parsing strings
+  // https://github.com/NVIDIA/spark-rapids/issues/2118
+  val unsupportedWordParseFromString = unsupportedWord ++ Set("yy")
+
   val conversionMap = Map(
     "MM" -> "%m", "LL" -> "%m", "dd" -> "%d", "mm" -> "%M", "ss" -> "%S", "HH" -> "%H",
     "yy" -> "%y", "yyyy" -> "%Y", "SSSSSS" -> "%f")
@@ -110,9 +114,13 @@ object DateUtils {
    * "hh" -> "%I" (12 hour clock)
    * "a" -> "%p" ('AM', 'PM')
    * "DDD" -> "%j" (Day of the year)
+   *
+   * @param format Java time format string
+   * @param parseString True if we're parsing a string
    */
-  def toStrf(format: String): String = {
-    val javaPatternsToReplace = identifySupportedFormatsToReplaceElseThrow(format)
+  def toStrf(format: String, parseString: Boolean): String = {
+    val javaPatternsToReplace = identifySupportedFormatsToReplaceElseThrow(
+      format, parseString)
     replaceFormats(format, javaPatternsToReplace)
   }
 
@@ -129,7 +137,14 @@ object DateUtils {
   }
 
   def identifySupportedFormatsToReplaceElseThrow(
-      format: String): ListBuffer[FormatKeywordToReplace] = {
+      format: String,
+      parseString: Boolean): ListBuffer[FormatKeywordToReplace] = {
+
+    val unsupportedWordContextAware = if (parseString) {
+      unsupportedWordParseFromString
+    } else {
+      unsupportedWord
+    }
     var sb = new StringBuilder()
     var index = 0;
     val patterns = new ListBuffer[FormatKeywordToReplace]
@@ -145,7 +160,7 @@ object DateUtils {
         // its a new pattern, check if the previous pattern was supported. If its supported,
         // add it to the groups and add this char as a start of a new pattern else throw exception
         val word = sb.toString
-        if (unsupportedWord(word)) {
+        if (unsupportedWordContextAware(word)) {
           throw TimestampFormatConversionException(s"Unsupported word: $word")
         }
         val startIndex = index - word.length
@@ -160,7 +175,7 @@ object DateUtils {
     })
     if (sb.length > 0) {
       val word = sb.toString()
-      if (unsupportedWord(word)) {
+      if (unsupportedWordContextAware(word)) {
         throw TimestampFormatConversionException(s"Unsupported word: $word")
       }
       val startIndex = format.length - word.length

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,14 +27,16 @@ ARG CUDA_VER=11.0
 ARG UBUNTU_VER=18.04
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 
-#Install java-8, maven, docker image
+# Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
     apt-get install -y software-properties-common
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
-    openjdk-8-jdk python3.8 python3.8-distutils python3-setuptools tzdata git
+    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git
 RUN python3.8 -m easy_install pip
+
+# Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
 
 RUN ln -s /usr/bin/python3.8 /usr/bin/python

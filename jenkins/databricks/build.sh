@@ -37,8 +37,8 @@ if [[ -n $SPARKSRCTGZ ]]
 then
     rm -rf spark-rapids
     mkdir spark-rapids
-    echo  "tar -zxvf $SPARKSRCTGZ -C spark-rapids"
-    tar -zxvf $SPARKSRCTGZ -C spark-rapids
+    echo  "tar -zxf $SPARKSRCTGZ -C spark-rapids"
+    tar -zxf $SPARKSRCTGZ -C spark-rapids
     cd spark-rapids
 fi
 export WORKSPACE=`pwd`
@@ -104,4 +104,4 @@ mvn -B install:install-file \
 mvn -B -P${BUILD_PROFILES} clean package -DskipTests
 
 cd /home/ubuntu
-tar -zcvf spark-rapids-built.tgz spark-rapids
+tar -zcf spark-rapids-built.tgz spark-rapids

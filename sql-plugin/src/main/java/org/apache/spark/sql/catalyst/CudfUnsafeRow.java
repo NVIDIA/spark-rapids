@@ -238,8 +238,9 @@ public final class CudfUnsafeRow extends InternalRow {
     if (isNullAt(ordinal)) {
       return null;
     }
-    // TODO when DECIMAL32 is supported a special case will need to be added here
-    if (precision <= Decimal.MAX_LONG_DIGITS()) {
+    if (precision <= Decimal.MAX_INT_DIGITS()) {
+      return Decimal.createUnsafe(getInt(ordinal), precision, scale);
+    } else if (precision <= Decimal.MAX_LONG_DIGITS()) {
       return Decimal.createUnsafe(getLong(ordinal), precision, scale);
     } else {
       throw new IllegalArgumentException("NOT IMPLEMENTED YET");
