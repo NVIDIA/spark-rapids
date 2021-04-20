@@ -426,7 +426,6 @@ object GpuToTimestamp extends Arm {
       lhs: GpuColumnVector,
       sparkFormat: String,
       strfFormat: String,
-      timeParserPolicy: TimeParserPolicy,
       dtype: DType,
       daysScalar: String => Scalar,
       asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
@@ -442,7 +441,7 @@ object GpuToTimestamp extends Arm {
           withResource(daysEqual(lhs.getBase, DateUtils.TODAY)) { isToday =>
             withResource(daysEqual(lhs.getBase, DateUtils.YESTERDAY)) { isYesterday =>
               withResource(daysEqual(lhs.getBase, DateUtils.TOMORROW)) { isTomorrow =>
-                withResource(lhs.getBase.isNull) { isNull =>
+                withResource(lhs.getBase.isNull) { _ =>
                   withResource(Scalar.fromNull(dtype)) { nullValue =>
                     withResource(asTimestamp(lhs.getBase, strfFormat)) { converted =>
                       withResource(daysScalar(DateUtils.EPOCH)) { epoch =>
@@ -518,7 +517,6 @@ abstract class GpuToTimestamp
         lhs,
         sparkFormat,
         strfFormat,
-        timeParserPolicy,
         DType.TIMESTAMP_MICROSECONDS,
         daysScalarMicros,
         (col, strfFormat) => col.asTimestampMicroseconds(strfFormat))
@@ -561,7 +559,6 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
         lhs,
         sparkFormat,
         strfFormat,
-        timeParserPolicy,
         DType.TIMESTAMP_SECONDS,
         daysScalarSeconds,
         (col, strfFormat) => col.asTimestampSeconds(strfFormat))

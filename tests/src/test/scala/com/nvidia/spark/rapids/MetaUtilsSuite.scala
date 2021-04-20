@@ -149,8 +149,6 @@ class MetaUtilsSuite extends FunSuite with Arm {
     withResource(buildContiguousTable()) { contigTable =>
       val origBuffer = contigTable.getBuffer
       val meta = MetaUtils.buildTableMeta(10, contigTable)
-      val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
-        DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
       withResource(origBuffer.sliceWithCopy(0, origBuffer.getLength)) { buffer =>
         withResource(MetaUtils.getBatchFromMeta(buffer, meta,
           contiguousTableSparkTypes)) { batch =>

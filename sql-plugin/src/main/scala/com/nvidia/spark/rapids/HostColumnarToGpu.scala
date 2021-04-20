@@ -67,7 +67,6 @@ object HostColumnarToGpu extends Logging {
   def arrowColumnarCopy(
       cv: ColumnVector,
       ab: ai.rapids.cudf.ArrowColumnBuilder,
-      nullable: Boolean,
       rows: Int): ju.List[ReferenceManager] = {
     val valVector = cv match {
       case v: ArrowColumnVector =>
@@ -100,7 +99,7 @@ object HostColumnarToGpu extends Logging {
     try {
       offsets = getBufferAndAddReference(ShimLoader.getSparkShims.getArrowOffsetsBuf(valVector))
     } catch {
-      case e: UnsupportedOperationException =>
+      case _: UnsupportedOperationException =>
         // swallow the exception and assume no offsets buffer
     }
     ab.addBatch(rows, nullCount, dataBuf, validity, offsets)
@@ -315,10 +314,10 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       (batch.column(0).isInstanceOf[ArrowColumnVector] ||
         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
       logDebug("Using GpuArrowColumnarBatchBuilder")
-      batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema, batchRowLimit, batch)
+      batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema)
     } else {
       logDebug("Using GpuColumnarBatchBuilder")
-      batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit, null)
+      batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit)
     }
     totalRows = 0
   }

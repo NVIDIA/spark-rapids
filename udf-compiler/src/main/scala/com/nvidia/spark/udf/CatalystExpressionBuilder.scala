@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -254,7 +254,7 @@ object CatalystExpressionBuilder extends Logging {
       val res = expr match {
         case And(Literal.TrueLiteral, c) => simplifyExpr(c)
         case And(c, Literal.TrueLiteral) => simplifyExpr(c)
-        case And(Literal.FalseLiteral, c) => Literal.FalseLiteral
+        case And(Literal.FalseLiteral, _) => Literal.FalseLiteral
         case And(c1@LessThan(s1, Literal(v1, t1)),
         c2@LessThan(s2, Literal(v2, t2))) if s1 == s2 && t1 == t2 => {
           t1 match {
@@ -346,7 +346,7 @@ object CatalystExpressionBuilder extends Logging {
           }
         }
         case And(c1, c2) => And(simplifyExpr(c1), simplifyExpr(c2))
-        case Or(Literal.TrueLiteral, c) => Literal.TrueLiteral
+        case Or(Literal.TrueLiteral, _) => Literal.TrueLiteral
         case Or(Literal.FalseLiteral, c) => simplifyExpr(c)
         case Or(c, Literal.FalseLiteral) => simplifyExpr(c)
         case Or(c1@GreaterThan(s1, Literal(v1, t1)),
@@ -384,13 +384,13 @@ object CatalystExpressionBuilder extends Logging {
         Literal(0, _)) => simplifyExpr(And(Not(c1), c2))
         case LessThanOrEqual(If(c1,
         Literal(1, _),
-        If(c2,
+        If(_,
         Literal(-1, _),
         Literal(0, _))),
         Literal(0, _)) => simplifyExpr(Not(c1))
         case GreaterThan(If(c1,
         Literal(1, _),
-        If(c2,
+        If(_,
         Literal(-1, _),
         Literal(0, _))),
         Literal(0, _)) => c1
@@ -406,7 +406,7 @@ object CatalystExpressionBuilder extends Logging {
         Literal(-1, _),
         Literal(0, _))),
         Literal(0, _)) => simplifyExpr(And(Not(c1), Not(c2)))
-        case If(c, t, f) if t == f => t
+        case If(_, t, f) if t == f => t
         // JVMachine encodes boolean array components using 1 to represent true
         // and 0 to represent false (see
         // https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-2.html#jvms-2.3.4).

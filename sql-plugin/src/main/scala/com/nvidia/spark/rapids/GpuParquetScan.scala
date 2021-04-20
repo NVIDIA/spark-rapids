@@ -357,7 +357,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         return uri
       }
     } catch {
-      case e: URISyntaxException =>
+      case _: URISyntaxException =>
     }
     new File(path).getAbsoluteFile().toURI()
   }
@@ -1090,7 +1090,6 @@ class MultiFileParquetPartitionReader(
     // and concatenate those together then go to the next column
     for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
       val dataType = field.dataType
-      val partitionColumns = new Array[GpuColumnVector](inPartitionValues.size)
       withResource(new Array[GpuColumnVector](inPartitionValues.size)) {
         partitionColumns =>
           for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
@@ -1566,7 +1565,7 @@ class MultiFileCloudParquetPartitionReader(
     // in cases close got called early for like limit() calls
     isDone = true
     currentFileHostBuffers.foreach { current =>
-      current.memBuffersAndSizes.foreach { case (buf, size) =>
+      current.memBuffersAndSizes.foreach { case (buf, _) =>
         if (buf != null) {
           buf.close()
         }
@@ -1577,7 +1576,7 @@ class MultiFileCloudParquetPartitionReader(
     batch = None
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
-        task.get.memBuffersAndSizes.foreach { case (buf, size) =>
+        task.get.memBuffersAndSizes.foreach { case (buf, _) =>
           if (buf != null) {
             buf.close()
           }
