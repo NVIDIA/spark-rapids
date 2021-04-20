@@ -142,7 +142,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           // https://issues.apache.org/jira/browse/SPARK-35093 for more information) so we
           // need to convert the output to rows in the driver before broadcasting the data
           // to the executors
-          GpuBroadcastColumnarToRowExec(b)
+          GpuBroadcastColumnarToRowExec(b.mode, b.child)
         case _ => getColumnarToRowExec(e)
       }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
