@@ -23,35 +23,34 @@ import scala.collection.mutable.ListBuffer
 import scala.concurrent.Promise
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor}
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric, MetricRange, NvtxWithMetrics, RapidsHostColumnVector}
+import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor}
+import com.nvidia.spark.rapids.{GpuColumnarToRowExecParent, GpuColumnVector, GpuExec, GpuMetric, MetricRange, NoopMetric, NvtxWithMetrics, RapidsHostColumnVector}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
-
 import org.apache.spark.SparkException
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution, UnaryExecNode}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.util.KnownSizeEstimation
 
 /**
- * This is a specialized version of GpuBroadcastExchangeExec that converts the columnar results
- * containing cuDF tables into Spark rows so that the results can feed a CPU BroadcastHashJoin.
- * This is required for exchange reuse in AQE.
+ * This is a specialized version of GpuColumnarToRow that wraps a GpuBroadcastExchange and
+ * converts the columnar results containing cuDF tables into Spark rows so that the results
+ * can feed a CPU BroadcastHashJoin. This is required for exchange reuse in AQE.
  *
- * @param child The input to the broadcast
+ * @param child GpuBroadcastExchangeExecBase
  */
-case class GpuBroadcastToRowExec(
-    mode: BroadcastMode,
-    child: SparkPlan)
-  extends UnaryExecNode with GpuExec {
+case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
+    extends UnaryExecNode with GpuExec {
 
   import GpuMetric._
   // We need to do this so the assertions don't fail
@@ -109,10 +108,12 @@ case class GpuBroadcastToRowExec(
             sparkContext.setJobGroup(_runId.toString, s"broadcast exchange (runId ${_runId})",
               interruptOnCancel = true)
 
+            val broadcastChild = child.child
+
             // run code on executors to serialize batches
             val serializedBatches: Array[SerializeBatchDeserializeHostBuffer] = withResource(
                 new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN, collectTime)) { _ =>
-              val data = child.executeColumnar().map(cb => try {
+              val data = broadcastChild.executeColumnar().map(cb => try {
                 new SerializeBatchDeserializeHostBuffer(cb)
               } finally {
                 cb.close()
@@ -122,7 +123,7 @@ case class GpuBroadcastToRowExec(
 
             // deserialize to host buffers in the driver and then convert to rows
             val rows = new ListBuffer[InternalRow]()
-            val dataTypes = child.output.map(_.dataType)
+            val dataTypes = broadcastChild.output.map(_.dataType)
 
             serializedBatches.foreach { cb =>
               val hostColumns = (0 until cb.header.getNumColumns).safeMap { i =>
@@ -156,7 +157,7 @@ case class GpuBroadcastToRowExec(
               "broadcast build", NvtxColor.DARK_GREEN, buildTime)) { _ =>
               val toUnsafe = UnsafeProjection.create(output, output)
               val unsafeRows = rows.iterator.map(toUnsafe)
-              val relation = mode.transform(unsafeRows.toArray)
+              val relation = child.mode.transform(unsafeRows.toArray)
 
               val dataSize = relation match {
                 case map: KnownSizeEstimation =>
