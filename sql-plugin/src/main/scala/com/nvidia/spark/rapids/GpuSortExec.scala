@@ -295,13 +295,14 @@ case class GpuOutOfCoreSortIterator(
         sorted.add(sp)
       }
     } else {
-      val splitIndexes = if (sortedOffset > 0) {
+      val hasFullySortedData = sortedOffset > 0
+      val splitIndexes = if (hasFullySortedData) {
         sortedOffset until rows by targetRowCount
       } else {
         targetRowCount until rows by targetRowCount
       }
       // Get back the first row so we can sort the batches
-      val gatherIndexes = if (sortedOffset > 0) {
+      val gatherIndexes = if (hasFullySortedData) {
         // The first batch is sorted so don't gather a row for it
         splitIndexes
       } else {
@@ -322,7 +323,7 @@ case class GpuOutOfCoreSortIterator(
 
       withResource(sortedTbl.contiguousSplit(splitIndexes: _*)) { splits =>
         memUsed += splits.map(_.getBuffer.getLength).sum
-        val stillPending = if (sortedOffset > 0) {
+        val stillPending = if (hasFullySortedData) {
           val sp = SpillableColumnarBatch(splits.head, sorter.projectedBatchTypes,
             SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
           sortedSize += sp.sizeInBytes
