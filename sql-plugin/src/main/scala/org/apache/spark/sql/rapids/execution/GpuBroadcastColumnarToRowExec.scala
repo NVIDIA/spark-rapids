@@ -25,13 +25,13 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor}
 import com.nvidia.spark.rapids.{GpuColumnarToRowExecParent, GpuColumnVector, GpuExec, GpuMetric, MetricRange, NoopMetric, NvtxWithMetrics, RapidsHostColumnVector}
-
 import org.apache.spark.SparkException
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution, UnaryExecNode}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
@@ -151,7 +151,9 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
 
             val buildRange = new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN, buildTime)
             val relation = try {
-              val relation = child.mode.transform(rows.toArray)
+              val toUnsafe = UnsafeProjection.create(output, output)
+              val unsafeRows = rows.iterator.map(toUnsafe)
+              val relation = child.mode.transform(unsafeRows.toArray)
 
               val dataSize = relation match {
                 case map: KnownSizeEstimation =>
