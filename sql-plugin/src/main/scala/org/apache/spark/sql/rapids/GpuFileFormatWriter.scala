@@ -127,7 +127,7 @@ object GpuFileFormatWriter extends Logging {
 
     val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
-    val bucketIdExpression = bucketSpec.map { spec =>
+    val bucketIdExpression = bucketSpec.map { _ =>
       // Use `HashPartitioning.partitionIdExpression` as our bucket id expression, so that we can
       // guarantee the data distribution is same between shuffle and bucketed data source, which
       // enables us to only shuffle one side when join a bucketed table and a normal one.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -200,7 +200,7 @@ class OpcodeSuite extends FunSuite {
   // tests for load and store operations, also cover +/-/* operators for int,long,double,float
   test("LLOAD_<n> odd") {
     val dataset = List((1,1L,1L)).toDF("x","y","z")
-    val myudf: (Int, Long, Long) => Long = (a,b,c) => {
+    val myudf: (Int, Long, Long) => Long = (_, b, c) => {
       (b+c)*c-b
     }
     val u = makeUdf(myudf)
@@ -211,7 +211,7 @@ class OpcodeSuite extends FunSuite {
 
   test("DLOAD_<n> odd") {
     val dataset = List((1,1.0,1.0)).toDF("x","y","z")
-    val myudf: (Int, Double, Double) => Double = (a,b,c) => {
+    val myudf: (Int, Double, Double) => Double = (_, b, c) => {
       (b+c)*b-c
     }
     val u = makeUdf(myudf)
@@ -267,7 +267,6 @@ class OpcodeSuite extends FunSuite {
   test("ISTORE_<n> all") {
     val myudf: () => Int = () => {
       var myInt : Int = 1
-      var myInt2 : Int = 1
       var myInt3 : Int = myInt
       var myInt4 : Int = myInt * myInt3
       myInt4
@@ -293,7 +292,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("DSTORE_<n> odd") {
-    val myudf: (Int) => Double = (a) => {
+    val myudf: (Int) => Double = (_) => {
       var myDoub : Double = 1.0
       var myDoub2 : Double = 1.0 * myDoub
       myDoub2
@@ -306,7 +305,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("ALOAD_0") {
-    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+    val myudf: (String,String,String,String) => String = (a, _, _, _) => {
       a
     }
     val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
@@ -317,7 +316,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("ALOAD_1") {
-    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+    val myudf: (String,String,String,String) => String = (_, b, _, _) => {
       b
     }
     val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
@@ -328,7 +327,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("ALOAD_2") {
-    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+    val myudf: (String,String,String,String) => String = (_, _, c, _) => {
       c
     }
     val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
@@ -339,7 +338,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("ALOAD_3") {
-    val myudf: (String,String,String,String) => String = (a,b,c,d) => {
+    val myudf: (String,String,String,String) => String = (_, _, _, d) => {
       d
     }
     val dataset = List(("a","b","c","d")).toDF("x","y","z","w")
@@ -391,7 +390,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("LSTORE_3") {
-    val myudf: (Int, Long) => Long = (a,b) => {
+    val myudf: (Int, Long) => Long = (_, b) => {
       var myLong : Long = b
       myLong
     }
@@ -515,7 +514,6 @@ class OpcodeSuite extends FunSuite {
   test("FSTORE_0, LSTORE_1") {
     val myudf: () => Float = () => {
       var myFloat : Float = 1.0f
-      var myLong : Long = 1L
       myFloat
     }
     val dataset = List(5.0f).toDS()
@@ -538,7 +536,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("ILOAD") {
-    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Int = (a,b,c,d,e,f,g,h) => {
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Int = (_, _, _, _, e, _, _, _) => {
       e
     }
     val u = makeUdf(myudf)
@@ -551,8 +549,8 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("LLOAD") {
-    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Long = (a,b,c,d,e,f,g,h) => {
-      f
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Long = {
+      (_, _, _, _, _, f, _, _) => f
     }
     val u = makeUdf(myudf)
     val dataset = List((1,2,3,4,5,1L,1.0f,1.0)).toDF("a","b","c","d","e","f","g","h")
@@ -564,8 +562,8 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("FLOAD") {
-    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Float = (a,b,c,d,e,f,g,h) => {
-      g
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Float = {
+      (_, _, _, _, _, _, g, _) => g
     }
     val u = makeUdf(myudf)
     val dataset = List((1,2,3,4,5,1L,1.0f,1.0)).toDF("a","b","c","d","e","f","g","h")
@@ -577,8 +575,8 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("DLOAD") {
-    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Double = (a,b,c,d,e,f,g,h) => {
-      h
+    val myudf: (Int, Int, Int, Int, Int, Long, Float, Double) => Double = {
+      (_, _, _, _, _, _, _, h) => h
     }
     val u = makeUdf(myudf)
     val dataset = List((1,2,3,4,5,1L,1.0f,1.0)).toDF("a","b","c","d","e","f","g","h")
@@ -788,7 +786,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("ALOAD opcode") {
-    val myudf: (Int, Int, Int, Int, String) => String = (a,b,c,d,e) => {
+    val myudf: (Int, Int, Int, Int, String) => String = (_, _, _, _, e) => {
       e
     }
     val u = makeUdf(myudf)
@@ -1140,7 +1138,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("float constant in a function call") {
-    val myudf: (Float) => Float = x => {
+    val myudf: (Float) => Float = _ => {
       val myFloat : Float = math.abs(-2.0f)
       myFloat
     }
@@ -1152,7 +1150,7 @@ class OpcodeSuite extends FunSuite {
   }
 
   test("int constant in a function call") {
-    val myudf: (Int) => Int = x => {
+    val myudf: (Int) => Int = _ => {
       val myInt : Int = math.abs(-2)
       myInt
     }
@@ -1419,7 +1417,7 @@ class OpcodeSuite extends FunSuite {
   test("FALLBACK TO CPU: loops") {
     val myudf: (Int, Int) => Int = (a,b) => {
       var myVar : Int = 0
-      for (indexVar <- a to b){
+      for (_ <- a to b){
         myVar = myVar + 1
       }
       myVar

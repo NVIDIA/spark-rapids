@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -196,7 +196,7 @@ class ImplicitsTestSuite extends FlatSpec with Matchers {
     val resources = (0 until 10).map(new RefCountTest(_, false))
 
     val out = resources.toArray.zipWithIndex.safeMap {
-      case (res, i) =>
+      case (res, _) =>
         res.incRefCount()
     }
 

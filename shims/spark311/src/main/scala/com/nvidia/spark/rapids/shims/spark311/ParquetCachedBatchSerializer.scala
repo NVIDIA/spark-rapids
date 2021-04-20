@@ -307,7 +307,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
         if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
           val s: StructType = schema.toStructType
-          val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows(), batch).build(batch.numRows())
+          val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows()).build(batch.numRows())
           batch.close()
           gpuCB
         } else {
@@ -1137,7 +1137,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   private def getSupportedSchemaFromUnsupported(
      cachedAttributes: Seq[Attribute],
      requestedAttributes: Seq[Attribute] = Seq.empty): (Seq[Attribute], Seq[Attribute]) = {
-    def getSupportedDataType(dataType: DataType, nullable: Boolean = true): DataType = {
+    def getSupportedDataType(dataType: DataType): DataType = {
       dataType match {
         case CalendarIntervalType =>
           intervalStructType
@@ -1147,19 +1147,19 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           val newStructType = StructType(
             s.map { field =>
               StructField(field.name,
-                getSupportedDataType(field.dataType, field.nullable), field.nullable,
+                getSupportedDataType(field.dataType), field.nullable,
                 field.metadata)
             })
           mapping.put(s, newStructType)
           newStructType
         case a@ArrayType(elementType, nullable) =>
           val newArrayType =
-            ArrayType(getSupportedDataType(elementType, nullable), nullable)
+            ArrayType(getSupportedDataType(elementType), nullable)
           mapping.put(a, newArrayType)
           newArrayType
         case m@MapType(keyType, valueType, nullable) =>
-          val newKeyType = getSupportedDataType(keyType, nullable)
-          val newValueType = getSupportedDataType(valueType, nullable)
+          val newKeyType = getSupportedDataType(keyType)
+          val newValueType = getSupportedDataType(valueType)
           val mapType = MapType(newKeyType, newValueType, nullable)
           mapping.put(m, mapType)
           mapType
@@ -1180,13 +1180,13 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             AttributeReference(attribute.name, DataTypes.ByteType, nullable = true,
               metadata = attribute.metadata)(attribute.exprId).asInstanceOf[Attribute]
           case s: StructType =>
-            AttributeReference(attribute.name, getSupportedDataType(s, attribute.nullable),
+            AttributeReference(attribute.name, getSupportedDataType(s),
               attribute.nullable, attribute.metadata)(attribute.exprId)
           case a: ArrayType =>
-            AttributeReference(attribute.name, getSupportedDataType(a, attribute.nullable),
+            AttributeReference(attribute.name, getSupportedDataType(a),
               attribute.nullable, attribute.metadata)(attribute.exprId)
           case m: MapType =>
-            AttributeReference(attribute.name, getSupportedDataType(m, attribute.nullable),
+            AttributeReference(attribute.name, getSupportedDataType(m),
               attribute.nullable, attribute.metadata)(attribute.exprId)
           case _ =>
             attribute

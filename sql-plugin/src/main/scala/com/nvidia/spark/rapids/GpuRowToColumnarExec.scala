@@ -58,7 +58,7 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable w
    */
   final def convertBatch(rows: Array[InternalRow], schema: StructType): ColumnarBatch = {
     val numRows = rows.length
-    val builders = new GpuColumnarBatchBuilder(schema, numRows, null)
+    val builders = new GpuColumnarBatchBuilder(schema, numRows)
     rows.foreach(convert(_, builders))
     builders.build(numRows)
   }
@@ -585,7 +585,7 @@ class RowToColumnarIterator(
       }
     }
 
-    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows, null)
+    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows)
     try {
       var rowCount = 0
       // Double because validity can be < 1 byte, and this is just an estimate anyways

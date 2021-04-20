@@ -1227,7 +1227,7 @@ case class GpuCast(
     if (to.scale <= from.scale) {
       if (!isFrom32Bit && isTo32Bit) {
         // check for overflow when 64bit => 32bit
-        withResource(checkForOverflow(input, from, to, isFrom32Bit)) { checkedInput =>
+        withResource(checkForOverflow(input, to, isFrom32Bit)) { checkedInput =>
           castCheckedDecimal(checkedInput)
         }
       } else {
@@ -1240,7 +1240,7 @@ case class GpuCast(
       }
     } else {
       //  from.scale > to.scale
-      withResource(checkForOverflow(input, from, to, isFrom32Bit)) { checkedInput =>
+      withResource(checkForOverflow(input, to, isFrom32Bit)) { checkedInput =>
         castCheckedDecimal(checkedInput)
       }
     }
@@ -1248,7 +1248,6 @@ case class GpuCast(
 
   def checkForOverflow(
      input: ColumnVector,
-     from: DecimalType,
      to: DecimalType,
      isFrom32Bit: Boolean): ColumnVector = {
 
