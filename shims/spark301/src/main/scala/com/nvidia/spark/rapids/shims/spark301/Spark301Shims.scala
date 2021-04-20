@@ -68,7 +68,7 @@ class Spark301Shims extends Spark300Shims {
         Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
         override def convertToGpu(): GpuExpression =
-          GpuFirst(childExprs(0).convertToGpu(), a.ignoreNulls)
+          GpuFirst(childExprs.head.convertToGpu(), a.ignoreNulls)
       }),
     GpuOverrides.expr[Last](
       "last aggregate operator",
@@ -76,7 +76,7 @@ class Spark301Shims extends Spark300Shims {
         Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
         override def convertToGpu(): GpuExpression =
-          GpuLast(childExprs(0).convertToGpu(), a.ignoreNulls)
+          GpuLast(childExprs.head.convertToGpu(), a.ignoreNulls)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 

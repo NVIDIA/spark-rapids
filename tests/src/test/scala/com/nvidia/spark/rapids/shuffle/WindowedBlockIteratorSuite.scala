@@ -104,8 +104,7 @@ class WindowedBlockIteratorSuite extends RapidsShuffleTestHelper {
     val blockRanges = wbi.next()
     assertResult(2)(blockRanges.size)
 
-    val firstBlock = blockRanges(0)
-    val secondBlock = blockRanges(1)
+    val Seq(firstBlock, secondBlock) = blockRanges
 
     assertResult(1000)(firstBlock.rangeSize())
     assertResult(0)(firstBlock.rangeStart)

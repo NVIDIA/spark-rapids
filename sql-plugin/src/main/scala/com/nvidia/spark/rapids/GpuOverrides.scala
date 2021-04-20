@@ -1550,7 +1550,8 @@ object GpuOverrides {
           // types were and cannot recover it. As such for now we are going to do what Spark does,
           // but we have to recompute/recheck the temporary precision to be sure it will fit
           // on the GPU.
-          (childExprs.head.dataType, childExprs(1).dataType) match {
+          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
               if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
@@ -1758,7 +1759,8 @@ object GpuOverrides {
           // effectively calculating an extra digit of precision. Because cudf does not support this
           // right now we actually increase the scale (and corresponding precision) to get an extra
           // decimal place so we can round it in GpuCheckOverflow
-          (childExprs.head.dataType, childExprs(1).dataType) match {
+          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val outputType = GpuDivideUtil.decimalDataType(l, r)
               // Case 1: OutputType.precision doesn't get truncated
@@ -1851,9 +1853,9 @@ object GpuOverrides {
           } catch {
             case _: Exception =>
               val resultMethod = a.getClass.getMethod("resultIds")
-              resultMethod.invoke(a).asInstanceOf[Seq[ExprId]](0)
+              resultMethod.invoke(a).asInstanceOf[Seq[ExprId]].head
           }
-          GpuAggregateExpression(childExprs(0).convertToGpu().asInstanceOf[GpuAggregateFunction],
+          GpuAggregateExpression(childExprs.head.convertToGpu().asInstanceOf[GpuAggregateFunction],
             a.mode, a.isDistinct, filter.map(_.convertToGpu()), resultId)
         }
       }),
@@ -1911,8 +1913,10 @@ object GpuOverrides {
                 " pivot values provided")
           }
         }
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuPivotFirst(childExprs(0), childExprs(1), pivot.pivotColumnValues)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val Seq(pivotColumn, valueColumn) = childExprs
+          GpuPivotFirst(pivotColumn, valueColumn, pivot.pivotColumnValues)
+        }
       }),
     expr[Count](
       "Count aggregate operator",
@@ -2479,7 +2483,7 @@ object GpuOverrides {
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuExplode(childExprs(0).convertToGpu())
+        override def convertToGpu(): GpuExpression = GpuExplode(childExprs.head.convertToGpu())
       }),
     expr[PosExplode](
       "Given an input array produces a sequence of rows for each value in the array. "
@@ -2495,7 +2499,7 @@ object GpuOverrides {
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs(0).convertToGpu())
+        override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
       "Collect a list of elements, now only supported by windowing.",
@@ -2680,7 +2684,7 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec = GpuProjectExec(
             // Force list to avoid recursive Java serialization of lazy list Seq implementation
             childExprs.map(_.convertToGpu()).toList,
-            childPlans(0).convertIfNeeded()
+            childPlans.head.convertIfNeeded()
           )
         }
       }),
@@ -2704,7 +2708,7 @@ object GpuOverrides {
           Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
         override def convertToGpu(): GpuExec =
-          GpuBatchScanExec(p.output, childScans(0).convertToGpu())
+          GpuBatchScanExec(p.output, childScans.head.convertToGpu())
       }),
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
@@ -2805,7 +2809,7 @@ object GpuOverrides {
           TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def convertToGpu(): GpuExec =
-          GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())
+          GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
@@ -2849,12 +2853,14 @@ object GpuOverrides {
 
         override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
 
-        override def convertToGpu(): GpuExec =
+        override def convertToGpu(): GpuExec = {
+          val Seq(left, right) = childPlans.map(_.convertIfNeeded())
           GpuCartesianProductExec(
-            childPlans.head.convertIfNeeded(),
-            childPlans(1).convertIfNeeded(),
+            left,
+            right,
             condition.map(_.convertToGpu()),
             conf.gpuTargetBatchSizeBytes)
+        }
       })
         .disabledByDefault("large joins can cause out of memory errors"),
     exec[HashAggregateExec](

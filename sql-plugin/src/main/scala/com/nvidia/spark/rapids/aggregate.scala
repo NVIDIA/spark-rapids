@@ -161,7 +161,7 @@ class GpuHashAggregateMeta(
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans(0).convertIfNeeded())
+      childPlans.head.convertIfNeeded())
   }
 }
 
@@ -276,7 +276,7 @@ class GpuSortAggregateMeta(
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans(0).convertIfNeeded())
+      childPlans.head.convertIfNeeded())
   }
 }
 
