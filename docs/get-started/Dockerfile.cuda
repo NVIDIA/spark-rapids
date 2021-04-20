@@ -22,14 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends openjdk-8-jdk o
 ENV JAVA_HOME /usr/lib/jvm/java-1.8.0-openjdk-amd64
 ENV PATH $PATH:/usr/lib/jvm/java-1.8.0-openjdk-amd64/jre/bin:/usr/lib/jvm/java-1.8.0-openjdk-amd64/bin
 
-# Before building the docker image, first either download Apache Spark 3.0+ from 
-# http://spark.apache.org/downloads.html or build and make a Spark distribution following
-# the instructions in http://spark.apache.org/docs/3.0.1/building-spark.html (3.0.0 can 
-# be used as well).  
-# If this docker file is being used in the context of building your images from a Spark
-# distribution, the docker build command should be invoked from the top level directory
-# of the Spark distribution. E.g.:
-# docker build -t spark:3.0.1 -f kubernetes/dockerfiles/spark/Dockerfile .
+# Before building the docker image, first either download Apache Spark 3.0+ from
+# http://spark.apache.org/downloads.html or build and make a Spark distribution following the
+# instructions in http://spark.apache.org/docs/3.0.2/building-spark.html (3.0.0, 3.0.1 or 3.1.1 can
+# be used as well).  If this docker file is being used in the context of building your images from a
+# Spark distribution, the docker build command should be invoked from the top level directory of the
+# Spark distribution. E.g.: docker build -t spark:3.0.2 -f kubernetes/dockerfiles/spark/Dockerfile .
 
 RUN set -ex && \
     ln -s /lib /lib64 && \
@@ -44,13 +42,13 @@ RUN set -ex && \
     echo "auth required pam_wheel.so use_uid" >> /etc/pam.d/su && \
     chgrp root /etc/passwd && chmod ug+rw /etc/passwd
 
-COPY spark-3.0.1-bin-hadoop3.2/jars /opt/spark/jars
-COPY spark-3.0.1-bin-hadoop3.2/bin /opt/spark/bin
-COPY spark-3.0.1-bin-hadoop3.2/sbin /opt/spark/sbin
-COPY spark-3.0.1-bin-hadoop3.2/kubernetes/dockerfiles/spark/entrypoint.sh /opt/
-COPY spark-3.0.1-bin-hadoop3.2/examples /opt/spark/examples
-COPY spark-3.0.1-bin-hadoop3.2/kubernetes/tests /opt/spark/tests
-COPY spark-3.0.1-bin-hadoop3.2/data /opt/spark/data
+COPY spark-3.0.2-bin-hadoop3.2/jars /opt/spark/jars
+COPY spark-3.0.2-bin-hadoop3.2/bin /opt/spark/bin
+COPY spark-3.0.2-bin-hadoop3.2/sbin /opt/spark/sbin
+COPY spark-3.0.2-bin-hadoop3.2/kubernetes/dockerfiles/spark/entrypoint.sh /opt/
+COPY spark-3.0.2-bin-hadoop3.2/examples /opt/spark/examples
+COPY spark-3.0.2-bin-hadoop3.2/kubernetes/tests /opt/spark/tests
+COPY spark-3.0.2-bin-hadoop3.2/data /opt/spark/data
 
 COPY cudf-0.20-SNAPSHOT-cuda11.jar /opt/sparkRapidsPlugin
 COPY rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar /opt/sparkRapidsPlugin
@@ -69,8 +67,8 @@ RUN apt-get update && \
     # Removed the .cache to save space
     rm -r /root/.cache && rm -rf /var/cache/apt/*
 
-COPY spark-3.0.1-bin-hadoop3.2/python/pyspark /opt/spark/python/pyspark
-COPY spark-3.0.1-bin-hadoop3.2/python/lib /opt/spark/python/lib
+COPY spark-3.0.2-bin-hadoop3.2/python/pyspark /opt/spark/python/pyspark
+COPY spark-3.0.2-bin-hadoop3.2/python/lib /opt/spark/python/lib
 
 ENV SPARK_HOME /opt/spark
 

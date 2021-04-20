@@ -1067,6 +1067,7 @@ class MultiFileParquetPartitionReader(
         BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
         footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
         val amountWritten = offset + footerOut.getPos
+        footerOut.close()
         // triple check we didn't go over memory
         if (amountWritten > totalBufferSize) {
            throw new QueryExecutionException(s"Calculated buffer size $totalBufferSize is to " +
@@ -1597,10 +1598,6 @@ class MultiFileCloudParquetPartitionReader(
       hostBuffer: HostMemoryBuffer,
       dataSize: Long,
       fileName: String): Option[ColumnarBatch] = {
-    if (dataSize == 0) {
-      // shouldn't ever get here
-      None
-    }
     // not reading any data, but add in partition data if needed
     if (hostBuffer == null) {
       // Someone is going to process this data, even if it is just a row count
