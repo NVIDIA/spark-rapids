@@ -2,7 +2,7 @@
 
 API validation script checks the compatibility of community Spark Execs and GPU Execs in the Rapids Plugin for Spark.  
 For example: HashAggregateExec with GpuHashAggregateExec.
-Script can be used to audit different versions of Spark(3.0.0, 3.0.1 and 3.1.0-SNAPSHOT)
+Script can be used to audit different versions of Spark(3.0.0, 3.0.1 and 3.1.1)
 The script prints Execs where validation fails. 
 Validation fails when:
 1) The number of parameters differ between community Spark Execs and Gpu Execs.
