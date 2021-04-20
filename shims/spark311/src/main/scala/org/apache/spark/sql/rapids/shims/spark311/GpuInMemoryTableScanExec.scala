@@ -97,8 +97,6 @@ case class GpuInMemoryTableScanExec(
     lazy val readPartitions = sparkContext.longAccumulator
     lazy val readBatches = sparkContext.longAccumulator
 
-    private val inMemoryPartitionPruningEnabled = sqlContext.conf.inMemoryPartitionPruning
-
     private def filteredCachedBatches() = {
       // Right now just return the batch without filtering
       relation.cacheBuilder.cachedColumnBuffers

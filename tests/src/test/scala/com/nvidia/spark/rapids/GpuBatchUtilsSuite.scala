@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -170,7 +170,7 @@ class GpuBatchUtilsSuite extends FunSuite {
    * verify that the memory calculations are consistent with the numbers reported by CuDF.
    */
   private def calculateGpuMemory(schema: StructType, rows: Array[InternalRow]): Long = {
-    val builders = new GpuColumnarBatchBuilder(schema, rows.length, null)
+    val builders = new GpuColumnarBatchBuilder(schema, rows.length)
     try {
       val converters = new GpuRowToColumnConverter(schema)
       rows.foreach(row => converters.convert(row, builders))

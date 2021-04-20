@@ -136,7 +136,6 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
 abstract class GpuBroadcastNestedLoopJoinExecBase(
     left: SparkPlan,
     right: SparkPlan,
-    join: BroadcastNestedLoopJoinExec,
     joinType: JoinType,
     condition: Option[Expression],
     targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
