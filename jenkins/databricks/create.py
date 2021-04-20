@@ -34,7 +34,7 @@ def main():
   worker_type = 'g4dn.xlarge'
   driver_type = 'g4dn.xlarge'
   cloud_provider = 'aws'
-  # comma seperated init scritps, e.g., dbfs:/foo,dbfs:/bar,...
+  # comma separated init scripts, e.g. dbfs:/foo,dbfs:/bar,...
   init_scripts = ''
 
 
