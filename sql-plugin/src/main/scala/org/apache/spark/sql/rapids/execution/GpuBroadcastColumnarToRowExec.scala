@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostColumnVector, JCudfSerialization, NvtxColor}
 import com.nvidia.spark.rapids.{GpuColumnarToRowExecParent, GpuColumnVector, GpuExec, GpuMetric, MetricRange, NoopMetric, NvtxWithMetrics, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 import org.apache.spark.SparkException
 
 import org.apache.spark.broadcast.Broadcast
@@ -110,24 +111,22 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
             val broadcastChild = child.child
 
             // run code on executors to serialize batches
-            val collectRange = new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-              collectTime)
-            val serializedBatches: Array[SerializeBatchDeserializeHostBuffer] = try {
+            val serializedBatches: Array[SerializeBatchDeserializeHostBuffer] = withResource(
+                new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN, collectTime)) { _ =>
               val data = broadcastChild.executeColumnar().map(cb => try {
                 new SerializeBatchDeserializeHostBuffer(cb)
               } finally {
                 cb.close()
               })
               data.collect()
-            } finally {
-              collectRange.close()
             }
 
             // deserialize to host buffers in the driver and then convert to rows
             val rows = new ListBuffer[InternalRow]()
             val dataTypes = broadcastChild.output.map(_.dataType)
+
             serializedBatches.foreach { cb =>
-              val hostColumns = (0 until cb.header.getNumColumns).map { i =>
+              val hostColumns = (0 until cb.header.getNumColumns).safeMap { i =>
                 val columnHeader = cb.header.getColumnHeader(i)
                 val hcv = new HostColumnVector(
                   columnHeader.getType,
@@ -137,9 +136,14 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
                   null, null, List.empty.asJava)
                 new RapidsHostColumnVector(dataTypes(i), hcv)
               }
-              val rowCount = hostColumns.headOption.map(_.getRowCount.toInt).getOrElse(0)
-              val hostColumnBatch = new ColumnarBatch(hostColumns.toArray, rowCount)
-              hostColumnBatch.rowIterator().asScala.foreach(row => rows += row)
+              try {
+                val rowCount = hostColumns.headOption.map(_.getRowCount.toInt).getOrElse(0)
+                withResource(new ColumnarBatch(hostColumns.toArray, rowCount)) { cb =>
+                  rows.appendAll(cb.rowIterator().asScala)
+                }
+              } finally {
+                hostColumns.safeClose()
+              }
             }
 
             val numRows = rows.length
@@ -149,8 +153,8 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
             }
             numOutputRows += numRows
 
-            val buildRange = new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN, buildTime)
-            val relation = try {
+            val relation = withResource(new NvtxWithMetrics(
+              "broadcast build", NvtxColor.DARK_GREEN, buildTime)) { _ =>
               val toUnsafe = UnsafeProjection.create(output, output)
               val unsafeRows = rows.iterator.map(toUnsafe)
               val relation = child.mode.transform(unsafeRows.toArray)
@@ -170,16 +174,12 @@ case class GpuBroadcastColumnarToRowExec(child: GpuBroadcastExchangeExecBase)
                   s"Cannot broadcast the table that is larger than 8GB: ${dataSize >> 30} GB")
               }
               relation
-            } finally {
-              buildRange.close()
             }
 
-            val broadcastRange = new NvtxWithMetrics("broadcast", NvtxColor.CYAN, broadcastTime)
-            val broadcasted = try {
+            val broadcasted = withResource(
+              new NvtxWithMetrics("broadcast", NvtxColor.CYAN, broadcastTime)) {
               // Broadcast the relation
-              sparkContext.broadcast(relation)
-            } finally {
-              broadcastRange.close()
+              _ => sparkContext.broadcast(relation)
             }
 
             val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
