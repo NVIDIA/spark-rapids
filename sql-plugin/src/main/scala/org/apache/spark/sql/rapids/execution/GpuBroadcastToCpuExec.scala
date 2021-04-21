@@ -46,6 +46,7 @@ import org.apache.spark.util.KnownSizeEstimation
  * converts the columnar results containing cuDF tables into Spark rows so that the results
  * can feed a CPU BroadcastHashJoin. This is required for exchange reuse in AQE.
  *
+ * @param mode Broadcast mode
  * @param child Input to broadcast
  */
 case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
@@ -233,6 +234,6 @@ case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
   }
 
   override protected def doExecute(): RDD[InternalRow] = {
-    throw new UnsupportedOperationException()
+    throw new UnsupportedOperationException(s"$nodeName does not implement doExecute")
   }
 }
