@@ -214,11 +214,14 @@ private[python] object BatchGroupUtils extends Arm {
 }
 
 /**
- * Runs a `groupby` on the input batch where the rows should be presorted in the order of
- * `Ascending & NullsFirst`, then split it into separate batches by the grouping expressions.
+ * An iterator that splits the groups in each input batch into separate batches by the grouping
+ * expressions, then each batch returned from the call to 'next' contains only one group.
  *
- * Since the rows in the batches are already sorted by Spark, a better performance is probably
- * achieved in the cudf `groupby`.
+ * This iterator supposes the rows in the input batches are presorted in the order of
+ * Ascending & NullsFirst`.
+ *
+ * Since the rows in the batches are already sorted by Spark for the Pandas UDF plans, a better
+ * performance is probably achieved in the cudf `groupby`.
  *
  * Example Input: (Grouping: `x`)
  *   A batch of 3 rows, two groups.
@@ -284,11 +287,7 @@ private[python] class BatchGroupedIterator private(
             // In Spark, the rows in a batch are already sorted by grouping keys in
             // the order of `Ascending & NullsFirst` for Pandas UDF plans. This is ensured by
             // overriding the 'requiredChildOrdering' in each plan.
-            //   '''
-            //   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-            //     Seq(groupingAttributes.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
-            //   '''
-            // So passes the info to cudf for better performance on `groupBy` operation.
+            // So passes the info to cudf for a better performance on `groupBy` operation.
             val builder = cudf.GroupByOptions.builder()
             builder.withIgnoreNullKeys(false)
                    .withKeysSorted(true)
