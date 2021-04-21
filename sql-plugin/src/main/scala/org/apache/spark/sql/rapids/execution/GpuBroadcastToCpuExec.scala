@@ -93,7 +93,7 @@ case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val collectTime = gpuLongMetric(COLLECT_TIME)
     val buildTime = gpuLongMetric(BUILD_TIME)
-    val broadcastTime = gpuLongMetric(BUILD_TIME)
+    val broadcastTime = gpuLongMetric("broadcastTime")
     val totalTime = gpuLongMetric(TOTAL_TIME)
 
     val task = new Callable[Broadcast[Any]]() {
