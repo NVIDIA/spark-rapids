@@ -1622,7 +1622,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     // verify nothing ran on the gpu
     if (gpuPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
       val execNode = gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec])
-      assert(!execNode.isDefined)
+      assert(execNode.isEmpty)
     }
   }}
 
@@ -1637,7 +1637,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     // verify nothing ran on the gpu
     if (gpuPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
       val execNode = gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec])
-      assert(!execNode.isDefined)
+      assert(execNode.isEmpty)
     }
   }}
 

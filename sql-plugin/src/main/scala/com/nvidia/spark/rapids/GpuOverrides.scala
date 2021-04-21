@@ -3034,7 +3034,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       if (!exp.equalsIgnoreCase("NONE")) {
         wrap.tagForExplain()
         val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
-        if (!explain.isEmpty) {
+        if (explain.nonEmpty) {
           logWarning(s"\n$explain")
           if (conf.optimizerExplain.equalsIgnoreCase("ALL") && optimizations.nonEmpty) {
             logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")

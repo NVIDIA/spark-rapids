@@ -87,7 +87,7 @@ case class CatalystExpressionBuilder(private val function: AnyRef) extends Loggi
       }
     }
 
-    if (compiled == None) {
+    if (compiled.isEmpty) {
       logDebug(s"[CatalystExpressionBuilder] failed to compile")
     } else {
       logDebug(s"[CatalystExpressionBuilder] compiled expression: ${compiled.get.toString}")
