@@ -66,6 +66,8 @@ object SparkSessionHolder extends Logging {
   }
 
   private def createSparkSession(): SparkSession = {
+    TrampolineUtil.cleanupAnyExistingSession()
+
     // Timezone is fixed to UTC to allow timestamps to work by default
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     // Add Locale setting
@@ -145,6 +147,17 @@ object SparkSessionHolder extends Logging {
  */
 trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   import SparkSessionHolder.withSparkSession
+
+  def enableCsvConf(): SparkConf = {
+    new SparkConf()
+        .set(RapidsConf.ENABLE_READ_CSV_DATES.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_BYTES.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_SHORTS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_INTEGERS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_LONGS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
+        .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
+  }
 
   //  @see java.lang.Float#intBitsToFloat
   // <quote>
@@ -648,7 +661,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
             } else if (cmp > 0) {
               return false
             } // else equal go on
-          case (o1, o2) =>
+          case (o1, _) =>
             throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
         }
       }
@@ -796,11 +809,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def testUnaryFunction(
     conf: SparkConf,
     values: Seq[Any],
-    expectNull: Boolean = false,
     maxFloatDiff: Double = 0.0,
     sort: Boolean = false,
-    repart: Integer = 1,
-    sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+    repart: Integer = 1)(fun: DataFrame => DataFrame): Unit = {
 
     val df: SparkSession => DataFrame =
       (sparkSession: SparkSession) => createDataFrame(sparkSession, values)
@@ -830,7 +841,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
     test(qualifiedTestName) {
       val t = Try({
-        val fromGpu = withGpuSparkSession( session => {
+        withGpuSparkSession( session => {
           var data = df(session)
           if (repart > 0) {
             // repartition the data so it is turned into a projection,

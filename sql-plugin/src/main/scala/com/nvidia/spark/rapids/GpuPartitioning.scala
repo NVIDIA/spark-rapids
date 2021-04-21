@@ -53,7 +53,7 @@ trait GpuPartitioning extends Partitioning with Arm {
         val contiguousTables = withResource(table)(t => t.contiguousSplit(parts: _*))
         GpuShuffleEnv.rapidsShuffleCodec match {
           case Some(codec) =>
-            compressSplits(splits, codec, contiguousTables, dataTypes)
+            compressSplits(splits, codec, contiguousTables)
           case None =>
             // GpuPackedTableColumn takes ownership of the contiguous tables
             closeOnExcept(contiguousTables) { cts =>
@@ -127,8 +127,7 @@ trait GpuPartitioning extends Partitioning with Arm {
   def compressSplits(
       outputBatches: ArrayBuffer[ColumnarBatch],
       codec: TableCompressionCodec,
-      contiguousTables: Array[ContiguousTable],
-      dataTypes: Array[DataType]): Unit = {
+      contiguousTables: Array[ContiguousTable]): Unit = {
     withResource(codec.createBatchCompressor(maxCompressionBatchSize,
         Cuda.DEFAULT_STREAM)) { compressor =>
       // tracks batches with no data and the corresponding output index for the batch

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
-    .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
@@ -59,7 +58,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     //static seed
     val r = new Random(4135277987418063300L)
 
-    val seq = for (i <- 1 to 100) yield r.nextInt(2) match {
+    val seq = for (_ <- 1 to 100) yield r.nextInt(2) match {
       case 0 => new Timestamp((upperValid * r.nextDouble()).toLong)
       case 1 => new Timestamp((lowerValid * r.nextDouble()).toLong)
     }
@@ -380,6 +379,20 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   test("ansi_cast double to string") {
     testCastToString[Double](DataTypes.DoubleType, ansiMode = true,
       comparisonFunc = Some(compareStringifiedFloats))
+  }
+
+  test("ansi_cast decimal to string") {
+    val sqlCtx = SparkSession.getActiveSession.get.sqlContext
+    sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
+
+    Seq(10, 15, 18).foreach { precision =>
+      Seq(-precision, -5, 0, 5, precision).foreach { scale =>
+        testCastToString(DataTypes.createDecimalType(precision, scale),
+          ansiMode = true,
+          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+      }
+    }
   }
 
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
@@ -731,13 +744,11 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   private def testTimestamps = testData(DataTypes.TimestampType)(_)
   private def testDates = testData(DataTypes.DateType)(_)
 
-  private val HIVE_BOOL_SQL_TYPE = "BOOLEAN"
   private val HIVE_LONG_SQL_TYPE = "BIGINT"
   private val HIVE_INT_SQL_TYPE = "INT"
   private val HIVE_SHORT_SQL_TYPE = "SMALLINT"
   private val HIVE_BYTE_SQL_TYPE = "TINYINT"
   private val HIVE_FLOAT_SQL_TYPE = "FLOAT"
-  private val HIVE_DOUBLE_SQL_TYPE = "DOUBLE"
   private val HIVE_STRING_SQL_TYPE = "STRING"
 
   private def testData(dt: DataType)(spark: SparkSession) = {

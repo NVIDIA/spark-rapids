@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@ class RapidsShuffleIterator(
   case class BlockIdMapIndex(id: ShuffleBlockBatchId, mapIndex: Int)
 
   def start(): Unit = {
-    logInfo(s"Fetching ${blocksByAddress.size} blocks.")
+    logInfo(s"Fetching ${blocksByAddress.length} blocks.")
 
     // issue local fetches first
     val (local, remote) = blocksByAddress.partition(ba => ba._1.host == localHost)

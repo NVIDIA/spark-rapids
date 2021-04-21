@@ -106,7 +106,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     val numRows = 100000
     val numBatches = 3
 
-    RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransport, numRows, numBatches)
+    RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransport, numBatches)
 
     // initialize metadata fetch
     client.doFetch(shuffleRequests.map(_._1), mockHandler)

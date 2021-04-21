@@ -50,13 +50,13 @@ class AcceleratedColumnarToRowIterator(
 
   // for packMap the nth entry is the index of the original input column that we want at
   // the nth entry.
-  // TODO When we support DECIMAL32 we will need to add in a special case here
-  //  because defaultSize of DecimalType does not take that into account.
   private val packMap: Array[Int] = schema
-      .zipWithIndex
-      .sortWith(_._1.dataType.defaultSize > _._1.dataType.defaultSize)
-      .map(_._2)
-      .toArray
+    .zipWithIndex
+    .sortWith {
+      (x, y) =>
+        DecimalUtil.getDataTypeSize(x._1.dataType) > DecimalUtil.getDataTypeSize(y._1.dataType)
+    }.map(_._2)
+    .toArray
   // For unpackMap the nth entry is the index in the row that came back for the original
   private val unpackMap: Array[Int] = packMap
       .zipWithIndex
@@ -120,7 +120,7 @@ class AcceleratedColumnarToRowIterator(
 
   private[this] def loadNextBatch(): Unit = {
     closeCurrentBatch()
-    if (!pendingCvs.isEmpty) {
+    if (pendingCvs.nonEmpty) {
       setCurrentBatch(pendingCvs.dequeue())
     } else {
       while (batches.hasNext) {

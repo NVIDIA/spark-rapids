@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,12 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer}
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class GpuDeviceManagerSuite extends FunSuite with Arm {
 
   test("RMM pool limit") {
-    SparkSession.getActiveSession.foreach(_.close())
-    GpuDeviceManager.shutdown()
+    TrampolineUtil.cleanupAnyExistingSession()
     val totalGpuSize = Cuda.memGetInfo().total
     val initPoolFraction = 0.1
     val maxPoolFraction = 0.2
@@ -52,13 +51,12 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
         }
       }
     } finally {
-      GpuDeviceManager.shutdown()
+      TrampolineUtil.cleanupAnyExistingSession()
     }
   }
 
   test("RMM reserve larger than max") {
-    SparkSession.getActiveSession.foreach(_.close())
-    GpuDeviceManager.shutdown()
+    TrampolineUtil.cleanupAnyExistingSession()
     val rapidsConf = new RapidsConf(Map(RapidsConf.RMM_ALLOC_RESERVE.key -> "200g"))
     assertThrows[IllegalArgumentException] {
       GpuDeviceManager.initializeMemory(None, Some(rapidsConf))
@@ -66,8 +64,7 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
   }
 
   test("RMM init equals max") {
-    SparkSession.getActiveSession.foreach(_.close())
-    GpuDeviceManager.shutdown()
+    TrampolineUtil.cleanupAnyExistingSession()
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.RMM_ALLOC_RESERVE.key -> "0",
       RapidsConf.RMM_ALLOC_FRACTION.key -> "0.3",

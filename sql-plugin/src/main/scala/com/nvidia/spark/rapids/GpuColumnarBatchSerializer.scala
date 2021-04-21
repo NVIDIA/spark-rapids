@@ -145,7 +145,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends Se
         new Iterator[(Int, ColumnarBatch)] with Arm {
           var toBeReturned: Option[ColumnarBatch] = None
 
-          TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
+          TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
             toBeReturned.foreach(_.close())
             toBeReturned = None
             dIn.close()

@@ -63,7 +63,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
 
@@ -229,6 +228,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
+  test("cast decimal to string") {
+    val sqlCtx = SparkSession.getActiveSession.get.sqlContext
+    sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
+
+    Seq(10, 15, 18).foreach { precision =>
+      Seq(-precision, -5, 0, 5, precision).foreach { scale =>
+        testCastToString(DataTypes.createDecimalType(precision, scale),
+          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+      }
+    }
+  }
+
   private def testCastToString[T](
       dataType: DataType,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
@@ -362,6 +374,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(TimestampType))
   }
 
+  testSparkResultsAreEqual("Test cast from strings to int", doublesAsStrings,
+    conf = sparkConf) {
+    frame => frame.select(
+      col("c0").cast(LongType),
+      col("c0").cast(IntegerType),
+      col("c0").cast(ShortType),
+      col("c0").cast(ByteType))
+  }
+
   testSparkResultsAreEqual("Test cast from strings to doubles", doublesAsStrings,
     conf = sparkConf, maxFloatDiff = 0.0001) {
     frame => frame.select(
@@ -473,6 +494,17 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 2),
       scale = 2,
+      ansiEnabled = true,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 2),
+      precision = 9, scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+
+    testCastToDecimal(DataTypes.createDecimalType(8, 0),
+      scale = 0,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 2),
+      precision = 18, scale = 2,
       customRandGenerator = Some(new scala.util.Random(1234L)))
 
     // fromScale > toScale
@@ -481,20 +513,42 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 10),
       scale = 2,
+      ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
-    testCastToDecimal(DataTypes.createDecimalType(18, 18),
-      scale = 15,
+    testCastToDecimal(DataTypes.createDecimalType(18, 10),
+      precision = 9, scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 4),
+      precision = 18, scale = 15,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 1),
+      scale = -1,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 7),
+      precision = 5, scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 7),
+      precision = 18, scale = 5,
       customRandGenerator = Some(new scala.util.Random(1234L)))
 
     // fromScale < toScale
     testCastToDecimal(DataTypes.createDecimalType(18, 0),
       scale = 3,
       customRandGenerator = Some(new scala.util.Random(1234L)))
-    testCastToDecimal(DataTypes.createDecimalType(18, 5),
-      scale = 10,
+    testCastToDecimal(DataTypes.createDecimalType(9, 5),
+      precision = 18, scale = 10,
       customRandGenerator = Some(new scala.util.Random(1234L)))
-    testCastToDecimal(DataTypes.createDecimalType(18, 10),
-      scale = 17,
+    testCastToDecimal(DataTypes.createDecimalType(18, 3),
+      precision = 9, scale = 5,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 0),
+      precision = 8, scale = 3,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 5),
+      precision = 9, scale = 3,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 5),
+      precision = 18, scale = 7,
       customRandGenerator = Some(new scala.util.Random(1234L)))
   }
 

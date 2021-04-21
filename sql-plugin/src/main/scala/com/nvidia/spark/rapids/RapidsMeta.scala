@@ -21,7 +21,7 @@ import java.time.ZoneId
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
@@ -112,6 +112,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def convertToCpu(): BASE = wrapped
 
   private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
+  private var mustBeReplacedReasons: Option[mutable.Set[String]] = None
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
   protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
@@ -124,7 +125,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * is reached that is already on CPU.
    */
   final def recursiveCostPreventsRunningOnGpu(): Unit = {
-    if (canThisBeReplaced) {
+    if (canThisBeReplaced && !mustThisBeReplaced) {
       costPreventsRunningOnGpu()
       childDataWriteCmds.foreach(_.recursiveCostPreventsRunningOnGpu())
     }
@@ -170,6 +171,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     }
   }
 
+  final def mustBeReplaced(because: String): Unit = {
+    mustBeReplacedReasons.get.add(because)
+  }
+
   /**
    * Call this if there is a condition found that the entire plan is not allowed
    * to run on the GPU.
@@ -190,6 +195,12 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * Returns true iff this could be replaced.
    */
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
+
+  /**
+   * Returns true iff this must be replaced because its children have already been
+   * replaced and this needs to also be replaced for compatibility.
+   */
+  final def mustThisBeReplaced: Boolean = mustBeReplacedReasons.exists(_.nonEmpty)
 
   /**
    * Returns the list of reasons the entire plan can't be replaced. An empty
@@ -229,6 +240,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   def initReasons(): Unit = {
     cannotBeReplacedReasons = Some(mutable.Set[String]())
+    mustBeReplacedReasons = Some(mutable.Set[String]())
     shouldBeRemovedReasons = Some(mutable.Set[String]())
     cannotReplaceAnyOfPlanReasons = Some(mutable.Set[String]())
   }
@@ -396,6 +408,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override final def tagSelfForGpu(): Unit = {
+    rule.getChecks.foreach(_.tag(this))
     if (!canExprTreeBeReplaced) {
       willNotWorkOnGpu("not all expressions can be replaced")
     }
@@ -518,7 +531,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     childPlans.foreach(_.tagForExplain())
   }
 
-  override val childPlans: Seq[SparkPlanMeta[_]] =
+  override val childPlans: Seq[SparkPlanMeta[SparkPlan]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
   override val childExprs: Seq[BaseExprMeta[_]] =
     plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -551,9 +564,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      childPlans.filter(_.canThisBeReplaced).isEmpty &&
+      !childPlans.exists(_.canThisBeReplaced) &&
         (plan.conf.adaptiveExecutionEnabled ||
-        parent.filter(_.canThisBeReplaced).isEmpty)) {
+        !parent.exists(_.canThisBeReplaced))) {
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
     }
   }
@@ -623,7 +636,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       } else if (childPlans.size > 1) {
         throw new IllegalStateException("can't remove when plan has more than 1 child")
       }
-      childPlans(0).convertIfNeeded()
+      childPlans.head.convertIfNeeded()
     } else {
       if (canThisBeReplaced) {
         convertToGpu()
@@ -789,7 +802,7 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu())
+    convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
 }
@@ -805,9 +818,25 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu())
+    convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
+}
+
+/**
+ * Base class for metadata around `ImperativeAggregate`.
+ */
+abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends ExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override final def convertToGpu(): GpuExpression =
+    convertToGpu(childExprs.map(_.convertToGpu()))
+
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }
 
 /**
@@ -820,8 +849,10 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu())
+  override final def convertToGpu(): GpuExpression = {
+    val Seq(lhs, rhs) = childExprs.map(_.convertToGpu())
+    convertToGpu(lhs, rhs)
+  }
 
   def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression
 }
@@ -836,9 +867,10 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu(),
-                 childExprs(2).convertToGpu())
+  override final def convertToGpu(): GpuExpression = {
+    val Seq(child0, child1, child2) = childExprs.map(_.convertToGpu())
+    convertToGpu(child0, child1, child2)
+  }
 
   def convertToGpu(val0: Expression, val1: Expression,
                    val2: Expression): GpuExpression
@@ -852,12 +884,8 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression = {
-    val trimParam = if (childExprs.size > 1) {
-      Some(childExprs(1).convertToGpu())
-    } else {
-      None
-    }
-    convertToGpu(childExprs(0).convertToGpu(), trimParam)
+    val gpuCol :: gpuTrimParam = childExprs.map(_.convertToGpu())
+    convertToGpu(gpuCol, gpuTrimParam.headOption)
   }
 
   def convertToGpu(column: Expression, target: Option[Expression] = None): GpuExpression

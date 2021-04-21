@@ -81,7 +81,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       sessionState.catalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
 
       result match {
-        case fs: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&
+        case _: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&
           sparkSession.sqlContext.conf.manageFilesourcePartitions =>
           // Need to recover partitions into the metastore so our saved data is visible.
           sessionState.executePlan(

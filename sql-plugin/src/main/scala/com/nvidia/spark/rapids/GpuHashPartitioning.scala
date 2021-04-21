@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayBuffer
+import ai.rapids.cudf.{DType, NvtxColor, NvtxRange}
 
-import ai.rapids.cudf.{ColumnVector, DType, NvtxColor, NvtxRange, OrderByArg, Table}
-
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.rapids.GpuMurmur3Hash
@@ -47,60 +46,40 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    //  We are doing this here because the cudf partition command is at this level
-    val numRows = batch.numRows
-    withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
-      val sortedTable = withResource(batch) { batch =>
-        val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
-          withResource(GpuMurmur3Hash.compute(batch, expressions)) { hash =>
-            withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
-              hash.pmod(partsLit, DType.INT32)
-            }
-          }
-        }
-        withResource(new NvtxRange("sort by part", NvtxColor.DARK_GREEN)) { _ =>
-          withResource(parts) { parts =>
-            val allColumns = new ArrayBuffer[ColumnVector](batch.numCols() + 1)
-            allColumns += parts
-            allColumns ++= GpuColumnVector.extractBases(batch)
-            withResource(new Table(allColumns: _*)) { fullTable =>
-              fullTable.orderBy(OrderByArg.asc(0))
-            }
+  def partitionInternalAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
+    val types = GpuColumnVector.extractTypes(batch)
+    val partedTable = withResource(batch) { batch =>
+      val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
+        withResource(GpuMurmur3Hash.compute(batch, expressions)) { hash =>
+          withResource(GpuScalar.from(numPartitions, IntegerType)) { partsLit =>
+            hash.pmod(partsLit, DType.INT32)
           }
         }
       }
-      val (partitionIndexes, partitionColumns) = withResource(sortedTable) { sortedTable =>
-        val cutoffs = withResource(new Table(sortedTable.getColumn(0))) { justPartitions =>
-          val partsTable = withResource(GpuScalar.from(0, IntegerType)) { zeroLit =>
-            withResource(ColumnVector.sequence(zeroLit, numPartitions)) { partsColumn =>
-              new Table(partsColumn)
-            }
-          }
-          withResource(partsTable) { partsTable =>
-            justPartitions.upperBound(Array(false), partsTable, Array(false))
-          }
+      withResource(parts) { parts =>
+        withResource(GpuColumnVector.from(batch)) { table =>
+          table.partition(parts, numPartitions)
         }
-        val partitionIndexes = withResource(cutoffs) { cutoffs =>
-          val buffer = new ArrayBuffer[Int](numPartitions)
-          // The first index is always 0
-          buffer += 0
-          withResource(cutoffs.copyToHost()) { hostCutoffs =>
-            (0 until numPartitions).foreach { i =>
-              buffer += hostCutoffs.getInt(i)
-            }
-          }
-          buffer.toArray
-        }
-        val dataTypes = GpuColumnVector.extractTypes(batch)
-        closeOnExcept(new ArrayBuffer[GpuColumnVector]()) { partitionColumns =>
-          (1 until sortedTable.getNumberOfColumns).foreach { index =>
-            partitionColumns +=
-                GpuColumnVector.from(sortedTable.getColumn(index).incRefCount(),
-                  dataTypes(index - 1))
-          }
+      }
+    }
+    withResource(partedTable) { partedTable =>
+      val parts = partedTable.getPartitions
+      val tp = partedTable.getTable
+      val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(types).map {
+        case (index, sparkType) =>
+          GpuColumnVector.from(tp.getColumn(index).incRefCount(), sparkType)
+      }
+      (parts, columns.toArray)
+    }
+  }
 
-          (partitionIndexes, partitionColumns.toArray)
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    //  We are doing this here because the cudf partition command is at this level
+    withResource(new NvtxRange("Hash partition", NvtxColor.PURPLE)) { _ =>
+      val numRows = batch.numRows
+      val (partitionIndexes, partitionColumns) = {
+        withResource(new NvtxRange("partition", NvtxColor.BLUE)) { _ =>
+          partitionInternalAndClose(batch)
         }
       }
       val ret = withResource(partitionColumns) { partitionColumns =>

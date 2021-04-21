@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -122,11 +122,10 @@ class GpuWindowExpressionMeta(
   /**
    * Convert what this wraps to a GPU enabled version.
    */
-  override def convertToGpu(): GpuExpression =
-    GpuWindowExpression(
-      childExprs.head.convertToGpu(),
-      childExprs(1).convertToGpu().asInstanceOf[GpuWindowSpecDefinition]
-    )
+  override def convertToGpu(): GpuExpression = {
+    val Seq(left, right) = childExprs.map(_.convertToGpu())
+    GpuWindowExpression(left, right.asInstanceOf[GpuWindowSpecDefinition])
+  }
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
@@ -185,8 +184,12 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     val totalExtraColumns = numGroupingColumns
 
     val aggColumn = withResource(GpuProjectExec.project(cb, boundRowProjectList)) { projected =>
-      withResource(GpuColumnVector.from(projected)) { table =>
-        val bases = GpuColumnVector.extractBases(projected).zipWithIndex
+
+      // in case boundRowProjectList is empty
+      val finalCb = if (boundRowProjectList.nonEmpty) projected else cb
+
+      withResource(GpuColumnVector.from(finalCb)) { table =>
+        val bases = GpuColumnVector.extractBases(finalCb).zipWithIndex
             .slice(totalExtraColumns, boundRowProjectList.length)
 
         val agg = windowFunc.windowAggregation(bases)
@@ -552,9 +555,10 @@ class GpuSpecifiedWindowFrameMeta(
     }
   }
 
-  override def convertToGpu(): GpuExpression =
-    GpuSpecifiedWindowFrame(windowFrame.frameType, childExprs.head.convertToGpu(),
-      childExprs(1).convertToGpu())
+  override def convertToGpu(): GpuExpression = {
+    val Seq(left, right) = childExprs.map(_.convertToGpu())
+    GpuSpecifiedWindowFrame(windowFrame.frameType, left, right)
+  }
 }
 
 trait GpuWindowFrame extends GpuExpression with GpuUnevaluable {

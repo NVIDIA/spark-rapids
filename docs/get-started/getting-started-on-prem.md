@@ -50,21 +50,20 @@ Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the v
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
 CUDA and will not run on other versions. The jars use a maven classifier to keep them separate.
 
-- CUDA 10.1 => classifier cuda10-1
-- CUDA 10.2 => classifier cuda10-2
-- CUDA 11.0 => classifier cuda11
+- CUDA 11.0/11.1/11.2 => classifier cuda11
 
-For example, here is a sample version of the jars and cudf with CUDA 10.1 support:
-- cudf-0.19-SNAPSHOT-cuda10-1.jar
-- rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar
+For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
+- cudf-0.20-SNAPSHOT-cuda11.jar
+- rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar
+jar that your version of the accelerator depends on.
 
 
 For simplicity export the location to these jars. This example assumes the sample jars above have
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.19-SNAPSHOT-cuda10-1.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-0.20-SNAPSHOT-cuda11.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -296,50 +295,7 @@ $SPARK_HOME/bin/spark-shell \
 ```  
 
 ## Running on Kubernetes
-Kubernetes requires a Docker image to run Spark.  Generally everything needed is in the Docker
-image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script.  See this
-[Dockerfile.cuda](Dockerfile.cuda) example.
-
-Alternatively the jars and discovery script would need to be on a drive that is mounted when your
-Spark application runs.  Here we will assume you have created a Docker image that contains the
-RAPIDS jars, cudf jars and discovery script.
-
-This assumes you have Kubernetes already installed and setup.  These instructions do not cover how
-to setup a Kubernetes cluster.
-
-- Install [Spark](#install-spark), the
-  [RAPIDS Accelerator for Spark jars](#download-the-rapids-jars), and the
-  [GPU discovery script](#install-the-gpu-discovery-script) on the node from which you are
-  going to build your Docker image.  Note that you can download these into a local directory and
-  untar the Spark `.tar.gz` rather than installing into a location on the machine.
-- Include the RAPIDS Accelerator for Spark jars in the Spark /jars directory
-- Download the sample
-  [Dockerfile.cuda](Dockerfile.cuda) or create
-  your own.
-- Update the Dockerfile with the filenames for Spark and the RAPIDS Accelerator for Spark jars
-  that you downloaded.  Include anything else application-specific that you need.
-- Create your Docker image.
-  - `docker build . -f Dockerfile.cuda -t ubuntu18cuda10-1-sparkrapidsplugin`
-  - Deploy your Dockerfile to the necessary repository to run on your K8S cluster.
-- Use the following configs when you run. Change the executor and task amounts as necessary:
-```shell 
-$SPARK_HOME/bin/spark-shell \
-       --master k8s://https://<k8s-apiserver-host>:<k8s-apiserver-port> \
-       --conf spark.rapids.sql.concurrentGpuTasks=1 \
-       --driver-memory 2G \
-       --conf spark.executor.memory=4G \
-       --conf spark.executor.cores=4 \
-       --conf spark.task.cpus=1 \
-       --conf spark.task.resource.gpu.amount=0.25 \
-       --conf spark.rapids.memory.pinnedPool.size=2G \
-       --conf spark.locality.wait=0s \
-       --conf spark.sql.files.maxPartitionBytes=512m \
-       --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-       --conf spark.executor.resource.gpu.amount=1 \
-       --conf spark.executor.resource.gpu.discoveryScript=/opt/sparkRapidsPlugin/getGpusResources.sh \
-       --conf spark.executor.resource.gpu.vendor=nvidia.com \
-       --conf spark.kubernetes.container.image=$IMAGE_NAME
-```  
+Please refer to [Getting Started with RAPIDS and Kubernetes](./getting-started-kubernetes.md).
 
 ## RAPIDS Accelerator Configuration and Tuning
 Most of what you need you can get from [tuning guide](../tuning-guide.md).

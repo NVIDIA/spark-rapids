@@ -76,9 +76,9 @@ object ConfHelper {
     v.map(stringConverter).mkString(",")
   }
 
-  def byteFromString(str: String, unit: ByteUnit, key: String): Long = {
+  def byteFromString(str: String, unit: ByteUnit): Long = {
     val (input, multiplier) =
-      if (str.length() > 0 && str.charAt(0) == '-') {
+      if (str.nonEmpty && str.head == '-') {
         (str.substring(1), -1)
       } else {
         (str, 1)
@@ -265,7 +265,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   }
 
   def bytesConf(unit: ByteUnit): TypedConfBuilder[Long] = {
-    new TypedConfBuilder[Long](this, byteFromString(_, unit, key))
+    new TypedConfBuilder[Long](this, byteFromString(_, unit))
   }
 
   def integerConf: TypedConfBuilder[Integer] = {
@@ -351,6 +351,15 @@ object RapidsConf {
         "before spilling to local disk")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1))
+
+  val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
+    .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
+        "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
+        "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
+        "memory usage")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
 
   val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
     .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
@@ -485,9 +494,13 @@ object RapidsConf {
     .createWithDefault(false)
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
-      .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, " +
-          "setting this to true will force all parsing onto GPU even for formats that can " +
-          "result in incorrect results when parsing invalid inputs.")
+    .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
+         "formats are fully supported on the GPU and some are unsupported and will fall back to " + 
+         "the CPU.  Some formats behave differently on the GPU than the CPU.  Spark on the CPU " +
+         "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
+         "the GPU will parse the date with invalid trailing characters. More detail can be found " +
+         "at [parsing strings as dates or timestamps]" + 
+         "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
 
@@ -590,12 +603,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
-    .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
-      "format for Spark includes a timezone at the end. Anything except the UTC timezone is not " +
-      "supported. Timestamps after 2038 and before 1902 are also not supported.")
-    .booleanConf
-    .createWithDefault(false)
+  val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
+      .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
+        "does NOT produce exact same string as spark produces, but producing strings which are " +
+        "semantically equal. For instance, given input BigDecimal(123, -2), the GPU produces " +
+        "\"12300\", which spark produces \"1.23E+4\".")
+      .booleanConf
+      .createWithDefault(false)
 
   // FILE FORMATS
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
@@ -684,10 +698,9 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
-    .doc("When set to false disables orc output acceleration. This has been disabled by " +
-        "default because of https://github.com/NVIDIA/spark-rapids/issues/1550")
+    .doc("When set to false disables orc output acceleration")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val ENABLE_CSV = conf("spark.rapids.sql.format.csv.enabled")
     .doc("When set to false disables all csv input and output acceleration. " +
@@ -699,6 +712,60 @@ object RapidsConf {
     .doc("When set to false disables csv input acceleration")
     .booleanConf
     .createWithDefault(true)
+
+  // TODO should we change this config?
+  val ENABLE_CSV_TIMESTAMPS = conf("spark.rapids.sql.csvTimestamps.enabled")
+      .doc("When set to true, enables the CSV parser to read timestamps. The default output " +
+          "format for Spark includes a timezone at the end. Anything except the UTC timezone is " +
+          "not supported. Timestamps after 2038 and before 1902 are also not supported.")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DATES = conf("spark.rapids.sql.csv.read.date.enabled")
+      .doc("Parsing invalid CSV dates produces different results from Spark")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_BOOLS = conf("spark.rapids.sql.csv.read.bool.enabled")
+      .doc("Parsing an invalid CSV boolean value produces true instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_BYTES = conf("spark.rapids.sql.csv.read.byte.enabled")
+      .doc("Parsing CSV bytes is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_SHORTS = conf("spark.rapids.sql.csv.read.short.enabled")
+      .doc("Parsing CSV shorts is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_INTEGERS = conf("spark.rapids.sql.csv.read.integer.enabled")
+      .doc("Parsing CSV integers is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_LONGS = conf("spark.rapids.sql.csv.read.long.enabled")
+      .doc("Parsing CSV longs is much more lenient and will return 0 for some " +
+          "malformed values instead of null")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_FLOATS = conf("spark.rapids.sql.csv.read.float.enabled")
+      .doc("Parsing CSV floats has some issues at the min and max values for floating" +
+          "point numbers and can be more lenient on parsing inf and -inf values")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_READ_CSV_DOUBLES = conf("spark.rapids.sql.csv.read.double.enabled")
+      .doc("Parsing CSV double has some issues at the min and max values for floating" +
+          "point numbers and can be more lenient on parsing inf and -inf values")
+      .booleanConf
+      .createWithDefault(false)
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
@@ -944,14 +1011,14 @@ object RapidsConf {
       .internal()
       .doc("Default cost of transitioning from GPU to CPU")
       .doubleConf
-      .createWithDefault(0.15)
+      .createWithDefault(0.1)
 
   val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
     "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
       .internal()
       .doc("Default cost of transitioning from CPU to GPU")
       .doubleConf
-      .createWithDefault(0.15)
+      .createWithDefault(0.1)
 
   val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
@@ -997,7 +1064,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.5.0-SNAPSHOT.jar,cudf-0.19-SNAPSHOT-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,cudf-0.20-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1155,6 +1222,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
+  lazy val isUnspillEnabled: Boolean = get(UNSPILL)
+
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
@@ -1191,15 +1260,31 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
 
-  lazy val isCastStringToIntegerEnabled: Boolean = get(ENABLE_CAST_STRING_TO_INTEGER)
-
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
   lazy val isCastStringToDecimalEnabled: Boolean = get(ENABLE_CAST_STRING_TO_DECIMAL)
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
-  lazy val isCsvTimestampEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
+  lazy val isCsvTimestampReadEnabled: Boolean = get(ENABLE_CSV_TIMESTAMPS)
+
+  lazy val isCsvDateReadEnabled: Boolean = get(ENABLE_READ_CSV_DATES)
+
+  lazy val isCsvBoolReadEnabled: Boolean = get(ENABLE_READ_CSV_BOOLS)
+
+  lazy val isCsvByteReadEnabled: Boolean = get(ENABLE_READ_CSV_BYTES)
+
+  lazy val isCsvShortReadEnabled: Boolean = get(ENABLE_READ_CSV_SHORTS)
+
+  lazy val isCsvIntReadEnabled: Boolean = get(ENABLE_READ_CSV_INTEGERS)
+
+  lazy val isCsvLongReadEnabled: Boolean = get(ENABLE_READ_CSV_LONGS)
+
+  lazy val isCsvFloatReadEnabled: Boolean = get(ENABLE_READ_CSV_FLOATS)
+
+  lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
+
+  lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 

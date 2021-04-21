@@ -1,6 +1,6 @@
 
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,9 +77,5 @@ public final class RapidsHostColumnVector extends RapidsHostColumnVectorCore {
 
   public final ai.rapids.cudf.HostColumnVector getBase() {
     return cudfCv;
-  }
-
-  public GpuColumnVector copyToDevice() {
-    return new GpuColumnVector(type, cudfCv.copyToDevice());
   }
 }

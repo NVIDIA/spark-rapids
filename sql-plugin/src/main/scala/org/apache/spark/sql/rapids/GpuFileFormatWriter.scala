@@ -118,16 +118,16 @@ object GpuFileFormatWriter extends Logging {
     val dataColumns = outputSpec.outputColumns.filterNot(partitionSet.contains)
 
     var needConvert = false
-    val projectList: Seq[Expression] = plan.output.map {
+    val projectList: List[Expression] = plan.output.map {
       case p if partitionSet.contains(p) && p.dataType == StringType && p.nullable =>
         needConvert = true
         GpuAlias(GpuEmpty2Null(p), p.name)()
       case other => other
-    }
+    }.toList // Force list to avoid recursive Java serialization of lazy list Seq implementation
+
     val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
 
-    val bucketIdExpression = bucketSpec.map { spec =>
-      val bucketColumns = spec.bucketColumnNames.map(c => dataColumns.find(_.name == c).get)
+    val bucketIdExpression = bucketSpec.map { _ =>
       // Use `HashPartitioning.partitionIdExpression` as our bucket id expression, so that we can
       // guarantee the data distribution is same between shuffle and bucketed data source, which
       // enables us to only shuffle one side when join a bucketed table and a normal one.

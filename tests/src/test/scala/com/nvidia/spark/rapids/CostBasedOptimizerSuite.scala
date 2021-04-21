@@ -45,6 +45,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.15")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.15")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
@@ -54,9 +56,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-        sparkPlan: SparkPlan,
-        costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
       optimizations += costOptimizations
     })
 
@@ -100,6 +102,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.15")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.15")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
@@ -109,9 +113,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -155,6 +159,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.15")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.15")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
@@ -163,9 +169,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -194,6 +200,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.15")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.15")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
@@ -202,9 +210,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -240,9 +248,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -273,9 +281,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
     var optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
+      (_: SparkPlanMeta[SparkPlan],
+       _: SparkPlan,
+       costOptimizations: Seq[Optimization]) => {
         optimizations += costOptimizations
       })
 
@@ -353,6 +361,35 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     }, conf)
   }
 
+
+  test("keep CustomShuffleReaderExec on GPU") {
+
+    // if we force a GPU CustomShuffleReaderExec back onto CPU due to cost then the query will
+    // fail because the shuffle already happened on GPU and we end up with an invalid plan
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1")
+        .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_EXPLAIN.key, "ALL")
+        .set(RapidsConf.EXPLAIN.key, "ALL")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0")
+        .set("spark.rapids.sql.optimizer.exec.CustomShuffleReaderExec", "99999999")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan")
+
+    withGpuSparkSession(spark => {
+      val df1: DataFrame = createQuery(spark).alias("l")
+      val df2: DataFrame = createQuery(spark).alias("r")
+      val df = df1.join(df2,
+        col("l.more_strings_1").equalTo(col("r.more_strings_2")))
+      df.collect()
+
+      df
+    }, conf)
+  }
+
   private def createQuery(spark: SparkSession) = {
     val df1 = nullableStringsDf(spark)
         .repartition(2)
@@ -372,12 +409,4 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     df
   }
 
-  private def addListener(optimizations: ListBuffer[Optimization]): Unit = {
-    GpuOverrides.addListener(
-      (plan: SparkPlanMeta[SparkPlan],
-          sparkPlan: SparkPlan,
-          costOptimizations: Seq[Optimization]) => {
-        optimizations.appendAll(costOptimizations)
-      })
-  }
 }

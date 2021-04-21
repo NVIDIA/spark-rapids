@@ -22,6 +22,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.types.{ArrayType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuHashJoin {
@@ -30,13 +31,21 @@ object GpuHashJoin {
       joinType: JoinType,
       leftKeys: Seq[Expression],
       rightKeys: Seq[Expression],
-      condition: Option[Expression]): Unit = joinType match {
-    case _: InnerLike =>
-    case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>
-      if (condition.isDefined) {
-        meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-      }
-    case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
+      condition: Option[Expression]): Unit = {
+    val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
+    if (keyDataTypes.exists(dtype =>
+      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
+        || dtype.isInstanceOf[MapType])) {
+      meta.willNotWorkOnGpu("Nested types in join keys are not supported")
+    }
+    joinType match {
+      case _: InnerLike =>
+      case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+        if (condition.isDefined) {
+          meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+        }
+      case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
+    }
   }
 
   def incRefCount(cb: ColumnarBatch): ColumnarBatch = {

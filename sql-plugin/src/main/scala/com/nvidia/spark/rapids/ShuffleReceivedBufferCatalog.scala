@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,8 +46,7 @@ case class ShuffleReceivedBufferId(
 
 /** Catalog for lookup of shuffle buffers by block ID */
 class ShuffleReceivedBufferCatalog(
-    catalog: RapidsBufferCatalog,
-    diskBlockManager: RapidsDiskBlockManager) extends Logging {
+    catalog: RapidsBufferCatalog) extends Logging {
   /** Mapping of table ID to shuffle buffer ID */
   private[this] val tableMap = new ConcurrentHashMap[Int, ShuffleReceivedBufferId]
 

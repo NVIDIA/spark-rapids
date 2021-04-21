@@ -27,21 +27,24 @@ def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
   sshkey = ''
-  cluster_name = 'CI-GPU-databricks-0.5.0-SNAPSHOT'
+  cluster_name = 'CI-GPU-databricks-0.6.0-SNAPSHOT'
   idletime = 240
   runtime = '7.0.x-gpu-ml-scala2.12'
   num_workers = 1
   worker_type = 'g4dn.xlarge'
   driver_type = 'g4dn.xlarge'
   cloud_provider = 'aws'
+  # comma separated init scripts, e.g. dbfs:/foo,dbfs:/bar,...
+  init_scripts = ''
+
 
   try:
-      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:k:n:i:r:o:d:e:s:',
+      opts, args = getopt.getopt(sys.argv[1:], 'hw:t:k:n:i:r:o:d:e:s:f:',
                                  ['workspace=', 'token=', 'sshkey=', 'clustername=', 'idletime=',
-                                     'runtime=', 'workertype=', 'drivertype=', 'numworkers=', 'cloudprovider='])
+                                     'runtime=', 'workertype=', 'drivertype=', 'numworkers=', 'cloudprovider=', 'initscripts='])
   except getopt.GetoptError:
       print(
-          'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider>')
+          'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider> -f <initscripts>')
       sys.exit(2)
 
   for opt, arg in opts:
@@ -69,6 +72,8 @@ def main():
           num_workers = arg
       elif opt in ('-s', '--cloudprovider'):
           cloud_provider = arg
+      elif opt in ('-f', '--initscripts'):
+          init_scripts = arg
 
   print('-w is ' + workspace, file=sys.stderr)
   print('-k is ' + sshkey, file=sys.stderr)
@@ -79,6 +84,7 @@ def main():
   print('-d is ' + driver_type, file=sys.stderr)
   print('-e is ' + str(num_workers), file=sys.stderr)
   print('-s is ' + cloud_provider, file=sys.stderr)
+  print('-f is ' + init_scripts, file=sys.stderr)
 
   if not sshkey:
       print("You must specify an sshkey!", file=sys.stderr)
@@ -89,7 +95,7 @@ def main():
       sys.exit(2)
 
   templ = ClusterUtils.generate_create_templ(sshkey, cluster_name, runtime, idletime,
-          num_workers, driver_type, worker_type, cloud_provider, printLoc=sys.stderr)
+          num_workers, driver_type, worker_type, cloud_provider, init_scripts, printLoc=sys.stderr)
   clusterid = ClusterUtils.create_cluster(workspace, templ, token, printLoc=sys.stderr)
   ClusterUtils.wait_for_cluster_start(workspace, clusterid, token, printLoc=sys.stderr)
 
