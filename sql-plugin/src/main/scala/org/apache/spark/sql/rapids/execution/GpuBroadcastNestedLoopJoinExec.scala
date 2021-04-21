@@ -56,9 +56,10 @@ class GpuBroadcastNestedLoopJoinMeta(
     }
 
     val gpuBuildSide = ShimLoader.getSparkShims.getBuildSide(join)
+    val Seq(leftPlan, rightPlan) = childPlans
     val buildSide = gpuBuildSide match {
-      case GpuBuildLeft => childPlans.head
-      case GpuBuildRight => childPlans(1)
+      case GpuBuildLeft => leftPlan
+      case GpuBuildRight => rightPlan
     }
 
     if (!canBuildSideBeReplaced(buildSide)) {
@@ -72,8 +73,7 @@ class GpuBroadcastNestedLoopJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val left = childPlans.head.convertIfNeeded()
-    val right = childPlans(1).convertIfNeeded()
+    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     // The broadcast part of this must be a BroadcastExchangeExec
     val gpuBuildSide = ShimLoader.getSparkShims.getBuildSide(join)
     val buildSide = gpuBuildSide match {

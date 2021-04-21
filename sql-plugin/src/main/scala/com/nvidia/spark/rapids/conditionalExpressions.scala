@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -173,7 +173,7 @@ case class GpuCaseWhen(
 
   override def nullable: Boolean = {
     // Result is nullable if any of the branch is nullable, or if the else value is nullable
-    branches.exists(_._2.nullable) || elseValue.map(_.nullable).getOrElse(true)
+    branches.exists(_._2.nullable) || elseValue.forall(_.nullable)
   }
 
   override def checkInputDataTypes(): TypeCheckResult = {
