@@ -424,8 +424,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: GpuColumnarToRowExecParent => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case shuffleExchange: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted
-        || !shuffleExchange.outputPartitioning.isInstanceOf[RangePartitioning] => {
+      case _: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted => {
         // Ignored for now, we don't force it to the GPU if
         // children are not on the gpu
       }
