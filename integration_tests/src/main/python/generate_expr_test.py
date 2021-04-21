@@ -147,5 +147,6 @@ def test_posexplode_nested_outer_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, *data_gen).selectExpr(
-            'a', 'posexplode_outer(b) as (pos, c)').selectExpr('a', 'pos', 'posexplode_outer(c)'),
+            'a', 'posexplode_outer(b) as (pos, c)').selectExpr(
+            'a', 'pos', 'posexplode_outer(c)'),
         conf=conf_to_enforce_split_input)
