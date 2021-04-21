@@ -187,7 +187,6 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
 # ======= Test flat map group in Pandas =======
 @ignore_order
-@allow_non_gpu('FlatMapGroupsInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_group_apply_udf(data_gen):
     def pandas_add(data):
@@ -201,6 +200,20 @@ def test_group_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+def test_group_apply_udf_more_types(data_gen):
+    def group_size_udf(key, pdf):
+        return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, data_gen, 5)\
+            .groupBy('a')\
+            .applyInPandas(group_size_udf, schema="c long, d long, e long"),
+        conf=arrow_udf_conf)
+
+
+# ======= Test map in Pandas =======
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_map_apply_udf(data_gen):
     def pandas_filter(iterator):
