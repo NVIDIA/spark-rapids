@@ -331,8 +331,7 @@ def _assert_gpu_and_cpu_are_equal(func,
         global gpu_start
         gpu_start = time.time()
         global from_gpu
-        from_gpu = with_gpu_session(bring_back,
-                conf=conf)
+        from_gpu = with_gpu_session(bring_back, conf=conf)
         global gpu_end
         gpu_end = time.time()
 

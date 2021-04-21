@@ -160,3 +160,13 @@ def test_single_orderby_with_skew(data_gen):
                     .orderBy(f.col('a'))\
                     .selectExpr('a'),
             conf = allow_negative_scale_of_decimal_conf)
+
+# This is primarily to test the out of core sort with multiple batches. For this we set the data size to
+# be relatively large (1 MiB across all tasks) and the target size to be small (16 KiB). This means we
+# should see around 64 batches of data. So this is the most valid if there are less than 64 tasks
+# in the cluster, but it should still work even then.
+def test_large_orderby():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, long_gen, length=1024*128)\
+                    .orderBy(f.col('a')),
+            conf = {'spark.rapids.sql.batchSizeBytes': '16384'})
