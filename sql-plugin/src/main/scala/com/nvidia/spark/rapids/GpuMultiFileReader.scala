@@ -242,7 +242,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
     // this shouldn't happen but if somehow the batch is None and we still
     // have work left skip to the next file
-    if (!batch.isDefined && filesToRead > 0 && !isDone) {
+    if (batch.isEmpty && filesToRead > 0 && !isDone) {
       next()
     }
 
@@ -263,7 +263,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   }
 
   private def addNextTaskIfNeeded(): Unit = {
-    if (tasksToRun.size > 0 && !isDone) {
+    if (tasksToRun.nonEmpty && !isDone) {
       val runner = tasksToRun.dequeue()
       tasks.add(getThreadPool(numThreads).submit(runner))
     }
@@ -274,7 +274,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     // in cases close got called early for like limit() calls
     isDone = true
     currentFileHostBuffers.foreach { current =>
-      current.memBuffersAndSizes.foreach { case (buf, size) =>
+      current.memBuffersAndSizes.foreach { case (buf, _) =>
         if (buf != null) {
           buf.close()
         }
@@ -285,7 +285,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     batch = None
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
-        task.get.memBuffersAndSizes.foreach { case (buf, size) =>
+        task.get.memBuffersAndSizes.foreach { case (buf, _) =>
           if (buf != null) {
             buf.close()
           }

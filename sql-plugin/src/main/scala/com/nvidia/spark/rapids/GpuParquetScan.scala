@@ -880,7 +880,7 @@ object ParquetMultiFileThreadPoolFactory {
   private def initThreadPool(
       threadTag: String,
       numThreads: Int): ThreadPoolExecutor = synchronized {
-    if (!threadPool.isDefined) {
+    if (threadPool.isEmpty) {
       threadPool = Some(MultiFileThreadPoolUtil.createThreadPool(threadTag, numThreads))
     }
     threadPool.get
