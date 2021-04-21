@@ -2606,14 +2606,6 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-        override def tagPartForGpu() {
-          val numPartitions = rp.numPartitions
-          if (numPartitions > 1 && rp.ordering.exists(so => isStructType(so.dataType))) {
-            willNotWorkOnGpu("only single partition sort is supported for nested types, " +
-              s"actual partitions: $numPartitions")
-          }
-        }
-
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
@@ -2883,14 +2875,7 @@ object GpuOverrides {
       // The types below are allowed as inputs and outputs.
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all),
-      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
-        override def tagPlanForGpu() {
-          if (!conf.stableSort && sort.sortOrder.exists(so => isStructType(so.dataType))) {
-            willNotWorkOnGpu("it's disabled for nested types " +
-              s"unless ${RapidsConf.STABLE_SORT.key} is true")
-          }
-        }
-      }),
+      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),

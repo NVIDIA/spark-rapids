@@ -36,11 +36,11 @@ def test_single_orderby(data_gen, order):
 
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
-    pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+    pytest.param(200)
 ])
 @pytest.mark.parametrize('stable_sort', [
     pytest.param(True),
-    pytest.param(False, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+    pytest.param(False)
 ])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
@@ -64,7 +64,6 @@ def test_single_orderby(data_gen, order):
 def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            # TODO no interference with range partition once implemented
             conf = {
                 **allow_negative_scale_of_decimal_conf,
                 **{
