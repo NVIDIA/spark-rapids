@@ -2272,6 +2272,15 @@ object GpuOverrides {
         ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
+    expr[ElementAt](
+      "Returns element of array at given(1-based) index in value if column is array. " +
+        "Returns value for the given key in value if column is map.",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.commonCudfTypes, TypeSig.all,
+        ("left", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes) +
+          TypeSig.MAP.nested(TypeSig.STRING), TypeSig.all),
+        ("right", TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
+      (in, conf, p, r) => new GpuElementAtMeta(in, conf, p, r)),
     expr[CreateNamedStruct](
       "Creates a struct with the given field names and values",
       CreateNamedStructCheck,

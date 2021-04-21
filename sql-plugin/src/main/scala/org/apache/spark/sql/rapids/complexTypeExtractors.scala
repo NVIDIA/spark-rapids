@@ -19,11 +19,10 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
-import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
+import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
+import org.apache.spark.sql.catalyst.util.{TypeUtils, quoteIdentifier}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -184,6 +183,30 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def left: Expression = child
 
   override def right: Expression = key
+}
+
+class GpuElementAtMeta(
+    expr: ElementAt,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends BinaryExprMeta[ElementAt](expr, conf, parent, rule) {
+  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+
+  }
+}
+
+case class GpuElementAt(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = ???
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = ???
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = ???
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = ???
+
+  override def dataType: DataType = ???
 }
 
 /** Checks if the array (left) has the element (right)
