@@ -81,12 +81,10 @@ case class GpuDataSource(
    * Whether or not paths should be globbed before being used to access files.
    */
   def globPaths: Boolean = {
-    options.get(GpuDataSource.GLOB_PATHS_KEY)
-      .map(_ == "true")
-      .getOrElse(true)
+    options.get(GpuDataSource.GLOB_PATHS_KEY).forall(_ == "true")
   }
 
-  bucketSpec.map { bucket =>
+  bucketSpec.foreach { bucket =>
     SchemaUtils.checkColumnNameDuplication(
       bucket.bucketColumnNames, "in the bucket definition", equality)
     SchemaUtils.checkColumnNameDuplication(
