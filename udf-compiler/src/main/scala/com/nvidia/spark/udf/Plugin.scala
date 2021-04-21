@@ -56,7 +56,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
           exp
         } else {
           try {
-            if (exp.children != null && !exp.children.exists(x => x == null)) {
+            if (exp.children != null && !exp.children.contains(null)) {
               exp.withNewChildren(exp.children.map(c => {
                 if (c != null && c.isInstanceOf[Expression]) {
                   attemptToReplaceExpression(plan, c)

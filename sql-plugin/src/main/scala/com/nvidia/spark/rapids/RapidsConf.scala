@@ -78,7 +78,7 @@ object ConfHelper {
 
   def byteFromString(str: String, unit: ByteUnit): Long = {
     val (input, multiplier) =
-      if (str.length() > 0 && str.charAt(0) == '-') {
+      if (str.nonEmpty && str.head == '-') {
         (str.substring(1), -1)
       } else {
         (str, 1)
