@@ -163,7 +163,7 @@ Default value: `0`
 ## Columnar Batch Size
 Configuration key: [`spark.rapids.sql.batchSizeBytes`](configs.md#sql.batchSizeBytes)
 
-Default value: `2147483648`
+Default value: `2147483647`
 
 The RAPIDS Accelerator plugin processes data on the GPU in a columnar format.  Data is processed
 in a series of columnar batches, and during processing sometimes multiple batches are concatenated
@@ -176,11 +176,11 @@ partitions have been read, try setting this to a lower value.
 ### File Reader Batch Size
 Configuration key: [`spark.rapids.sql.reader.batchSizeRows`](configs.md#sql.reader.batchSizeRows)
 
-Default value: `2147483648`
+Default value: `2147483647`
 
 Configuration key: [`spark.rapids.sql.reader.batchSizeBytes`](configs.md#sql.reader.batchSizeBytes)
 
-Default value: `2147483648`
+Default value: `2147483647`
 
 When reading data from a file, this setting is used to control the maximum batch size separately
 from the main [columnar batch size](#columnar-batch-size) setting.  Some transcoding jobs (e.g.:
