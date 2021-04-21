@@ -58,6 +58,9 @@ private[python] object BatchGroupUtils extends Arm {
    * Doing this is because the Spark plan may contain an attribute twice; once in the
    * key and once in the value. For any such attribute we need to deduplicate.
    *
+   * Besides, this API supposes the grouping attributes are placed before the others in
+   * the output attributes of the plan.
+   *
    * For example, assuming there is a DataFrame 'df' with two columns 'a' and 'b'.
    *     +---+---+
    *     |  a|  b|
@@ -211,8 +214,9 @@ private[python] object BatchGroupUtils extends Arm {
 }
 
 /**
- * Runs a `groupby` on the input batch, then split it into separate batches by the grouping
- * expressions.
+ * Runs a `groupby` on the input batch where the rows should be presorted in the order of
+ * `Ascending & NullsFirst`, then split it into separate batches by the grouping expressions.
+ *
  * Since the rows in the batches are already sorted by Spark, a better performance is probably
  * achieved in the cudf `groupby`.
  *
@@ -242,7 +246,8 @@ private[python] object BatchGroupUtils extends Arm {
  * Besides the class does not handle the case of an empty input for simplicity of implementation.
  * Use the factory to construct a new instance.
  *
- * @param input An iterator of batches.
+ * @param input An iterator of batches where the rows are presorted in the order
+ *              of `Ascending & NullsFirst`.
  * @param inputAttributes The schema of the batch in the `input` iterator.
  * @param groupingIndices The set of column indices used to do grouping.
  */
