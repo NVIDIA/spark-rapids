@@ -191,8 +191,11 @@ class Spark311Shims extends Spark301Shims {
           }
         }
         override def convertToGpu(): GpuExpression = {
-          val Seq(child0, child1, child2) = childExprs.map(_.convertToGpu())
-          GpuStringReplace(child0, child1, child2)
+          // ignore the pos expression which must be a literal 1 after tagging check
+          require(childExprs.length == 4,
+            s"Unexpected child count for RegExpReplace: ${childExprs.length}")
+          val Seq(subject, regexp, rep) = childExprs.take(3).map(_.convertToGpu())
+          GpuStringReplace(subject, regexp, rep)
         }
       }),
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
