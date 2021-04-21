@@ -90,7 +90,6 @@ def test_explode_outer_nested_array_data(spark_tmp_path, data_gen):
             'a', 'explode_outer(b) as c').selectExpr('a', 'explode_outer(c)'),
         conf=conf_to_enforce_split_input)
 
-
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
