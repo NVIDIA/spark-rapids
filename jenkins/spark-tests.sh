@@ -96,10 +96,7 @@ spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR
 #only run cache tests with our serializer in nightly test for Spark version >= 3.1.1
 if [ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]; then
   SHIM_PACKAGE=$(echo ${SPARK_VER} | sed 's/\.//g' | sed 's/-SNAPSHOT//')
-  # cache tests fail with --master flag, this is being tracked in https://github.com/NVIDIA/spark-rapids/issues/2203
-  # remove --master flag from the BASE_SPARK_SUBMIT_ARGS
-  CACHE_SPARK_SUBMIT_ARGS=$(echo ${BASE_SPARK_SUBMIT_ARGS}|sed 's/--master.*7077//g')
-  spark-submit ${CACHE_SPARK_SUBMIT_ARGS} --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark${SHIM_PACKAGE}.ParquetCachedBatchSerializer --jars $RAPIDS_TEST_JAR \
+  spark-submit ${BASE_SPARK_SUBMIT_ARGS} --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark${SHIM_PACKAGE}.ParquetCachedBatchSerializer --jars $RAPIDS_TEST_JAR \
   ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/" -k cache_test.py -x
 fi
 popd
