@@ -25,7 +25,6 @@
         <version>0.6.0-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-shuffle_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Shuffle Plugin</name>
     <description>Accelerated shuffle plugin for the RAPIDS plugin for Apache Spark</description>
