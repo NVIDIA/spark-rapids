@@ -148,7 +148,7 @@ object DateUtils {
     var sb = new StringBuilder()
     var index = 0;
     val patterns = new ListBuffer[FormatKeywordToReplace]
-    format.map(character => {
+    format.foreach(character => {
       // We are checking to see if this char is a part of a previously read pattern
       // or start of a new one.
       if (sb.isEmpty || sb.last == character) {

@@ -49,13 +49,16 @@ class GpuFlatMapCoGroupsInPandasExecMeta(
   // Ignore the expressions since columnar way is not supported yet
   override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
 
-  override def convertToGpu(): GpuExec =
+  override def convertToGpu(): GpuExec = {
+    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     GpuFlatMapCoGroupsInPandasExec(
       flatPandas.leftGroup, flatPandas.rightGroup,
       flatPandas.func,
       flatPandas.output,
-      childPlans.head.convertIfNeeded(), childPlans(1).convertIfNeeded()
+      left,
+      right
     )
+  }
 }
 
 /*

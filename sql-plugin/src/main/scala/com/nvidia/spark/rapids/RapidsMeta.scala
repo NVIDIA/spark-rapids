@@ -531,7 +531,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     childPlans.foreach(_.tagForExplain())
   }
 
-  override val childPlans: Seq[SparkPlanMeta[_]] =
+  override val childPlans: Seq[SparkPlanMeta[SparkPlan]] =
     plan.children.map(GpuOverrides.wrapPlan(_, conf, Some(this)))
   override val childExprs: Seq[BaseExprMeta[_]] =
     plan.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -636,7 +636,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       } else if (childPlans.size > 1) {
         throw new IllegalStateException("can't remove when plan has more than 1 child")
       }
-      childPlans(0).convertIfNeeded()
+      childPlans.head.convertIfNeeded()
     } else {
       if (canThisBeReplaced) {
         convertToGpu()
@@ -802,7 +802,7 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu())
+    convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
 }
@@ -818,7 +818,7 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu())
+    convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
 }
@@ -849,8 +849,10 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu())
+  override final def convertToGpu(): GpuExpression = {
+    val Seq(lhs, rhs) = childExprs.map(_.convertToGpu())
+    convertToGpu(lhs, rhs)
+  }
 
   def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression
 }
@@ -865,9 +867,10 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs(0).convertToGpu(), childExprs(1).convertToGpu(),
-                 childExprs(2).convertToGpu())
+  override final def convertToGpu(): GpuExpression = {
+    val Seq(child0, child1, child2) = childExprs.map(_.convertToGpu())
+    convertToGpu(child0, child1, child2)
+  }
 
   def convertToGpu(val0: Expression, val1: Expression,
                    val2: Expression): GpuExpression
@@ -881,12 +884,8 @@ abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
     extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def convertToGpu(): GpuExpression = {
-    val trimParam = if (childExprs.size > 1) {
-      Some(childExprs(1).convertToGpu())
-    } else {
-      None
-    }
-    convertToGpu(childExprs(0).convertToGpu(), trimParam)
+    val gpuCol :: gpuTrimParam = childExprs.map(_.convertToGpu())
+    convertToGpu(gpuCol, gpuTrimParam.headOption)
   }
 
   def convertToGpu(column: Expression, target: Option[Expression] = None): GpuExpression
