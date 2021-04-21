@@ -26,7 +26,7 @@ class RapidsShuffleHeartbeatManagerTest extends RapidsShuffleTestHelper {
     val hbMgr = new RapidsShuffleHeartbeatManager
     val updateMsg = hbMgr.registerExecutor(
       TrampolineUtil.newBlockManagerId("1", "peer", 123, Some("rapids=123")))
-    assertResult(0)(updateMsg.ids.size)
+    assertResult(0)(updateMsg.ids.length)
   }
 
   test("a heartbeat picks up new executors") {
@@ -45,7 +45,7 @@ class RapidsShuffleHeartbeatManagerTest extends RapidsShuffleTestHelper {
 
     match {
       case RapidsExecutorUpdateMsg(idAndExecutorData) =>
-        assertResult(1)(idAndExecutorData.size)
+        assertResult(1)(idAndExecutorData.length)
         val peerBlockManager = idAndExecutorData.head
         assertResult(exec2)(peerBlockManager)
     }
@@ -69,11 +69,11 @@ class RapidsShuffleHeartbeatManagerTest extends RapidsShuffleTestHelper {
 
     // second heartbeat from exec1, should be empty
     val secondUpdate = hbMgr.executorHeartbeat(exec1)
-    assertResult(0)(secondUpdate.ids.size)
+    assertResult(0)(secondUpdate.ids.length)
 
     // first heartbeat from exec2 returns empty, it already knew about exec1 on registration
     val firstUpdateExec2 = hbMgr.executorHeartbeat(exec2)
-    assertResult(0)(firstUpdateExec2.ids.size)
+    assertResult(0)(firstUpdateExec2.ids.length)
   }
 
   test("an executor tells heartbeat handler about new peers") {

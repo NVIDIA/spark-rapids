@@ -83,7 +83,7 @@ trait OrcFiltersBase {
         .groupBy(_._1.toLowerCase(Locale.ROOT))
         .filter(_._2.size == 1)
         .mapValues(_.head._2)
-      CaseInsensitiveMap(dedupPrimitiveFields.toMap)
+      CaseInsensitiveMap(dedupPrimitiveFields)
     }
   }
 }
