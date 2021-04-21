@@ -67,8 +67,8 @@ class GpuShuffleMeta(
 
   override def convertToGpu(): GpuExec =
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
-      childParts(0).convertToGpu(),
-      childPlans(0).convertIfNeeded(),
+      childParts.head.convertToGpu(),
+      childPlans.head.convertIfNeeded(),
       Some(shuffle))
 }
 

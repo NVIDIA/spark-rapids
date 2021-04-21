@@ -108,7 +108,7 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
     val splitRange = scala.Range(rowsAllowedInABatch.toInt, rows, rowsAllowedInABatch.toInt)
     scala.Range(0, cb.numCols()).indices.foreach { i =>
       val spyCol = cb.column(i).asInstanceOf[GpuColumnVector].getBase
-      val splitCols0 = scala.Range(0, splitRange.length).map { _ =>
+      val splitCols0 = splitRange.indices.map { _ =>
         val spySplitCol = spy(ColumnVector.fromBytes(4, 5, 6))
         when(spySplitCol.getRowCount()).thenReturn(rowsAllowedInABatch)
         spySplitCol
