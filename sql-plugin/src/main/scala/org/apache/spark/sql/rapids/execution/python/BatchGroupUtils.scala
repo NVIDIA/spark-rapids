@@ -142,6 +142,9 @@ private[python] object BatchGroupUtils extends Arm {
    * Projects each input batch into the deduplicated schema, and splits
    * into separate group batches.
    *
+   * Since this API will use a `BatchGroupedIterator` inside, so it also requires the rows
+   * in the input batches are presorted in the order of `Ascending & NullsFirst`.
+   *
    * BatchGroupedIterator will probably return more batches than input, so projecting
    * first, then grouping. Doing this is likely to save time.
    *
@@ -218,7 +221,7 @@ private[python] object BatchGroupUtils extends Arm {
  * expressions, then each batch returned from the call to 'next' contains only one group.
  *
  * This iterator supposes the rows in the input batches are presorted in the order of
- * Ascending & NullsFirst`.
+ * `Ascending & NullsFirst`.
  *
  * Since the rows in the batches are already sorted by Spark for the Pandas UDF plans, a better
  * performance is probably achieved in the cudf `groupby`.
