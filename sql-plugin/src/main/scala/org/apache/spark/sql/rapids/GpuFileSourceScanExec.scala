@@ -318,7 +318,7 @@ case class GpuFileSourceScanExec(
   }
 
   /** SQL metrics generated only for scans using dynamic partition pruning. */
-  private lazy val staticMetrics = if (partitionFilters.filter(isDynamicPruningFilter).nonEmpty) {
+  private lazy val staticMetrics = if (partitionFilters.exists(isDynamicPruningFilter)) {
     Map("staticFilesNum" -> createMetric(ESSENTIAL_LEVEL, "static number of files read"),
       "staticFilesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "static size of files read"))
   } else {
@@ -331,7 +331,7 @@ case class GpuFileSourceScanExec(
       static: Boolean): Unit = {
     val filesNum = partitions.map(_.files.size.toLong).sum
     val filesSize = ShimLoader.getSparkShims.getPartitionFileStatusSize(partitions)
-    if (!static || partitionFilters.filter(isDynamicPruningFilter).isEmpty) {
+    if (!static || !partitionFilters.exists(isDynamicPruningFilter)) {
       driverMetrics("numFiles") = filesNum
       driverMetrics("filesSize") = filesSize
     } else {

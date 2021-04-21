@@ -490,7 +490,7 @@ case class Instruction(opcode: Int, operand: Int, instructionStr: String) extend
         newState
       }
     } else if (declaringClassName.equals("scala.collection.mutable.ArrayBuffer") ||
-               ((!args.isEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
+               ((args.nonEmpty && args.head.isInstanceOf[Repr.ArrayBuffer]) &&
                 ((declaringClassName.equals("scala.collection.AbstractSeq") &&
                   opcode == Opcode.INVOKEVIRTUAL) ||
                  (declaringClassName.equals("scala.collection.TraversableOnce") &&
