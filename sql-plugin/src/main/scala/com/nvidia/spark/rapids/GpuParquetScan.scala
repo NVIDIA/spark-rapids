@@ -1456,10 +1456,10 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   /**
-   * file reading logic in a Callable which will be running in a thread pool
+   * File reading logic in a Callable which will be running in a thread pool
    *
    * @param file    file to be read
-   * @param conf
+   * @param conf    configuration
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
    */
@@ -1469,24 +1469,26 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   /**
-   * get ThreadPoolExecutor to run the Callable.
+   * Get ThreadPoolExecutor to run the Callable.
    *
-   * same ThreadPoolExecutor for cloud and coalescing for same file format
-   * different ThreadPoolExecutors for different file formats
-   *
-   * @return
+   * @param  numThreads  max number of threads to create
+   * @return ThreadPoolExecutor
    */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
     ParquetMultiFileThreadPoolFactory.getThreadPool(getLogTag, numThreads)
   }
 
+  /**
+   * Get the log prefix
+   *  @return "Parquet"
+   */
   override def getLogTag: String = "Parquet"
 
   /**
-   * decode HostMemoryBuffers by GPU
+   * Decode HostMemoryBuffers by GPU
    *
-   * @param fileBufsAndMeta
-   * @return
+   * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
+   * @return Option[ColumnarBatch]
    */
   override def readBatch(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
       Option[ColumnarBatch] = {

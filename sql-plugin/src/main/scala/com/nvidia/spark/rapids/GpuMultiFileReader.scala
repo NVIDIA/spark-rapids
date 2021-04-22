@@ -46,14 +46,14 @@ trait HostMemoryBuffersWithMetaDataBase {
   def partitionedFile: PartitionedFile
   // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
   def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)]
-  // total bytes read
+  // Total bytes read
   def bytesRead: Long
 }
 
-// this is a common trait for all kind of file formats
+// This is a common trait for all kind of file formats
 trait MultiFileReaderFunctions extends Arm {
 
-  // add partitioned columns into the batch
+  // Add partitioned columns into the batch
   protected def addPartitionValues(
       batch: Option[ColumnarBatch],
       inPartitionValues: InternalRow,
@@ -82,7 +82,6 @@ trait MultiFileReaderFunctions extends Arm {
 // Please note that the TaskContext is not set in these threads and should not be used.
 object MultiFileThreadPoolUtil {
 
-  // create a thread pool
   def createThreadPool(
       threadTag: String,
       maxThreads: Int = 20,
@@ -175,27 +174,28 @@ abstract class MultiFileCloudPartitionReaderBase(
     filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
 
   /**
-   * get ThreadPoolExecutor to run the Callable.
+   * Get ThreadPoolExecutor to run the Callable.
    *
-   * the rules:
-   * 1. same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. different file formats have different ThreadPoolExecutors
+   * There're two rules:
+   * 1. Same ThreadPoolExecutor for cloud and coalescing for the same file format
+   * 2. Different file formats have different ThreadPoolExecutors
    *
-   * @return
+   * @param numThreads  max number of threads to create
+   * @return A ThreadPoolExecutors to used
    */
   def getThreadPool(numThreads: Int): ThreadPoolExecutor
 
   /**
-   * decode HostMemoryBuffers in GPU
+   * Decode HostMemoryBuffers in GPU
    * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
-   * @return
+   * @return Option[ColumnarBatch] which has been decoded by GPU
    */
   def readBatch(
     fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Option[ColumnarBatch]
 
   /**
-   * get the log tag
-   * @return
+   * Get the log prefix to form a new log tag in Logger and NVTX.
+   * @return the log tag
    */
   def getLogTag: String
 
