@@ -413,7 +413,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
    * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
    * caches them s.t. at [[close]] time we can release resources.
    *
-   * @param endpointId    presently an executor, it is used to distinguish between endpoints
+   * @param endpointId    presently an executorId, it is used to distinguish between endpoints
    *                      when routing messages outbound
    * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
    * @param peerRkeys list of UCX rkeys that the peer has sent us for unpacking
@@ -460,7 +460,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
       startConnection(connection, peerMgmtHost, peerMgmtPort)
       connection
     })
-    logDebug(s"Got connection for executorId ${peerExecutorId} in " +
+    logDebug(s"Got connection for executor ${peerExecutorId} in " +
       s"${System.currentTimeMillis() - getConnectionStartTime} ms")
     result
   }
