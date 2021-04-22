@@ -697,8 +697,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           }
           parquetFileReader.close()
           val iter = unsafeRows.iterator
-          val unsafeProjection =
-            GenerateUnsafeProjection.generate(requestedSchema, cacheSchema)
+          val unsafeProjection = GenerateUnsafeProjection.generate(requestedSchema, cacheSchema)
           if (hasUnsupportedType) {
             new UnsupportedDataHandlerIterator() {
               val wrappedIter: Iterator[InternalRow] = iter
