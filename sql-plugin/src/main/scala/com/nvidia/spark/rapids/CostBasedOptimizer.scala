@@ -21,8 +21,9 @@ import scala.collection.mutable.ListBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
-import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, ProjectExec, SparkPlan, UnionExec}
+import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, ProjectExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
 import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec}
+import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
@@ -275,7 +276,7 @@ class DefaultCostModel(conf: RapidsConf) extends CostModel {
 
 /**
  * Estimate the number of rows that an operator will output. Note that these row counts are
- * the aggregate across all partitions.
+ * the aggregate across all output partitions.
  *
  * Logic is based on Spark's SizeInBytesOnlyStatsPlanVisitor. which operates on logical plans
  * and only computes data sizes, not row counts.
@@ -288,7 +289,14 @@ object RowCountPlanVisitor {
     case GlobalLimitExec(limit, _) =>
       visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
     case LocalLimitExec(limit, _) =>
-      visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
+      // LocalLimit applies the same limit for each partition
+      val n = limit * plan.wrapped.asInstanceOf[SparkPlan]
+          .outputPartitioning.numPartitions
+      visit(plan.childPlans.head).map(_.min(n)).orElse(Some(n))
+    case p: TakeOrderedAndProjectExec =>
+      visit(plan.childPlans.head).map(_.min(p.limit)).orElse(Some(p.limit))
+    case p: HashAggregateExec if p.groupingExpressions.isEmpty =>
+      Some(1)
     case p: SortMergeJoinExec =>
       estimateJoin(plan, p.joinType)
     case p: ShuffledHashJoinExec =>
