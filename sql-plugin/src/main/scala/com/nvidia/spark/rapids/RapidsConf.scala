@@ -855,15 +855,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val SHUFFLE_UCX_USE_SOCKADDR = conf("spark.rapids.shuffle.ucx.useSockaddr")
-    .doc("When set to true, start listener and exchange socket address. This allows better detecting " +
-      "remote peer failures.")
+  val SHUFFLE_UCX_LISTENER_ENABLED = conf("spark.rapids.shuffle.ucx.listener.enabled")
+    .doc("When set to true, start listener and exchange socket address." +
+      " This allows better detecting remote peer failures.")
+    .internal()
     .booleanConf
     .createWithDefault(false)
 
-  val SHUFFLE_UCX_USE_PEER_ERR_HDNL = conf("spark.rapids.shuffle.ucx.usePeerErrHndl")
-    .doc("When set to true, enable peer error handling for ucx endpoints. Could impact on a transports " +
-      "and protocols, being selected in ucx")
+  val SHUFFLE_UCX_USE_PEER_ERR_HDNL = conf("spark.rapids.shuffle.ucx.peerErrorHandling.enabled")
+    .doc("When set to true, enable peer error handling for ucx endpoints. " +
+      "Could impact on a transports and protocols, being selected in ucx")
+    .internal()
     .booleanConf
     .createWithDefault(false)
 
@@ -1346,7 +1348,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
-  lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_USE_SOCKADDR)
+  lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_LISTENER_ENABLED)
 
   lazy val shuffleUcxUsePeerErrorHandler: Boolean = get(SHUFFLE_UCX_USE_PEER_ERR_HDNL)
 

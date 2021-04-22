@@ -43,7 +43,7 @@ case class Rkeys(rkeys: Seq[ByteBuffer])
 /**
  * The UCX class wraps JUCX classes and handles all communication with UCX from other
  * parts of the shuffle code. It manages a `UcpContext` and `UcpWorker`, for the
- * local executorId, and maintain a set of `UcpEndpoint` for peers.
+ * local executor, and maintain a set of `UcpEndpoint` for peers.
  *
  * The current API supported from UCX is the tag based API. Tags are exposed in this class
  * via an `AddressLengthTag`.
@@ -98,15 +98,15 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
   private val serverService = Executors.newCachedThreadPool(
     new ThreadFactoryBuilder().setNameFormat("ucx-connection-server-%d").build)
 
-  // The pending queues are used to enqueue [[PendingReceive]] or [[PendingSend]], from executorId
+  // The pending queues are used to enqueue [[PendingReceive]] or [[PendingSend]], from executor
   // task threads and [[progressThread]] will hand them to the UcpWorker thread.
   private val workerTasks = new ConcurrentLinkedQueue[() => Unit]()
 
-  // Multiple executorId threads are going to try to call connect (from the
+  // Multiple executor threads are going to try to call connect (from the
   // [[RapidsUCXShuffleIterator]]) because they don't know what executors to connect to up until
   // shuffle fetch time.
   //
-  // This makes sure that all executorId threads get the same [[Connection]] object for a specific
+  // This makes sure that all executor threads get the same [[Connection]] object for a specific
   // management (host, port) key.
   private val connectionCache = new ConcurrentHashMap[Long, ClientConnection]()
   private val executorIdToPeerTag = new ConcurrentHashMap[Long, Long]()
@@ -133,13 +133,12 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
 
   // Common endpoint parameters.
   private def getEpParams = {
-    val result = new UcpEndpointParams().setErrorHandler(epErrorHandler)
+    val result = new UcpEndpointParams()
     if (rapidsConf.shuffleUcxUsePeerErrorHandler) {
-      result.setPeerErrorHandlingMode()
+      result.setErrorHandler(epErrorHandler).setPeerErrorHandlingMode()
     }
     result
   }
-
 
   /**
    * Initializes the UCX context and local worker and starts up the worker progress thread.
@@ -162,8 +161,9 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
       worker = context.newWorker(workerParams)
       logInfo(s"UCX Worker created")
       if (rapidsConf.shuffleUcxUseSockaddr) {
-        // For now backward endpoints are not used and just add them as negative executorId.
-        // With AM this endpoints would be used as replyEp
+        // For now backward endpoints are not used, but need to create
+        // an endpoint from connectionHandler in order to use ucpListener connections.
+        // With AM this endpoints would be used as replyEp.
         val backwardEpId = new AtomicInteger(0)
         val ucpListenerParams = new UcpListenerParams().setConnectionHandler(
           (connectionRequest: UcpConnectionRequest) => {
@@ -184,10 +184,9 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
             ucpListenerParams.setSockAddr(sockAddress)
             listener = Option(worker.newListener(ucpListenerParams))
           } catch {
-            case ex: UcxException => {
+            case ex: UcxException =>
               logDebug(s"Failed to bind UcpListener on $sockAddress")
               listener = None
-            }
           }
         }
         if (listener.isEmpty) {
@@ -288,7 +287,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
             } catch {
               case e: Throwable if initialized =>
                 // This will cause the `SparkUncaughtExceptionHandler` to get invoked
-                // and it will shut down the executorId (as it should).
+                // and it will shut down the executor (as it should).
                 throw e
               case _: SocketException if !initialized =>
                 // `initialized = false` means we are shutting down,
@@ -398,13 +397,13 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
     val result = ByteBuffer.allocateDirect(4 + hostnameBytes.length)
     result.putInt(listenerAddress.getPort)
     result.put(hostnameBytes)
-    result.asReadOnlyBuffer()
+    result
   } else {
-    worker.getAddress.asReadOnlyBuffer()
+    worker.getAddress
   }
 
   private def getUcxAddress: ByteBuffer = {
-    val result = ucxAddress.duplicate()
+    val result = ucxAddress.asReadOnlyBuffer()
     result.rewind()
     result
   }
@@ -413,7 +412,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
    * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
    * caches them s.t. at [[close]] time we can release resources.
    *
-   * @param endpointId    presently an executorId, it is used to distinguish between endpoints
+   * @param endpointId    presently an executor, it is used to distinguish between endpoints
    *                      when routing messages outbound
    * @param workerAddress the worker address for the remote endpoint (ucx opaque object)
    * @param peerRkeys list of UCX rkeys that the peer has sent us for unpacking
@@ -485,16 +484,16 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
         val os = socket.getOutputStream
         val is = socket.getInputStream
 
-        // "this executorId id will receive on tmpLocalReceiveTag for this Connection"
+        //this executor id will receive on tmpLocalReceiveTag for this Connection
         UCXConnection.writeHandshakeHeader(os, getUcxAddress, executor.executorId.toInt, localRkeys)
 
-        // "the remote executorId will receive on remoteReceiveTag, and expects this executorId to
-        // receive on localReceiveTag"
+        // the remote executor will receive on remoteReceiveTag, and expects this executor to
+        // receive on localReceiveTag
         val (peerWorkerAddress, remoteExecutorId, peerRkeys) = UCXConnection.readHandshakeHeader(is)
 
         val peerExecutorId = connection.getPeerExecutorId
         if (remoteExecutorId != peerExecutorId) {
-          throw new IllegalStateException(s"Attempted to reach executorId $peerExecutorId, but" +
+          throw new IllegalStateException(s"Attempted to reach executor $peerExecutorId, but" +
             s" instead received reply from $remoteExecutorId")
         }
 
@@ -534,7 +533,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
         val (peerWorkerAddress: WorkerAddress, peerExecutorId: Int, peerRkeys: Rkeys) =
           UCXConnection.readHandshakeHeader(is)
 
-        logInfo(s"Got peer worker address from executorId $peerExecutorId")
+        logInfo(s"Got peer worker address from executor $peerExecutorId")
 
         // ack what we saw as the local and remote peer tags
         UCXConnection.writeHandshakeHeader(os, getUcxAddress, executor.executorId.toInt, localRkeys)
@@ -544,7 +543,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
         })
 
         // peer would have established an endpoint peer -> local
-        logInfo(s"Sent server UCX worker address to executorId $peerExecutorId")
+        logInfo(s"Sent server UCX worker address to executor $peerExecutorId")
       } finally {
         // at this point we have handshaked, UCX is ready to go for this point-to-point connection.
         // assume that we get a list of block ids, tag tuples we want to transfer out
