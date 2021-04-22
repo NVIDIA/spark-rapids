@@ -5683,7 +5683,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="2">Explode</td>
 <td rowSpan="2">`explode`, `explode_outer`</td>
-<td rowSpan="2">Given an input array produces a sequence of rows for each value in the array. Explode with outer Generate is not supported under GPU runtime.</td>
+<td rowSpan="2">Given an input array produces a sequence of rows for each value in the array.</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
@@ -11073,7 +11073,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="2">PosExplode</td>
 <td rowSpan="2">`posexplode_outer`, `posexplode`</td>
-<td rowSpan="2">Given an input array produces a sequence of rows for each value in the array. PosExplode with outer Generate is not supported under GPU runtime.</td>
+<td rowSpan="2">Given an input array produces a sequence of rows for each value in the array.</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
