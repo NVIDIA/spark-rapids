@@ -43,7 +43,7 @@ import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekable
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{vectorized, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, GenericInternalRow, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
@@ -609,11 +609,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      sharedHadoopConf: Broadcast[SerializableConfiguration],
      sharedConf: Broadcast[Map[String, String]]) {
 
-    val conf = {
-      val c = new SQLConf()
-      sharedConf.value.foreach { case(k, v) => c.setConfString(k, v) }
-      c
-    }
+    val conf = getConfFromMap(sharedConf)
     val hadoopConf = sharedHadoopConf.value.value
     val origRequestedSchema: Seq[Attribute] = getCatalystSchema(selectedAttributes, cacheAttributes)
     val origCacheSchema: Seq[Attribute] = getCatalystSchema(cacheAttributes, cacheAttributes)
@@ -824,7 +820,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         val columnVectors: Array[OffHeapColumnVector] =
           OffHeapColumnVector.allocateColumns(capacity, requestedSchema.toStructType)
         val columnarBatch = new ColumnarBatch(columnVectors
-          .asInstanceOf[Array[org.apache.spark.sql.vectorized.ColumnVector]])
+          .asInstanceOf[Array[vectorized.ColumnVector]])
         val missingColumns = new Array[Boolean](reqParquetSchema.getFieldCount)
         var columnReaders: Array[VectorizedColumnReader] = _
 
@@ -906,6 +902,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
   }
 
+  private def getConfFromMap(sharedConf: Broadcast[Map[String, String]]): SQLConf = {
+    val conf = new SQLConf()
+    sharedConf.value.foreach { case (k, v) => conf.setConfString(k, v) }
+    conf
+  }
+
   private def getCatalystSchema(
      selectedAttributes: Seq[Attribute],
      cacheAttributes: Seq[Attribute]): Seq[Attribute] = {
@@ -937,11 +939,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      sharedHadoopConf: Broadcast[SerializableConfiguration],
      sharedConf: Broadcast[Map[String, String]]) {
 
-    val conf = {
-      val c = new SQLConf()
-      sharedConf.value.foreach { case(k, v) => c.setConfString(k, v) }
-      c
-    }
+    val conf = getConfFromMap(sharedConf)
     val hadoopConf = sharedHadoopConf.value.value
 
     def getInternalRowToCachedBatchIterator: Iterator[CachedBatch] = {
