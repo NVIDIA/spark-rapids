@@ -831,7 +831,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           this.totalRowCount += block.getRowCount
         }
 
-        // initialize missingColumns
+        // initialize missingColumns to cover the case where requested column isn't present in the
+        // cache, which should never happen but just in case it does
         val columns = reqParquetSchema.getColumns
         val paths = reqParquetSchema.getPaths
         val fileSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
