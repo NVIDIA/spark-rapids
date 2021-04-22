@@ -171,8 +171,9 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
     val ser = new ParquetCachedBatchSerializer
 
     val producer = new ser.CachedBatchIteratorProducer[ColumnarBatch](cbIter, schema,
-      SparkContext.getOrCreate().broadcast(new SerializableConfiguration(new Configuration(true))),
-      SparkContext.getOrCreate().broadcast(new SQLConf().getAllConfs))
+      withCpuSparkSession(spark =>
+        spark.sparkContext.broadcast(new SerializableConfiguration(new Configuration(true)))),
+      withCpuSparkSession(spark => spark.sparkContext.broadcast(new SQLConf().getAllConfs)))
     val mockParquetOutputFileFormat = mock(classOf[ParquetOutputFileFormat])
     var totalSize = 0L
     val mockRecordWriter = new RecordWriter[Void, InternalRow] {
