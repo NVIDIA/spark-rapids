@@ -182,7 +182,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
           val sockAddress = new InetSocketAddress(executor.host, startPort + i)
           try {
             ucpListenerParams.setSockAddr(sockAddress)
-            listener = Some(worker.newListener(ucpListenerParams))
+            listener = Option(worker.newListener(ucpListenerParams))
           } catch {
             case ex: UcxException => {
               logDebug(s"Failed to bind UcpListener on $sockAddress")
