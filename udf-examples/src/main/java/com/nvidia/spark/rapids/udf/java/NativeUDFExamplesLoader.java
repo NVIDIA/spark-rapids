@@ -22,21 +22,17 @@ import java.io.IOException;
 
 /** Loads the native dependencies for UDF examples with a native implementation */
 public class NativeUDFExamplesLoader {
-  private static volatile boolean isLoaded = false;
+  private static boolean isLoaded;
 
   /** Loads native UDF code if necessary */
-  public static void ensureLoaded() {
+  public static synchronized void ensureLoaded() {
     if (!isLoaded) {
-      load();
-    }
-  }
-
-  private static synchronized void load() {
-    try {
-      NativeDepsLoader.loadNativeDeps(new String[]{"udfexamplesjni"});
-      isLoaded = true;
-    } catch (IOException e) {
-      throw new RuntimeException(e);
+      try {
+        NativeDepsLoader.loadNativeDeps(new String[]{"udfexamplesjni"});
+        isLoaded = true;
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
     }
   }
 }
