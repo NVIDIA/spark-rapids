@@ -26,11 +26,13 @@ import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
 
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 
 
 /**
@@ -167,8 +169,11 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
       }
     }
     val ser = new ParquetCachedBatchSerializer
+
     val producer = new ser.CachedBatchIteratorProducer[ColumnarBatch](cbIter, schema,
-      new Configuration(true), new SQLConf)
+      withCpuSparkSession(spark =>
+        spark.sparkContext.broadcast(new SerializableConfiguration(new Configuration(true)))),
+      withCpuSparkSession(spark => spark.sparkContext.broadcast(new SQLConf().getAllConfs)))
     val mockParquetOutputFileFormat = mock(classOf[ParquetOutputFileFormat])
     var totalSize = 0L
     val mockRecordWriter = new RecordWriter[Void, InternalRow] {
