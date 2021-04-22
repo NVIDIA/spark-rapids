@@ -95,11 +95,10 @@ def test_java_cosine_similarity_reasonable_range(enable_rapids_udf_example_nativ
     def evalfn(spark):
         class RangeFloatGen(FloatGen):
             def start(self, rand):
-                def gen_float(): return rand.uniform(-1000.0, 1000.0)
-                self._start(rand, gen_float)
+                self._start(rand, lambda: rand.uniform(-1000.0, 1000.0))
         load_java_udf_or_skip_test(spark, "cosine_similarity", "com.nvidia.spark.rapids.udf.java.CosineSimilarity")
-        arraygen = ArrayGen(RangeFloatGen(nullable=False), min_length=8, max_length=8)
-        df = binary_op_df(spark, arraygen, length=16)
+        arraygen = ArrayGen(RangeFloatGen(nullable=False, no_nans=True, special_cases=[]), min_length=8, max_length=8)
+        df = binary_op_df(spark, arraygen)
         return df.selectExpr("cosine_similarity(a, b)")
     assert_gpu_and_cpu_are_equal_collect(evalfn)
 
