@@ -136,6 +136,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
   private def getEpParams = {
     val result = new UcpEndpointParams()
     if (rapidsConf.shuffleUcxUsePeerErrorHandler) {
+      logDebug("Using peer error handling")
       result.setErrorHandler(epErrorHandler).setPeerErrorHandlingMode()
     }
     result
