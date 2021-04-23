@@ -108,5 +108,4 @@ else
     git log HEAD -n 1 --pretty="%h" > $lastcommit
 fi
 cd ${ABSOLUTE_PATH}/../ 
-scripts/audit-plugin.sh
-
+scripts/prioritize-commits.sh
