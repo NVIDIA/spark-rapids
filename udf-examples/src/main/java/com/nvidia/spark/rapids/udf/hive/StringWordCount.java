@@ -20,6 +20,7 @@ import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.NativeDepsLoader;
 import com.nvidia.spark.RapidsUDF;
+import com.nvidia.spark.rapids.udf.java.NativeUDFExamplesLoader;
 import org.apache.hadoop.hive.ql.exec.UDF;
 
 import java.io.IOException;
@@ -73,24 +74,9 @@ public class StringWordCount extends UDF implements RapidsUDF {
     // Load the native code if it has not been already loaded. This is done here
     // rather than in a static code block since the driver may not have the
     // required CUDA environment.
-    ensureNativeCodeLoaded();
+    NativeUDFExamplesLoader.ensureLoaded();
 
     return new ColumnVector(countWords(strs.getNativeView()));
-  }
-
-  private void ensureNativeCodeLoaded() {
-    if (!isNativeCodeLoaded) {
-      synchronized(StringWordCount.class) {
-        if (!isNativeCodeLoaded) {
-          try {
-            NativeDepsLoader.loadNativeDeps(new String[]{"udfexamplesjni"});
-            isNativeCodeLoaded = true;
-          } catch (IOException e) {
-            throw new RuntimeException(e);
-          }
-        }
-      }
-    }
   }
 
   private static native long countWords(long stringsView);
