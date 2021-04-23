@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write
+from conftest import get_non_gpu_allowed
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -288,7 +289,8 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
-            'FileSourceScanExec',
+            # TODO add support for lists
+            cpu_fallback_class_name=get_non_gpu_allowed()[0],
             conf=updated_conf)
 
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
