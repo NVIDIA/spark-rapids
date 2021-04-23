@@ -486,7 +486,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
         val os = socket.getOutputStream
         val is = socket.getInputStream
 
-        //this executor id will receive on tmpLocalReceiveTag for this Connection
+        // this executor id will receive on tmpLocalReceiveTag for this Connection
         UCXConnection.writeHandshakeHeader(os, getUcxAddress, executor.executorId.toInt, localRkeys)
 
         // the remote executor will receive on remoteReceiveTag, and expects this executor to
