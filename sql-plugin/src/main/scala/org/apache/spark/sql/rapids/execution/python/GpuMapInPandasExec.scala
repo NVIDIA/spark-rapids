@@ -92,9 +92,7 @@ case class GpuMapInPandasExec(
 
     // Start process
     child.executeColumnar().mapPartitionsInternal { inputIter =>
-      val queue: BatchQueue = new BatchQueue()
       val context = TaskContext.get()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
 
       // Single function with one struct.
       val argOffsets = Array(Array(0))
@@ -117,18 +115,17 @@ case class GpuMapInPandasExec(
       }
 
       val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
-        batchSize, mNumInputRows, mNumInputBatches, spillCallback)
+          batchSize, mNumInputRows, mNumInputBatches, spillCallback)
         .map { batch =>
           // Here we wrap it via another column so that Python sides understand it
           // as a DataFrame.
-          val structColumn = cudf.ColumnVector.makeStruct(GpuColumnVector.extractBases(batch): _*)
-          val pyInputBatch = withResource(structColumn) { stColumn =>
-            val gpuColumn = GpuColumnVector.from(stColumn.incRefCount(), pyInputTypes)
-            new ColumnarBatch(Array(gpuColumn), batch.numRows())
+          withResource(batch) { b =>
+            val structColumn = cudf.ColumnVector.makeStruct(GpuColumnVector.extractBases(b): _*)
+            withResource(structColumn) { stColumn =>
+              val gpuColumn = GpuColumnVector.from(stColumn.incRefCount(), pyInputTypes)
+              new ColumnarBatch(Array(gpuColumn), b.numRows())
+            }
           }
-          // cache the original batches for release later.
-          queue.add(batch, spillCallback)
-          pyInputBatch
       }
 
       if (pyInputIterator.hasNext) {
@@ -140,7 +137,7 @@ case class GpuMapInPandasExec(
           sessionLocalTimeZone,
           pythonRunnerConf,
           batchSize,
-          () => queue.close(),
+          onDataWriteFinished = null,
           pythonOutputSchema,
           // We can not assert the result batch from Python has the same row number with the
           // input batch. Because Map Pandas UDF allows the output of arbitrary length
