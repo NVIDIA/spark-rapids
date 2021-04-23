@@ -390,6 +390,111 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     }, conf)
   }
 
+  test("Compute estimated row count nested joins no broadcast") {
+    assumeSpark301orLater
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+        .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan")
+
+    var plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
+      new ListBuffer[SparkPlanMeta[SparkPlan]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          _: SparkPlan,
+          _: Seq[Optimization]) => {
+        plans += plan
+      })
+
+    withGpuSparkSession(spark => {
+      val df1: DataFrame = createQuery(spark).alias("l")
+      val df2: DataFrame = createQuery(spark).alias("r")
+      val df = df1.join(df2,
+        col("l.more_strings_1").equalTo(col("r.more_strings_2")))
+      df.collect()
+    }, conf)
+
+    val accum = new ListBuffer[SparkPlanMeta[_]]()
+    plans.foreach(collectPlansWithRowCount(_, accum))
+
+    val summary = accum
+        .map(plan => plan.wrapped.getClass.getSimpleName -> plan.estimatedOutputRows.get)
+        .distinct
+        .sorted
+
+    // we expect to see:
+    // 4 rows for the leaf query stages
+    // 16 rows for the nested joins (4 x 4)
+    // 256 rows for the final join (16 x 16)
+    assert(summary === Seq(
+      "CustomShuffleReaderExec" -> 4,
+      "ProjectExec" -> 4,
+      "ProjectExec" -> 16,
+      "ShuffleExchangeExec" -> 4,
+      "ShuffleExchangeExec" -> 16,
+      "ShuffleQueryStageExec" -> 4,
+      "SortExec" -> 4,
+      "SortExec" -> 16,
+      "SortMergeJoinExec" -> 16,
+      "SortMergeJoinExec" -> 256))
+  }
+
+  test("Compute estimated row count nested joins with broadcast") {
+    assumeSpark301orLater
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan")
+
+    var plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
+      new ListBuffer[SparkPlanMeta[SparkPlan]]()
+    GpuOverrides.addListener(
+      (plan: SparkPlanMeta[SparkPlan],
+          _: SparkPlan,
+          _: Seq[Optimization]) => {
+        plans += plan
+      })
+
+    withGpuSparkSession(spark => {
+      val df1: DataFrame = createQuery(spark).alias("l")
+      val df2: DataFrame = createQuery(spark).alias("r")
+      val df = df1.join(df2,
+        col("l.more_strings_1").equalTo(col("r.more_strings_2")))
+      df.collect()
+    }, conf)
+
+    val accum = new ListBuffer[SparkPlanMeta[_]]()
+    plans.foreach(collectPlansWithRowCount(_, accum))
+
+    val summary = accum
+        .map(plan => plan.wrapped.getClass.getSimpleName -> plan.estimatedOutputRows.get)
+        .distinct
+        .sorted
+
+    // due to the concurrent nature of adaptive execution, the results are not deterministic
+    // so we just check that we do see row counts for multiple broadcast exchanges
+
+    val broadcastExchanges = summary
+        .filter(_._1 == "BroadcastExchangeExec")
+
+    assert(broadcastExchanges.nonEmpty)
+    assert(broadcastExchanges.forall(_._2.toLong > 0))
+  }
+
+  private def collectPlansWithRowCount(
+      plan: SparkPlanMeta[_],
+      accum: ListBuffer[SparkPlanMeta[_]]): Unit = {
+    if (plan.estimatedOutputRows.exists(_ > 0)) {
+      accum += plan
+    }
+    plan.childPlans.foreach(collectPlansWithRowCount(_, accum))
+  }
+
   private def createQuery(spark: SparkSession) = {
     val df1 = nullableStringsDf(spark)
         .repartition(2)
