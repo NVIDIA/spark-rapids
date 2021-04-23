@@ -330,7 +330,7 @@ references to the RDDs supporting your query are not reachable.
 
 One of the issues with this is with large JVM footprints in the driver. The driver may not run a GC at
 all between different parts of your application, causing output for shuffle to accumulate (output that
-will not be reused), and eventually causing OOM or even filled disk. This is true from Spark even without
+will not be reused), and eventually causing OOM or even filled disk. This is true for Spark even without
 the RAPIDS Shuffle Manager, but in our case it's likely GPU memory that is being occupied, and performance
 degrades given the churn due to spill to host memory or disk. As of this stage, there isn't a good solution 
 for this, other than to cause GC to happen. 
