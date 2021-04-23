@@ -78,14 +78,15 @@ class GpuSortMergeJoinMeta(
     } else {
       throw new IllegalStateException(s"Cannot build either side for ${join.joinType} join")
     }
+    val Seq(leftChild, rightChild) = childPlans.map(_.convertIfNeeded())
     GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       GpuJoinUtils.getGpuBuildSide(buildSide),
       condition.map(_.convertToGpu()),
-      childPlans(0).convertIfNeeded(),
-      childPlans(1).convertIfNeeded())
+      leftChild,
+      rightChild)
   }
 
   /**

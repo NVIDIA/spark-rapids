@@ -43,7 +43,7 @@ import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekable
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{vectorized, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, GenericInternalRow, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
@@ -327,11 +327,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     } else {
       val cachedSchema = getCatalystSchema(schema, schema)
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, cachedSchema)
-      val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
+      val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter =>
           new CachedBatchIteratorProducer[ColumnarBatch](cbIter, cachedSchema,
-            broadcastedHadoopConf.value.value, broadcastedConf.value)
+            broadcastedHadoopConf, broadcastedConf)
             .getColumnarBatchToCachedBatchIterator
       }
     }
@@ -486,11 +486,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
     } else {
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, selectedAttributes)
-      val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
+      val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter => {
           new CachedBatchIteratorConsumer(cbIter, cacheAttributes, selectedAttributes,
-            broadcastedHadoopConf.value.value, broadcastedConf.value).getColumnBatchIterator
+            broadcastedHadoopConf, broadcastedConf).getColumnBatchIterator
         }
       }
     }
@@ -518,11 +518,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       }
     }
     val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, selectedAttributes)
-    val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
+    val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
     input.mapPartitions {
       cbIter => {
         new CachedBatchIteratorConsumer(cbIter, cacheAttributes, selectedAttributes,
-          broadcastedHadoopConf.value.value, broadcastedConf.value).getInternalRowIterator
+          broadcastedHadoopConf, broadcastedConf).getInternalRowIterator
       }
     }
   }
@@ -606,12 +606,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      cbIter: Iterator[CachedBatch],
      cacheAttributes: Seq[Attribute],
      selectedAttributes: Seq[Attribute],
-     sharedHadoopConf: Configuration,
-     sharedConf: SQLConf) {
+     sharedHadoopConf: Broadcast[SerializableConfiguration],
+     sharedConf: Broadcast[Map[String, String]]) {
 
+    val conf = getConfFromMap(sharedConf)
+    val hadoopConf = sharedHadoopConf.value.value
     val origRequestedSchema: Seq[Attribute] = getCatalystSchema(selectedAttributes, cacheAttributes)
     val origCacheSchema: Seq[Attribute] = getCatalystSchema(cacheAttributes, cacheAttributes)
-    val options: ParquetReadOptions = HadoopReadOptions.builder(sharedHadoopConf).build()
+    val options: ParquetReadOptions = HadoopReadOptions.builder(hadoopConf).build()
     /**
      * We are getting this method using reflection because its a package-private
      */
@@ -681,7 +683,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             val recordReader =
               columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
                 cacheSchema.toStructType,
-                new ParquetToSparkSchemaConverter(sharedHadoopConf), None /*convertTz*/,
+                new ParquetToSparkSchemaConverter(hadoopConf), None /*convertTz*/,
                 LegacyBehaviorPolicy.CORRECTED))
             for (_ <- 0 until rows.toInt) {
               val row = recordReader.read
@@ -691,8 +693,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           }
           parquetFileReader.close()
           val iter = unsafeRows.iterator
-          val unsafeProjection =
-            GenerateUnsafeProjection.generate(requestedSchema, cacheSchema)
+          val unsafeProjection = GenerateUnsafeProjection.generate(requestedSchema, cacheSchema)
           if (hasUnsupportedType) {
             new UnsupportedDataHandlerIterator() {
               val wrappedIter: Iterator[InternalRow] = iter
@@ -781,7 +782,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      */
     def getColumnBatchIterator: Iterator[ColumnarBatch] = {
       if (!cbIter.hasNext) return Iterator.empty
-      val capacity = sharedConf.parquetVectorizedReaderBatchSize
+      val capacity = conf.parquetVectorizedReaderBatchSize
       val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
       val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
       val parquetFileReader = ParquetFileReader.open(inputFile, options)
@@ -794,9 +795,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       // we are getting parquet schema and then converting it to catalyst schema
       // because catalyst schema that we get from Spark doesn't have the exact schema expected by
       // the columnar parquet reader
-      val parquetToSparkSchemaConverter = new ParquetToSparkSchemaConverter(sharedHadoopConf)
+      val parquetToSparkSchemaConverter = new ParquetToSparkSchemaConverter(hadoopConf)
       val sparkSchema = parquetToSparkSchemaConverter.convert(parquetSchema)
-      val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(sharedHadoopConf)
+      val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(hadoopConf)
 
       val (_, requestedSchema) = if (hasUnsupportedType) {
         getSupportedSchemaFromUnsupported(origCacheSchema, origRequestedSchema)
@@ -809,8 +810,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val reqParquetSchema = sparkToParquetSchemaConverter.convert(reqSparkSchema)
 
       // reset spark schema calculated from parquet schema
-      sharedHadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, reqSparkSchema.json)
-      sharedHadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, reqSparkSchema.json)
+      hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, reqSparkSchema.json)
+      hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, reqSparkSchema.json)
 
       /**
        * Read the next RowGroup and read each column and return the columnarBatch
@@ -819,7 +820,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         val columnVectors: Array[OffHeapColumnVector] =
           OffHeapColumnVector.allocateColumns(capacity, requestedSchema.toStructType)
         val columnarBatch = new ColumnarBatch(columnVectors
-          .asInstanceOf[Array[org.apache.spark.sql.vectorized.ColumnVector]])
+          .asInstanceOf[Array[vectorized.ColumnVector]])
         val missingColumns = new Array[Boolean](reqParquetSchema.getFieldCount)
         var columnReaders: Array[VectorizedColumnReader] = _
 
@@ -901,6 +902,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
   }
 
+  private def getConfFromMap(sharedConf: Broadcast[Map[String, String]]): SQLConf = {
+    val conf = new SQLConf()
+    sharedConf.value.foreach { case (k, v) => conf.setConfString(k, v) }
+    conf
+  }
+
   private def getCatalystSchema(
      selectedAttributes: Seq[Attribute],
      cacheAttributes: Seq[Attribute]): Seq[Attribute] = {
@@ -929,8 +936,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   private[rapids] class CachedBatchIteratorProducer[T](
      iter: Iterator[T],
      cachedAttributes: Seq[Attribute],
-     sharedHadoopConf: Configuration,
-     sharedConf: SQLConf) {
+     sharedHadoopConf: Broadcast[SerializableConfiguration],
+     sharedConf: Broadcast[Map[String, String]]) {
+
+    val conf = getConfFromMap(sharedConf)
+    val hadoopConf = sharedHadoopConf.value.value
 
     def getInternalRowToCachedBatchIterator: Iterator[CachedBatch] = {
       new InternalRowToCachedBatchIterator
@@ -965,9 +975,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             getSupportedSchemaFromUnsupported(getCatalystSchema(cachedAttributes,
               cachedAttributes))._1
           // save it to sharedConf and sharedHadoopConf
-          sharedHadoopConf.set(
+          hadoopConf.set(
             ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, newCachedAttributes.toStructType.json)
-          sharedHadoopConf.set(
+          hadoopConf.set(
             ParquetWriteSupport.SPARK_ROW_SCHEMA, newCachedAttributes.toStructType.json)
           newCachedAttributes
         } else {
@@ -1077,10 +1087,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             // at least a single block
             val stream = new ByteArrayOutputStream(ByteArrayOutputFile.BLOCK_SIZE)
             val outputFile: OutputFile = new ByteArrayOutputFile(stream)
-            sharedConf.setConfString(ShimLoader.getSparkShims.parquetRebaseWriteKey,
+            conf.setConfString(ShimLoader.getSparkShims.parquetRebaseWriteKey,
               LegacyBehaviorPolicy.CORRECTED.toString)
-            val recordWriter = SQLConf.withExistingConf(sharedConf) {
-              parquetOutputFileFormat.getRecordWriter(outputFile, sharedHadoopConf)
+            val recordWriter = SQLConf.withExistingConf(conf) {
+              parquetOutputFileFormat.getRecordWriter(outputFile, hadoopConf)
             }
             var totalSize = 0
             while (rowIterator.hasNext && totalSize < BYTES_ALLOWED_PER_BATCH) {
@@ -1264,12 +1274,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       })
     } else {
       val broadcastedHadoopConf = getBroadcastedHadoopConf(conf, parquetSchema)
-      val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf)
-      // fallback to the CPU
+      val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter =>
           new CachedBatchIteratorProducer[InternalRow](cbIter, schema,
-            broadcastedHadoopConf.value.value, broadcastedConf.value)
+            broadcastedHadoopConf, broadcastedConf)
             .getInternalRowToCachedBatchIterator
       }
     }
