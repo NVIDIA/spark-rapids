@@ -541,6 +541,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
   var cpuCost: Double = 0
   var gpuCost: Double = 0
+  var estimatedOutputRows: Option[BigInt] = None
 
   override def convertToCpu(): SparkPlan = {
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
