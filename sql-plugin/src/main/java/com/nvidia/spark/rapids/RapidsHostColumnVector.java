@@ -63,7 +63,7 @@ public final class RapidsHostColumnVector extends RapidsHostColumnVectorCore {
   /**
    * Sets up the data type of this column vector.
    */
-  RapidsHostColumnVector(DataType type, ai.rapids.cudf.HostColumnVector cudfCv) {
+  public RapidsHostColumnVector(DataType type, ai.rapids.cudf.HostColumnVector cudfCv) {
     super(type, cudfCv);
     // TODO need some checks to be sure everything matches
     this.cudfCv = cudfCv;
