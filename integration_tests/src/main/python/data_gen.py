@@ -252,6 +252,29 @@ class LongGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
+class LongRangeGen(DataGen):
+    """Generate Longs in incrementing order."""
+    def __init__(self, nullable=False, start_val=0, direction="inc"):
+        super().__init__(LongType(), nullable=nullable)
+        self._start_val = start_val
+        self._current_val = start_val
+        if (direction == "dec"):
+            def dec_it():
+                tmp = self._current_val
+                self._current_val -= 1
+                return tmp
+            self._do_it = dec_it
+        else:
+            def inc_it():
+                tmp = self._current_val
+                self._current_val += 1
+                return tmp
+            self._do_it = inc_it
+
+    def start(self, rand):
+        self._current_val = self._start_val
+        self._start(rand, self._do_it)
+
 class RepeatSeqGen(DataGen):
     """Generate Repeated seq of `length` random items"""
     def __init__(self, child, length):
