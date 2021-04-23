@@ -48,13 +48,6 @@ case class GpuInMemoryTableScanExec(attributes: Seq[Attribute],
       predicates = predicates.map(QueryPlan.normalizeExpressions(_, relation.output)),
       relation = relation.canonicalized.asInstanceOf[InMemoryRelation])
 
-  override def innerChildren: Seq[QueryPlan[_]] = Seq(relation) ++ super.innerChildren
-
-  override def doCanonicalize(): SparkPlan =
-    copy(attributes = attributes.map(QueryPlan.normalizeExpressions(_, relation.output)),
-      predicates = predicates.map(QueryPlan.normalizeExpressions(_, relation.output)),
-      relation = relation.canonicalized.asInstanceOf[InMemoryRelation])
-
   override def vectorTypes: Option[Seq[String]] =
     relation.cacheBuilder.serializer.vectorTypes(attributes, conf)
 
