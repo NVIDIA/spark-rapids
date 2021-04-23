@@ -318,28 +318,16 @@ object ExecutionPlanCaptureCallback {
         s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
   }
 
-  private def getBaseNameFromClass(planClassStr: String): String = {
-    val firstDotIndex = planClassStr.lastIndexOf(".")
-    if (firstDotIndex != -1) planClassStr.substring(firstDotIndex + 1) else planClassStr
-  }
-
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
-    if (!exp.isInstanceOf[GpuExpression] &&
-      getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass) {
-      true
-    } else {
+    !exp.isInstanceOf[GpuExpression] &&
+      PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
       exp.children.exists(didFallBack(_, fallbackCpuClass))
-    }
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
-    if (!executedPlan.isInstanceOf[GpuExec] &&
-      getBaseNameFromClass(executedPlan.getClass.getName) == fallbackCpuClass) {
-      true
-    } else {
+    !executedPlan.isInstanceOf[GpuExec] && PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
       executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
-    }
   }
 }
 

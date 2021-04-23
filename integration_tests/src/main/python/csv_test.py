@@ -268,7 +268,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
             lambda spark : spark.read.schema(schema).csv(data_path),
             conf=updated_conf)
 
-@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
 def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
