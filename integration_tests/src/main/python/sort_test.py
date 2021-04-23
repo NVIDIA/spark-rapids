@@ -183,7 +183,8 @@ def test_large_orderby():
     StructGen([('child1', byte_gen)]),
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
 def test_large_orderby_nested_ridealong(data_gen):
-    # we use a LongRangeGen to avoid 
+    # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
+    #  results, especially on distributed clusters.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, LongRangeGen(), data_gen, length=1024*127)\
                     .orderBy(f.col('a').desc()),

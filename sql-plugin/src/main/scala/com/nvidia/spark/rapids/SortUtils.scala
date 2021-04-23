@@ -210,10 +210,10 @@ class GpuSorter(
             }
           }
           if (hasNested) {
-            // so as a work around we concat all of the data together and then sort it.
+            // so as a work around we concatenate all of the data together and then sort it.
             // It is slower, but it works
-            withResource(Table.concatenate(tabs: _*)) { concated =>
-              concated.orderBy(cudfOrdering: _*)
+            withResource(Table.concatenate(tabs: _*)) { concatenated =>
+              concatenated.orderBy(cudfOrdering: _*)
             }
           } else {
             Table.merge(tabs.toArray, cudfOrdering: _*)

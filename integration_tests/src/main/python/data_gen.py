@@ -253,7 +253,7 @@ class LongGen(DataGen):
         self._start(rand, lambda : rand.randint(self._min_val, self._max_val))
 
 class LongRangeGen(DataGen):
-    """Generate Longs in incramenting order."""
+    """Generate Longs in incrementing order."""
     def __init__(self, nullable=False, start_val=0, direction="inc"):
         super().__init__(LongType(), nullable=nullable)
         self._start_val = start_val
