@@ -33,6 +33,7 @@
 
   <properties>
     <udf.native.build.path>${project.build.directory}/cpp-build</udf.native.build.path>
+    <BUILD_UDF_BENCHMARKS>OFF</BUILD_UDF_BENCHMARKS>
     <CMAKE_CXX_FLAGS/>
     <GPU_ARCHS>ALL</GPU_ARCHS>
     <PER_THREAD_DEFAULT_STREAM>ON</PER_THREAD_DEFAULT_STREAM>
@@ -112,6 +113,7 @@
                           failonerror="true"
                           executable="cmake">
                       <arg value="${basedir}/src/main/cpp"/>
+                      <arg value="-DBUILD_UDF_BENCHMARKS=${BUILD_UDF_BENCHMARKS}"/>
                       <arg value="-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}"/>
                       <arg value="-DGPU_ARCHS=${GPU_ARCHS}"/>
                       <arg value="-DPER_THREAD_DEFAULT_STREAM=${PER_THREAD_DEFAULT_STREAM}"/>

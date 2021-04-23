@@ -105,6 +105,21 @@ CPMAddPackage(NAME  cudf
     )
 
 ###################################################################################################
+# - benchmarks ------------------------------------------------------------------------------------
+
+if(BUILD_UDF_BENCHMARKS)
+    # Find or install GoogleBench
+    CPMFindPackage(NAME benchmark
+        VERSION         1.5.2
+        GIT_REPOSITORY  https://github.com/google/benchmark.git
+        GIT_TAG         v1.5.2
+        GIT_SHALLOW     TRUE
+        OPTIONS         "BENCHMARK_ENABLE_TESTING OFF"
+                        "BENCHMARK_ENABLE_INSTALL OFF")
+    add_subdirectory(benchmarks)
+endif()
+
+###################################################################################################
 # - find JNI -------------------------------------------------------------------------------------
 
 find_package(JNI REQUIRED)
@@ -126,7 +141,9 @@ link_directories("${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES}"
 # - library targets -------------------------------------------------------------------------------
 
 set(SOURCE_FILES
+    "src/CosineSimilarityJni.cpp"
     "src/StringWordCountJni.cpp"
+    "src/cosine_similarity.cu"
     "src/string_word_count.cu")
 
 add_library(udfexamplesjni SHARED ${SOURCE_FILES})
