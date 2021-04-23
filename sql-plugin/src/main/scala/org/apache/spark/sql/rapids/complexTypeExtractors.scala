@@ -20,10 +20,10 @@ import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
 import org.apache.spark.sql.catalyst.util.{TypeUtils, quoteIdentifier}
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegerType, IntegralType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
@@ -192,21 +192,70 @@ class GpuElementAtMeta(
     rule: DataFromReplacementRule)
   extends BinaryExprMeta[ElementAt](expr, conf, parent, rule) {
   override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-
+    GpuElementAt(lhs, rhs)
   }
 }
 
-case class GpuElementAt(left: Expression, right: Expression) extends GpuBinaryExpression {
+case class GpuElementAt(left: Expression, right: Expression)
+  extends GpuBinaryExpression with ExpectsInputTypes {
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = ???
+  // ?? need ?
+  private lazy val mapKeyType = left.dataType.asInstanceOf[MapType].keyType
+  private lazy val arrayContainsNull = left.dataType.asInstanceOf[ArrayType].containsNull
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = ???
+  override lazy val dataType: DataType = left.dataType match {
+    case ArrayType(elementType, _) => elementType
+    case MapType(_, valueType, _) => valueType
+  }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = ???
+  override def inputTypes: Seq[AbstractDataType] = {
+    (left.dataType, right.dataType) match {
+      case (arr: ArrayType, e2: IntegralType) if (e2 != LongType) =>
+        Seq(arr, IntegerType)
+      case (MapType(keyType, valueType, hasNull), e2) =>
+        TypeCoercion.findTightestCommonType(keyType, e2) match {
+          case Some(dt) => Seq(MapType(dt, valueType, hasNull), dt)
+          case _ => Seq.empty
+        }
+      case (l, r) => Seq.empty
+    }
+  }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = ???
+  override def checkInputDataTypes(): TypeCheckResult = {
+    (left.dataType, right.dataType) match {
+      case (_: ArrayType, e2) if e2 != IntegerType =>
+        TypeCheckResult.TypeCheckFailure(s"Input to function $prettyName should have " +
+          s"been ${ArrayType.simpleString} followed by a ${IntegerType.simpleString}, but it's " +
+          s"[${left.dataType.catalogString}, ${right.dataType.catalogString}].")
+      case (MapType(e1, _, _), e2) if (!e2.sameType(e1)) =>
+        TypeCheckResult.TypeCheckFailure(s"Input to function $prettyName should have " +
+          s"been ${MapType.simpleString} followed by a value of same key type, but it's " +
+          s"[${left.dataType.catalogString}, ${right.dataType.catalogString}].")
+      case (e1, _) if (!e1.isInstanceOf[MapType] && !e1.isInstanceOf[ArrayType]) =>
+        TypeCheckResult.TypeCheckFailure(s"The first argument to function $prettyName should " +
+          s"have been ${ArrayType.simpleString} or ${MapType.simpleString} type, but its " +
+          s"${left.dataType.catalogString} type.")
+      case _ => TypeCheckResult.TypeCheckSuccess
+    }
+  }
 
-  override def dataType: DataType = ???
+  // Eventually we need something more full featured like
+  // GetArrayItemUtil.computeNullabilityFromArray
+  override def nullable: Boolean = true
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
+    throw new IllegalStateException("This is not supported yet")
+
+  override def prettyName: String = "element_at"
 }
 
 /** Checks if the array (left) has the element (right)
