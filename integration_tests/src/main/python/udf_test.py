@@ -42,7 +42,8 @@ from typing import Iterator, Tuple
 
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
-    'spark.rapids.sql.exec.WindowInPandasExec': 'true'
+    'spark.rapids.sql.exec.WindowInPandasExec': 'true',
+    'spark.rapids.sql.exec.AggregateInPandasExec': 'true'
 }
 
 data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
@@ -91,8 +92,8 @@ def test_pandas_scalar_udf_nested_type(data_gen):
         conf=arrow_udf_conf)
 
 
+@allow_non_gpu('PythonUDF', 'Alias')
 @approximate_float
-@allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_single_aggregate_udf(data_gen):
     @f.pandas_udf('double')
@@ -106,7 +107,7 @@ def test_single_aggregate_udf(data_gen):
 
 
 @ignore_order
-@allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
+@allow_non_gpu('PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_group_aggregate_udf(data_gen):
     @f.pandas_udf('long')

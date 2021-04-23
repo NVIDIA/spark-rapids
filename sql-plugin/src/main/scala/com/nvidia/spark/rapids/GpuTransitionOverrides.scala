@@ -430,15 +430,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException("It looks like some operations were " +
             s"pushed down to InMemoryTableScanExec ${imts.expressions.mkString(",")}")
         }
-      case _: GpuColumnarToRowExecParent => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case _: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted => {
-        // Ignored for now, we don't force it to the GPU if
-        // children are not on the gpu
-      }
       case other =>
         if (!plan.supportsColumnar &&
+            // There are some python execs that are not columnar because of a little
+            // used feature. This prevents those from failing tests. It also allows
+            // the columnar to row transitions to need to be explicitly allowed either.
+            !plan.isInstanceOf[GpuExec] &&
           !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n${plan}")

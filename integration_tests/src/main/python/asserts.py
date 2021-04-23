@@ -99,9 +99,14 @@ def _has_incompat_conf(conf):
 class _RowCmp(object):
     """Allows for sorting Rows in a consistent way"""
     def __init__(self, wrapped):
-        #TODO will need others for maps, etc
-        if isinstance(wrapped, Row) or isinstance(wrapped, list):
+        if isinstance(wrapped, Row) or isinstance(wrapped, list) or isinstance(wrapped, tuple):
             self.wrapped = [_RowCmp(c) for c in wrapped]
+        elif isinstance(wrapped, dict):
+            def sort_dict(e):
+                return _RowCmp(e)
+            tmp = [(k, v) for k, v in wrapped.items()]
+            tmp.sort(key=sort_dict)
+            self.wrapped = [_RowCmp(c) for c in tmp]
         else:
             self.wrapped = wrapped
 

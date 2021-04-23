@@ -109,7 +109,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
-              "Alias,Cast,LessThan")
+              "Alias,Cast,LessThan,ShuffleExchangeExec,RangePartitioning,HashPartitioning")
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
@@ -206,7 +206,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec," +
-              "Alias,Cast,LessThan")
+              "Alias,Cast,LessThan,ShuffleExchangeExec,RangePartitioning")
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
@@ -277,7 +277,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
-          "Alias,Cast,LessThan")
+          "Alias,Cast,LessThan,ShuffleExchangeExec")
 
     var optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
@@ -346,7 +346,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec," +
-              "Alias,Cast,LessThan")
+              "Alias,Cast,LessThan,ShuffleExchangeExec")
 
     withGpuSparkSession(spark => {
       val df: DataFrame = createQuery(spark)
