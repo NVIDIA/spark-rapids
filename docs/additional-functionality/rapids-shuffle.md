@@ -333,7 +333,7 @@ all between different parts of your application, causing output for shuffle to a
 will not be reused), and eventually causing OOM or even filled disk. This is true for Spark even without
 the RAPIDS Shuffle Manager, but in our case it's likely GPU memory that is being occupied, and performance
 degrades given the churn due to spill to host memory or disk. As of this stage, there isn't a good solution 
-for this, other than to cause GC to happen. 
+for this, other than to trigger a GC cycle on the driver.
 
 Spark has a configuration `spark.cleaner.periodicGC.interval` (defaults to 30 minutes), that 
 can be used to periodically cause garbage collection. If you are experiencing OOM situations, or 
