@@ -55,7 +55,7 @@ import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.spark311.
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
-import org.apache.spark.sql.types.{StructType, _}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -849,13 +849,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               throw new UnsupportedOperationException("Schema evolution not supported.")
             }
             missingColumns(i) = false
-          }
-          else {
+          } else {
             if (columns.get(i).getMaxDefinitionLevel == 0) {
               // Column is missing in data but the required data is non-nullable.
               // This file is invalid.
-              throw new IOException("Required column is missing in data file. Col: "
-                + colPath.toList)
+              throw new IOException(s"Required column is missing in data file. Col: " +
+                s"${colPath.toList}")
             }
             missingColumns(i) = true
           }
