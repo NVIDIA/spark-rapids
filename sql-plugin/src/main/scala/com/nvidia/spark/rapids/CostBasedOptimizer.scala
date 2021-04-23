@@ -20,10 +20,12 @@ import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression}
-import org.apache.spark.sql.execution.{ProjectExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.CustomShuffleReaderExec
+import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
+import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, ProjectExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
+import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec}
+import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
 class CostBasedOptimizer(conf: RapidsConf) extends Logging {
@@ -77,6 +79,8 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     // calculate total (this operator + children)
     val totalCpuCost = operatorCpuCost + childCpuCosts.sum
     var totalGpuCost = operatorGpuCost + childGpuCosts.sum
+
+    plan.estimatedOutputRows = RowCountPlanVisitor.visit(plan)
 
     // determine how many transitions between CPU and GPU are taking place between
     // the child operators and this operator
@@ -268,6 +272,69 @@ class DefaultCostModel(conf: RapidsConf) extends CostModel {
     }
   }
 
+}
+
+/**
+ * Estimate the number of rows that an operator will output. Note that these row counts are
+ * the aggregate across all output partitions.
+ *
+ * Logic is based on Spark's SizeInBytesOnlyStatsPlanVisitor. which operates on logical plans
+ * and only computes data sizes, not row counts.
+ */
+object RowCountPlanVisitor {
+
+  def visit(plan: SparkPlanMeta[_]): Option[BigInt] = plan.wrapped match {
+    case p: QueryStageExec =>
+      ShimLoader.getSparkShims.getQueryStageRuntimeStatistics(p).rowCount
+    case GlobalLimitExec(limit, _) =>
+      visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
+    case LocalLimitExec(limit, _) =>
+      // LocalLimit applies the same limit for each partition
+      val n = limit * plan.wrapped.asInstanceOf[SparkPlan]
+          .outputPartitioning.numPartitions
+      visit(plan.childPlans.head).map(_.min(n)).orElse(Some(n))
+    case p: TakeOrderedAndProjectExec =>
+      visit(plan.childPlans.head).map(_.min(p.limit)).orElse(Some(p.limit))
+    case p: HashAggregateExec if p.groupingExpressions.isEmpty =>
+      Some(1)
+    case p: SortMergeJoinExec =>
+      estimateJoin(plan, p.joinType)
+    case p: ShuffledHashJoinExec =>
+      estimateJoin(plan, p.joinType)
+    case p: BroadcastHashJoinExec =>
+      estimateJoin(plan, p.joinType)
+    case _: UnionExec =>
+      Some(plan.childPlans.flatMap(visit).sum)
+    case _ =>
+      default(plan)
+  }
+
+  private def estimateJoin(plan: SparkPlanMeta[_], joinType: JoinType): Option[BigInt] = {
+    joinType match {
+      case LeftAnti | LeftSemi =>
+        // LeftSemi and LeftAnti won't ever be bigger than left
+        visit(plan.childPlans.head)
+      case _ =>
+        default(plan)
+    }
+  }
+
+  /**
+   * The default row count is the product of the row count of all child plans.
+   */
+  private def default(p: SparkPlanMeta[_]): Option[BigInt] = {
+    val one = BigInt(1)
+    val product = p.childPlans.map(visit)
+        .filter(_.exists(_ > 0L))
+        .map(_.get)
+        .product
+    if (product == one) {
+      // product will be 1 when there are no child plans
+      None
+    } else {
+      Some(product)
+    }
+  }
 }
 
 sealed abstract class Optimization
