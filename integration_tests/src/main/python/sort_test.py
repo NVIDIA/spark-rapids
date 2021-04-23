@@ -170,3 +170,21 @@ def test_large_orderby():
             lambda spark : unary_op_df(spark, long_gen, length=1024*128)\
                     .orderBy(f.col('a')),
             conf = {'spark.rapids.sql.batchSizeBytes': '16384'})
+
+# This is similar to test_large_orderby, but here we want to test some types
+# that are not being sorted on, but are going along with it
+@pytest.mark.parametrize('data_gen', [byte_gen,
+    string_gen,
+    float_gen,
+    date_gen,
+    timestamp_gen,
+    decimal_gen_default,
+    StructGen([('child1', byte_gen)]),
+    ArrayGen(byte_gen, max_length=5)], ids=idfn)
+def test_large_orderby_nested_ridealong(data_gen):
+    # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
+    #  results, especially on distributed clusters.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, LongRangeGen(), data_gen, length=1024*127)\
+                    .orderBy(f.col('a').desc()),
+            conf = {'spark.rapids.sql.batchSizeBytes': '16384'})
