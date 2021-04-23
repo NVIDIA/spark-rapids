@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ package com.nvidia.spark.rapids.shims.spark301
 
 import java.util.UUID
 
+import com.nvidia.spark.rapids.GpuMetric
+
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
@@ -24,14 +26,15 @@ import org.apache.spark.sql.execution.exchange.BroadcastExchangeLike
 import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 
 case class GpuBroadcastExchangeExec(
-    mode: BroadcastMode,
+    override val mode: BroadcastMode,
     child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) with BroadcastExchangeLike {
 
   override def runId: UUID = _runId
 
   override def runtimeStatistics: Statistics = {
-    val dataSize = metrics("dataSize").value
-    Statistics(dataSize)
+    Statistics(
+      sizeInBytes = metrics("dataSize").value,
+      rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
   }
 
   override def doCanonicalize(): SparkPlan = {
