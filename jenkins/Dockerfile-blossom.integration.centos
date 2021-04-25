@@ -19,7 +19,7 @@
 # Arguments:
 #    CUDA_VER=10.1, 10.2 or 11.0
 #    CENTOS_VER=7 or 8
-#    CUDF_VER=0.18 or 0.19
+#    CUDF_VER=0.19.1
 #    URM_URL=<maven repo url>
 ###
 
