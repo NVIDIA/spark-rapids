@@ -2849,6 +2849,7 @@ object GpuOverrides {
         TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
         override def tagPlanForGpu() {
+          // https://github.com/NVIDIA/spark-rapids/issues/2257
           if (!conf.stableSort && sort.sortOrder.exists(so => isStructType(so.dataType))) {
             willNotWorkOnGpu("it's disabled for nested types " +
               s"unless ${RapidsConf.STABLE_SORT.key} is true")

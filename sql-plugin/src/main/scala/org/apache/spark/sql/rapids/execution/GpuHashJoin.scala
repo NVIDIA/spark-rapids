@@ -46,10 +46,13 @@ object GpuHashJoin {
     }
     joinType match {
       case _: InnerLike =>
-      case RightOuter | LeftOuter =>
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
         unSupportNonEqualCondition()
-      case FullOuter | LeftSemi | LeftAnti =>
+      case FullOuter =>
         unSupportNonEqualCondition()
+        // FullOuter join cannot support with struct keys as two issues below
+        //  * https://github.com/NVIDIA/spark-rapids/issues/2126
+        //  * https://github.com/rapidsai/cudf/issues/7947
         unSupportStructKeys()
       case _ =>
         meta.willNotWorkOnGpu(s"$joinType currently is not supported")
