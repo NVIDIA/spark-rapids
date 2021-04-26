@@ -16,9 +16,12 @@
 
 package com.nvidia.spark.rapids
 
+import scala.annotation.tailrec
 import scala.collection.mutable.Queue
+
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
+
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
@@ -28,8 +31,6 @@ import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.annotation.tailrec
 
 /**
  * An iterator that uses the GPU for columnar to row conversion of fixed width types.
@@ -192,13 +193,14 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   }
 
   def loadNextBatch(): Unit = {
+    closeCurrentBatch()
+    if (it != null) {
+      it = null
+    }
+
     // fetch next batch
     val devCb = withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE,
         fetchTime)) { _ =>
-      closeCurrentBatch()
-      if (it != null) {
-        it = null
-      }
       if (batches.hasNext) {
         Some(batches.next())
       } else {
