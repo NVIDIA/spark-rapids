@@ -22,7 +22,7 @@ function print_ver(){
     VERSION=$3
     SUFFIX=$4
     SERVER_ID=$5
-    
+
     # Collect snapshot dependency info only in Jenkins build
     # In dev build, print 'SNAPSHOT' tag without time stamp, e.g.: cudf-0.20-SNAPSHOT.jar
     if [[ "$VERSION" == *"-SNAPSHOT" && -n "$JENKINS_URL" ]]; then

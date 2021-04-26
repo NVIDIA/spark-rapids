@@ -49,7 +49,7 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
       shuffleCatalog =
           new ShuffleBufferCatalog(RapidsBufferCatalog.singleton, diskBlockManager)
       shuffleReceivedBufferCatalog =
-          new ShuffleReceivedBufferCatalog(RapidsBufferCatalog.singleton, diskBlockManager)
+          new ShuffleReceivedBufferCatalog(RapidsBufferCatalog.singleton)
     }
   }
 

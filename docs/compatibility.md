@@ -295,7 +295,6 @@ The formats which are supported on GPU and 100% compatible with Spark are :
 
 Examples of supported formats that may produce different results are:
 
-- Use of a two digit year, i.e.: `yy`, may use a different century on GPU compared to CPU
 - Trailing characters (including whitespace) may return a non-null value on GPU and Spark will 
   return null 
 
@@ -314,10 +313,35 @@ Formats that contain any of the following words are unsupported and will fall ba
 
 ```
 "u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
-"y", "yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+"y", "yy", yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
 "D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
 "d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
 ```
+
+## Formatting dates and timestamps as strings
+
+When formatting dates and timestamps as strings using functions such as `from_unixtime`, only a
+subset of valid format strings are supported on the GPU.
+
+Formats that contain any of the following characters are unsupported and will fall back to CPU:
+
+```
+'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N',
+'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y'
+```
+
+Formats that contain any of the following words are unsupported and will fall back to CPU:
+
+```
+"u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
+"y", yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+"D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
+"d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
+```
+
+Note that this list differs very slightly from the list given in the previous section for parsing
+strings to dates because the two-digit year format `"yy"` is supported when formatting dates as
+strings but not when parsing strings to dates.
 
 ## Casting between types
 

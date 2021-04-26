@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,7 +79,7 @@ object GpuDeviceManager extends Logging {
     // loop multiple times to see if a GPU was released or something unexpected happened that
     // we couldn't acquire on first try
     var numRetries = 2
-    val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
+    val addrsToTry = ArrayBuffer.empty ++= (0 until deviceCount)
     while (numRetries > 0) {
       val addr = addrsToTry.find(tryToSetGpuDeviceAndAcquire)
       if (addr.isDefined) {
@@ -103,7 +103,7 @@ object GpuDeviceManager extends Logging {
   def getGPUAddrFromResources(resources: Map[String, ResourceInformation]): Option[Int] = {
     if (resources.contains("gpu")) {
       val addrs = resources("gpu").addresses
-      if (addrs.size > 1) {
+      if (addrs.length > 1) {
         // Throw an exception since we assume one GPU per executor.
         // If multiple GPUs are allocated by spark, then different tasks could get assigned
         // different GPUs but RMM would only be initialized for 1. We could also just get

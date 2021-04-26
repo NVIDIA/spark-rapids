@@ -36,11 +36,11 @@ def test_single_orderby(data_gen, order):
 
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
-    pytest.param(200, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+    pytest.param(200)
 ])
 @pytest.mark.parametrize('stable_sort', [
     pytest.param(True),
-    pytest.param(False, marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1607"))
+    pytest.param(False)
 ])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
@@ -64,7 +64,6 @@ def test_single_orderby(data_gen, order):
 def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            # TODO no interference with range partition once implemented
             conf = {
                 **allow_negative_scale_of_decimal_conf,
                 **{
@@ -161,3 +160,31 @@ def test_single_orderby_with_skew(data_gen):
                     .orderBy(f.col('a'))\
                     .selectExpr('a'),
             conf = allow_negative_scale_of_decimal_conf)
+
+# This is primarily to test the out of core sort with multiple batches. For this we set the data size to
+# be relatively large (1 MiB across all tasks) and the target size to be small (16 KiB). This means we
+# should see around 64 batches of data. So this is the most valid if there are less than 64 tasks
+# in the cluster, but it should still work even then.
+def test_large_orderby():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, long_gen, length=1024*128)\
+                    .orderBy(f.col('a')),
+            conf = {'spark.rapids.sql.batchSizeBytes': '16384'})
+
+# This is similar to test_large_orderby, but here we want to test some types
+# that are not being sorted on, but are going along with it
+@pytest.mark.parametrize('data_gen', [byte_gen,
+    string_gen,
+    float_gen,
+    date_gen,
+    timestamp_gen,
+    decimal_gen_default,
+    StructGen([('child1', byte_gen)]),
+    ArrayGen(byte_gen, max_length=5)], ids=idfn)
+def test_large_orderby_nested_ridealong(data_gen):
+    # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
+    #  results, especially on distributed clusters.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, LongRangeGen(), data_gen, length=1024*127)\
+                    .orderBy(f.col('a').desc()),
+            conf = {'spark.rapids.sql.batchSizeBytes': '16384'})

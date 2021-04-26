@@ -104,7 +104,6 @@ class AdaptiveQueryExecSuite
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
-      val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
       val shuffleExchanges = ShimLoader.getSparkShims
           .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
           .map(_.asInstanceOf[ShuffleQueryStageExec])
@@ -548,25 +547,6 @@ class AdaptiveQueryExecSuite
       fun(spark)
 
     }, conf)
-  }
-
-  /** most of the AQE tests requires Spark 3.0.1 or later */
-  private def assumeSpark301orLater =
-    assume(cmpSparkVersion(3, 0, 1) >= 0)
-
-  private def assumePriorToSpark320 =
-    assume(cmpSparkVersion(3, 2, 0) < 0)
-
-  private def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
-    val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
-      case SparkShimVersion(a, b, c) => (a, b, c)
-      case DatabricksShimVersion(a, b, c) => (a, b, c)
-      case EMRShimVersion(a, b, c) => (a, b, c)
-    }
-    val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
-    val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
-    sparkFullVersion.compareTo(fullVersion)
   }
 
   def checkSkewJoin(

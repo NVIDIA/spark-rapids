@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
           exp
         } else {
           try {
-            if (exp.children != null && !exp.children.exists(x => x == null)) {
+            if (exp.children != null && !exp.children.contains(null)) {
               exp.withNewChildren(exp.children.map(c => {
                 if (c != null && c.isInstanceOf[Expression]) {
                   attemptToReplaceExpression(plan, c)
@@ -68,7 +68,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
               exp
             }
           } catch {
-            case npe: NullPointerException => {
+            case _: NullPointerException => {
               exp
             }
           }

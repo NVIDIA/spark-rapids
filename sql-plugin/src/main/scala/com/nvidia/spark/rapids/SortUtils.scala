@@ -201,7 +201,23 @@ class GpuSorter(
           batches.foreach { cb =>
             tabs += GpuColumnVector.from(cb)
           }
-          Table.merge(tabs.toArray, cudfOrdering: _*)
+          // In the current version of cudf merge does not work for structs or lists (nested types)
+          // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
+          val hasNested = {
+            val tab = tabs.head
+            (0 until tab.getNumberOfColumns).exists { i =>
+              tab.getColumn(i).getType.isNestedType
+            }
+          }
+          if (hasNested) {
+            // so as a work around we concatenate all of the data together and then sort it.
+            // It is slower, but it works
+            withResource(Table.concatenate(tabs: _*)) { concatenated =>
+              concatenated.orderBy(cudfOrdering: _*)
+            }
+          } else {
+            Table.merge(tabs.toArray, cudfOrdering: _*)
+          }
         }
         withResource(merged) { merged =>
           GpuColumnVector.from(merged, projectedBatchTypes)

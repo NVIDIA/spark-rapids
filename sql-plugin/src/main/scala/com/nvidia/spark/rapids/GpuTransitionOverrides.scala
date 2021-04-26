@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -135,7 +135,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // in future query stages. Note that because these query stages have already executed, we
     // don't need to recurse down and optimize them again
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
-      getColumnarToRowExec(e)
+      e.plan match {
+        case ReusedExchangeExec(_, b: GpuBroadcastExchangeExecBase) =>
+          // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
+          // hash join but Spark will sometimes try and do this (see
+          // https://issues.apache.org/jira/browse/SPARK-35093 for more information) so we
+          // need to convert the output to rows in the driver before broadcasting the data
+          // to the executors
+          GpuBroadcastToCpuExec(b.mode, b.child)
+        case _ => getColumnarToRowExec(e)
+      }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       getColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 
@@ -424,8 +433,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: GpuColumnarToRowExecParent => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case shuffleExchange: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted
-        || !shuffleExchange.outputPartitioning.isInstanceOf[RangePartitioning] => {
+      case _: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted => {
         // Ignored for now, we don't force it to the GPU if
         // children are not on the gpu
       }

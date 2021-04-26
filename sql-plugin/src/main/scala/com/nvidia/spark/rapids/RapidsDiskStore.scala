@@ -31,7 +31,7 @@ class RapidsDiskStore(
     diskBlockManager: RapidsDiskBlockManager,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
     deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
-    extends RapidsBufferStore(StorageTier.DISK, catalog, deviceStorage) {
+    extends RapidsBufferStore(StorageTier.DISK, catalog) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
   override protected def createBuffer(incoming: RapidsBuffer, incomingBuffer: MemoryBuffer,

@@ -661,7 +661,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
             } else if (cmp > 0) {
               return false
             } // else equal go on
-          case (o1, o2) =>
+          case (o1, _) =>
             throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
         }
       }
@@ -809,11 +809,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def testUnaryFunction(
     conf: SparkConf,
     values: Seq[Any],
-    expectNull: Boolean = false,
     maxFloatDiff: Double = 0.0,
     sort: Boolean = false,
-    repart: Integer = 1,
-    sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+    repart: Integer = 1)(fun: DataFrame => DataFrame): Unit = {
 
     val df: SparkSession => DataFrame =
       (sparkSession: SparkSession) => createDataFrame(sparkSession, values)
@@ -843,7 +841,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
     test(qualifiedTestName) {
       val t = Try({
-        val fromGpu = withGpuSparkSession( session => {
+        withGpuSparkSession( session => {
           var data = df(session)
           if (repart > 0) {
             // repartition the data so it is turned into a projection,
@@ -1823,5 +1821,25 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       case _ => throw new IllegalArgumentException("There must be at least one non-null value")
     }
   }
+
+  /** most of the AQE tests requires Spark 3.0.1 or later */
+  def assumeSpark301orLater =
+    assume(cmpSparkVersion(3, 0, 1) >= 0)
+
+  def assumePriorToSpark320 =
+    assume(cmpSparkVersion(3, 2, 0) < 0)
+
+  def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
+    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
+    val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
+      case SparkShimVersion(a, b, c) => (a, b, c)
+      case DatabricksShimVersion(a, b, c) => (a, b, c)
+      case EMRShimVersion(a, b, c) => (a, b, c)
+    }
+    val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
+    val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
+    sparkFullVersion.compareTo(fullVersion)
+  }
+
 
 }

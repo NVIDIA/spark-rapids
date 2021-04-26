@@ -51,10 +51,10 @@ class GpuBroadcastHashJoinMeta(
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
-
+    val Seq(leftChild, rightChild) = childPlans
     val buildSide = join.buildSide match {
-      case BuildLeft => childPlans(0)
-      case BuildRight => childPlans(1)
+      case BuildLeft => leftChild
+      case BuildRight => rightChild
     }
 
     if (!buildSide.canThisBeReplaced) {
@@ -67,8 +67,7 @@ class GpuBroadcastHashJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val left = childPlans(0).convertIfNeeded()
-    val right = childPlans(1).convertIfNeeded()
+    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSide = join.buildSide match {
       case BuildLeft => left

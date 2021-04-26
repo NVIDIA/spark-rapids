@@ -145,7 +145,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
         devColumn = hostColumn.copyToDevice();
       }
     }
-    try (NvtxRange range = buildRange;
+    try (NvtxRange ignored = buildRange;
          ColumnVector cv = devColumn;
          Table tab = Table.convertFromRows(cv, rapidsTypes)) {
       return GpuColumnVector.from(tab, outputTypes);

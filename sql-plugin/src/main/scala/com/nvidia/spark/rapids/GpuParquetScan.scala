@@ -357,7 +357,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         return uri
       }
     } catch {
-      case e: URISyntaxException =>
+      case _: URISyntaxException =>
     }
     new File(path).getAbsoluteFile().toURI()
   }
@@ -663,7 +663,7 @@ abstract class FileParquetPartitionReaderBase(
 
     val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
     // check if there are cols with precision that can be stored in an int
-    val typeCastingNeeded = precisions.filter(p => p <= Decimal.MAX_INT_DIGITS).nonEmpty
+    val typeCastingNeeded = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
     if (readDataSchema.length > inputTable.getNumberOfColumns || typeCastingNeeded) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anyting like that
@@ -890,7 +890,7 @@ object MultiFileThreadPoolFactory {
   private def initThreadPool(
       maxThreads: Int = 20,
       keepAliveSeconds: Long = 60): ThreadPoolExecutor = synchronized {
-    if (!threadPool.isDefined) {
+    if (threadPool.isEmpty) {
       val threadFactory = new ThreadFactoryBuilder()
         .setNameFormat("parquet reader worker-%d")
         .setDaemon(true)
@@ -1067,6 +1067,7 @@ class MultiFileParquetPartitionReader(
         BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
         footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
         val amountWritten = offset + footerOut.getPos
+        footerOut.close()
         // triple check we didn't go over memory
         if (amountWritten > totalBufferSize) {
            throw new QueryExecutionException(s"Calculated buffer size $totalBufferSize is to " +
@@ -1083,14 +1084,13 @@ class MultiFileParquetPartitionReader(
   private def buildAndConcatPartitionColumns(
       rowsPerPartition: Array[Long],
       inPartitionValues: Array[InternalRow]): Array[GpuColumnVector] = {
-    val numCols = partitionSchema.fields.size
+    val numCols = partitionSchema.fields.length
     val allPartCols = new Array[GpuColumnVector](numCols)
     // build the partitions vectors for all partitions within each column
     // and concatenate those together then go to the next column
     for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
       val dataType = field.dataType
-      val partitionColumns = new Array[GpuColumnVector](inPartitionValues.size)
-      withResource(new Array[GpuColumnVector](inPartitionValues.size)) {
+      withResource(new Array[GpuColumnVector](inPartitionValues.length)) {
         partitionColumns =>
           for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
             val partInternalRow = inPartitionValues(partIndex)
@@ -1138,10 +1138,10 @@ class MultiFileParquetPartitionReader(
       inPartitionValues: Array[InternalRow],
       rowsPerPartition: Array[Long],
       partitionSchema: StructType): Option[ColumnarBatch] = {
-    assert(rowsPerPartition.size == inPartitionValues.size)
+    assert(rowsPerPartition.length == inPartitionValues.length)
     if (partitionSchema.nonEmpty) {
       batch.map { cb =>
-        val numPartitions = inPartitionValues.size
+        val numPartitions = inPartitionValues.length
         if (numPartitions > 1) {
           concatAndAddPartitionColsToBatch(cb, rowsPerPartition, inPartitionValues)
         } else {
@@ -1291,7 +1291,7 @@ class MultiFileParquetPartitionReader(
                 blockIterator.head.schema.asGroupType().getFields.asScala.map(_.getName)
               val schemaCurrentfile =
                 currentClippedSchema.asGroupType().getFields.asScala.map(_.getName)
-              if (!schemaNextfile.sameElements(schemaCurrentfile)) {
+              if (!(schemaNextfile == schemaCurrentfile)) {
                 logInfo(s"File schema for the next file ${blockIterator.head.filePath}" +
                   s" doesn't match current $currentFile, splitting it into another batch!")
                 return
@@ -1409,7 +1409,7 @@ class MultiFileCloudParquetPartitionReader(
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
       try {
         val fileBlockMeta = filterHandler.filterBlocks(file, conf, filters, readDataSchema)
-        if (fileBlockMeta.blocks.length == 0) {
+        if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
           return HostMemoryBuffersWithMetaData(fileBlockMeta.isCorrectedRebaseMode,
@@ -1503,7 +1503,7 @@ class MultiFileCloudParquetPartitionReader(
   }
 
   private def addNextTaskIfNeeded(): Unit = {
-    if (tasksToRun.size > 0 && !isDone) {
+    if (tasksToRun.nonEmpty && !isDone) {
       val runner = tasksToRun.dequeue()
       tasks.add(MultiFileThreadPoolFactory.submitToThreadPool(runner, numThreads))
     }
@@ -1550,7 +1550,7 @@ class MultiFileCloudParquetPartitionReader(
 
     // this shouldn't happen but if somehow the batch is None and we still
     // have work left skip to the next file
-    if (!batch.isDefined && filesToRead > 0 && !isDone) {
+    if (batch.isEmpty && filesToRead > 0 && !isDone) {
       next()
     }
 
@@ -1565,7 +1565,7 @@ class MultiFileCloudParquetPartitionReader(
     // in cases close got called early for like limit() calls
     isDone = true
     currentFileHostBuffers.foreach { current =>
-      current.memBuffersAndSizes.foreach { case (buf, size) =>
+      current.memBuffersAndSizes.foreach { case (buf, _) =>
         if (buf != null) {
           buf.close()
         }
@@ -1576,7 +1576,7 @@ class MultiFileCloudParquetPartitionReader(
     batch = None
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
-        task.get.memBuffersAndSizes.foreach { case (buf, size) =>
+        task.get.memBuffersAndSizes.foreach { case (buf, _) =>
           if (buf != null) {
             buf.close()
           }
@@ -1597,10 +1597,6 @@ class MultiFileCloudParquetPartitionReader(
       hostBuffer: HostMemoryBuffer,
       dataSize: Long,
       fileName: String): Option[ColumnarBatch] = {
-    if (dataSize == 0) {
-      // shouldn't ever get here
-      None
-    }
     // not reading any data, but add in partition data if needed
     if (hostBuffer == null) {
       // Someone is going to process this data, even if it is just a row count

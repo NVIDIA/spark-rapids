@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -396,7 +396,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
 
   override def doColumnar(value: GpuColumnVector, scale: Scalar): ColumnVector = {
     val scaleVal = dataType match {
-      case DecimalType.Fixed(p, s) => s
+      case DecimalType.Fixed(_, s) => s
       case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => scale.getInt
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }

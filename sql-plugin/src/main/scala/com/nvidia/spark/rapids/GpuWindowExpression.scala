@@ -122,11 +122,10 @@ class GpuWindowExpressionMeta(
   /**
    * Convert what this wraps to a GPU enabled version.
    */
-  override def convertToGpu(): GpuExpression =
-    GpuWindowExpression(
-      childExprs.head.convertToGpu(),
-      childExprs(1).convertToGpu().asInstanceOf[GpuWindowSpecDefinition]
-    )
+  override def convertToGpu(): GpuExpression = {
+    val Seq(left, right) = childExprs.map(_.convertToGpu())
+    GpuWindowExpression(left, right.asInstanceOf[GpuWindowSpecDefinition])
+  }
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
@@ -556,9 +555,10 @@ class GpuSpecifiedWindowFrameMeta(
     }
   }
 
-  override def convertToGpu(): GpuExpression =
-    GpuSpecifiedWindowFrame(windowFrame.frameType, childExprs.head.convertToGpu(),
-      childExprs(1).convertToGpu())
+  override def convertToGpu(): GpuExpression = {
+    val Seq(left, right) = childExprs.map(_.convertToGpu())
+    GpuSpecifiedWindowFrame(windowFrame.frameType, left, right)
+  }
 }
 
 trait GpuWindowFrame extends GpuExpression with GpuUnevaluable {

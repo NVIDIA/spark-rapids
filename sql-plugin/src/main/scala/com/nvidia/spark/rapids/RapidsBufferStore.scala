@@ -40,8 +40,7 @@ object RapidsBufferStore {
  */
 abstract class RapidsBufferStore(
     val tier: StorageTier,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
-    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
     extends AutoCloseable with Logging with Arm {
 
   val name: String = tier.toString
@@ -61,10 +60,6 @@ abstract class RapidsBufferStore(
       }
       spillable.offer(buffer)
       totalBytesStored += buffer.size
-    }
-
-    def get(id: RapidsBufferId): RapidsBufferBase = synchronized {
-      buffers.get(id)
     }
 
     def remove(id: RapidsBufferId): Unit = synchronized {

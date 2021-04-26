@@ -18,6 +18,5 @@ can be used to include the native UDF examples in the build, i.e.: specify
 The `Dockerfile` in this directory can be used to setup a Docker image that
 provides a libcudf build environment. This repository will either need to be
 cloned or mounted into a container using that Docker image.
-There are a number of build arguments in the `Dockerfile` to control the
-Linux version, GCC version, CUDA version, and other settings. See the top of
-the `Dockerfile` for details.
+The `Dockerfile` contains build arguments to control the Linux version,
+CUDA version, and other settings. See the top of the `Dockerfile` for details.

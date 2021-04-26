@@ -76,9 +76,9 @@ object ConfHelper {
     v.map(stringConverter).mkString(",")
   }
 
-  def byteFromString(str: String, unit: ByteUnit, key: String): Long = {
+  def byteFromString(str: String, unit: ByteUnit): Long = {
     val (input, multiplier) =
-      if (str.length() > 0 && str.charAt(0) == '-') {
+      if (str.nonEmpty && str.head == '-') {
         (str.substring(1), -1)
       } else {
         (str, 1)
@@ -265,7 +265,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   }
 
   def bytesConf(unit: ByteUnit): TypedConfBuilder[Long] = {
-    new TypedConfBuilder[Long](this, byteFromString(_, unit, key))
+    new TypedConfBuilder[Long](this, byteFromString(_, unit))
   }
 
   def integerConf: TypedConfBuilder[Integer] = {
@@ -494,9 +494,13 @@ object RapidsConf {
     .createWithDefault(false)
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
-      .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, " +
-          "setting this to true will force all parsing onto GPU even for formats that can " +
-          "result in incorrect results when parsing invalid inputs.")
+    .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
+         "formats are fully supported on the GPU and some are unsupported and will fall back to " + 
+         "the CPU.  Some formats behave differently on the GPU than the CPU.  Spark on the CPU " +
+         "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
+         "the GPU will parse the date with invalid trailing characters. More detail can be found " +
+         "at [parsing strings as dates or timestamps]" + 
+         "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
 
