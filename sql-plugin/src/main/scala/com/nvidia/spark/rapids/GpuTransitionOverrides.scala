@@ -21,14 +21,13 @@ import java.lang.reflect.Method
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.RangePartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
@@ -435,8 +434,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case other =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little
-            // used feature. This prevents those from failing tests. It also allows
-            // the columnar to row transitions to need to be explicitly allowed either.
+            // used feature. This prevents those from failing tests. This also allows
+            // the columnar to row transitions to not cause test issues because they too
+            // are not columnar (they output rows) but are instances of GpuExec.
             !plan.isInstanceOf[GpuExec] &&
           !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +

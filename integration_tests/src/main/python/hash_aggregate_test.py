@@ -174,7 +174,7 @@ _confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
-# but this ends up allowing close to everything beig off the GPU so I am not sure how
+# but this ends up allowing close to everything being off the GPU so I am not sure how
 # useful this really is
 _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
