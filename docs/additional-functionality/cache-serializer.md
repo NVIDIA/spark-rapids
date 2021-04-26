@@ -29,37 +29,28 @@ nav_order: 2
   `spark.sql.inMemoryColumnarStorage.enableVectorizedReader` will not be honored as the GPU
   data is always read in as columnar. If `spark.rapids.sql.enabled` is set to false
   the cached objects will still be compressed on the CPU as a part of the caching process.
+  
   Please note that ParquetCachedBatchSerializer doesn't support negative decimal scale, so if 
   `spark.sql.legacy.allowNegativeScaleOfDecimal` is set to true ParquetCachedBatchSerializer
   should not be used.  Using the serializer with negative decimal scales will generate
   an error at runtime.
-  
-  To use this serializer, set the `spark.sql.cache.serializer` config to the serializer class as in 
-  this example:
+
+  Make sure to use the right package corresponding to the spark version you are using. To use
+  this serializer with Spark 3.1.1 please run Spark with the following conf.
   ```
   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
   ```
+  See the below table for all the names of the serializers corresponding to the Spark
+  versions
+ 
+  | Spark version | Serializer name |
+  | ------ | -----|
+  | 3.1.1 | com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer |
+  | 3.1.2 | com.nvidia.spark.rapids.shims.spark312.ParquetCachedBatchSerializer |
+  | 3.2.0 | com.nvidia.spark.rapids.shims.spark320.ParquetCachedBatchSerializer | 
   
-##           Supported Types                       
-  
-  | Types      | On Gpu | On CPU   |
-  | ---------- | ----------- |--- |
-  | LongType | True | True|
-  | DoubleType | True | True|
-  | ByteType | True | True|
-  | BooleanType | True | True|
-  | ShortType | True | True|
-  | IntegerType | True | True|
-  | FloatType | True | True|
-  | DateType | True | True|
-  | TimestampType | True | True|
-  | StringType | True | True|
-  | NullType | True | True|
-  | DecimalType | True | True|
-  | StructType | True | True|
-  | CalendarIntervalType | True | True |
-  | ArrayType | False | True|
-  | MapType | False | True |
-  | BinaryType | False | True |
-  
+##          Supported Types                       
+ 
+ All types are supported on the CPU, on the Gpu, ArrayType, MapType and BinaryType are not
+ supported 
 

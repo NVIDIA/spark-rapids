@@ -62,6 +62,7 @@ def test_hive_generic_udf():
 @rapids_udf_example_native
 def test_hive_simple_udf_native(enable_rapids_udf_example_native):
     with_spark_session(skip_if_no_hive)
+    data_gens = [["s", StringGen('.{0,30}')]]
     def evalfn(spark):
         load_hive_udf_or_skip_test(spark, "wordcount", "com.nvidia.spark.rapids.udf.hive.StringWordCount")
         return gen_df(spark, data_gens)
@@ -87,4 +88,24 @@ def test_java_url_encode():
     def evalfn(spark):
         load_java_udf_or_skip_test(spark, 'urlencode', 'com.nvidia.spark.rapids.udf.java.URLEncode')
         return unary_op_df(spark, StringGen('.{0,30}')).selectExpr("urlencode(a)")
+    assert_gpu_and_cpu_are_equal_collect(evalfn)
+
+@rapids_udf_example_native
+def test_java_cosine_similarity_reasonable_range(enable_rapids_udf_example_native):
+    def evalfn(spark):
+        class RangeFloatGen(FloatGen):
+            def start(self, rand):
+                self._start(rand, lambda: rand.uniform(-1000.0, 1000.0))
+        load_java_udf_or_skip_test(spark, "cosine_similarity", "com.nvidia.spark.rapids.udf.java.CosineSimilarity")
+        arraygen = ArrayGen(RangeFloatGen(nullable=False, no_nans=True, special_cases=[]), min_length=8, max_length=8)
+        df = binary_op_df(spark, arraygen)
+        return df.selectExpr("cosine_similarity(a, b)")
+    assert_gpu_and_cpu_are_equal_collect(evalfn)
+
+@rapids_udf_example_native
+def test_java_cosine_similarity_with_nans(enable_rapids_udf_example_native):
+    def evalfn(spark):
+        load_java_udf_or_skip_test(spark, "cosine_similarity", "com.nvidia.spark.rapids.udf.java.CosineSimilarity")
+        arraygen = ArrayGen(FloatGen(nullable=False), min_length=8, max_length=8)
+        return binary_op_df(spark, arraygen).selectExpr("cosine_similarity(a, b)")
     assert_gpu_and_cpu_are_equal_collect(evalfn)

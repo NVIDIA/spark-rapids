@@ -90,9 +90,9 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -w --expt-extended-lambda --expt-relax
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
 CPMAddPackage(NAME  cudf
-        VERSION         "0.19.0"
+        VERSION         "0.20.0"
         GIT_REPOSITORY  https://github.com/rapidsai/cudf.git
-        GIT_TAG         branch-0.19
+        GIT_TAG         branch-0.20
         GIT_SHALLOW     TRUE
         SOURCE_SUBDIR   cpp
         OPTIONS         "BUILD_TESTS OFF"
@@ -103,6 +103,21 @@ CPMAddPackage(NAME  cudf
                         "DISABLE_DEPRECATION_WARNING ON"
                         "AUTO_DETECT_CUDA_ARCHITECTURES OFF"
     )
+
+###################################################################################################
+# - benchmarks ------------------------------------------------------------------------------------
+
+if(BUILD_UDF_BENCHMARKS)
+    # Find or install GoogleBench
+    CPMFindPackage(NAME benchmark
+        VERSION         1.5.2
+        GIT_REPOSITORY  https://github.com/google/benchmark.git
+        GIT_TAG         v1.5.2
+        GIT_SHALLOW     TRUE
+        OPTIONS         "BENCHMARK_ENABLE_TESTING OFF"
+                        "BENCHMARK_ENABLE_INSTALL OFF")
+    add_subdirectory(benchmarks)
+endif()
 
 ###################################################################################################
 # - find JNI -------------------------------------------------------------------------------------
@@ -126,7 +141,9 @@ link_directories("${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES}"
 # - library targets -------------------------------------------------------------------------------
 
 set(SOURCE_FILES
+    "src/CosineSimilarityJni.cpp"
     "src/StringWordCountJni.cpp"
+    "src/cosine_similarity.cu"
     "src/string_word_count.cu")
 
 add_library(udfexamplesjni SHARED ${SOURCE_FILES})

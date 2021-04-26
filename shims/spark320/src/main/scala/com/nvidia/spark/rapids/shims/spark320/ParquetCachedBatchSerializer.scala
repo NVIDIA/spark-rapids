@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,17 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims.spark300
 
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
+package com.nvidia.spark.rapids.shims.spark320
 
-case class GpuBroadcastExchangeExec(
-    override val mode: BroadcastMode,
-    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
+import com.nvidia.spark.rapids.shims
 
-  override def doCanonicalize(): SparkPlan = {
-    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
-  }
+class ParquetCachedBatchSerializer extends shims.spark311.ParquetCachedBatchSerializer {
 }
