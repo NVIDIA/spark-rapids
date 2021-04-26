@@ -425,21 +425,18 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .distinct
         .sorted
 
-    // we expect to see:
-    // 4 rows for the leaf query stages
-    // 16 rows for the nested joins (4 x 4)
-    // 256 rows for the final join (16 x 16)
-    assert(summary === Seq(
-      "CustomShuffleReaderExec" -> 4,
-      "ProjectExec" -> 4,
-      "ProjectExec" -> 16,
-      "ShuffleExchangeExec" -> 4,
-      "ShuffleExchangeExec" -> 16,
-      "ShuffleQueryStageExec" -> 4,
-      "SortExec" -> 4,
-      "SortExec" -> 16,
-      "SortMergeJoinExec" -> 16,
-      "SortMergeJoinExec" -> 256))
+    // due to the concurrent nature of adaptive execution, the results are not deterministic
+    // so we just check that we do see row counts for shuffle exchanges and sort-merge joins
+
+    val shuffleExchanges = summary
+        .filter(_._1 == "ShuffleExchangeExec")
+    assert(shuffleExchanges.nonEmpty)
+    assert(shuffleExchanges.forall(_._2.toLong > 0))
+
+    val sortMergeJoins = summary
+        .filter(_._1 == "SortMergeJoinExec")
+    assert(sortMergeJoins.nonEmpty)
+    assert(sortMergeJoins.forall(_._2.toLong > 0))
   }
 
   test("Compute estimated row count nested joins with broadcast") {
