@@ -56,8 +56,6 @@ _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
                         'spark.sql.join.preferSortMergeJoin': 'True',
                         'spark.sql.shuffle.partitions': '2',
                         'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-                        # turn stableSort off after issue https://github.com/NVIDIA/spark-rapids/issues/2257 addressed
-                        'spark.rapids.sql.stableSort.enabled': 'true'
                         }
 
 # For spark to insert a shuffled hash join it has to be enabled with
@@ -406,10 +404,7 @@ def test_broadcast_join_right_struct_as_key(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.join(broadcast(right), left.a == right.r_a, join_type)
-    # StableSort is necessary for right outer join, because Spark will plan SortMergeJoin instead BroadcastHashJoin.
-    # turn stableSort off after issue https://github.com/NVIDIA/spark-rapids/issues/2257 addressed
-    conf = {'spark.rapids.sql.stableSort.enabled': 'true', **allow_negative_scale_of_decimal_conf}
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -421,10 +416,7 @@ def test_broadcast_join_right_struct_mixed_key(data_gen, join_type):
         left = two_col_df(spark, data_gen, int_gen, length=500)
         right = two_col_df(spark, data_gen, int_gen, length=250)
         return left.join(broadcast(right), (left.a == right.a) & (left.b == right.b), join_type)
-    # StableSort is necessary for right outer join, because Spark will plan SortMergeJoin instead BroadcastHashJoin.
-    # turn stableSort off after issue https://github.com/NVIDIA/spark-rapids/issues/2257 addressed
-    conf = {'spark.rapids.sql.stableSort.enabled': 'true', **allow_negative_scale_of_decimal_conf}
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
