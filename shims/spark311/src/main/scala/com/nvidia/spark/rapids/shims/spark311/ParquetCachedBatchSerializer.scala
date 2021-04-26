@@ -853,8 +853,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             if (columns.get(i).getMaxDefinitionLevel == 0) {
               // Column is missing in data but the required data is non-nullable.
               // This file is invalid.
-              throw new IOException(s"Required column is missing in data file. Col: " +
-                s"${colPath.toList}")
+              throw new IOException(s"Required column is missing in data file: ${colPath.toList}")
             }
             missingColumns(i) = true
           }
