@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_gpu_fallback_write
+from conftest import get_non_gpu_allowed
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -268,27 +269,28 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
             lambda spark : spark.read.schema(schema).csv(data_path),
             conf=updated_conf)
 
-@allow_non_gpu('FileSourceScanExec')
+@allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
 def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens =[
         StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
- 
+
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
     updated_conf=_enable_all_types_conf.copy()
     updated_conf[disable_conf]='false'
- 
+
     reader = read_func(data_path, schema)
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_fallback_collect(
             lambda spark : reader(spark).select(f.col('*'), f.col('_c2') + f.col('_c3')),
-            'FileSourceScanExec',
+            # TODO add support for lists
+            cpu_fallback_class_name=get_non_gpu_allowed()[0],
             conf=updated_conf)
 
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
@@ -345,7 +347,7 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 def test_input_meta(spark_tmp_path, v1_enabled_list):
-    gen = StructGen([('a', long_gen), ('b', long_gen)], nullable=False) 
+    gen = StructGen([('a', long_gen), ('b', long_gen)], nullable=False)
     first_data_path = spark_tmp_path + '/CSV_DATA/key=0'
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(first_data_path))
