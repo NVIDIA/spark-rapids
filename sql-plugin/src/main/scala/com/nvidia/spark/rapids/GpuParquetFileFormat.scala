@@ -100,22 +100,29 @@ object GpuParquetFileFormat {
 
   def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions]
   (builder: ParquetColumnWriterOptions.NestedBuilder[T, V], schema: StructType): T = {
+    // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
+    // setting if the output is nullable or not everywhere we have hard-coded nullable=true
     schema.foreach(field =>
       field.dataType match {
         case dt: DecimalType =>
-          builder.withDecimalColumn(field.name, dt.precision, field.nullable)
+          builder.withDecimalColumn(field.name, dt.precision, true)
         case TimestampType =>
-          builder.withTimestampColumn(field.name, false, field.nullable)
+          builder.withTimestampColumn(field.name,
+            // TODO once https://github.com/rapidsai/cudf/issues/8070 is fixed uncomment the line
+            //  where we actually check if the user has set the INT96 flag
+//            ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
+            false,
+            true)
         case s: StructType =>
           builder.withStructColumn(
             parquetWriterOptionsFromSchema(structBuilder(field.name), s).build())
         case a: ArrayType =>
           builder.withListColumn(
             parquetWriterOptionsFromSchema(listBuilder(field.name),
-              StructType(Array(StructField(field.name, a.elementType, field.nullable))))
+              StructType(Array(StructField(field.name, a.elementType, true))))
               .build())
         case _ =>
-          builder.withColumn(field.nullable, field.name)
+          builder.withColumn(true, field.name)
       }
     )
     builder.asInstanceOf[T]
