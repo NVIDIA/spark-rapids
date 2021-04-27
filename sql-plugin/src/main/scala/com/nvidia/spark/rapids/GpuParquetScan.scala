@@ -1475,14 +1475,16 @@ class MultiFileCloudParquetPartitionReader(
    * @return ThreadPoolExecutor
    */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    ParquetMultiFileThreadPoolFactory.getThreadPool(getLogTag, numThreads)
+    ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
   }
 
   /**
-   * Get the log prefix
-   *  @return "Parquet"
+   * File format short name used for logging and other things to uniquely identity
+   * which file format is being used.
+   *
+   * @return the file format short name
    */
-  override def getLogTag: String = "Parquet"
+  override def getFileFormatShortName: String = "Parquet"
 
   /**
    * Decode HostMemoryBuffers by GPU

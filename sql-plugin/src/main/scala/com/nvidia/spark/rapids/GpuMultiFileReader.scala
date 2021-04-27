@@ -194,13 +194,15 @@ abstract class MultiFileCloudPartitionReaderBase(
     fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Option[ColumnarBatch]
 
   /**
-   * Get the log prefix to form a new log tag in Logger and NVTX.
-   * @return the log tag
+   * File format short name used for logging and other things to uniquely identity
+   * which file format is being used.
+   *
+   * @return the file format short name
    */
-  def getLogTag: String
+  def getFileFormatShortName: String
 
   override def next(): Boolean = {
-    withResource(new NvtxRange(getLogTag + " readBatch", NvtxColor.GREEN)) { _ =>
+    withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
       if (isInitted == false) {
         initAndStartReaders()
       }
