@@ -405,10 +405,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
     worker.getAddress
   }
 
-  private def getUcxAddress: ByteBuffer = {
-    val result = ucxAddress.asReadOnlyBuffer()
-    result
-  }
+  private def getUcxAddress: ByteBuffer = ucxAddress.asReadOnlyBuffer()
 
   /**
    * Establish a new [[UcpEndpoint]] given a [[WorkerAddress]]. It also
