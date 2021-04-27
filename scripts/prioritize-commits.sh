@@ -53,7 +53,7 @@ RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.ja
 DEPS=$(jdeps -include "(com\.nvidia\.spark.*|org\.apache\.spark.*)" -v -e org.apache.spark.* $RAPIDS_PLUGIN_JAR)
 
 FOUND=1
-cd ${SPARK_HOME}
+cd ${SPARK_TREE}
 PRIORITIZED_COMMITS=${WORKSPACE}/commits-with-priority.txt
 if [ -e ${PRIORITIZED_COMMITS} ]; then
   rm ${PRIORITIZED_COMMITS}
