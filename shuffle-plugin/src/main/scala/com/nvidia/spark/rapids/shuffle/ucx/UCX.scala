@@ -399,6 +399,7 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
     val result = ByteBuffer.allocateDirect(4 + hostnameBytes.length)
     result.putInt(listenerAddress.getPort)
     result.put(hostnameBytes)
+    result.rewind()
     result
   } else {
     worker.getAddress
@@ -406,7 +407,6 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
 
   private def getUcxAddress: ByteBuffer = {
     val result = ucxAddress.asReadOnlyBuffer()
-    result.rewind()
     result
   }
 
