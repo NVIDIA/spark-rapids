@@ -20,10 +20,40 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.{ArrayType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+object JoinTypeChecks {
+  def tagForGpu(joinType: JoinType, meta: RapidsMeta[_, _, _]): Unit = {
+    val conf = meta.conf
+    joinType match {
+      case Inner if !conf.areInnerJoinsEnabled =>
+        meta.willNotWorkOnGpu("inner joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_INNER_JOIN.key} to true")
+      case Cross if !conf.areCrossJoinsEnabled =>
+        meta.willNotWorkOnGpu("cross joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_CROSS_JOIN.key} to true")
+      case LeftOuter if !conf.areLeftOuterJoinsEnabled =>
+        meta.willNotWorkOnGpu("left outer joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_LEFT_OUTER_JOIN.key} to true")
+      case RightOuter if !conf.areRightOuterJoinsEnabled =>
+        meta.willNotWorkOnGpu("right outer joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_RIGHT_OUTER_JOIN.key} to true")
+      case FullOuter if !conf.areFullOuterJoinsEnabled =>
+        meta.willNotWorkOnGpu("full outer joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_FULL_OUTER_JOIN.key} to true")
+      case LeftSemi if !conf.areLeftSemiJoinsEnabled =>
+        meta.willNotWorkOnGpu("left semi joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_LEFT_SEMI_JOIN.key} to true")
+      case LeftAnti if !conf.areLeftAntiJoinsEnabled =>
+        meta.willNotWorkOnGpu("left anti joins have been disabled. To enable set " +
+            s"${RapidsConf.ENABLE_LEFT_ANTI_JOIN.key} to true")
+      case _ => // not disabled
+    }
+  }
+}
 
 object GpuHashJoin {
   def tagJoin(
@@ -38,6 +68,7 @@ object GpuHashJoin {
         || dtype.isInstanceOf[MapType])) {
       meta.willNotWorkOnGpu("Nested types in join keys are not supported")
     }
+    JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
       case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>

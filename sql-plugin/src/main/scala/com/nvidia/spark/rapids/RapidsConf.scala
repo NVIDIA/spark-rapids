@@ -611,6 +611,41 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
+      .doc("When set to true inner joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_CROSS_JOIN = conf("spark.rapids.sql.join.cross.enabled")
+      .doc("When set to true cross joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_LEFT_OUTER_JOIN = conf("spark.rapids.sql.join.leftOuter.enabled")
+      .doc("When set to true left outer joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_RIGHT_OUTER_JOIN = conf("spark.rapids.sql.join.rightOuter.enabled")
+      .doc("When set to true right outer joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_FULL_OUTER_JOIN = conf("spark.rapids.sql.join.fullOuter.enabled")
+      .doc("When set to true full outer joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_LEFT_SEMI_JOIN = conf("spark.rapids.sql.join.leftSemi.enabled")
+      .doc("When set to true left semi joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_LEFT_ANTI_JOIN = conf("spark.rapids.sql.join.leftAnti.enabled")
+      .doc("When set to true left anti joins are enabled on the GPU")
+      .booleanConf
+      .createWithDefault(true)
+
   // FILE FORMATS
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -1253,6 +1288,20 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
+
+  lazy val areInnerJoinsEnabled: Boolean = get(ENABLE_INNER_JOIN)
+
+  lazy val areCrossJoinsEnabled: Boolean = get(ENABLE_CROSS_JOIN)
+
+  lazy val areLeftOuterJoinsEnabled: Boolean = get(ENABLE_LEFT_OUTER_JOIN)
+
+  lazy val areRightOuterJoinsEnabled: Boolean = get(ENABLE_RIGHT_OUTER_JOIN)
+
+  lazy val areFullOuterJoinsEnabled: Boolean = get(ENABLE_FULL_OUTER_JOIN)
+
+  lazy val areLeftSemiJoinsEnabled: Boolean = get(ENABLE_LEFT_SEMI_JOIN)
+
+  lazy val areLeftAntiJoinsEnabled: Boolean = get(ENABLE_LEFT_ANTI_JOIN)
 
   lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
