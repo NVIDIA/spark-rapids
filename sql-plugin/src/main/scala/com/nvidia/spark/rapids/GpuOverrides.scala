@@ -1388,6 +1388,18 @@ object GpuOverrides {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuDateAddInterval(lhs, rhs)
         }),
+    expr[DateFormatClass](
+      "Converts timestamp to a value of string in the format specified by the date format",
+      ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.STRING,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("strfmt", TypeSig.lit(TypeEnum.STRING)
+            .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
+            TypeSig.STRING)),
+      (a, conf, p, r) => new UnixTimeExprMeta[DateFormatClass](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuDateFormatClass(lhs, rhs, strfFormat)
+      }
+    ),
     expr[ToUnixTimestamp](
       "Returns the UNIX timestamp of the given time",
       ExprChecks.binaryProjectNotLambda(TypeSig.LONG, TypeSig.LONG,
