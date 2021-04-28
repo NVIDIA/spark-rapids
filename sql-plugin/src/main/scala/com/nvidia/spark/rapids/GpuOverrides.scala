@@ -2276,8 +2276,8 @@ object GpuOverrides {
       "Returns element of array at given(1-based) index in value if column is array. " +
         "Returns value for the given key in value if column is map.",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-          TypeSig.DECIMAL + TypeSig.MAP, TypeSig.all,
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+          TypeSig.DECIMAL + TypeSig.MAP).nested(), TypeSig.all,
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
           TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP) +
           TypeSig.MAP.nested(TypeSig.STRING)
