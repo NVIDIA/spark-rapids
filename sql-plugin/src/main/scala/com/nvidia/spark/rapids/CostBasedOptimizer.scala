@@ -28,16 +28,31 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
+/**
+ * Optimizer that can operate on a physical query plan.
+ */
 trait Optimizer {
+
+  /**
+   * Apply optimizations to a query plan.
+   *
+   * @param conf Rapids configuration
+   * @param plan The plan to optimize
+   * @return A list of optimizations that were applied
+   */
   def optimize(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Seq[Optimization]
 }
 
+/**
+ * Experimental cost-based optimizer.
+ */
 class CostBasedOptimizer extends Optimizer with Logging {
 
   /**
    * Walk the plan and determine CPU and GPU costs for each operator and then make decisions
    * about whether operators should run on CPU or GPU.
    *
+   * @param conf Rapids configuration
    * @param plan The plan to optimize
    * @return A list of optimizations that were applied
    */
