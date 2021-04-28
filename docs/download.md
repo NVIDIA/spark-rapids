@@ -103,7 +103,7 @@ For a detailed list of changes, please refer to the
 **_Note:_** Using Nvidia driver release 450.80.02 in combination with the CUDA 10.1 or 10.2 toolkit may
 result in long read times when reading a file that is snappy compressed.  If using the 450.80.02
 driver we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue
-is resolved in the 0.5 and higher release. 
+is resolved in the 0.5.0 and higher release. 
 
 ## Release v0.4.0
 ### Download v0.4.0
@@ -157,7 +157,7 @@ For a detailed list of changes, please refer to the
 **_Note:_** Using Nvidia driver release 450.80.02 in combination with the CUDA 10.1 or 10.2 toolkit may
 result in long read times when reading a file that is snappy compressed.  If using the 450.80.02
 driver we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue
-is resolved in the 0.5 and higher release. 
+is resolved in the 0.5.0 and higher release. 
 
 ## Release v0.3.0
 ### Download v0.3.0
@@ -208,7 +208,7 @@ For a detailed list of changes, please refer to the
 **_Note:_** Using Nvidia driver release 450.80.02 in combination with the CUDA 10.1 or 10.2 toolkit may
 result in long read times when reading a file that is snappy compressed.  If using the 450.80.02
 driver we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue
-is resolved in the 0.5 and higher release. 
+is resolved in the 0.5.0 and higher release. 
 
 ## Release v0.2.0
 ### Download v0.2.0
@@ -262,7 +262,7 @@ For a detailed list of changes, please refer to the
 **_Note:_** Using Nvidia driver release 450.80.02 in combination with the CUDA 10.1 or 10.2 toolkit may
 result in long read times when reading a file that is snappy compressed.  If using the 450.80.02
 driver we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue
-is resolved in the 0.5 and higher release. 
+is resolved in the 0.5.0 and higher release. 
 
 ## Release v0.1.0
 ### Download v0.1.0
