@@ -81,11 +81,14 @@ def create_nested_df(spark, key_data_gen, data_gen, left_length, right_length):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
-def test_sortmerge_join(data_gen, join_type):
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+def test_sortmerge_join(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
+    conf.update(_sortmerge_join_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
