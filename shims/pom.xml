@@ -39,6 +39,12 @@
             </modules>
         </profile>
         <profile>
+            <id>databricks310</id>
+            <modules>
+                <module>spark310db</module>
+            </modules>
+        </profile>
+        <profile>
             <id>spark320</id>
             <modules>
                 <module>spark320</module>
