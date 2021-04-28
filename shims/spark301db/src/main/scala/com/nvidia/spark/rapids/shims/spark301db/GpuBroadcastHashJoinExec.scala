@@ -110,9 +110,11 @@ case class GpuBroadcastHashJoinExec(
   }
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
-    case (FullOuter, _) => Seq(RequireSingleBatch, RequireSingleBatch)
-    case (_, GpuBuildLeft) => Seq(RequireSingleBatch, null)
-    case (_, GpuBuildRight) => Seq(null, RequireSingleBatch)
+    // For FullOuter join require a single batch for the side that is not the broadcast, because it
+    // will be a single batch already
+    case (FullOuter, GpuBuildLeft) => Seq(null, RequireSingleBatch)
+    case (FullOuter, GpuBuildRight) => Seq(RequireSingleBatch, null)
+    case (_, _) => Seq(null, null)
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
