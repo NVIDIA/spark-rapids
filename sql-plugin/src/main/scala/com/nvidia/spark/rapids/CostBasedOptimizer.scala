@@ -28,11 +28,11 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
-class CostBasedOptimizer(conf: RapidsConf) extends Logging {
+trait Optimizer {
+  def optimize(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Seq[Optimization]
+}
 
-  // the intention is to make the cost model pluggable since we are probably going to need to
-  // experiment a fair bit with this part
-  private val costModel = new DefaultCostModel(conf)
+class CostBasedOptimizer extends Optimizer with Logging {
 
   /**
    * Walk the plan and determine CPU and GPU costs for each operator and then make decisions
@@ -41,9 +41,10 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
    * @param plan The plan to optimize
    * @return A list of optimizations that were applied
    */
-  def optimize(plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
+  def optimize(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
+    val costModel = new DefaultCostModel(conf)
     val optimizations = new ListBuffer[Optimization]()
-    recursivelyOptimize(plan, optimizations, finalOperator = true)
+    recursivelyOptimize(conf, costModel, plan, optimizations, finalOperator = true)
     optimizations
   }
 
@@ -60,6 +61,8 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
    *         tree beneath it that is a candidate for optimization.
    */
   private def recursivelyOptimize(
+      conf: RapidsConf,
+      costModel: CostModel,
       plan: SparkPlanMeta[SparkPlan],
       optimizations: ListBuffer[Optimization],
       finalOperator: Boolean): (Double, Double) = {
@@ -67,7 +70,9 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     // get the CPU and GPU cost of the child plan(s)
     val childCosts = plan.childPlans
         .map(child => recursivelyOptimize(
-          child.asInstanceOf[SparkPlanMeta[SparkPlan]],
+          conf,
+          costModel,
+          child,
           optimizations,
           finalOperator = false))
 
