@@ -230,13 +230,13 @@ class GpuBroadcastMeta(
 
   override def convertToGpu(): GpuExec = {
     ShimLoader.getSparkShims.getGpuBroadcastExchangeExec(
-      exchange.mode, childPlans(0).convertIfNeeded())
+      exchange.mode, childPlans.head.convertIfNeeded())
   }
 
 }
 
 abstract class GpuBroadcastExchangeExecBase(
-    mode: BroadcastMode,
+    val mode: BroadcastMode,
     child: SparkPlan) extends Exchange with GpuExec {
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

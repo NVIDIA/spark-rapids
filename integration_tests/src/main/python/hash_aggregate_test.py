@@ -550,3 +550,28 @@ def test_agg_count(data_gen, count_func):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
                               length=1024).groupBy('a').agg(count_func("b")))
+
+def subquery_create_temp_views(spark, expr):
+    t1 = "select * from values (1,2) as t1(a,b)"
+    t2 = "select * from values (3,4) as t2(c,d)"
+    spark.sql(t1).createOrReplaceTempView("t1")
+    spark.sql(t2).createOrReplaceTempView("t2")
+    return spark.sql(expr)
+
+# Adding these tests as they were added in SPARK-31620, and were shown to break in
+# SPARK-32031, but our GPU hash aggregate does not seem to exhibit the same failure.
+# The tests are being added more as a sanity check.
+# Adaptive is being turned on and off so we invoke re-optimization at the logical plan level.
+@pytest.mark.parametrize('adaptive', ["true", "false"])
+@pytest.mark.parametrize('expr', [
+  "select sum(if(c > (select a from t1), d, 0)) as csum from t2",
+  "select c, sum(if(c > (select a from t1), d, 0)) as csum from t2 group by c",
+  "select avg(distinct(d)), sum(distinct(if(c > (select a from t1), d, 0))) as csum " +
+    "from t2 group by c",
+  "select sum(distinct(if(c > (select sum(distinct(a)) from t1), d, 0))) as csum " +
+    "from t2 group by c"
+])
+def test_subquery_in_agg(adaptive, expr):
+    assert_gpu_and_cpu_are_equal_collect(
+      lambda spark: subquery_create_temp_views(spark, expr),
+        conf = {"spark.sql.adaptive.enabled" : adaptive})

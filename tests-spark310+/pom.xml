@@ -24,7 +24,6 @@
         <artifactId>rapids-4-spark-parent</artifactId>
         <version>0.6.0-SNAPSHOT</version>
     </parent>
-    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-tests-next-spark_2.12</artifactId>
     <version>0.6.0-SNAPSHOT</version>
 

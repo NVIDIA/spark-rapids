@@ -825,7 +825,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
     // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
     // So, we are going to be cautious and start with that until we have tested it more.
-    if (output.length > 0 && output.length < 100 &&
+    if ((1 until 100).contains(output.length) &&
         CudfRowTransitions.areAllSupported(output)) {
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(

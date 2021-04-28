@@ -22,17 +22,14 @@ import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution,
-  Distribution, Partitioning}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.execution.python.{ArrowPythonRunner, FlatMapGroupsInPandasExec}
-import org.apache.spark.sql.execution.python.rapids.GpuPandasUtils._
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
+import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
 
 class GpuFlatMapGroupsInPandasExecMeta(
     flatPandas: FlatMapGroupsInPandasExec,
@@ -45,43 +42,45 @@ class GpuFlatMapGroupsInPandasExecMeta(
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
-  // Ignore the expressions since columnar way is not supported yet
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+  private val groupingAttrs: Seq[BaseExprMeta[Attribute]] =
+    flatPandas.groupingAttributes.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  private val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
+    flatPandas.func.asInstanceOf[PythonUDF], conf, Some(this))
+
+  private val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+    flatPandas.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[BaseExprMeta[_]] = groupingAttrs ++ resultAttrs :+ udf
 
   override def convertToGpu(): GpuExec =
     GpuFlatMapGroupsInPandasExec(
-      flatPandas.groupingAttributes,
-      flatPandas.func,
-      flatPandas.output,
+      groupingAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+      udf.convertToGpu(),
+      resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       childPlans.head.convertIfNeeded()
     )
 }
 
-/*
+/**
+ * Physical node of GPU version for
+ * [[org.apache.spark.sql.catalyst.plans.logical.FlatMapGroupsInPandas]]
  *
- * This GpuFlatMapGroupsInPandasExec aims at supporting running Pandas functional code
- * on GPU at Python side.
+ * Rows in each group are passed to the Python worker as an Arrow record batch.
+ * The Python worker turns the record batch to a `pandas.DataFrame`, invoke the
+ * user-defined function, and passes the resulting `pandas.DataFrame`
+ * as an Arrow record batch. Finally, each record batch is turned to
+ * a ColumnarBatch.
  *
- * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
- *
+ * This node aims at accelerating the data transfer between JVM and Python for GPU pipeline, and
+ * scheduling GPU resources for its Python processes.
  */
 case class GpuFlatMapGroupsInPandasExec(
     groupingAttributes: Seq[Attribute],
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan)
-  extends SparkPlan with UnaryExecNode with GpuExec {
-
-  override def supportsColumnar = false
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
-  }
-
-  // Most code is copied from FlatMapGroupsInPandasExec, except two GPU related calls
-  private val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
-  private val pandasFunction = func.asInstanceOf[PythonUDF].func
-  private val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+  extends SparkPlan with UnaryExecNode with GpuPythonExecBase {
 
   override def producedAttributes: AttributeSet = AttributeSet(output)
 
@@ -98,34 +97,78 @@ case class GpuFlatMapGroupsInPandasExec(
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
     Seq(groupingAttributes.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
 
-  override protected def doExecute(): RDD[InternalRow] = {
+  private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
+
+  // One batch as input to keep the integrity for each group
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
+
+  // The input batch will be split into multiple batches by grouping expression, and
+  // processed by Python executors group by group, so better to coalesce the output batches.
+  override def coalesceAfter: Boolean = true
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
+         spillCallback) = commonGpuMetrics()
+
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
-    val inputRDD = child.execute()
+    val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+    val sessionLocalTimeZone = conf.sessionLocalTimeZone
+    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+    val localOutput = output
+    val localChildOutput = child.output
+    // Python wraps the resulting columns in a single struct column.
+    val pythonOutputSchema = StructType(
+        StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
 
-    val (dedupAttributes, argOffsets) = resolveArgOffsets(child, groupingAttributes)
+    // Resolve the argument offsets and related attributes.
+    val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
+        resolveArgOffsets(child, groupingAttributes)
 
-    // Map grouped rows to ArrowPythonRunner results, Only execute if partition is not empty
-    inputRDD.mapPartitionsInternal { iter => if (iter.isEmpty) iter else {
+    // Start processing. Map grouped batches to ArrowPythonRunner results.
+    child.executeColumnar().mapPartitionsInternal { inputIter =>
+      val queue: BatchQueue = new BatchQueue()
+      val context = TaskContext.get()
+      context.addTaskCompletionListener[Unit](_ => queue.close())
 
-      val data = groupAndProject(iter, groupingAttributes, child.output, dedupAttributes)
-        .map { case (_, x) => x }
-
-      // Start of GPU things
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
-        PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
+        PythonWorkerSemaphore.acquireIfNecessary(context)
       }
-      // End of GPU things
 
-      val runner = new ArrowPythonRunner(
-        chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-        Array(argOffsets),
-        StructType.fromAttributes(dedupAttributes),
-        sessionLocalTimeZone,
-        pythonRunnerConf)
+      // Projects each input batch into the deduplicated schema, and splits
+      // into separate group batches to sends them to Python group by group later.
+      val pyInputIter = projectAndGroup(inputIter, localChildOutput, dedupAttrs, groupingOffsets,
+          mNumInputRows, mNumInputBatches, spillCallback)
+        .map { groupBatch =>
+          // Cache the input batches for release after writing done.
+          queue.add(groupBatch, spillCallback)
+          groupBatch
+        }
 
-      executePython(data, output, runner)
-    }}
+      if (pyInputIter.hasNext) {
+        // Launch Python workers only when the data is not empty.
+        val pyRunner = new GpuArrowPythonRunner(
+          chainedFunc,
+          PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+          Array(argOffsets),
+          StructType.fromAttributes(dedupAttrs),
+          sessionLocalTimeZone,
+          pythonRunnerConf,
+          // The whole group data should be written in a single call, so here is unlimited
+          Int.MaxValue,
+          () => queue.close(),
+          pythonOutputSchema,
+          // We can not assert the result batch from Python has the same row number with the
+          // input batch. Because Grouped Map UDF allows the output of arbitrary length.
+          // So try to read as many as possible by specifying `minReadTargetBatchSize` as
+          // `Int.MaxValue` here.
+          Int.MaxValue)
+
+        executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)
+      } else {
+        // Empty partition, return it directly
+        inputIter
+      }
+    } // end of mapPartitionsInternal
   }
 }

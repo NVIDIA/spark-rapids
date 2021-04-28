@@ -18,18 +18,16 @@ package org.apache.spark.sql.rapids.execution.python
 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, PythonUDF}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils.executePython
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -72,7 +70,7 @@ case class GpuMapInPandasExec(
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan)
-  extends UnaryExecNode with GpuExec {
+  extends UnaryExecNode with GpuPythonExecBase {
 
   private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
 
@@ -82,22 +80,9 @@ case class GpuMapInPandasExec(
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
-  ) ++ spillMetrics
-
-  override protected def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
-
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
-    val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
+         spillCallback) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val pyInputTypes = child.schema
@@ -132,7 +117,7 @@ case class GpuMapInPandasExec(
       }
 
       val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
-        batchSize, numInputRows, numInputBatches, spillCallback)
+        batchSize, mNumInputRows, mNumInputBatches, spillCallback)
         .map { batch =>
           // Here we wrap it via another column so that Python sides understand it
           // as a DataFrame.
@@ -157,42 +142,14 @@ case class GpuMapInPandasExec(
           batchSize,
           () => queue.close(),
           pythonOutputSchema,
+          // We can not assert the result batch from Python has the same row number with the
+          // input batch. Because Map Pandas UDF allows the output of arbitrary length
+          // and columns.
+          // Then try to read as many as possible by specifying `minReadTargetBatchSize` as
+          // `Int.MaxValue` here.
           Int.MaxValue)
-        val pythonOutputIter = pyRunner.compute(pyInputIterator, context.partitionId(), context)
 
-        new Iterator[ColumnarBatch] {
-
-          override def hasNext: Boolean = pythonOutputIter.hasNext
-
-          override def next(): ColumnarBatch = {
-            // We can not assert the result batch from Python has the same row number with the
-            // input batch. Because Map Pandas UDF allows the output of arbitrary length
-            // and columns.
-            // Then try to read as many as possible by specifying `minReadTargetBatchSize` as
-            // `Int.MaxValue` when creating the `GpuArrowPythonRunner` above.
-            withResource(pythonOutputIter.next()) { cbFromPython =>
-              numOutputBatches += 1
-              numOutputRows += cbFromPython.numRows
-              extractChildren(cbFromPython)
-            }
-          }
-
-          private[this] def extractChildren(batch: ColumnarBatch): ColumnarBatch = {
-            assert(batch.numCols() == 1, "Expect only one struct column")
-            assert(batch.column(0).dataType().isInstanceOf[StructType],
-              "Expect a struct column")
-            // Scalar Iterator UDF returns a StructType column in ColumnarBatch, select
-            // the children here
-            val structColumn = batch.column(0).asInstanceOf[GpuColumnVector].getBase
-            val outputColumns = output.zipWithIndex.safeMap {
-              case (attr, i) =>
-                withResource(structColumn.getChildColumnView(i)) { childView =>
-                  GpuColumnVector.from(childView.copyToColumnVector(), attr.dataType)
-                }
-            }
-            new ColumnarBatch(outputColumns.toArray, batch.numRows())
-          }
-        }
+        executePython(pyInputIterator, output, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {
         // Empty partition, return it directly
         inputIter

@@ -1562,7 +1562,8 @@ object GpuOverrides {
           // types were and cannot recover it. As such for now we are going to do what Spark does,
           // but we have to recompute/recheck the temporary precision to be sure it will fit
           // on the GPU.
-          (childExprs.head.dataType, childExprs(1).dataType) match {
+          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
               if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
@@ -1770,7 +1771,8 @@ object GpuOverrides {
           // effectively calculating an extra digit of precision. Because cudf does not support this
           // right now we actually increase the scale (and corresponding precision) to get an extra
           // decimal place so we can round it in GpuCheckOverflow
-          (childExprs.head.dataType, childExprs(1).dataType) match {
+          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val outputType = GpuDivideUtil.decimalDataType(l, r)
               // Case 1: OutputType.precision doesn't get truncated
@@ -1863,9 +1865,9 @@ object GpuOverrides {
           } catch {
             case _: Exception =>
               val resultMethod = a.getClass.getMethod("resultIds")
-              resultMethod.invoke(a).asInstanceOf[Seq[ExprId]](0)
+              resultMethod.invoke(a).asInstanceOf[Seq[ExprId]].head
           }
-          GpuAggregateExpression(childExprs(0).convertToGpu().asInstanceOf[GpuAggregateFunction],
+          GpuAggregateExpression(childExprs.head.convertToGpu().asInstanceOf[GpuAggregateFunction],
             a.mode, a.isDistinct, filter.map(_.convertToGpu()), resultId)
         }
       }),
@@ -1923,8 +1925,10 @@ object GpuOverrides {
                 " pivot values provided")
           }
         }
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuPivotFirst(childExprs(0), childExprs(1), pivot.pivotColumnValues)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val Seq(pivotColumn, valueColumn) = childExprs
+          GpuPivotFirst(pivotColumn, valueColumn, pivot.pivotColumnValues)
+        }
       }),
     expr[Count](
       "Count aggregate operator",
@@ -2479,8 +2483,7 @@ object GpuOverrides {
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       }),
     expr[Explode](
-      "Given an input array produces a sequence of rows for each value in the array. "
-        + "Explode with outer Generate is not supported under GPU runtime." ,
+      "Given an input array produces a sequence of rows for each value in the array.",
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
@@ -2491,11 +2494,11 @@ object GpuOverrides {
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuExplode(childExprs(0).convertToGpu())
+        override val supportOuter: Boolean = true
+        override def convertToGpu(): GpuExpression = GpuExplode(childExprs.head.convertToGpu())
       }),
     expr[PosExplode](
-      "Given an input array produces a sequence of rows for each value in the array. "
-        + "PosExplode with outer Generate is not supported under GPU runtime." ,
+      "Given an input array produces a sequence of rows for each value in the array.",
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
@@ -2507,7 +2510,8 @@ object GpuOverrides {
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs(0).convertToGpu())
+        override val supportOuter: Boolean = true
+        override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
       "Collect a list of elements, now only supported by windowing.",
@@ -2614,14 +2618,6 @@ object GpuOverrides {
         override val childExprs: Seq[BaseExprMeta[_]] =
           rp.ordering.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-        override def tagPartForGpu() {
-          val numPartitions = rp.numPartitions
-          if (numPartitions > 1 && rp.ordering.exists(so => isStructType(so.dataType))) {
-            willNotWorkOnGpu("only single partition sort is supported for nested types, " +
-              s"actual partitions: $numPartitions")
-          }
-        }
-
         override def convertToGpu(): GpuPartitioning = {
           if (rp.numPartitions > 1) {
             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
@@ -2692,7 +2688,7 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec = GpuProjectExec(
             // Force list to avoid recursive Java serialization of lazy list Seq implementation
             childExprs.map(_.convertToGpu()).toList,
-            childPlans(0).convertIfNeeded()
+            childPlans.head.convertIfNeeded()
           )
         }
       }),
@@ -2716,7 +2712,7 @@ object GpuOverrides {
           Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
         override def convertToGpu(): GpuExec =
-          GpuBatchScanExec(p.output, childScans(0).convertToGpu())
+          GpuBatchScanExec(p.output, childScans.head.convertToGpu())
       }),
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
@@ -2817,7 +2813,7 @@ object GpuOverrides {
           TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def convertToGpu(): GpuExec =
-          GpuFilterExec(childExprs(0).convertToGpu(), childPlans(0).convertIfNeeded())
+          GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
@@ -2861,19 +2857,21 @@ object GpuOverrides {
 
         override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
 
-        override def convertToGpu(): GpuExec =
+        override def convertToGpu(): GpuExec = {
+          val Seq(left, right) = childPlans.map(_.convertIfNeeded())
           GpuCartesianProductExec(
-            childPlans.head.convertIfNeeded(),
-            childPlans(1).convertIfNeeded(),
+            left,
+            right,
             condition.map(_.convertToGpu()),
             conf.gpuTargetBatchSizeBytes)
+        }
       })
         .disabledByDefault("large joins can cause out of memory errors"),
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP + TypeSig.ARRAY)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL),
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
@@ -2889,14 +2887,7 @@ object GpuOverrides {
       // The types below are allowed as inputs and outputs.
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all),
-      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r) {
-        override def tagPlanForGpu() {
-          if (!conf.stableSort && sort.sortOrder.exists(so => isStructType(so.dataType))) {
-            willNotWorkOnGpu("it's disabled for nested types " +
-              s"unless ${RapidsConf.STABLE_SORT.key} is true")
-          }
-        }
-      }),
+      (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
@@ -2937,11 +2928,11 @@ object GpuOverrides {
         TypeSig.all),
       (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
     exec[FlatMapGroupsInPandasExec](
-      "The backend for Grouped Map Pandas UDF, it runs on CPU itself now but supports " +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
-      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+      "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled.",
+      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
     exec[AggregateInPandasExec](
       "The backend for Grouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",
@@ -3046,7 +3037,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       if (!exp.equalsIgnoreCase("NONE")) {
         wrap.tagForExplain()
         val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
-        if (!explain.isEmpty) {
+        if (explain.nonEmpty) {
           logWarning(s"\n$explain")
           if (conf.optimizerExplain.equalsIgnoreCase("ALL") && optimizations.nonEmpty) {
             logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")

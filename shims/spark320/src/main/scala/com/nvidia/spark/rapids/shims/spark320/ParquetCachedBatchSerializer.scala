@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark320
 
-/**
- * This is a wrapper to com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
- */
-class ParquetCachedBatchSerializer extends
-  com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
+import com.nvidia.spark.rapids.shims
+
+class ParquetCachedBatchSerializer extends shims.spark311.ParquetCachedBatchSerializer {
+}
