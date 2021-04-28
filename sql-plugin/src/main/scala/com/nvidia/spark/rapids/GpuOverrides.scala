@@ -2276,11 +2276,32 @@ object GpuOverrides {
       "Returns element of array at given(1-based) index in value if column is array. " +
         "Returns value for the given key in value if column is map.",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes, TypeSig.all,
-        ("left", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes) +
-          TypeSig.MAP.nested(TypeSig.STRING), TypeSig.all),
-        ("right", TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
-      (in, conf, p, r) => new GpuElementAtMeta(in, conf, p, r)),
+        TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+          TypeSig.DECIMAL + TypeSig.MAP, TypeSig.all,
+        ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP) +
+          TypeSig.MAP.nested(TypeSig.STRING)
+            .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported. " +
+              "Extra check is inside the expression metadata"), TypeSig.all),
+        ("index/key", TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
+      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // To distinguish the supported nested type between Array and Map
+          in.left.dataType match {
+            case MapType(_,valueType,_) => {
+              valueType match {
+                case StringType => // minimum support
+                case _ => willNotWorkOnGpu(s"${valueType.simpleString} is not supported for" +
+                  s" Map value")
+              }
+            }
+            case ArrayType(_,_) => // Array supports more
+          }
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuElementAt(lhs, rhs)
+        }
+      }),
     expr[CreateNamedStruct](
       "Creates a struct with the given field names and values",
       CreateNamedStructCheck,

@@ -186,16 +186,6 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def right: Expression = key
 }
 
-class GpuElementAtMeta(
-    expr: ElementAt,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends BinaryExprMeta[ElementAt](expr, conf, parent, rule) {
-  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-    GpuElementAt(lhs, rhs)
-  }
-}
 
 case class GpuElementAt(left: Expression, right: Expression)
   extends GpuBinaryExpression with ExpectsInputTypes {

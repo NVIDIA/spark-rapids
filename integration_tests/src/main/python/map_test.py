@@ -40,4 +40,5 @@ def test_simple_map_element_at(data_gen):
                 'element_at(a, "null")',
                 'element_at(a, "key_9")',
                 'element_at(a, "NOT_FOUND")',
-                'element_at(a, "key_5")'))
+                'element_at(a, "key_5")'),
+                conf={'spark.sql.ansi.enabled':False})

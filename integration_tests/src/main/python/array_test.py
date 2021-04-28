@@ -110,11 +110,28 @@ def test_array_contains_for_nans(data_gen):
         return df.select(array_contains(col('a'), chk_val))
     assert_gpu_and_cpu_are_equal_collect(main_df)
 
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-                                      FloatGen(no_nans=True), DoubleGen(no_nans=True),
-                                      string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
 def test_array_element_at(data_gen):
-    arr_gen = ArrayGen(data_gen)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
-        spark, arr_gen).select(element_at(col('a'), 1),
-                               element_at(col('a'), -1)), no_nans_conf)
+        spark, data_gen).select(element_at(col('a'), 1),
+                               element_at(col('a'), -1)),
+                               conf={'spark.sql.ansi.enabled':False})
+
+
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_array_element_at_null(data_gen):
+    array_gen = ArrayGen(data_gen)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
+        spark, data_gen).select(element_at(col('a'), 1),
+                               element_at(col('a'), -1)),
+                               conf={'spark.sql.ansi.enabled':False,
+                                     'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10)], ids=idfn)
+def test_array_element_at_test(data_gen):
+    array_gen = ArrayGen(data_gen)
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
+        spark, data_gen).select(element_at(col('a'), 1),
+                               element_at(col('a'), -1)),
+                               conf={'spark.sql.ansi.enabled':False,
+                                     'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
