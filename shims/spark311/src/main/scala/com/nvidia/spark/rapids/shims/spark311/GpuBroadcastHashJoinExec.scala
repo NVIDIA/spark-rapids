@@ -23,7 +23,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, SortOrder}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
-import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
@@ -112,6 +112,12 @@ case class GpuBroadcastHashJoinExec(
       case GpuBuildRight =>
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
+  }
+
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
+    case (FullOuter, _) => Seq(RequireSingleBatch, RequireSingleBatch)
+    case (_, GpuBuildLeft) => Seq(RequireSingleBatch, null)
+    case (_, GpuBuildRight) => Seq(null, RequireSingleBatch)
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
