@@ -20,6 +20,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.plans.FullOuter
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.BinaryExecNode
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
@@ -51,9 +52,10 @@ abstract class GpuShuffledHashJoinBase(
       "GpuShuffledHashJoin does not support the execute() code path.")
   }
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = buildSide match {
-    case GpuBuildLeft => Seq(RequireSingleBatch, null)
-    case GpuBuildRight => Seq(null, RequireSingleBatch)
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
+    case (FullOuter, _) => Seq(RequireSingleBatch, RequireSingleBatch)
+    case (_, GpuBuildLeft) => Seq(RequireSingleBatch, null)
+    case (_, GpuBuildRight) => Seq(null, RequireSingleBatch)
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
