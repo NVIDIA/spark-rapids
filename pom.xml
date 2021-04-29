@@ -210,7 +210,7 @@
         <spark.version>${spark300.version}</spark.version>
         <spark.test.version>${spark300.version}</spark.test.version>
         <cuda.version>cuda10-1</cuda.version>
-        <cudf.version>0.19.1</cudf.version>
+        <cudf.version>0.19.2</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>

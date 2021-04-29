@@ -18,7 +18,7 @@
 # The initscript to set up environment for the cudf_udf tests on Databrcks
 # Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
 
-CUDF_VER=${CUDF_VER:-0.19.1}
+CUDF_VER=${CUDF_VER:-0.19.2}
 
 # Use mamba to install cudf-udf packages to speed up conda resolve time
 base=$(conda info --base)
