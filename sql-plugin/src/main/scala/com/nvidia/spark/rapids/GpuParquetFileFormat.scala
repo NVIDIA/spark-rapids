@@ -122,7 +122,7 @@ object GpuParquetFileFormat {
               StructType(Array(StructField(field.name, a.elementType, true))))
               .build())
         case _ =>
-          builder.withColumn(true, field.name)
+          builder.withColumns(true, field.name)
       }
     )
     builder.asInstanceOf[T]

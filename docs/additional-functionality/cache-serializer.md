@@ -52,5 +52,6 @@ nav_order: 2
 ##          Supported Types                       
  
  All types are supported on the CPU, on the Gpu, ArrayType, MapType and BinaryType are not
- supported 
+ supported. If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall 
+ back to using the CPU for caching. 
 
