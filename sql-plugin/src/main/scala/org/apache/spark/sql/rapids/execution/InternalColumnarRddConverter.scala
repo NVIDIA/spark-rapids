@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -404,7 +404,7 @@ private class ExternalRowToColumnarIterator(
       }
     }
 
-    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows, null)
+    val builders = new GpuColumnarBatchBuilder(localSchema, targetRows)
     try {
       var rowCount = 0
       var byteCount: Long = variableWidthColumnCount * 4 // offset bytes

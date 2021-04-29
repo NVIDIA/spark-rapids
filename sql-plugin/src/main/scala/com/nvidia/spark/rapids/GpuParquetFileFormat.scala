@@ -32,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, DecimalType, MapType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -41,12 +41,6 @@ object GpuParquetFileFormat {
       spark: SparkSession,
       options: Map[String, String],
       schema: StructType): Option[GpuParquetFileFormat] = {
-
-    val unSupportedTypes =
-      schema.filterNot(field => GpuOverrides.isSupportedType(field.dataType, allowDecimal = true))
-    if (unSupportedTypes.nonEmpty) {
-      meta.willNotWorkOnGpu(s"These types aren't supported for parquet $unSupportedTypes")
-    }
 
     val sqlConf = spark.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
@@ -60,6 +54,8 @@ object GpuParquetFileFormat {
       meta.willNotWorkOnGpu("Parquet output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET_WRITE} to true")
     }
+
+    FileFormatChecks.tag(meta, schema, ParquetFormatType, WriteFileOp)
 
     parseCompressionType(parquetOptions.compressionCodecClassName)
       .getOrElse(meta.willNotWorkOnGpu(
@@ -83,7 +79,7 @@ object GpuParquetFileFormat {
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
     }
 
-    sqlConf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE) match {
+    ShimLoader.getSparkShims.parquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" => //Good
       case "CORRECTED" => //Good
       case "LEGACY" =>
@@ -101,13 +97,15 @@ object GpuParquetFileFormat {
     }
   }
 
-  def getFlatPrecisionList(schema: StructType): Seq[Int] =  {
+  def getPrecisionList(schema: StructType): Seq[Int] =  {
     def precisionsList(t: DataType): Seq[Int] = {
       t match {
         case d: DecimalType => List(d.precision)
-        case s: StructType => s.flatMap(f => precisionsList(f.dataType))
-        case ArrayType(elementType, _) => precisionsList(elementType)
-        case _ => List.empty
+        case _: StructType =>
+          throw new IllegalStateException("structs are not supported right now")
+        case _: ArrayType =>
+          throw new IllegalStateException("arrays are not supported right now")
+        case _ => List(0)
       }
     }
     schema.flatMap(f => precisionsList(f.dataType))
@@ -148,8 +146,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
     val conf = ContextUtil.getConfiguration(job)
 
-    val dateTimeRebaseException =
-      "EXCEPTION".equals(conf.get(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key))
+    val dateTimeRebaseException = "EXCEPTION".equals(
+        sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
 
     val committerClass =
       conf.getClass(
@@ -275,7 +273,7 @@ class GpuParquetWriter(
               new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
                 v.castTo(DType.TIMESTAMP_MILLISECONDS)
               })
-            case d: DecimalType if d.precision < 10 =>
+            case d: DecimalType if d.precision <= Decimal.MAX_INT_DIGITS =>
               // There is a bug in Spark that causes a problem if we write Decimals with
               // precision < 10 as Decimal64.
               // https://issues.apache.org/jira/browse/SPARK-34167
@@ -297,12 +295,15 @@ class GpuParquetWriter(
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
       .withTimestampInt96(outputTimestampType == ParquetOutputTimestampType.INT96)
-      .withPrecisionValues(GpuParquetFileFormat.getFlatPrecisionList(dataSchema):_*)
+      .withDecimalPrecisions(GpuParquetFileFormat.getPrecisionList(dataSchema):_*)
     dataSchema.foreach(entry => {
       if (entry.nullable) {
         builder.withColumnNames(entry.name)
       } else {
-        builder.withNotNullableColumnNames(entry.name)
+        builder.withColumnNames(entry.name)
+        // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
+        // setting if the output is nullable or not.
+        //builder.withNotNullableColumnNames(entry.name)
       }
     })
     val options = builder.build()

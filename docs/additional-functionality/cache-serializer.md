@@ -33,8 +33,18 @@ nav_order: 2
   ParquetCachedBatchSerializer does by decomposing intervals to struct containing the
   months, days and microseconds and NullType to Int column containing nulls.
 
-  To use this serializer please run Spark
+  Please make sure to use the right package corresponding to the spark version you are using. To use
+  this serializer with Spark 3.1.1 please run Spark with the following conf.
   ```
   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
   ```
+  Please see the below table for all the names of the serializers corresponding to the Spark
+  versions
+
+  | Spark version | Serializer name |
+  | ------ | -----|
+  | 3.1.1 | com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer |
+  | 3.1.2 | com.nvidia.spark.rapids.shims.spark312.ParquetCachedBatchSerializer |
+  | 3.2.0 | com.nvidia.spark.rapids.shims.spark320.ParquetCachedBatchSerializer |
+
   To use the default serializer don't set the `spark.sql.cache.serializer` conf

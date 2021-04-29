@@ -257,7 +257,10 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.0.1      | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
     | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
     | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
+    | 3.0.3      | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
     | 3.1.1      | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
+    | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
+    | 3.2.0      | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
 
 2. Recommended settings for UCX 1.9.0+
 ```shell
@@ -270,7 +273,6 @@ In this section, we are using a docker container built using the sample dockerfi
 --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
 --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
 --conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
---conf spark.executorEnv.LD_LIBRARY_PATH=/usr/lib:/usr/lib/ucx \
 --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
@@ -319,3 +321,20 @@ the [defaults](../configs.md) work in your case.
 This setting controls the amount of host memory (RAM) that can be utilized to spill GPU blocks when
 the GPU is out of memory, before going to disk. Please verify the [defaults](../configs.md).
 - `spark.rapids.memory.host.spillStorageSize`
+
+##### Shuffle Garbage Collection
+Shuffle buffers cached in the spillable store, whether they are in the GPU, host, or disk, will not
+be removed even after all actions for your query complete. This is a design decision in Spark, where 
+shuffle temporary stores are cleaned when there is a garbage collection on the driver, and the 
+references to the RDDs supporting your query are not reachable. 
+
+One of the issues with this is with large JVM footprints in the driver. The driver may not run a GC at
+all between different parts of your application, causing output for shuffle to accumulate (output that
+will not be reused), and eventually causing OOM or even filled disk. This is true for Spark even without
+the RAPIDS Shuffle Manager, but in our case it's likely GPU memory that is being occupied, and performance
+degrades given the churn due to spill to host memory or disk. As of this stage, there isn't a good solution 
+for this, other than to trigger a GC cycle on the driver.
+
+Spark has a configuration `spark.cleaner.periodicGC.interval` (defaults to 30 minutes), that 
+can be used to periodically cause garbage collection. If you are experiencing OOM situations, or 
+performance degradation with several Spark actions, consider tuning this setting in your jobs.

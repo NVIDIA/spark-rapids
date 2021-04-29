@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,20 +24,17 @@ import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** A buffer store using GPUDirect Storage (GDS). */
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("gds", catalog) with Arm {
+    extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
-  override def createBuffer(
-      other: RapidsBuffer,
+  override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    withResource(other.getMemoryBuffer) { otherBuffer =>
+    withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
         case d: DeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
@@ -59,20 +56,24 @@ class RapidsGdsStore(
         0
       }
       logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
-      new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority)
+      new RapidsGdsBuffer(id, fileOffset, other.size, other.meta, other.getSpillPriority,
+        other.spillCallback)
     }
   }
 
   class RapidsGdsBuffer(
       id: RapidsBufferId,
-      fileOffset: Long,
+      val fileOffset: Long,
       size: Long,
       meta: TableMeta,
-      spillPriority: Long) extends RapidsBufferBase(id, size, meta, spillPriority) {
+      spillPriority: Long,
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
-    // TODO(rongou): cache this buffer to avoid repeated reads from disk.
-    override def getMemoryBuffer: DeviceMemoryBuffer = synchronized {
+    override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
+
+    override def materializeMemoryBuffer: MemoryBuffer = {
       val path = if (id.canShareDiskPaths) {
         sharedBufferFiles.get(id)
       } else {
@@ -85,6 +86,24 @@ class RapidsGdsStore(
       }
     }
 
+    override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
+        length: Long, stream: Cuda.Stream): Unit = {
+      val path = if (id.canShareDiskPaths) {
+        sharedBufferFiles.get(id)
+      } else {
+        id.getDiskPath(diskBlockManager)
+      }
+      dst match {
+        case dmOriginal: DeviceMemoryBuffer =>
+          val dm = dmOriginal.slice(dstOffset, length)
+          // TODO: switch to async API when it's released, using the passed in CUDA stream.
+          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+          logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
+        case _ => throw new IllegalStateException(
+          s"GDS can only copy to device buffer, not ${dst.getClass}")
+      }
+    }
+
     override protected def releaseResources(): Unit = {
       // Buffers that share paths must be cleaned up elsewhere
       if (id.canShareDiskPaths) {
@@ -94,12 +113,6 @@ class RapidsGdsStore(
         if (!path.delete() && path.exists()) {
           logWarning(s"Unable to delete GDS spill path $path")
         }
-      }
-    }
-
-    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
-      withResource(getMemoryBuffer) { deviceBuffer =>
-        columnarBatchFromDeviceBuffer(deviceBuffer, sparkTypes)
       }
     }
   }

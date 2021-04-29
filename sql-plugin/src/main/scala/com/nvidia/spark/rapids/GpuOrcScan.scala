@@ -109,14 +109,11 @@ object GpuOrcScanBase {
         s"${RapidsConf.ENABLE_ORC_READ} to true")
     }
 
+    FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)
+
     if (sparkSession.conf
       .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
-    schema.foreach { field =>
-      if (!GpuOverrides.isSupportedType(field.dataType)) {
-        meta.willNotWorkOnGpu(s"GpuOrcScan does not support fields of type ${field.dataType}")
-      }
     }
   }
 }
@@ -840,7 +837,8 @@ class GpuOrcPartitionReader(
         if (debugDumpPrefix != null) {
           dumpOrcData(dataBuffer, dataSize)
         }
-        val includedColumns = ctx.updatedReadSchema.getFieldNames.asScala
+        val fieldNames = ctx.updatedReadSchema.getFieldNames.asScala.toArray
+        val includedColumns = requestedMapping.map(_.map(fieldNames(_))).getOrElse(fieldNames)
         val parseOpts = ORCOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .withNumPyTypes(false)

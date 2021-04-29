@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ class ClusterUtils(object):
 
     @staticmethod
     def generate_create_templ(sshKey, cluster_name, runtime, idle_timeout,
-            num_workers, driver_node_type, worker_node_type,
+            num_workers, driver_node_type, worker_node_type, cloud_provider,
             printLoc=sys.stdout):
         timeStr = str(int(time.time()))
         uniq_name = cluster_name + "-" + timeStr
@@ -31,13 +31,14 @@ class ClusterUtils(object):
         templ['cluster_name'] = uniq_name
         print("cluster name is going to be %s" % uniq_name, file=printLoc)
         templ['spark_version'] = runtime
-        templ['aws_attributes'] = {
-                    "zone_id": "us-west-2a",
-                    "first_on_demand": 1,
-                    "availability": "SPOT_WITH_FALLBACK",
-                    "spot_bid_price_percent": 100,
-                    "ebs_volume_count": 0
-                }
+        if (cloud_provider == 'aws'):
+            templ['aws_attributes'] = {
+                        "zone_id": "us-west-2a",
+                        "first_on_demand": 1,
+                        "availability": "SPOT_WITH_FALLBACK",
+                        "spot_bid_price_percent": 100,
+                        "ebs_volume_count": 0
+            }
         templ['autotermination_minutes'] = idle_timeout
         templ['enable_elastic_disk'] = 'false'
         templ['enable_local_disk_encryption'] = 'false'
@@ -45,6 +46,13 @@ class ClusterUtils(object):
         templ['driver_node_type_id'] = driver_node_type
         templ['ssh_public_keys'] = [ sshKey ]
         templ['num_workers'] = num_workers
+        templ['init_scripts'] = [
+            {
+                "dbfs": {
+                     "destination": "dbfs:/databricks/init_scripts/init_cudf_udf.sh"
+                }
+            }
+        ]
         return templ
 
 

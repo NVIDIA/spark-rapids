@@ -16,7 +16,12 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.reflect.Method
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.RangePartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
@@ -26,7 +31,8 @@ import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -60,8 +66,20 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def optimizeAdaptiveTransitions(
       plan: SparkPlan,
       parent: Option[SparkPlan]): SparkPlan = plan match {
+    // HostColumnarToGpu(RowToColumnarExec(..)) => GpuRowToColumnarExec(..)
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-      GpuRowToColumnarExec(optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
+      val transition = GpuRowToColumnarExec(
+        optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
+      r2c.child match {
+        case _: AdaptiveSparkPlanExec =>
+          // When the input is an adaptive plan we do not get to see the GPU version until
+          // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
+          // final operator and we can bypass this to keep the data columnar by inserting
+          // the [[AvoidAdaptiveTransitionToRow]] operator here
+          AvoidAdaptiveTransitionToRow(transition)
+        case _ =>
+          transition
+      }
 
     case ColumnarToRowExec(GpuBringBackToHost(
         GpuShuffleCoalesceExec(e: GpuShuffleExchangeExecBase, _))) if parent.isEmpty =>
@@ -117,7 +135,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // in future query stages. Note that because these query stages have already executed, we
     // don't need to recurse down and optimize them again
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
-      getColumnarToRowExec(e)
+      e.plan match {
+        case ReusedExchangeExec(_, b: GpuBroadcastExchangeExecBase) =>
+          // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
+          // hash join but Spark will sometimes try and do this (see
+          // https://issues.apache.org/jira/browse/SPARK-35093 for more information) so we
+          // need to convert the output to rows in the driver before broadcasting the data
+          // to the executors
+          GpuBroadcastToCpuExec(b.mode, b.child)
+        case _ => getColumnarToRowExec(e)
+      }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       getColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
 
@@ -337,10 +364,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       plan match {
         case _: GpuHashJoin =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
+          GpuSortExec(sortOrder, false, plan, SortEachBatch)
         case _: GpuHashAggregateExec =>
           val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, TargetSize(conf.gpuTargetBatchSizeBytes))
+          GpuSortExec(sortOrder, false, plan, SortEachBatch)
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
@@ -365,17 +392,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-  private def getBaseNameFromClass(planClassStr: String): String = {
-    val firstDotIndex = planClassStr.lastIndexOf(".")
-    if (firstDotIndex != -1) planClassStr.substring(firstDotIndex + 1) else planClassStr
-  }
-
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     // There are no GpuAttributeReference or GpuSortOrder
     if (!exp.isInstanceOf[AttributeReference] &&
         !exp.isInstanceOf[SortOrder] &&
         !exp.isInstanceOf[GpuExpression] &&
-      !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(exp.getClass.toString))) {
+      !conf.testingAllowedNonGpu.contains(PlanUtils.getBaseNameFromClass(exp.getClass.toString))) {
       throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
     }
     exp.children.foreach(subExp => assertIsOnTheGpu(subExp, conf))
@@ -406,11 +428,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: GpuColumnarToRowExecParent => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case _: ShuffleExchangeExec => () // Ignored for now, we don't force it to the GPU if
-                                        // children are not on the gpu
-      case other =>
-        if (!plan.supportsColumnar &&
-          !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
+      case shuffleExchange: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted
+        || !shuffleExchange.outputPartitioning.isInstanceOf[RangePartitioning] => {
+        // Ignored for now, we don't force it to the GPU if
+        // children are not on the gpu
+      }
+      case _ =>
+        if (!plan.supportsColumnar && !conf.testingAllowedNonGpu.exists(nonGpuClass =>
+          PlanUtils.sameClass(plan, nonGpuClass))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n${plan}")
         }
@@ -498,5 +523,62 @@ object GpuTransitionOverrides {
       case ShuffleQueryStageExec(_, plan) => plan
       case _ => plan
     }
+  }
+}
+
+/**
+ * This operator will attempt to optimize the case when we are writing the results of
+ * an adaptive query to disk so that we remove the redundant transitions from columnar
+ * to row within AdaptiveSparkPlanExec followed by a row to columnar transition.
+ *
+ * Specifically, this is the plan we see in this case:
+ *
+ * {{{
+ * GpuRowToColumnar(AdaptiveSparkPlanExec(GpuColumnarToRow(child))
+ * }}}
+ *
+ * We perform this optimization at runtime rather than during planning, because when the adaptive
+ * plan is being planned and executed, we don't know whether it is being called from an operation
+ * that wants rows (such as CollectTailExec) or from an operation that wants columns (such as
+ * GpuDataWritingCommandExec).
+ *
+ * Spark does not provide a mechanism for executing an adaptive plan and retrieving columnar
+ * results and the internal methods that we need to call are private, so we use reflection to
+ * call them.
+ *
+ * @param child The plan to execute
+ */
+case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode with GpuExec {
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override def output: Seq[Attribute] = child.output
+
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = child match {
+    case GpuRowToColumnarExec(a: AdaptiveSparkPlanExec, _) =>
+      val getFinalPhysicalPlan = getPrivateMethod("getFinalPhysicalPlan")
+      val plan = getFinalPhysicalPlan.invoke(a)
+      val rdd = plan match {
+        case t: GpuColumnarToRowExec =>
+          t.child.executeColumnar()
+        case _ =>
+          child.executeColumnar()
+      }
+
+      // final UI update
+      val finalPlanUpdate = getPrivateMethod("finalPlanUpdate")
+      finalPlanUpdate.invoke(a)
+
+      rdd
+
+    case _ =>
+      child.executeColumnar()
+  }
+
+  private def getPrivateMethod(name: String): Method = {
+    val m = classOf[AdaptiveSparkPlanExec].getDeclaredMethod(name)
+    m.setAccessible(true)
+    m
   }
 }

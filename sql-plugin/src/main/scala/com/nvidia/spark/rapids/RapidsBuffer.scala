@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -58,6 +58,26 @@ object StorageTier extends Enumeration {
   val GDS: StorageTier = Value(3, "GPUDirect Storage")
 }
 
+object RapidsBuffer {
+  /**
+   * Callback type for when a batch is spilled from one storage tier to another. This is
+   * intended to only be used for metrics gathering in parts of the GPU plan that can spill.
+   * No GPU memory should ever be allocated from this callback, blocking in this function
+   * is strongly discouraged. It should be as light weight as possible. It takes three arguments
+   * <ul>
+   * <li><code>from</code> the storage tier the data is being spilled from.</li>
+   * <li><code>to</code> the storage tier the data is being spilled to.</li>
+   * <li><code>amount</code> the amount of data in bytes that is spilled.</li>
+   * </ul>
+   */
+  type SpillCallback = (StorageTier, StorageTier, Long) => Unit
+
+  /**
+   * A default NOOP callback for when a buffer is spilled
+   */
+  def defaultSpillCallback(to: StorageTier, from: StorageTier, amount: Long): Unit = ()
+}
+
 /** Interface provided by all types of RAPIDS buffers */
 trait RapidsBuffer extends AutoCloseable {
   /** The buffer identifier for this buffer. */
@@ -72,6 +92,8 @@ trait RapidsBuffer extends AutoCloseable {
   /** The storage tier for this buffer */
   val storageTier: StorageTier
 
+  val spillCallback: RapidsBuffer.SpillCallback
+
   /**
    * Get the columnar batch within this buffer. The caller must have
    * successfully acquired the buffer beforehand.
@@ -85,13 +107,35 @@ trait RapidsBuffer extends AutoCloseable {
   def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch
 
   /**
-   * Get the underlying memory buffer. This may be either a HostMemoryBuffer
-   * or a DeviceMemoryBuffer depending on where the buffer currently resides.
+   * Get the underlying memory buffer. This may be either a HostMemoryBuffer or a DeviceMemoryBuffer
+   * depending on where the buffer currently resides.
    * The caller must have successfully acquired the buffer beforehand.
    * @see [[addReference]]
    * @note It is the responsibility of the caller to close the buffer.
    */
   def getMemoryBuffer: MemoryBuffer
+
+  /**
+   * Copy the content of this buffer into the specified memory buffer, starting from the given
+   * offset.
+   *
+   * @param srcOffset offset to start copying from.
+   * @param dst the memory buffer to copy into.
+   * @param dstOffset offset to copy into.
+   * @param length number of bytes to copy.
+   * @param stream CUDA stream to use
+   */
+  def copyToMemoryBuffer(
+      srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long, stream: Cuda.Stream)
+
+  /**
+   * Get the device memory buffer from the underlying storage. If the buffer currently resides
+   * outside of device memory, a new DeviceMemoryBuffer is created with the data copied over.
+   * The caller must have successfully acquired the buffer beforehand.
+   * @see [[addReference]]
+   * @note It is the responsibility of the caller to close the buffer.
+   */
+  def getDeviceMemoryBuffer: DeviceMemoryBuffer
 
   /**
    * Try to add a reference to this buffer to acquire it.
@@ -162,6 +206,13 @@ sealed class DegenerateRapidsBuffer(
   override def getMemoryBuffer: MemoryBuffer =
     throw new UnsupportedOperationException("degenerate buffer has no memory buffer")
 
+  override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long, length: Long,
+      stream: Cuda.Stream): Unit =
+    throw new UnsupportedOperationException("degenerate buffer cannot copy to memory buffer")
+
+  override def getDeviceMemoryBuffer: DeviceMemoryBuffer =
+    throw new UnsupportedOperationException("degenerate buffer has no device memory buffer")
+
   override def addReference(): Boolean = true
 
   override def getSpillPriority: Long = Long.MaxValue
@@ -169,4 +220,6 @@ sealed class DegenerateRapidsBuffer(
   override def setSpillPriority(priority: Long): Unit = {}
 
   override def close(): Unit = {}
+
+  override val spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback
 }

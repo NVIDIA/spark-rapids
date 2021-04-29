@@ -58,10 +58,9 @@ class HashSortOptimizeSuite extends FunSuite {
     val gse = sortNode.get.asInstanceOf[GpuSortExec]
     assert(gse.children.length == 1)
     assert(gse.global == false)
-    assert(gse.coalesceGoal.isInstanceOf[TargetSize])
+    assert(gse.sortType == SortEachBatch)
     val sortChild = gse.children.head
-    assert(sortChild.isInstanceOf[GpuCoalesceBatches])
-    assertResult(joinNode) { sortChild.children.head }
+    assertResult(joinNode) { sortChild }
   }
 
   test("sort inserted after broadcast hash join") {

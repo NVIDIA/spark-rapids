@@ -145,7 +145,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends Se
         new Iterator[(Int, ColumnarBatch)] with Arm {
           var toBeReturned: Option[ColumnarBatch] = None
 
-          TaskContext.get().addTaskCompletionListener[Unit]((tc: TaskContext) => {
+          TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
             toBeReturned.foreach(_.close())
             toBeReturned = None
             dIn.close()
@@ -156,7 +156,9 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends Se
               val header = new SerializedTableHeader(dIn)
               if (header.wasInitialized) {
                 if (header.getNumColumns > 0) {
-                  closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen)) { hostBuffer =>
+                  // This buffer will later be concatenated into another host buffer before being
+                  // sent to the GPU, so no need to use pinned memory for these buffers.
+                  closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen, false)) { hostBuffer =>
                     JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
                     Some(SerializedTableColumn.from(header, hostBuffer))
                   }

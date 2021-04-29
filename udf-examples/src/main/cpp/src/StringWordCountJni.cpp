@@ -53,8 +53,8 @@ extern "C" {
  * @return The address of the cudf column containing the word counts
  */
 JNIEXPORT jlong JNICALL
-Java_com_nvidia_spark_rapids_udf_StringWordCount_countWords(JNIEnv* env, jclass,
-                                                            jlong j_strings) {
+Java_com_nvidia_spark_rapids_udf_hive_StringWordCount_countWords(JNIEnv* env, jclass,
+                                                                 jlong j_strings) {
   // Use a try block to translate C++ exceptions into Java exceptions to avoid
   // crashing the JVM if a C++ exception occurs.
   try {
@@ -70,11 +70,11 @@ Java_com_nvidia_spark_rapids_udf_StringWordCount_countWords(JNIEnv* env, jclass,
     auto msg = std::string("Unable to allocate native memory: ") +
         (e.what() == nullptr ? "" : e.what());
     throw_java_exception(env, RUNTIME_ERROR_CLASS, msg.c_str());
-    return 0;
   } catch (std::exception const& e) {
     auto msg = e.what() == nullptr ? "" : e.what();
     throw_java_exception(env, RUNTIME_ERROR_CLASS, msg);
   }
+  return 0;
 }
 
 }

@@ -22,15 +22,10 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.4.2</version>
+        <version>0.5.0</version>
     </parent>
-    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-tests-next-spark_2.12</artifactId>
-    <version>0.4.2</version>
-
-    <properties>
-        <spark.test.version>${spark311.version}</spark.test.version>
-    </properties>
+    <version>0.5.0</version>
 
     <dependencies>
         <dependency>
@@ -90,12 +85,6 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>src/test/resources/**</exclude>
-                        <exclude>**/*.md</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
         </plugins>
     </build>

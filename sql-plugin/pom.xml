@@ -22,13 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.4.2</version>
+        <version>0.5.0</version>
     </parent>
-    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>0.4.2</version>
+    <version>0.5.0</version>
 
     <dependencies>
         <dependency>
@@ -148,14 +147,6 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>dependency-reduced-pom.xml</exclude>
-                        <exclude>src/main/format/README.md</exclude>
-                        <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
-                        <exclude>src/test/resources/**</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
         </plugins>
     </build>

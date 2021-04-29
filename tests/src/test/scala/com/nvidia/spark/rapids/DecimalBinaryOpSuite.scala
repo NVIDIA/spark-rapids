@@ -23,10 +23,10 @@ import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType}
 
 class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
   private val schema = FuzzerUtils.createSchema(Seq(
-    DecimalType(DType.DECIMAL32_MAX_PRECISION, 4),
+    DecimalType(DType.DECIMAL32_MAX_PRECISION, 3),
     DecimalType(DType.DECIMAL32_MAX_PRECISION, 2)))
-  private val litValue = Decimal(12345.6789)
-  private val lit = GpuLiteral(litValue, DecimalType(DType.DECIMAL64_MAX_PRECISION, 5))
+  private val litValue = Decimal(12345.678)
+  private val lit = GpuLiteral(litValue, DecimalType(DType.DECIMAL32_MAX_PRECISION, 3))
   private val leftExpr = GpuBoundReference(0, schema.head.dataType, nullable = true)
   private val rightExpr = GpuBoundReference(1, schema(1).dataType, nullable = true)
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,8 +85,22 @@ case class GpuAlias(child: Expression, name: String)(
   }
 
   override def sql: String = {
-    val qualifierPrefix = if (qualifier.nonEmpty) qualifier.mkString(".") + "." else ""
-    s"${child.sql} AS $qualifierPrefix${quoteIdentifier(name)}"
+    if (ShimLoader.getSparkShims.hasAliasQuoteFix) {
+      val qualifierPrefix =
+        if (qualifier.nonEmpty) qualifier.map(quoteIfNeeded).mkString(".") + "." else ""
+      s"${child.sql} AS $qualifierPrefix${quoteIfNeeded(name)}"
+    } else {
+      val qualifierPrefix = if (qualifier.nonEmpty) qualifier.mkString(".") + "." else ""
+      s"${child.sql} AS $qualifierPrefix${quoteIdentifier(name)}"
+    }
+  }
+
+  private def quoteIfNeeded(part: String): String = {
+    if (part.contains(".") || part.contains("`")) {
+      s"`${part.replace("`", "``")}`"
+    } else {
+      part
+    }
   }
 
   override def columnarEval(batch: ColumnarBatch): Any =

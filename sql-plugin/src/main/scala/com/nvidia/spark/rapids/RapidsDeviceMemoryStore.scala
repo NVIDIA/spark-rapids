@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -28,11 +28,26 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param catalog catalog to register this store
  */
 class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("GPU", catalog) {
-  override protected def createBuffer(
-      other: RapidsBuffer,
+    extends RapidsBufferStore(StorageTier.DEVICE, catalog) with Arm {
+
+  override protected def createBuffer(other: RapidsBuffer, memoryBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    throw new IllegalStateException("should not be spilling to device memory")
+    val deviceBuffer = {
+      memoryBuffer match {
+        case d: DeviceMemoryBuffer => d
+        case h: HostMemoryBuffer =>
+          withResource(h) { _ =>
+            closeOnExcept(DeviceMemoryBuffer.allocate(other.size)) { deviceBuffer =>
+              logDebug(s"copying from host $h to device $deviceBuffer")
+              deviceBuffer.copyFromHostBuffer(h, stream)
+              deviceBuffer
+            }
+          }
+        case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
+      }
+    }
+    new RapidsDeviceMemoryBuffer(other.id, other.size, other.meta, None,
+      deviceBuffer, other.getSpillPriority, other.spillCallback)
   }
 
   /**
@@ -42,20 +57,24 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param contigBuffer device memory buffer backing the table
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
   def addTable(
       id: RapidsBufferId,
       table: Table,
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
-      initialSpillPriority: Long): Unit = {
+      initialSpillPriority: Long,
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val buffer = new RapidsDeviceMemoryBuffer(
       id,
       contigBuffer.getLength,
       tableMeta,
       Some(table),
       contigBuffer,
-      initialSpillPriority)
+      initialSpillPriority,
+      spillCallback)
     try {
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
@@ -75,11 +94,14 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param id buffer ID to associate with this buffer
    * @param contigTable contiguous table to track in storage
    * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
   def addContiguousTable(
       id: RapidsBufferId,
       contigTable: ContiguousTable,
-      initialSpillPriority: Long): Unit = {
+      initialSpillPriority: Long,
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -90,7 +112,8 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       meta,
       None,
       contigBuffer,
-      initialSpillPriority)
+      initialSpillPriority,
+      spillCallback)
     try {
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
@@ -109,19 +132,23 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
    */
   def addBuffer(
       id: RapidsBufferId,
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
-      initialSpillPriority: Long): Unit = {
+      initialSpillPriority: Long,
+      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
     val buff = new RapidsDeviceMemoryBuffer(
       id,
       buffer.getLength,
       tableMeta,
       None,
       buffer,
-      initialSpillPriority)
+      initialSpillPriority,
+      spillCallback)
     try {
       logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
           s"uncompressed=${buff.meta.bufferMeta.uncompressedSize}, " +
@@ -141,7 +168,9 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       meta: TableMeta,
       table: Option[Table],
       contigBuffer: DeviceMemoryBuffer,
-      spillPriority: Long) extends RapidsBufferBase(id, size, meta, spillPriority) {
+      spillPriority: Long,
+      override val spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.DEVICE
 
     override protected def releaseResources(): Unit = {
@@ -149,10 +178,12 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       table.foreach(_.close())
     }
 
-    override def getMemoryBuffer: MemoryBuffer = {
+    override def getDeviceMemoryBuffer: DeviceMemoryBuffer = {
       contigBuffer.incRefCount()
       contigBuffer
     }
+
+    override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
     override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
       if (table.isDefined) {

@@ -14,8 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
-from marks import validate_execs_in_gpu_plan
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
+from marks import *
 
 columnarClass = 'com.nvidia.spark.rapids.tests.datasourcev2.parquet.ArrowColumnarDataSourceV2'
 
@@ -40,8 +40,14 @@ def test_read_all_types():
             conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
 
 @validate_execs_in_gpu_plan('HostColumnarToGpu')
+def test_read_all_types_count():
+    assert_gpu_and_cpu_row_counts_equal(
+       readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
+            conf={'spark.rapids.sql.castFloatToString.enabled': 'true'})
+
+@validate_execs_in_gpu_plan('HostColumnarToGpu')
 def test_read_arrow_off():
     assert_gpu_and_cpu_are_equal_collect(
         readTable("int,bool,byte,short,long,string,float,double,date,timestamp", columnarClass),
-            conf={'spark.rapids.arrowCopyOptmizationEnabled': 'false',
+            conf={'spark.rapids.arrowCopyOptimizationEnabled': 'false',
                   'spark.rapids.sql.castFloatToString.enabled': 'true'})

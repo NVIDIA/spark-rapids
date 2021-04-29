@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ import org.apache.spark.sql.types._
 // used by the rest of the compiler.
 //
 class LambdaReflection private(private val classPool: ClassPool,
-                               private val ctClass: CtClass,
                                private val ctMethod: CtMethod,
                                val capturedArgs: Seq[Expression] = Seq()) {
   def lookupConstant(constPoolIndex: Int): Any = {
@@ -63,7 +62,6 @@ class LambdaReflection private(private val classPool: ClassPool,
       val methodName = constPool.getInterfaceMethodrefName(constPoolIndex)
       val descriptor = constPool.getInterfaceMethodrefType(constPoolIndex)
       val className = constPool.getInterfaceMethodrefClassName(constPoolIndex)
-      val params = Descriptor.getParameterTypes(descriptor, classPool)
       classPool.getCtClass(className).getMethod(methodName, descriptor)
     } else {
       if (constPool.getTag(constPoolIndex) != ConstPool.CONST_Methodref) {
@@ -140,13 +138,13 @@ object LambdaReflection {
       val lambdaImplName = serializedLambda.getImplMethodName
       ctClass.getDeclaredMethod(lambdaImplName.stripSuffix("$adapted"))
     }
-    new LambdaReflection(classPool, ctClass, ctMethod, capturedArgs)
+    new LambdaReflection(classPool, ctMethod, capturedArgs)
   }
 
   private def apply(ctMethod: CtMethod): LambdaReflection = {
     val ctClass = ctMethod.getDeclaringClass
     val classPool = ctClass.getClassPool
-    new LambdaReflection(classPool, ctClass, ctMethod)
+    new LambdaReflection(classPool, ctMethod)
   }
 
   def getClass(name: String): Class[_] = {
