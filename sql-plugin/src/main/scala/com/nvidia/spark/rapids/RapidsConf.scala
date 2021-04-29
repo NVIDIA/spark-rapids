@@ -870,7 +870,7 @@ object RapidsConf {
     .createWithDefault(false)
 
   val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
-    .doc("Starting port to try to bind ucx listener.")
+    .doc("Starting port to try to bind the UCX listener.")
     .internal()
     .integerConf
     .createWithDefault(0)
