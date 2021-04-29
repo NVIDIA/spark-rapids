@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.function.BiFunction
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -32,11 +33,11 @@ class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
     extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
-  private val BlockSize = 4096;
-  private val BatchWriteBufferSize = 1 << 27; // 128 MiB
-  private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
-  private[this] val batchWriteBuffer = CuFileBuffer.allocate(BatchWriteBufferSize, true)
-  private[this] var batchWriteBufferId = TempSpillBufferId()
+  private val blockSize = 4096
+  private val batchWriteBufferSize = 1 << 27 // 128 MiB
+  private[this] val batchedBuffers = new ConcurrentHashMap[File, Set[RapidsBufferId]]
+  private[this] val batchWriteBuffer = CuFileBuffer.allocate(batchWriteBufferSize, true)
+  private[this] var batchWriteFile = TempSpillBufferId().getDiskPath(diskBlockManager)
   private[this] var batchWriteBufferOffset = 0L
   private[this] val pendingBuffers = ArrayBuffer.empty[RapidsGdsBuffer]
 
@@ -56,17 +57,13 @@ class RapidsGdsStore(
   }
 
   private def isBatched(length: Long): Boolean = {
-    length < BatchWriteBufferSize
+    length < batchWriteBufferSize
   }
 
   private def singleShotSpill(
       other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase = {
     val id = other.id
-    val path = if (id.canShareDiskPaths) {
-      sharedBufferFiles.computeIfAbsent(id, _ => id.getDiskPath(diskBlockManager))
-    } else {
-      id.getDiskPath(diskBlockManager)
-    }
+    val path = id.getDiskPath(diskBlockManager)
     // When sharing files, append to the file; otherwise, write from the beginning.
     val fileOffset = if (id.canShareDiskPaths) {
       // only one writer at a time for now when using shared files
@@ -78,21 +75,21 @@ class RapidsGdsStore(
       0
     }
     logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
-    new RapidsGdsBuffer(id, None, fileOffset, other.size, other.meta, other.getSpillPriority,
+    new RapidsGdsBuffer(id, path, None, fileOffset, other.size, other.meta, other.getSpillPriority,
       other.spillCallback)
   }
 
-  private def batchSpill(
-      other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase = this.synchronized {
-      if (deviceBuffer.getLength > BatchWriteBufferSize - batchWriteBufferOffset) {
-        val path = batchWriteBufferId.getDiskPath(diskBlockManager).getAbsolutePath
+  private def batchSpill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase =
+    this.synchronized {
+      if (deviceBuffer.getLength > batchWriteBufferSize - batchWriteBufferOffset) {
+        val path = batchWriteFile.getAbsolutePath
         withResource(new CuFileWriteHandle(path)) { handle =>
           handle.write(batchWriteBuffer, batchWriteBufferOffset, 0)
           logDebug(s"Spilled to $path 0:$batchWriteBufferOffset via GDS")
         }
         pendingBuffers.foreach(_.cuFileBuffer = None)
         pendingBuffers.clear
-        batchWriteBufferId = TempSpillBufferId()
+        batchWriteFile = TempSpillBufferId().getDiskPath(diskBlockManager)
         batchWriteBufferOffset = 0
       }
 
@@ -102,19 +99,42 @@ class RapidsGdsStore(
       batchWriteBufferOffset += alignUp(deviceBuffer.getLength)
 
       val id = other.id
-      sharedBufferFiles.computeIfAbsent(id, _ => batchWriteBufferId.getDiskPath(diskBlockManager))
-      val gdsBuffer = new RapidsGdsBuffer(id, Some(batchWriteBuffer), currentBufferOffset,
-        other.size, other.meta, other.getSpillPriority, other.spillCallback)
+      addBatchedBuffer(batchWriteFile, id)
+      val gdsBuffer = new RapidsGdsBuffer(id, batchWriteFile, Some(batchWriteBuffer),
+        currentBufferOffset, other.size, other.meta, other.getSpillPriority, other.spillCallback)
       pendingBuffers += gdsBuffer
       gdsBuffer
     }
 
   private def alignUp(length: Long): Long = {
-    (length + BlockSize - 1) & ~(BlockSize - 1)
+    (length + blockSize - 1) & ~(blockSize - 1)
+  }
+
+  private def addBatchedBuffer(path: File, id: RapidsBufferId): Set[RapidsBufferId] = {
+    val updater = new BiFunction[File, Set[RapidsBufferId], Set[RapidsBufferId]] {
+      override def apply(key: File, value: Set[RapidsBufferId]): Set[RapidsBufferId] = {
+        if (value == null) {
+          Set(id)
+        } else {
+          value + id
+        }
+      }
+    }
+    batchedBuffers.compute(path, updater)
+  }
+
+  private def removeBatchedBuffer(path: File, id: RapidsBufferId): Set[RapidsBufferId] = {
+    val updater = new BiFunction[File, Set[RapidsBufferId], Set[RapidsBufferId]] {
+      override def apply(key: File, value: Set[RapidsBufferId]): Set[RapidsBufferId] = {
+        value - id
+      }
+    }
+    batchedBuffers.computeIfPresent(path, updater)
   }
 
   class RapidsGdsBuffer(
       id: RapidsBufferId,
+      path: File,
       var cuFileBuffer: Option[CuFileBuffer],
       val fileOffset: Long,
       size: Long,
@@ -127,11 +147,6 @@ class RapidsGdsStore(
     override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
     override def materializeMemoryBuffer: MemoryBuffer = {
-      val path = if (id.canShareDiskPaths || isBatched(size)) {
-        sharedBufferFiles.get(id)
-      } else {
-        id.getDiskPath(diskBlockManager)
-      }
       closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
         if (cuFileBuffer.isEmpty) {
           CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
@@ -145,11 +160,6 @@ class RapidsGdsStore(
 
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
         length: Long, stream: Cuda.Stream): Unit = {
-      val path = if (id.canShareDiskPaths || isBatched(size)) {
-        sharedBufferFiles.get(id)
-      } else {
-        id.getDiskPath(diskBlockManager)
-      }
       dst match {
         case dmOriginal: DeviceMemoryBuffer =>
           val dm = dmOriginal.slice(dstOffset, length)
@@ -167,14 +177,21 @@ class RapidsGdsStore(
     }
 
     override protected def releaseResources(): Unit = {
-      // Buffers that share paths must be cleaned up elsewhere
-      if (id.canShareDiskPaths || isBatched(size)) {
-        sharedBufferFiles.remove(id)
-      } else {
-        val path = id.getDiskPath(diskBlockManager)
-        if (!path.delete() && path.exists()) {
-          logWarning(s"Unable to delete GDS spill path $path")
+      if (isBatched(size)) {
+        val ids = removeBatchedBuffer(path, id)
+        if (ids.isEmpty) {
+          deletePath()
         }
+      } else if (id.canShareDiskPaths) {
+        // Buffers that share paths must be cleaned up elsewhere
+      } else {
+        deletePath()
+      }
+    }
+
+    private def deletePath(): Unit = {
+      if (!path.delete() && path.exists()) {
+        logWarning(s"Unable to delete GDS spill path $path")
       }
     }
   }
