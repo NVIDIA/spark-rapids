@@ -863,8 +863,8 @@ object RapidsConf {
     .createWithDefault(false)
 
   val SHUFFLE_UCX_USE_PEER_ERR_HDNL = conf("spark.rapids.shuffle.ucx.peerErrorHandling.enabled")
-    .doc("When set to true, enable peer error handling for ucx endpoints. " +
-      "Could impact on a transports and protocols, being selected in ucx")
+    .doc("When set to true, enable peer error handling for UCX endpoints. " +
+      "This can impact transports and protocols selected in UCX.")
     .internal()
     .booleanConf
     .createWithDefault(false)
