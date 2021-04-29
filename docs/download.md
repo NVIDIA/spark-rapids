@@ -100,6 +100,10 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02 or 450.102.04 in combination with the CUDA 10.1 or
+10.2 toolkit may result in long read times when reading a file that is snappy compressed.  In those
+cases we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue is
+resolved in the 0.5.0 and higher releases. 
 
 ## Release v0.4.0
 ### Download v0.4.0
@@ -150,6 +154,10 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02 or 450.102.04 in combination with the CUDA 10.1 or
+10.2 toolkit may result in long read times when reading a file that is snappy compressed.  In those
+cases we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue is
+resolved in the 0.5.0 and higher releases. 
 
 ## Release v0.3.0
 ### Download v0.3.0
@@ -197,6 +205,10 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02 or 450.102.04 in combination with the CUDA 10.1 or
+10.2 toolkit may result in long read times when reading a file that is snappy compressed.  In those
+cases we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue is
+resolved in the 0.5.0 and higher releases. 
 
 ## Release v0.2.0
 ### Download v0.2.0
@@ -247,6 +259,10 @@ The list of all supported operations is provided
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02 or 450.102.04 in combination with the CUDA 10.1 or
+10.2 toolkit may result in long read times when reading a file that is snappy compressed.  In those
+cases we recommend either running with the CUDA 11.0 toolkit or using a newer driver.  This issue is
+resolved in the 0.5.0 and higher releases. 
 
 ## Release v0.1.0
 ### Download v0.1.0
@@ -271,9 +287,4 @@ Software Requirements:
   
     Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
-    Python 3.x, Scala 2.12, Java 8 
-
-
-
-
-
+    Python 3.x, Scala 2.12, Java 8
