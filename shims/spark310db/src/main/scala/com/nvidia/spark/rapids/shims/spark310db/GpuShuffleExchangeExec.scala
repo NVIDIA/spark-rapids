@@ -38,6 +38,11 @@ case class GpuShuffleExchangeExec(
     throw new UnsupportedOperationException
   }
 
+  // TODO - is this ok?
+  override def withNewOutputPartitioning(outputPartitioning: org.apache.spark.sql.catalyst.plans.physical.Partitioning) = {
+    throw new UnsupportedOperationException
+  }
+
   override def runtimeStatistics: Statistics = {
     // note that Spark will only use the sizeInBytes statistic but making the rowCount
     // available here means that we can more easily reference it in GpuOverrides when
