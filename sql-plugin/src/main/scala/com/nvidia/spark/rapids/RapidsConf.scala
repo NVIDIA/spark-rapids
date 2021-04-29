@@ -1035,6 +1035,13 @@ object RapidsConf {
       .doubleConf
       .createWithDefault(0.8)
 
+  val OPTIMIZER_CLASS_NAME = conf("spark.rapids.sql.optimizer.className")
+    .internal()
+    .doc("Optimizer implementation class name. The class must implement the " +
+      "com.nvidia.spark.rapids.Optimizer trait")
+    .stringConf
+    .createWithDefault("com.nvidia.spark.rapids.CostBasedOptimizer")
+
   val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.defaultExprGpuCost")
       .internal()
       .doc("Default relative GPU cost of running an expression on the GPU")
@@ -1416,6 +1423,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
+
+  lazy val optimizerClassName: String = get(OPTIMIZER_CLASS_NAME)
 
   lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
 

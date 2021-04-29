@@ -3016,8 +3016,13 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // we need to run these rules both before and after CBO because the cost
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
-        val optimizer = new CostBasedOptimizer(conf)
-        optimizer.optimize(wrap)
+        val optimizer = try {
+          Class.forName(conf.optimizerClassName).newInstance().asInstanceOf[Optimizer]
+        } catch {
+          case e: Exception =>
+            throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
+        }
+        optimizer.optimize(conf, wrap)
       } else {
         Seq.empty
       }
