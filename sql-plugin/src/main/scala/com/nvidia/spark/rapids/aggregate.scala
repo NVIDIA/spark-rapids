@@ -102,7 +102,8 @@ class GpuHashAggregateMeta(
         case _@(ArrayType(_, _) | MapType(_, _, _)) => true
         case _ => false
       })
-      .foreach(_ => willNotWorkOnGpu("Nested types in grouping expressions are not supported"))
+      .foreach(_ =>
+        willNotWorkOnGpu("Array and Map types in grouping expressions are not supported"))
 
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
