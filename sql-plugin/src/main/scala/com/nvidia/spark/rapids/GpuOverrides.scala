@@ -2358,13 +2358,16 @@ object GpuOverrides {
       }),
     expr[CreateArray](
       " Returns an array with the given elements",
+      // Cudf only supports 2D Array.
       ExprChecks.projectNotLambda(
         TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
-            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP),
+            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("arg",
           TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
-              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP,
+              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY +
+              TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
+                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP),
           TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
         override def convertToGpu(): GpuExpression =

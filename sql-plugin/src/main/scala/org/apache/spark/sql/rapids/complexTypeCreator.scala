@@ -70,7 +70,7 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
           GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
       }
       GpuColumnVector.from(ColumnVector.makeList(numRows,
-        GpuColumnVector.getNonNestedRapidsType(dataType.elementType),
+        GpuColumnVector.getArrayNestedRapidsType(dataType.elementType),
         columns: _*), dataType)
     }
   }
