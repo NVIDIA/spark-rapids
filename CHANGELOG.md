@@ -1,13 +1,241 @@
 # Change log
-Generated on 2021-04-16
+Generated on 2021-04-29
 
-## Release 0.4.2
+## Release 0.5
+
+### Features
+|||
+|:---|:---|
+|[#1604](https://github.com/NVIDIA/spark-rapids/issues/1604)|[FEA] Support casting structs to strings |
+|[#1920](https://github.com/NVIDIA/spark-rapids/issues/1920)|[FEA] Support murmur3 hashing of structs|
+|[#2018](https://github.com/NVIDIA/spark-rapids/issues/2018)|[FEA] A way for user to find out the plugin version and cudf version in REPL|
+|[#77](https://github.com/NVIDIA/spark-rapids/issues/77)|[FEA] Support ArrayContains|
+|[#1721](https://github.com/NVIDIA/spark-rapids/issues/1721)|[FEA] build cudf jars with NVTX enabled|
+|[#1782](https://github.com/NVIDIA/spark-rapids/issues/1782)|[FEA] Shim layers to support spark versions|
+|[#1625](https://github.com/NVIDIA/spark-rapids/issues/1625)|[FEA] Support Decimal Casts to String and String to Decimal|
+|[#166](https://github.com/NVIDIA/spark-rapids/issues/166)|[FEA] Support get_json_object|
+|[#2026](https://github.com/NVIDIA/spark-rapids/issues/2026)|[TEST] run the pandas udf using cudf on Databricks|
+|[#1698](https://github.com/NVIDIA/spark-rapids/issues/1698)|[FEA] Support casting structs to string|
+|[#1912](https://github.com/NVIDIA/spark-rapids/issues/1912)|[FEA] Let `Scalar Pandas UDF ` support array of struct type.|
+|[#1136](https://github.com/NVIDIA/spark-rapids/issues/1136)|[FEA] Audit: Script to list commits between different Spark versions/tags|
+|[#1921](https://github.com/NVIDIA/spark-rapids/issues/1921)|[FEA] cudf version check should be lenient on later patch version|
+|[#1490](https://github.com/NVIDIA/spark-rapids/issues/1490)|[FEA] Add Apache Spark 3.2.0 shim layer|
+|[#1733](https://github.com/NVIDIA/spark-rapids/issues/1733)|[FEA] Enable remaining TPC-DS queries in automated benchmark suite|
+|[#19](https://github.com/NVIDIA/spark-rapids/issues/19)|[FEA] Out of core sorts|
+
+### Performance
+|||
+|:---|:---|
+|[#2090](https://github.com/NVIDIA/spark-rapids/issues/2090)|[FEA] Make row count estimates available to the cost-based optimizer|
+|[#1341](https://github.com/NVIDIA/spark-rapids/issues/1341)|Optimize unnecessary columnar->row->columnar transitions with AQE|
+|[#1558](https://github.com/NVIDIA/spark-rapids/issues/1558)|[FEA] Initialize UCX early|
+|[#1633](https://github.com/NVIDIA/spark-rapids/issues/1633)|[FEA] Implement a cost-based optimizer|
+|[#1727](https://github.com/NVIDIA/spark-rapids/issues/1727)|[FEA] Put RangePartitioner data path on the GPU|
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#2278](https://github.com/NVIDIA/spark-rapids/issues/2278)|[BUG] FullOuter join can produce too many results|
+|[#2220](https://github.com/NVIDIA/spark-rapids/issues/2220)|[BUG] csv_test.py::test_csv_fallback FAILED on the EMR Cluster|
+|[#2225](https://github.com/NVIDIA/spark-rapids/issues/2225)|[BUG] GpuSort fails on tables containing arrays.|
+|[#2232](https://github.com/NVIDIA/spark-rapids/issues/2232)|[BUG] hash_aggregate_test.py::test_hash_grpby_pivot FAILED on the Databricks Cluster|
+|[#2231](https://github.com/NVIDIA/spark-rapids/issues/2231)|[BUG]string_test.py::test_re_replace FAILED on the Dataproc Cluster|
+|[#2042](https://github.com/NVIDIA/spark-rapids/issues/2042)|[BUG] NDS q14a fails with "GpuColumnarToRow does not implement doExecuteBroadcast"|
+|[#2203](https://github.com/NVIDIA/spark-rapids/issues/2203)|[BUG] Spark nightly cache tests fail with -- master flag|
+|[#2230](https://github.com/NVIDIA/spark-rapids/issues/2230)|[BUG] qa_nightly_select_test.py::test_select FAILED on the Dataproc Cluster|
+|[#1711](https://github.com/NVIDIA/spark-rapids/issues/1711)|[BUG] find a way to stop allocating from RMM on the shuffle-client thread|
+|[#2109](https://github.com/NVIDIA/spark-rapids/issues/2109)|[BUG] Fix high priority violations detected by code analysis tools|
+|[#2217](https://github.com/NVIDIA/spark-rapids/issues/2217)|[BUG] qa_nightly_select_test failure in test_select |
+|[#2127](https://github.com/NVIDIA/spark-rapids/issues/2127)|[BUG] Parsing with two-digit year should fall back to CPU|
+|[#2078](https://github.com/NVIDIA/spark-rapids/issues/2078)|[BUG] java.lang.ArithmeticException: divide by zero when spark.sql.ansi.enabled=true|
+|[#2048](https://github.com/NVIDIA/spark-rapids/issues/2048)|[BUG] split function+ repartition result in "ai.rapids.cudf.CudaException: device-side assert triggered"|
+|[#2036](https://github.com/NVIDIA/spark-rapids/issues/2036)|[BUG] Stackoverflow when writing wide parquet files.|
+|[#1973](https://github.com/NVIDIA/spark-rapids/issues/1973)|[BUG] generate_expr_test FAILED on Dataproc Cluster|
+|[#2079](https://github.com/NVIDIA/spark-rapids/issues/2079)|[BUG] koalas.sql fails with java.lang.ArrayIndexOutOfBoundsException|
+|[#217](https://github.com/NVIDIA/spark-rapids/issues/217)|[BUG] CudaUtil should be removed|
+|[#1550](https://github.com/NVIDIA/spark-rapids/issues/1550)|[BUG] The ORC output data of a query is not readable|
+|[#2074](https://github.com/NVIDIA/spark-rapids/issues/2074)|[BUG] Intermittent NPE in RapidsBufferCatalog when running test suite|
+|[#2027](https://github.com/NVIDIA/spark-rapids/issues/2027)|[BUG] udf_cudf_test.py integration tests fail |
+|[#1899](https://github.com/NVIDIA/spark-rapids/issues/1899)|[BUG] Some queries fail when cost-based optimizations are enabled|
+|[#1914](https://github.com/NVIDIA/spark-rapids/issues/1914)|[BUG] Add in float, double, timestamp, and date support to murmur3|
+|[#2014](https://github.com/NVIDIA/spark-rapids/issues/2014)|[BUG] earlyStart option added in 0.5 can cause errors when starting UCX|
+|[#1984](https://github.com/NVIDIA/spark-rapids/issues/1984)|[BUG] NDS q58 Decimal scale (59) cannot be greater than precision (38).|
+|[#2001](https://github.com/NVIDIA/spark-rapids/issues/2001)|[BUG] RapidsShuffleManager didn't pass `dirs` to `getBlockData` from a wrapped `ShuffleBlockResolver`|
+|[#1797](https://github.com/NVIDIA/spark-rapids/issues/1797)|[BUG] occasional crashes in CI|
+|[#1861](https://github.com/NVIDIA/spark-rapids/issues/1861)|Encountered column data outside the range of input buffer|
+|[#1905](https://github.com/NVIDIA/spark-rapids/issues/1905)|[BUG] Large concat task time in GpuShuffleCoalesce with pinned memory pool|
+|[#1638](https://github.com/NVIDIA/spark-rapids/issues/1638)|[BUG] Tests `test_window_aggs_for_rows_collect_list` fails when there are null values in columns.|
+|[#1864](https://github.com/NVIDIA/spark-rapids/issues/1864)|[BUG]HostColumnarToGPU inefficient when only doing count()|
+|[#1862](https://github.com/NVIDIA/spark-rapids/issues/1862)|[BUG] spark 3.2.0-snapshot integration test failed due to conf change|
+|[#1844](https://github.com/NVIDIA/spark-rapids/issues/1844)|[BUG] branch-0.5 nightly IT FAILED on the The mortgage ETL test "Could not read footer for file: file:/xxx/xxx.snappy.parquet"|
+|[#1627](https://github.com/NVIDIA/spark-rapids/issues/1627)|[BUG] GDS exception when restoring spilled buffer|
+|[#1802](https://github.com/NVIDIA/spark-rapids/issues/1802)|[BUG] Many decimal integration test failures for 0.5|
 
 ### PRs
 |||
 |:---|:---|
-|[#2155](https://github.com/NVIDIA/spark-rapids/pull/2155)|Update docs for rapids v0.4.2 release [skip ci]|
-|[#2153](https://github.com/NVIDIA/spark-rapids/pull/2153)|Change version to 0.4.2-SNAPSHOT [skip ci]|
+|[#2293](https://github.com/NVIDIA/spark-rapids/pull/2293)|update cudf version to 0.19.2|
+|[#2289](https://github.com/NVIDIA/spark-rapids/pull/2289)|Update docs to warn against 450.80.02 driver with 10.x toolkit|
+|[#2285](https://github.com/NVIDIA/spark-rapids/pull/2285)|Require single batch for full outer join streaming|
+|[#2281](https://github.com/NVIDIA/spark-rapids/pull/2281)|Remove download section for unreleased 0.4.2|
+|[#2264](https://github.com/NVIDIA/spark-rapids/pull/2264)|Add spark312 and spark320 versions of cache serializer|
+|[#2254](https://github.com/NVIDIA/spark-rapids/pull/2254)|updated gcp docs with custom dataproc image instructions|
+|[#2247](https://github.com/NVIDIA/spark-rapids/pull/2247)|Allow specifying a superclass for non-GPU execs|
+|[#2235](https://github.com/NVIDIA/spark-rapids/pull/2235)|Fix distributed cache to read requested schema |
+|[#2261](https://github.com/NVIDIA/spark-rapids/pull/2261)|Make CBO row count test more robust|
+|[#2237](https://github.com/NVIDIA/spark-rapids/pull/2237)|update cudf version to 0.19.1|
+|[#2240](https://github.com/NVIDIA/spark-rapids/pull/2240)|Get the correct 'PIPESTATUS' in bash [skip ci]|
+|[#2242](https://github.com/NVIDIA/spark-rapids/pull/2242)|Add shuffle doc section on the periodicGC configuration|
+|[#2251](https://github.com/NVIDIA/spark-rapids/pull/2251)|Fix issue when out of core sorting nested data types|
+|[#2204](https://github.com/NVIDIA/spark-rapids/pull/2204)|Run nightly tests for ParquetCachedBatchSerializer|
+|[#2245](https://github.com/NVIDIA/spark-rapids/pull/2245)|Fix pivot bug for decimalType|
+|[#2093](https://github.com/NVIDIA/spark-rapids/pull/2093)|Initial implementation of row count estimates in cost-based optimizer|
+|[#2188](https://github.com/NVIDIA/spark-rapids/pull/2188)|Support GPU broadcast exchange reuse to feed CPU BHJ when AQE is enabled|
+|[#2227](https://github.com/NVIDIA/spark-rapids/pull/2227)|ParquetCachedBatchSerializer broadcast AllConfs instead of SQLConf to fix distributed mode|
+|[#2223](https://github.com/NVIDIA/spark-rapids/pull/2223)|Adds subquery aggregate tests from SPARK-31620|
+|[#2222](https://github.com/NVIDIA/spark-rapids/pull/2222)|Remove groupId already specified in parent pom|
+|[#2209](https://github.com/NVIDIA/spark-rapids/pull/2209)|Fixed a few issues with out of core sort|
+|[#2218](https://github.com/NVIDIA/spark-rapids/pull/2218)|Fix incorrect RegExpReplace children handling on Spark 3.1+|
+|[#2207](https://github.com/NVIDIA/spark-rapids/pull/2207)|fix batch size default values in the tuning guide|
+|[#2208](https://github.com/NVIDIA/spark-rapids/pull/2208)|Revert "add nightly cache tests (#2083)"|
+|[#2206](https://github.com/NVIDIA/spark-rapids/pull/2206)|Fix shim301db build|
+|[#2192](https://github.com/NVIDIA/spark-rapids/pull/2192)|Fix index-based access to the head elements|
+|[#2210](https://github.com/NVIDIA/spark-rapids/pull/2210)|Avoid redundant collection conversions|
+|[#2190](https://github.com/NVIDIA/spark-rapids/pull/2190)|JNI fixes for StringWordCount native UDF example|
+|[#2086](https://github.com/NVIDIA/spark-rapids/pull/2086)|Updating documentation for data format support|
+|[#2172](https://github.com/NVIDIA/spark-rapids/pull/2172)|Remove easy unused symbols|
+|[#2089](https://github.com/NVIDIA/spark-rapids/pull/2089)|Update PandasUDF doc|
+|[#2195](https://github.com/NVIDIA/spark-rapids/pull/2195)|fix cudf 0.19.0 download link [skip ci]|
+|[#2175](https://github.com/NVIDIA/spark-rapids/pull/2175)|Branch 0.5 doc update|
+|[#2168](https://github.com/NVIDIA/spark-rapids/pull/2168)|Simplify GpuExpressions w/ withResourceIfAllowed|
+|[#2055](https://github.com/NVIDIA/spark-rapids/pull/2055)|Support PivotFirst|
+|[#2183](https://github.com/NVIDIA/spark-rapids/pull/2183)|GpuParquetScan#readBufferToTable remove dead code|
+|[#2129](https://github.com/NVIDIA/spark-rapids/pull/2129)|Fall back to CPU when parsing two-digit years|
+|[#2083](https://github.com/NVIDIA/spark-rapids/pull/2083)|add nightly cache tests|
+|[#2151](https://github.com/NVIDIA/spark-rapids/pull/2151)|add corresponding close call for HostMemoryOutputStream|
+|[#2169](https://github.com/NVIDIA/spark-rapids/pull/2169)|Work around bug in Spark for integration test|
+|[#2130](https://github.com/NVIDIA/spark-rapids/pull/2130)|Fix divide-by-zero in GpuAverage with ansi mode|
+|[#2149](https://github.com/NVIDIA/spark-rapids/pull/2149)|Auto generate the supported types for the file formats|
+|[#2072](https://github.com/NVIDIA/spark-rapids/pull/2072)|Disable CSV parsing by default and update tests to better show what is left|
+|[#2157](https://github.com/NVIDIA/spark-rapids/pull/2157)|fix merge conflict for 0.4.2 [skip ci]|
+|[#2144](https://github.com/NVIDIA/spark-rapids/pull/2144)|Allow array and struct types to pass thru when doing join|
+|[#2145](https://github.com/NVIDIA/spark-rapids/pull/2145)|Avoid GPU shuffle for round-robin of unsortable types|
+|[#2021](https://github.com/NVIDIA/spark-rapids/pull/2021)|Add in support for murmur3 hashing of structs|
+|[#2128](https://github.com/NVIDIA/spark-rapids/pull/2128)|Add in Partition type check support|
+|[#2116](https://github.com/NVIDIA/spark-rapids/pull/2116)|Add dynamic Spark configuration for Databricks|
+|[#2132](https://github.com/NVIDIA/spark-rapids/pull/2132)|Log plugin and cudf versions on startup|
+|[#2135](https://github.com/NVIDIA/spark-rapids/pull/2135)|Disable Spark 3.2 shim by default|
+|[#2125](https://github.com/NVIDIA/spark-rapids/pull/2125)|enable auto-merge from 0.5 to 0.6 [skip ci]|
+|[#2120](https://github.com/NVIDIA/spark-rapids/pull/2120)|Materialize Stream before serialization|
+|[#2119](https://github.com/NVIDIA/spark-rapids/pull/2119)|Add more comprehensive documentation on supported date formats|
+|[#1717](https://github.com/NVIDIA/spark-rapids/pull/1717)|Decimal32 support|
+|[#2114](https://github.com/NVIDIA/spark-rapids/pull/2114)|Modified the Download page for 0.4.1 and updated doc to point to K8s guide|
+|[#2106](https://github.com/NVIDIA/spark-rapids/pull/2106)|Fix some buffer leaks|
+|[#2097](https://github.com/NVIDIA/spark-rapids/pull/2097)|fix the bound row project empty issue in row frame|
+|[#2099](https://github.com/NVIDIA/spark-rapids/pull/2099)|Remove verbose log prints to make the build/test log clean|
+|[#2105](https://github.com/NVIDIA/spark-rapids/pull/2105)|Cleanup prior Spark sessions in tests consistently|
+|[#2104](https://github.com/NVIDIA/spark-rapids/pull/2104)| Clone apache spark source code to parse the git commit IDs|
+|[#2095](https://github.com/NVIDIA/spark-rapids/pull/2095)|fix refcount when materializing device buffer from GDS|
+|[#2100](https://github.com/NVIDIA/spark-rapids/pull/2100)|[BUG] add wget for fetching conda [skip ci]|
+|[#2096](https://github.com/NVIDIA/spark-rapids/pull/2096)|Adjust images for integration tests|
+|[#2094](https://github.com/NVIDIA/spark-rapids/pull/2094)|Changed name of parquet files for Mortgage ETL Integration test|
+|[#2035](https://github.com/NVIDIA/spark-rapids/pull/2035)|Accelerate data transfer for map Pandas UDF plan|
+|[#2050](https://github.com/NVIDIA/spark-rapids/pull/2050)|stream shuffle buffers from GDS to UCX|
+|[#2084](https://github.com/NVIDIA/spark-rapids/pull/2084)|Enable ORC write by default|
+|[#2088](https://github.com/NVIDIA/spark-rapids/pull/2088)|Upgrade ScalaTest plugin to respect JAVA_HOME|
+|[#1932](https://github.com/NVIDIA/spark-rapids/pull/1932)|Create a getting started on K8s page|
+|[#2080](https://github.com/NVIDIA/spark-rapids/pull/2080)|Improve error message after failed RMM shutdown|
+|[#2064](https://github.com/NVIDIA/spark-rapids/pull/2064)|Optimize unnecessary columnar->row->columnar transitions with AQE|
+|[#2025](https://github.com/NVIDIA/spark-rapids/pull/2025)|Update the doc for pandas udf on databricks|
+|[#2059](https://github.com/NVIDIA/spark-rapids/pull/2059)|Add the flag 'TEST_TYPE' to avoid integration tests silently skipping some test cases|
+|[#2075](https://github.com/NVIDIA/spark-rapids/pull/2075)|Remove debug println from CBO test|
+|[#2046](https://github.com/NVIDIA/spark-rapids/pull/2046)|support casting Decimal to String|
+|[#1812](https://github.com/NVIDIA/spark-rapids/pull/1812)|allow spilled buffers to be unspilled|
+|[#2061](https://github.com/NVIDIA/spark-rapids/pull/2061)|Run the pandas udf using cudf on Databricks|
+|[#1893](https://github.com/NVIDIA/spark-rapids/pull/1893)|Plug-in support for get_json_object|
+|[#2044](https://github.com/NVIDIA/spark-rapids/pull/2044)|Use partition for GPU hash partitioning|
+|[#1954](https://github.com/NVIDIA/spark-rapids/pull/1954)|Fix CBO bug where incompatible plans were produced with AQE on|
+|[#2049](https://github.com/NVIDIA/spark-rapids/pull/2049)|Remove incompatable int overflow checking|
+|[#2056](https://github.com/NVIDIA/spark-rapids/pull/2056)|Remove Spark 3.2 from premerge and nightly CI run|
+|[#1814](https://github.com/NVIDIA/spark-rapids/pull/1814)|Struct to string casting functionality|
+|[#2037](https://github.com/NVIDIA/spark-rapids/pull/2037)|Fix warnings from use of deprecated cudf methods|
+|[#2033](https://github.com/NVIDIA/spark-rapids/pull/2033)|Bump up pre-merge OS from ubuntu 16 to ubuntu 18 [skip ci]|
+|[#1883](https://github.com/NVIDIA/spark-rapids/pull/1883)|Enable sort for single-level nesting struct columns on GPU|
+|[#2016](https://github.com/NVIDIA/spark-rapids/pull/2016)|Refactor logic for parallel testing|
+|[#2022](https://github.com/NVIDIA/spark-rapids/pull/2022)|Update order by to not load native libraries when sorting|
+|[#2017](https://github.com/NVIDIA/spark-rapids/pull/2017)|Add in murmur3 support for float, double, date and timestamp|
+|[#1981](https://github.com/NVIDIA/spark-rapids/pull/1981)|Fix GpuSize|
+|[#1999](https://github.com/NVIDIA/spark-rapids/pull/1999)|support casting string to decimal|
+|[#2006](https://github.com/NVIDIA/spark-rapids/pull/2006)|Enable windowed `collect_list` by default|
+|[#2000](https://github.com/NVIDIA/spark-rapids/pull/2000)|Use Spark's HybridRowQueue to avoid MemoryConsumer API shim|
+|[#2015](https://github.com/NVIDIA/spark-rapids/pull/2015)|Fix bug where rkey buffer is getting advanced after the first handshake|
+|[#2007](https://github.com/NVIDIA/spark-rapids/pull/2007)|Fix unknown column name error when filtering ORC file with no names|
+|[#2005](https://github.com/NVIDIA/spark-rapids/pull/2005)|Update to new is_before_spark_311 function name|
+|[#1944](https://github.com/NVIDIA/spark-rapids/pull/1944)|Support running scalar pandas UDF with array type.|
+|[#1991](https://github.com/NVIDIA/spark-rapids/pull/1991)|Fixes creation of invalid DecimalType in GpuDivide.tagExprForGpu|
+|[#1958](https://github.com/NVIDIA/spark-rapids/pull/1958)|Support legacy behavior of parameterless count |
+|[#1919](https://github.com/NVIDIA/spark-rapids/pull/1919)|Add support for Structs for UnionExec|
+|[#2002](https://github.com/NVIDIA/spark-rapids/pull/2002)|Pass dirs to getBlockData for a wrapped shuffle resolver|
+|[#1983](https://github.com/NVIDIA/spark-rapids/pull/1983)|document building against different CUDA Toolkit versions|
+|[#1994](https://github.com/NVIDIA/spark-rapids/pull/1994)|Merge 0.4 to 0.5 [skip ci]|
+|[#1982](https://github.com/NVIDIA/spark-rapids/pull/1982)|Update ORC pushdown filter building to latest Spark logic|
+|[#1978](https://github.com/NVIDIA/spark-rapids/pull/1978)|Add audit script to list commits from Spark|
+|[#1976](https://github.com/NVIDIA/spark-rapids/pull/1976)|Temp fix for parquet write changes|
+|[#1970](https://github.com/NVIDIA/spark-rapids/pull/1970)|add maven profiles for supported CUDA versions|
+|[#1951](https://github.com/NVIDIA/spark-rapids/pull/1951)|Branch 0.5 doc remove numpartitions|
+|[#1967](https://github.com/NVIDIA/spark-rapids/pull/1967)|Update FAQ for Dataset API and format supported versions|
+|[#1972](https://github.com/NVIDIA/spark-rapids/pull/1972)|support GpuSize|
+|[#1966](https://github.com/NVIDIA/spark-rapids/pull/1966)|add xml report for codecov|
+|[#1955](https://github.com/NVIDIA/spark-rapids/pull/1955)|Fix typo in Arrow optimization config|
+|[#1956](https://github.com/NVIDIA/spark-rapids/pull/1956)|Fix NPE in plugin shutdown|
+|[#1930](https://github.com/NVIDIA/spark-rapids/pull/1930)|Relax cudf version check for patch-level versions|
+|[#1787](https://github.com/NVIDIA/spark-rapids/pull/1787)|support distributed file path in cloud environment|
+|[#1961](https://github.com/NVIDIA/spark-rapids/pull/1961)|change premege GPU_TYPE from secret to global env [skip ci]|
+|[#1957](https://github.com/NVIDIA/spark-rapids/pull/1957)|Update Spark 3.1.2 shim for float upcast behavior|
+|[#1889](https://github.com/NVIDIA/spark-rapids/pull/1889)|Decimal DIV changes |
+|[#1947](https://github.com/NVIDIA/spark-rapids/pull/1947)|Move doc of Pandas UDF to additional-functionality|
+|[#1938](https://github.com/NVIDIA/spark-rapids/pull/1938)|Add spark.executor.resource.gpu.amount=1 to YARN and K8s docs|
+|[#1937](https://github.com/NVIDIA/spark-rapids/pull/1937)|Fix merge conflict with branch-0.4|
+|[#1878](https://github.com/NVIDIA/spark-rapids/pull/1878)|spillable cache for GpuCartesianRDD|
+|[#1843](https://github.com/NVIDIA/spark-rapids/pull/1843)|Refactor GpuGenerateExec and Explode|
+|[#1933](https://github.com/NVIDIA/spark-rapids/pull/1933)|Split DB scripts to make them common for the build and IT pipeline|
+|[#1935](https://github.com/NVIDIA/spark-rapids/pull/1935)|Update Alias SQL quoting and float-to-timestamp casting to match Spark 3.2|
+|[#1926](https://github.com/NVIDIA/spark-rapids/pull/1926)|Consolidate RAT settings in parent pom|
+|[#1918](https://github.com/NVIDIA/spark-rapids/pull/1918)|Minor code cleanup in dateTImeExpressions|
+|[#1906](https://github.com/NVIDIA/spark-rapids/pull/1906)|Remove get call on timeZoneId|
+|[#1908](https://github.com/NVIDIA/spark-rapids/pull/1908)|Remove the Scala version of Mortgage ETL tests from nightly test|
+|[#1894](https://github.com/NVIDIA/spark-rapids/pull/1894)|Modified Download Page to re-order the items and change the format of download links|
+|[#1909](https://github.com/NVIDIA/spark-rapids/pull/1909)|Avoid pinned memory for shuffle host buffers|
+|[#1891](https://github.com/NVIDIA/spark-rapids/pull/1891)|Connect UCX endpoints early during app startup|
+|[#1877](https://github.com/NVIDIA/spark-rapids/pull/1877)|remove docker build in pre-merge [skip ci]|
+|[#1830](https://github.com/NVIDIA/spark-rapids/pull/1830)|Enable the tests for collect over window.|
+|[#1882](https://github.com/NVIDIA/spark-rapids/pull/1882)|GpuArrowColumnarBatchBuilder retains the references of ArrowBuf until HostToGpuCoalesceIterator put them into device|
+|[#1868](https://github.com/NVIDIA/spark-rapids/pull/1868)|Increase row limit when doing count() for HostColumnarToGpu |
+|[#1855](https://github.com/NVIDIA/spark-rapids/pull/1855)|Expose row count statistics in GpuShuffleExchangeExec|
+|[#1875](https://github.com/NVIDIA/spark-rapids/pull/1875)|Fix merge conflict with branch-0.4|
+|[#1841](https://github.com/NVIDIA/spark-rapids/pull/1841)|Add in support for DateAddInterval|
+|[#1869](https://github.com/NVIDIA/spark-rapids/pull/1869)|Fix tests for Spark 3.2.0 shim|
+|[#1858](https://github.com/NVIDIA/spark-rapids/pull/1858)|fix shuffle manager doc on ucx library path|
+|[#1836](https://github.com/NVIDIA/spark-rapids/pull/1836)|Add shim for Spark 3.1.2|
+|[#1852](https://github.com/NVIDIA/spark-rapids/pull/1852)|Fix Part Suite Tests|
+|[#1616](https://github.com/NVIDIA/spark-rapids/pull/1616)|Cost-based optimizer|
+|[#1834](https://github.com/NVIDIA/spark-rapids/pull/1834)|Add shim for Spark 3.0.3|
+|[#1839](https://github.com/NVIDIA/spark-rapids/pull/1839)|Refactor join code to reduce duplicated code|
+|[#1848](https://github.com/NVIDIA/spark-rapids/pull/1848)|Fix merge conflict with branch-0.4|
+|[#1796](https://github.com/NVIDIA/spark-rapids/pull/1796)|Have most of range partitioning run on the GPU|
+|[#1845](https://github.com/NVIDIA/spark-rapids/pull/1845)|Fix fails on the mortgage ETL test|
+|[#1829](https://github.com/NVIDIA/spark-rapids/pull/1829)|Cleanup unused Jenkins files and scripts|
+|[#1704](https://github.com/NVIDIA/spark-rapids/pull/1704)|Create a shim for Spark 3.2.0 development|
+|[#1838](https://github.com/NVIDIA/spark-rapids/pull/1838)|Make databricks build.sh more convenient for dev|
+|[#1835](https://github.com/NVIDIA/spark-rapids/pull/1835)|Fix merge conflict with branch-0.4|
+|[#1808](https://github.com/NVIDIA/spark-rapids/pull/1808)|Update mortgage tests to support reading multiple dataset formats|
+|[#1822](https://github.com/NVIDIA/spark-rapids/pull/1822)|Fix conflict 0.4 to 0.5|
+|[#1807](https://github.com/NVIDIA/spark-rapids/pull/1807)|Fix merge conflict between branch-0.4 and branch-0.5|
+|[#1788](https://github.com/NVIDIA/spark-rapids/pull/1788)|Spill metrics everywhere|
+|[#1719](https://github.com/NVIDIA/spark-rapids/pull/1719)|Add in out of core sort|
+|[#1728](https://github.com/NVIDIA/spark-rapids/pull/1728)|Skip RAPIDS accelerated Java UDF tests if UDF fails to load|
+|[#1689](https://github.com/NVIDIA/spark-rapids/pull/1689)|Update docs for plugin 0.5.0-SNAPSHOT and cudf 0.19-SNAPSHOT|
+|[#1682](https://github.com/NVIDIA/spark-rapids/pull/1682)|init CI/CD dependencies branch-0.5|
 
 ## Release 0.4.1
 
@@ -19,6 +247,7 @@ Generated on 2021-04-16
 ### PRs
 |||
 |:---|:---|
+|[#1995](https://github.com/NVIDIA/spark-rapids/pull/1995)|update changelog 0.4.1 [skip ci]|
 |[#1990](https://github.com/NVIDIA/spark-rapids/pull/1990)|Prepare for v0.4.1 release|
 |[#1988](https://github.com/NVIDIA/spark-rapids/pull/1988)|broadcast exchange can fail when job group set|
 
