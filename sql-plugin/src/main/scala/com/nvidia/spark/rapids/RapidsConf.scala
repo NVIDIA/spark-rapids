@@ -857,7 +857,7 @@ object RapidsConf {
 
   val SHUFFLE_UCX_LISTENER_ENABLED = conf("spark.rapids.shuffle.ucx.listener.enabled")
     .doc("When set to true, start listener and exchange socket address." +
-      " This allows better detecting remote peer failures.")
+      " This improves detection of remote peer failures.")
     .internal()
     .booleanConf
     .createWithDefault(false)
