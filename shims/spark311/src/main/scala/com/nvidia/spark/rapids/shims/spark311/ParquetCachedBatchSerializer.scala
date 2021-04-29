@@ -397,8 +397,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      table: Table,
      schema: StructType): ParquetBufferConsumer = {
     val buffer = new ParquetBufferConsumer(table.getRowCount.toInt)
+    val schemaWithUnambiguousNames = StructType(schema.fields.indices.map(index => {
+      val field = schema.fields(index)
+      StructField(s"_col$index", field.dataType, field.nullable, field.metadata)
+    }))
     val opts = GpuParquetFileFormat
-      .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), schema)
+      .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), schemaWithUnambiguousNames)
       .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
     withResource(Table.writeParquetChunked(opts, buffer)) { writer =>
       writer.write(table)
@@ -455,7 +459,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   private def getColumnNames(
      selectedAttributes: Seq[Attribute],
      cacheAttributes: Seq[Attribute]): Seq[String] = {
-    selectedAttributes.map(a => a.name)
+    selectedAttributes.map(a => "_col" + cacheAttributes.map(_.exprId).indexOf(a.exprId))
   }
 
   /**
