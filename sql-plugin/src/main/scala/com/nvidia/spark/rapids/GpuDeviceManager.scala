@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,11 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceInformation
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 
+sealed trait MemoryState
+private case object Initialized extends MemoryState
+private case object Uninitialized extends MemoryState
+private case object Errored extends MemoryState
+
 object GpuDeviceManager extends Logging {
   // This config controls whether RMM/Pinned memory are initialized from the task
   // or from the executor side plugin. The default is to initialize from the
@@ -43,7 +48,7 @@ object GpuDeviceManager extends Logging {
   }
 
   private val threadGpuInitialized = new ThreadLocal[Boolean]()
-  @volatile private var singletonMemoryInitialized: Boolean = false
+  @volatile private var singletonMemoryInitialized: MemoryState = Uninitialized
   @volatile private var deviceId: Option[Int] = None
 
   /**
@@ -74,7 +79,7 @@ object GpuDeviceManager extends Logging {
     // loop multiple times to see if a GPU was released or something unexpected happened that
     // we couldn't acquire on first try
     var numRetries = 2
-    val addrsToTry = ArrayBuffer.empty ++= (0 to (deviceCount - 1))
+    val addrsToTry = ArrayBuffer.empty ++= (0 until deviceCount)
     while (numRetries > 0) {
       val addr = addrsToTry.find(tryToSetGpuDeviceAndAcquire)
       if (addr.isDefined) {
@@ -98,7 +103,7 @@ object GpuDeviceManager extends Logging {
   def getGPUAddrFromResources(resources: Map[String, ResourceInformation]): Option[Int] = {
     if (resources.contains("gpu")) {
       val addrs = resources("gpu").addresses
-      if (addrs.size > 1) {
+      if (addrs.length > 1) {
         // Throw an exception since we assume one GPU per executor.
         // If multiple GPUs are allocated by spark, then different tasks could get assigned
         // different GPUs but RMM would only be initialized for 1. We could also just get
@@ -127,9 +132,11 @@ object GpuDeviceManager extends Logging {
   }
 
   def shutdown(): Unit = synchronized {
+    // assume error during shutdown until we complete it
+    singletonMemoryInitialized = Errored
     RapidsBufferCatalog.close()
     Rmm.shutdown()
-    singletonMemoryInitialized = false
+    singletonMemoryInitialized = Uninitialized
   }
 
   def getResourcesFromTaskContext: Map[String, ResourceInformation] = {
@@ -283,15 +290,18 @@ object GpuDeviceManager extends Logging {
    * @param rapidsConf the config to use.
    */
   def initializeMemory(gpuId: Option[Int], rapidsConf: Option[RapidsConf] = None): Unit = {
-    if (singletonMemoryInitialized == false) {
+    if (singletonMemoryInitialized != Initialized) {
       // Memory or memory related components that only need to be initialized once per executor.
       // This synchronize prevents multiple tasks from trying to initialize these at the same time.
       GpuDeviceManager.synchronized {
-        if (singletonMemoryInitialized == false) {
+        if (singletonMemoryInitialized == Errored) {
+          throw new IllegalStateException(
+            "Cannot initialize memory due to previous shutdown failing")
+        } else if (singletonMemoryInitialized == Uninitialized) {
           val gpu = gpuId.getOrElse(findGpuAndAcquire())
           initializeRmm(gpu, rapidsConf)
           allocatePinnedMemory(gpu, rapidsConf)
-          singletonMemoryInitialized = true
+          singletonMemoryInitialized = Initialized
         }
       }
     }

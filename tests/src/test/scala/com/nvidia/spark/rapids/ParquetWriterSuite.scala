@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,12 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
-import java.lang.reflect.Method
 import java.nio.charset.StandardCharsets
 
-import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetFileReader
-import org.mockito.ArgumentMatchers._
-import org.mockito.Mockito._
-import org.mockito.invocation.InvocationOnMock
 
 import org.apache.spark.{SparkConf, SparkException}
-import org.apache.spark.sql.types.{ByteType, DataType}
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Tests for writing Parquet files with the GPU.

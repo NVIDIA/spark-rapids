@@ -63,7 +63,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
 
@@ -229,6 +228,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastToString[Double](DataTypes.DoubleType, comparisonFunc = Some(compareStringifiedFloats))
   }
 
+  test("cast decimal to string") {
+    val sqlCtx = SparkSession.getActiveSession.get.sqlContext
+    sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
+    sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
+
+    Seq(10, 15, 18).foreach { precision =>
+      Seq(-precision, -5, 0, 5, precision).foreach { scale =>
+        testCastToString(DataTypes.createDecimalType(precision, scale),
+          comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
+      }
+    }
+  }
+
   private def testCastToString[T](
       dataType: DataType,
       comparisonFunc: Option[(String, String) => Boolean] = None) {
@@ -362,6 +374,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("doubles").cast(TimestampType))
   }
 
+  testSparkResultsAreEqual("Test cast from strings to int", doublesAsStrings,
+    conf = sparkConf) {
+    frame => frame.select(
+      col("c0").cast(LongType),
+      col("c0").cast(IntegerType),
+      col("c0").cast(ShortType),
+      col("c0").cast(ByteType))
+  }
+
   testSparkResultsAreEqual("Test cast from strings to doubles", doublesAsStrings,
     conf = sparkConf, maxFloatDiff = 0.0001) {
     frame => frame.select(
@@ -439,10 +460,30 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  test("cast float to decimal (include NaN/INF/-INF)") {
+    def floatsIncludeNaNs(ss: SparkSession): DataFrame = {
+      mixedFloatDf(ss).select(col("floats").as("col"))
+    }
+    List(-10, -1, 0, 1, 10).foreach { scale =>
+      testCastToDecimal(DataTypes.FloatType, scale,
+        customDataGenerator = Some(floatsIncludeNaNs))
+    }
+  }
+
   test("cast double to decimal") {
     List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
       testCastToDecimal(DataTypes.DoubleType, scale,
         customRandGenerator = Some(new scala.util.Random(1234L)))
+    }
+  }
+
+  test("cast double to decimal (include NaN/INF/-INF)") {
+    def doublesIncludeNaNs(ss: SparkSession): DataFrame = {
+      mixedDoubleDf(ss).select(col("doubles").as("col"))
+    }
+    List(-10, -1, 0, 1, 10).foreach { scale =>
+      testCastToDecimal(DataTypes.DoubleType, scale,
+        customDataGenerator = Some(doublesIncludeNaNs))
     }
   }
 
@@ -453,6 +494,17 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 2),
       scale = 2,
+      ansiEnabled = true,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 2),
+      precision = 9, scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+
+    testCastToDecimal(DataTypes.createDecimalType(8, 0),
+      scale = 0,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 2),
+      precision = 18, scale = 2,
       customRandGenerator = Some(new scala.util.Random(1234L)))
 
     // fromScale > toScale
@@ -461,20 +513,42 @@ class CastOpSuite extends GpuExpressionTestSuite {
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 10),
       scale = 2,
+      ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
-    testCastToDecimal(DataTypes.createDecimalType(18, 18),
-      scale = 15,
+    testCastToDecimal(DataTypes.createDecimalType(18, 10),
+      precision = 9, scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 4),
+      precision = 18, scale = 15,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 1),
+      scale = -1,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 7),
+      precision = 5, scale = 2,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 7),
+      precision = 18, scale = 5,
       customRandGenerator = Some(new scala.util.Random(1234L)))
 
     // fromScale < toScale
     testCastToDecimal(DataTypes.createDecimalType(18, 0),
       scale = 3,
       customRandGenerator = Some(new scala.util.Random(1234L)))
-    testCastToDecimal(DataTypes.createDecimalType(18, 5),
-      scale = 10,
+    testCastToDecimal(DataTypes.createDecimalType(9, 5),
+      precision = 18, scale = 10,
       customRandGenerator = Some(new scala.util.Random(1234L)))
-    testCastToDecimal(DataTypes.createDecimalType(18, 10),
-      scale = 17,
+    testCastToDecimal(DataTypes.createDecimalType(18, 3),
+      precision = 9, scale = 5,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 0),
+      precision = 8, scale = 3,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(18, 5),
+      precision = 9, scale = 3,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
+    testCastToDecimal(DataTypes.createDecimalType(8, 5),
+      precision = 18, scale = 7,
       customRandGenerator = Some(new scala.util.Random(1234L)))
   }
 
@@ -574,6 +648,53 @@ class CastOpSuite extends GpuExpressionTestSuite {
       generator = decimalGenerator(Seq(Decimal(100000000L)), decType))
   }
 
+  test("cast string to decimal") {
+    List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale,
+        customRandGenerator = Some(new scala.util.Random(1234L)))
+    }
+  }
+
+  test("cast string to decimal (include NaN/INF/-INF)") {
+    def doubleStrings(ss: SparkSession): DataFrame = {
+      val df1 = floatsAsStrings(ss).selectExpr("cast(c0 as Double) as col")
+      val df2 = doublesAsStrings(ss).select(col("c0").as("col"))
+      df1.unionAll(df2)
+    }
+    List(-10, -1, 0, 1, 10).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale = scale,
+        customDataGenerator = Some(doubleStrings))
+    }
+  }
+
+  test("cast string to decimal (truncated cases)") {
+    def specialGenerator(column: Seq[String])(ss: SparkSession): DataFrame = {
+      import ss.sqlContext.implicits._
+      column.toDF("col")
+    }
+    testCastToDecimal(DataTypes.StringType, scale = 7,
+      customDataGenerator = Some(specialGenerator(Seq("9999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = 2,
+      customDataGenerator = Some(specialGenerator(Seq("999999999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = 0,
+      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = -1,
+      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+    testCastToDecimal(DataTypes.StringType, scale = -10,
+      customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
+  }
+
+  test("ansi_cast string to decimal exp") {
+    def exponentsAsStrings(ss: SparkSession): DataFrame = {
+      exponentsAsStringsDf(ss).select(col("c0").as("col"))
+    }
+    List(-10, -1, 0, 1, 10).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale = scale,
+        customDataGenerator = Some(exponentsAsStrings),
+        ansiEnabled = true)
+    }
+  }
+
   protected def testCastToDecimal(
     dataType: DataType,
     scale: Int,
@@ -592,13 +713,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val conf = new SparkConf()
         .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)
 
       val defaultRandomGenerator: SparkSession => DataFrame = {
         val rnd = customRandGenerator.getOrElse(new scala.util.Random(1234L))
-        generateCastNumericToDecimalDataFrame(dataType, precision - scale, rnd, 500)
+        generateCastToDecimalDataFrame(dataType, precision - scale, rnd, 500)
       }
       val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
       withCpuSparkSession(spark => generator(spark).write.parquet(path), conf)
@@ -613,7 +735,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         val (cpuResult, gpuResult) = dataType match {
           case ShortType | IntegerType | LongType | _: DecimalType =>
             fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
-          case FloatType | DoubleType =>
+          case FloatType | DoubleType | StringType =>
             // There may be tiny difference between CPU and GPU result when casting from double
             val fetchFromRow = (r: Row) => {
               if (r.isNullAt(1)) Double.NaN
@@ -630,7 +752,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def generateCastNumericToDecimalDataFrame(
+  private def generateCastToDecimalDataFrame(
     dataType: DataType,
     integralSize: Int,
     rndGenerator: scala.util.Random,
@@ -656,7 +778,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
           enhancedRnd.nextLong() / math.pow(10, scale max 9).toLong
         case LongType =>
           enhancedRnd.nextLong() / math.pow(10, scale max 0).toLong
-        case FloatType | DoubleType =>
+        case FloatType | DoubleType | StringType =>
           enhancedRnd.nextLong() / math.pow(10, scale + 2)
         case dt: DecimalType =>
           val unscaledValue = (enhancedRnd.nextLong() * math.pow(10, dt.precision - 18)).toLong
@@ -676,6 +798,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
         rawColumn.map(_.asInstanceOf[Double].toFloat).toDF("col")
       case DoubleType =>
         rawColumn.map(_.asInstanceOf[Double]).toDF("col")
+      case StringType =>
+        rawColumn.map(_.asInstanceOf[Double].toString).toDF("col")
       case dt: DecimalType =>
         val row = rawColumn.map(e => Row(e.asInstanceOf[Decimal])).asJava
         ss.createDataFrame(row, StructType(Seq(StructField("col", dt))))
@@ -935,10 +1059,15 @@ object CastOpSuite {
         "2010-1-7 T")
     }
 
-    val timestampWithoutDate = Seq(
-      "23:59:59.333666Z",
-      "T21:34:56.333666Z"
-    )
+    val timestampWithoutDate = if (validOnly && !castStringToTimestamp) {
+      // 3.2.0+ throws exceptions on string to date ANSI cast errors
+      Seq.empty
+    } else {
+      Seq(
+        "23:59:59.333666Z",
+        "T21:34:56.333666Z"
+      )
+    }
 
     val allValues = specialDates ++
         validYear ++

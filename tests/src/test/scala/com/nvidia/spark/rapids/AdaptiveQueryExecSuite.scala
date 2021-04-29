@@ -24,13 +24,13 @@ import org.scalatest.BeforeAndAfterEach
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuShuffledHashJoinBase}
+import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DecimalType, IntegerType, StructField, StructType}
 
 object AdaptiveQueryExecSuite {
@@ -94,9 +94,23 @@ class AdaptiveQueryExecSuite
   }
 
   private def findReusedExchange(plan: SparkPlan): Seq[ReusedExchangeExec] = {
-    collectWithSubqueries(plan) {
-      case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
-      case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
+    collectWithSubqueries(plan)(ShimLoader.getSparkShims.reusedExchangeExecPfn)
+  }
+
+  test("get row counts from executed shuffle query stages") {
+    assumeSpark301orLater
+
+    skewJoinTest { spark =>
+      val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
+        spark,
+        "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
+      val shuffleExchanges = ShimLoader.getSparkShims
+          .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+          .map(_.asInstanceOf[ShuffleQueryStageExec])
+      assert(shuffleExchanges.length === 2)
+      val shim = ShimLoader.getSparkShims
+      val stats = shuffleExchanges.map(e => shim.getQueryStageRuntimeStatistics(e))
+      assert(stats.forall(_.rowCount.contains(1000)))
     }
   }
 
@@ -142,8 +156,9 @@ class AdaptiveQueryExecSuite
     }
   }
 
-  test("Join partitioned tables") {
+  test("Join partitioned tables DPP fallback") {
     assumeSpark301orLater
+    assumePriorToSpark320 // In 3.2.0 AQE works with DPP
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -278,6 +293,92 @@ class AdaptiveQueryExecSuite
     }, conf)
   }
 
+  test("Avoid transitions to row when writing to Parquet") {
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      // read from a parquet file so we can test reading on GPU
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+          .repartition(2          )
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+
+      val df = spark.read.parquet(path)
+
+      ExecutionPlanCaptureCallback.startCapture()
+
+      val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
+      df.write.mode(SaveMode.Overwrite).parquet(outputPath)
+
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
+
+      // write should be on GPU
+      val writeCommand = TestUtils.findOperator(executedPlan,
+        _.isInstanceOf[GpuDataWritingCommandExec])
+      assert(writeCommand.isDefined)
+
+      // the read should be an adaptive plan
+      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+        _.isInstanceOf[AdaptiveSparkPlanExec])
+          .get.asInstanceOf[AdaptiveSparkPlanExec]
+
+      val transition = adaptiveSparkPlanExec
+          .executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
+
+      // although the plan contains a GpuColumnarToRowExec, we bypass it in
+      // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+      assert(transition.metrics("numOutputRows").value === 0)
+
+    }, conf)
+  }
+
+  test("Keep transition to row when collecting results") {
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      // read from a parquet file so we can test reading on GPU
+      val path = new File(TEST_FILES_ROOT, "AvoidTransitionInput.parquet").getAbsolutePath
+      (0 until 100).toDF("a")
+          .repartition(2          )
+          .write
+          .mode(SaveMode.Overwrite)
+          .parquet(path)
+
+      val df = spark.read.parquet(path)
+
+      ExecutionPlanCaptureCallback.startCapture()
+
+      df.collect()
+
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
+        ExecutionPlanCaptureCallback.getResultWithTimeout())
+
+      val transition = executedPlan
+          .asInstanceOf[GpuColumnarToRowExec]
+
+      // because we are calling collect, AvoidAdaptiveTransitionToRow will not bypass
+      // GpuColumnarToRowExec so we should see accurate metrics
+      assert(transition.metrics("numOutputRows").value === 100)
+
+    }, conf)
+  }
+
   test("Exchange reuse") {
 
     assumeSpark301orLater
@@ -319,7 +420,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
@@ -354,7 +454,6 @@ class AdaptiveQueryExecSuite
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
       .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
 
@@ -448,22 +547,6 @@ class AdaptiveQueryExecSuite
       fun(spark)
 
     }, conf)
-  }
-
-  /** most of the AQE tests requires Spark 3.0.1 or later */
-  private def assumeSpark301orLater =
-    assume(cmpSparkVersion(3, 0, 1) >= 0)
-
-  private def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
-    val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
-      case SparkShimVersion(a, b, c) => (a, b, c)
-      case DatabricksShimVersion(a, b, c) => (a, b, c)
-      case EMRShimVersion(a, b, c) => (a, b, c)
-    }
-    val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
-    val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
-    sparkFullVersion.compareTo(fullVersion)
   }
 
   def checkSkewJoin(

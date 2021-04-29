@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,9 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  */
 class RapidsHostMemoryStore(
     maxSize: Long,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore("host", catalog) {
+    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
+    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
+    extends RapidsBufferStore(StorageTier.HOST, catalog) {
   private[this] val pool = HostMemoryBuffer.allocate(maxSize, false)
   private[this] val addressAllocator = new AddressSpaceAllocator(maxSize)
   private[this] var haveLoggedMaxExceeded = false
@@ -71,12 +72,10 @@ class RapidsHostMemoryStore(
     (buffer, true)
   }
 
-  override protected def createBuffer(
-      other: RapidsBuffer,
+  override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
-    try {
-      val otherBuffer = other.getMemoryBuffer
+    withResource(otherBuffer) { _ =>
+      val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
       try {
         otherBuffer match {
           case devBuffer: DeviceMemoryBuffer =>
@@ -87,21 +86,21 @@ class RapidsHostMemoryStore(
             }
           case _ => throw new IllegalStateException("copying from buffer without device memory")
         }
-      } finally {
-        otherBuffer.close()
+      } catch {
+        case e: Exception =>
+          hostBuffer.close()
+          throw e
       }
-    } catch {
-      case e: Exception =>
-        hostBuffer.close()
-        throw e
+      new RapidsHostMemoryBuffer(
+        other.id,
+        other.size,
+        other.meta,
+        other.getSpillPriority,
+        hostBuffer,
+        isPinned,
+        other.spillCallback,
+        deviceStorage)
     }
-    new RapidsHostMemoryBuffer(
-      other.id,
-      other.size,
-      other.meta,
-      other.getSpillPriority,
-      hostBuffer,
-      isPinned)
   }
 
   def numBytesFree: Long = maxSize - currentSize
@@ -117,7 +116,11 @@ class RapidsHostMemoryStore(
       meta: TableMeta,
       spillPriority: Long,
       buffer: HostMemoryBuffer,
-      isInternalPoolAllocated: Boolean) extends RapidsBufferBase(id, size, meta, spillPriority) {
+      isInternalPoolAllocated: Boolean,
+      spillCallback: RapidsBuffer.SpillCallback,
+      deviceStorage: RapidsDeviceMemoryStore)
+      extends RapidsBufferBase(
+        id, size, meta, spillPriority, spillCallback, deviceStorage = deviceStorage) {
     override val storageTier: StorageTier = StorageTier.HOST
 
     override def getMemoryBuffer: MemoryBuffer = {

@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>0.4.2</version>
+    <version>0.5.0</version>
     <packaging>pom</packaging>
 
     <url>https://github.com/NVIDIA</url>
@@ -131,14 +131,76 @@
 	        <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
         </profile>
+
+        <profile>
+            <id>spark301dbtests</id>
+            <properties>
+                <spark.test.version>${spark301db.version}</spark.test.version>
+            </properties>
+        </profile>
         <profile>
             <id>spark301tests</id>
+            <properties>
+                <spark.test.version>${spark301.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark302tests</id>
+            <properties>
+                <spark.test.version>${spark302.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark303tests</id>
+            <properties>
+                <spark.test.version>${spark303.version}</spark.test.version>
+            </properties>
         </profile>
         <profile>
             <id>spark311tests</id>
+            <properties>
+                <spark.test.version>${spark311.version}</spark.test.version>
+            </properties>
             <modules>
                 <module>tests-spark310+</module>
             </modules>
+        </profile>
+        <profile>
+            <id>spark312tests</id>
+            <properties>
+                <spark.test.version>${spark312.version}</spark.test.version>
+            </properties>
+            <modules>
+                <module>tests-spark310+</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>spark320tests</id>
+            <properties>
+                <spark.test.version>${spark320.version}</spark.test.version>
+            </properties>
+            <modules>
+                <module>tests-spark310+</module>
+            </modules>
+        </profile>
+
+        <profile>
+            <id>cuda10-1</id>
+            <properties>
+                <cuda.version>cuda10-1</cuda.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>cuda10-2</id>
+            <properties>
+                <cuda.version>cuda10-2</cuda.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>cuda11</id>
+            <properties>
+                <cuda.version>cuda11</cuda.version>
+            </properties>
         </profile>
     </profiles>
 
@@ -146,8 +208,9 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark300.version}</spark.version>
+        <spark.test.version>${spark300.version}</spark.test.version>
         <cuda.version>cuda10-1</cuda.version>
-        <cudf.version>0.18.2</cudf.version>
+        <cudf.version>0.19.2</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
@@ -176,10 +239,14 @@
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
         <spark302.version>3.0.2</spark302.version>
+        <spark303.version>3.0.3-SNAPSHOT</spark303.version>
         <spark311.version>3.1.1</spark311.version>
+        <spark312.version>3.1.2-SNAPSHOT</spark312.version>
+        <spark320.version>3.2.0-SNAPSHOT</spark320.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
+        <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -420,7 +487,7 @@
                 <plugin>
                     <groupId>org.scalatest</groupId>
                     <artifactId>scalatest-maven-plugin</artifactId>
-                    <version>2.0.0</version>
+                    <version>${scalatest-maven-plugin.version}</version>
                     <configuration>
                         <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                         <junitxml>.</junitxml>
@@ -519,25 +586,21 @@
                 <artifactId>apache-rat-plugin</artifactId>
                 <configuration>
                     <excludes>
-                        <exclude>.docker/**</exclude>
-                        <exclude>.download/**</exclude>
-                        <exclude>.gitattributes</exclude>
-                        <exclude>.gitignore</exclude>
-                        <exclude>.git/**</exclude>
-                        <exclude>.pytest_cache/**</exclude>
-                        <exclude>.github/pull_request_template.md</exclude>
                         <exclude>**/*.md</exclude>
                         <exclude>**/*.iml</exclude>
                         <exclude>NOTICE-binary</exclude>
                         <exclude>docs/dev/idea-code-style-settings.xml</exclude>
-                        <exclude>**/.m2/**</exclude>
-                        <exclude>.gnupg/**</exclude>
                         <exclude>pom.xml.asc</exclude>
                         <exclude>jenkins/databricks/*.patch</exclude>
                         <exclude>*.jar</exclude>
                         <exclude>docs/demo/**/*.ipynb</exclude>
                         <exclude>docs/demo/**/*.zpln</exclude>
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
+                        <exclude>**/src/test/resources/**</exclude>
+                        <exclude>rmm_log.txt</exclude>
+                        <exclude>dependency-reduced-pom.xml</exclude>
+                        <exclude>**/.*/**</exclude>
+                        <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>

@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 
 object FloatUtils extends Arm {
 
-  def nanToZero(cv: ColumnVector): ColumnVector = {
+  def nanToZero(cv: ColumnView): ColumnVector = {
     if (cv.getType() != DType.FLOAT32 && cv.getType() != DType.FLOAT64) {
       throw new IllegalArgumentException("Only Floats and Doubles allowed")
     }

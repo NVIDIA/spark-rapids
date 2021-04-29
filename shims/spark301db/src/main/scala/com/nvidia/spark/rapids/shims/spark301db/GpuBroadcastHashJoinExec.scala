@@ -21,7 +21,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
-import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
@@ -48,10 +48,10 @@ class GpuBroadcastHashJoinMeta(
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
-
+    val Seq(leftChild, rightChild) = childPlans
     val buildSide = join.buildSide match {
-      case BuildLeft => childPlans(0)
-      case BuildRight => childPlans(1)
+      case BuildLeft => leftChild
+      case BuildRight => rightChild
     }
 
     if (!canBuildSideBeReplaced(buildSide)) {
@@ -64,8 +64,7 @@ class GpuBroadcastHashJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val left = childPlans(0).convertIfNeeded()
-    val right = childPlans(1).convertIfNeeded()
+    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSide = join.buildSide match {
       case BuildLeft => left
@@ -108,6 +107,14 @@ case class GpuBroadcastHashJoinExec(
       case GpuBuildRight =>
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
+  }
+
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
+    // For FullOuter join require a single batch for the side that is not the broadcast, because it
+    // will be a single batch already
+    case (FullOuter, GpuBuildLeft) => Seq(null, RequireSingleBatch)
+    case (FullOuter, GpuBuildRight) => Seq(RequireSingleBatch, null)
+    case (_, _) => Seq(null, null)
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {

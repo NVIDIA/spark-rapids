@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,10 @@ import java.io.File
 import java.nio.file.Files
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{Column, DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.{ArrayType, DecimalType}
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
@@ -41,13 +43,19 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         assert(d < 1.0)
         assert(d >= 0.0)
       })
-    })
+    }, conf = enableCsvConf())
   }
 
   testSparkResultsAreEqual("Test literal values in select", mixedFloatDf) {
-    frame => frame.select(col("floats"), lit(100), lit("hello, world!"),
-      lit(BigDecimal(123456789L, 6)), lit(BigDecimal(0L)), lit(BigDecimal(1L, -3)),
-      lit(BigDecimal(-2.12314e-8)))
+    frame =>
+      frame.select(col("floats"),
+        lit(100), lit("hello, world!"),
+        lit(BigDecimal(123456789L, 6)), lit(BigDecimal(0L)), lit(BigDecimal(1L, -3)),
+        lit(BigDecimal(-2.12314e-8)),
+        lit(Array(1, 2, 3, 4, 5)), lit(Array(1.2, 3.4, 5.6)),
+        lit(Array("a", "b", null, "")),
+        new Column(Literal.create(List(BigDecimal(123L, 2), BigDecimal(-1444L, 2)),
+          ArrayType(DecimalType(10, 2)))))
   }
 
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),

@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
+import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.SparkEnv
@@ -138,7 +139,7 @@ class Spark311Shims extends Spark301Shims {
 
         // stringChecks are the same
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = none
+        override val decimalChecks: TypeSig = DECIMAL + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same
@@ -190,10 +191,11 @@ class Spark311Shims extends Spark301Shims {
           }
         }
         override def convertToGpu(): GpuExpression = {
-          GpuStringReplace(
-            childExprs(0).convertToGpu(),
-            childExprs(1).convertToGpu(),
-            childExprs(2).convertToGpu())
+          // ignore the pos expression which must be a literal 1 after tagging check
+          require(childExprs.length == 4,
+            s"Unexpected child count for RegExpReplace: ${childExprs.length}")
+          val Seq(subject, regexp, rep) = childExprs.take(3).map(_.convertToGpu())
+          GpuStringReplace(subject, regexp, rep)
         }
       }),
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
@@ -291,15 +293,18 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
@@ -423,17 +428,24 @@ class Spark311Shims extends Spark301Shims {
     HadoopFSUtilsShim.shouldIgnorePath(path)
   }
 
+  override def getLegacyComplexTypeToString(): Boolean = {
+    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+  }
+
   // Arrow version changed between Spark versions
-  override def getArrowDataBuf(vec: ValueVector): ByteBuffer = {
-    vec.getDataBuffer.nioBuffer()
+  override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getDataBuffer()
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowValidityBuf(vec: ValueVector): ByteBuffer = {
-    vec.getValidityBuffer.nioBuffer()
+  override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getValidityBuffer
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def getArrowOffsetsBuf(vec: ValueVector): ByteBuffer = {
-    vec.getOffsetBuffer.nioBuffer()
+  override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
+    val arrowBuf = vec.getOffsetBuffer
+    (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   /** matches SPARK-33008 fix in 3.1.1 */

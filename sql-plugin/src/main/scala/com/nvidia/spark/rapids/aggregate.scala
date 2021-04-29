@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -32,8 +32,8 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression, GpuDeclarativeAggregate}
-import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, MapType, StructType}
+import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression}
+import org.apache.spark.sql.types.{ArrayType, DoubleType, FloatType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
@@ -161,7 +161,7 @@ class GpuHashAggregateMeta(
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans(0).convertIfNeeded())
+      childPlans.head.convertIfNeeded())
   }
 }
 
@@ -276,7 +276,7 @@ class GpuSortAggregateMeta(
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       agg.initialInputBufferOffset,
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans(0).convertIfNeeded())
+      childPlans.head.convertIfNeeded())
   }
 }
 
@@ -446,7 +446,9 @@ case class GpuHashAggregateExec(
                 // batch sizes would go over a threshold, we'd spill the aggregatedCb,
                 // and perform aggregation on the new batch (which would need to be merged, with the
                 // spilled aggregates)
-                concatCvs = concatenateBatches(aggregatedInputCb, aggregatedCb, concatTime)
+                // Please note that in order for first/last to work properly we have to maintain
+                // the order of the input batches.
+                concatCvs = concatenateBatches(aggregatedCb, aggregatedInputCb, concatTime)
                 aggregatedCb.close()
                 aggregatedCb = null
                 aggregatedInputCb.close()
@@ -476,7 +478,7 @@ case class GpuHashAggregateExec(
           if (aggregatedCb == null && groupingExpressions.isEmpty) {
             val aggregateFunctions = aggregateExpressions.map(_.aggregateFunction)
             val defaultValues =
-              aggregateFunctions.asInstanceOf[Seq[GpuDeclarativeAggregate]].flatMap(_.initialValues)
+              aggregateFunctions.flatMap(_.initialValues)
             val vecs = defaultValues.map { ref =>
               val scalar = GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType)
               try {
@@ -658,14 +660,14 @@ case class GpuHashAggregateExec(
     //
     val updateExpressionsSeq =
       aggregateExpressions.map(
-        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions)
+        _.aggregateFunction.updateExpressions)
     //
     // merge expressions are used while merging multiple batches, or while on final mode
     // e.g. for count it's sum, and for average it's sum and sum.
     //
     val mergeExpressionsSeq =
       aggregateExpressions.map(
-        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
+        _.aggregateFunction.mergeExpressions)
 
     val aggModeCudfAggregates = aggregateExpressions.zipWithIndex.map { case (expr, modeIndex) =>
       val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
@@ -686,7 +688,7 @@ case class GpuHashAggregateExec(
       _.isDistinct)
     val updateExpressionsDistinct =
       distinctAggExpressions.flatMap(
-        _.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].updateExpressions)
+        _.aggregateFunction.updateExpressions)
     val updateAttributesDistinct =
       distinctAggExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val inputProjectionsDistinct =
@@ -695,7 +697,7 @@ case class GpuHashAggregateExec(
     // Pick merge non-distinct for PartialMerge
     val mergeExpressionsNonDistinct =
       nonDistinctAggExpressions
-        .flatMap(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate].mergeExpressions)
+        .flatMap(_.aggregateFunction.mergeExpressions)
         .map(_.asInstanceOf[CudfAggregate].ref)
     val mergeAttributesNonDistinct =
       nonDistinctAggExpressions.flatMap(
@@ -736,8 +738,7 @@ case class GpuHashAggregateExec(
     val resultingBindAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
 
     val finalProjections = groupingExpressions ++
-        aggregateExpressions.map(_.aggregateFunction.asInstanceOf[GpuDeclarativeAggregate]
-          .evaluateExpression)
+      aggregateExpressions.map(_.aggregateFunction.evaluateExpression)
 
     // boundInputReferences is used to pick out of the input batch the appropriate columns
     // for aggregation
@@ -855,7 +856,7 @@ case class GpuHashAggregateExec(
         // reduction merge or update aggregates functions are
         val cvs = ArrayBuffer[GpuColumnVector]()
         aggModeCudfAggregates.foreach { case (mode, aggs) =>
-          aggs.foreach {agg =>
+          aggs.foreach { agg =>
             val aggFn = if ((mode == Partial || mode == Complete) && !merge) {
               agg.updateReductionAggregate
             } else {
@@ -867,6 +868,17 @@ case class GpuHashAggregateExec(
                 cvs += GpuColumnVector.from(cv.castTo(rapidsType), agg.dataType)
               }
             }
+          }
+        }
+        // If cvs is empty, we add a single row with zero value. The value in the row is
+        // meaningless as it doesn't matter what we put in it. The projection will add a zero
+        // column to the result set in case of a parameter-less count.
+        // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
+        // desired result compared to Spark-CPU.
+        // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
+        if (cvs.isEmpty) {
+          withResource(Scalar.fromLong(0L)) { ZERO =>
+            cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
           }
         }
         new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)

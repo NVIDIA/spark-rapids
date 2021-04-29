@@ -22,43 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.4.2</version>
+        <version>0.5.0</version>
     </parent>
-    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-tests_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests</name>
     <description>RAPIDS plugin for Apache Spark integration tests</description>
-    <version>0.4.2</version>
-
-    <properties>
-        <spark.test.version>${spark300.version}</spark.test.version>
-    </properties>
-    <profiles>
-        <profile>
-            <id>spark301dbtests</id>
-            <properties>
-                <spark.test.version>${spark301db.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark301tests</id>
-            <properties>
-                <spark.test.version>${spark301.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark302tests</id>
-            <properties>
-                <spark.test.version>${spark302.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark311tests</id>
-            <properties>
-                <spark.test.version>${spark311.version}</spark.test.version>
-            </properties>
-        </profile>
-    </profiles>
+    <version>0.5.0</version>
 
     <dependencies>
         <dependency>
@@ -140,13 +109,6 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>src/test/resources/**</exclude>
-                        <exclude>**/*.md</exclude>
-                        <exclude>rmm_log.txt</exclude>
-                    </excludes>
-                </configuration>
             </plugin>
         </plugins>
     </build>

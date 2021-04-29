@@ -24,8 +24,9 @@ import ai.rapids.cudf.{DType, Scalar}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils, TimestampFormatter}
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuCreateArray
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -65,7 +66,7 @@ object GpuScalar {
     case DType.TIMESTAMP_DAYS => v.getInt
     case DType.TIMESTAMP_MICROSECONDS => v.getLong
     case DType.STRING => v.getJavaString
-    case dt: DType if dt.isDecimalType && dt.isBackedByLong => Decimal(v.getBigDecimal)
+    case dt: DType if dt.isDecimalType => Decimal(v.getBigDecimal)
     case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
   }
 
@@ -89,9 +90,12 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
-    // make sure all scalars created are backed by DECIMAL64
     case dec: Decimal =>
-      Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+      if (dec.precision <= Decimal.MAX_INT_DIGITS) {
+        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong.toInt)
+      } else {
+        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
+      }
     case dec: BigDecimal =>
       Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
     case _ =>
@@ -116,8 +120,11 @@ object GpuScalar {
       if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
         throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision constraint of $t")
       }
-      // make sure all scalars created are backed by DECIMAL64
-      Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValueExact())
+      if (!DecimalType.is32BitDecimalType(t.asInstanceOf[DecimalType])) {
+        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValue())
+      } else {
+        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().intValue())
+      }
     case l: Long => t match {
       case LongType => Scalar.fromLong(l)
       case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
@@ -232,4 +239,34 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = value
+}
+
+class LiteralExprMeta(
+    lit: Literal,
+    conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends ExprMeta[Literal](lit, conf, p, r) {
+
+  override def convertToGpu(): GpuExpression = {
+    lit.dataType match {
+      // NOTICE: There is a temporary transformation from Literal(ArrayType(BaseType)) into
+      // CreateArray(Literal(BaseType):_*). The transformation is a walkaround support for Literal
+      // of ArrayData under GPU runtime, because cuDF scalar doesn't support nested types.
+      // related issue: https://github.com/NVIDIA/spark-rapids/issues/1902
+      case ArrayType(baseType, _) =>
+        val litArray = lit.value.asInstanceOf[ArrayData]
+          .array.map(GpuLiteral(_, baseType))
+        GpuCreateArray(litArray, useStringTypeWhenEmpty = false)
+      case _ =>
+        GpuLiteral(lit.value, lit.dataType)
+    }
+  }
+
+  // There are so many of these that we don't need to print them out, unless it
+  // will not work on the GPU
+  override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
+    if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
+      super.print(append, depth, all)
+    }
+  }
 }

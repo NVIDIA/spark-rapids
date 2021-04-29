@@ -30,6 +30,7 @@ class ScalarSubquerySuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("Uncorrelated Scalar Subquery", longsFromCSVDf,
+    conf = enableCsvConf(),
     repart = 0) {
     frame => {
       frame.createOrReplaceTempView("table")

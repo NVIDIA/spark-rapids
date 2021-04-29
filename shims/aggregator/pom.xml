@@ -22,15 +22,14 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shims_2.12</artifactId>
-        <version>0.4.2</version>
+        <version>0.5.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
-    <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-shims-aggregator_2.12</artifactId>
     <packaging>jar</packaging>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Shim Aggregator</name>
     <description>The RAPIDS SQL plugin for Apache Spark Shim Aggregator</description>
-    <version>0.4.2</version>
+    <version>0.5.0</version>
 
    <profiles>
         <profile>
@@ -56,12 +55,35 @@
                 </dependency>
             </dependencies>
         </profile>
+       <profile>
+           <id>spark320</id>
+           <dependencies>
+               <dependency>
+                   <groupId>com.nvidia</groupId>
+                   <artifactId>rapids-4-spark-shims-spark320_${scala.binary.version}</artifactId>
+                   <version>${project.version}</version>
+                   <scope>compile</scope>
+               </dependency>
+           </dependencies>
+       </profile>
         <profile>
             <id>snapshot-shims</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
             <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-spark303_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-spark312_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>compile</scope>
+                </dependency>
             </dependencies>
         </profile>
     </profiles>
