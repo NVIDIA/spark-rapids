@@ -60,7 +60,7 @@
         <dependency>
           <groupId>org.openucx</groupId>
           <artifactId>jucx</artifactId>
-          <version>1.9.0</version>
+          <version>1.11.0</version>
           <scope>compile</scope>
         </dependency>
     </dependencies>
