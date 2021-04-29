@@ -19,13 +19,13 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeLike
+import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 
 case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
-    canChangeNumPartitions: Boolean)
+    shuffleOrigin: ShuffleOrigin)
   extends GpuShuffleExchangeExecBase(outputPartitioning, child) with ShuffleExchangeLike {
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
