@@ -131,7 +131,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 10.1 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.5.0.jar,rapids-4-spark-udf-examples_2.12-0.5.0.jar,cudf-0.19.1-cuda10-1.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.5.0.jar,rapids-4-spark-udf-examples_2.12-0.5.0.jar,cudf-0.19.2-cuda10-1.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -205,7 +205,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 10.1:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.5.0.jar,rapids-4-spark-udf-examples_2.12-0.5.0.jar,cudf-0.19.1-cuda10-1.jar,rapids-4-spark-tests_2.12-0.5.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.5.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.5.0.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.5.0.jar,rapids-4-spark-udf-examples_2.12-0.5.0.jar,cudf-0.19.2-cuda10-1.jar,rapids-4-spark-tests_2.12-0.5.0.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.5.0.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.5.0.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests
