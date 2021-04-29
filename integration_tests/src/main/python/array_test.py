@@ -115,14 +115,5 @@ def test_array_element_at(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
         spark, data_gen).select(element_at(col('a'), 1),
                                element_at(col('a'), -1)),
-                               conf={'spark.sql.ansi.enabled':False})
-
-
-@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
-def test_array_element_at_array(data_gen):
-    array_gen = ArrayGen(data_gen)
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
-        spark, data_gen).select(element_at(col('a'), 1),
-                               element_at(col('a'), -1)),
                                conf={'spark.sql.ansi.enabled':False,
                                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
