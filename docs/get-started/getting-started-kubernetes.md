@@ -378,6 +378,4 @@ Then open browser with `http://localhost:1234/` to check Spark UI.
 sparkctl delete testpython-rapids
 ```
 
-
-
 Please refer to [Running Spark on Kubernetes](https://spark.apache.org/docs/latest/running-on-kubernetes.html) for more information.
