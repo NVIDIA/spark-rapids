@@ -5307,24 +5307,24 @@ Accelerator support is described below.
 <td rowSpan="6">None</td>
 <td rowSpan="3">project</td>
 <td>array/map</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
 <td><em>PS* (If it's map, only string is supported. Extra check is inside the expression metadata; missing nested BINARY, CALENDAR, UDT)</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td>index/key</td>
@@ -5371,24 +5371,24 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="3">lambda</td>
 <td>array/map</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
 </tr>
 <tr>
 <td>index/key</td>

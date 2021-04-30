@@ -2282,7 +2282,8 @@ object GpuOverrides {
           TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP) +
           TypeSig.MAP.nested(TypeSig.STRING)
             .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported. " +
-              "Extra check is inside the expression metadata"), TypeSig.all),
+              "Extra check is inside the expression metadata"),
+          TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
         ("index/key", TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
