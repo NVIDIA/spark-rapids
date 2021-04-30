@@ -2921,8 +2921,8 @@ object GpuOverrides {
       ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
       (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
     exec[AggregateInPandasExec](
-      "The backend for Aggregation Pandas UDF, Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
+      "The backend for an Aggregation Pandas UDF, this accelerates the data transfer between" +
+        " the Java process and the Python process. It also supports scheduling GPU resources" +
         " for the Python process when enabled.",
       ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
       (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),

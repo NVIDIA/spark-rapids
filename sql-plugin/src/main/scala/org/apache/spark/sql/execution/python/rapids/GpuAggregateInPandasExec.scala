@@ -69,8 +69,8 @@ class GpuAggregateInPandasExecMeta(
  * Physical node for aggregation with group aggregate Pandas UDF.
  *
  * This plan works by sending the necessary (projected) input grouped data as Arrow record batches
- * to the python worker, the python worker invokes the UDF and sends the results to the executor,
- * finally the executor evaluates any post-aggregation expressions and join the result with the
+ * to the Python worker, the Python worker invokes the UDF and sends the results to the executor.
+ * Finally the executor evaluates any post-aggregation expressions and join the result with the
  * grouped key.
  *
  * This node aims at accelerating the data transfer between JVM and Python for GPU pipeline, and
@@ -146,8 +146,9 @@ case class GpuAggregateInPandasExec(
     val dataTypes = new ArrayBuffer[DataType]
     val argOffsets = inputs.map { input =>
       input.map { e =>
-        if (allInputs.exists(_.semanticEquals(e))) {
-          allInputs.indexWhere(_.semanticEquals(e))
+        val pos = allInputs.indexWhere(_.semanticEquals(e))
+        if (pos >= 0) {
+          pos
         } else {
           allInputs += e
           dataTypes += e.dataType

@@ -385,28 +385,19 @@ private[python] class CombiningIterator(
     numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
 
   // For `hasNext` we are waiting on the queue to have something inserted into it
-  // instead of waiting for a result to be ready from python. The reason for this
+  // instead of waiting for a result to be ready from Python. The reason for this
   // is to let us know the target number of rows in the batch that we want when reading.
   // It is a bit hacked up but it works. In the future when we support spilling we should
   // store the number of rows separate from the batch. That way we can get the target batch
   // size out without needing to grab the GpuSemaphore which we cannot do if we might block
   // on a read operation.
-  override def hasNext: Boolean = {
-    val ret = inputBatchQueue.hasNext
-    if (!ret) {
-      // When the queue is empty, meaning all the batches are processed, still needs to call
-      // the `hasNext` on the `pythonOutputIter` to trigger reading and handling the control
-      // data followed with the stream data.
-      pythonOutputIter.hasNext
-    }
-    ret
-  }
+  override def hasNext: Boolean = inputBatchQueue.hasNext || pythonOutputIter.hasNext
 
   override def next(): ColumnarBatch = {
     val numRows = inputBatchQueue.peekBatchSize
     // Updates the expected batch size for next read
     pythonArrowReader.updateMinReadTargetBatchSize(numRows)
-    // Reads next batch from python and combines it with the input batch by the left side.
+    // Reads next batch from Python and combines it with the input batch by the left side.
     withResource(pythonOutputIter.next()) { cbFromPython =>
       assert(cbFromPython.numRows() == numRows)
       withResource(inputBatchQueue.remove()) { origBatch =>
