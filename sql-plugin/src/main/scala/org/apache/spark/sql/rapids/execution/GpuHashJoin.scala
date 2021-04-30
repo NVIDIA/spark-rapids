@@ -229,7 +229,8 @@ trait JoinGatherer extends AutoCloseable with Arm {
  */
 class LazySpillableColumnarBatch(
     cb: ColumnarBatch,
-    spillCallback: SpillCallback) extends AutoCloseable with Arm {
+    spillCallback: SpillCallback,
+    name: String) extends AutoCloseable with Arm {
 
   private var cached: Option[ColumnarBatch] = Some(GpuColumnVector.incRefCounts(cb))
   private var spill: Option[SpillableColumnarBatch] = None
@@ -240,19 +241,23 @@ class LazySpillableColumnarBatch(
 
   def getBatch: ColumnarBatch = synchronized {
     if (cached.isEmpty) {
-      cached = Some(spill.get.getColumnarBatch())
+      withResource(new NvtxRange("get batch " + name, NvtxColor.RED)) { _ =>
+        cached = Some(spill.get.getColumnarBatch())
+      }
     }
     cached.get
   }
 
   def allowSpilling(): Unit = synchronized {
     if (spill.isEmpty && cached.isDefined) {
-      // First time we need to allow for spilling
-      spill = Some(SpillableColumnarBatch(cached.get,
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-        spillCallback))
-      // Putting data in a SpillableColumnarBatch takes ownership of it.
-      cached = None
+      withResource(new NvtxRange("spill batch " + name, NvtxColor.RED)) { _ =>
+        // First time we need to allow for spilling
+        spill = Some(SpillableColumnarBatch(cached.get,
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+          spillCallback))
+        // Putting data in a SpillableColumnarBatch takes ownership of it.
+        cached = None
+      }
     }
     cached.foreach(_.close())
     cached = None
@@ -268,7 +273,8 @@ class LazySpillableColumnarBatch(
 
 class LazySpillableGatherMap(
     map: GatherMap,
-    spillCallback: SpillCallback) extends AutoCloseable with Arm {
+    spillCallback: SpillCallback,
+    name: String) extends AutoCloseable with Arm {
 
   val getRowCount: Long = map.getRowCount
 
@@ -281,19 +287,23 @@ class LazySpillableGatherMap(
 
   private def getBuffer = synchronized {
     if (cached.isEmpty) {
-      cached = Some(spill.get.getDeviceBuffer())
+      withResource(new NvtxRange("get map " + name, NvtxColor.RED)) { _ =>
+        cached = Some(spill.get.getDeviceBuffer())
+      }
     }
     cached.get
   }
 
   def allowSpilling(): Unit = synchronized {
     if (spill.isEmpty && cached.isDefined) {
-      // First time we need to allow for spilling
-      spill = Some(SpillableBuffer(cached.get,
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-        spillCallback))
-      // Putting data in a SpillableBuffer takes ownership of it.
-      cached = None
+      withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
+        // First time we need to allow for spilling
+        spill = Some(SpillableBuffer(cached.get,
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+          spillCallback))
+        // Putting data in a SpillableBuffer takes ownership of it.
+        cached = None
+      }
     }
     cached.foreach(_.close())
     cached = None
@@ -598,13 +608,13 @@ class HashJoinIterator(
   private var nextCb: Option[ColumnarBatch] = None
   private var gathererStore: Option[JoinGatherer] = None
   private val builtKeys = {
-    val tmp = new LazySpillableColumnarBatch(inputBuiltKeys, spillCallback)
+    val tmp = new LazySpillableColumnarBatch(inputBuiltKeys, spillCallback, "build_keys")
     // Close the input keys, the lazy spillable batch now owns it.
     inputBuiltKeys.close()
     tmp
   }
   private val builtData = {
-    val tmp = new LazySpillableColumnarBatch(inputBuiltData, spillCallback)
+    val tmp = new LazySpillableColumnarBatch(inputBuiltData, spillCallback, "build_data")
     // Close the input data, the lazy spillable batch now owns it.
     inputBuiltData.close()
     tmp
@@ -657,19 +667,19 @@ class HashJoinIterator(
           if (joinerOwnsRightData) {
             rightData.close()
           }
-          JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback),
+          JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback, "left_map"),
             leftData, joinerOwnsLeftData)
         case 2 =>
           if (rightData.numCols == 0) {
             if (joinerOwnsRightData) {
               rightData.close()
             }
-            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback),
+            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback, "left_map"),
               leftData, joinerOwnsLeftData)
           } else {
-            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback),
+            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback, "left_map"),
               leftData, joinerOwnsLeftData,
-              new LazySpillableGatherMap(maps(1), spillCallback),
+              new LazySpillableGatherMap(maps(1), spillCallback, "right_map"),
               rightData, joinerOwnsRightData)
           }
         case other =>
@@ -742,7 +752,7 @@ class HashJoinIterator(
     withResource(GpuProjectExec.project(streamCb, boundStreamKeys)) { streamKeys =>
       withResource(GpuProjectExec.project(streamCb, boundStreamData)) { streamData =>
         joinGatherMap(buildKeys, buildData,
-          streamKeys, new LazySpillableColumnarBatch(streamData, spillCallback))
+          streamKeys, new LazySpillableColumnarBatch(streamData, spillCallback, "stream_data"))
       }
     }
   }
