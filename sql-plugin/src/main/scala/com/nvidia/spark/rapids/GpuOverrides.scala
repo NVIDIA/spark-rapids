@@ -776,7 +776,7 @@ object GpuOverrides {
       ExprChecks.projectNotLambda(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR
           + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-          + TypeSig.ARRAY),
+          + TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](

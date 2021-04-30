@@ -27,6 +27,7 @@ import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import javax.xml.bind.DatatypeConverter
 import org.json4s.JsonAST.{JField, JNull, JString}
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
@@ -147,6 +148,14 @@ object GpuScalar extends Arm {
       case null => null
       case ar => ar.array.map(convertElementTo(_, eType)).toList.asJava
     }
+    case StructType(fields) => element.asInstanceOf[InternalRow] match {
+      case null => null
+      case row =>
+        val data = fields.zipWithIndex.map { case (f, id) =>
+          convertElementTo(row.get(id, f.dataType), f.dataType)
+        }
+        new HostColumnVector.StructData(data.asInstanceOf[Array[Object]]: _*)
+    }
     case _ => element
   }
 
@@ -191,6 +200,10 @@ object GpuScalar extends Arm {
         val colType = resolveElementType(elementType)
         val rows = castTo[JList[_]](convertElementTo(_, elementType))(array)
         ColumnVector.fromLists(colType, rows: _*)
+      case StructType(_) =>
+        val colType = resolveElementType(elementType)
+        val rows = castTo[HostColumnVector.StructData](convertElementTo(_, elementType))(array)
+        ColumnVector.fromStructs(colType, rows: _*)
       case u =>
         throw new IllegalStateException(s"Unsupported element type ($u) for the list scalar.")
     }
