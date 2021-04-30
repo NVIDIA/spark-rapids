@@ -238,9 +238,8 @@ issues between them. Dates and timestamps are where the known issues exist.  For
 `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `CORRECTED`
 [timestamps](https://github.com/NVIDIA/spark-rapids/issues/132) before the transition between the
 Julian and Gregorian calendars are wrong, but dates are fine. When
-`spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `LEGACY`, however both dates and
-timestamps are read incorrectly before the Gregorian calendar transition as described
-[here](https://github.com/NVIDIA/spark-rapids/issues/133).
+`spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `LEGACY`, the read may fail for
+values occurring before the transition between the Julian and Gregorian calendars, i.e.: date <= 1582-10-04.
 
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).

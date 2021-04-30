@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
@@ -110,6 +110,14 @@ case class GpuBroadcastHashJoinExec(
       case GpuBuildRight =>
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
+  }
+
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
+    // For FullOuter join require a single batch for the side that is not the broadcast, because it
+    // will be a single batch already
+    case (FullOuter, GpuBuildLeft) => Seq(null, RequireSingleBatch)
+    case (FullOuter, GpuBuildRight) => Seq(RequireSingleBatch, null)
+    case (_, _) => Seq(null, null)
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {

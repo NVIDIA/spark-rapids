@@ -392,17 +392,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-  private def getBaseNameFromClass(planClassStr: String): String = {
-    val firstDotIndex = planClassStr.lastIndexOf(".")
-    if (firstDotIndex != -1) planClassStr.substring(firstDotIndex + 1) else planClassStr
-  }
-
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     // There are no GpuAttributeReference or GpuSortOrder
     if (!exp.isInstanceOf[AttributeReference] &&
         !exp.isInstanceOf[SortOrder] &&
         !exp.isInstanceOf[GpuExpression] &&
-      !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(exp.getClass.toString))) {
+      !conf.testingAllowedNonGpu.contains(PlanUtils.getBaseNameFromClass(exp.getClass.toString))) {
       throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
     }
     exp.children.foreach(subExp => assertIsOnTheGpu(subExp, conf))
@@ -437,9 +432,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         // Ignored for now, we don't force it to the GPU if
         // children are not on the gpu
       }
-      case other =>
-        if (!plan.supportsColumnar &&
-          !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
+      case _ =>
+        if (!plan.supportsColumnar && !conf.testingAllowedNonGpu.exists(nonGpuClass =>
+          PlanUtils.sameClass(plan, nonGpuClass))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n${plan}")
         }

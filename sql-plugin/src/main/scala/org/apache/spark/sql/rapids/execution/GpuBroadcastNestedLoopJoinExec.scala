@@ -49,6 +49,8 @@ class GpuBroadcastNestedLoopJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
 
   override def tagPlanForGpu(): Unit = {
+    JoinTypeChecks.tagForGpu(join.joinType, this)
+
     join.joinType match {
       case Inner =>
       case Cross =>

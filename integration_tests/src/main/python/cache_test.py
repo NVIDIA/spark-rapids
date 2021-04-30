@@ -163,6 +163,27 @@ def test_cache_partial_load(data_gen, enableVectorizedConf):
             .limit(50).select(f.col("b")), enableVectorizedConf
     )
 
+@allow_non_gpu('CollectLimitExec')
+def test_cache_diff_req_order(spark_tmp_path):
+    def n_fold(spark):
+        data_path_cpu = spark_tmp_path + '/PARQUET_DATA/{}/{}'
+        data = spark.range(100).selectExpr(
+            "cast(id as double) as col0",
+            "cast(id - 100 as double) as col1",
+            "cast(id * 2 as double) as col2",
+            "rand(100) as col3",
+            "rand(200) as col4")
+
+        num_buckets = 10
+        with_random = data.selectExpr("*", "cast(rand(0) * {} as int) as BUCKET".format(num_buckets)).cache()
+        for test_bucket in range(0, num_buckets):
+            with_random.filter(with_random.BUCKET == test_bucket).drop("BUCKET") \
+                .write.parquet(data_path_cpu.format("test_data", test_bucket))
+            with_random.filter(with_random.BUCKET != test_bucket).drop("BUCKET") \
+                .write.parquet(data_path_cpu.format("train_data", test_bucket))
+
+    with_cpu_session(n_fold)
+
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enableVectorized', ['true', 'false'], ids=idfn)
