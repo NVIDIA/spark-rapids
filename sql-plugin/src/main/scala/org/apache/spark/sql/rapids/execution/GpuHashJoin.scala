@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{ColumnView, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
+import ai.rapids.cudf.{ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
@@ -266,6 +266,47 @@ class LazySpillableColumnarBatch(
   }
 }
 
+class LazySpillableGatherMap(
+    map: GatherMap,
+    spillCallback: SpillCallback) extends AutoCloseable with Arm {
+
+  val getRowCount: Long = map.getRowCount
+
+  private var cached: Option[DeviceMemoryBuffer] = Some(map.releaseBuffer())
+  private var spill: Option[SpillableBuffer] = None
+
+  def toColumnView(startRow: Long, numRows: Int): ColumnView = {
+    ColumnView.fromDeviceBuffer(getBuffer, startRow * 4L, DType.INT32, numRows)
+  }
+
+  private def getBuffer = synchronized {
+    if (cached.isEmpty) {
+      cached = Some(spill.get.getDeviceBuffer())
+    }
+    cached.get
+  }
+
+  def allowSpilling(): Unit = synchronized {
+    if (spill.isEmpty && cached.isDefined) {
+      // First time we need to allow for spilling
+      spill = Some(SpillableBuffer(cached.get,
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+        spillCallback))
+      // Putting data in a SpillableBuffer takes ownership of it.
+      cached = None
+    }
+    cached.foreach(_.close())
+    cached = None
+  }
+
+  override def close(): Unit = synchronized {
+    cached.foreach(_.close())
+    cached = None
+    spill.foreach(_.close())
+    spill = None
+  }
+}
+
 object JoinGathererImpl {
 
   /**
@@ -327,8 +368,7 @@ object JoinGathererImpl {
  * JoinGatherer for a single map/table
  */
 class JoinGathererImpl(
-    // TODO need a way to spill/cache the GatherMap
-    private val gatherMap: GatherMap,
+    private val gatherMap: LazySpillableGatherMap,
     private val data: LazySpillableColumnarBatch,
     private val closeData: Boolean) extends JoinGatherer {
 
@@ -379,6 +419,7 @@ class JoinGathererImpl(
 
   override def allowSpilling(): Unit = {
     data.allowSpilling()
+    gatherMap.allowSpilling()
   }
 
   override def getBitSizeMap(n: Int): ColumnView = synchronized {
@@ -500,15 +541,15 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
 }
 
 object JoinGatherer extends Arm {
-  def apply(gatherMap: GatherMap,
+  def apply(gatherMap: LazySpillableGatherMap,
       inputData: LazySpillableColumnarBatch,
       closeData: Boolean): JoinGatherer =
     new JoinGathererImpl(gatherMap, inputData, closeData)
 
-  def apply(leftMap: GatherMap,
+  def apply(leftMap: LazySpillableGatherMap,
       leftData: LazySpillableColumnarBatch,
       closeLeftData: Boolean,
-      rightMap: GatherMap,
+      rightMap: LazySpillableGatherMap,
       rightData: LazySpillableColumnarBatch,
       closeRightData: Boolean): JoinGatherer = {
     val left = JoinGatherer(leftMap, leftData, closeLeftData)
@@ -610,30 +651,38 @@ class HashJoinIterator(
       case GpuBuildRight => (true, false)
       case GpuBuildLeft => (false, true)
     }
-    val gatherer = maps.length match {
-      case 1 =>
-        if (joinerOwnsRightData) {
-          rightData.close()
-        }
-        JoinGatherer(maps(0), leftData, joinerOwnsLeftData)
-      case 2 => if (rightData.numCols == 0) {
-        maps(1).close()
-        if (joinerOwnsRightData) {
-          rightData.close()
-        }
-        JoinGatherer(maps(0), leftData, joinerOwnsLeftData)
-      } else {
-        JoinGatherer(maps(0), leftData, joinerOwnsLeftData,
-          maps(1), rightData, joinerOwnsRightData)
+    try {
+      val gatherer = maps.length match {
+        case 1 =>
+          if (joinerOwnsRightData) {
+            rightData.close()
+          }
+          JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback),
+            leftData, joinerOwnsLeftData)
+        case 2 =>
+          if (rightData.numCols == 0) {
+            if (joinerOwnsRightData) {
+              rightData.close()
+            }
+            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback),
+              leftData, joinerOwnsLeftData)
+          } else {
+            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback),
+              leftData, joinerOwnsLeftData,
+              new LazySpillableGatherMap(maps(1), spillCallback),
+              rightData, joinerOwnsRightData)
+          }
+        case other =>
+          throw new IllegalArgumentException(s"Got back unexpected number of gather maps $other")
       }
-      case other =>
-        throw new IllegalArgumentException(s"Got back unexpected number of gather maps $other")
-    }
-    if (gatherer.isDone) {
-      gatherer.close()
-      None
-    } else {
-      Some(gatherer)
+      if (gatherer.isDone) {
+        gatherer.close()
+        None
+      } else {
+        Some(gatherer)
+      }
+    } finally {
+      maps.foreach(_.close())
     }
   }
 
