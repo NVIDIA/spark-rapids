@@ -130,7 +130,6 @@ object GpuHashJoin extends Arm {
     } finally {
       if (mask != null) {
         mask.close()
-        mask = null
       }
     }
   }
@@ -176,12 +175,13 @@ trait JoinGatherer extends AutoCloseable with Arm {
   def realCheapPerRowSizeEstimate: Double
 
   /**
-   * Get the bit count size map for the next n rows to be gathered.
+   * Get the bit count size map for the next n rows to be gathered. The returned value is
+   * an INT64 for each row in the n rows requested.
    */
   def getBitSizeMap(n: Int): ColumnView
 
   /**
-   * If the data is all fixed width return the size of each row, otherwise return null.
+   * If the data is all fixed width return the size of each row, otherwise return None.
    */
   def getFixedWidthBitSize: Option[Int]
 
@@ -194,8 +194,12 @@ trait JoinGatherer extends AutoCloseable with Arm {
     if (bitSizePerRow.isDefined) {
       Math.min(Math.min((targetSize/bitSizePerRow.get) / 8, numRowsLeft), Integer.MAX_VALUE).toInt
     } else {
+      // WARNING magic number below. The rowEstimateMultiplier is arbitrary, we want to get
+      // enough rows that we include that we go over the target size, but not too much so we
+      // waste memory. It could probably be tuned better.
+      val rowEstimateMultiplier = 1.1
       val estimatedRows = Math.min(
-        ((targetSize / realCheapPerRowSizeEstimate) * 1.1).toLong,
+        ((targetSize / realCheapPerRowSizeEstimate) * rowEstimateMultiplier).toLong,
         numRowsLeft)
       val numRowsToProbe = Math.min(estimatedRows, Integer.MAX_VALUE).toInt
       if (numRowsToProbe <= 0) {
@@ -215,8 +219,7 @@ trait JoinGatherer extends AutoCloseable with Arm {
         }
         withResource(cutoff) { cutoff =>
           withResource(cutoff.copyToHost()) { hostCutoff =>
-            hostCutoff.getInt(0)
-            hostCutoff.getInt(0)
+            Math.max(1, hostCutoff.getInt(0))
           }
         }
       }
@@ -239,7 +242,7 @@ class LazySpillableColumnarBatch(
   val dataTypes: Array[DataType] = GpuColumnVector.extractTypes(cb)
   val numCols: Int = dataTypes.length
 
-  def getBatch: ColumnarBatch = synchronized {
+  def getBatch: ColumnarBatch = {
     if (cached.isEmpty) {
       withResource(new NvtxRange("get batch " + name, NvtxColor.RED)) { _ =>
         cached = Some(spill.get.getColumnarBatch())
@@ -248,7 +251,7 @@ class LazySpillableColumnarBatch(
     cached.get
   }
 
-  def allowSpilling(): Unit = synchronized {
+  def allowSpilling(): Unit = {
     if (spill.isEmpty && cached.isDefined) {
       withResource(new NvtxRange("spill batch " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling
@@ -263,7 +266,7 @@ class LazySpillableColumnarBatch(
     cached = None
   }
 
-  override def close(): Unit = synchronized {
+  override def close(): Unit = {
     cached.foreach(_.close())
     cached = None
     spill.foreach(_.close())
@@ -285,7 +288,7 @@ class LazySpillableGatherMap(
     ColumnView.fromDeviceBuffer(getBuffer, startRow * 4L, DType.INT32, numRows)
   }
 
-  private def getBuffer = synchronized {
+  private def getBuffer = {
     if (cached.isEmpty) {
       withResource(new NvtxRange("get map " + name, NvtxColor.RED)) { _ =>
         cached = Some(spill.get.getDeviceBuffer())
@@ -294,7 +297,7 @@ class LazySpillableGatherMap(
     cached.get
   }
 
-  def allowSpilling(): Unit = synchronized {
+  def allowSpilling(): Unit = {
     if (spill.isEmpty && cached.isDefined) {
       withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling
@@ -309,7 +312,7 @@ class LazySpillableGatherMap(
     cached = None
   }
 
-  override def close(): Unit = synchronized {
+  override def close(): Unit = {
     cached.foreach(_.close())
     cached = None
     spill.foreach(_.close())
@@ -385,8 +388,6 @@ class JoinGathererImpl(
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
   private val totalRows: Long = gatherMap.getRowCount
-  private val totalInputRows: Int = data.numRows
-  private val totalInputSize: Long = data.deviceMemorySize
   private val (fixedWidthRowSizeBits, nullRowSizeBits) = {
     val dts = data.dataTypes
     val fw = JoinGathererImpl.fixedWidthRowSizeBits(dts)
@@ -395,6 +396,8 @@ class JoinGathererImpl(
   }
 
   override def realCheapPerRowSizeEstimate: Double = {
+    val totalInputRows: Int = data.numRows
+    val totalInputSize: Long = data.deviceMemorySize
     // Avoid divide by 0 here and later on
     if (totalInputRows > 0 && totalInputSize > 0) {
       totalInputSize.toDouble / totalInputRows
@@ -405,15 +408,15 @@ class JoinGathererImpl(
 
   override def getFixedWidthBitSize: Option[Int] = fixedWidthRowSizeBits
 
-  override def gatherNext(n: Int): ColumnarBatch = synchronized {
+  override def gatherNext(n: Int): ColumnarBatch = {
     val start = gatheredUpTo
     assert((start + n) <= totalRows)
     val ret = withResource(gatherMap.toColumnView(start, n)) { gatherView =>
       val batch = data.getBatch
-      val gatheredTab = withResource(GpuColumnVector.from(batch)) { table =>
+      val gatheredTable = withResource(GpuColumnVector.from(batch)) { table =>
         table.gather(gatherView)
       }
-      withResource(gatheredTab) { gt =>
+      withResource(gatheredTable) { gt =>
         GpuColumnVector.from(gt, GpuColumnVector.extractTypes(batch))
       }
     }
@@ -421,9 +424,8 @@ class JoinGathererImpl(
     ret
   }
 
-  override def isDone: Boolean = synchronized {
+  override def isDone: Boolean =
     gatheredUpTo >= totalRows
-  }
 
   override def numRowsLeft: Long = totalRows - gatheredUpTo
 
@@ -432,7 +434,7 @@ class JoinGathererImpl(
     gatherMap.allowSpilling()
   }
 
-  override def getBitSizeMap(n: Int): ColumnView = synchronized {
+  override def getBitSizeMap(n: Int): ColumnView = {
     val cb = data.getBatch
     val inputBitCounts = withResource(GpuColumnVector.from(cb)) { table =>
       withResource(table.rowBitCount()) { bits =>
@@ -466,7 +468,7 @@ class JoinGathererImpl(
     }
   }
 
-  override def close(): Unit = synchronized {
+  override def close(): Unit = {
     gatherMap.close()
     if (closeData) {
       data.close()
@@ -512,7 +514,9 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
 
   override def getBitSizeMap(n: Int): ColumnView = {
     (left.getFixedWidthBitSize, right.getFixedWidthBitSize) match {
-      case (Some(l), Some(r)) => // This should never happen, but just in case
+      case (Some(l), Some(r)) =>
+        // This should never happen because all fixed width should be covered by
+        // a faster code path. But just in case we provide it anyways.
         withResource(GpuScalar.from(l.toLong + r.toLong, LongType)) { s =>
           ai.rapids.cudf.ColumnVector.fromScalar(s, n)
         }
@@ -607,26 +611,26 @@ class HashJoinIterator(
   private var initialJoin = true
   private var nextCb: Option[ColumnarBatch] = None
   private var gathererStore: Option[JoinGatherer] = None
-  private val builtKeys = {
-    val tmp = new LazySpillableColumnarBatch(inputBuiltKeys, spillCallback, "build_keys")
-    // Close the input keys, the lazy spillable batch now owns it.
-    inputBuiltKeys.close()
-    tmp
+  // Close the input keys, the lazy spillable batch now owns it.
+  private val builtKeys = withResource(inputBuiltKeys) { inputBuiltKeys =>
+    new LazySpillableColumnarBatch(inputBuiltKeys, spillCallback, "build_keys")
   }
-  private val builtData = {
-    val tmp = new LazySpillableColumnarBatch(inputBuiltData, spillCallback, "build_data")
-    // Close the input data, the lazy spillable batch now owns it.
-    inputBuiltData.close()
-    tmp
+  // Close the input data, the lazy spillable batch now owns it.
+  private val builtData = withResource(inputBuiltData) { inputBuiltData =>
+    new LazySpillableColumnarBatch(inputBuiltData, spillCallback, "build_data")
   }
+  private var closed = false
 
   def close(): Unit = {
-    builtKeys.close()
-    builtData.close()
-    nextCb.foreach(_.close())
-    nextCb = None
-    gathererStore.foreach(_.close())
-    gathererStore = None
+    if (!closed) {
+      builtKeys.close()
+      builtData.close()
+      nextCb.foreach(_.close())
+      nextCb = None
+      gathererStore.foreach(_.close())
+      gathererStore = None
+      closed = true
+    }
   }
 
   TaskContext.get().addTaskCompletionListener[Unit](_ => close())
@@ -642,7 +646,7 @@ class HashJoinIterator(
         gathererStore = None
       }
 
-      if (ret.isDefined && gathererStore.isDefined) {
+      if (ret.isDefined) {
         // We are about to return something. We got everything we need from it so now let it spill
         // if there is more to be gathered later on.
         gathererStore.foreach(_.allowSpilling())
@@ -662,28 +666,30 @@ class HashJoinIterator(
       case GpuBuildLeft => (false, true)
     }
     try {
-      val gatherer = maps.length match {
-        case 1 =>
+      val leftMap = maps.head
+      val rightMap = if (maps.length > 1) {
+        if (rightData.numCols == 0) {
+          // No data so don't both with it
+          None
+        } else {
+          Some(maps(1))
+        }
+      } else {
+        None
+      }
+
+      val gatherer = rightMap match {
+        case None =>
           if (joinerOwnsRightData) {
             rightData.close()
           }
-          JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback, "left_map"),
+          JoinGatherer(new LazySpillableGatherMap(leftMap, spillCallback, "left_map"),
             leftData, joinerOwnsLeftData)
-        case 2 =>
-          if (rightData.numCols == 0) {
-            if (joinerOwnsRightData) {
-              rightData.close()
-            }
-            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback, "left_map"),
-              leftData, joinerOwnsLeftData)
-          } else {
-            JoinGatherer(new LazySpillableGatherMap(maps(0), spillCallback, "left_map"),
+        case Some(right) =>
+            JoinGatherer(new LazySpillableGatherMap(leftMap, spillCallback, "left_map"),
               leftData, joinerOwnsLeftData,
-              new LazySpillableGatherMap(maps(1), spillCallback, "right_map"),
+              new LazySpillableGatherMap(right, spillCallback, "right_map"),
               rightData, joinerOwnsRightData)
-          }
-        case other =>
-          throw new IllegalArgumentException(s"Got back unexpected number of gather maps $other")
       }
       if (gatherer.isDone) {
         gatherer.close()
@@ -922,7 +928,12 @@ trait GpuHashJoin extends GpuExec {
         // We cannot dedupe anything here because the we can get nulls in the key columns
         // at least one side
         (left.output, left.output, right.output, right.output)
-      case _: InnerLike | LeftSemi | LeftAnti =>
+      case LeftSemi | LeftAnti =>
+        // These only need the keys from the right hand side, in fact there should only be keys on
+        // the right hand side, except if there is a condition, but we don't support conditions for
+        // these joins, so it is OK
+        (left.output, left.output, Seq.empty, Seq.empty)
+      case _: InnerLike =>
         val (rightData, remappedRightData) = dedupDataFromKeys(right.output, rightKeys, leftKeys)
         (left.output, left.output, rightData, remappedRightData)
       case x =>
@@ -934,8 +945,6 @@ trait GpuHashJoin extends GpuExec {
     val finalProject: Seq[Expression] = joinType match {
       case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
         remappedLeftOutput ++ remappedRightOutput
-//      case j: ExistenceJoin =>
-//        remappedLeftOutput :+ j.exists
       case LeftExistence(_) =>
         remappedLeftOutput
       case x =>
