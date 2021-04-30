@@ -36,11 +36,10 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, WindowInPandasExec}
+import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, MapInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
-import org.apache.spark.sql.rapids.execution.python.spark310db.GpuPythonUDF
-import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuWindowInPandasExecMetaBaseDatabricks}
+import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuMapInPandasExecMeta, GpuPythonUDF, GpuWindowInPandasExecMetaBaseDatabricks}
 import org.apache.spark.sql.types._
 
 class Spark310dbShims extends Spark311Shims {
@@ -186,7 +185,14 @@ class Spark310dbShims extends Spark311Shims {
               resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
               childPlans.head.convertIfNeeded(),
               e.evalType)
-        })
+        }),
+      GpuOverrides.exec[MapInPandasExec](
+        "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled.",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all),
+      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
