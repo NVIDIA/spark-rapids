@@ -92,8 +92,6 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
  * @param exec Executor used to handle tasks that take time, and should not be in the
  *             transport's thread
  * @param clientCopyExecutor Executors used to handle synchronous mem copies
- * @param maximumMetadataSize The maximum metadata buffer size we are able to request
- *                            TODO: this should go away
  */
 class RapidsShuffleClient(
     localExecutorId: Long,
@@ -101,7 +99,6 @@ class RapidsShuffleClient(
     transport: RapidsShuffleTransport,
     exec: Executor,
     clientCopyExecutor: Executor,
-    maximumMetadataSize: Long,
     devStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
       extends Logging with Arm {
@@ -115,20 +112,8 @@ class RapidsShuffleClient(
      * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
      */
     case class HandleMetadataResponse(tx: Transaction,
-                                      resp: RefCountedDirectByteBuffer,
                                       shuffleRequests: Seq[ShuffleBlockBatchId],
                                       rapidsShuffleFetchHandler: RapidsShuffleFetchHandler)
-
-    /**
-     * Represents retry due to metadata being larger than expected.
-     *
-     * @param shuffleRequests request to retry
-     * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
-     * @param fullResponseSize response size to allocate to fit the server's response in full
-     */
-    case class FetchRetry(shuffleRequests: Seq[ShuffleBlockBatchId],
-                          rapidsShuffleFetchHandler: RapidsShuffleFetchHandler,
-                          fullResponseSize: Long)
 
     /**
      * Used to have this client handle the enclosed [[BufferReceiveState]] asynchronously.
@@ -157,10 +142,8 @@ class RapidsShuffleClient(
   private[this] def handleOp(op: Any): Unit = {
     // functions we dispatch to must not throw
     op match {
-      case HandleMetadataResponse(tx, resp, shuffleRequests, rapidsShuffleFetchHandler) =>
-        doHandleMetadataResponse(tx, resp, shuffleRequests, rapidsShuffleFetchHandler)
-      case FetchRetry(shuffleRequests, rapidsShuffleFetchHandler, fullResponseSize) =>
-        doFetch(shuffleRequests, rapidsShuffleFetchHandler, fullResponseSize)
+      case HandleMetadataResponse(tx, shuffleRequests, rapidsShuffleFetchHandler) =>
+        doHandleMetadataResponse(tx, shuffleRequests, rapidsShuffleFetchHandler)
       case IssueBufferReceives(bufferReceiveState) =>
         doIssueBufferReceives(bufferReceiveState)
       case HandleBounceBufferReceive(tx, bufferReceiveState) =>
@@ -183,54 +166,36 @@ class RapidsShuffleClient(
     clientCopyExecutor.execute(() => handleOp(op))
   }
 
+
   /**
    * Starts a fetch request for all the shuffleRequests, using `handler` to communicate
    * events back to the iterator.
    *
    * @param shuffleRequests blocks to fetch
    * @param handler iterator to callback to
-   * @param metadataSize metadata size to use for this fetch
    */
   def doFetch(shuffleRequests: Seq[ShuffleBlockBatchId],
-              handler: RapidsShuffleFetchHandler,
-              metadataSize: Long = maximumMetadataSize): Unit = {
+              handler: RapidsShuffleFetchHandler): Unit = {
     try {
       withResource(new NvtxRange("Client.fetch", NvtxColor.PURPLE)) { _ =>
         if (shuffleRequests.isEmpty) {
           throw new IllegalStateException("Sending empty blockIds in the MetadataRequest?")
         }
 
-        // get a metadata response tag so we can send it with the request
-        val responseTag = connection.assignResponseTag
-
-        // serialize a request, note that this includes the responseTag in the message
-        val metaReq = new RefCountedDirectByteBuffer(ShuffleMetadata.buildShuffleMetadataRequest(
-          localExecutorId, // needed s.t. the server knows what endpoint to pick
-          responseTag,
-          shuffleRequests,
-          metadataSize))
+        val metaReq = new RefCountedDirectByteBuffer(
+          ShuffleMetadata.buildShuffleMetadataRequest(shuffleRequests))
 
         logDebug(s"Requesting block_ids=[$shuffleRequests] from connection $connection, req: \n " +
             s"${ShuffleMetadata.printRequest(
               ShuffleMetadata.getMetadataRequest(metaReq.getBuffer()))}")
 
-        val resp = transport.getMetaBuffer(metadataSize)
-
         // make request
-        connection.request(
-          AddressLengthTag.from(
-            metaReq.acquire(),
-            connection.composeRequestTag(RequestType.MetadataRequest)),
-          AddressLengthTag.from(
-            resp.acquire(),
-            responseTag),
-          tx => {
-            try {
-              asyncOrBlock(HandleMetadataResponse(tx, resp, shuffleRequests, handler))
-            } finally {
-              metaReq.close()
-            }
-          })
+        connection.request(RequestType.MetadataRequest, metaReq.acquire(), tx => {
+          withResource(metaReq) { _ =>
+            logDebug(s"at callback for ${tx}")
+            asyncOrBlock(HandleMetadataResponse(tx, shuffleRequests, handler))
+          }
+        })
       }
     } catch {
       case t: Throwable =>
@@ -242,53 +207,41 @@ class RapidsShuffleClient(
    * Function to handle MetadataResponses, as a result of the [[HandleMetadataResponse]] event.
    *
    * @param tx live metadata response transaction to be closed in this handler
-   * @param resp response buffer, to be closed in this handler
    * @param shuffleRequests blocks to fetch
    * @param handler iterator to callback to
    */
   private[this] def doHandleMetadataResponse(
       tx: Transaction,
-      resp: RefCountedDirectByteBuffer,
       shuffleRequests: Seq[ShuffleBlockBatchId],
       handler: RapidsShuffleFetchHandler): Unit = {
-    try {
-      val start = System.currentTimeMillis()
-      val handleMetaRange = new NvtxRange("Client.handleMeta", NvtxColor.CYAN)
-      try {
-        tx.getStatus match {
-          case TransactionStatus.Success =>
-            // start the receives
-            val respBuffer = resp.getBuffer()
-            val metadataResponse: MetadataResponse = ShuffleMetadata.getMetadataResponse(respBuffer)
+    withResource(tx) { _ =>
+      withResource(tx.releaseMessage()) { resp =>
+        withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
+          try {
+            tx.getStatus match {
+              case TransactionStatus.Success =>
+                // start the receives
+                val metadataResponse: MetadataResponse =
+                  ShuffleMetadata.getMetadataResponse(resp.getBuffer())
 
-            logDebug(s"Received from ${tx} response: \n:" +
-                s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
+                logDebug(s"Received from ${tx} response: \n:" +
+                  s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
 
-            if (metadataResponse.fullResponseSize() <= respBuffer.capacity()) {
-              // signal to the handler how many batches are expected
-              handler.start(metadataResponse.tableMetasLength())
+                // signal to the handler how many batches are expected
+                handler.start(metadataResponse.tableMetasLength())
 
-              // queue up the receives
-              queueTransferRequests(metadataResponse, handler)
-            } else {
-              // NOTE: this path hasn't been tested yet.
-              logWarning("Large metadata message received, widening the receive size.")
-              asyncOrBlock(
-                FetchRetry(shuffleRequests, handler, metadataResponse.fullResponseSize()))
+                // queue up the receives
+                queueTransferRequests(metadataResponse, handler)
+              case _ =>
+                handler.transferError(
+                  tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request ${tx}"))
             }
-          case _ =>
-            handler.transferError(
-              tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request ${tx}"))
+          } catch {
+            case t: Throwable =>
+              handler.transferError("Error occurred while handling metadata", t)
+          }
         }
-      } finally {
-        logDebug(s"Metadata response handled in ${TransportUtils.timeDiffMs(start)} ms")
-        handleMetaRange.close()
-        resp.close()
-        tx.close()
       }
-    } catch {
-      case t: Throwable =>
-        handler.transferError("Error occurred while handling metadata", t)
     }
   }
 
@@ -324,13 +277,13 @@ class RapidsShuffleClient(
   private def receiveBuffers(bufferReceiveState: BufferReceiveState): Transaction = {
     val alt = bufferReceiveState.next()
 
-    logDebug(s"Issuing receive for ${TransportUtils.formatTag(alt.tag)}")
+    logDebug(s"Issuing receive for $alt")
 
     connection.receive(alt,
       tx => {
         tx.getStatus match {
           case TransactionStatus.Success =>
-            logDebug(s"Handling response for ${TransportUtils.formatTag(alt.tag)}")
+            logDebug(s"Handling response for $alt")
             asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState))
           case _ => try {
             val errMsg = s"Unsuccessful buffer receive ${tx}"
@@ -353,49 +306,31 @@ class RapidsShuffleClient(
   private[this] def sendTransferRequest(toIssue: BufferReceiveState): Unit = {
     val requestsToIssue = toIssue.getRequests
     logDebug(s"Sending a transfer request for " +
-        s"${requestsToIssue.map(r => TransportUtils.formatTag(r.tag)).mkString(",")}")
-
-    // get a tag that the server can use to send its reply
-    val responseTag = connection.assignResponseTag
+        s"${requestsToIssue.map(r => TransportUtils.toHex(r.tag)).mkString(",")}")
 
     val transferReq = new RefCountedDirectByteBuffer(
-      ShuffleMetadata.buildTransferRequest(localExecutorId, responseTag,
-        requestsToIssue.map(i => (i.tableMeta, i.tag))))
-
-    if (transferReq.getBuffer().remaining() > maximumMetadataSize) {
-      throw new IllegalStateException("Trying to send a transfer request metadata buffer that " +
-        "is larger than the limit.")
-    }
-
-    val res = transport.getMetaBuffer(maximumMetadataSize)
+      ShuffleMetadata.buildTransferRequest(requestsToIssue.map(i => (i.tableMeta, i.tag))))
 
     //issue the buffer transfer request
-    connection.request(
-      AddressLengthTag.from(
-        transferReq.acquire(),
-        connection.composeRequestTag(RequestType.TransferRequest)),
-      AddressLengthTag.from(
-        res.acquire(),
-        responseTag),
-      tx => {
-        try {
-          // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
-          val transferResponse = ShuffleMetadata.getTransferResponse(res.getBuffer())
-          (0 until transferResponse.responsesLength()).foreach(r => {
-            val response = transferResponse.responses(r)
-            if (response.state() != TransferState.STARTED) {
-              // we could either re-issue the request, cancelling and releasing memory
-              // or we could re-issue, and leave the old receive waiting
-              // for now, leaving the old receive waiting.
-              throw new IllegalStateException("NOT IMPLEMENTED")
-            }
-          })
-        } finally {
-          transferReq.close()
-          res.close()
-          tx.close()
+    connection.request(RequestType.TransferRequest, transferReq.acquire(), tx => {
+      withResource(tx.releaseMessage()) { res =>
+        withResource(transferReq) { _ =>
+          withResource(tx) { _ =>
+            // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
+            val transferResponse = ShuffleMetadata.getTransferResponse(res.getBuffer())
+            (0 until transferResponse.responsesLength()).foreach(r => {
+              val response = transferResponse.responses(r)
+              if (response.state() != TransferState.STARTED) {
+                // we could either re-issue the request, cancelling and releasing memory
+                // or we could re-issue, and leave the old receive waiting
+                // for now, leaving the old receive waiting.
+                throw new IllegalStateException("NOT IMPLEMENTED")
+              }
+            })
+          }
         }
-      })
+      }
+    })
   }
 
   /**

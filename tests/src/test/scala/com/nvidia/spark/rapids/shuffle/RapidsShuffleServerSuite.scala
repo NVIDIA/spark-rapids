@@ -94,15 +94,16 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   }
 
   test("sending tables that fit within one bounce buffer") {
-    val mockTransferRequest =
-      RapidsShuffleTestHelper.prepareMetaTransferRequest(10, 1000)
+    val mockTx = mock[Transaction]
+    val transferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(10, 1000)
+    when(mockTx.releaseMessage()).thenReturn(transferRequest)
 
     val bb = closeOnExcept(getSendBounceBuffer(10000)) { bounceBuffer =>
       withResource((0 until 10).map(_ => DeviceMemoryBuffer.allocate(1000))) { deviceBuffers =>
         val receiveSide = deviceBuffers.map(b => new MockBlockWithSize(b))
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
-        withResource(new BufferSendState(mockTransferRequest, bounceBuffer, handler)) { bss =>
+        withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           assert(bss.hasNext)
           val alt = bss.next()
           val receiveBlocks = receiveWindow.next()
@@ -120,18 +121,21 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assertResult(true)(bb.deviceBounceBuffer.isClosed)
+    assertResult(true)(transferRequest.isClosed)
     newMocks()
   }
 
   test("sending tables that require two bounce buffer lengths") {
-    val mockTransferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(20, 1000)
+    val mockTx = mock[Transaction]
+    val transferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(20, 1000)
+    when(mockTx.releaseMessage()).thenReturn(transferRequest)
 
     val bb = closeOnExcept(getSendBounceBuffer(10000)) { bounceBuffer =>
       withResource((0 until 20).map(_ => DeviceMemoryBuffer.allocate(1000))) { deviceBuffers =>
         val receiveSide = deviceBuffers.map(b => new MockBlockWithSize(b))
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
-        withResource(new BufferSendState(mockTransferRequest, bounceBuffer, handler)) { bss =>
+        withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           var buffs = bss.next()
           var receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
@@ -154,10 +158,13 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assertResult(true)(bb.deviceBounceBuffer.isClosed)
+    assertResult(true)(transferRequest.isClosed)
   }
 
   test("sending buffers larger than bounce buffer") {
-    val mockTransferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(20, 10000)
+    val mockTx = mock[Transaction]
+    val transferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(20, 10000)
+    when(mockTx.releaseMessage()).thenReturn(transferRequest)
 
     val bb = closeOnExcept(getSendBounceBuffer(10000)) { bounceBuffer =>
       withResource((0 until 20).map(_ => DeviceMemoryBuffer.allocate(123000))) { deviceBuffers =>
@@ -165,7 +172,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
         val receiveSide = deviceBuffers.map(b => new MockBlockWithSize(b))
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
-        withResource(new BufferSendState(mockTransferRequest, bounceBuffer, handler)) { bss =>
+        withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           (0 until 246).foreach { _ =>
             bss.next()
             val receiveBlocks = receiveWindow.next()
@@ -181,5 +188,6 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assertResult(true)(bb.deviceBounceBuffer.isClosed)
+    assertResult(true)(transferRequest.isClosed)
   }
 }
