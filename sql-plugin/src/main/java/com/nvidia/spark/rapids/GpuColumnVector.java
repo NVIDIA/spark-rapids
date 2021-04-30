@@ -671,7 +671,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   static boolean typeConversionAllowed(Table table, DataType[] colTypes) {
     final int numColumns = table.getNumberOfColumns();
-    assert numColumns == colTypes.length: "The number of columns and the number of types don't match";
+    assert numColumns == colTypes.length: "The number of columns and the number of types don't " +
+        "match " + table + " " + Arrays.toString(colTypes);
     boolean ret = true;
     for (int colIndex = 0; colIndex < numColumns; colIndex++) {
       ret = ret && typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex]);

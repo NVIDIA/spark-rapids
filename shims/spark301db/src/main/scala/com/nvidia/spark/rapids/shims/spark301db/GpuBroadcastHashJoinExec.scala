@@ -145,12 +145,13 @@ case class GpuBroadcastHashJoinExec(
     val broadcastRelation = broadcastExchange
         .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-    lazy val builtBatch = broadcastRelation.value.batch
-
     val rdd = streamedPlan.executeColumnar()
-    rdd.mapPartitions(it =>
+    rdd.mapPartitions { it =>
+      val builtBatch = broadcastRelation.value.batch
+      GpuColumnVector.extractBases(builtBatch).foreach(_.noWarnLeakExpected())
       doJoin(builtBatch, it, targetSize, spillCallback,
         numOutputRows, joinOutputRows, numOutputBatches, streamTime, joinTime,
-        filterTime, totalTime))
+        filterTime, totalTime)
+    }
   }
 }
