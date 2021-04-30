@@ -54,6 +54,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         lit(BigDecimal(-2.12314e-8)),
         lit(Array(1, 2, 3, 4, 5)), lit(Array(1.2, 3.4, 5.6)),
         lit(Array("a", "b", null, "")),
+        lit(Array(Array(1, 2), null, Array(3, 4))),
+        lit(Array(Array(Array(1, 2), Array(2, 3), null), null)),
         new Column(Literal.create(List(BigDecimal(123L, 2), BigDecimal(-1444L, 2)),
           ArrayType(DecimalType(10, 2)))))
   }

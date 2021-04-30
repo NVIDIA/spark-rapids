@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,20 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat,
+  Long => JLong, Short => JShort}
 import java.util
-import java.util.Objects
-import javax.xml.bind.DatatypeConverter
+import java.util.{List => JList, Objects}
 
-import ai.rapids.cudf.{DType, Scalar}
+import scala.collection.JavaConverters._
+
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
+import javax.xml.bind.DatatypeConverter
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuCreateArray
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -39,7 +42,10 @@ object LiteralHelper {
   }
 }
 
-object GpuScalar {
+object GpuScalar extends Arm {
+
+  @deprecated("This will be removed. Since no need to infer the type again because" +
+    " Spark does it already. Besides it is difficult to support nested type.", "")
   def scalaTypeToDType(v: Any): DType = {
     v match {
       case _: Long => DType.INT64
@@ -56,6 +62,11 @@ object GpuScalar {
   }
 
   def extract(v: Scalar): Any = v.getType match {
+    // We are not going to support list type for this 'extract', which is used for
+    // Scalar unit tests only now.
+    // It is not a good idea pulling data out of GPU unless there is no other ways to go.
+    // And all the GPU expressions/operators should take care of the result of an expression,
+    // it can be a Scalar or ColumnVector or Any.
     case DType.BOOL8 => v.getBoolean
     case DType.FLOAT32 => v.getFloat
     case DType.FLOAT64 => v.getDouble
@@ -79,7 +90,120 @@ object GpuScalar {
     }
   }
 
+  /**
+   * Resolves a cudf `HostColumnVector.DataType` from a Spark `DataType`.
+   * The returned type will be used by the `ColumnVector.fromXXX` family.
+   */
+  private def resolveElementType(dt: DataType): HostColumnVector.DataType = dt match {
+    case ArrayType(elementType, _) =>
+      new HostColumnVector.ListType(true, resolveElementType(elementType))
+    case StructType(fields) =>
+      new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
+    case other =>
+      new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
+  }
+
+  /** Casts each element in `data` array to type T */
+  private def castTo[T](data: Array[Any]): Seq[T] = data.map(_.asInstanceOf[T])
+
+  /** Casts each element in `data` array to type T, and applies 'f' on the casted element */
+  private def castTo[T, R](data: Array[Any])(f: T => R): Seq[R] =
+    data.map(e => f(e.asInstanceOf[T]))
+
+  /** Applies 'f' on each element in `data` array, and casts the result to type T*/
+  private def castTo[T](f: Any => Any)(data: Array[Any]): Seq[T] =
+    data.map(e => f(e).asInstanceOf[T])
+
+  /**
+   * The "convertXXXTo" functions are used to convert the array data from catalyst type
+   * to the Java type required by the `ColumnVector.fromXXX` family.
+   *
+   * The data received from the CPU `Literal` has been converted to catalyst type already.
+   * The mapping from DataType to catalyst data type can be found in the function
+   * 'validateLiteralValue' in Spark.
+   */
+  private def convertUTF8StringTo(us: UTF8String): String = us match {
+    case null => null
+    case s => s.asInstanceOf[UTF8String].toString
+  }
+
+  private def convertDecimalTo(dec: Decimal, dt: DecimalType): JLong = dec match {
+    case null => null
+    case d if d.precision > dt.precision =>
+      throw new IllegalArgumentException(s"Decimal $d exceeds precision constraint of $dt")
+    case _ => dec.toUnscaledLong
+  }
+
+  /** Converts an element for nested lists */
+  private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
+    case StringType => convertUTF8StringTo(element.asInstanceOf[UTF8String])
+    case dt: DecimalType =>
+      if (DecimalType.is32BitDecimalType(dt)) {
+        convertDecimalTo(element.asInstanceOf[Decimal], dt).intValue()
+      } else {
+        convertDecimalTo(element.asInstanceOf[Decimal], dt)
+      }
+    case ArrayType(eType, _) => element.asInstanceOf[ArrayData] match {
+      case null => null
+      case ar => ar.array.map(convertElementTo(_, eType)).toList.asJava
+    }
+    case _ => element
+  }
+
+  /**
+   * Creates a cudf Scalar from a ArrayData.
+   *
+   * It does not handle null because null is filtered out in 'from'.
+   *
+   * NOTE: This is done by leveraging the `ColumnVector.fromXXX` API family. These APIs are
+   * designed for test only according to its doc, but it is ok to use here, since the size
+   * of the literal values will not be large in most cases.
+   *
+   * @param data the data to build the Scalar. Should not be null.
+   * @param elementType the element type
+   * @return a cudf Scalar contains the array data.
+   */
+  private def createScalarFromArray(data: ArrayData, elementType: DataType): Scalar = {
+    val array = data.array
+    val listView = elementType match {
+      // Uses the boxed version for primitive types to keep the nulls.
+      case ByteType => ColumnVector.fromBoxedBytes(castTo[JByte](array): _*)
+      case DateType => ColumnVector.timestampDaysFromBoxedInts(castTo[Integer](array): _*)
+      case LongType => ColumnVector.fromBoxedLongs(castTo[JLong](array): _*)
+      case ShortType => ColumnVector.fromBoxedShorts(castTo[JShort](array): _*)
+      case FloatType => ColumnVector.fromBoxedFloats(castTo[JFloat](array): _*)
+      case DoubleType => ColumnVector.fromBoxedDoubles(castTo[JDouble](array): _*)
+      case IntegerType => ColumnVector.fromBoxedInts(castTo[Integer](array): _*)
+      case BooleanType => ColumnVector.fromBoxedBooleans(castTo[JBoolean](array): _*)
+      case TimestampType =>
+        ColumnVector.timestampMicroSecondsFromBoxedLongs(castTo[JLong](array): _*)
+      case StringType =>
+        ColumnVector.fromStrings(castTo[UTF8String, String](array)(convertUTF8StringTo(_)): _*)
+      case dt: DecimalType =>
+        if (DecimalType.is32BitDecimalType(dt)) {
+          val rows = castTo[Decimal, Integer](array)(convertDecimalTo(_, dt).intValue())
+          ColumnVector.decimalFromBoxedInts(-dt.scale, rows: _*)
+        } else {
+          val rows = castTo[Decimal, JLong](array)(convertDecimalTo(_, dt))
+          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows: _*)
+        }
+      case ArrayType(_, _) =>
+        val colType = resolveElementType(elementType)
+        val rows = castTo[JList[_]](convertElementTo(_, elementType))(array)
+        ColumnVector.fromLists(colType, rows: _*)
+      case u =>
+        throw new IllegalStateException(s"Unsupported element type ($u) for the list scalar.")
+    }
+
+    withResource(listView) { list =>
+      Scalar.listFromColumnView(list);
+    }
+  }
+
+  @deprecated("This will be removed. Since no need to infer the type again because" +
+    " Spark does it already. Besides it is difficult to support nested type.", "")
   def from(v: Any): Scalar = v match {
+    case s: Scalar => s.incRefCount()
     case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
     case l: Long => Scalar.fromLong(l)
     case d: Double => Scalar.fromDouble(d)
@@ -98,12 +222,18 @@ object GpuScalar {
       }
     case dec: BigDecimal =>
       Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
+    case _: ArrayData =>
+      // Not sure why there are two independent `from`s. A little confused that why this one
+      // is needed since Spark has already inferred the DataType for the literal value.
+      throw new IllegalStateException("Please calls 'from(Any, DataType)' instead to" +
+        " create a Scalar of array type.")
     case _ =>
       throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
-    case _ if v == null => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(t))
+    case s: Scalar => s.incRefCount()
+    case _ if v == null => Scalar.fromNull(GpuColumnVector.sparkDataTypeToRapidsType(t))
     case _ if t.isInstanceOf[DecimalType] =>
       var bigDec = v match {
         case vv: Decimal => vv.toBigDecimal.bigDecimal
@@ -142,6 +272,10 @@ object GpuScalar {
     case b: Boolean => Scalar.fromBool(b)
     case s: String => Scalar.fromString(s)
     case s: UTF8String => Scalar.fromString(s.toString)
+    case array: ArrayData => t match {
+      case ArrayType(e, _) => createScalarFromArray(array, e)
+      case _ => throw new IllegalArgumentException(s"$t not supported for array values")
+    }
     case _ =>
       throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
   }
@@ -247,20 +381,7 @@ class LiteralExprMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends ExprMeta[Literal](lit, conf, p, r) {
 
-  override def convertToGpu(): GpuExpression = {
-    lit.dataType match {
-      // NOTICE: There is a temporary transformation from Literal(ArrayType(BaseType)) into
-      // CreateArray(Literal(BaseType):_*). The transformation is a walkaround support for Literal
-      // of ArrayData under GPU runtime, because cuDF scalar doesn't support nested types.
-      // related issue: https://github.com/NVIDIA/spark-rapids/issues/1902
-      case ArrayType(baseType, _) =>
-        val litArray = lit.value.asInstanceOf[ArrayData]
-          .array.map(GpuLiteral(_, baseType))
-        GpuCreateArray(litArray, useStringTypeWhenEmpty = false)
-      case _ =>
-        GpuLiteral(lit.value, lit.dataType)
-    }
-  }
+  override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
   // There are so many of these that we don't need to print them out, unless it
   // will not work on the GPU

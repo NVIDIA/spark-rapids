@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
@@ -69,6 +69,10 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
         children(index).columnarEval(batch) match {
           case cv: GpuColumnVector =>
             columns(index) = cv.getBase
+          case scalar: Scalar =>
+            withResource(scalar) { s =>
+              columns(index) = ColumnVector.fromScalar(s, numRows)
+            }
           case other =>
             val dt = dataType.elementType
             withResource(GpuScalar.from(other, dt)) { scalar =>
@@ -144,6 +148,10 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
         valExprs(index).columnarEval(batch) match {
           case cv: GpuColumnVector =>
             columns(index) = cv.getBase
+          case scalar: Scalar =>
+            withResource(scalar) { s =>
+              columns(index) = ColumnVector.fromScalar(s, numRows)
+            }
           case other =>
             val dt = dataType.fields(index).dataType
             withResource(GpuScalar.from(other, dt)) { scalar =>

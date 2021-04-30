@@ -170,6 +170,10 @@ class GpuExpandIterator(
             }
             (cv, false)
           case cv: GpuColumnVector => (cv, false)
+          case scalar: Scalar =>
+            withResource(scalar) { s =>
+              (GpuColumnVector.from(s, cb.numRows(), sparkType), false)
+            }
           case other =>
             val cv = withResource(GpuScalar.from(other, sparkType)) { scalar =>
               GpuColumnVector.from(scalar, cb.numRows(), sparkType)
