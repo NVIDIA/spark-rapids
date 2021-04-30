@@ -75,8 +75,8 @@ class RapidsGdsStore(
       0
     }
     logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
-    new RapidsGdsBuffer(id, path, None, fileOffset, other.size, other.meta, other.getSpillPriority,
-      other.spillCallback)
+    new RapidsGdsBuffer(id, path, fileOffset, other.size, other.meta, other.getSpillPriority,
+      other.spillCallback, isPending = false)
   }
 
   private def batchSpill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase =
@@ -87,7 +87,7 @@ class RapidsGdsStore(
           handle.write(batchWriteBuffer, batchWriteBufferOffset, 0)
           logDebug(s"Spilled to $path 0:$batchWriteBufferOffset via GDS")
         }
-        pendingBuffers.foreach(_.cuFileBuffer = None)
+        pendingBuffers.foreach(_.flush())
         pendingBuffers.clear
         batchWriteFile = TempSpillBufferId().getDiskPath(diskBlockManager)
         batchWriteBufferOffset = 0
@@ -100,14 +100,19 @@ class RapidsGdsStore(
 
       val id = other.id
       addBatchedBuffer(batchWriteFile, id)
-      val gdsBuffer = new RapidsGdsBuffer(id, batchWriteFile, Some(batchWriteBuffer),
-        currentBufferOffset, other.size, other.meta, other.getSpillPriority, other.spillCallback)
+      val gdsBuffer = new RapidsGdsBuffer(id, batchWriteFile, currentBufferOffset, other.size,
+        other.meta, other.getSpillPriority, other.spillCallback, isPending = true)
       pendingBuffers += gdsBuffer
       gdsBuffer
     }
 
   private def alignUp(length: Long): Long = {
     (length + blockSize - 1) & ~(blockSize - 1)
+  }
+
+  private def copyToBuffer(
+      buffer: MemoryBuffer, offset: Long, size: Long, stream: Cuda.Stream): Unit = {
+    buffer.copyFromMemoryBuffer(0, batchWriteBuffer, offset, size, stream)
   }
 
   private def addBatchedBuffer(path: File, id: RapidsBufferId): Set[RapidsBufferId] = {
@@ -126,7 +131,12 @@ class RapidsGdsStore(
   private def removeBatchedBuffer(path: File, id: RapidsBufferId): Set[RapidsBufferId] = {
     val updater = new BiFunction[File, Set[RapidsBufferId], Set[RapidsBufferId]] {
       override def apply(key: File, value: Set[RapidsBufferId]): Set[RapidsBufferId] = {
-        value - id
+        val newValue = value - id
+        if (newValue.isEmpty) {
+          null
+        } else {
+          newValue
+        }
       }
     }
     batchedBuffers.computeIfPresent(path, updater)
@@ -135,51 +145,57 @@ class RapidsGdsStore(
   class RapidsGdsBuffer(
       id: RapidsBufferId,
       path: File,
-      var cuFileBuffer: Option[CuFileBuffer],
       val fileOffset: Long,
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback)
+      spillCallback: RapidsBuffer.SpillCallback,
+      var isPending: Boolean)
       extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.GDS
 
     override def getMemoryBuffer: MemoryBuffer = getDeviceMemoryBuffer
 
-    override def materializeMemoryBuffer: MemoryBuffer = {
+    override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
       closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-        if (cuFileBuffer.isEmpty) {
+        if (isPending) {
+          copyToBuffer(buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
+        } else {
           CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
           logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
-        } else {
-          buffer.copyFromMemoryBuffer(0, cuFileBuffer.get, fileOffset, size, Cuda.DEFAULT_STREAM)
         }
         buffer
       }
     }
 
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
-        length: Long, stream: Cuda.Stream): Unit = {
+        length: Long, stream: Cuda.Stream): Unit = this.synchronized {
       dst match {
         case dmOriginal: DeviceMemoryBuffer =>
           val dm = dmOriginal.slice(dstOffset, length)
-          if (cuFileBuffer.isEmpty) {
+          if (isPending) {
+            copyToBuffer(dm, fileOffset + srcOffset, size, stream)
+          } else {
             // TODO: switch to async API when it's released, using the passed in CUDA stream.
             CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
             logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
-          } else {
-            dm.copyFromMemoryBuffer(
-              0, cuFileBuffer.get, fileOffset + srcOffset, size, Cuda.DEFAULT_STREAM)
           }
         case _ => throw new IllegalStateException(
           s"GDS can only copy to device buffer, not ${dst.getClass}")
       }
     }
 
+    /**
+     * Mark this buffer as disk based, no longer in device memory.
+     */
+    def flush(): Unit = this.synchronized {
+      isPending = false
+    }
+
     override protected def releaseResources(): Unit = {
       if (isBatched(size)) {
         val ids = removeBatchedBuffer(path, id)
-        if (ids.isEmpty) {
+        if (ids == null) {
           deletePath()
         }
       } else if (id.canShareDiskPaths) {
