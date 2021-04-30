@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark310db
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.rapids.shims.spark310db._
@@ -42,7 +42,7 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuB
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
 import org.apache.spark.sql.types._
 
-class Spark310dbShims extends Spark301Shims {
+class Spark310dbShims extends Spark311Shims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
