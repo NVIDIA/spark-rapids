@@ -346,7 +346,7 @@ spec:
 sparkctl create testpython-rapids.yaml
 ```
 
-Note: sparkctl can be built from the Spark Operator repo after [installing golang](https://golang.org/doc/install):
+Note: `sparkctl` can be built from the Spark Operator repo after [installing golang](https://golang.org/doc/install):
 ```
 cd sparkctl
 go build -o sparkctl
