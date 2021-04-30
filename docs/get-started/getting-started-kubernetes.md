@@ -271,6 +271,8 @@ Using Spark Operator is another way to submit Spark Applications into a Kubernet
 
 For example, we copy above `test.py` in directory `/opt/sparkRapidsPlugin` inside the docker image.
 
+This is because currently only `cluster` deployment mode is supported by Spark Operator.
+
 2. Create spark operator using `helm`.
 
 Follow [Spark Operator quick start guide](https://github.com/GoogleCloudPlatform/spark-on-k8s-operator/blob/master/docs/quick-start-guide.md)
