@@ -46,6 +46,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 
 /**
  * This iterator will round incoming batches to multiples of targetRoundoff rows, if possible.
@@ -241,67 +242,6 @@ class BatchQueue extends AutoCloseable with Arm {
     while(queue.nonEmpty) {
       queue.dequeue().close()
     }
-  }
-}
-
-/**
- * Helper functions for [[GpuPythonUDF]]
- */
-object GpuPythonUDF {
-  private[this] val SCALAR_TYPES = Set(
-    PythonEvalType.SQL_BATCHED_UDF,
-    PythonEvalType.SQL_SCALAR_PANDAS_UDF,
-    PythonEvalType.SQL_SCALAR_PANDAS_ITER_UDF
-  )
-
-  def isScalarPythonUDF(e: Expression): Boolean = {
-    e.isInstanceOf[GpuPythonUDF] && SCALAR_TYPES.contains(e.asInstanceOf[GpuPythonUDF].evalType)
-  }
-
-  def isGroupedAggPandasUDF(e: Expression): Boolean = {
-    e.isInstanceOf[GpuPythonUDF] &&
-        e.asInstanceOf[GpuPythonUDF].evalType == PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF
-  }
-
-  // This is currently same as GroupedAggPandasUDF, but we might support new types in the future,
-  // e.g, N -> N transform.
-  def isWindowPandasUDF(e: Expression): Boolean = isGroupedAggPandasUDF(e)
-}
-
-/**
- * A serialized version of a Python lambda function. This is a special expression, which needs a
- * dedicated physical operator to execute it, and thus can't be pushed down to data sources.
- */
-case class GpuPythonUDF(
-    name: String,
-    func: PythonFunction,
-    dataType: DataType,
-    children: Seq[Expression],
-    evalType: Int,
-    udfDeterministic: Boolean,
-    resultId: ExprId = NamedExpression.newExprId)
-    extends Expression with GpuUnevaluable with NonSQLExpression with UserDefinedExpression
-    with GpuAggregateWindowFunction {
-
-  override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
-
-  override def toString: String = s"$name(${children.mkString(", ")})"
-
-  lazy val resultAttribute: Attribute = AttributeReference(toPrettySQL(this), dataType, nullable)(
-    exprId = resultId)
-
-  override def nullable: Boolean = true
-
-  override lazy val canonicalized: Expression = {
-    val canonicalizedChildren = children.map(_.canonicalized)
-    // `resultId` can be seen as cosmetic variation in PythonUDF, as it doesn't affect the result.
-    this.copy(resultId = ExprId(-1)).withNewChildren(canonicalizedChildren)
-  }
-
-  // Support window things
-  override val windowInputProjection: Seq[Expression] = Seq.empty
-  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
-    throw new UnsupportedOperationException(s"GpuPythonUDF should run in a Python process.")
   }
 }
 

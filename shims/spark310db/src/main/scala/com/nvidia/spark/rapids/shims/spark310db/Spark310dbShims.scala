@@ -39,7 +39,8 @@ import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, MapInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
-import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuMapInPandasExecMeta, GpuPythonUDF, GpuWindowInPandasExecMetaBaseDatabricks}
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuMapInPandasExecMeta, GpuWindowInPandasExecMetaBaseDatabricks}
 import org.apache.spark.sql.types._
 
 class Spark310dbShims extends Spark311Shims {

@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expre
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python._
-import org.apache.spark.sql.rapids.execution.python.{GpuPythonExecBase, GpuPythonHelper}
+import org.apache.spark.sql.rapids.execution.python.{GpuPythonExecBase, GpuPythonHelper, GpuPythonUDF}
 import org.apache.spark.sql.rapids.execution.python.spark310db.BatchGroupUtils.executePython
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
