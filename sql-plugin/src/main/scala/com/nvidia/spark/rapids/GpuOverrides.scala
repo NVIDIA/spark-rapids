@@ -2284,7 +2284,10 @@ object GpuOverrides {
             .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported. " +
               "Extra check is inside the expression metadata"),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
+        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+          .withPsNote(TypeEnum.INT, "If it's the index for array, only INT is supported." +
+            "If it's the key for map, only STRING is supported"),
+          TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // To distinguish the supported nested type between Array and Map
@@ -2296,7 +2299,7 @@ object GpuOverrides {
                   s" Map value")
               }
             }
-            case ArrayType(_,_) => // Array supports more
+            case _ => // Array supports more
           }
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
