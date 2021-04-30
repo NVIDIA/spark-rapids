@@ -6,6 +6,7 @@ Generated on 2021-04-29
 ### Features
 |||
 |:---|:---|
+|[#938](https://github.com/NVIDIA/spark-rapids/issues/938)|[FEA] Have hashed shuffle match spark|
 |[#1604](https://github.com/NVIDIA/spark-rapids/issues/1604)|[FEA] Support casting structs to strings |
 |[#1920](https://github.com/NVIDIA/spark-rapids/issues/1920)|[FEA] Support murmur3 hashing of structs|
 |[#2018](https://github.com/NVIDIA/spark-rapids/issues/2018)|[FEA] A way for user to find out the plugin version and cudf version in REPL|
@@ -14,13 +15,10 @@ Generated on 2021-04-29
 |[#1782](https://github.com/NVIDIA/spark-rapids/issues/1782)|[FEA] Shim layers to support spark versions|
 |[#1625](https://github.com/NVIDIA/spark-rapids/issues/1625)|[FEA] Support Decimal Casts to String and String to Decimal|
 |[#166](https://github.com/NVIDIA/spark-rapids/issues/166)|[FEA] Support get_json_object|
-|[#2026](https://github.com/NVIDIA/spark-rapids/issues/2026)|[TEST] run the pandas udf using cudf on Databricks|
 |[#1698](https://github.com/NVIDIA/spark-rapids/issues/1698)|[FEA] Support casting structs to string|
 |[#1912](https://github.com/NVIDIA/spark-rapids/issues/1912)|[FEA] Let `Scalar Pandas UDF ` support array of struct type.|
 |[#1136](https://github.com/NVIDIA/spark-rapids/issues/1136)|[FEA] Audit: Script to list commits between different Spark versions/tags|
 |[#1921](https://github.com/NVIDIA/spark-rapids/issues/1921)|[FEA] cudf version check should be lenient on later patch version|
-|[#1490](https://github.com/NVIDIA/spark-rapids/issues/1490)|[FEA] Add Apache Spark 3.2.0 shim layer|
-|[#1733](https://github.com/NVIDIA/spark-rapids/issues/1733)|[FEA] Enable remaining TPC-DS queries in automated benchmark suite|
 |[#19](https://github.com/NVIDIA/spark-rapids/issues/19)|[FEA] Out of core sorts|
 
 ### Performance
@@ -35,6 +33,7 @@ Generated on 2021-04-29
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#2244](https://github.com/NVIDIA/spark-rapids/issues/2244)|[BUG] Executors hanging when running NDS benchmarks|
 |[#2278](https://github.com/NVIDIA/spark-rapids/issues/2278)|[BUG] FullOuter join can produce too many results|
 |[#2220](https://github.com/NVIDIA/spark-rapids/issues/2220)|[BUG] csv_test.py::test_csv_fallback FAILED on the EMR Cluster|
 |[#2225](https://github.com/NVIDIA/spark-rapids/issues/2225)|[BUG] GpuSort fails on tables containing arrays.|
@@ -74,6 +73,8 @@ Generated on 2021-04-29
 ### PRs
 |||
 |:---|:---|
+|[#2301](https://github.com/NVIDIA/spark-rapids/pull/2301)|Update doc to reflect nanosleep problem with 460.32.03|
+|[#2298](https://github.com/NVIDIA/spark-rapids/pull/2298)|Update changelog for v0.5.0 release [skip ci]|
 |[#2293](https://github.com/NVIDIA/spark-rapids/pull/2293)|update cudf version to 0.19.2|
 |[#2289](https://github.com/NVIDIA/spark-rapids/pull/2289)|Update docs to warn against 450.80.02 driver with 10.x toolkit|
 |[#2285](https://github.com/NVIDIA/spark-rapids/pull/2285)|Require single batch for full outer join streaming|
@@ -649,6 +650,7 @@ Generated on 2021-04-29
 |:---|:---|
 |[#1496](https://github.com/NVIDIA/spark-rapids/pull/1496)|Update changelog for v0.3.0 release [skip ci]|
 |[#1473](https://github.com/NVIDIA/spark-rapids/pull/1473)|Update documentation for 0.3 release|
+|[#1371](https://github.com/NVIDIA/spark-rapids/pull/1371)|Start Guide for RAPIDS on AWS EMR 6.2|
 |[#1446](https://github.com/NVIDIA/spark-rapids/pull/1446)|Update changelog for 0.3.0 release [skip ci]|
 |[#1439](https://github.com/NVIDIA/spark-rapids/pull/1439)|when AQE enabled we fail to fix up exchanges properly and EMR|
 |[#1433](https://github.com/NVIDIA/spark-rapids/pull/1433)|fix pandas 1.2 compatible issue|
