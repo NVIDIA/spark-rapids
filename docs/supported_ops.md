@@ -9258,7 +9258,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td>S</td>
-<td><em>PS* (missing nested BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
