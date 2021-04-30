@@ -450,3 +450,9 @@ ConstantFolding is an operator optimization rule in Catalyst that replaces expre
 be statically evaluated with their equivalent literal values. The RAPIDS Accelerator relies
 on constant folding and parts of the query will not be accelerated if 
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
+
+## JSON string handling
+The 0.5 release introduces the `get_json_object` operator.  The JSON specification only allows
+double quotes around strings, whereas Spark allows single quotes.  The `get_json_object` operation
+on the GPU will return `None` in Pyspark or `Null` in Scala when trying to match a string surrounded
+by single quotes. 
