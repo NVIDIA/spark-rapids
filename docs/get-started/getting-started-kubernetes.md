@@ -277,7 +277,7 @@ Follow [Spark Operator quick start guide](https://github.com/GoogleCloudPlatform
 
 3. Create a Spark Application YAML file
 
-For example, below file named `testpython-rapids.yaml` is created:
+For example, create a file named `testpython-rapids.yaml` with the following contents:
 
 ```
 apiVersion: "sparkoperator.k8s.io/v1beta2"
