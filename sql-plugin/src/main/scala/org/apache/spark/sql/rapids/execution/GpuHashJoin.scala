@@ -38,10 +38,10 @@ object GpuHashJoin {
       meta.willNotWorkOnGpu("ArrayType or MapType in join keys are not supported")
     }
 
-    val unSupportNonEqualCondition = () => if (condition.isDefined) {
+    def unSupportNonEqualCondition(): Unit = if (condition.isDefined) {
       meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
     }
-    val unSupportStructKeys = () => if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
       meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
     }
     joinType match {
