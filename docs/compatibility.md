@@ -455,4 +455,4 @@ on constant folding and parts of the query will not be accelerated if
 The 0.5 release introduces the `get_json_object` operation.  The JSON specification only allows
 double quotes around strings, whereas Spark allows single quotes.  The `get_json_object` operation
 on the GPU will return `None` in PySpark or `Null` in Scala when trying to match a string surrounded
-by single quotes.
+by single quotes.  The behavior will be updated in a future release to more closely match Spark. 
