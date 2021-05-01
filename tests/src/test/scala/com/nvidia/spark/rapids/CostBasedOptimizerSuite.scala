@@ -42,6 +42,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
   test("Force section of plan back onto CPU, AQE on") {
     logError("Force section of plan back onto CPU, AQE on")
+    assumeSpark311orLater
+
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
@@ -155,6 +157,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
   test("Force last section of plan back onto CPU, AQE on") {
     logError("Force last section of plan back onto CPU, AQE on")
+    assumeSpark311orLater
+
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
