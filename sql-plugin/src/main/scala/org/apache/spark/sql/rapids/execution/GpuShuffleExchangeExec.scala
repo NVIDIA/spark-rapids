@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
-import org.apache.spark.sql.types.{ArrayType, DataType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -54,17 +54,28 @@ class GpuShuffleMeta(
     // previously stored on the spark plan to determine whether this exchange can run on GPU
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
 
-    if (shuffle.outputPartitioning.isInstanceOf[RoundRobinPartitioning] &&
-        shuffle.sqlContext.conf.sortBeforeRepartition) {
-      val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
-      shuffle.output.map(_.dataType)
-          .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
-          .foreach { dataType =>
-            willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType")
-          }
-    } else if (shuffle.outputPartitioning.isInstanceOf[HashPartitioning] &&
-        shuffle.output.exists(_.dataType.isInstanceOf[ArrayType])) {
-      willNotWorkOnGpu("hash partitioning does not support ArrayType")
+    shuffle.outputPartitioning match {
+      case _: RoundRobinPartitioning if shuffle.sqlContext.conf.sortBeforeRepartition =>
+        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
+        shuffle.output.map(_.dataType)
+            .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
+            .foreach { dataType =>
+              willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType")
+            }
+      case _: HashPartitioning =>
+        val hasArraysOfNested = TrampolineUtil.dataTypeExistsRecursively(shuffle.schema,
+          {
+            case ArrayType(et, _) => et match {
+              case _: ArrayType | _: MapType | _: StringType | _: StructType => true
+              case _ => false
+            }
+            case _ => false
+          })
+        if (hasArraysOfNested) {
+          willNotWorkOnGpu("hash partitioning does not support array of arrays, " +
+              "maps, strings, or structs")
+        }
+      case _ =>
     }
   }
 
