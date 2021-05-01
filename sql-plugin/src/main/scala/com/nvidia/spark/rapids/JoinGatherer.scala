@@ -36,7 +36,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 trait LazySpillable extends AutoCloseable {
 
   /**
-   * Indicate that we are done messing with the data for now and it can be spilled.
+   * Indicate that we are done using the data for now and it can be spilled.
+   *
+   * This method should not have issues with being called multiple times without the data being
+   * accessed.
    */
   def allowSpilling(): Unit
 }
@@ -255,7 +258,7 @@ class LazySpillableColumnarBatchImpl(
   override def getBatch: ColumnarBatch = {
     if (cached.isEmpty) {
       withResource(new NvtxRange("get batch " + name, NvtxColor.RED)) { _ =>
-        cached = Some(spill.get.getColumnarBatch())
+        cached = spill.map(_.getColumnarBatch())
       }
     }
     cached.get
@@ -307,13 +310,13 @@ class LazySpillableGatherMap(
   private def getBuffer = {
     if (cached.isEmpty) {
       withResource(new NvtxRange("get map " + name, NvtxColor.RED)) { _ =>
-        cached = Some(spill.get.getDeviceBuffer())
+        cached = spill.map(_.getDeviceBuffer())
       }
     }
     cached.get
   }
 
-  def allowSpilling(): Unit = {
+  override def allowSpilling(): Unit = {
     if (spill.isEmpty && cached.isDefined) {
       withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling

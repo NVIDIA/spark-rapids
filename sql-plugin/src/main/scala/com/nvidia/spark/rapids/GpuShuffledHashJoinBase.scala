@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.FullOuter
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.execution.BinaryExecNode
@@ -71,6 +70,7 @@ abstract class GpuShuffledHashJoinBase(
     val filterTime = gpuLongMetric(FILTER_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+    val localBuildOutput: Seq[Attribute] = buildPlan.output
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
