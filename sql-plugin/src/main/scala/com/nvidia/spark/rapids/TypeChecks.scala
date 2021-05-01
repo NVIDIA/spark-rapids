@@ -631,20 +631,18 @@ class ExecChecks private(
     val plan = meta.wrapped.asInstanceOf[SparkPlan]
     val allowDecimal = meta.conf.decimalTypeEnabled
 
-    val unsupportedOutputTypes = plan.output.collect {
-      case attr if !check.isSupportedByPlugin(attr.dataType, allowDecimal) => attr.dataType
-    }.toSet
+    val unsupportedOutputTypes = plan.output
+      .filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+      .toSet
 
     if (unsupportedOutputTypes.nonEmpty) {
       meta.willNotWorkOnGpu("unsupported data types in output: " +
         unsupportedOutputTypes.mkString(", "))
     }
 
-    val unsupportedInputTypes = plan.children.flatMap(
-      _.output.collect {
-        case attr if !check.isSupportedByPlugin(attr.dataType, allowDecimal) => attr.dataType
-      }
-    ).toSet
+    val unsupportedInputTypes = plan.children.flatMap { childPlan =>
+      childPlan.output.filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
+    }.toSet
 
     if (unsupportedInputTypes.nonEmpty) {
       meta.willNotWorkOnGpu("unsupported data types in input: " +
