@@ -27,13 +27,13 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RoundRobinPartitioning}
+import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, RoundRobinPartitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ArrayType, DataType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -62,6 +62,9 @@ class GpuShuffleMeta(
           .foreach { dataType =>
             willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType")
           }
+    } else if (shuffle.outputPartitioning.isInstanceOf[HashPartitioning] &&
+        shuffle.output.exists(_.dataType.isInstanceOf[ArrayType])) {
+      willNotWorkOnGpu("hash partitioning does not support ArrayType")
     }
   }
 
