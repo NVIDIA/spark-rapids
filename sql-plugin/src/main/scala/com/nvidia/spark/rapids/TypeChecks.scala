@@ -487,7 +487,7 @@ abstract class TypeChecks[RET] {
 
   val shown: Boolean = true
 
-  private def prettyPrint(groupedByType: Map[DataType, Set[String]]): String = {
+  private def stringifyTypeAttributeMap(groupedByType: Map[DataType, Set[String]]): String = {
     groupedByType.map { case (dataType, nameSet) =>
       dataType + " " + nameSet.mkString("[", ", ", "]")
     }.mkString(", ")
@@ -506,7 +506,7 @@ abstract class TypeChecks[RET] {
       .mapValues(_.map(_.name).toSet)
 
     if (unsupportedOutputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu(msgFormat.format(prettyPrint(unsupportedOutputTypes)))
+      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedOutputTypes)))
     }
   }
 }
@@ -594,7 +594,8 @@ class FileFormatChecks private (
       fileType: FileFormatType,
       op: FileFormatOp): Unit = {
     val allowDecimal = meta.conf.decimalTypeEnabled
-    tagUnsupportedTypes(meta, sig, allowDecimal, schema.fields, s"input type for $op on $fileType")
+    tagUnsupportedTypes(meta, sig, allowDecimal, schema.fields,
+      s"unsupported data types %s in $op for $fileType")
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
