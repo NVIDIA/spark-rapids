@@ -647,7 +647,8 @@ class ExecChecks private(
     val plan = meta.wrapped.asInstanceOf[SparkPlan]
     val allowDecimal = meta.conf.decimalTypeEnabled
 
-    def toStructField(a: Attribute) = StructField(name = a.name, dataType = a.dataType)
+    // expression.toString to capture ids in not-on-GPU tags
+    def toStructField(a: Attribute) = StructField(name = a.toString(), dataType = a.dataType)
 
     tagUnsupportedTypes(meta, check, allowDecimal, plan.output.map(toStructField),
       "unsupported data types in output: %s")
