@@ -91,8 +91,6 @@ case class GpuBroadcastHashJoinExec(
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
-  private [this] lazy val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -141,6 +139,8 @@ case class GpuBroadcastHashJoinExec(
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
     val broadcastRelation = broadcastExchange
         .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
