@@ -96,6 +96,14 @@ case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean
   override def toString: String = s"input[$ordinal, ${dataType.simpleString}, $nullable]"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    batch.column(ordinal).asInstanceOf[GpuColumnVector].incRefCount()
+    batch.column(ordinal) match {
+      case fb: GpuColumnVectorFromBuffer =>
+        // When doing a project we might re-order columns or do other things that make it
+        // so this no longer looks like the original contiguous buffer it came from
+        // so to avoid it appearing to down stream processing as the same buffer we change
+        // the type here.
+        new GpuColumnVector(fb.dataType(), fb.getBase.incRefCount())
+      case cv: GpuColumnVector => cv.incRefCount()
+    }
   }
 }
