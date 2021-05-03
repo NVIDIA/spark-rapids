@@ -21,7 +21,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.catalyst.expressions.{CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 
@@ -486,6 +486,29 @@ abstract class TypeChecks[RET] {
   def support(dataType: TypeEnum.Value): RET
 
   val shown: Boolean = true
+
+  private def stringifyTypeAttributeMap(groupedByType: Map[DataType, Set[String]]): String = {
+    groupedByType.map { case (dataType, nameSet) =>
+      dataType + " " + nameSet.mkString("[", ", ", "]")
+    }.mkString(", ")
+  }
+
+  protected def tagUnsupportedTypes(
+    meta: RapidsMeta[_, _, _],
+    sig: TypeSig,
+    allowDecimal: Boolean,
+    fields: Seq[StructField],
+    msgFormat: String
+    ): Unit = {
+    val unsupportedOutputTypes: Map[DataType, Set[String]] = fields
+      .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
+      .groupBy(_.dataType)
+      .mapValues(_.map(_.name).toSet)
+
+    if (unsupportedOutputTypes.nonEmpty) {
+      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedOutputTypes)))
+    }
+  }
 }
 
 /**
@@ -571,15 +594,8 @@ class FileFormatChecks private (
       fileType: FileFormatType,
       op: FileFormatOp): Unit = {
     val allowDecimal = meta.conf.decimalTypeEnabled
-
-    val unsupportedOutputTypes = schema.fields
-        .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
-        .toSet
-
-    if (unsupportedOutputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu("unsupported data types " +
-          unsupportedOutputTypes.mkString(", ") + s" in $op for $fileType")
-    }
+    tagUnsupportedTypes(meta, sig, allowDecimal, schema.fields,
+      s"unsupported data types %s in $op for $fileType")
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
@@ -631,23 +647,14 @@ class ExecChecks private(
     val plan = meta.wrapped.asInstanceOf[SparkPlan]
     val allowDecimal = meta.conf.decimalTypeEnabled
 
-    val unsupportedOutputTypes = plan.output
-      .filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
-      .toSet
+    // expression.toString to capture ids in not-on-GPU tags
+    def toStructField(a: Attribute) = StructField(name = a.toString(), dataType = a.dataType)
 
-    if (unsupportedOutputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu("unsupported data types in output: " +
-        unsupportedOutputTypes.mkString(", "))
-    }
-
-    val unsupportedInputTypes = plan.children.flatMap { childPlan =>
-      childPlan.output.filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
-    }.toSet
-
-    if (unsupportedInputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu("unsupported data types in input: " +
-        unsupportedInputTypes.mkString(", "))
-    }
+    tagUnsupportedTypes(meta, check, allowDecimal, plan.output.map(toStructField),
+      "unsupported data types in output: %s")
+    tagUnsupportedTypes(meta, check, allowDecimal,
+      plan.children.flatMap(_.output.map(toStructField)),
+      "unsupported data types in input: %s")
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
