@@ -33,8 +33,6 @@ abstract class GpuShuffledHashJoinBase(
     val isSkewJoin: Boolean) extends BinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
-  private [this] lazy val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -69,6 +67,7 @@ abstract class GpuShuffledHashJoinBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val filterTime = gpuLongMetric(FILTER_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val localBuildOutput: Seq[Attribute] = buildPlan.output
 

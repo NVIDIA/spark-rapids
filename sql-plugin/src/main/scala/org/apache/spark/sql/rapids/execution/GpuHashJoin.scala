@@ -102,19 +102,16 @@ object GpuHashJoin extends Arm {
     }
 
   /**
-   * Filter rows from the batch where all of the keys are null.
+   * Filter rows from the batch where any of the keys are null.
    */
   def filterNulls(cb: ColumnarBatch, boundKeys: Seq[Expression]): ColumnarBatch = {
     var mask: ai.rapids.cudf.ColumnVector = null
     try {
       withResource(GpuProjectExec.project(cb, boundKeys)) { keys =>
         val keyColumns = GpuColumnVector.extractBases(keys)
-        // to remove a row all of the key columns must be null for that row
-        // If there is even one key column with no nulls in it, don't filter anything
-        // we do this by leaving mask as null
-        if (keyColumns.forall(_.hasNulls)) {
-          keyColumns.foreach { column =>
-            withResource(column.isNull) { nn =>
+        keyColumns.foreach { column =>
+          if (column.hasNulls) {
+            withResource(column.isNotNull) { nn =>
               if (mask == null) {
                 mask = nn.incRefCount()
               } else {
@@ -156,12 +153,8 @@ object GpuHashJoin extends Arm {
    * yet.
    */
   def anyNullableStructChild(expressions: Seq[Expression]): Boolean = {
-    System.err.println(s"LOOKING FOR NULLABLE STRUCT CHILDREN IN " +
-        s"${expressions.map(_.dataType).toArray.toSeq}")
     def anyNullableChild(struct: StructType): Boolean = {
-      System.err.println(s"CHECK FOR NULLABLE CHILDREN $struct")
-      val ret = struct.fields.exists { field =>
-        System.err.println(s"IS NULLABLE FIELD $field? ${field.nullable}")
+      struct.fields.exists { field =>
         if (field.nullable) {
           true
         } else field.dataType match {
@@ -170,18 +163,13 @@ object GpuHashJoin extends Arm {
           case _ => false
         }
       }
-      System.err.println(s"HAS NULLABLE CHILDREN $struct? $ret")
-      ret
     }
 
-    val ret = expressions.map(_.dataType).exists {
+    expressions.map(_.dataType).exists {
       case st: StructType =>
         anyNullableChild(st)
       case _ => false
     }
-    System.err.println(s"NULLABLE STRUCT CHILDREN IN " +
-        s"${expressions.map(_.dataType).toArray.toSeq}? $ret")
-    ret
   }
 }
 
@@ -363,16 +351,9 @@ class HashJoinIterator(
         // Need to refill the gatherer
         gathererStore.foreach(_.close())
         gathererStore = None
-        val filtered = withResource(stream.next()) { cb =>
+        withResource(stream.next()) { cb =>
           streamTime += (System.nanoTime() - startTime)
-          if (compareNullsEqual) { // TODO need some checks for nullability...
-            GpuHashJoin.filterNulls(cb, boundStreamKeys)
-          } else {
-            GpuColumnVector.incRefCounts(cb)
-          }
-        }
-        withResource(filtered) { filtered =>
-          gathererStore = joinGatherer(builtKeys.getBatch, builtData, filtered)
+          gathererStore = joinGatherer(builtKeys.getBatch, builtData, cb)
         }
         nextCb = nextCbFromGatherer()
       } else if (initialJoin) {
@@ -497,11 +478,8 @@ trait GpuHashJoin extends GpuExec {
   // struct keys with nullable children. Non-nested keys can also be correctly processed with
   // compareNullsEqual = true, because we filter all null records from build table before join.
   // For some details, please refer the issue: https://github.com/NVIDIA/spark-rapids/issues/2126
-  protected lazy val compareNullsEqual: Boolean = {
-    val ret = (joinType != FullOuter) && GpuHashJoin.anyNullableStructChild(buildKeys)
-    System.err.println(s"SHOULD NULLS BE EQUAL $joinType => $ret")
-    ret
-  }
+  protected lazy val compareNullsEqual: Boolean = (joinType != FullOuter) &&
+      GpuHashJoin.anyNullableStructChild(buildKeys)
 
   /**
    * Spark does joins rather simply. They do it row by row, and as such don't really worry
@@ -596,20 +574,16 @@ trait GpuHashJoin extends GpuExec {
       // Filtering nulls on the build side is a workaround.
       // 1) For a performance issue in LeftSemi and LeftAnti joins
       // https://github.com/rapidsai/cudf/issues/7300
-      // 2) As a work around to Struct joins with nullable children no doing the right thing
+      // 2) As a work around to Struct joins with nullable children
       // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
-      val builtAnyNullable = compareNullsEqual || joinType == LeftSemi || joinType == LeftAnti
-
-      System.err.println(s"SHOULD FILTER NULL KEYS FOR BUILT TABLE? $builtAnyNullable " +
-          s"${builtBatch.numRows()}")
+      val builtAnyNullable = (compareNullsEqual || joinType == LeftSemi || joinType == LeftAnti) &&
+          buildKeys.exists(_.nullable)
 
       val cb = if (builtAnyNullable) {
         GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
       } else {
         GpuColumnVector.incRefCounts(builtBatch)
       }
-
-      System.err.println(s"AFTER NULL FILTER (IF NEEDED) ${cb.numRows()}")
 
       withResource(cb) { cb =>
         closeOnExcept(GpuProjectExec.project(cb, boundBuildKeys)) { builtKeys =>
