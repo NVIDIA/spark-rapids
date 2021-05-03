@@ -2817,9 +2817,10 @@ object GpuOverrides {
         TypeSig.STRUCT).nested()
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
-          .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported for arrays if " +
-              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
-          .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported for maps if " +
+          .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true and hash partitioning for array " +
+              "of arrays, maps, strings, or structs is not supported")
+          .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
         TypeSig.all),
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),

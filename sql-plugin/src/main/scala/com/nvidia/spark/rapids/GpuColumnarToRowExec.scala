@@ -161,12 +161,12 @@ class AcceleratedColumnarToRowIterator(
 class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    totalTime: GpuMetric) extends Iterator[InternalRow] {
+    totalTime: GpuMetric) extends Iterator[InternalRow] with Arm {
   // GPU batches read in must be closed by the receiver (us)
   @transient var cb: ColumnarBatch = null
   var it: java.util.Iterator[InternalRow] = null
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {
@@ -177,29 +177,41 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
 
   def loadNextBatch(): Unit = {
     closeCurrentBatch()
-    if (it != null) {
-      it = null
-    }
-    if (batches.hasNext) {
-      val devCb = batches.next()
-      val nvtxRange = new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)
+    it = null
+    while (batches.hasNext) {
       try {
-        cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
-          devCb.numRows())
-        it = cb.rowIterator()
-        numInputBatches += 1
-        // In order to match the numOutputRows metric in the generated code we update
-        // numOutputRows for each batch. This is less accurate than doing it at output
-        // because it will over count the number of rows output in the case of a limit,
-        // but it is more efficient.
-        numOutputRows += cb.numRows()
+        withResource(batches.next()) { devCb =>
+          numInputBatches += 1
+          if (setupBatchIterator(devCb)) {
+            return
+          }
+        }
       } finally {
-        devCb.close()
         // Leaving the GPU for a while
         GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        nvtxRange.close()
       }
     }
+  }
+
+  /**
+   * Setup the columnar to row batch iterator for the specified device batch.
+   * Returns true if the batch iterator was succesfully initialized or false otherwise.
+   */
+  private def setupBatchIterator(devCb: ColumnarBatch): Boolean = {
+    if (devCb.numRows > 0) {
+      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)) { _ =>
+          cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
+            devCb.numRows())
+          it = cb.rowIterator()
+          // In order to match the numOutputRows metric in the generated code we update
+          // numOutputRows for each batch. This is less accurate than doing it at output
+          // because it will over count the number of rows output in the case of a limit,
+          // but it is more efficient.
+          numOutputRows += cb.numRows()
+      }
+      return true
+    }
+    false
   }
 
   override def hasNext: Boolean = {
