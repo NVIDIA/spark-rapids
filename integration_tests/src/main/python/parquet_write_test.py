@@ -45,7 +45,9 @@ parquet_write_gens_list = [
                   decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit],
                  marks=pytest.mark.allow_non_gpu("CoalesceExec"))]
 
-parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
+# TODO: remove the following mark after https://github.com/rapidsai/cudf/issues/8070 is fixed
+int96_param = pytest.param('INT96', marks=pytest.mark.allow_non_gpu("DataWritingCommandExec, CoalesceExec"))
+parquet_ts_write_options = [int96_param, 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -113,7 +115,11 @@ def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, re
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = reader_confs.copy()
     all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.parquet.compression.codec': compress})
+            'spark.sql.parquet.compression.codec': compress,
+            # TODO: remove the following two conf after https://github.com/rapidsai/cudf/issues/8070
+            # is resolved
+            'spark.sql.parquet.outputTimestampType' : 'TIMESTAMP_MICROS',
+            'spark.sql.parquet.int96AsTimestamp' : False})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
@@ -155,13 +161,15 @@ def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_t
 def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_factory, ts_rebase, ts_write):
     spark.conf.set('spark.sql.parquet.outputTimestampType', ts_write)
     spark.conf.set('spark.sql.legacy.parquet.datetimeRebaseModeInWrite', ts_rebase)
+    # TODO: remove the following conf after https://github.com/rapidsai/cudf/issues/8070 is fixed
+    spark.conf.set('spark.sql.parquet.int96AsTimestamp', ts_rebase == 'INT96')
     spark.conf.set('spark.sql.legacy.parquet.int96RebaseModeInWrite', ts_rebase) # for spark 310
     with pytest.raises(Exception) as e_info:
         df.coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(spark_tmp_table_factory.get())
     assert e_info.match(r".*SparkUpgradeException.*")
 
 # TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to handle TIMESTAMP_MILLIS
-@pytest.mark.parametrize('ts_write', ['INT96', 'TIMESTAMP_MICROS'])
+@pytest.mark.parametrize('ts_write', [int96_param, 'TIMESTAMP_MICROS'])
 @pytest.mark.parametrize('ts_rebase', ['EXCEPTION'])
 def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
     gen = TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))
@@ -178,10 +186,15 @@ def test_ts_write_twice_fails_exception(spark_tmp_path, spark_tmp_table_factory)
     gen = IntegerGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
     table_name = spark_tmp_table_factory.get()
+    # TODO: remove the following two conf after https://github.com/rapidsai/cudf/issues/8070
+    # is resolved
+    conf = {'spark.sql.parquet.int96AsTimestamp' : False, 'spark.sql.parquet.outputTimestampType' : 'TIMESTAMP_MICROS'}
     with_gpu_session(
-            lambda spark : unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(table_name))
+            lambda spark : unary_op_df(spark, gen).coalesce(1).write.format("parquet").mode(
+                'overwrite').option("path", data_path).saveAsTable(table_name), conf)
     with_gpu_session(
-            lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen), data_path, table_name))
+            lambda spark : writeParquetNoOverwriteCatchException(spark, unary_op_df(spark, gen),
+                                                                 data_path, table_name), conf)
 
 @allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('ts_write', parquet_ts_write_options)
