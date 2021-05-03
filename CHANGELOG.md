@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-05-02
+Generated on 2021-05-03
 
 ## Release 0.5
 
@@ -33,6 +33,7 @@ Generated on 2021-05-02
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#2279](https://github.com/NVIDIA/spark-rapids/issues/2279)|[BUG] Hash Partitioning can fail for very small batches|
 |[#2314](https://github.com/NVIDIA/spark-rapids/issues/2314)|[BUG] v0.5.0 pre-release pytests join_test.py::test_hash_join_array FAILED on SPARK-EGX Yarn Cluster|
 |[#2317](https://github.com/NVIDIA/spark-rapids/issues/2317)|[BUG] GpuColumnarToRowIterator can stop after receiving an empty batch|
 |[#2244](https://github.com/NVIDIA/spark-rapids/issues/2244)|[BUG] Executors hanging when running NDS benchmarks|
