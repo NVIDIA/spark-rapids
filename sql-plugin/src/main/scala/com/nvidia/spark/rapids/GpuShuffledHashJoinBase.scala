@@ -84,7 +84,7 @@ abstract class GpuShuffledHashJoinBase(
               combinedSize =
                   GpuColumnVector.extractColumns(combined)
                       .map(_.getBase.getDeviceMemorySize).sum.toInt
-              GpuColumnVector.from(combined)
+              filterBuiltNullsIfNecessary(GpuColumnVector.from(combined))
             }
           }
         }
