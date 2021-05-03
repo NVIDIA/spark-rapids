@@ -40,7 +40,7 @@ import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class GpuWindowInPandasExecMetaBaseDatabricks(
+abstract class GpuWindowInPandasExecMetaBase(
     winPandas: WindowInPandasExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],

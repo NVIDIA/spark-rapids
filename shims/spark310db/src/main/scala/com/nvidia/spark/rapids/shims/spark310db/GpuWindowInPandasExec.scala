@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims.spark310db
 import com.nvidia.spark.rapids.{GpuBindReferences, GpuBoundReference, GpuProjectExec, GpuWindowExpression}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.spark310db.GpuWindowInPandasExecBase
+import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecBase
 import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 /*

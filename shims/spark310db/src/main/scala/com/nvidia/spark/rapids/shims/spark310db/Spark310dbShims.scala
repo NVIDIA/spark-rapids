@@ -40,7 +40,7 @@ import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, FlatMapGroups
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
-import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuWindowInPandasExecMetaBaseDatabricks}
+import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuWindowInPandasExecMetaBase}
 import org.apache.spark.sql.types._
 
 class Spark310dbShims extends Spark311Shims {
@@ -86,7 +86,7 @@ class Spark310dbShims extends Spark311Shims {
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
           TypeSig.all),
-        (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBaseDatabricks(winPy, conf, p, r) {
+        (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),
