@@ -894,6 +894,26 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val SHUFFLE_UCX_LISTENER_ENABLED = conf("spark.rapids.shuffle.ucx.listener.enabled")
+    .doc("When set to true, start listener and exchange socket address." +
+      " This improves detection of remote peer failures.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_USE_PEER_ERR_HDNL = conf("spark.rapids.shuffle.ucx.peerErrorHandling.enabled")
+    .doc("When set to true, enable peer error handling for UCX endpoints. " +
+      "This can impact transports and protocols selected in UCX.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
+    .doc("Starting port to try to bind the UCX listener.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
   val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
     .doc("The host to be used to start the management server")
     .stringConf
@@ -1034,6 +1054,13 @@ object RapidsConf {
       .doc("Default relative GPU cost of running an operator on the GPU")
       .doubleConf
       .createWithDefault(0.8)
+
+  val OPTIMIZER_CLASS_NAME = conf("spark.rapids.sql.optimizer.className")
+    .internal()
+    .doc("Optimizer implementation class name. The class must implement the " +
+      "com.nvidia.spark.rapids.Optimizer trait")
+    .stringConf
+    .createWithDefault("com.nvidia.spark.rapids.CostBasedOptimizer")
 
   val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.defaultExprGpuCost")
       .internal()
@@ -1381,6 +1408,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
+  lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_LISTENER_ENABLED)
+
+  lazy val shuffleUcxUsePeerErrorHandler: Boolean = get(SHUFFLE_UCX_USE_PEER_ERR_HDNL)
+
+  lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
+
   lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
 
   lazy val shuffleUcxBounceBuffersSize: Long = get(SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE)
@@ -1416,6 +1449,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
+
+  lazy val optimizerClassName: String = get(OPTIMIZER_CLASS_NAME)
 
   lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
 

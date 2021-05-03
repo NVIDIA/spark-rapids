@@ -65,19 +65,30 @@ object GpuHashJoin extends Arm {
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
-    if (keyDataTypes.exists(dtype =>
-      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
-        || dtype.isInstanceOf[MapType])) {
-      meta.willNotWorkOnGpu("Nested types in join keys are not supported")
+    if (keyDataTypes.exists(dType =>
+      dType.isInstanceOf[ArrayType] || dType.isInstanceOf[MapType])) {
+      meta.willNotWorkOnGpu("ArrayType or MapType in join keys are not supported")
+    }
+
+    def unSupportNonEqualCondition(): Unit = if (condition.isDefined) {
+      meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+    }
+    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+      meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
     }
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>
-        if (condition.isDefined) {
-          meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-        }
-      case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+        unSupportNonEqualCondition()
+      case FullOuter =>
+        unSupportNonEqualCondition()
+        // FullOuter join cannot support with struct keys as two issues below
+        //  * https://github.com/NVIDIA/spark-rapids/issues/2126
+        //  * https://github.com/rapidsai/cudf/issues/7947
+        unSupportStructKeys()
+      case _ =>
+        meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
   }
 
@@ -133,6 +144,45 @@ object GpuHashJoin extends Arm {
       }
     }
   }
+
+  /**
+   * Given sequence of expressions, detect whether there exists any StructType expressions
+   * who contains nullable child columns.
+   * Since cuDF can not match nullable children as Spark during join, we detect them before join
+   * to apply some walking around strategies. For some details, please refer the issue:
+   * https://github.com/NVIDIA/spark-rapids/issues/2126.
+   *
+   * NOTE that this does not work for arrays of Structs or Maps that are not supported as join keys
+   * yet.
+   */
+  def anyNullableStructChild(expressions: Seq[Expression]): Boolean = {
+    System.err.println(s"LOOKING FOR NULLABLE STRUCT CHILDREN IN " +
+        s"${expressions.map(_.dataType).toArray.toSeq}")
+    def anyNullableChild(struct: StructType): Boolean = {
+      System.err.println(s"CHECK FOR NULLABLE CHILDREN $struct")
+      val ret = struct.fields.exists { field =>
+        System.err.println(s"IS NULLABLE FIELD $field? ${field.nullable}")
+        if (field.nullable) {
+          true
+        } else field.dataType match {
+          case structType: StructType =>
+            anyNullableChild(structType)
+          case _ => false
+        }
+      }
+      System.err.println(s"HAS NULLABLE CHILDREN $struct? $ret")
+      ret
+    }
+
+    val ret = expressions.map(_.dataType).exists {
+      case st: StructType =>
+        anyNullableChild(st)
+      case _ => false
+    }
+    System.err.println(s"NULLABLE STRUCT CHILDREN IN " +
+        s"${expressions.map(_.dataType).toArray.toSeq}? $ret")
+    ret
+  }
 }
 
 /**
@@ -148,6 +198,7 @@ class HashJoinIterator(
     val targetSize: Long,
     val joinType: JoinType,
     val buildSide: GpuBuildSide,
+    var compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     private val spillCallback: SpillCallback,
     private val streamTime: GpuMetric,
     private val joinTime: GpuMetric,
@@ -248,15 +299,15 @@ class HashJoinIterator(
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
       val maps = joinType match {
-        case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, false)
+        case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
         case RightOuter =>
           // Reverse the output of the join, because we expect the right gather map to
           // always be on the right
-          rightKeys.leftJoinGatherMaps(leftKeys, false).reverse
-        case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, false)
-        case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, false))
-        case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, false))
-        case FullOuter => leftKeys.fullJoinGatherMaps(rightKeys, false)
+          rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
+        case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
+        case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
+        case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
+        case FullOuter => leftKeys.fullJoinGatherMaps(rightKeys, compareNullsEqual)
         case _ =>
           throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
               s" supported")
@@ -312,9 +363,16 @@ class HashJoinIterator(
         // Need to refill the gatherer
         gathererStore.foreach(_.close())
         gathererStore = None
-        withResource(stream.next()) { cb =>
+        val filtered = withResource(stream.next()) { cb =>
           streamTime += (System.nanoTime() - startTime)
-          gathererStore = joinGatherer(builtKeys.getBatch, builtData, cb)
+          if (compareNullsEqual) { // TODO need some checks for nullability...
+            GpuHashJoin.filterNulls(cb, boundStreamKeys)
+          } else {
+            GpuColumnVector.incRefCounts(cb)
+          }
+        }
+        withResource(filtered) { filtered =>
+          gathererStore = joinGatherer(builtKeys.getBatch, builtData, filtered)
         }
         nextCb = nextCbFromGatherer()
       } else if (initialJoin) {
@@ -435,6 +493,16 @@ trait GpuHashJoin extends GpuExec {
     (rightData, remappedRightOutput)
   }
 
+  // For join types other than FullOuter, we simply set compareNullsEqual as true to adapt
+  // struct keys with nullable children. Non-nested keys can also be correctly processed with
+  // compareNullsEqual = true, because we filter all null records from build table before join.
+  // For some details, please refer the issue: https://github.com/NVIDIA/spark-rapids/issues/2126
+  protected lazy val compareNullsEqual: Boolean = {
+    val ret = (joinType != FullOuter) && GpuHashJoin.anyNullableStructChild(buildKeys)
+    System.err.println(s"SHOULD NULLS BE EQUAL $joinType => $ret")
+    ret
+  }
+
   /**
    * Spark does joins rather simply. They do it row by row, and as such don't really worry
    * about how much space is being taken up. We are doing this in batches, and have the option to
@@ -525,14 +593,23 @@ trait GpuHashJoin extends GpuExec {
     val realTarget = Math.max(targetSize, 10 * 1024)
 
     val (builtKeys, builtData) = {
-      val builtAnyNullable =
-        (joinType == LeftSemi || joinType == LeftAnti) && boundBuildKeys.forall(_.nullable)
+      // Filtering nulls on the build side is a workaround.
+      // 1) For a performance issue in LeftSemi and LeftAnti joins
+      // https://github.com/rapidsai/cudf/issues/7300
+      // 2) As a work around to Struct joins with nullable children no doing the right thing
+      // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
+      val builtAnyNullable = compareNullsEqual || joinType == LeftSemi || joinType == LeftAnti
+
+      System.err.println(s"SHOULD FILTER NULL KEYS FOR BUILT TABLE? $builtAnyNullable " +
+          s"${builtBatch.numRows()}")
 
       val cb = if (builtAnyNullable) {
         GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
       } else {
         GpuColumnVector.incRefCounts(builtBatch)
       }
+
+      System.err.println(s"AFTER NULL FILTER (IF NEEDED) ${cb.numRows()}")
 
       withResource(cb) { cb =>
         closeOnExcept(GpuProjectExec.project(cb, boundBuildKeys)) { builtKeys =>
@@ -545,7 +622,7 @@ trait GpuHashJoin extends GpuExec {
     // them when it is done
     val joinIterator =
       new HashJoinIterator(builtKeys, builtData, stream, boundStreamKeys, boundStreamData,
-        streamedPlan.output, realTarget, joinType, buildSide, spillCallback,
+        streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
         streamTime, joinTime, totalTime)
     val boundFinal = boundFinalProject
     if (boundCondition.isDefined) {

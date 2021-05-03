@@ -160,6 +160,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.DateAdd"></a>spark.rapids.sql.expression.DateAdd|`date_add`|Returns the date that is num_days after start_date|true|None|
 <a name="sql.expression.DateAddInterval"></a>spark.rapids.sql.expression.DateAddInterval| |Adds interval to date|true|None|
 <a name="sql.expression.DateDiff"></a>spark.rapids.sql.expression.DateDiff|`datediff`|Returns the number of days from startDate to endDate|true|None|
+<a name="sql.expression.DateFormatClass"></a>spark.rapids.sql.expression.DateFormatClass|`date_format`|Converts timestamp to a value of string in the format specified by the date format|true|None|
 <a name="sql.expression.DateSub"></a>spark.rapids.sql.expression.DateSub|`date_sub`|Returns the date that is num_days before start_date|true|None|
 <a name="sql.expression.DayOfMonth"></a>spark.rapids.sql.expression.DayOfMonth|`dayofmonth`, `day`|Returns the day of the month from a date or timestamp|true|None|
 <a name="sql.expression.DayOfWeek"></a>spark.rapids.sql.expression.DayOfWeek|`dayofweek`|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|

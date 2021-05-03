@@ -183,7 +183,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   @transient var cb: ColumnarBatch = null
   var it: java.util.Iterator[InternalRow] = null
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => closeCurrentBatch())
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 
   private def closeCurrentBatch(): Unit = {
     if (cb != null) {
@@ -194,20 +194,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
 
   def loadNextBatch(): Unit = {
     closeCurrentBatch()
-    if (it != null) {
-      it = null
-    }
-
-    // fetch next batch
-    val devCb = withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE,
-        fetchTime)) { _ =>
-      if (batches.hasNext) {
-        Some(batches.next())
-      } else {
-        None
-      }
-    }
-
+    it = null
+    val devCb = fetchNextBatch()
     // perform conversion
     devCb.foreach { devCb =>
       withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, gpuOpTime)) { _ =>
@@ -215,7 +203,6 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
           cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
             devCb.numRows())
           it = cb.rowIterator()
-          numInputBatches += 1
           // In order to match the numOutputRows metric in the generated code we update
           // numOutputRows for each batch. This is less accurate than doing it at output
           // because it will over count the number of rows output in the case of a limit,
@@ -227,6 +214,21 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
           GpuSemaphore.releaseIfNecessary(TaskContext.get())
         }
       }
+    }
+  }
+
+  private def fetchNextBatch(): Option[ColumnarBatch] = {
+    withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, fetchTime)) { _ =>
+      while (batches.hasNext) {
+        numInputBatches += 1
+        val devCb = batches.next()
+        if (devCb.numRows() > 0) {
+          return Some(devCb)
+        } else {
+          devCb.close()
+        }
+      }
+      None
     }
   }
 
