@@ -153,7 +153,7 @@ case class GpuBroadcastHashJoinExec(
         GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
         val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
         withResource(combined) { combined =>
-          GpuColumnVector.from(combined)
+          filterBuiltNullsIfNecessary(GpuColumnVector.from(combined))
         }
       }
 

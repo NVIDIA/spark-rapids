@@ -63,19 +63,30 @@ object GpuHashJoin {
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
-    if (keyDataTypes.exists(dtype =>
-      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
-        || dtype.isInstanceOf[MapType])) {
-      meta.willNotWorkOnGpu("Nested types in join keys are not supported")
+    if (keyDataTypes.exists(dType =>
+      dType.isInstanceOf[ArrayType] || dType.isInstanceOf[MapType])) {
+      meta.willNotWorkOnGpu("ArrayType or MapType in join keys are not supported")
+    }
+
+    def unSupportNonEqualCondition(): Unit = if (condition.isDefined) {
+      meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
+    }
+    def unSupportStructKeys(): Unit = if (keyDataTypes.exists(_.isInstanceOf[StructType])) {
+      meta.willNotWorkOnGpu(s"$joinType joins currently do not support with struct keys")
     }
     JoinTypeChecks.tagForGpu(joinType, meta)
     joinType match {
       case _: InnerLike =>
-      case FullOuter | RightOuter | LeftOuter | LeftSemi | LeftAnti =>
-        if (condition.isDefined) {
-          meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
-        }
-      case _ => meta.willNotWorkOnGpu(s"$joinType currently is not supported")
+      case RightOuter | LeftOuter | LeftSemi | LeftAnti =>
+        unSupportNonEqualCondition()
+      case FullOuter =>
+        unSupportNonEqualCondition()
+        // FullOuter join cannot support with struct keys as two issues below
+        //  * https://github.com/NVIDIA/spark-rapids/issues/2126
+        //  * https://github.com/rapidsai/cudf/issues/7947
+        unSupportStructKeys()
+      case _ =>
+        meta.willNotWorkOnGpu(s"$joinType currently is not supported")
     }
   }
 
@@ -155,6 +166,13 @@ trait GpuHashJoin extends GpuExec {
       case GpuBuildRight => (rkeys, lkeys)
     }
   }
+
+  // For join types other than FullOuter, we simply set compareNullsEqual as true to adapt
+  // struct keys with nullable children. Non-nested keys can also be correctly processed with
+  // compareNullsEqual = true, because we filter all null records from build table before join.
+  // For some details, please refer the issue: https://github.com/NVIDIA/spark-rapids/issues/2126
+  protected lazy val compareNullsEqual: Boolean = (joinType != FullOuter) &&
+      anyNullableStructChild(gpuBuildKeys)
 
   /**
    * Place the columns in left and the columns in right into a single ColumnarBatch
@@ -342,9 +360,11 @@ trait GpuHashJoin extends GpuExec {
       leftTable: Table, rightTable: Table, closeRightTable: Boolean): ColumnarBatch = {
 
     def withRightTable(body: Table => Table): Table = {
+      // Run nullable check on cuDF columns rather than Spark Schema, because right table may be
+      // filtered in previous (if it is built-side).
       val builtAnyNullable =
-        (joinType == LeftSemi || joinType == LeftAnti) && gpuBuildKeys.exists(_.nullable)
-
+        (joinType == LeftSemi || joinType == LeftAnti) &&
+            joinKeyIndices.exists(rightTable.getColumn(_).hasNulls)
       if (builtAnyNullable) {
         withResource(filterNulls(rightTable, joinKeyIndices, closeRightTable)) { filtered =>
           body(filtered)
@@ -363,17 +383,17 @@ trait GpuHashJoin extends GpuExec {
     val joinedTable = withRightTable { rt =>
       joinType match {
         case LeftOuter => leftTable.onColumns(joinKeyIndices: _*)
-            .leftJoin(rt.onColumns(joinKeyIndices: _*), false)
+            .leftJoin(rt.onColumns(joinKeyIndices: _*), compareNullsEqual)
         case RightOuter => rt.onColumns(joinKeyIndices: _*)
-            .leftJoin(leftTable.onColumns(joinKeyIndices: _*), false)
+            .leftJoin(leftTable.onColumns(joinKeyIndices: _*), compareNullsEqual)
         case _: InnerLike => leftTable.onColumns(joinKeyIndices: _*)
-            .innerJoin(rt.onColumns(joinKeyIndices: _*), false)
+            .innerJoin(rt.onColumns(joinKeyIndices: _*), compareNullsEqual)
         case LeftSemi => leftTable.onColumns(joinKeyIndices: _*)
-            .leftSemiJoin(rt.onColumns(joinKeyIndices: _*), false)
+            .leftSemiJoin(rt.onColumns(joinKeyIndices: _*), compareNullsEqual)
         case LeftAnti => leftTable.onColumns(joinKeyIndices: _*)
-            .leftAntiJoin(rt.onColumns(joinKeyIndices: _*), false)
+            .leftAntiJoin(rt.onColumns(joinKeyIndices: _*), compareNullsEqual)
         case FullOuter => leftTable.onColumns(joinKeyIndices: _*)
-            .fullJoin(rt.onColumns(joinKeyIndices: _*), false)
+            .fullJoin(rt.onColumns(joinKeyIndices: _*), compareNullsEqual)
         case _ =>
           throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
               s" supported")
@@ -388,6 +408,42 @@ trait GpuHashJoin extends GpuExec {
       new ColumnarBatch(result, joinedTable.getRowCount.toInt)
     } finally {
       joinedTable.close()
+    }
+  }
+
+  /**
+   * Filter null values for build-side keys, so as to ensure no nullable join column included in
+   * built table if compareNullsEqual is true.
+   */
+  protected def filterBuiltNullsIfNecessary(table: Table): Table = closeOnExcept(table) { t =>
+    if (compareNullsEqual && gpuBuildKeys.exists(_.nullable)) {
+      filterNulls(t, joinKeyIndices, closeTable = true)
+    } else {
+      t
+    }
+  }
+
+  /**
+   * Given sequence of GPU expressions, detect whether there exists any StructType expressions
+   * who contains nullable child columns.
+   * Since cuDF can not match nullable children as Spark during join, we detect them before join
+   * to apply some walking around strategies. For some details, please refer the issue:
+   * https://github.com/NVIDIA/spark-rapids/issues/2126.
+   */
+  private[this] def anyNullableStructChild(expressions: Seq[GpuExpression]): Boolean = {
+    def anyNullableChild(struct: StructType): Boolean = struct.fields.exists { field =>
+      if (field.nullable) {
+        true
+      } else field.dataType match {
+        case structType: StructType => anyNullableChild(structType)
+        case _ => false
+      }
+    }
+
+    expressions.exists {
+      case expression if expression.dataType.isInstanceOf[StructType] =>
+        anyNullableChild(expression.dataType.asInstanceOf[StructType])
+      case _ => false
     }
   }
 }
