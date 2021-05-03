@@ -56,15 +56,6 @@ object GpuParquetFileFormat {
         s"${RapidsConf.ENABLE_PARQUET_WRITE} to true")
     }
 
-    if (SQLConf.get.isParquetINT96AsTimestamp || SQLConf.get.parquetOutputTimestampType ==
-      ParquetOutputTimestampType.INT96) {
-      // TODO: This is being tracked by https://github.com/rapidsai/cudf/issues/8070
-      // We should revert back to supporting INT96 once this issue is resolved
-      meta.willNotWorkOnGpu("We don't support int96 timestamps currently. If your data doesn't " +
-        "contain any INT96 values then please set spark.sql.parquet.int96AsTimestamp to false and" +
-        " spark.sql.parquet.outputTimestampType to the appropriate value")
-    }
-
     FileFormatChecks.tag(meta, schema, ParquetFormatType, WriteFileOp)
 
     parseCompressionType(parquetOptions.compressionCodecClassName)
