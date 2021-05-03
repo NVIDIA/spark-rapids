@@ -524,7 +524,7 @@ case class GpuHashAggregateExec(
               // them to be vectors since this is going into a ColumnarBatch
               result match {
                 case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-                case scalar: Scalar =>
+                case scalar: Scalar if scalar != null =>
                   withResource(scalar) { s =>
                     GpuColumnVector.from(s, finalCb.numRows(), ref.dataType)
                   }
@@ -587,7 +587,7 @@ case class GpuHashAggregateExec(
       val in = ref.columnarEval(batch)
       val childCv = in match {
         case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-        case scalar: Scalar =>
+        case scalar: Scalar if scalar != null =>
           withResource(scalar) { s =>
             GpuColumnVector.from(s, batch.numRows(), ref.dataType)
           }

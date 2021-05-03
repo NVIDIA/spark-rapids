@@ -69,7 +69,7 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
         children(index).columnarEval(batch) match {
           case cv: GpuColumnVector =>
             columns(index) = cv.getBase
-          case scalar: Scalar =>
+          case scalar: Scalar if scalar != null =>
             withResource(scalar) { s =>
               columns(index) = ColumnVector.fromScalar(s, numRows)
             }
@@ -148,7 +148,7 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
         valExprs(index).columnarEval(batch) match {
           case cv: GpuColumnVector =>
             columns(index) = cv.getBase
-          case scalar: Scalar =>
+          case scalar: Scalar if scalar != null =>
             withResource(scalar) { s =>
               columns(index) = ColumnVector.fromScalar(s, numRows)
             }

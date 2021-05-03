@@ -51,7 +51,7 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
           withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
             GpuColumnVector.from(view.copyToColumnVector(), dt)
           }
-        case scalar: Scalar =>
+        case scalar: Scalar if scalar != null =>
           withResource(scalar) { s =>
             GpuColumnVector.from(s, batch.numRows(), dt)
           }

@@ -50,7 +50,7 @@ object GpuProjectExec extends Arm {
         val result = expr.columnarEval(cb)
         result match {
           case cv: ColumnVector => cv
-          case scalar: Scalar =>
+          case scalar: Scalar if scalar != null =>
             withResource(scalar) { s =>
               GpuColumnVector.from(s, cb.numRows(), expr.dataType)
             }

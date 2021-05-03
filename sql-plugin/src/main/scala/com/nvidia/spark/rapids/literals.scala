@@ -228,8 +228,8 @@ object GpuScalar extends Arm {
   @deprecated("This will be removed. Since no need to infer the type again because" +
     " Spark does it already. Besides it is difficult to support nested type.", "")
   def from(v: Any): Scalar = v match {
-    case s: Scalar => s.incRefCount()
     case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
+    case s: Scalar => s.incRefCount()
     case l: Long => Scalar.fromLong(l)
     case d: Double => Scalar.fromDouble(d)
     case i: Int => Scalar.fromInt(i)
