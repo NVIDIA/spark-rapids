@@ -36,7 +36,9 @@ writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
 
 
 parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                    string_gen, boolean_gen, date_gen, timestamp_gen]
+                    string_gen, boolean_gen, date_gen,
+                    # we are limiting TimestampGen to avoid overflowing the INT96 value
+                    TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))]
 parquet_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)])
 
 parquet_write_gens_list = [
@@ -69,7 +71,7 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
 @ignore_order
 def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
-    gen = TimestampGen()
+    gen = TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, gen).write.parquet(path),
@@ -83,7 +85,8 @@ parquet_part_write_gens = [
         byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         # Some file systems have issues with UTF8 strings so to help the test pass even there
         StringGen('(\\w| ){0,50}'),
-        boolean_gen, date_gen, timestamp_gen]
+        boolean_gen, date_gen,
+        TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))]
 
 # There are race conditions around when individual files are read in for partitioned data
 @ignore_order

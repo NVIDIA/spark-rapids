@@ -108,11 +108,7 @@ object GpuParquetFileFormat {
           builder.withDecimalColumn(field.name, dt.precision, true)
         case TimestampType =>
           builder.withTimestampColumn(field.name,
-            // TODO once https://github.com/rapidsai/cudf/issues/8070 is fixed uncomment the line
-            //  where we actually check if the user has set the INT96 flag
-//            ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
-            false,
-            true)
+            ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType, true)
         case s: StructType =>
           builder.withStructColumn(
             parquetWriterOptionsFromSchema(structBuilder(field.name), s).build())
