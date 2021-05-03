@@ -28,7 +28,7 @@ import data_gen
 def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
     if (t is Row):
-        assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {}".format(path)
+        assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         if hasattr(cpu, "__fields__") and hasattr(gpu, "__fields__"):
             for field in cpu.__fields__:
                 _assert_equal(cpu[field], gpu[field], float_check, path + [field])
@@ -36,7 +36,7 @@ def _assert_equal(cpu, gpu, float_check, path):
             for index in range(len(cpu)):
                 _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is list):
-        assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {}".format(path)
+        assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         for index in range(len(cpu)):
             _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is pytypes.GeneratorType):

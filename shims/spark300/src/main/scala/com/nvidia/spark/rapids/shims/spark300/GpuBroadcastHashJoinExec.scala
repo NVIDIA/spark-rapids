@@ -89,7 +89,7 @@ case class GpuBroadcastHashJoinExec(
     rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: GpuBuildSide,
-    condition: Option[Expression],
+    override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
   import GpuMetric._
@@ -100,7 +100,7 @@ case class GpuBroadcastHashJoinExec(
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
-    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME))
+    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME)) ++ spillMetrics
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -141,28 +141,20 @@ case class GpuBroadcastHashJoinExec(
     val filterTime = gpuLongMetric(FILTER_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+
     val broadcastRelation = broadcastExchange
         .executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-    val boundCondition = condition.map(GpuBindReferences.bindReference(_, output))
-
-    lazy val builtTable = {
-      val ret = withResource(
-        GpuProjectExec.project(broadcastRelation.value.batch, gpuBuildKeys)) { keys =>
-        val combined = GpuHashJoin.incRefCount(combine(keys, broadcastRelation.value.batch))
-        withResource(combined) { combined =>
-          filterBuiltNullsIfNecessary(GpuColumnVector.from(combined))
-        }
-      }
-
-      // Don't warn for a leak, because we cannot control when we are done with this
-      (0 until ret.getNumberOfColumns).foreach(ret.getColumn(_).noWarnLeakExpected())
-      ret
-    }
-
     val rdd = streamedPlan.executeColumnar()
-    rdd.mapPartitions(it =>
-      doJoin(builtTable, it, boundCondition, numOutputRows, joinOutputRows,
-        numOutputBatches, streamTime, joinTime, filterTime, totalTime))
+    rdd.mapPartitions { it =>
+      val builtBatch = broadcastRelation.value.batch
+      GpuColumnVector.extractBases(builtBatch).foreach(_.noWarnLeakExpected())
+      doJoin(builtBatch, it, targetSize, spillCallback,
+        numOutputRows, joinOutputRows, numOutputBatches, streamTime, joinTime,
+        filterTime, totalTime)
+    }
   }
 }

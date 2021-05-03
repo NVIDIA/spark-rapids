@@ -75,7 +75,7 @@ case class GpuShuffledHashJoinExec(
     rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: GpuBuildSide,
-    condition: Option[Expression],
+    override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
     override val isSkewJoin: Boolean)

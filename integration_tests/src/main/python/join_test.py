@@ -110,7 +110,7 @@ def test_sortmerge_join(data_gen, join_type, batch_size):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
-@pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_sortmerge_join_array(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
@@ -132,11 +132,14 @@ def test_sortmerge_join_array_as_key(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
-def test_sortmerge_join_struct(data_gen, join_type):
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test out of core joins too
+def test_sortmerge_join_struct(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
         return left.join(right, left.key == right.r_key, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
+    conf.update(_sortmerge_join_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # For spark to insert a shuffled hash join it has to be enabled with
 # "spark.sql.join.preferSortMergeJoin" = "false" and both sides have to
