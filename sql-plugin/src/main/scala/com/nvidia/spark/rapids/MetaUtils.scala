@@ -147,6 +147,18 @@ object MetaUtils extends Arm {
   }
 
   /**
+   * This is a hack to create a table meta that passed muster, but is not really going to be used
+   */
+  lazy val ignoreTableMeta: TableMeta = {
+    val fbb = new FlatBufferBuilder(1024)
+    TableMeta.startTableMeta(fbb)
+    TableMeta.addRowCount(fbb, 0)
+    fbb.finish(TableMeta.endTableMeta(fbb))
+    // copy the message to trim the backing array to only what is needed
+    TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))
+  }
+
+  /**
    * Construct a table from a contiguous device buffer and a
    * `TableMeta` message describing the schema of the buffer data.
    * @param deviceBuffer contiguous buffer
