@@ -111,7 +111,7 @@ object GpuScalar extends Arm {
   private def castTo[T, R](data: Array[Any])(f: T => R): Seq[R] =
     data.map(e => f(e.asInstanceOf[T]))
 
-  /** Applies 'f' on each element in `data` array, and casts the result to type T*/
+  /** Applies 'f' on each element in `data` array, and casts the result to type T */
   private def castTo[T](f: Any => Any)(data: Array[Any]): Seq[T] =
     data.map(e => f(e).asInstanceOf[T])
 
@@ -123,9 +123,9 @@ object GpuScalar extends Arm {
    * The mapping from DataType to catalyst data type can be found in the function
    * 'validateLiteralValue' in Spark.
    */
-  private def convertUTF8StringTo(us: UTF8String): String = us match {
+  private def convertUTF8StringTo(us: UTF8String): Array[Byte] = us match {
     case null => null
-    case s => s.asInstanceOf[UTF8String].toString
+    case s => s.asInstanceOf[UTF8String].getBytes
   }
 
   private def convertDecimalTo(dec: Decimal, dt: DecimalType): JLong = dec match {
@@ -137,7 +137,12 @@ object GpuScalar extends Arm {
 
   /** Converts an element for nested lists */
   private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
-    case StringType => convertUTF8StringTo(element.asInstanceOf[UTF8String])
+    // StructData does not support utf8 string yet, so parses it here instead of calling the
+    //  `convertUTF8StringTo`. Tracked by https://github.com/rapidsai/cudf/issues/8137
+    case StringType => element.asInstanceOf[UTF8String] match {
+      case null => null
+      case s => s.toString
+    }
     case dt: DecimalType =>
       if (DecimalType.is32BitDecimalType(dt)) {
         convertDecimalTo(element.asInstanceOf[Decimal], dt).intValue()
@@ -187,7 +192,14 @@ object GpuScalar extends Arm {
       case TimestampType =>
         ColumnVector.timestampMicroSecondsFromBoxedLongs(castTo[JLong](array): _*)
       case StringType =>
-        ColumnVector.fromStrings(castTo[UTF8String, String](array)(convertUTF8StringTo(_)): _*)
+        // To be updated. https://github.com/rapidsai/cudf/issues/8137
+        val rows = castTo[UTF8String, Array[Byte]](array)(convertUTF8StringTo(_))
+        ColumnVector.build(DType.STRING, rows.length, b => {
+          rows.foreach {
+            case null => b.appendNull()
+            case s => b.appendUTF8String(s.asInstanceOf[Array[Byte]])
+          }
+        })
       case dt: DecimalType =>
         if (DecimalType.is32BitDecimalType(dt)) {
           val rows = castTo[Decimal, Integer](array)(convertDecimalTo(_, dt).intValue())
@@ -245,8 +257,8 @@ object GpuScalar extends Arm {
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
+    case _ if v == null => Scalar.fromNull(GpuColumnVector.toRapidsType(t))
     case s: Scalar => s.incRefCount()
-    case _ if v == null => Scalar.fromNull(GpuColumnVector.sparkDataTypeToRapidsType(t))
     case _ if t.isInstanceOf[DecimalType] =>
       var bigDec = v match {
         case vv: Decimal => vv.toBigDecimal.bigDecimal
