@@ -391,17 +391,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-  private def getBaseNameFromClass(planClassStr: String): String = {
-    val firstDotIndex = planClassStr.lastIndexOf(".")
-    if (firstDotIndex != -1) planClassStr.substring(firstDotIndex + 1) else planClassStr
-  }
-
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     // There are no GpuAttributeReference or GpuSortOrder
     if (!exp.isInstanceOf[AttributeReference] &&
         !exp.isInstanceOf[SortOrder] &&
         !exp.isInstanceOf[GpuExpression] &&
-      !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(exp.getClass.toString))) {
+      !conf.testingAllowedNonGpu.contains(PlanUtils.getBaseNameFromClass(exp.getClass.toString))) {
       throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
     }
     exp.children.foreach(subExp => assertIsOnTheGpu(subExp, conf))
@@ -431,14 +426,15 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case other =>
+      case _ =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little
             // used feature. This prevents those from failing tests. This also allows
             // the columnar to row transitions to not cause test issues because they too
             // are not columnar (they output rows) but are instances of GpuExec.
-            !plan.isInstanceOf[GpuExec] &&
-          !conf.testingAllowedNonGpu.contains(getBaseNameFromClass(other.getClass.toString))) {
+            !plan.isInstanceOf[GpuExec] && 
+            !conf.testingAllowedNonGpu.exists(nonGpuClass => 
+                PlanUtils.sameClass(plan, nonGpuClass))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n${plan}")
         }

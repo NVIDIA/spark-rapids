@@ -49,10 +49,12 @@ class GpuBroadcastNestedLoopJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
 
   override def tagPlanForGpu(): Unit = {
+    JoinTypeChecks.tagForGpu(join.joinType, this)
+
     join.joinType match {
       case Inner =>
       case Cross =>
-      case _ => willNotWorkOnGpu(s"$join.joinType currently is not supported")
+      case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }
 
     val gpuBuildSide = ShimLoader.getSparkShims.getBuildSide(join)
