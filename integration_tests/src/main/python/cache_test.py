@@ -107,8 +107,7 @@ def test_cache_broadcast_hash_join(data_gen, join_type, enableVectorizedConf):
 
 shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
                  "spark.sql.join.preferSortMergeJoin": "false",
-                 "spark.sql.shuffle.partitions": "2",
-                 "spark.rapids.sql.exec.BroadcastNestedLoopJoinExec": "true"}
+                 "spark.sql.shuffle.partitions": "2"}
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
@@ -130,8 +129,6 @@ def test_cache_shuffled_hash_join(data_gen, join_type, enableVectorizedConf):
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_broadcast_nested_loop_join(data_gen, join_type, enableVectorizedConf):
-    enableVectorizedConf.update({'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec':
-                                            'true'})
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         cached = left.crossJoin(right.hint("broadcast")).cache()

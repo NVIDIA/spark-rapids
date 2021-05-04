@@ -2848,8 +2848,7 @@ object GpuOverrides {
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-      (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
-        .disabledByDefault("large joins can cause out of memory errors"),
+      (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
@@ -2867,8 +2866,7 @@ object GpuOverrides {
             condition.map(_.convertToGpu()),
             conf.gpuTargetBatchSizeBytes)
         }
-      })
-        .disabledByDefault("large joins can cause out of memory errors"),
+      }),
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
