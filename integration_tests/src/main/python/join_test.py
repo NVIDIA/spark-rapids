@@ -107,6 +107,10 @@ def test_sortmerge_join(data_gen, join_type, batch_size):
     conf.update(_sortmerge_join_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
+# Cudf had some issues with hash partitioning of some arrays
+# https://github.com/NVIDIA/spark-rapids/issues/2330 should fix that, and then the allow_non_gpu
+# can be removed
+@allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
@@ -119,7 +123,10 @@ def test_sortmerge_join_array(data_gen, join_type, batch_size):
     conf.update(_sortmerge_join_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction', 'NamedLambdaVariable', 'NormalizeNaNAndZero')
+# For floating point values the normalization is done using a higher order function. We could probably work around this
+# for now it falls back to the CPU
+@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction',
+        'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
@@ -150,6 +157,10 @@ def test_sortmerge_join_struct(data_gen, join_type, batch_size):
 # unless we can give it some help. Parameters are setup to try to make
 # this happen, if test fails something might have changed related to that.
 @validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
+# Cudf had some issues with hash partitioning of some arrays
+# https://github.com/NVIDIA/spark-rapids/issues/2330 should fix that, and then the allow_non_gpu
+# can be removed
+@allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
@@ -172,6 +183,12 @@ def test_broadcast_join_right_table(data_gen, join_type):
         return left.join(broadcast(right), left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
+# Cudf had some issues with hash partitioning of some arrays. Yes a broadcast join
+# should not be doing hash partitioning, but in some cases (FullOuter and Right) it cannot do the
+# broadcast so it falls back to a SortMergeJoin
+# https://github.com/NVIDIA/spark-rapids/issues/2330 should fix that, and then the allow_non_gpu
+# can be removed
+@allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
@@ -329,10 +346,13 @@ def test_join_bucketed_table(repartition, spark_tmp_table_factory):
                 return testurls.join(resolved, "Url", "inner")
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.autoBroadcastJoinThreshold': '-1'})
 
+# Because we disable ShuffleExchangeExec in some cases we need to allow it to not be on the GPU
+# and we do the result sorting in python to avoid that shuffle also being off the GPU
+@allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
+@ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('cache_side', ['cache_left', 'cache_right'], ids=idfn)
 @pytest.mark.parametrize('cpu_side', ['cache', 'not_cache'], ids=idfn)
-@ignore_order
 def test_half_cache_join(join_type, cache_side, cpu_side):
     left_gen = [('a', SetValuesGen(LongType(), range(500))), ('b', IntegerGen())]
     right_gen = [('r_a', SetValuesGen(LongType(), range(500))), ('c', LongGen())]
@@ -439,7 +459,8 @@ def test_sortmerge_join_struct_with_floats_key(data_gen, join_type):
         return left.join(right, left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
-@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'CreateNamedStruct', 'GetStructField', 'Literal', 'If', 'IsNull')
+@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'CreateNamedStruct',
+        'GetStructField', 'Literal', 'If', 'IsNull', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['FullOuter'], ids=idfn)

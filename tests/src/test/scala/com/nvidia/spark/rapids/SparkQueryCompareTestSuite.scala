@@ -888,7 +888,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           case Failure(e) if clazz.isAssignableFrom(e.getClass) =>
             assert(expectedException(e.asInstanceOf[T]))
           case Failure(e) => throw e
-          case _ => fail("Expected an exception")
+          case _ => fail("Expected an exception, but got none")
         }
       }
   }
