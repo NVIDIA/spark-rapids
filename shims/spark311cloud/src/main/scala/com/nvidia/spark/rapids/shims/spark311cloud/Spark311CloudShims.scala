@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark311
+package com.nvidia.spark.rapids.shims.spark311cloud
 
 import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
+import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -49,19 +49,20 @@ import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
-class Spark311Shims extends Spark301Shims {
+class Spark311CloudShims extends Spark311Shims {
+
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getScalaUDFAsExpression(
-      function: AnyRef,
-      dataType: DataType,
-      children: Seq[Expression],
-      inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-      outputEncoder: Option[ExpressionEncoder[_]] = None,
-      udfName: Option[String] = None,
-      nullable: Boolean = true,
-      udfDeterministic: Boolean = true): Expression = {
+                                        function: AnyRef,
+                                        dataType: DataType,
+                                        children: Seq[Expression],
+                                        inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
+                                        outputEncoder: Option[ExpressionEncoder[_]] = None,
+                                        udfName: Option[String] = None,
+                                        nullable: Boolean = true,
+                                        udfDeterministic: Boolean = true): Expression = {
     ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
       udfDeterministic)
   }
@@ -103,22 +104,22 @@ class Spark311Shims extends Spark301Shims {
   override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
     sqlConf.maxMetadataStringLength
 
-  def exprs311: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  override def exprs311: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
-        "Convert a column of one type of data into another type",
-        new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-            .ansiEnabled, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            if (!conf.isCastFloatToIntegralTypesEnabled &&
-                (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
-                (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
-                    toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
-              willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
-            }
-            super.tagExprForGpu()
+      "Convert a column of one type of data into another type",
+      new CastChecks(),
+      (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
+        .ansiEnabled, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (!conf.isCastFloatToIntegralTypesEnabled &&
+            (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
+            (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
+              toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
+            willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
           }
-        }),
+          super.tagExprForGpu()
+        }
+      }),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
       new CastChecks {
@@ -162,9 +163,9 @@ class Spark311Shims extends Spark301Shims {
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (!conf.isCastFloatToIntegralTypesEnabled &&
-              (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
-              (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
-                  toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
+            (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
+            (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
+              toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
             willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
           }
           super.tagExprForGpu()
@@ -175,7 +176,7 @@ class Spark311Shims extends Spark301Shims {
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
-              .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+            .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
           ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
             .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
@@ -185,7 +186,7 @@ class Spark311Shims extends Spark301Shims {
           if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
             willNotWorkOnGpu(
               "Only non-null, non-empty String literals that are not regex patterns " +
-                  "are supported by RegExpReplace on the GPU")
+                "are supported by RegExpReplace on the GPU")
           }
           GpuOverrides.extractLit(a.pos).foreach { lit =>
             if (lit.value.asInstanceOf[Int] != 1) {
@@ -232,7 +233,7 @@ class Spark311Shims extends Spark301Shims {
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+  override def getExprs: Map[Class[_ <: Expression],ExprRule[_ <: Expression]] = {
     getExprsSansTimeSub ++ exprs311
   }
 
@@ -241,7 +242,7 @@ class Spark311Shims extends Spark301Shims {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
@@ -305,19 +306,19 @@ class Spark311Shims extends Spark301Shims {
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
         ), TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
         ), TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
         ), TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
@@ -381,16 +382,16 @@ class Spark311Shims extends Spark301Shims {
   }
 
   override def copyParquetBatchScanExec(
-      batchScanExec: GpuBatchScanExec,
-      queryUsesInputFile: Boolean): GpuBatchScanExec = {
+                                         batchScanExec: GpuBatchScanExec,
+                                         queryUsesInputFile: Boolean): GpuBatchScanExec = {
     val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
     val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
     batchScanExec.copy(scan=scanCopy)
   }
 
   override def copyFileSourceScanExec(
-      scanExec: GpuFileSourceScanExec,
-      queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
+                                       scanExec: GpuFileSourceScanExec,
+                                       queryUsesInputFile: Boolean): GpuFileSourceScanExec = {
     scanExec.copy(queryUsesInputFile=queryUsesInputFile)(scanExec.rapidsConf)
   }
 
@@ -406,16 +407,16 @@ class Spark311Shims extends Spark301Shims {
   }
 
   override def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit = {
+                                           schema: StructType,
+                                           colType: String,
+                                           resolver: Resolver): Unit = {
     GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
   override def getGpuShuffleExchangeExec(
-      outputPartitioning: Partitioning,
-      child: SparkPlan,
-      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
+    outputPartitioning: Partitioning,
+    child: SparkPlan,
+    cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
     val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
     GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
   }
@@ -423,18 +424,18 @@ class Spark311Shims extends Spark301Shims {
   override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
 
   override def sortOrder(
-      child: Expression,
-      direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
+    child: Expression,
+    direction: SortDirection,
+    nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
 
   override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
     s.copy(child = child)
   }
 
   override def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String],
-      explicitMetadata: Option[Metadata]): Alias = {
+    exprId: ExprId,
+    qualifier: Seq[String],
+    explicitMetadata: Option[Metadata]): Alias = {
     Alias(child, name)(exprId, qualifier, explicitMetadata)
   }
 
@@ -458,9 +459,9 @@ class Spark311Shims extends Spark301Shims {
   }
 
   override def createTable(table: CatalogTable,
-    sessionCatalog: SessionCatalog,
-    tableLocation: Option[URI],
-    result: BaseRelation) = {
+                           sessionCatalog: SessionCatalog,
+                           tableLocation: Option[URI],
+                           result: BaseRelation) = {
     val newTable = table.copy(
       storage = table.storage.copy(locationUri = tableLocation),
       // We will use the schema of resolved.relation as the schema of the table (instead of
@@ -478,4 +479,5 @@ class Spark311Shims extends Spark301Shims {
 
   /** matches SPARK-33008 fix in 3.1.1 */
   override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
+
 }

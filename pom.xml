@@ -177,6 +177,15 @@
             </modules>
         </profile>
         <profile>
+            <id>spark311cloudtests</id>
+            <properties>
+                <spark.test.version>${spark311cloud.version}</spark.test.version>
+            </properties>
+            <modules>
+                <module>tests-spark310+</module>
+            </modules>
+        </profile>
+        <profile>
             <id>spark312tests</id>
             <properties>
                 <spark.test.version>${spark312.version}</spark.test.version>
@@ -239,6 +248,7 @@
         <spark303.version>3.0.3-SNAPSHOT</spark303.version>
         <spark310db.version>3.1.0-databricks</spark310db.version>
         <spark311.version>3.1.1</spark311.version>
+        <spark311cloud.version>3.1.1.3.1.7270.0-253</spark311cloud.version>
         <spark312.version>3.1.2-SNAPSHOT</spark312.version>
         <spark320.version>3.2.0-SNAPSHOT</spark320.version>
         <mockito.version>3.6.0</mockito.version>
@@ -674,6 +684,10 @@
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
+        </repository>
+        <repository>
+            <id>cloudera-repo</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
         </repository>
     </repositories>
 </project>
