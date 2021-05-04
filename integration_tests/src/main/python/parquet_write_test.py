@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_py4j_exception
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -107,6 +107,15 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf=all_confs)
+
+@pytest.mark.parametrize('data_gen', [pytest.param(TimestampGen(end=datetime(1677, 9, 22, tzinfo=timezone.utc))),
+                          pytest.param(TimestampGen(start=datetime(2262, 4, 11, tzinfo=timezone.utc)))], ids=idfn)
+def test_catch_int96_overflow(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    confs = writer_confs.copy()
+    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
+    assert_py4j_exception(lambda: with_gpu_session(
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)

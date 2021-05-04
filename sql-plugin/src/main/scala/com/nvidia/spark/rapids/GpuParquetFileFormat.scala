@@ -286,6 +286,27 @@ class GpuParquetWriter(
               new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
                 v.castTo(DType.TIMESTAMP_MILLISECONDS)
               })
+            case DataTypes.TimestampType
+              if outputTimestampType == ParquetOutputTimestampType.INT96.toString =>
+                withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
+                  withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
+                    withResource(cv.getBase().bitCastTo(DType.INT64).greaterOrEqualTo(upper)) {
+                      a => withResource(cv.getBase().bitCastTo(DType.INT64).lessOrEqualTo(lower)) {
+                        b => withResource(a.or(b)) { aOrB =>
+                          withResource(aOrB.any()) { any =>
+                            if (any.getBoolean()) {
+                              // its the writer's responsibility to close the batch
+                              batch.close()
+                              throw new IllegalArgumentException("INT96 column contains value " +
+                                "that can overflow and will result in data corruption")
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                cv
             case d: DecimalType if d.precision <= Decimal.MAX_INT_DIGITS =>
               // There is a bug in Spark that causes a problem if we write Decimals with
               // precision < 10 as Decimal64.
