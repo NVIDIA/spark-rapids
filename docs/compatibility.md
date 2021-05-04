@@ -242,12 +242,12 @@ Julian and Gregorian calendars are wrong, but dates are fine. When
 timestamps are read incorrectly before the Gregorian calendar transition as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/133). 
 
-When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and 
-result in an `IllegalArgumentException` thrown if any value is before September 21, 1677 12:12:43 AM
-or it is after April 11, 2262 11:47:17 PM.
-
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
+
+When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and 
+result in an `IllegalArgumentException` thrown, if any value is before 
+September 21, 1677 12:12:43 AM or it is after April 11, 2262 11:47:17 PM.
 
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
