@@ -298,6 +298,50 @@ case class GpuDateDiff(endDate: Expression, startDate: Expression)
   }
 }
 
+case class GpuDateFormatClass(timestamp: Expression,
+    format: Expression,
+    strfFormat: String,
+    timeZoneId: Option[String] = None)
+  extends GpuBinaryExpression with TimeZoneAwareExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = StringType
+  override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
+  override def left: Expression = timestamp
+
+  // we aren't using this "right" GpuExpression, as it was already converted in the GpuOverrides
+  // while creating the expressions map and passed down here as strfFormat
+  override def right: Expression = format
+  override def prettyName: String = "date_format"
+
+  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    throw new IllegalArgumentException("rhs has to be a scalar for the date_format to work")
+  }
+
+  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
+        "the date_format to work")
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+    // we aren't using rhs as it was already converted in the GpuOverrides while creating the
+    // expressions map and passed down here as strfFormat
+    withResource(lhs.getBase.asTimestampSeconds) { tsVector =>
+      tsVector.asStrings(strfFormat)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+}
+
 case class GpuQuarter(child: Expression) extends GpuDateUnaryExpression {
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     val tmp = withResource(Scalar.fromInt(2)) { two =>
