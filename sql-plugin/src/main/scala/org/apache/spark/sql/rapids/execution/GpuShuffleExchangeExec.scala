@@ -60,7 +60,8 @@ class GpuShuffleMeta(
         shuffle.output.map(_.dataType)
             .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
             .foreach { dataType =>
-              willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType")
+              willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType to run " +
+                  s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")
             }
       case _: HashPartitioning =>
         val hasArraysOfNested = TrampolineUtil.dataTypeExistsRecursively(shuffle.schema,

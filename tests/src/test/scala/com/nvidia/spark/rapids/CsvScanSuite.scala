@@ -22,7 +22,10 @@ import org.apache.spark.sql.functions.col
 class CsvScanSuite extends SparkQueryCompareTestSuite {
   testExpectedException[IllegalArgumentException]("Test CSV projection including unsupported types",
       _.getMessage.startsWith("Part of the plan is not columnar"),
-      mixedTypesFromCsvWithHeader) {
+      mixedTypesFromCsvWithHeader,
+    // Shuffle can go back the the CPU because teh CSV read is not on the GPU, but we want to make
+    // sure the error is wht we expect
+    execsAllowedNonGpu = Seq("ShuffleExchangeExec")) {
     frame => frame.select(col("c_string"), col("c_int"), col("c_timestamp"))
   }
 
