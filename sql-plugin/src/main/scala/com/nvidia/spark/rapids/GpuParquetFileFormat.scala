@@ -68,8 +68,8 @@ object GpuParquetFileFormat {
 
     if (!meta.conf.isParquetInt96WriteEnabled && sqlConf.parquetOutputTimestampType ==
       ParquetOutputTimestampType.INT96) {
-      meta.willNotWorkOnGpu("Writing INT96 is disabled, if you want to enable it turn it on by " +
-        "setting the `spark.rapids.sql.format.parquet.writer.int96.enabled` to true. NOTE: check " +
+      meta.willNotWorkOnGpu(s"Writing INT96 is disabled, if you want to enable it turn it on by " +
+        s"setting the ${RapidsConf.ENABLE_PARQUET_INT96_WRITE} to true. NOTE: check " +
         "out the compatibility.md to know about the limitations associated with INT96 writer")
     }
 
@@ -295,11 +295,12 @@ class GpuParquetWriter(
               })
             case DataTypes.TimestampType
               if outputTimestampType == ParquetOutputTimestampType.INT96.toString =>
-                withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
-                  withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
-                    withResource(cv.getBase().bitCastTo(DType.INT64).greaterOrEqualTo(upper)) {
-                      a => withResource(cv.getBase().bitCastTo(DType.INT64).lessOrEqualTo(lower)) {
-                        b => withResource(a.or(b)) { aOrB =>
+              withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
+                withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
+                  withResource(cv.getBase().bitCastTo(DType.INT64)) { int64 =>
+                    withResource(int64.greaterOrEqualTo(upper)) { a =>
+                      withResource(int64.lessOrEqualTo(lower)) { b =>
+                        withResource(a.or(b)) { aOrB =>
                           withResource(aOrB.any()) { any =>
                             if (any.getBoolean()) {
                               // its the writer's responsibility to close the batch
@@ -317,7 +318,8 @@ class GpuParquetWriter(
                     }
                   }
                 }
-                cv
+              }
+              cv
             case d: DecimalType if d.precision <= Decimal.MAX_INT_DIGITS =>
               // There is a bug in Spark that causes a problem if we write Decimals with
               // precision < 10 as Decimal64.
