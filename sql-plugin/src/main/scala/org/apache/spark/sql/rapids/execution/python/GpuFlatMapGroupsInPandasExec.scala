@@ -63,8 +63,7 @@ class GpuFlatMapGroupsInPandasExecMeta(
 }
 
 /**
- * Physical node of GPU version for
- * [[org.apache.spark.sql.catalyst.plans.logical.FlatMapGroupsInPandas]]
+ * GPU version of Spark's `FlatMapGroupsInPandasExec`
  *
  * Rows in each group are passed to the Python worker as an Arrow record batch.
  * The Python worker turns the record batch to a `pandas.DataFrame`, invoke the
