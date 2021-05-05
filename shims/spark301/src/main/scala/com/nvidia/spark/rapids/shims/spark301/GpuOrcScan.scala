@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark300
+package com.nvidia.spark.rapids.shims.spark301
 
-import com.nvidia.spark.rapids.{GpuParquetScanBase, RapidsConf}
+import com.nvidia.spark.rapids.{GpuOrcScanBase, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -30,33 +30,29 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 // FileScan changed in Spark 3.1.0 so need to compile in Shim
-case class GpuParquetScan(
+case class GpuOrcScan(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
     fileIndex: PartitioningAwareFileIndex,
     dataSchema: StructType,
     readDataSchema: StructType,
     readPartitionSchema: StructType,
-    pushedFilters: Array[Filter],
     options: CaseInsensitiveStringMap,
+    pushedFilters: Array[Filter],
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
-    rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = false)
-  extends GpuParquetScanBase(sparkSession, hadoopConf, dataSchema,
-    readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
-    queryUsesInputFile) with FileScan {
+    rapidsConf: RapidsConf)
+  extends GpuOrcScanBase(sparkSession, hadoopConf, dataSchema, readDataSchema,
+    readPartitionSchema, pushedFilters, rapidsConf) with FileScan {
 
   override def isSplitable(path: Path): Boolean = super.isSplitableBase(path)
 
   override def createReaderFactory(): PartitionReaderFactory = super.createReaderFactoryBase()
 
   override def equals(obj: Any): Boolean = obj match {
-    case p: GpuParquetScan =>
-      super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
-        equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
-        queryUsesInputFile == p.queryUsesInputFile
-
+    case o: GpuOrcScan =>
+      super.equals(o) && dataSchema == o.dataSchema && options == o.options &&
+        equivalentFilters(pushedFilters, o.pushedFilters) && rapidsConf == o.rapidsConf
     case _ => false
   }
 

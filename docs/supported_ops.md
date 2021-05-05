@@ -9,7 +9,7 @@ support all data types. The RAPIDS Accelerator for Apache Spark has further
 restrictions on what types are supported for processing. This tries
 to document what operations are supported and what data types each operation supports.
 Because Apache Spark is under active development too and this document was generated
-against version 3.0.0 of Spark. Most of this should still
+against version 3.0.1 of Spark. Most of this should still
 apply to other versions of Spark, but there may be slight changes.
 
 # General limitations
@@ -18033,11 +18033,11 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="9">First</td>
-<td rowSpan="9">`first_value`, `first`</td>
-<td rowSpan="9">first aggregate operator</td>
-<td rowSpan="9">None</td>
-<td rowSpan="3">aggregation</td>
+<td rowSpan="6">First</td>
+<td rowSpan="6">`first_value`, `first`</td>
+<td rowSpan="6">first aggregate operator</td>
+<td rowSpan="6">None</td>
+<td rowSpan="2">aggregation</td>
 <td>input</td>
 <td>S</td>
 <td>S</td>
@@ -18057,27 +18057,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-</tr>
-<tr>
-<td>ignoreNulls</td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 </tr>
 <tr>
 <td>result</td>
@@ -18101,7 +18080,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowSpan="3">reduction</td>
+<td rowSpan="2">reduction</td>
 <td>input</td>
 <td>S</td>
 <td>S</td>
@@ -18121,27 +18100,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-</tr>
-<tr>
-<td>ignoreNulls</td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 </tr>
 <tr>
 <td>result</td>
@@ -18165,7 +18123,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowSpan="3">window</td>
+<td rowSpan="2">window</td>
 <td>input</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -18185,27 +18143,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-</tr>
-<tr>
-<td>ignoreNulls</td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 </tr>
 <tr>
 <td>result</td>
@@ -18255,11 +18192,11 @@ Accelerator support is described below.
 <th>UDT</th>
 </tr>
 <tr>
-<td rowSpan="9">Last</td>
-<td rowSpan="9">`last`, `last_value`</td>
-<td rowSpan="9">last aggregate operator</td>
-<td rowSpan="9">None</td>
-<td rowSpan="3">aggregation</td>
+<td rowSpan="6">Last</td>
+<td rowSpan="6">`last`, `last_value`</td>
+<td rowSpan="6">last aggregate operator</td>
+<td rowSpan="6">None</td>
+<td rowSpan="2">aggregation</td>
 <td>input</td>
 <td>S</td>
 <td>S</td>
@@ -18279,27 +18216,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-</tr>
-<tr>
-<td>ignoreNulls</td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 </tr>
 <tr>
 <td>result</td>
@@ -18323,7 +18239,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowSpan="3">reduction</td>
+<td rowSpan="2">reduction</td>
 <td>input</td>
 <td>S</td>
 <td>S</td>
@@ -18343,27 +18259,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-</tr>
-<tr>
-<td>ignoreNulls</td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 </tr>
 <tr>
 <td>result</td>
@@ -18387,7 +18282,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowSpan="3">window</td>
+<td rowSpan="2">window</td>
 <td>input</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -18407,27 +18302,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-</tr>
-<tr>
-<td>ignoreNulls</td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 </tr>
 <tr>
 <td>result</td>
@@ -18584,32 +18458,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td rowSpan="6">Min</td>
 <td rowSpan="6">`min`</td>
 <td rowSpan="6">Min aggregate operator</td>
@@ -18741,6 +18589,32 @@ Accelerator support is described below.
 <td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="6">PivotFirst</td>
@@ -19008,32 +18882,6 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td rowSpan="4">NormalizeNaNAndZero</td>
 <td rowSpan="4"> </td>
 <td rowSpan="4">Normalize NaN and zero</td>
@@ -19122,6 +18970,32 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="1">ScalarSubquery</td>

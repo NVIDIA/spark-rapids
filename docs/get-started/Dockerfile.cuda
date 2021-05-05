@@ -24,7 +24,7 @@ ENV PATH $PATH:/usr/lib/jvm/java-1.8.0-openjdk-amd64/jre/bin:/usr/lib/jvm/java-1
 
 # Before building the docker image, first either download Apache Spark 3.0+ from
 # http://spark.apache.org/downloads.html or build and make a Spark distribution following the
-# instructions in http://spark.apache.org/docs/3.0.2/building-spark.html (3.0.0, 3.0.1 or 3.1.1 can
+# instructions in http://spark.apache.org/docs/3.0.2/building-spark.html (3.0.1 or 3.1.1 can
 # be used as well).  If this docker file is being used in the context of building your images from a
 # Spark distribution, the docker build command should be invoked from the top level directory of the
 # Spark distribution. E.g.: docker build -t spark:3.0.2 -f kubernetes/dockerfiles/spark/Dockerfile .

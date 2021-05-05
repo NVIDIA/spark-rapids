@@ -252,8 +252,6 @@ In this section, we are using a docker container built using the sample dockerfi
 
     | Spark Shim | spark.shuffle.manager value                              |
     | -----------| -------------------------------------------------------- |
-    | 3.0.0      | com.nvidia.spark.rapids.spark300.RapidsShuffleManager    |
-    | 3.0.0 EMR  | com.nvidia.spark.rapids.spark300emr.RapidsShuffleManager |
     | 3.0.1      | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
     | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
     | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
@@ -265,7 +263,7 @@ In this section, we are using a docker container built using the sample dockerfi
 2. Recommended settings for UCX 1.9.0+
 ```shell
 ...
---conf spark.shuffle.manager=com.nvidia.spark.rapids.spark300.RapidsShuffleManager \
+--conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
 --conf spark.shuffle.service.enabled=false \
 --conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
 --conf spark.executorEnv.UCX_ERROR_SIGNALS= \

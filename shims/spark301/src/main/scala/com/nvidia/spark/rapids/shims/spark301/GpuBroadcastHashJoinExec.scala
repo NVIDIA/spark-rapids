@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark300.GpuJoinUtils
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

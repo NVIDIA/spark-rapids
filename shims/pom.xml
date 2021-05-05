@@ -57,8 +57,6 @@
     </profiles>
 
     <modules>
-        <module>spark300</module>
-        <module>spark300emr</module>
         <module>spark301emr</module>
         <module>spark301</module>
         <module>spark302</module>

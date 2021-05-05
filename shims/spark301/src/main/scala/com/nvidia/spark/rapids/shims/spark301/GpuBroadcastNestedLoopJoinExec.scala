@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark300
+package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids.GpuBuildSide
 

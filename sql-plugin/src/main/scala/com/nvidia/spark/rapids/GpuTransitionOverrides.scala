@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
@@ -405,8 +405,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def assertIsOnTheGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
     val isAdaptiveEnabled = plan.conf.adaptiveExecutionEnabled
     plan match {
-      case e: Exchange if isAdaptiveEnabled &&
-          ShimLoader.getSparkShims.isBroadcastExchangeLike(e) =>
+      case _: BroadcastExchangeLike if isAdaptiveEnabled =>
         // broadcasts are left on CPU for now when AQE is enabled
       case _: BroadcastHashJoinExec | _: BroadcastNestedLoopJoinExec
           if isAdaptiveEnabled =>
@@ -462,7 +461,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         validateExecs.contains(plan.getClass.getSimpleName)
       }
       // to set to make uniq execs
-      val execsFound = ShimLoader.getSparkShims.findOperators(plan, planContainsInstanceOf).toSet
+      val execsFound = PlanUtils.findOperators(plan, planContainsInstanceOf).toSet
       val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
       require(execsNotFound.isEmpty,
         s"Plan ${plan.toString()} does not contain the following execs: " +

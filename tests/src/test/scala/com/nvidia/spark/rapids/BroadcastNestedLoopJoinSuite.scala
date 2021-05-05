@@ -34,8 +34,8 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
       df3.collect()
       val plan = df3.queryExecution.executedPlan
 
-      val nljCount = ShimLoader.getSparkShims
-        .findOperators(plan, _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
+      val nljCount =
+        PlanUtils.findOperators(plan, _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
       assert(nljCount.size === 1)
     }, conf)
   }
@@ -55,8 +55,8 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
       df3.collect()
       val plan = df3.queryExecution.executedPlan
 
-      val nljCount = ShimLoader.getSparkShims
-        .findOperators(plan, _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
+      val nljCount =
+        PlanUtils.findOperators(plan, _.isInstanceOf[GpuBroadcastNestedLoopJoinExecBase])
 
       ShimLoader.getSparkShims.getSparkShimVersion match {
         case SparkShimVersion(3, 0, 0) =>
