@@ -243,26 +243,26 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
   def getCost(plan: SparkPlanMeta[_]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    val costPerRow = plan.conf.getOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
+    plan.conf.getOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
       plan.wrapped match {
         case _: ProjectExec =>
           // the cost of a projection is the sum of its expressions
           plan.childExprs
-            .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]]))
+            .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
             .sum
-        case _ => 1.0
+        case _ => 1.0 * rowCount
       }
     }
-    rowCount * costPerRow
   }
 
-  private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]): Double = {
+  private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
 
     val childExprCost = expr.childExprs
-      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]])).sum
+      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
 
     // always check for user overrides first
-    childExprCost + expr.conf.getExpressionCost(expr.getClass.getSimpleName).getOrElse {
+    val totalExprCost = childExprCost + expr.conf
+        .getExpressionCost(expr.getClass.getSimpleName).getOrElse {
       expr match {
         case _ =>
           // many of our BaseExprMeta implementations are anonymous classes so we look directly at
@@ -276,6 +276,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
           }
       }
     }
+    rowCount * totalExprCost
   }
 }
 
@@ -284,33 +285,33 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
   def getCost(plan: SparkPlanMeta[_]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    val perRowCost = plan.conf.getOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
+    plan.conf.getOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
       plan.wrapped match {
         case _: ProjectExec =>
           // the cost of a projection is the sum of its expressions
           plan.childExprs
-            .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]]))
+            .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
             .sum
 
         case _: ShuffleExchangeExec =>
           // setting the GPU cost of ShuffleExchangeExec to 1.0 avoids moving from CPU to GPU for
           // a shuffle. This must happen before the join consistency or we risk running into issues
           // with disabling one exchange that would make a join inconsistent
-          1.0
+          1.0 * rowCount
 
-        case _ => conf.defaultOperatorCost
+        case _ => conf.defaultOperatorCost * rowCount
       }
     }
-    rowCount * perRowCost
   }
 
-  private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]): Double = {
+  private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
 
     val childExprCost = expr.childExprs
-      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]])).sum
+      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
 
     // always check for user overrides first
-    childExprCost + expr.conf.getExpressionCost(expr.getClass.getSimpleName).getOrElse {
+    val totalExprCost = childExprCost + expr.conf
+        .getExpressionCost(expr.getClass.getSimpleName).getOrElse {
       expr match {
         case cast: CastExprMeta[_] =>
           // different CAST operations have different costs, so we allow these to be configured
@@ -329,6 +330,7 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
           }
       }
     }
+    rowCount * totalExprCost
   }
 }
 
