@@ -118,6 +118,9 @@ decodes URL-encoded strings using the
 - [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLEncode.java)
 URL-encodes strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+- [CosineSimilarity](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/CosineSimilarity.java)
+computes the [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity)
+between two float vectors using [native code](../../udf-examples/src/main/cpp/src)
 
 ### Hive UDF Examples
 
