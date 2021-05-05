@@ -268,13 +268,12 @@ case class GpuCartesianProductExec(
         numOutputRows,
         numOutputBatches)
     } else {
-      val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
       val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
       new GpuCartesianRDD(sparkContext,
         boundCondition,
         spillCallback,
-        targetSize,
+        targetSizeBytes,
         joinTime,
         joinOutputRows,
         numOutputRows,

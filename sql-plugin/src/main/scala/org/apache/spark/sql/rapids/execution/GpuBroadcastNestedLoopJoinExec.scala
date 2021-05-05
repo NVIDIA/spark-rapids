@@ -403,7 +403,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     } else {
       lazy val builtBatch: ColumnarBatch =
         makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
-      val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
       val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
       streamed.executeColumnar().mapPartitions { streamedIter =>
         val lazyStream = streamedIter.map { cb =>
@@ -413,7 +412,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         }
         GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
           LazySpillableColumnarBatch(builtBatch, spillCallback, "built_batch"),
-          lazyStream, targetSize, getGpuBuildSide, boundCondition,
+          lazyStream, targetSizeBytes, getGpuBuildSide, boundCondition,
           numOutputRows, joinOutputRows, numOutputBatches,
           joinTime, filterTime, totalTime)
       }
