@@ -257,8 +257,12 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]): Double = {
+
+    val childExprCost = expr.childExprs
+      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]])).sum
+
     // always check for user overrides first
-    expr.conf.getExpressionCost(expr.getClass.getSimpleName).getOrElse {
+    childExprCost + expr.conf.getExpressionCost(expr.getClass.getSimpleName).getOrElse {
       expr match {
         case _ =>
           // many of our BaseExprMeta implementations are anonymous classes so we look directly at
@@ -301,8 +305,12 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]): Double = {
+
+    val childExprCost = expr.childExprs
+      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]])).sum
+
     // always check for user overrides first
-    expr.conf.getExpressionCost(expr.getClass.getSimpleName).getOrElse {
+    childExprCost + expr.conf.getExpressionCost(expr.getClass.getSimpleName).getOrElse {
       expr match {
         case cast: CastExprMeta[_] =>
           // different CAST operations have different costs, so we allow these to be configured
