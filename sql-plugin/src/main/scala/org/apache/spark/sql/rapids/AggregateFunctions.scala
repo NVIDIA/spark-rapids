@@ -663,7 +663,7 @@ case class GpuCollectList(child: Expression,
   // WINDOW FUNCTION
   override val windowInputProjection: Seq[Expression] = Seq(child)
   override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn =
-    Aggregation.collect().onColumn(inputs.head._2)
+    Aggregation.collectList().onColumn(inputs.head._2)
 
   // Declarative aggregate. But for now 'CollectList' does not support it.
   // The members as below should NOT be used yet, ensured by the
