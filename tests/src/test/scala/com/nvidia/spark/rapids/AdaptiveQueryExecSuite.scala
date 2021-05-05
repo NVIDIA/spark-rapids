@@ -85,7 +85,7 @@ class AdaptiveQueryExecSuite
 
   private def findTopLevelGpuBroadcastHashJoin(plan: SparkPlan): Seq[GpuExec] = {
     collect(plan) {
-      case j: GpuExec if j.isInstanceOf[BroadcastExchangeLike] => j
+      case j: GpuExec with BroadcastExchangeLike => j
     }
   }
 
