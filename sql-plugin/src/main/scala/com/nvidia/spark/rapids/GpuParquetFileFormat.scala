@@ -63,7 +63,14 @@ object GpuParquetFileFormat {
         s"compression codec ${parquetOptions.compressionCodecClassName} is not supported"))
 
     if (sqlConf.writeLegacyParquetFormat) {
-      meta.willNotWorkOnGpu(s"Spark legacy format is not supported")
+      meta.willNotWorkOnGpu("Spark legacy format is not supported")
+    }
+
+    if (!meta.conf.isParquetInt96WriteEnabled && sqlConf.parquetOutputTimestampType ==
+      ParquetOutputTimestampType.INT96) {
+      meta.willNotWorkOnGpu("Writing INT96 is disabled, if you want to enable it turn it on by " +
+        "setting the `spark.rapids.sql.format.parquet.writer.int96.enabled` to true. NOTE: check " +
+        "out the compatibility.md to know about the limitations associated with INT96 writer")
     }
 
     val schemaHasTimestamps = schema.exists { field =>
@@ -297,8 +304,12 @@ class GpuParquetWriter(
                             if (any.getBoolean()) {
                               // its the writer's responsibility to close the batch
                               batch.close()
-                              throw new IllegalArgumentException("INT96 column contains value " +
-                                "that can overflow and will result in data corruption")
+                              throw new IllegalArgumentException("INT96 column contains one " +
+                                "or more values that can overflow and will result in data " +
+                                "corruption. Please set " +
+                                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false" +
+                                " so we can fallback on CPU for writing parquet but still take " +
+                                "advantage of parquet read on the GPU.")
                             }
                           }
                         }

@@ -108,14 +108,24 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
             data_path,
             conf=all_confs)
 
-@pytest.mark.parametrize('data_gen', [pytest.param(TimestampGen(end=datetime(1677, 9, 22, tzinfo=timezone.utc))),
-                          pytest.param(TimestampGen(start=datetime(2262, 4, 11, tzinfo=timezone.utc)))], ids=idfn)
+
+@pytest.mark.parametrize('data_gen', [TimestampGen(end=datetime(1677, 9, 22, tzinfo=timezone.utc)),
+                                      TimestampGen(start=datetime(2262, 4, 11, tzinfo=timezone.utc))], ids=idfn)
 def test_catch_int96_overflow(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = writer_confs.copy()
     confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_py4j_exception(lambda: with_gpu_session(
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
+
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+@pytest.mark.allow_non_gpu("DataWritingCommandExec")
+def test_int96_write_conf(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    confs = writer_confs.copy()
+    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96',
+                 'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
+    with_gpu_session(lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs)
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
