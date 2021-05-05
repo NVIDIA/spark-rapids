@@ -1090,12 +1090,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val CPU_RANGE_PARTITIONING_ALLOWED = conf("spark.rapids.allowCpuRangePartitioning")
-    .doc("Option to control enforcement of range partitioning on GPU.")
-    .internal()
-    .booleanConf
-    .createWithDefault(true)
-
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1461,8 +1455,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
-
-  lazy val cpuRangePartitioningPermitted = get(CPU_RANGE_PARTITIONING_ALLOWED)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

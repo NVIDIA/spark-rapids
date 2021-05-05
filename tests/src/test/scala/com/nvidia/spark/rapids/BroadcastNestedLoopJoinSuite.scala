@@ -25,7 +25,6 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
 
   test("BroadcastNestedLoopJoinExec AQE off") {
     val conf = new SparkConf()
-      .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
 
     withGpuSparkSession(spark => {
@@ -45,6 +44,9 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
     val conf = new SparkConf()
         .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        // In some cases AQE can make the children not look like they are on the GPU
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "ShuffleExchangeExec,RoundRobinPartitioning")
 
     withGpuSparkSession(spark => {
       val df1 = longsDf(spark).repartition(2)

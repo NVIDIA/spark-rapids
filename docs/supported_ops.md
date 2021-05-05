@@ -615,7 +615,7 @@ Accelerator supports are described below.
 <tr>
 <td>BroadcastNestedLoopJoinExec</td>
 <td>Implementation of join using brute force</td>
-<td>This is disabled by default because large joins can cause out of memory errors</td>
+<td>None</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
@@ -638,7 +638,7 @@ Accelerator supports are described below.
 <tr>
 <td>CartesianProductExec</td>
 <td>Implementation of join using brute force</td>
-<td>This is disabled by default because large joins can cause out of memory errors</td>
+<td>None</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>

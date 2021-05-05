@@ -1615,7 +1615,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     "max_with_nans_fall_back",
     nanDf,
     Seq("HashAggregateExec", "AggregateExpression",
-      "AttributeReference", "Alias", "Max"),
+      "AttributeReference", "Alias", "Max", "ShuffleExchangeExec"),
     conf = enableCsvConf()) {
     frame => frame.agg(max("doubles"))
   } { (_, gpuPlan) => {
@@ -1630,7 +1630,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     "min_with_nans_fall_back",
     nanDf,
     Seq("HashAggregateExec", "AggregateExpression",
-      "AttributeReference", "Alias", "Min"),
+      "AttributeReference", "Alias", "Min", "ShuffleExchangeExec"),
     conf = enableCsvConf()) {
     frame => frame.agg(min("doubles"))
   } { (_, gpuPlan) => {

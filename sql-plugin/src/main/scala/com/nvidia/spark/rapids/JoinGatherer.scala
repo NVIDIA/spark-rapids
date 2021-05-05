@@ -16,10 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
-import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, DataType, DateType, DecimalType, LongType, NullType, NumericType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, DataType, DateType, DecimalType, IntegerType, LongType, NullType, NumericType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -201,7 +201,6 @@ trait LazySpillableColumnarBatch extends LazySpillable {
    * Get the batch that this wraps and unspill it if needed.
    */
   def getBatch: ColumnarBatch
-
 }
 
 object LazySpillableColumnarBatch {
@@ -238,6 +237,8 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
     // Don't actually close it, we don't own it, just allow it to be spilled.
     wrapped.allowSpilling()
   }
+
+  override def toString: String = s"SPILL_ONLY $wrapped"
 }
 
 /**
@@ -285,25 +286,49 @@ class LazySpillableColumnarBatchImpl(
     spill.foreach(_.close())
     spill = None
   }
+
+  override def toString: String = s"SpillableBatch $name $numCols X $numRows"
+}
+
+trait LazySpillableGatherMap extends LazySpillable with Arm {
+  /**
+   * How many rows total are in this gather map
+   */
+  val getRowCount: Long
+
+  /**
+   * Get a column view that can be used to gather.
+   * @param startRow the row to start at.
+   * @param numRows the number of rows in the map.
+   */
+  def toColumnView(startRow: Long, numRows: Int): ColumnView
+}
+
+object LazySpillableGatherMap {
+  def apply(map: GatherMap, spillCallback: SpillCallback, name: String): LazySpillableGatherMap =
+    new LazySpillableGatherMapImpl(map, spillCallback, name)
+
+  def leftCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
+    new LeftCrossGatherMap(leftCount, rightCount)
+
+  def rightCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
+    new RightCrossGatherMap(leftCount, rightCount)
 }
 
 /**
  * Holds a gather map that is also lazy spillable.
  */
-class LazySpillableGatherMap(
+class LazySpillableGatherMapImpl(
     map: GatherMap,
     spillCallback: SpillCallback,
-    name: String) extends LazySpillable with Arm {
+    name: String) extends LazySpillableGatherMap {
 
-  val getRowCount: Long = map.getRowCount
+  override val getRowCount: Long = map.getRowCount
 
   private var cached: Option[DeviceMemoryBuffer] = Some(map.releaseBuffer())
   private var spill: Option[SpillableBuffer] = None
 
-  /**
-   * Get a ColumnView that can be used to do a cudf gather.
-   */
-  def toColumnView(startRow: Long, numRows: Int): ColumnView = {
+  override def toColumnView(startRow: Long, numRows: Int): ColumnView = {
     ColumnView.fromDeviceBuffer(getBuffer, startRow * 4L, DType.INT32, numRows)
   }
 
@@ -337,6 +362,59 @@ class LazySpillableGatherMap(
     spill.foreach(_.close())
     spill = None
   }
+}
+
+abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
+    extends LazySpillableGatherMap {
+  override val getRowCount: Long = leftCount.toLong * rightCount.toLong
+
+  override def toColumnView(startRow: Long, numRows: Int): ColumnView = {
+    withResource(GpuScalar.from(startRow, LongType)) { startScalar =>
+      withResource(ai.rapids.cudf.ColumnVector.sequence(startScalar, numRows)) { rowNum =>
+        compute(rowNum)
+      }
+    }
+  }
+
+  /**
+   * Given a vector of INT64 row numbers compute the corresponding gather map (result should be
+   * INT32)
+   */
+  def compute(rowNum: ai.rapids.cudf.ColumnVector): ai.rapids.cudf.ColumnVector
+
+  override def allowSpilling(): Unit = {
+    // NOOP, we don't cache anything on the GPU
+  }
+
+  override def close(): Unit = {
+    // NOOP, we don't cache anything on the GPU
+  }
+}
+
+class LeftCrossGatherMap(leftCount: Int, rightCount: Int) extends
+    BaseCrossJoinGatherMap(leftCount, rightCount) {
+
+  override def compute(rowNum: ColumnVector): ColumnVector = {
+    withResource(GpuScalar.from(rightCount, IntegerType)) { rightCountScalar =>
+      rowNum.div(rightCountScalar, DType.INT32)
+    }
+  }
+
+  override def toString: String =
+    s"LEFT CROSS MAP $leftCount by $rightCount"
+}
+
+class RightCrossGatherMap(leftCount: Int, rightCount: Int) extends
+    BaseCrossJoinGatherMap(leftCount, rightCount) {
+
+  override def compute(rowNum: ColumnVector): ColumnVector = {
+    withResource(GpuScalar.from(rightCount, IntegerType)) { rightCountScalar =>
+      rowNum.mod(rightCountScalar, DType.INT32)
+    }
+  }
+
+  override def toString: String =
+    s"RIGHT CROSS MAP $leftCount by $rightCount"
 }
 
 object JoinGathererImpl {
@@ -403,6 +481,8 @@ class JoinGathererImpl(
     private val gatherMap: LazySpillableGatherMap,
     private val data: LazySpillableColumnarBatch) extends JoinGatherer {
 
+  assert(data.numCols > 0, "data with no columns should have been filtered out already")
+
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
   private val totalRows: Long = gatherMap.getRowCount
@@ -411,6 +491,10 @@ class JoinGathererImpl(
     val fw = JoinGathererImpl.fixedWidthRowSizeBits(dts)
     val nullVal = JoinGathererImpl.nullRowSizeBits(dts)
     (fw, nullVal)
+  }
+
+  override def toString: String = {
+    s"GATHERER $gatheredUpTo/$totalRows $gatherMap $data"
   }
 
   override def realCheapPerRowSizeEstimate: Double = {
@@ -566,4 +650,6 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
     left.close()
     right.close()
   }
+
+  override def toString: String = s"MULTI-GATHER $left and $right"
 }
