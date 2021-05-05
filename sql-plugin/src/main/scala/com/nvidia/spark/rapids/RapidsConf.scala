@@ -653,7 +653,8 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_PARQUET_INT96_WRITE = conf("spark.rapids.sql.format.parquet.writer.int96.enabled")
-    .doc("When set to false, disables accelerated parquet write")
+    .doc("When set to false, disables accelerated parquet write if the " +
+      "spark.sql.parquet.outputTimestampType is set to INT96")
     .booleanConf
     .createWithDefault(true)
 
