@@ -82,9 +82,6 @@ trait SparkShims {
 
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
-  def isBroadcastExchangeLike(plan: SparkPlan): Boolean
-  def isShuffleExchangeLike(plan: SparkPlan): Boolean
-  def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics
   def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
@@ -131,10 +128,6 @@ trait SparkShims {
     endMapIndex: Int,
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
-
-  def injectQueryStagePrepRule(
-      extensions: SparkSessionExtensions,
-      rule: SparkSession => Rule[SparkPlan])
 
   def getShuffleManagerShims(): ShuffleManagerShimBase
 
@@ -204,8 +197,6 @@ trait SparkShims {
     replaceFunc: Path => Path): Seq[Path]
 
   def shouldFailDivByZero(): Boolean
-
-  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
 
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
 

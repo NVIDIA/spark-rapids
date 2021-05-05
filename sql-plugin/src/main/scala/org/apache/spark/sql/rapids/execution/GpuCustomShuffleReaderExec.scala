@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, UnknownPartitioning}
 import org.apache.spark.sql.execution.{CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
-import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -56,15 +56,13 @@ case class GpuCustomShuffleReaderExec(
     // If it is a local shuffle reader with one mapper per task, then the output partitioning is
     // the same as the plan before shuffle.
     // TODO this check is based on assumptions of callers' behavior but is sufficient for now.
-    val sparkShims = ShimLoader.getSparkShims
     if (partitionSpecs.forall(_.isInstanceOf[PartialMapperPartitionSpec]) &&
         partitionSpecs.map(_.asInstanceOf[PartialMapperPartitionSpec].mapIndex).toSet.size ==
             partitionSpecs.length) {
       child match {
-        case ShuffleQueryStageExec(_, s: Exchange) if sparkShims.isShuffleExchangeLike(s) =>
+        case ShuffleQueryStageExec(_, s: ShuffleExchangeLike) =>
           s.child.outputPartitioning
-        case ShuffleQueryStageExec(_, r @ ReusedExchangeExec(_, s))
-            if sparkShims.isShuffleExchangeLike(s) =>
+        case ShuffleQueryStageExec(_, r @ ReusedExchangeExec(_, s: ShuffleExchangeLike)) =>
           s.child.outputPartitioning match {
             case e: Expression => r.updateAttr(e).asInstanceOf[Partitioning]
             case other => other

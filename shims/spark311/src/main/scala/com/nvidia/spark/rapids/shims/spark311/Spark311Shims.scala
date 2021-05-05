@@ -227,10 +227,10 @@ class Spark311Shims extends Spark301Shims {
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
         }
       })
- ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    super.exprs301 ++ exprs311
+    getExprsSansTimeSub ++ exprs311
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
