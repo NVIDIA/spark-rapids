@@ -21,7 +21,6 @@ decimals are disabled by default in the plugin, because it is supported by a sma
 number of operations presently, which can result in a lot of data movement to and
 from the GPU, slowing down processing in some cases.
 
-
 ## `Timestamp`
 Timestamps in Spark will all be converted to the local time zone before processing
 and are often converted to UTC before being stored, like in Parquet or ORC.
