@@ -246,7 +246,10 @@ When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently i
 
 When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and 
 result in an `IllegalArgumentException` thrown, if any value is before 
-September 21, 1677 12:12:43 AM or it is after April 11, 2262 11:47:17 PM.
+September 21, 1677 12:12:43 AM or it is after April 11, 2262 11:47:17 PM. To get around this
+issue, turn off the ParquetWriter and ParquetReader acceleration by either setting 
+`spark.rapids.sql.format.parquet.enabled` to false or by setting 
+`spark.sql.parquet.outputTimestampType` to `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS`
 
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
