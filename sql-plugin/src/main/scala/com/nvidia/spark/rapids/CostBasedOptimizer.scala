@@ -240,10 +240,13 @@ trait CostModel {
 
 class CpuCostModel(conf: RapidsConf) extends CostModel {
 
+  private val attrRefCost = conf.getCpuExpressionCost("AttributeReference").getOrElse(0d)
+  private val structFieldCost = conf.getCpuExpressionCost("GetStructField").getOrElse(0.05d)
+
   def getCost(plan: SparkPlanMeta[_]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    plan.conf.getOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
+    plan.conf.getGpuOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
       plan.wrapped match {
         case _: ProjectExec =>
           // the cost of a projection is the sum of its expressions
@@ -256,22 +259,20 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
-
-    val childExprCost = expr.childExprs
+    val childExprCost: Double = expr.childExprs
       .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
-
     // always check for user overrides first
-    val totalExprCost = childExprCost + expr.conf
-        .getExpressionCost(expr.getClass.getSimpleName).getOrElse {
+    val totalExprCost = childExprCost + expr.conf.getGpuExpressionCost(
+      expr.getClass.getSimpleName).getOrElse {
       expr match {
         case _ =>
           // many of our BaseExprMeta implementations are anonymous classes so we look directly at
           // the wrapped expressions in some cases
           expr.wrapped match {
-            case _: AttributeReference => 0.01
-            case Alias(_: AttributeReference, _) => 0.01
-            case _: GetStructField => 0.01
-            case Alias(_: GetStructField, _) => 0.01
+            case _: Alias =>
+              exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
+            case _: AttributeReference => attrRefCost
+            case _: GetStructField => structFieldCost
             case _ => conf.defaultExpressionCost
           }
       }
@@ -282,10 +283,13 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
 
 class GpuCostModel(conf: RapidsConf) extends CostModel {
 
+  private val attrRefCost = conf.getGpuExpressionCost("AttributeReference").getOrElse(0d)
+  private val structFieldCost = conf.getGpuExpressionCost("GetStructField").getOrElse(0.05d)
+
   def getCost(plan: SparkPlanMeta[_]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    plan.conf.getOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
+    plan.conf.getGpuOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
       plan.wrapped match {
         case _: ProjectExec =>
           // the cost of a projection is the sum of its expressions
@@ -305,27 +309,25 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
-
     val childExprCost = expr.childExprs
       .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
-
     // always check for user overrides first
     val totalExprCost = childExprCost + expr.conf
-        .getExpressionCost(expr.getClass.getSimpleName).getOrElse {
+        .getGpuExpressionCost(expr.getClass.getSimpleName).getOrElse {
       expr match {
         case cast: CastExprMeta[_] =>
           // different CAST operations have different costs, so we allow these to be configured
           // based on the data types involved
-          expr.conf.getExpressionCost(s"Cast${cast.fromType}To${cast.toType}")
+          expr.conf.getGpuExpressionCost(s"Cast${cast.fromType}To${cast.toType}")
             .getOrElse(conf.defaultExpressionCost)
         case _ =>
           // many of our BaseExprMeta implementations are anonymous classes so we look directly at
           // the wrapped expressions in some cases
           expr.wrapped match {
-            case _: AttributeReference => 0.01 // no benefit on GPU
-            case Alias(_: AttributeReference, _) => 0.01 // no benefit on GPU
-            case _: GetStructField => 0.01 // no benefit on GPU
-            case Alias(_: GetStructField, _) => 0.01 // no benefit on GPU
+            case _: Alias =>
+              exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
+            case _: AttributeReference => attrRefCost
+            case _: GetStructField => structFieldCost
             case _ => conf.defaultExpressionCost
           }
       }
