@@ -27,7 +27,7 @@ import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
-import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
@@ -85,7 +85,7 @@ class AdaptiveQueryExecSuite
 
   private def findTopLevelGpuBroadcastHashJoin(plan: SparkPlan): Seq[GpuExec] = {
     collect(plan) {
-      case j: GpuExec if ShimLoader.getSparkShims.isBroadcastExchangeLike(j) => j
+      case j: GpuExec with BroadcastExchangeLike => j
     }
   }
 
@@ -106,12 +106,11 @@ class AdaptiveQueryExecSuite
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
-      val shuffleExchanges = ShimLoader.getSparkShims
-          .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
-          .map(_.asInstanceOf[ShuffleQueryStageExec])
+      val shuffleExchanges =
+          PlanUtils.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+              .map(_.asInstanceOf[ShuffleQueryStageExec])
       assert(shuffleExchanges.length === 2)
-      val shim = ShimLoader.getSparkShims
-      val stats = shuffleExchanges.map(e => shim.getQueryStageRuntimeStatistics(e))
+      val stats = shuffleExchanges.map(_.getRuntimeStatistics)
       assert(stats.forall(_.rowCount.contains(1000)))
     }
   }
@@ -411,7 +410,7 @@ class AdaptiveQueryExecSuite
       // one of the GPU exchanges should have been re-used
       val ex = findReusedExchange(adaptivePlan)
       assert(ex.size == 1)
-      assert(ShimLoader.getSparkShims.isShuffleExchangeLike(ex.head.child))
+      assert(ex.head.child.isInstanceOf[ShuffleExchangeLike])
       assert(ex.head.child.isInstanceOf[GpuExec])
 
     }, conf)

@@ -81,13 +81,11 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
       assert(opt.plan.wrapped.isInstanceOf[SortExec])
 
       // check that the final plan has a CPU sort and no GPU sort
-      val cpuSort = ShimLoader.getSparkShims
-          .findOperators(df.queryExecution.executedPlan,
-            _.isInstanceOf[SortExec])
+      val cpuSort =
+        PlanUtils.findOperators(df.queryExecution.executedPlan, _.isInstanceOf[SortExec])
 
-      val gpuSort = ShimLoader.getSparkShims
-          .findOperators(df.queryExecution.executedPlan,
-            _.isInstanceOf[GpuSortExec])
+      val gpuSort =
+        PlanUtils.findOperators(df.queryExecution.executedPlan, _.isInstanceOf[GpuSortExec])
 
       assert(cpuSort.nonEmpty)
       assert(gpuSort.isEmpty)
@@ -139,13 +137,11 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
           .count(_.plan.wrapped.isInstanceOf[SortExec]))
 
       // check that the final plan has a CPU sort and no GPU sort
-      val cpuSort = ShimLoader.getSparkShims
-          .findOperators(df.queryExecution.executedPlan,
-            _.isInstanceOf[SortExec])
+      val cpuSort =
+        PlanUtils.findOperators(df.queryExecution.executedPlan, _.isInstanceOf[SortExec])
 
-      val gpuSort = ShimLoader.getSparkShims
-          .findOperators(df.queryExecution.executedPlan,
-            _.isInstanceOf[GpuSortExec])
+      val gpuSort =
+        PlanUtils.findOperators(df.queryExecution.executedPlan, _.isInstanceOf[GpuSortExec])
 
       assert(cpuSort.nonEmpty)
       assert(gpuSort.isEmpty)
@@ -329,9 +325,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
       val df: DataFrame = createQuery(spark)
       df.collect()
 
-      val gpuExchanges = ShimLoader.getSparkShims
-          .findOperators(df.queryExecution.executedPlan,
-          _.isInstanceOf[GpuShuffleExchangeExecBase])
+      val gpuExchanges = PlanUtils.findOperators(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuShuffleExchangeExecBase])
       assert(gpuExchanges.isEmpty)
 
       df
@@ -353,9 +348,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
       val df: DataFrame = createQuery(spark)
       df.collect()
 
-      val gpuExchanges = ShimLoader.getSparkShims
-          .findOperators(df.queryExecution.executedPlan,
-          _.isInstanceOf[GpuShuffleExchangeExecBase])
+      val gpuExchanges = PlanUtils.findOperators(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuShuffleExchangeExecBase])
       assert(gpuExchanges.isEmpty)
 
       df

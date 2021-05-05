@@ -14,55 +14,55 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark300
+package com.nvidia.spark.rapids.shims.spark301
 
 import java.nio.ByteBuffer
 
-import scala.collection.mutable.ListBuffer
-
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark300.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
-import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
-import org.apache.spark.sql.rapids.shims.spark300._
+import org.apache.spark.sql.rapids.shims.spark301.{GpuSchemaUtils, ShuffleManagerShim}
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-class Spark300Shims extends SparkShims {
+/**
+ * This class contains the default implementation for most shim methods and should be compiled
+ * against the lowest supported Spark version. As support for the oldest Spark version is
+ * abandoned, this class should move to the next oldest supported version and overrides from
+ * that version should be folded into here. Any shim methods that are implemented only in the
+ * updated base version can then be removed from the shim interface.
+ */
+abstract class SparkBaseShims extends SparkShims {
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
   override def parquetRebaseWriteKey: String =
@@ -98,8 +98,8 @@ class Spark300Shims extends SparkShims {
       endMapIndex: Int,
       startPartition: Int,
       endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
-    // startMapIndex and endMapIndex ignored as we don't support those for gpu shuffle.
-    SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(shuffleId, startPartition, endPartition)
+    SparkEnv.get.mapOutputTracker.getMapSizesByRange(shuffleId,
+      startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
   override def getGpuBroadcastNestedLoopJoinShim(
@@ -122,7 +122,8 @@ class Spark300Shims extends SparkShims {
       outputPartitioning: Partitioning,
       child: SparkPlan,
       cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
-    GpuShuffleExchangeExec(outputPartitioning, child)
+    val canChangeNumPartitions = cpuShuffle.forall(_.canChangeNumPartitions)
+    GpuShuffleExchangeExec(outputPartitioning, child, canChangeNumPartitions)
   }
 
   override def getGpuShuffleExchangeExec(
@@ -142,16 +143,6 @@ class Spark300Shims extends SparkShims {
       case _: GpuShuffledHashJoinExec => true
       case _ => false
     }
-  }
-
-  override def isBroadcastExchangeLike(plan: SparkPlan): Boolean =
-    plan.isInstanceOf[BroadcastExchangeExec]
-
-  override def isShuffleExchangeLike(plan: SparkPlan): Boolean =
-    plan.isInstanceOf[ShuffleExchangeExec]
-
-  override def getQueryStageRuntimeStatistics(plan: QueryStageExec): Statistics = {
-    Statistics(0)
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -234,7 +225,7 @@ class Spark300Shims extends SparkShims {
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+  protected def getExprsSansTimeSub: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
       GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
@@ -245,61 +236,12 @@ class Spark300Shims extends SparkShims {
         "Convert a column of one type of data into another type",
         new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
-      GpuOverrides.expr[TimeSub](
-        "Subtracts interval from timestamp",
-        ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-        (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            timeSub.interval match {
-              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _ =>
-            }
-            checkTimeZoneId(timeSub.timeZoneId)
-          }
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuTimeSub(lhs, rhs)
-        }),
-      GpuOverrides.expr[First](
-        "first aggregate operator",
-        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
-          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
-            ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
-        (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-          val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
-          val ignoreNulls: BaseExprMeta[_] =
-            GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
-          override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
-
-          override def convertToGpu(): GpuExpression =
-            GpuFirst(child.convertToGpu(), ignoreNulls.convertToGpu())
-        }),
-      GpuOverrides.expr[Last](
-        "last aggregate operator",
-        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
-          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all),
-            ParamCheck("ignoreNulls", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
-        (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-          val child: BaseExprMeta[_] = GpuOverrides.wrapExpr(a.child, conf, Some(this))
-          val ignoreNulls: BaseExprMeta[_] =
-            GpuOverrides.wrapExpr(a.ignoreNullsExpr, conf, Some(this))
-          override val childExprs: Seq[BaseExprMeta[_]] = Seq(child, ignoreNulls)
-
-          override def convertToGpu(): GpuExpression =
-            GpuLast(child.convertToGpu(), ignoreNulls.convertToGpu())
-        }),
       GpuOverrides.expr[RegExpReplace](
         "RegExpReplace support for string literal input patterns",
         ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
-            .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+                .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
         (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
@@ -313,6 +255,30 @@ class Spark300Shims extends SparkShims {
               rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  }
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    getExprsSansTimeSub + (classOf[TimeSub] -> GpuOverrides.expr[TimeSub](
+      "Subtracts interval from timestamp",
+      ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("interval", TypeSig.lit(TypeEnum.CALENDAR)
+            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
+      (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          timeSub.interval match {
+            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+              if (intvl.months != 0) {
+                willNotWorkOnGpu("interval months isn't supported")
+              }
+            case _ =>
+          }
+          checkTimeZoneId(timeSub.timeZoneId)
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuTimeSub(lhs, rhs)
+      }))
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
@@ -362,17 +328,6 @@ class Spark300Shims extends SparkShims {
 
   override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
-
-  override def injectQueryStagePrepRule(
-      extensions: SparkSessionExtensions,
-      ruleBuilder: SparkSession => Rule[SparkPlan]): Unit = {
-    // not supported in 3.0.0 but it doesn't matter because AdaptiveSparkPlanExec in 3.0.0 will
-    // never allow us to replace an Exchange node, so they just stay on CPU
   }
 
   override def getShuffleManagerShims(): ShuffleManagerShimBase = {
@@ -488,17 +443,17 @@ class Spark300Shims extends SparkShims {
 
   // Arrow version changed between Spark versions
   override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getDataBuffer()
+    val arrowBuf = vec.getDataBuffer
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getValidityBuffer()
+    val arrowBuf = vec.getValidityBuffer
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
   override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getOffsetBuffer()
+    val arrowBuf = vec.getOffsetBuffer
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
@@ -592,29 +547,6 @@ class Spark300Shims extends SparkShims {
   }
 
   override def shouldFailDivByZero(): Boolean = false
-
-  /**
-   * Return list of matching predicates present in the plan
-   * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
-   */
-  override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
-    def recurse(
-        plan: SparkPlan,
-        predicate: SparkPlan => Boolean,
-        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
-      plan match {
-        case _ if predicate(plan) =>
-          accum += plan
-          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
-        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
-        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
-        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
-        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
-      }
-      accum
-    }
-    recurse(plan, predicate, new ListBuffer[SparkPlan]())
-  }
 
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
