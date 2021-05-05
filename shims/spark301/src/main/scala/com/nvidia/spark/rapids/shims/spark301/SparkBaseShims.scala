@@ -31,7 +31,6 @@ import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.aggregate.{First, Last}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
@@ -226,7 +225,7 @@ abstract class SparkBaseShims extends SparkShims {
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+  protected def getExprsSansTimeSub: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
       GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
@@ -237,49 +236,12 @@ abstract class SparkBaseShims extends SparkShims {
         "Convert a column of one type of data into another type",
         new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
-      GpuOverrides.expr[TimeSub](
-        "Subtracts interval from timestamp",
-        ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-          ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-        (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            timeSub.interval match {
-              case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _ =>
-            }
-            checkTimeZoneId(timeSub.timeZoneId)
-          }
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuTimeSub(lhs, rhs)
-        }),
-      GpuOverrides.expr[First](
-        "first aggregate operator",
-        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
-          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression =
-            GpuFirst(childExprs.head.convertToGpu(), a.ignoreNulls)
-        }),
-      GpuOverrides.expr[Last](
-        "last aggregate operator",
-        ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
-          Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-          override def convertToGpu(): GpuExpression =
-            GpuLast(childExprs.head.convertToGpu(), a.ignoreNulls)
-        }),
       GpuOverrides.expr[RegExpReplace](
         "RegExpReplace support for string literal input patterns",
         ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
-            .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+                .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
         (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
@@ -293,6 +255,30 @@ abstract class SparkBaseShims extends SparkShims {
               rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  }
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    getExprsSansTimeSub + (classOf[TimeSub] -> GpuOverrides.expr[TimeSub](
+      "Subtracts interval from timestamp",
+      ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("interval", TypeSig.lit(TypeEnum.CALENDAR)
+            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
+      (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          timeSub.interval match {
+            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
+              if (intvl.months != 0) {
+                willNotWorkOnGpu("interval months isn't supported")
+              }
+            case _ =>
+          }
+          checkTimeZoneId(timeSub.timeZoneId)
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuTimeSub(lhs, rhs)
+      }))
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(

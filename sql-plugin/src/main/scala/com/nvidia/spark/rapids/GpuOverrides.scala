@@ -2045,6 +2045,22 @@ object GpuOverrides {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    expr[First](
+      "first aggregate operator",
+      ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuFirst(childExprs.head.convertToGpu(), a.ignoreNulls)
+      }),
+    expr[Last](
+      "last aggregate operator",
+      ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLast(childExprs.head.convertToGpu(), a.ignoreNulls)
+      }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProjectNotLambda(
