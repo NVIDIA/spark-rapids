@@ -21,7 +21,7 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, RapidsConf}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
