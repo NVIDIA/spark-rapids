@@ -481,6 +481,8 @@ class JoinGathererImpl(
     private val gatherMap: LazySpillableGatherMap,
     private val data: LazySpillableColumnarBatch) extends JoinGatherer {
 
+  assert(data.numCols > 0, "data with no columns should have been filtered out already")
+
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
   private val totalRows: Long = gatherMap.getRowCount

@@ -148,7 +148,17 @@ class CrossJoinIterator(
     val leftMap = LazySpillableGatherMap.leftCross(leftBatch.numRows, rightBatch.numRows)
     val rightMap = LazySpillableGatherMap.rightCross(leftBatch.numRows, rightBatch.numRows)
 
-    val joinGatherer = JoinGatherer(leftMap, leftBatch, rightMap, rightBatch)
+    val joinGatherer = (leftBatch.numCols, rightBatch.numCols) match {
+      case (_, 0) =>
+        rightBatch.close()
+        rightMap.close()
+        JoinGatherer(leftMap, leftBatch)
+      case (0, _) =>
+        leftBatch.close()
+        leftMap.close()
+        JoinGatherer(rightMap, rightBatch)
+      case (_, _) => JoinGatherer(leftMap, leftBatch, rightMap, rightBatch)
+    }
     if (joinGatherer.isDone) {
       joinGatherer.close()
       None
@@ -362,7 +372,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
     val buildTime = gpuLongMetric(BUILD_TIME)
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-    
+
     joinType match {
       case _: InnerLike => // The only thing we support right now
       case _ => throw new IllegalArgumentException(s"$joinType + $getGpuBuildSide is not" +
