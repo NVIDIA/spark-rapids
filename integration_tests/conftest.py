@@ -40,6 +40,23 @@ def pytest_addoption(parser):
         help="if true enable tests for RAPIDS UDF examples with native code"
     )
     parser.addoption(
+        "--rapids_shuffle_enabled", action='store_true', default=False,
+        help="if true enable tests for RAPIDS Shuffle Manager"
+    )
+    parser.addoption(
         "--test_type", action='store', default="developer",
         help="the type of tests that are being run to help check all the correct tests are run - developer, pre-commit, or nightly"
     )
+
+def pytest_generate_tests(metafunc):
+    option_value = metafunc.config.option.rapids_shuffle_enabled
+    if 'rapids_shuffle_enabled' in metafunc.fixturenames:
+        if option_value is False:
+            metafunc.parametrize("rapids_shuffle_enabled",[
+                {"spark.rapids.shuffle.enabled": "false"}],
+                ids=lambda val: "RAPIDS SHUFFLE DISABLED")
+        else:
+            metafunc.parametrize("rapids_shuffle_enabled", [
+                {"spark.rapids.shuffle.enabled": "false"},
+                {"spark.rapids.shuffle.enabled": "true"}],
+                ids=lambda val: str(val))

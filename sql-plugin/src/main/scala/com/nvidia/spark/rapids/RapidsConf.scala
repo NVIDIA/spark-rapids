@@ -970,6 +970,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val SHUFFLE_MANAGER_ENABLED = conf("spark.rapids.shuffle.enabled")
+    .doc("Enable the RAPIDS Shuffle Manager at runtime. When set to false, " +
+      "the built-in Spark shuffle will be used.")
+    .booleanConf
+    .createWithDefault(true)
+
   val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
     .doc("Enable the RAPIDS Shuffle Transport for accelerated shuffle. By default, this " +
         "requires UCX to be installed in the system. Consider setting to false if running with " +
@@ -1573,6 +1579,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
+
+  lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
   lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
 

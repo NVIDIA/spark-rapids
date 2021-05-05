@@ -29,6 +29,7 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -233,12 +234,13 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   GpuShuffleEnv.setRapidsShuffleManager(Some(this))
 
   private [this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
-    "Transport disabled (local cached blocks only)."
+    "Transport disabled (local cached blocks only)"
   } else {
-    s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName})."
+    s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName}"
   }
 
-  logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}")
+  logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}. To disable the " +
+    s"RAPIDS Shuffle Manager set `${RapidsConf.SHUFFLE_MANAGER_ENABLED}` to false")
 
   //Many of these values like blockManager are not initialized when the constructor is called,
   // so they all need to be lazy values that are executed when things are first called
@@ -248,8 +250,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   private lazy val blockManager = env.blockManager
   private lazy val shouldFallThroughOnEverything = {
     val fallThroughReasons = new ListBuffer[String]()
-    if (!GpuShuffleEnv.isRapidsShuffleEnabled) {
-      fallThroughReasons += "external shuffle is enabled"
+    if (GpuShuffleEnv.isExternalShuffleEnabled) {
+      fallThroughReasons += "External Shuffle Service is enabled"
     }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
@@ -313,10 +315,19 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
     // Always register with the wrapped handler so we can write to it ourselves if needed
     val orig = wrapped.registerShuffle(shuffleId, dependency)
-    if (!shouldFallThroughOnEverything && dependency.isInstanceOf[GpuShuffleDependency[K, V, C]]) {
-      val handle = new GpuShuffleHandle(orig,
+    var shouldUseRapidsShuffle = false
+
+    if (!shouldFallThroughOnEverything) {
+      shouldUseRapidsShuffle = dependency match {
+        case gpuDependency: GpuShuffleDependency[K, V, C] =>
+          gpuDependency.useRapidsShuffle
+        case _ => false
+      }
+    }
+
+    if (shouldUseRapidsShuffle) {
+      new GpuShuffleHandle(orig,
         dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
-      handle
     } else {
       orig
     }
