@@ -186,7 +186,7 @@ class HashJoinIterator(
     val targetSize: Long,
     val joinType: JoinType,
     val buildSide: GpuBuildSide,
-    var compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
+    val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     private val spillCallback: SpillCallback,
     private val streamTime: GpuMetric,
     private val joinTime: GpuMetric,
@@ -259,13 +259,13 @@ class HashJoinIterator(
         None
       }
 
-      val lazyLeftMap = new LazySpillableGatherMap(leftMap, spillCallback, "left_map")
+      val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
       val gatherer = rightMap match {
         case None =>
           rightData.close()
           JoinGatherer(lazyLeftMap, leftData)
         case Some(right) =>
-          val lazyRightMap = new LazySpillableGatherMap(right, spillCallback, "right_map")
+          val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
           JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData)
       }
       if (gatherer.isDone) {
@@ -342,6 +342,9 @@ class HashJoinIterator(
   }
 
   override def hasNext: Boolean = {
+    if (closed) {
+      return false
+    }
     var mayContinue = true
     while (nextCb.isEmpty && mayContinue) {
       val startTime = System.nanoTime()
@@ -385,7 +388,6 @@ class HashJoinIterator(
     ret
   }
 }
-
 
 trait GpuHashJoin extends GpuExec {
   def left: SparkPlan

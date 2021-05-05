@@ -25,7 +25,6 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
 
   test("BroadcastNestedLoopJoinExec AQE off") {
     val conf = new SparkConf()
-      .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
 
     withGpuSparkSession(spark => {
