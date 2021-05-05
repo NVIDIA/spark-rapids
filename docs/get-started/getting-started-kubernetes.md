@@ -54,6 +54,8 @@ On a client machine which has access to the Kubernetes cluster:
    along with the RAPIDS Accelerator jars and `getGpusResources.sh` into `/opt/sparkRapidsPlugin`
    inside the Docker image.
    
+   You can modify the Dockerfile to copy your application into the docker image, i.e. `test.py`.
+   
    Examine the Dockerfile.cuda file to ensure the file names are correct and modify if needed.
    
    Currently the directory in the local machine should look as below:
@@ -267,9 +269,9 @@ sc.stop()
 
 Using Spark Operator is another way to submit Spark Applications into a Kubernetes Cluster.
 
-1. Copy Spark Application jars/files into the docker image when preparing docker image.
+1. Locate the Spark Application jars/files in the docker image when preparing docker image.
 
-For example, we copy above `test.py` in directory `/opt/sparkRapidsPlugin` inside the docker image.
+For example, assume `/opt/sparkRapidsPlugin/test.py` is inside the docker image.
 
 This is because currently only `cluster` deployment mode is supported by Spark Operator.
 
