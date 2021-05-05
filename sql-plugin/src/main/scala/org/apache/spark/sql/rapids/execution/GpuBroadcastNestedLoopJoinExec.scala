@@ -30,7 +30,6 @@ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuBroadcastNestedLoopJoinMeta(
@@ -262,24 +261,6 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
 
     rowCounts.flatMap(divideIntoBatches)
   }
-
-  def divideIntoBatches(
-      batch: ColumnarBatch,
-      numTimes: Long,
-      outputSchema: Array[DataType],
-      numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric): Iterator[ColumnarBatch] = {
-    // TODO if we hit a point where we need to we can divide the data up into batches
-    //  The current use case is likely to be small enough that we are OK without this.
-    assert(numTimes < Int.MaxValue)
-    withResource(GpuColumnVector.from(batch)) { table =>
-      withResource(table.repeat(numTimes.toInt)) { repeated =>
-        numOutputBatches += 1
-        numOutputRows += repeated.getRowCount
-        Iterator(GpuColumnVector.from(repeated, outputSchema))
-      }
-    }
-  }
 }
 
 abstract class GpuBroadcastNestedLoopJoinExecBase(
@@ -381,9 +362,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
     val buildTime = gpuLongMetric(BUILD_TIME)
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-
-    val outputSchema = output.map(_.dataType).toArray
-
+    
     joinType match {
       case _: InnerLike => // The only thing we support right now
       case _ => throw new IllegalArgumentException(s"$joinType + $getGpuBuildSide is not" +
@@ -411,39 +390,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         targetSizeBytes,
         numOutputRows,
         numOutputBatches)
-    } else if (broadcast.output.isEmpty) {
-      assert(boundCondition.isEmpty)
-
-      lazy val buildCount: Int = computeBuildRowCount(broadcastRelation, buildTime, buildDataSize)
-
-      streamed.executeColumnar().mapPartitions { streamedIter =>
-        streamedIter.flatMap { cb =>
-          withResource(cb) { cb =>
-            GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
-              cb,
-              buildCount,
-              outputSchema,
-              numOutputRows,
-              numOutputBatches)
-          }
-        }
-      }
-    } else if (streamed.output.isEmpty) {
-      assert(boundCondition.isEmpty)
-
-      // streamed is empty, not sure if this ever actually happens though
-      lazy val builtBatch: ColumnarBatch =
-        makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
-      streamed.executeColumnar().flatMap { cb =>
-        withResource(cb) { cb =>
-          GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
-            builtBatch,
-            cb.numRows(),
-            outputSchema,
-            numOutputRows,
-            numOutputBatches)
-        }
-      }
     } else {
       lazy val builtBatch: ColumnarBatch =
         makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
