@@ -148,7 +148,7 @@ case class GpuFlatMapGroupsInPandasExec(
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        val pyRunner = new GpuArrowPythonRunner(
+        val pyRunner = new GpuGroupUDFArrowPythonRunner(
           chainedFunc,
           PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
           Array(argOffsets),

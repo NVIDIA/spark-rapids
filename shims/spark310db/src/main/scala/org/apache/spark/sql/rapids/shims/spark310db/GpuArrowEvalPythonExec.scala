@@ -330,7 +330,6 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
   }
 }
 
-
 /**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
@@ -406,6 +405,98 @@ class GpuArrowPythonRunner(
           GpuSemaphore.releaseIfNecessary(TaskContext.get())
         } {
           writer.close()
+          dataOut.flush()
+          if (onDataWriteFinished != null) onDataWriteFinished()
+        }
+      }
+
+      private def flattenNames(d: DataType, nullable: Boolean=true): Seq[(String, Boolean)] =
+        d match {
+          case s: StructType =>
+            s.flatMap(sf => Seq((sf.name, sf.nullable)) ++ flattenNames(sf.dataType, sf.nullable))
+          case m: MapType =>
+            flattenNames(m.keyType, nullable) ++ flattenNames(m.valueType, nullable)
+          case a: ArrayType => flattenNames(a.elementType, nullable)
+          case _ => Nil
+      }
+    }
+  }
+}
+
+
+/**
+ * Group Map UDF specific serializer for databricks.
+ */
+class GpuGroupUDFArrowPythonRunner(
+    funcs: Seq[ChainedPythonFunctions],
+    evalType: Int,
+    argOffsets: Array[Array[Int]],
+    pythonInSchema: StructType,
+    timeZoneId: String,
+    conf: Map[String, String],
+    batchSize: Long,
+    onDataWriteFinished: () => Unit,
+    override val pythonOutSchema: StructType,
+    minReadTargetBatchSize: Int)
+    extends GpuArrowPythonRunner(funcs, evalType, argOffsets, pythonInSchema, timeZoneId, conf, batchSize, onDataWriteFinished, pythonOutSchema, minReadTargetBatchSize) {
+
+  protected override def newWriterThread(
+      env: SparkEnv,
+      worker: Socket,
+      inputIterator: Iterator[ColumnarBatch],
+      partitionIndex: Int,
+      context: TaskContext): WriterThread = {
+    new WriterThread(env, worker, inputIterator, partitionIndex, context) {
+
+      protected override def writeCommand(dataOut: DataOutputStream): Unit = {
+
+        // Write config for the worker as a number of key -> value pairs of strings
+        dataOut.writeInt(conf.size)
+        for ((k, v) <- conf) {
+          PythonRDD.writeUTF(k, dataOut)
+          PythonRDD.writeUTF(v, dataOut)
+        }
+
+        PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
+      }
+
+      protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
+        val writer = {
+          val builder = ArrowIPCWriterOptions.builder()
+          builder.withMaxChunkSize(batchSize)
+          builder.withCallback((table: Table) => {
+            table.close()
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          })
+          // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
+          flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+              if (nullable) {
+                builder.withColumnNames(name)
+              } else {
+                builder.withNotNullableColumnNames(name)
+              }
+          }
+          // write 1 out to indicate there is more to read
+          dataOut.writeInt(1)
+          Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))
+        }
+        // write out number of columns
+        Utils.tryWithSafeFinally {
+          while(inputIterator.hasNext) {
+            val table = withResource(inputIterator.next()) { nextBatch =>
+              GpuColumnVector.from(nextBatch)
+            }
+            withResource(new NvtxRange("write python batch", NvtxColor.DARK_GREEN)) { _ =>
+              // The callback will handle closing table and releasing the semaphore
+              writer.write(table)
+            }
+          }
+          // indicate not to read more
+          // The iterator can grab the semaphore even on an empty batch
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+        } {
+          writer.close()
+          dataOut.writeInt(0)
           dataOut.flush()
           if (onDataWriteFinished != null) onDataWriteFinished()
         }
