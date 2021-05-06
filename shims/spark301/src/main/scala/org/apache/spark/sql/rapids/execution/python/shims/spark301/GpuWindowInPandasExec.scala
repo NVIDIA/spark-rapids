@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-
-package org.apache.spark.sql.rapids.execution.python.shims.spark310db
+package org.apache.spark.sql.rapids.execution.python.shims.spark301
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -28,8 +27,7 @@ import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.{BatchQueue, GpuWindowInPandasExecBase, GpuPythonHelper, GpuPythonUDF, GroupingIterator}
-import org.apache.spark.sql.rapids.execution.python.shims.spark310db.GpuArrowPythonRunner
+import org.apache.spark.sql.rapids.execution.python.{BatchQueue, GpuArrowPythonRunner, GpuWindowInPandasExecBase, GpuPythonHelper, GpuPythonUDF, GroupingIterator}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -39,44 +37,19 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * JVM and Python, and scheduling GPU resources for Python processes
  */
 case class GpuWindowInPandasExec(
-    projectList: Seq[Expression],  // parameter name is different
+    windowExpression: Seq[Expression],
     partitionSpec: Seq[Expression],
     orderSpec: Seq[SortOrder],
     child: SparkPlan) extends GpuWindowInPandasExecBase {
 
-  override final def pythonModuleKey: String = "databricks"
+  override final def pythonModuleKey: String = "spark"
 
-  // On Databricks, the projectList contains not only the window expression, but may also contains
-  // the input attributes. So we need to extract the window expressions from it.
-  override def windowExpression: Seq[Expression] = projectList.filter { expr =>
-    expr.find(node => node.isInstanceOf[GpuWindowExpression]).isDefined
-  }
-
-  // On Databricks, the projectList is expected to be the final output, and it is nondeterministic.
-  // It may contain the input attributes or not, or even part of the input attributes. So
-  // we need to project the joined batch per this projectList.
-  // But for the schema, just return it directly.
-  override def output: Seq[Attribute] = projectList
+  // Apache Spark expects input columns before the result columns
+  override def output: Seq[Attribute] = child.output ++ windowExpression
     .map(_.asInstanceOf[NamedExpression].toAttribute)
 
-  override def projectResult(joinedBatch: ColumnarBatch): ColumnarBatch = {
-    // Project the data
-    withResource(joinedBatch) { joinBatch =>
-      GpuProjectExec.project(joinBatch, outReferences)
-    }
-  }
-
-  private val outReferences = {
-    val allExpressions = windowFramesWithExpressions.map(_._2).flatten
-    val references = allExpressions.zipWithIndex.map { case (e, i) =>
-      // Results of window expressions will be on the right side of child's output
-      GpuBoundReference(child.output.size + i, e.dataType, e.nullable)
-    }
-    val unboundToRefMap = allExpressions.zip(references).toMap
-    // Bound the project list for GPU
-    GpuBindReferences.bindGpuReferences(
-      projectList.map(_.transform(unboundToRefMap)), child.output)
-  }
+  // Return the join batch directly per Apache Spark's expectation.
+  override def projectResult(joinedBatch: ColumnarBatch): ColumnarBatch = joinedBatch
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
@@ -266,5 +239,4 @@ case class GpuWindowInPandasExec(
 
     } // End of mapPartitions
   } // End of doExecuteColumnar
-
 }

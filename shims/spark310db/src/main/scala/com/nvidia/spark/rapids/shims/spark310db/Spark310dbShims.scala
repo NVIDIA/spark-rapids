@@ -40,8 +40,7 @@ import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, FlatMapGroups
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.{GpuPythonUDF, GpuWindowInPandasExecMetaBase}
-import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta}
-import org.apache.spark.sql.rapids.execution.python.shims.spark310db.GpuWindowInPandasExec
+import org.apache.spark.sql.rapids.execution.python.shims.spark310db.{GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuWindowInPandasExec}
 import org.apache.spark.sql.types._
 
 class Spark310dbShims extends Spark311Shims {
