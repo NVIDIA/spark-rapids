@@ -498,6 +498,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       if (conf.isTestEnabled) {
         assertIsOnTheGpu(updatedPlan, conf)
+        // Generate the canonicalized plan to ensure no incompatibilities.
+        // The plan itself is not currently checked.
+        updatedPlan.canonicalized
         validateExecsInGpuPlan(updatedPlan, conf)
       }
       updatedPlan
