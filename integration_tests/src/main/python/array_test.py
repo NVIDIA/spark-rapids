@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
 from conftest import is_dataproc_runtime
 from data_gen import *
 from pyspark.sql.types import *
@@ -109,3 +109,11 @@ def test_array_contains_for_nans(data_gen):
         chk_val = df.select(col('a')[0].alias('t')).filter(~isnan(col('t'))).collect()[0][0]
         return df.select(array_contains(col('a'), chk_val))
     assert_gpu_and_cpu_are_equal_collect(main_df)
+
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_get_array_item_ansi_fail(data_gen):
+    assert_gpu_and_cpu_error(lambda spark: unary_op_df(
+        spark, data_gen).select(col('a')[100]).collect(),
+                               conf={'spark.sql.ansi.enabled':True,
+                                     'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
+                               error_message='java.lang.ArrayIndexOutOfBoundsException')
