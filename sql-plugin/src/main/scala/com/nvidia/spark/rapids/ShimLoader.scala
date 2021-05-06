@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ object ShimLoader extends Logging {
     logInfo(s"Loading shim for Spark version: $sparkVersion")
 
     // This is not ideal, but pass the version in here because otherwise loader that match the
-    // same version (3.0.0 Apache and 3.0.0 Databricks) would need to know how to differentiate.
+    // same version (3.0.1 Apache and 3.0.1 Databricks) would need to know how to differentiate.
     val sparkShimLoaders = ServiceLoader.load(classOf[SparkShimServiceProvider])
         .asScala.filter(_.matchesVersion(sparkVersion))
     if (sparkShimLoaders.size > 1) {

@@ -94,9 +94,6 @@ def with_gpu_session(func, conf={}):
     copy['spark.rapids.sql.decimalType.enabled'] = 'true'
     return with_spark_session(func, conf=copy)
 
-def is_spark_300():
-    return (spark_version() == "3.0.0" or spark_version().startswith('3.0.0-amzn'))
-
 # databricks runtime 8.x and lower show 3.1.0 even though really 3.1.1
 def is_before_spark_311():
     return (is_databricks_runtime() and spark_version() < "3.1.0") or (not is_databricks_runtime() and spark_version() < "3.1.1")

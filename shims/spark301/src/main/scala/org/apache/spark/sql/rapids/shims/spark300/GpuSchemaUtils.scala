@@ -13,17 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims.spark300
 
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
+package org.apache.spark.sql.rapids.shims.spark301
 
-case class GpuBroadcastExchangeExec(
-    override val mode: BroadcastMode,
-    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
+import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.SchemaUtils
 
-  override def doCanonicalize(): SparkPlan = {
-    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
+object GpuSchemaUtils {
+
+  def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    SchemaUtils.checkColumnNameDuplication(schema.map(_.name), colType, resolver)
   }
 }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark300
+package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids._
 
@@ -22,7 +22,6 @@ import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike,
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, SortMergeJoinExec}
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
-import org.apache.spark.sql.types.DataType
 
 /**
  * HashJoin changed in Spark 3.1 requiring Shim

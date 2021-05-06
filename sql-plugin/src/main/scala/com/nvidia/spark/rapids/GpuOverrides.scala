@@ -1388,6 +1388,18 @@ object GpuOverrides {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             GpuDateAddInterval(lhs, rhs)
         }),
+    expr[DateFormatClass](
+      "Converts timestamp to a value of string in the format specified by the date format",
+      ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.STRING,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("strfmt", TypeSig.lit(TypeEnum.STRING)
+            .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
+            TypeSig.STRING)),
+      (a, conf, p, r) => new UnixTimeExprMeta[DateFormatClass](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuDateFormatClass(lhs, rhs, strfFormat)
+      }
+    ),
     expr[ToUnixTimestamp](
       "Returns the UNIX timestamp of the given time",
       ExprChecks.binaryProjectNotLambda(TypeSig.LONG, TypeSig.LONG,
@@ -2032,6 +2044,22 @@ object GpuOverrides {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
+      }),
+    expr[First](
+      "first aggregate operator",
+      ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuFirst(childExprs.head.convertToGpu(), a.ignoreNulls)
+      }),
+    expr[Last](
+      "last aggregate operator",
+      ExprChecks.aggNotWindow(TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.all))),
+      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLast(childExprs.head.convertToGpu(), a.ignoreNulls)
       }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
@@ -2809,9 +2837,10 @@ object GpuOverrides {
         TypeSig.STRUCT).nested()
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
-          .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported for arrays if " +
-              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
-          .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported for maps if " +
+          .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true and hash partitioning for array " +
+              "of arrays, maps, strings, or structs is not supported")
+          .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
         TypeSig.all),
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
@@ -2829,13 +2858,13 @@ object GpuOverrides {
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
+          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+        , TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-      (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r))
-        .disabledByDefault("large joins can cause out of memory errors"),
+      (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
@@ -2853,8 +2882,7 @@ object GpuOverrides {
             condition.map(_.convertToGpu()),
             conf.gpuTargetBatchSizeBytes)
         }
-      })
-        .disabledByDefault("large joins can cause out of memory errors"),
+      }),
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
@@ -3016,8 +3044,13 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // we need to run these rules both before and after CBO because the cost
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
-        val optimizer = new CostBasedOptimizer(conf)
-        optimizer.optimize(wrap)
+        val optimizer = try {
+          Class.forName(conf.optimizerClassName).newInstance().asInstanceOf[Optimizer]
+        } catch {
+          case e: Exception =>
+            throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
+        }
+        optimizer.optimize(conf, wrap)
       } else {
         Seq.empty
       }

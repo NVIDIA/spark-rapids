@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark300
+package com.nvidia.spark.rapids.shims.spark301
 
 import com.nvidia.spark.rapids._
 
@@ -75,7 +75,7 @@ case class GpuShuffledHashJoinExec(
     rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: GpuBuildSide,
-    condition: Option[Expression],
+    override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
     override val isSkewJoin: Boolean)
