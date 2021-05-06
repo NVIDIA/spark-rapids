@@ -2294,12 +2294,12 @@ object GpuOverrides {
           // To distinguish the supported nested type between Array and Map
           val checks = in.left.dataType match {
             case _: MapType =>
-              // This should match exactly with the checks for GetMapValue
+              // Match exactly with the checks for GetMapValue
               ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
                 ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
                 ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all))
             case _: ArrayType =>
-              // This should match exactly with the checks for GetArrayItem
+              // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProjectNotLambda(
                 (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
                   TypeSig.DECIMAL + TypeSig.MAP).nested(),
