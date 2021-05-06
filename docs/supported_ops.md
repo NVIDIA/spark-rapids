@@ -20,6 +20,26 @@ supports a precision up to 18 digits. Note that
 decimals are disabled by default in the plugin, because it is supported by a small
 number of operations presently, which can result in a lot of data movement to and
 from the GPU, slowing down processing in some cases.
+Result `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:
+
+```
+ * In particular, if we have expressions e1 and e2 with precision/scale p1/s1 and p2/s2
+ * respectively, then the following operations have the following precision / scale:
+ *
+ *   Operation    Result Precision                        Result Scale
+ *   ------------------------------------------------------------------------
+ *   e1 + e2      max(s1, s2) + max(p1-s1, p2-s2) + 1     max(s1, s2)
+ *   e1 - e2      max(s1, s2) + max(p1-s1, p2-s2) + 1     max(s1, s2)
+ *   e1 * e2      p1 + p2 + 1                             s1 + s2
+ *   e1 / e2      p1 - s1 + s2 + max(6, s1 + p2 + 1)      max(6, s1 + p2 + 1)
+ *   e1 % e2      min(p1-s1, p2-s2) + max(s1, s2)         max(s1, s2)
+ *   e1 union e2  max(s1, s2) + max(p1-s1, p2-s2)         max(s1, s2)
+```
+
+However Spark inserts `PromotePrecision` to CAST both sides to the same type.
+GPU mode may fall back to CPU even if the result Decimal precision is within 18 digits.
+For example, `Decimal(8,2)` x `Decimal(6,3)` resulting in `Decimal (15,5)` runs on CPU,
+because due to `PromotePrecision`, GPU mode assumes the result is `Decimal(19,6)`.
 
 ## `Timestamp`
 Timestamps in Spark will all be converted to the local time zone before processing
