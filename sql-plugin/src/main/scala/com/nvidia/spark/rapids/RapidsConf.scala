@@ -373,10 +373,10 @@ object RapidsConf {
     conf("spark.rapids.memory.gpu.direct.storage.spill.batchWriteBuffer.size")
     .doc("The size of the GPU memory buffer used to batch small buffers when spilling to GDS. " +
         "Note that this buffer is mapped to the PCI Base Address Register (BAR) space, which may " +
-        "be very limited on some GPUs (e.g. the NVIDIA T4 only has 256 MiB), and is also used by " +
-        "UCX bounce buffers.")
+        "be very limited on some GPUs (e.g. the NVIDIA T4 only has 256 MiB), and it is also used " +
+        "by UCX bounce buffers.")
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.MiB.toBytes(128))
+    .createWithDefault(ByteUnit.MiB.toBytes(8))
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
