@@ -262,7 +262,7 @@ trait GpuExec extends SparkPlan with Arm {
         // normalize that for equality testing, by assigning expr id from 0 incrementally. The
         // alias name doesn't matter and should be erased.
         val normalizedChild = QueryPlan.normalizeExpressions(a.child, allAttributes)
-        Alias(normalizedChild, "")(ExprId(id), a.qualifier)
+        ShimLoader.getSparkShims.alias(normalizedChild, "")(ExprId(id), a.qualifier)
       case a: GpuAlias =>
         id += 1
         // As the root of the expression, Alias will always take an arbitrary exprId, we need to
