@@ -1268,7 +1268,7 @@ object SupportedOpsDocs {
     println("Result `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:")
     println()
     println("```")
-    println(" * In particular, if we have expressions e1 and e2 with precision/scale p1/s2 and p2/s2")
+    println(" * In particular, if we have expressions e1 and e2 with precision/scale p1/s1 and p2/s2")
     println(" * respectively, then the following operations have the following precision / scale:")
     println(" *")
     println(" *   Operation    Result Precision                        Result Scale")
