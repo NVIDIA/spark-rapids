@@ -165,6 +165,9 @@ class Spark300Shims extends SparkShims {
           (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
           TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
+          override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
+            winPy.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),
