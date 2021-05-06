@@ -465,22 +465,22 @@ class GpuGroupUDFArrowPythonRunner(
         Utils.tryWithSafeFinally {
           // databricks uses special GroupUDFSerializer so we have to match the logic it expects,
           // which is a arrow stream for each grouped data
+          val builder = ArrowIPCWriterOptions.builder()
+          builder.withMaxChunkSize(batchSize)
+          builder.withCallback((table: Table) => {
+            table.close()
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+          })
+          // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
+          flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+              if (nullable) {
+                builder.withColumnNames(name)
+              } else {
+                builder.withNotNullableColumnNames(name)
+              }
+          }
           while(inputIterator.hasNext) {
             val writer = {
-              val builder = ArrowIPCWriterOptions.builder()
-              builder.withMaxChunkSize(batchSize)
-              builder.withCallback((table: Table) => {
-                table.close()
-                GpuSemaphore.releaseIfNecessary(TaskContext.get())
-              })
-              // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
-              flattenNames(pythonInSchema).foreach { case (name, nullable) =>
-                  if (nullable) {
-                    builder.withColumnNames(name)
-                  } else {
-                    builder.withNotNullableColumnNames(name)
-                  }
-              }
               // write 1 out to indicate there is more to read
               dataOut.writeInt(1)
               Table.writeArrowIPCChunked(builder.build(), new BufferToStreamWriter(dataOut))

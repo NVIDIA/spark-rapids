@@ -28,7 +28,7 @@ import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
  * JVM and Python, and scheduling GPU resources for Python processes
  */
 case class GpuWindowInPandasExec(
-    projectList: Seq[Expression],
+    projectList: Seq[Expression],  // parameter name is different
     partitionSpec: Seq[Expression],
     orderSpec: Seq[SortOrder],
     child: SparkPlan) extends GpuWindowInPandasExecBase {

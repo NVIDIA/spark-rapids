@@ -52,6 +52,7 @@ abstract class GpuWindowInPandasExecMetaBase(
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
+  // parameter name different - projectList vs windowExpression
   val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
     winPandas.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
