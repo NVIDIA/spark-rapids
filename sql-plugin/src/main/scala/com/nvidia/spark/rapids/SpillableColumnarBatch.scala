@@ -273,7 +273,8 @@ object SpillableBuffer extends Arm {
       priority: Long,
       spillCallback: RapidsBuffer.SpillCallback): SpillableBuffer = {
     val id = TempSpillBufferId()
-    RapidsBufferCatalog.addBuffer(id, buffer, MetaUtils.ignoreTableMeta, priority, spillCallback)
+    val meta = MetaUtils.getTableMetaNoTable(buffer)
+    RapidsBufferCatalog.addBuffer(id, buffer, meta, priority, spillCallback)
     new SpillableBuffer(id)
   }
 }
