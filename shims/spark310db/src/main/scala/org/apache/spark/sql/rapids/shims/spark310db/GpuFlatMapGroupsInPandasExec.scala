@@ -64,8 +64,7 @@ class GpuFlatMapGroupsInPandasExecMeta(
 }
 
 /**
- * Physical node of GPU version for
- * [[org.apache.spark.sql.catalyst.plans.logical.FlatMapGroupsInPandas]]
+ * GPU version of Spark's `FlatMapGroupsInPandasExec`
  *
  * Rows in each group are passed to the Python worker as an Arrow record batch.
  * The Python worker turns the record batch to a `pandas.DataFrame`, invoke the
@@ -127,24 +126,15 @@ case class GpuFlatMapGroupsInPandasExec(
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>
-      val queue: BatchQueue = new BatchQueue()
-      val context = TaskContext.get()
-      context.addTaskCompletionListener[Unit](_ => queue.close())
-
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
-        PythonWorkerSemaphore.acquireIfNecessary(context)
+        PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
       }
 
       // Projects each input batch into the deduplicated schema, and splits
       // into separate group batches to sends them to Python group by group later.
       val pyInputIter = projectAndGroup(inputIter, localChildOutput, dedupAttrs, groupingOffsets,
           mNumInputRows, mNumInputBatches, spillCallback)
-        .map { groupBatch =>
-          // Cache the input batches for release after writing done.
-          queue.add(groupBatch, spillCallback)
-          groupBatch
-        }
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
@@ -157,7 +147,7 @@ case class GpuFlatMapGroupsInPandasExec(
           pythonRunnerConf,
           // The whole group data should be written in a single call, so here is unlimited
           Int.MaxValue,
-          () => queue.close(),
+          onDataWriteFinished = null,
           pythonOutputSchema,
           // We can not assert the result batch from Python has the same row number with the
           // input batch. Because Grouped Map UDF allows the output of arbitrary length.
