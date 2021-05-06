@@ -19,11 +19,11 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
-import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
+import org.apache.spark.sql.catalyst.util.{TypeUtils, quoteIdentifier}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -87,7 +87,7 @@ class GpuGetArrayItemMeta(
   override def convertToGpu(
       arr: Expression,
       ordinal: Expression): GpuExpression =
-    GpuGetArrayItem(arr, ordinal)
+    GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
 }
 
 /**
@@ -95,7 +95,7 @@ class GpuGetArrayItemMeta(
  *
  * We need to do type checking here as `ordinal` expression maybe unresolved.
  */
-case class GpuGetArrayItem(child: Expression, ordinal: Expression)
+case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: Boolean = false)
     extends GpuBinaryExpression with ExpectsInputTypes with ExtractValue {
 
   // We have done type checking for child in `ExtractValue`, so only need to check the `ordinal`.
@@ -119,8 +119,15 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
     // Need to handle negative indexes...
-    if (ordinal.isValid && ordinal.getInt >= 0) {
-      lhs.getBase.extractListElement(ordinal.getInt)
+    if (ordinal.isValid) {
+      val minNumElements = lhs.getBase.countElements.min.getInt
+      if (minNumElements < math.abs(ordinal.getInt) + 1 && failOnError) {
+          throw new ArrayIndexOutOfBoundsException(
+            s"Invalid index: $ordinal.getInt, minumum numElements in this ColumnVector: " +
+              s"$minNumElements")
+      } else {
+        lhs.getBase.extractListElement(ordinal.getInt)
+      }
     } else {
       withResource(Scalar.fromNull(
         GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
