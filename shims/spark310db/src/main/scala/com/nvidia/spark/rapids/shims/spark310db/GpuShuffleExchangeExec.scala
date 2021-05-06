@@ -38,8 +38,8 @@ case class GpuShuffleExchangeExec(
     throw new UnsupportedOperationException
   }
 
-  // TODO - is this ok?
-  override def withNewOutputPartitioning(outputPartitioning: org.apache.spark.sql.catalyst.plans.physical.Partitioning) = {
+  // DB SPECIFIC - throw if called since we don't know how its used
+  override def withNewOutputPartitioning(outputPartitioning: Partitioning) = {
     throw new UnsupportedOperationException
   }
 
