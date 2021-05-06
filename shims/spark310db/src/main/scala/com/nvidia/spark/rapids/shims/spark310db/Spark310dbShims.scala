@@ -39,8 +39,9 @@ import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.{ArrowEvalPythonExec, FlatMapGroupsInPandasExec, MapInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
-import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuWindowInPandasExecMetaBase}
+import org.apache.spark.sql.rapids.execution.python.{GpuPythonUDF, GpuWindowInPandasExecMetaBase}
+import org.apache.spark.sql.rapids.execution.python.spark310db.{GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta}
+import org.apache.spark.sql.rapids.execution.python.shims.spark310db.GpuWindowInPandasExec
 import org.apache.spark.sql.types._
 
 class Spark310dbShims extends Spark311Shims {
@@ -87,6 +88,9 @@ class Spark310dbShims extends Spark311Shims {
           (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
           TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
+          override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
+            winPy.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),

@@ -28,6 +28,8 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+// This file is a copy of the base file with package changed to be built against specific
+// version of spark because GpuArrowPythonRunner is different
 
 /**
  * A helper class to pack the group related items for the Python input.

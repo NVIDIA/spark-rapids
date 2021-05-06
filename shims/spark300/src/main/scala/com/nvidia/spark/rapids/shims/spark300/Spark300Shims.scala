@@ -56,6 +56,7 @@ import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, Gpu
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
 import org.apache.spark.sql.rapids.shims.spark300._
+import org.apache.spark.sql.rapids.execution.python.shims.spark300._
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval

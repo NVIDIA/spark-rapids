@@ -33,6 +33,9 @@ import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+// This file is a copy of the base file with package changed to be built against specific
+// version of spark because GpuArrowPythonRunner is different
+
 class GpuMapInPandasExecMeta(
     mapPandas: MapInPandasExec,
     conf: RapidsConf,
