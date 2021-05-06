@@ -58,7 +58,7 @@ object GpuProjectExec extends Arm {
   def isNoopProject(cb: ColumnarBatch, boundExprs: Seq[Expression]): Boolean = {
     if (boundExprs.length == cb.numCols()) {
       extractSingleBoundIndex(boundExprs).zip(0 until cb.numCols()).forall {
-        case (Some(foundIndex), expectedIndex) if foundIndex == expectedIndex => true
+        case (Some(foundIndex), expectedIndex) => foundIndex == expectedIndex
         case _ => false
       }
     } else {

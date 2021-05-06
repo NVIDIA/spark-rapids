@@ -153,9 +153,9 @@ object JoinGatherer extends Arm {
     withResource(new NvtxRange("calc gather size", NvtxColor.YELLOW)) { _ =>
       val rowsLeft = gatherer.numRowsLeft
       val rowEstimate: Long = gatherer.getFixedWidthBitSize match {
-        case Some(fixedSize) =>
+        case Some(fixedBitSize) =>
           // Odd corner cases for tests, make sure we do at least one row
-          Math.max(1, (targetSize / fixedSize) * 8)
+          Math.max(1, (targetSize / fixedBitSize) * 8)
         case None =>
           // Heuristic to see if we need to do the expensive calculation
           if (rowsLeft * gatherer.realCheapPerRowSizeEstimate <= targetSize * 0.75) {
