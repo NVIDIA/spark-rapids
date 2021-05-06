@@ -403,7 +403,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }))
     val opts = GpuParquetFileFormat
       .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), schemaWithUnambiguousNames,
-        false)
+        writeInt96 = false)
       .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
     withResource(Table.writeParquetChunked(opts, buffer)) { writer =>
       writer.write(table)
