@@ -5322,7 +5322,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
-<td><em>PS* (If it's map, only string is supported. Extra check is inside the expression metadata; missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (If it's map, only string is supported.; missing nested BINARY, CALENDAR, UDT)</em></td>
 <td> </td>
 <td> </td>
 </tr>
@@ -5331,13 +5331,13 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS (Literal value only)</em></td>
+<td><em>PS (ints are only supported as array indexes, not as maps keys; Literal value only)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS (Literal value only)</em></td>
+<td><em>PS (strings are only supported as map keys, not array indexes; Literal value only)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
