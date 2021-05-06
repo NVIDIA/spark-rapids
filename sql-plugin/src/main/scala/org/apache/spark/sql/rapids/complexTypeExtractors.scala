@@ -121,7 +121,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
     // Need to handle negative indexes...
     if (ordinal.isValid) {
       val minNumElements = lhs.getBase.countElements.min.getInt
-      if ( (ordinal.getInt < 0 | minNumElements < ordinal.getInt + 1) & failOnError) {
+      if ( (ordinal.getInt < 0 || minNumElements < ordinal.getInt + 1) && failOnError) {
           throw new ArrayIndexOutOfBoundsException(
             s"Invalid index: ${ordinal.getInt}, minimum numElements in this ColumnVector: " +
               s"$minNumElements")
