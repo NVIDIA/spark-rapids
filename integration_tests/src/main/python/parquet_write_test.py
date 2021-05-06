@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_py4j_exception
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -29,15 +29,22 @@ multithreaded_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.
 coalesce_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
         coalesce_parquet_file_reader_conf]
-
+parquet_decimal_gens=[decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit]
+parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_decimal_gens)])
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
+
+parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                    string_gen, boolean_gen, date_gen,
+                    # we are limiting TimestampGen to avoid overflowing the INT96 value
+                    # see https://github.com/rapidsai/cudf/issues/8070
+                    TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))]
+parquet_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)])
+
 parquet_write_gens_list = [
-    [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-     string_gen, boolean_gen, date_gen, timestamp_gen],
-    pytest.param([byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                  string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_default,
+    parquet_basic_gen,
+    pytest.param(parquet_basic_gen + [decimal_gen_default,
                   decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit],
                  marks=pytest.mark.allow_non_gpu("CoalesceExec"))]
 
@@ -65,7 +72,9 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type
 @pytest.mark.parametrize('ts_rebase', ['CORRECTED'])
 @ignore_order
 def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
-    gen = TimestampGen()
+    # we are limiting TimestampGen to avoid overflowing the INT96 value
+    # see https://github.com/rapidsai/cudf/issues/8070
+    gen = TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, gen).write.parquet(path),
@@ -75,11 +84,15 @@ def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
               'spark.sql.parquet.outputTimestampType': ts_type})
 
+
 parquet_part_write_gens = [
-        byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        # Some file systems have issues with UTF8 strings so to help the test pass even there
-        StringGen('(\\w| ){0,50}'),
-        boolean_gen, date_gen, timestamp_gen]
+    byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+    # Some file systems have issues with UTF8 strings so to help the test pass even there
+    StringGen('(\\w| ){0,50}'),
+    boolean_gen, date_gen,
+    # we are limiting TimestampGen to avoid overflowing the INT96 value
+    # see https://github.com/rapidsai/cudf/issues/8070
+    TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))]
 
 # There are race conditions around when individual files are read in for partitioned data
 @ignore_order
@@ -100,6 +113,26 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf=all_confs)
+
+# we are limiting TimestampGen to avoid overflowing the INT96 value
+# see https://github.com/rapidsai/cudf/issues/8070
+@pytest.mark.parametrize('data_gen', [TimestampGen(end=datetime(1677, 9, 22, tzinfo=timezone.utc)),
+                                      TimestampGen(start=datetime(2262, 4, 11, tzinfo=timezone.utc))], ids=idfn)
+def test_catch_int96_overflow(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    confs = writer_confs.copy()
+    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
+    assert_py4j_exception(lambda: with_gpu_session(
+        lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
+
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+@pytest.mark.allow_non_gpu("DataWritingCommandExec")
+def test_int96_write_conf(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    confs = writer_confs.copy()
+    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96',
+                 'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
+    with_gpu_session(lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs)
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
@@ -157,10 +190,12 @@ def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_fact
     assert e_info.match(r".*SparkUpgradeException.*")
 
 # TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to handle TIMESTAMP_MILLIS
-@pytest.mark.parametrize('ts_write', ['INT96', 'TIMESTAMP_MICROS'])
+# TODO - we are limiting the INT96 values, see https://github.com/rapidsai/cudf/issues/8070
+@pytest.mark.parametrize('ts_write_data_gen', [('INT96', TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))),
+                                      ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('ts_rebase', ['EXCEPTION'])
-def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write, ts_rebase, spark_tmp_table_factory):
-    gen = TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc))
+def test_ts_write_fails_datetime_exception(spark_tmp_path, ts_write_data_gen, ts_rebase, spark_tmp_table_factory):
+    ts_write, gen = ts_write_data_gen
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_gpu_session(
             lambda spark : writeParquetUpgradeCatchException(spark, unary_op_df(spark, gen), data_path, spark_tmp_table_factory, ts_rebase, ts_write))
