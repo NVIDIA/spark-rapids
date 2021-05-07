@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
+from conftest import get_non_gpu_allowed
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
@@ -609,10 +610,9 @@ def test_subquery_in_agg(adaptive, expr):
         conf = {"spark.sql.adaptive.enabled" : adaptive})
 
 
+@allow_non_gpu('HashAggregateExec')
 @pytest.mark.parametrize('cast_struct_tostring', [
-    pytest.param('NO_CAST',
-        marks=pytest.mark.xfail(reason='cast to string first, '
-                                       'no support for structs as hash aggregation keys yet')),
+    pytest.param('NO_CAST'),
     pytest.param('LEGACY', marks=pytest.mark.xfail(
         reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
     pytest.param('SPARK311+', marks=pytest.mark.xfail(condition=is_before_spark_311(),
@@ -632,19 +632,19 @@ def test_subquery_in_agg(adaptive, expr):
 def test_struct_groupby_count(cast_struct_tostring, key_data_gen, val_data_gen):
     def _group_by_struct_or_cast(spark):
         df = two_col_df(spark, key_data_gen, val_data_gen)
-        return df.groupBy(df.a) if cast_struct_tostring == 'NO_CAST'\
-            else df.groupBy(df.a.cast(StringType()))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: _group_by_struct_or_cast(spark).count(),
-        {
-            'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
-        })
+        return df.groupBy(df.a).count() if cast_struct_tostring == 'NO_CAST'\
+            else df.groupBy(df.a.cast(StringType())).count()
+    conf = {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
+    }
+    if cast_struct_tostring == 'NO_CAST':
+        assert_gpu_fallback_collect(_group_by_struct_or_cast, get_non_gpu_allowed()[0], conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(_group_by_struct_or_cast, conf)
 
 
 @pytest.mark.parametrize('cast_struct_tostring', [
-    pytest.param('NO_CAST',
-        marks=pytest.mark.xfail(reason='cast to string first, '
-                                       'no support for structs as hash aggregation keys yet')),
+    pytest.param('NO_CAST'),
     pytest.param('LEGACY', marks=pytest.mark.xfail(
         reason='https://github.com/NVIDIA/spark-rapids/issues/2309')),
     pytest.param('SPARK311+', marks=pytest.mark.xfail(condition=is_before_spark_311(),
@@ -667,8 +667,10 @@ def test_struct_count_distinct(cast_struct_tostring, key_data_gen):
         df = gen_df(spark, key_data_gen)
         return df.agg(f.countDistinct(df.a)) if cast_struct_tostring == 'NO_CAST'\
             else df.agg(f.countDistinct(df.a.cast(StringType())))
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: _count_distinct_by_struct_or_cast(spark),
-         {
-            'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY',
-        })
+    conf = {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY',
+    }
+    if cast_struct_tostring == 'NO_CAST':
+        assert_gpu_fallback_collect(_count_distinct_by_struct_or_cast, 'HashAggregateExec', conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct_or_cast, conf)

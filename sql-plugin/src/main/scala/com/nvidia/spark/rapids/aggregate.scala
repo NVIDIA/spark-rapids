@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression}
-import org.apache.spark.sql.types.{ArrayType, LongType, MapType}
+import org.apache.spark.sql.types.{ArrayType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
@@ -100,11 +100,11 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   override def tagPlanForGpu(): Unit = {
     agg.groupingExpressions
       .find(_.dataType match {
-        case _@(ArrayType(_, _) | MapType(_, _, _)) => true
+        case _@(ArrayType(_, _) | MapType(_, _, _)) | _@StructType(_) => true
         case _ => false
       })
       .foreach(_ =>
-        willNotWorkOnGpu("Array and Map types in grouping expressions are not supported"))
+        willNotWorkOnGpu("Nested types in grouping expressions are not supported"))
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
     }

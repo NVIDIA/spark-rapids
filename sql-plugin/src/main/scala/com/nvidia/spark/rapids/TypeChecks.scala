@@ -500,13 +500,13 @@ abstract class TypeChecks[RET] {
     fields: Seq[StructField],
     msgFormat: String
     ): Unit = {
-    val unsupportedOutputTypes: Map[DataType, Set[String]] = fields
+    val unsupportedTypes: Map[DataType, Set[String]] = fields
       .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet)
 
-    if (unsupportedOutputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedOutputTypes)))
+    if (unsupportedTypes.nonEmpty) {
+      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
   }
 }
