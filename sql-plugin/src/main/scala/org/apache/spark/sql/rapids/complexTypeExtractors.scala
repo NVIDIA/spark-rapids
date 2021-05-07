@@ -120,13 +120,15 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
     // Need to handle negative indexes...
     if (ordinal.isValid) {
-      val minNumElements = lhs.getBase.countElements.min.getInt
-      if ( (ordinal.getInt < 0 || minNumElements < ordinal.getInt + 1) && failOnError) {
+      withResource(lhs.getBase.countElements) { numElementsCV =>
+        val minNumElements = numElementsCV.min.getInt
+        if ( (ordinal.getInt < 0 || minNumElements < ordinal.getInt + 1) && failOnError) {
           throw new ArrayIndexOutOfBoundsException(
             s"Invalid index: ${ordinal.getInt}, minimum numElements in this ColumnVector: " +
               s"$minNumElements")
-      } else {
-        lhs.getBase.extractListElement(ordinal.getInt)
+        } else {
+          lhs.getBase.extractListElement(ordinal.getInt)
+        }
       }
     } else {
       withResource(Scalar.fromNull(
