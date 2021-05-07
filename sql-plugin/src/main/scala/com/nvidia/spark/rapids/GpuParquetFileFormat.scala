@@ -106,7 +106,8 @@ object GpuParquetFileFormat {
   }
 
   def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions]
-  (builder: ParquetColumnWriterOptions.NestedBuilder[T, V], schema: StructType): T = {
+  (builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
+   schema: StructType, writeInt96: Boolean): T = {
     // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
     // setting if the output is nullable or not everywhere we have hard-coded nullable=true
     schema.foreach(field =>
@@ -115,14 +116,14 @@ object GpuParquetFileFormat {
           builder.withDecimalColumn(field.name, dt.precision, true)
         case TimestampType =>
           builder.withTimestampColumn(field.name,
-            ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType, true)
+            writeInt96, true)
         case s: StructType =>
           builder.withStructColumn(
-            parquetWriterOptionsFromSchema(structBuilder(field.name), s).build())
+            parquetWriterOptionsFromSchema(structBuilder(field.name), s, writeInt96).build())
         case a: ArrayType =>
           builder.withListColumn(
             parquetWriterOptionsFromSchema(listBuilder(field.name),
-              StructType(Array(StructField(field.name, a.elementType, true))))
+              StructType(Array(StructField(field.name, a.elementType, true))), writeInt96)
               .build())
         case _ =>
           builder.withColumns(true, field.name)
@@ -338,7 +339,8 @@ class GpuParquetWriter(
   override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = GpuParquetFileFormat
-      .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema)
+      .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
     Table.writeParquetChunked(builder.build(), this)
