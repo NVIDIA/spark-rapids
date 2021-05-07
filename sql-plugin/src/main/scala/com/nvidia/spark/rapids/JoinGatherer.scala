@@ -99,7 +99,7 @@ trait JoinGatherer extends LazySpillable with Arm {
   def gatherRowEstimate(targetSize: Long): Int = {
     val bitSizePerRow = getFixedWidthBitSize
     if (bitSizePerRow.isDefined) {
-      Math.min(Math.min((targetSize / bitSizePerRow.get) / 8, numRowsLeft), Integer.MAX_VALUE).toInt
+      Math.min(Math.min((targetSize / bitSizePerRow.get) * 8, numRowsLeft), Integer.MAX_VALUE).toInt
     } else {
       // WARNING magic number below. The rowEstimateMultiplier is arbitrary, we want to get
       // enough rows that we include that we go over the target size, but not too much so we
@@ -153,9 +153,9 @@ object JoinGatherer extends Arm {
     withResource(new NvtxRange("calc gather size", NvtxColor.YELLOW)) { _ =>
       val rowsLeft = gatherer.numRowsLeft
       val rowEstimate: Long = gatherer.getFixedWidthBitSize match {
-        case Some(fixedSize) =>
+        case Some(fixedBitSize) =>
           // Odd corner cases for tests, make sure we do at least one row
-          Math.max(1, (targetSize / fixedSize) / 8)
+          Math.max(1, (targetSize / fixedBitSize) * 8)
         case None =>
           // Heuristic to see if we need to do the expensive calculation
           if (rowsLeft * gatherer.realCheapPerRowSizeEstimate <= targetSize * 0.75) {
@@ -444,7 +444,7 @@ object JoinGathererImpl {
     if (allOptions.exists(_.isEmpty)) {
       None
     } else {
-      Some(allOptions.map(_.get).sum + 1)
+      Some(allOptions.map(_.get).sum)
     }
   }
 
@@ -456,7 +456,7 @@ object JoinGathererImpl {
    */
   private def calcRowSizeBits(dt: DataType, nullValueCalc: Boolean): Option[Int] = dt match {
     case StructType(fields) =>
-      sumRowSizesBits(fields.map(_.dataType), nullValueCalc)
+      sumRowSizesBits(fields.map(_.dataType), nullValueCalc).map(_ + 1)
     case dt: DecimalType if dt.precision > DType.DECIMAL64_MAX_PRECISION =>
       if (nullValueCalc) {
         throw new IllegalArgumentException(s"Found an unsupported type $dt")

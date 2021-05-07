@@ -310,6 +310,13 @@ case class GpuPythonUDF(
  */
 trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
 
+  /**
+   * Update the expected batch size for next reading.
+   */
+  private[python] final def updateMinReadTargetBatchSize(size: Int) = {
+    self.minReadTargetBatchSize = size
+  }
+
   protected def newReaderIterator(
       stream: DataInputStream,
       writerThread: WriterThread,
