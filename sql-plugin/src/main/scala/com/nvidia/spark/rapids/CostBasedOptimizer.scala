@@ -151,7 +151,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
                 && childGpuTotal > childCpuCost) {
               // force this child plan back onto CPU
               optimizations.append(ReplaceSection(
-                child, totalCpuCost, totalGpuCost /*childCpuCost, childGpuTotal*/))
+                child, totalCpuCost, totalGpuCost))
               child.recursiveCostPreventsRunningOnGpu()
             }
         }
