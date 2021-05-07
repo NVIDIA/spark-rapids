@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.shims.spark310db
 import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShims}
 
 object SparkShimServiceProvider {
+  // Databricks reports version 3.1.0 but really its based on 3.1.1, here we match what
+  // spark version reports though
   val VERSION = DatabricksShimVersion(3, 1, 0)
   val VERSIONNAMES = Seq(s"$VERSION")
 }
