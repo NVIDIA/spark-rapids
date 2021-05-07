@@ -130,7 +130,7 @@ abstract class RapidsBufferStore(
    */
   def copyBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
   : RapidsBufferBase = {
-    closeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
+    freeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
       buffers.add(newBuffer)
       catalog.registerNewBuffer(newBuffer)
       newBuffer

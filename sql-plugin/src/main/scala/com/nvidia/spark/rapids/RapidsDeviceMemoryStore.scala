@@ -67,7 +67,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
-    closeOnExcept(
+    freeOnExcept(
       new RapidsDeviceMemoryBuffer(
         id,
         contigBuffer.getLength,
@@ -102,7 +102,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
     contigBuffer.incRefCount()
-    closeOnExcept(
+    freeOnExcept(
       new RapidsDeviceMemoryBuffer(
         id,
         size,
@@ -133,7 +133,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
-    closeOnExcept(
+    freeOnExcept(
       new RapidsDeviceMemoryBuffer(
         id,
         buffer.getLength,
