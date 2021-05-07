@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,32 +64,30 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
             } finally {
               data.close()
             }
-          case other =>
-            if (other == null) {
-              // NOOP does not matter the current state is unchanged
-            } else {
-              // Other is NOT null so it now takes over
-              if (runningResult != null) {
-                runningResult.close()
-                runningResult = null
-              }
-
-              if (runningScalar != null) {
-                runningScalar.close()
-                runningScalar = null
-              }
-
-              runningScalar = GpuScalar.from(other, expr.dataType)
+          case s: Scalar =>
+            // scalar now takes over
+            if (runningResult != null) {
+              runningResult.close()
+              runningResult = null
             }
+
+            if (runningScalar != null) {
+              runningScalar.close()
+              runningScalar = null
+            }
+            runningScalar = s
+          case _ => // NOOP does not matter the current state is unchanged
         }
       })
 
       if (runningResult != null) {
         GpuColumnVector.from(runningResult.incRefCount(), dataType)
       } else if (runningScalar != null) {
-        GpuScalar.extract(runningScalar)
+        // Returns the Scalar directly instead of pulling data out of GPU.
+        runningScalar.incRefCount()
       } else {
-        null
+        // null is not welcome, so use a null scalar instead
+        GpuScalar.from(null, dataType)
       }
     } finally {
       if (runningResult != null) {

@@ -36,7 +36,7 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
     // MapData is represented as List of Struct in terms of cuDF.
     withResource(input.getBase.countElements()) { collectionSize =>
       if (legacySizeOfNull) {
-        withResource(GpuScalar.from(-1)) { nullScalar =>
+        withResource(GpuScalar.from(-1, IntegerType)) { nullScalar =>
           withResource(input.getBase.isNull) { inputIsNull =>
             inputIsNull.ifElse(nullScalar, collectionSize)
           }

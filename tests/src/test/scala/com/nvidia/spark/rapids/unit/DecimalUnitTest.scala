@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.math.RoundingMode
 
 import scala.util.Random
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector}
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import com.nvidia.spark.rapids.{GpuAlias, GpuBatchScanExec, GpuColumnVector, GpuIsNotNull, GpuIsNull, GpuLiteral, GpuOverrides, GpuScalar, GpuUnitTests, HostColumnarToGpu, RapidsConf}
 
 import org.apache.spark.SparkConf
@@ -158,7 +158,9 @@ class DecimalUnitTest extends GpuUnitTests {
     wrapperLit.tagForGpu()
     assertResult(true)(wrapperLit.canExprTreeBeReplaced)
     val gpuLit = wrapperLit.convertToGpu().asInstanceOf[GpuLiteral]
-    assertResult(lit.eval(null))(gpuLit.columnarEval(null))
+    withResourceIfAllowed(gpuLit.columnarEval(null)) { s =>
+      assertResult(lit.eval(null))(GpuScalar.extract(s.asInstanceOf[Scalar]))
+    }
     assertResult(lit.sql)(gpuLit.sql)
 
     // inconvertible because of precision overflow
@@ -175,7 +177,9 @@ class DecimalUnitTest extends GpuUnitTests {
     val gpuAlias = wrapperAlias.convertToGpu().asInstanceOf[GpuAlias]
     assertResult(cpuAlias.dataType)(gpuAlias.dataType)
     assertResult(cpuAlias.sql)(gpuAlias.sql)
-    assertResult(cpuAlias.eval(null))(gpuAlias.columnarEval(null))
+    withResourceIfAllowed(gpuAlias.columnarEval(null)) { s =>
+      assertResult(cpuAlias.eval(null))(GpuScalar.extract(s.asInstanceOf[Scalar]))
+    }
   }
 
   test("test AttributeReference with decimal") {

@@ -387,7 +387,10 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
   // avoid unnecessary `child` evaluation in both codegen and non-codegen eval
   // by checking if scaleV == null as well.
   private lazy val scaleV: Any = scale match {
-    case _: GpuExpression => scale.columnarEval(null)
+    case _: GpuExpression =>
+      withResource(scale.columnarEval(null).asInstanceOf[Scalar]) { s =>
+        s.getInt
+      }
     case _ => scale.eval(EmptyRow)
   }
   private lazy val _scale: Int = scaleV.asInstanceOf[Int]

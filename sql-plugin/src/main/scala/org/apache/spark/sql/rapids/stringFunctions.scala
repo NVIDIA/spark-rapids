@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -270,24 +270,14 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
     var nullStrScalar: Scalar = null
     var emptyStrScalar: Scalar = null
     val rows = batch.numRows()
-    val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
-    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
+    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector](children.size)
     try {
-      nullStrScalar = GpuScalar.from(null, StringType)
-      children.foreach(childEvals += _.columnarEval(batch))
-      childEvals.foreach {
-        case vector: GpuColumnVector =>
-          columns += vector.getBase
-        case col => if (col == null) {
-          columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
-        } else {
-          withResource(GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)) {
-            stringScalar =>
-              columns += GpuColumnVector.from(stringScalar, rows, StringType).getBase
-          }
-        }
+      children.foreach { childExpr =>
+        columns += GpuExpressionsUtils.resolveColumnVector(
+          childExpr.columnarEval(batch), rows, StringType).getBase
       }
       emptyStrScalar = GpuScalar.from("", StringType)
+      nullStrScalar = GpuScalar.from(null, StringType)
       GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
         columns.toArray[ColumnView]), dataType)
     } finally {
@@ -461,11 +451,9 @@ case class GpuStringReplace(
       replaceExpr: Scalar): ColumnVector = {
     // When search or replace string is null, return all nulls like the CPU does.
     if (!searchExpr.isValid || !replaceExpr.isValid) {
-      withResource(GpuScalar.from(null, StringType)) { nullStrScalar =>
-        return ColumnVector.fromScalar(nullStrScalar, strExpr.getRowCount.toInt)
-      }
-    }
-    if (searchExpr.getJavaString.isEmpty) { // Return original string if search string is empty
+      GpuColumnVector.fromNull(strExpr.getRowCount.toInt, StringType).getBase
+    } else if (searchExpr.getJavaString.isEmpty) {
+      // Return original string if search string is empty
       strExpr.getBase.asStrings()
     } else {
       strExpr.getBase.stringReplace(searchExpr, replaceExpr)

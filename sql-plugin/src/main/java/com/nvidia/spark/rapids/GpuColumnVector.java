@@ -756,6 +756,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Creates a GpuColumnVector where the elements are filled with nulls.
+   *
+   * @param count the row number of the output column
+   * @param sparkType the data type of the output column
+   * @return a GpuColumnVector filled with nulls. It should be closed to avoid memory leak.
+   */
+  public static GpuColumnVector fromNull(int count, DataType sparkType) {
+    try (Scalar s = Scalar.fromNull(getNonNestedRapidsType(sparkType))) {
+      return from(ai.rapids.cudf.ColumnVector.fromScalar(s, count), sparkType);
+    }
+  }
+
+  /**
    * Get the underlying cudf columns from the batch.  This does not increment any
    * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.

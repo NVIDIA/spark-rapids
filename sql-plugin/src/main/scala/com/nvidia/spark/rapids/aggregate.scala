@@ -451,13 +451,7 @@ case class GpuHashAggregateExec(
               val result = ref.columnarEval(finalCb)
               // Result references can be virtually anything, we need to coerce
               // them to be vectors since this is going into a ColumnarBatch
-              result match {
-                case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-                case _ =>
-                  withResource(GpuScalar.from(result, ref.dataType)) { scalar =>
-                    GpuColumnVector.from(scalar, finalCb.numRows, ref.dataType)
-                  }
-              }
+              GpuExpressionsUtils.resolveColumnVector(result, finalCb.numRows, ref.dataType)
             }
             finalCb.close()
             finalCb = null
@@ -508,13 +502,7 @@ case class GpuHashAggregateExec(
       boundInputReferences: Seq[Expression]): Seq[GpuColumnVector] = {
     boundInputReferences.safeMap { ref =>
       val in = ref.columnarEval(batch)
-      val childCv = in match {
-        case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-        case _ =>
-          withResource(GpuScalar.from(in, ref.dataType)) { scalar =>
-            GpuColumnVector.from(scalar, batch.numRows, ref.dataType)
-          }
-      }
+      val childCv = GpuExpressionsUtils.resolveColumnVector(in, batch.numRows, ref.dataType)
       if (childCv.dataType == ref.dataType) {
         childCv
       } else {

@@ -222,14 +222,10 @@ case class GpuCast(
   def doColumnar(input: ColumnView, sparkType: DataType): ColumnVector = {
     (sparkType, dataType) match {
       case (NullType, to) =>
-        withResource(GpuScalar.from(null, to)) { scalar =>
-          ColumnVector.fromScalar(scalar, input.getRowCount.toInt)
-        }
+        GpuColumnVector.fromNull(input.getRowCount.toInt, to).getBase
       case (DateType, BooleanType | _: NumericType) =>
         // casts from date type to numerics are always null
-        withResource(GpuScalar.from(null, dataType)) { scalar =>
-          ColumnVector.fromScalar(scalar, input.getRowCount.toInt)
-        }
+        GpuColumnVector.fromNull(input.getRowCount.toInt, dataType).getBase
       case (DateType, StringType) =>
         input.asStrings("%Y-%m-%d")
       case (TimestampType, FloatType | DoubleType) =>

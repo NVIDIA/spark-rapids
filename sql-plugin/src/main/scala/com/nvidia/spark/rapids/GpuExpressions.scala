@@ -20,7 +20,7 @@ import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, Un
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -45,6 +45,38 @@ object GpuExpressionsUtils extends Arm {
     case _ =>
       throw new IllegalStateException("Internal Error GPU support for this data type is not " +
         "implemented and should have been disabled")
+  }
+
+  /**
+   * Tries to resolve a `GpuColumnVector` from a Scala `Any`.
+   *
+   * Now it covers only 3 types as below, and will blow up for other types.
+   *   - GpuColumnVector
+   *   - Scalar
+   *   - null
+   *
+   * This is a common handling of the result from the `columnarEval` of an expression.
+   * And it is recommended to return only one of the two types from a GPU expression's
+   * `columnarEval`.
+   *
+   * Not sure if `null` should be taken into account, since null should be replaced by
+   * `GpuScalar(null, dataType)` or a null ColumnVector. But what if some exceptions occur.
+   *
+   * @param any the input value. It will be closed if it is a closeable after the call done.
+   * @param numRows the expected row number of the output column, used when 'any' is a Scalar.
+   * @param dType the data type of the output column, used when 'any' is a Scalar.
+   * @return a `GpuColumnVector` if it succeeds. Users should close the column vector to avoid
+   *         memory leak.
+   */
+  def resolveColumnVector(any: Any, numRows: Int, dType: DataType): GpuColumnVector = {
+    withResourceIfAllowed(any) {
+      case c: GpuColumnVector => c.incRefCount()
+      case s: Scalar => GpuColumnVector.from(s, numRows, dType)
+      case null => GpuColumnVector.fromNull(numRows, dType)
+      case _ =>
+        throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value: $any." +
+          s" Please convert the value to a Scalar or a GpuColumnVector before returning it.")
+    }
   }
 }
 
@@ -114,14 +146,10 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResourceIfAllowed(child.columnarEval(batch)) {
-      case vec: GpuColumnVector => doItColumnar(vec)
-      case other =>
-        withResource(GpuScalar.from(other, child.dataType)) { s =>
-          withResource(GpuColumnVector.from(s, batch.numRows(), child.dataType)) { vec =>
-            doItColumnar(vec)
-          }
-        }
+    val any = child.columnarEval(batch)
+    val column = GpuExpressionsUtils.resolveColumnVector(any, batch.numRows(), child.dataType)
+    withResource(column) { col =>
+      doItColumnar(col)
     }
   }
 }
@@ -145,21 +173,14 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
         (lhs, rhs) match {
           case (l: GpuColumnVector, r: GpuColumnVector) =>
             GpuColumnVector.from(doColumnar(l, r), dataType)
-          case (l, r: GpuColumnVector) =>
-            withResource(GpuScalar.from(l, left.dataType)) { scalar =>
-              GpuColumnVector.from(doColumnar(scalar, r), dataType)
-            }
-          case (l: GpuColumnVector, r) =>
-            withResource(GpuScalar.from(r, right.dataType)) { scalar =>
-              GpuColumnVector.from(doColumnar(l, scalar), dataType)
-            }
-          case (l, r) if l != null && r != null =>
-            withResource(GpuScalar.from(l, left.dataType)) { leftScalar =>
-              withResource(GpuScalar.from(r, right.dataType)) { rightScalar =>
-                GpuColumnVector.from(doColumnar(batch.numRows(), leftScalar, rightScalar), dataType)
-              }
-            }
-          case _ => null
+          case (l: Scalar, r: GpuColumnVector) =>
+            GpuColumnVector.from(doColumnar(l, r), dataType)
+          case (l: GpuColumnVector, r: Scalar) =>
+            GpuColumnVector.from(doColumnar(l, r), dataType)
+          case (l: Scalar, r: Scalar) =>
+            GpuColumnVector.from(doColumnar(batch.numRows(), l, r), dataType)
+          // null is not welcome, use a null Column.
+          case _ => GpuColumnVector.fromNull(batch.numRows(), dataType)
         }
       }
     }
@@ -229,7 +250,7 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
 
   override def children: Seq[Expression] = srcStr +: trimStr.toSeq
 
-  def strippedColumnVector(value: GpuColumnVector, sclarValue: Scalar): GpuColumnVector
+  def strippedColumnVector(value: GpuColumnVector, scalarValue: Scalar): GpuColumnVector
 
   override def sql: String = if (trimStr.isDefined) {
     s"TRIM($direction ${trimStr.get.sql} FROM ${srcStr.sql})"
@@ -245,9 +266,7 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
       // have been optimized out
       val column = shouldBeColumn.asInstanceOf[GpuColumnVector]
       if (trim == null) {
-        withResource(GpuScalar.from(null, StringType)) { nullScalar =>
-          GpuColumnVector.from(nullScalar, column.getRowCount.toInt, StringType)
-        }
+        GpuColumnVector.fromNull(column.getRowCount.toInt, StringType)
       } else if (trim.isEmpty) {
         column.incRefCount() // This is a noop
       } else {
@@ -278,47 +297,23 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
         withResourceIfAllowed(child2.columnarEval(batch)) { val2 =>
           (val0, val1, val2) match {
             case (v0: GpuColumnVector, v1: GpuColumnVector, v2: GpuColumnVector) =>
-              doColumnar(v0, v1, v2)
-            case (v0, v1: GpuColumnVector, v2: GpuColumnVector) =>
-              withResource(GpuScalar.from(v0, child0.dataType)) { scalar0 =>
-                GpuColumnVector.from(doColumnar(scalar0, v1, v2), dataType)
-              }
-            case (v0: GpuColumnVector, v1, v2: GpuColumnVector) =>
-              withResource(GpuScalar.from(v1, child1.dataType)) { scalar1 =>
-                GpuColumnVector.from(doColumnar(v0, scalar1, v2), dataType)
-              }
-            case (v0: GpuColumnVector, v1: GpuColumnVector, v2) =>
-              withResource(GpuScalar.from(v2, child2.dataType)) { scalar2 =>
-                GpuColumnVector.from(doColumnar(v0, v1, scalar2), dataType)
-              }
-            case (v0, v1, v2: GpuColumnVector) =>
-              withResource(GpuScalar.from(v0, child0.dataType)) { scalar0 =>
-                withResource(GpuScalar.from(v1, child1.dataType)) { scalar1 =>
-                  GpuColumnVector.from(doColumnar(scalar0, scalar1, v2), dataType)
-                }
-              }
-            case (v0, v1: GpuColumnVector, v2) =>
-              withResource(GpuScalar.from(v0, child0.dataType)) { scalar0 =>
-                withResource(GpuScalar.from(v2, child2.dataType)) { scalar2 =>
-                  GpuColumnVector.from(doColumnar(scalar0, v1, scalar2), dataType)
-                }
-              }
-            case (v0: GpuColumnVector, v1, v2) =>
-              withResource(GpuScalar.from(v1, child1.dataType)) { scalar1 =>
-                withResource(GpuScalar.from(v2, child2.dataType)) { scalar2 =>
-                  GpuColumnVector.from(doColumnar(v0, scalar1, scalar2), dataType)
-                }
-              }
-            case (v0, v1, v2) if v0 != null && v1 != null && v2 != null =>
-              withResource(GpuScalar.from(v0, child0.dataType)) { v0Scalar =>
-                withResource(GpuScalar.from(v1, child1.dataType)) { v1Scalar =>
-                  withResource(GpuScalar.from(v2, child2.dataType)) { v2Scalar =>
-                    GpuColumnVector.from(doColumnar(batch.numRows(), v0Scalar, v1Scalar, v2Scalar),
-                      dataType)
-                  }
-                }
-              }
-            case _ => null
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: Scalar, v1: GpuColumnVector, v2: GpuColumnVector) =>
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: GpuColumnVector, v1: Scalar, v2: GpuColumnVector) =>
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: GpuColumnVector, v1: GpuColumnVector, v2: Scalar) =>
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: Scalar, v1: Scalar, v2: GpuColumnVector) =>
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: Scalar, v1: GpuColumnVector, v2: Scalar) =>
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: GpuColumnVector, v1: Scalar, v2: Scalar) =>
+              GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
+            case (v0: Scalar, v1: Scalar, v2: Scalar) =>
+              GpuColumnVector.from(doColumnar(batch.numRows(), v0, v1, v2), dataType)
+            // null is not welcome, use a null Scalar column.
+            case _ => GpuColumnVector.fromNull(batch.numRows(), dataType)
           }
         }
       }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import java.util
 import java.util.Objects
 import javax.xml.bind.DatatypeConverter
 
+import scala.reflect.runtime.universe.TypeTag
+
 import ai.rapids.cudf.{DType, Scalar}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
@@ -39,8 +41,10 @@ object LiteralHelper {
   }
 }
 
-object GpuScalar {
-  def scalaTypeToDType(v: Any): DType = {
+object GpuScalar extends Arm {
+  @deprecated("This will be removed. Since no need to infer the type again because" +
+    " Spark does it already. Besides it is difficult to support nested type.", "")
+  private def scalaTypeToDType(v: Any): DType = {
     v match {
       case _: Long => DType.INT64
       case _: Double => DType.FLOAT64
@@ -56,6 +60,9 @@ object GpuScalar {
   }
 
   def extract(v: Scalar): Any = v.getType match {
+    // This is only used in unit tests.
+    // It is not a good idea to pull the data out of GPU during computations, unless
+    // there is no ways to go.
     case DType.BOOL8 => v.getBoolean
     case DType.FLOAT32 => v.getFloat
     case DType.FLOAT64 => v.getDouble
@@ -79,6 +86,8 @@ object GpuScalar {
     }
   }
 
+  @deprecated("This will be removed. Since no need to infer the type again because" +
+    " Spark does it already. Besides it is difficult to support nested type.", "")
   def from(v: Any): Scalar = v match {
     case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
     case l: Long => Scalar.fromLong(l)
@@ -156,6 +165,32 @@ object GpuScalar {
   }
 }
 
+object GpuLiteral {
+
+  /**
+   * The following 3 APIs are used to create a `GpuLiteral` from a Scala value, by leveraging the
+   * corresponding CPU APIs to do the data conversion and type checking, which are quite
+   * complicated. Fortunately Spark does this for us.
+   */
+  def apply(v: Any): GpuLiteral = {
+    val cpuLiteral = Literal(v)
+    GpuLiteral(cpuLiteral.value, cpuLiteral.dataType)
+  }
+
+  def create(value: Any, dataType: DataType): GpuLiteral = {
+    val cpuLiteral = Literal.create(value, dataType)
+    GpuLiteral(cpuLiteral.value, cpuLiteral.dataType)
+  }
+
+  def create[T : TypeTag](v: T): GpuLiteral = {
+    val cpuLiteral = Literal.create(v)
+    GpuLiteral(cpuLiteral.value, cpuLiteral.dataType)
+  }
+}
+
+/**
+ * In order to do type conversion and checking, use GpuLiteral.create() instead of constructor.
+ */
 case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression {
 
   // Assume this came from Spark Literal and no need to call Literal.validateLiteralValue here.
@@ -238,7 +273,11 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
     case _ => value.toString
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = value
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    // Returns a Scalar instead of the value to support the scalar of nested type, and
+    // simplify the handling of result from a `expr.columnarEval`.
+    GpuScalar.from(value, dataType)
+  }
 }
 
 class LiteralExprMeta(

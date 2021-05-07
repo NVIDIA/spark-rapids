@@ -51,7 +51,8 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
           withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
             GpuColumnVector.from(view.copyToColumnVector(), dt)
           }
-        case null => null
+        case null =>
+          GpuColumnVector.fromNull(batch.numRows(), dt)
         case ir: InternalRow =>
           // Literal struct values are not currently supported, but just in case...
           val tmp = ir.get(ordinal, dt)
@@ -122,10 +123,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
     if (ordinal.isValid && ordinal.getInt >= 0) {
       lhs.getBase.extractListElement(ordinal.getInt)
     } else {
-      withResource(Scalar.fromNull(
-        GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
-        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
-      }
+      GpuColumnVector.fromNull(lhs.getRowCount.toInt, dataType).getBase
     }
   }
 
