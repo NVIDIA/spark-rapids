@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-04-29
+Generated on 2021-05-03
 
 ## Release 0.5
 
@@ -33,6 +33,9 @@ Generated on 2021-04-29
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#2279](https://github.com/NVIDIA/spark-rapids/issues/2279)|[BUG] Hash Partitioning can fail for very small batches|
+|[#2314](https://github.com/NVIDIA/spark-rapids/issues/2314)|[BUG] v0.5.0 pre-release pytests join_test.py::test_hash_join_array FAILED on SPARK-EGX Yarn Cluster|
+|[#2317](https://github.com/NVIDIA/spark-rapids/issues/2317)|[BUG] GpuColumnarToRowIterator can stop after receiving an empty batch|
 |[#2244](https://github.com/NVIDIA/spark-rapids/issues/2244)|[BUG] Executors hanging when running NDS benchmarks|
 |[#2278](https://github.com/NVIDIA/spark-rapids/issues/2278)|[BUG] FullOuter join can produce too many results|
 |[#2220](https://github.com/NVIDIA/spark-rapids/issues/2220)|[BUG] csv_test.py::test_csv_fallback FAILED on the EMR Cluster|
@@ -73,6 +76,10 @@ Generated on 2021-04-29
 ### PRs
 |||
 |:---|:---|
+|[#2316](https://github.com/NVIDIA/spark-rapids/pull/2316)|Update doc to note that single quoted json strings are not ok|
+|[#2319](https://github.com/NVIDIA/spark-rapids/pull/2319)|Disable hash partitioning on arrays|
+|[#2318](https://github.com/NVIDIA/spark-rapids/pull/2318)|Fix ColumnarToRowIterator handling of empty batches|
+|[#2304](https://github.com/NVIDIA/spark-rapids/pull/2304)|Update CHANGELOG.md|
 |[#2301](https://github.com/NVIDIA/spark-rapids/pull/2301)|Update doc to reflect nanosleep problem with 460.32.03|
 |[#2298](https://github.com/NVIDIA/spark-rapids/pull/2298)|Update changelog for v0.5.0 release [skip ci]|
 |[#2293](https://github.com/NVIDIA/spark-rapids/pull/2293)|update cudf version to 0.19.2|

@@ -17,10 +17,6 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.functions.{col, upper}
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
@@ -41,8 +37,6 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
       .set("spark.sql.autoBroadcastJoinThreshold", "160")
       .set("spark.sql.join.preferSortMergeJoin", "false")
       .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
-      .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
-      .set("spark.rapids.sql.exec.CartesianProductExec", "true")
 
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {

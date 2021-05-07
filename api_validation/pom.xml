@@ -29,12 +29,6 @@
 
     <profiles>
         <profile>
-            <id>spark300</id>
-            <properties>
-                <spark.version>${spark300.version}</spark.version>
-            </properties>
-        </profile>
-        <profile>
             <id>spark301</id>
             <properties>
                 <spark.version>${spark301.version}</spark.version>

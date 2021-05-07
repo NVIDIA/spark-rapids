@@ -42,7 +42,8 @@ from typing import Iterator, Tuple
 
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
-    'spark.rapids.sql.exec.WindowInPandasExec': 'true'
+    'spark.rapids.sql.exec.WindowInPandasExec': 'true',
+    'spark.rapids.sql.exec.AggregateInPandasExec': 'true'
 }
 
 data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
