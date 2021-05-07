@@ -88,15 +88,14 @@ class SerializeConcatHostBuffersDeserializeBatch(
       val tableInfo: JCudfSerialization.TableAndRowCountPair =
         JCudfSerialization.readTableFrom(in)
       try {
-        val table = tableInfo.getTable
+        val table = tableInfo.getContiguousTable
         if (table == null) {
           val numRows = tableInfo.getNumRows
-          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows.toInt)
+          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
         } else {
           val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
-          // This is read as part of the broadcast join so we expect it to leak.
-          (0 until table.getNumberOfColumns).foreach(table.getColumn(_).noWarnLeakExpected())
-          this.batchInternal = GpuColumnVector.from(table, colDataTypes)
+          this.batchInternal = GpuColumnVectorFromBuffer.from(table, colDataTypes)
+          GpuColumnVector.extractBases(this.batchInternal).foreach(_.noWarnLeakExpected())
         }
       } finally {
         tableInfo.close()
