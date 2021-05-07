@@ -42,10 +42,10 @@ Software Requirements:
 
 ### Download v0.5.0
 * Download [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.5.0/rapids-4-spark_2.12-0.5.0.jar)
-* Download RAPIDS cuDF 0.19.1 for your system:
-  * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.1/cudf-0.19.1-cuda11.jar)
-  * [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.1/cudf-0.19.1-cuda10-2.jar)
-  * [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.1/cudf-0.19.1-cuda10-1.jar)
+* Download RAPIDS cuDF 0.19.2 for your system:
+  * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda11.jar)
+  * [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda10-2.jar)
+  * [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda10-1.jar)
 
 ### Release Notes
 New functionality for this release includes:
@@ -100,6 +100,10 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
+compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
+driver.  This issue is resolved in the 0.5.0 and higher releases.
 
 ## Release v0.4.0
 ### Download v0.4.0
@@ -150,6 +154,10 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
+compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
+driver.  This issue is resolved in the 0.5.0 and higher releases.
 
 ## Release v0.3.0
 ### Download v0.3.0
@@ -197,6 +205,10 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
+compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
+driver.  This issue is resolved in the 0.5.0 and higher releases.
 
 ## Release v0.2.0
 ### Download v0.2.0
@@ -247,6 +259,10 @@ The list of all supported operations is provided
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
+**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
+compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
+driver.  This issue is resolved in the 0.5.0 and higher releases.
 
 ## Release v0.1.0
 ### Download v0.1.0
@@ -271,9 +287,4 @@ Software Requirements:
   
     Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 
-    Python 3.x, Scala 2.12, Java 8 
-
-
-
-
-
+    Python 3.x, Scala 2.12, Java 8

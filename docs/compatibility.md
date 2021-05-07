@@ -238,12 +238,19 @@ issues between them. Dates and timestamps are where the known issues exist.  For
 `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `CORRECTED`
 [timestamps](https://github.com/NVIDIA/spark-rapids/issues/132) before the transition between the
 Julian and Gregorian calendars are wrong, but dates are fine. When
-`spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `LEGACY`, however both dates and
-timestamps are read incorrectly before the Gregorian calendar transition as described
-[here](https://github.com/NVIDIA/spark-rapids/issues/133).
+`spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is set to `LEGACY`, the read may fail for
+values occurring before the transition between the Julian and Gregorian calendars, i.e.: date <= 1582-10-04.
 
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
+
+When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and 
+result in an `IllegalArgumentException` thrown, if any value is before 
+September 21, 1677 12:12:43 AM or it is after April 11, 2262 11:47:17 PM. To get around this
+issue, turn off the ParquetWriter acceleration for timestamp columns by either setting 
+`spark.rapids.sql.format.parquet.writer.int96.enabled` to false or 
+set `spark.sql.parquet.outputTimestampType` to `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS` to by
+-pass the issue entirely.
 
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
@@ -450,3 +457,10 @@ ConstantFolding is an operator optimization rule in Catalyst that replaces expre
 be statically evaluated with their equivalent literal values. The RAPIDS Accelerator relies
 on constant folding and parts of the query will not be accelerated if 
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
+
+## JSON string handling
+The 0.5 release introduces the `get_json_object` operation.  The JSON specification only allows
+double quotes around strings in JSON data, whereas Spark allows single quotes around strings in JSON
+data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None` in PySpark or
+`Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
+updated in a future release to more closely match Spark.

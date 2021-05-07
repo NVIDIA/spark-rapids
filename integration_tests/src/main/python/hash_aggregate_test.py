@@ -14,13 +14,12 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
-from conftest import is_databricks_runtime
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_spark_session, is_spark_300, is_before_spark_311
+from spark_session import with_spark_session, is_before_spark_311
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -174,12 +173,14 @@ _confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
+# but this ends up allowing close to everything being off the GPU so I am not sure how
+# useful this really is
 _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
-    'PivotFirst', 'GetArrayItem')
+    'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
 
 params_markers_for_confs = [
     (_no_nans_float_conf_partial, [_excluded_operators_marker]),
@@ -282,10 +283,27 @@ def test_hash_grpby_pivot(data_gen, conf):
 
 @approximate_float
 @ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem', 
+        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
+        'NormalizeNaNAndZero')
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
+def test_hash_pivot_groupby_nan_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .pivot('b')
+            .agg(f.sum('c')),
+        "PivotFirst",
+        conf=_nans_float_conf)
+
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
-def test_hash_grpby_pivot_with_nans(data_gen, conf):
+def test_hash_grpby_pivot_without_nans(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
@@ -307,20 +325,33 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
             .agg(f.sum('c'), f.max('c')),
         conf=conf)
 
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem', 
+        'Literal', 'ShuffleExchangeExec')
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
+def test_hash_pivot_reduction_nan_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby()
+            .pivot('b')
+            .agg(f.sum('c')),
+        "PivotFirst",
+        conf=_nans_float_conf)
 
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
-def test_hash_reduction_pivot_with_nans(data_gen, conf):
+def test_hash_reduction_pivot_without_nans(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby()
             .pivot('b')
             .agg(f.sum('c')),
         conf=conf)
-
 
 @approximate_float
 @ignore_order
@@ -429,13 +460,14 @@ def test_hash_multiple_filters(data_gen, conf):
 
 @ignore_order
 @allow_non_gpu('HashAggregateExec', 'AggregateExpression', 'AttributeReference', 'Alias', 'Max',
-               'KnownFloatingPointNormalized', 'NormalizeNaNAndZero')
+               'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'ShuffleExchangeExec',
+               'HashPartitioning')
 @pytest.mark.parametrize('data_gen', struct_gens_xfail, ids=idfn)
-def test_hash_query_max_bug(data_gen):
+def test_hash_query_max_nan_fallback(data_gen):
     print_params(data_gen)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')))
-
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')),
+        "Max")
 
 @approximate_float
 @ignore_order
@@ -461,11 +493,6 @@ def test_hash_agg_with_nan_keys(data_gen, parameterless):
         _no_nans_float_conf)
 
 
-@pytest.mark.xfail(
-    condition=with_spark_session(lambda spark : is_spark_300()),
-    reason="[SPARK-32038][SQL] NormalizeFloatingNumbers should also work on distinct aggregate "
-           "(https://github.com/apache/spark/pull/28876) "
-           "Fixed in later Apache Spark releases.")
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', [ _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
