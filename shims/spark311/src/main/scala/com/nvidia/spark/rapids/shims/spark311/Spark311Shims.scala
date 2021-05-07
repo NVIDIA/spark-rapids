@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuGetArrayItemMeta, GpuStringReplace, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuGetArrayItem, GpuGetArrayItemMeta, GpuStringReplace, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark311._
 import org.apache.spark.sql.types._
@@ -235,7 +235,10 @@ class Spark311Shims extends Spark301Shims {
         TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all)),
       ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
-    (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r))
+    (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
+      override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
+        GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
+    })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {

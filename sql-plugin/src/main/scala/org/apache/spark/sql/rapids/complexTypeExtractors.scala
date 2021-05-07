@@ -87,7 +87,7 @@ class GpuGetArrayItemMeta(
   override def convertToGpu(
       arr: Expression,
       ordinal: Expression): GpuExpression =
-    GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
+    GpuGetArrayItem(arr, ordinal, failOnError = false)
 }
 
 /**
@@ -95,7 +95,7 @@ class GpuGetArrayItemMeta(
  *
  * We need to do type checking here as `ordinal` expression maybe unresolved.
  */
-case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: Boolean = false)
+case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: Boolean)
     extends GpuBinaryExpression with ExpectsInputTypes with ExtractValue {
 
   // We have done type checking for child in `ExtractValue`, so only need to check the `ordinal`.
@@ -121,13 +121,16 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
     // Need to handle negative indexes...
     if (ordinal.isValid) {
       withResource(lhs.getBase.countElements) { numElementsCV =>
-        val minNumElements = numElementsCV.min.getInt
-        if ( (ordinal.getInt < 0 || minNumElements < ordinal.getInt + 1) && failOnError) {
-          throw new ArrayIndexOutOfBoundsException(
-            s"Invalid index: ${ordinal.getInt}, minimum numElements in this ColumnVector: " +
-              s"$minNumElements")
-        } else {
-          lhs.getBase.extractListElement(ordinal.getInt)
+        withResource(numElementsCV.min) {
+          minScalar =>
+            val minNumElements = minScalar.getInt
+            if ( (ordinal.getInt < 0 || minNumElements < ordinal.getInt + 1) && failOnError) {
+              throw new ArrayIndexOutOfBoundsException(
+                s"Invalid index: ${ordinal.getInt}, minimum numElements in this ColumnVector: " +
+                  s"$minNumElements")
+            } else {
+              lhs.getBase.extractListElement(ordinal.getInt)
+            }
         }
       }
     } else {
