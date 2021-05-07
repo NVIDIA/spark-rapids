@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf
+import scala.annotation.tailrec
+
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -44,19 +45,45 @@ object GpuProjectExec extends Arm {
     }
   }
 
-  def project[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A]): ColumnarBatch = {
-    val newColumns = boundExprs.safeMap {
-      expr => {
-        val result = expr.columnarEval(cb)
-        result match {
-          case cv: ColumnVector => cv
-          case other =>
-            withResource(GpuScalar.from(other, expr.dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows(), expr.dataType)
-            }
+  @tailrec
+  private def extractSingleBoundIndex(expr: Expression): Option[Int] = expr match {
+    case ga: GpuAlias => extractSingleBoundIndex(ga.child)
+    case br: GpuBoundReference => Some(br.ordinal)
+    case _ => None
+  }
+
+  private def extractSingleBoundIndex(boundExprs: Seq[Expression]): Seq[Option[Int]] =
+    boundExprs.map(extractSingleBoundIndex)
+
+  def isNoopProject(cb: ColumnarBatch, boundExprs: Seq[Expression]): Boolean = {
+    if (boundExprs.length == cb.numCols()) {
+      extractSingleBoundIndex(boundExprs).zip(0 until cb.numCols()).forall {
+        case (Some(foundIndex), expectedIndex) => foundIndex == expectedIndex
+        case _ => false
+      }
+    } else {
+      false
+    }
+  }
+
+  def projectSingle(cb: ColumnarBatch, boundExpr: Expression): GpuColumnVector = {
+    boundExpr.columnarEval(cb) match {
+      case cv: GpuColumnVector => cv
+      case other =>
+        withResource(GpuScalar.from(other, boundExpr.dataType)) { scalar =>
+          GpuColumnVector.from(scalar, cb.numRows(), boundExpr.dataType)
         }
-      }}.toArray
-    new ColumnarBatch(newColumns, cb.numRows())
+    }
+  }
+
+  def project(cb: ColumnarBatch, boundExprs: Seq[Expression]): ColumnarBatch = {
+    if (isNoopProject(cb, boundExprs)) {
+      // This can help avoid contiguous splits in some cases when the input data is also contiguous
+      GpuColumnVector.incRefCounts(cb)
+    } else {
+      val newColumns = boundExprs.safeMap(expr => projectSingle(cb, expr)).toArray[ColumnVector]
+      new ColumnarBatch(newColumns, cb.numRows())
+    }
   }
 }
 
@@ -119,21 +146,33 @@ object GpuFilter extends Arm {
     }
   }
 
-  def apply(
-      batch: ColumnarBatch,
+  def apply(batch: ColumnarBatch,
       boundCondition: Expression) : ColumnarBatch = {
-    var filterConditionCv: GpuColumnVector = null
-    var tbl: cudf.Table = null
-    var filtered: cudf.Table = null
-    try {
-      filterConditionCv = boundCondition.columnarEval(batch).asInstanceOf[GpuColumnVector]
-      tbl = GpuColumnVector.from(batch)
-      val colTypes =
-        (0 until batch.numCols()).map(i => batch.column(i).dataType())
-      filtered = tbl.filter(filterConditionCv.getBase)
-      GpuColumnVector.from(filtered, colTypes.toArray)
-    } finally {
-      Seq(filtered, tbl, filterConditionCv, batch).safeClose()
+    withResource(batch) { batch =>
+      val checkedFilterMap = withResource(
+        GpuProjectExec.projectSingle(batch, boundCondition)) { filterMap =>
+        // If  filter is a noop then return a None
+        withResource(filterMap.getBase.all()) { allIncluded =>
+          if (allIncluded.getBoolean) {
+            None
+          } else {
+            Some(filterMap.getBase.incRefCount())
+          }
+        }
+      }
+      checkedFilterMap.map { checkedFilterMap =>
+        withResource(checkedFilterMap) { checkedFilterMap =>
+          val colTypes = GpuColumnVector.extractTypes(batch)
+          withResource(GpuColumnVector.from(batch)) { tbl =>
+            withResource(tbl.filter(checkedFilterMap)) { filteredData =>
+              GpuColumnVector.from(filteredData, colTypes)
+            }
+          }
+        }
+      }.getOrElse {
+        // Nothing to filter so it is a NOOP
+        GpuColumnVector.incRefCounts(batch)
+      }
     }
   }
 }
