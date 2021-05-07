@@ -82,6 +82,7 @@ class RapidsGdsStore(
         case dmOriginal: DeviceMemoryBuffer =>
           val dm = dmOriginal.slice(dstOffset, length)
           // TODO: switch to async API when it's released, using the passed in CUDA stream.
+          stream.sync()
           CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
           logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
         case _ => throw new IllegalStateException(
@@ -225,6 +226,7 @@ class RapidsGdsStore(
               logDebug(s"Created device buffer $size from batch write buffer")
             } else {
               // TODO: switch to async API when it's released, using the passed in CUDA stream.
+              stream.sync()
               CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
               logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
             }
