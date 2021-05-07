@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session, is_spark_300
+from spark_session import with_cpu_session, with_spark_session
 
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
@@ -178,18 +178,12 @@ def setup_orc_file_no_column_names(spark, table_name):
     spark.sql(insert_query).collect
 
 def test_missing_column_names(spark_tmp_table_factory):
-    if is_spark_300():
-        pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
-
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)))
 
 def test_missing_column_names_filter(spark_tmp_table_factory):
-    if is_spark_300():
-        pytest.skip("Apache Spark 3.0.0 does not handle ORC files without column names")
-
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
     assert_gpu_and_cpu_are_equal_collect(

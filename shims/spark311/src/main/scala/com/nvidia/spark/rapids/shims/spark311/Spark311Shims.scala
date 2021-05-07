@@ -227,10 +227,10 @@ class Spark311Shims extends Spark301Shims {
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
         }
       })
- ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    super.exprs301 ++ exprs311
+    getExprsSansTimeSub ++ exprs311
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -276,11 +276,19 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested()
+          .withPsNote(TypeEnum.DECIMAL,
+            "Negative scales aren't supported at the moment even with " +
+              "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. This is because Parquet " +
+              "doesn't support negative scale for decimal values"),
+          TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+            }
+            if (SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
+              willNotWorkOnGpu("Parquet doesn't support negative scales for Decimal values")
             }
           }
 

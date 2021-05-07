@@ -22,6 +22,7 @@ import ai.rapids.cudf.Aggregation.NullPolicy
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.util.TypeUtils
@@ -562,10 +563,8 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
  * to check if the value was set (if we don't ignore nulls, valueSet is true, that's what we do
  * here).
  */
-abstract class GpuFirstBase(child: Expression)
+case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
-
-  val ignoreNulls: Boolean
 
   private lazy val cudfFirst = AttributeReference("first", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
@@ -592,17 +591,25 @@ abstract class GpuFirstBase(child: Expression)
   // Copied from First
   // Expected input data type.
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
+  override def children: Seq[Expression] = child :: Nil
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
   // First is not a deterministic function.
   override lazy val deterministic: Boolean = false
   override def toString: String = s"gpufirst($child)${if (ignoreNulls) " ignore nulls"}"
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    val defaultCheck = super.checkInputDataTypes()
+    if (defaultCheck.isFailure) {
+      defaultCheck
+    } else {
+      TypeCheckSuccess
+    }
+  }
 }
 
-abstract class GpuLastBase(child: Expression)
+case class GpuLast(child: Expression, ignoreNulls: Boolean)
   extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
-
-  val ignoreNulls: Boolean
 
   private lazy val cudfLast = AttributeReference("last", child.dataType)()
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
@@ -628,11 +635,21 @@ abstract class GpuLastBase(child: Expression)
 
   // Copied from Last
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, BooleanType)
+  override def children: Seq[Expression] = child :: Nil
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
   // Last is not a deterministic function.
   override lazy val deterministic: Boolean = false
   override def toString: String = s"gpulast($child)${if (ignoreNulls) " ignore nulls"}"
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    val defaultCheck = super.checkInputDataTypes()
+    if (defaultCheck.isFailure) {
+      defaultCheck
+    } else {
+      TypeCheckSuccess
+    }
+  }
 }
 
 /**

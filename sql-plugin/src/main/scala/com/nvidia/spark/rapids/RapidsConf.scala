@@ -652,6 +652,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_PARQUET_INT96_WRITE = conf("spark.rapids.sql.format.parquet.writer.int96.enabled")
+    .doc("When set to false, disables accelerated parquet write if the " +
+      "spark.sql.parquet.outputTimestampType is set to INT96")
+    .booleanConf
+    .createWithDefault(true)
+
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
@@ -1010,9 +1016,9 @@ object RapidsConf {
     .internal()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.0.0.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.0.0, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark300.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly.")
     .stringConf
     .createOptional
@@ -1357,6 +1363,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
+
+  lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
 
   lazy val isParquetPerFileReadEnabled: Boolean =
     ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE

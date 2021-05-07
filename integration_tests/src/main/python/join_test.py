@@ -99,10 +99,6 @@ def test_sortmerge_join(data_gen, join_type, batch_size):
     conf.update(_sortmerge_join_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-# Cudf had some issues with hash partitioning of some arrays
-# https://github.com/NVIDIA/spark-rapids/issues/2330 should fix that, and then the allow_non_gpu
-# can be removed
-@allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
@@ -149,10 +145,6 @@ def test_sortmerge_join_struct(data_gen, join_type, batch_size):
 # unless we can give it some help. Parameters are setup to try to make
 # this happen, if test fails something might have changed related to that.
 @validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
-# Cudf had some issues with hash partitioning of some arrays
-# https://github.com/NVIDIA/spark-rapids/issues/2330 should fix that, and then the allow_non_gpu
-# can be removed
-@allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter'], ids=idfn)
@@ -175,12 +167,6 @@ def test_broadcast_join_right_table(data_gen, join_type):
         return left.join(broadcast(right), left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
-# Cudf had some issues with hash partitioning of some arrays. Yes a broadcast join
-# should not be doing hash partitioning, but in some cases (FullOuter and Right) it cannot do the
-# broadcast so it falls back to a SortMergeJoin
-# https://github.com/NVIDIA/spark-rapids/issues/2330 should fix that, and then the allow_non_gpu
-# can be removed
-@allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we

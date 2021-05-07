@@ -195,8 +195,8 @@
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <spark.version>${spark300.version}</spark.version>
-        <spark.test.version>${spark300.version}</spark.test.version>
+        <spark.version>${spark301.version}</spark.version>
+        <spark.test.version>${spark301.version}</spark.test.version>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>0.20-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -218,14 +218,12 @@
         <pytest.TEST_TYPE>developer</pytest.TEST_TYPE>
         <rat.consoleOutput>false</rat.consoleOutput>
         <slf4j.version>1.7.30</slf4j.version>
-        <spark300.version>3.0.0</spark300.version>
-        <spark300emr.version>3.0.0-amzn</spark300emr.version>
-        <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <!--
-         If you update a dependendy version so it is no longer a SNAPSHOT
+         If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
+        <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <spark302.version>3.0.2</spark302.version>
         <spark303.version>3.0.3-SNAPSHOT</spark303.version>
         <spark311.version>3.1.1</spark311.version>

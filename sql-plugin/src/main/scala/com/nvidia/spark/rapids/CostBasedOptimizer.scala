@@ -126,7 +126,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
           optimizations.append(AvoidTransition(plan))
           plan.costPreventsRunningOnGpu()
           // reset GPU cost
-          totalGpuCost = totalCpuCost;
+          totalGpuCost = totalCpuCost
         } else {
           // add transition cost to total GPU cost
           totalGpuCost += transitionCost
@@ -305,7 +305,7 @@ object RowCountPlanVisitor {
 
   def visit(plan: SparkPlanMeta[_]): Option[BigInt] = plan.wrapped match {
     case p: QueryStageExec =>
-      ShimLoader.getSparkShims.getQueryStageRuntimeStatistics(p).rowCount
+      p.getRuntimeStatistics.rowCount
     case GlobalLimitExec(limit, _) =>
       visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
     case LocalLimitExec(limit, _) =>
