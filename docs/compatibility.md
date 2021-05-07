@@ -244,6 +244,14 @@ values occurring before the transition between the Julian and Gregorian calendar
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
 
+When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and 
+result in an `IllegalArgumentException` thrown, if any value is before 
+September 21, 1677 12:12:43 AM or it is after April 11, 2262 11:47:17 PM. To get around this
+issue, turn off the ParquetWriter acceleration for timestamp columns by either setting 
+`spark.rapids.sql.format.parquet.writer.int96.enabled` to false or 
+set `spark.sql.parquet.outputTimestampType` to `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS` to by
+-pass the issue entirely.
+
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
 fall back to the CPU when reading an unsupported compression format, and will error out in that

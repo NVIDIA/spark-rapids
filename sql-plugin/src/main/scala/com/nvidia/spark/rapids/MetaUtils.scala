@@ -147,12 +147,20 @@ object MetaUtils extends Arm {
   }
 
   /**
-   * This is a hack to create a table meta that passed muster, but is not really going to be used
+   * Constructs a table metadata buffer from a device buffer without describing any schema
+   * for the buffer.
    */
-  lazy val ignoreTableMeta: TableMeta = {
+  def getTableMetaNoTable(buffer: DeviceMemoryBuffer): TableMeta = {
     val fbb = new FlatBufferBuilder(1024)
+    val bufferSize = buffer.getLength
+    BufferMeta.startBufferMeta(fbb)
+    BufferMeta.addId(fbb, 0)
+    BufferMeta.addSize(fbb, bufferSize)
+    BufferMeta.addUncompressedSize(fbb, bufferSize)
+    val bufferMetaOffset = BufferMeta.endBufferMeta(fbb)
     TableMeta.startTableMeta(fbb)
     TableMeta.addRowCount(fbb, 0)
+    TableMeta.addBufferMeta(fbb, bufferMetaOffset)
     fbb.finish(TableMeta.endTableMeta(fbb))
     // copy the message to trim the backing array to only what is needed
     TableMeta.getRootAsTableMeta(ByteBuffer.wrap(fbb.sizedByteArray()))

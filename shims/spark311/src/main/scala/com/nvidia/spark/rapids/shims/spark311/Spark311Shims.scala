@@ -276,11 +276,19 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested()
+          .withPsNote(TypeEnum.DECIMAL,
+            "Negative scales aren't supported at the moment even with " +
+              "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. This is because Parquet " +
+              "doesn't support negative scale for decimal values"),
+          TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+            }
+            if (SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
+              willNotWorkOnGpu("Parquet doesn't support negative scales for Decimal values")
             }
           }
 

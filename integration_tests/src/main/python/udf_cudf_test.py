@@ -225,7 +225,6 @@ def test_group_apply_in_pandas(enable_cudf_udf):
 
 
 # ======= Test Aggregate In Pandas =======
-@allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
 @cudf_udf
 def test_group_agg(enable_cudf_udf):
     @pandas_udf("int")
@@ -249,7 +248,6 @@ def test_group_agg(enable_cudf_udf):
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
 
 
-@allow_non_gpu('GpuAggregateInPandasExec','PythonUDF','Alias')
 @cudf_udf
 def test_sql_group(enable_cudf_udf):
     @pandas_udf("int")
