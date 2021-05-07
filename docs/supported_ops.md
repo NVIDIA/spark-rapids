@@ -706,7 +706,7 @@ Accelerator supports are described below.
 </tr>
 <tr>
 <td>AggregateInPandasExec</td>
-<td>The backend for Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
+<td>The backend for an Aggregation Pandas UDF, this accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
