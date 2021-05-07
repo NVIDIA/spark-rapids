@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 package org.apache.spark.sql.rapids.execution.python.shims.spark310db
 
 import scala.collection.mutable.ArrayBuffer
