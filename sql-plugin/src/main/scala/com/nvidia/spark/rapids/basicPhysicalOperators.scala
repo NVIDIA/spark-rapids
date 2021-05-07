@@ -336,8 +336,8 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                       done = true
                     }
 
-                    val ret = withResource(Scalar.fromLong(start)) { startScalar =>
-                      withResource(Scalar.fromLong(step)) { stepScalar =>
+                    val ret = withResource(GpuScalar.from(start, LongType)) { startScalar =>
+                      withResource(GpuScalar.from(step, LongType)) { stepScalar =>
                         withResource(
                           ai.rapids.cudf.ColumnVector.sequence(
                             startScalar, stepScalar, rowsThisBatch.toInt)) { vec =>

@@ -42,11 +42,6 @@ class DecimalUnitTest extends GpuUnitTests {
 
   test("test decimal as scalar") {
     Array(dec32Data, dec64Data).flatten.foreach { dec =>
-      // test GpuScalar.from(v: Any)
-      withResource(GpuScalar.from(dec)) { s =>
-        assertResult(-dec.scale)(s.getType.getScale)
-        assertResult(dec)(GpuScalar.extract(s).asInstanceOf[Decimal])
-      }
       // test GpuScalar.from(v: Any, t: DataType)
       val dt = DecimalType(DType.DECIMAL64_MAX_PRECISION, dec.scale)
       withResource(GpuScalar.from(dec.toDouble, dt)) { s =>
@@ -120,13 +115,13 @@ class DecimalUnitTest extends GpuUnitTests {
     withResource(ColumnVector.decimalFromInts(0, 1)) { dcv =>
       GpuColumnVector.from(dcv, DecimalType(1, 0))
     }
-    withResource(GpuScalar.from(dec64Data(0), dt64)) { scalar =>
+    withResource(GpuScalar(dec64Data(0), dt64)) { scalar =>
       withResource(GpuColumnVector.from(scalar, 10, dt64)) { cv =>
         assertResult(10)(cv.getRowCount)
         withResource(cv.copyToHost()) { hcv =>
           (0 until 10).foreach { i =>
-            assertResult(scalar.getLong)(hcv.getLong(i))
-            assertResult(scalar.getBigDecimal)(
+            assertResult(scalar.getBase.getLong)(hcv.getLong(i))
+            assertResult(scalar.getBase.getBigDecimal)(
               hcv.getDecimal(i, dt64.precision, dt64.scale).toJavaBigDecimal)
           }
         }
@@ -159,7 +154,7 @@ class DecimalUnitTest extends GpuUnitTests {
     assertResult(true)(wrapperLit.canExprTreeBeReplaced)
     val gpuLit = wrapperLit.convertToGpu().asInstanceOf[GpuLiteral]
     withResourceIfAllowed(gpuLit.columnarEval(null)) { s =>
-      assertResult(lit.eval(null))(GpuScalar.extract(s.asInstanceOf[Scalar]))
+      assertResult(lit.eval(null))(GpuScalar.extract(s.asInstanceOf[GpuScalar].getBase))
     }
     assertResult(lit.sql)(gpuLit.sql)
 
@@ -178,7 +173,7 @@ class DecimalUnitTest extends GpuUnitTests {
     assertResult(cpuAlias.dataType)(gpuAlias.dataType)
     assertResult(cpuAlias.sql)(gpuAlias.sql)
     withResourceIfAllowed(gpuAlias.columnarEval(null)) { s =>
-      assertResult(cpuAlias.eval(null))(GpuScalar.extract(s.asInstanceOf[Scalar]))
+      assertResult(cpuAlias.eval(null))(GpuScalar.extract(s.asInstanceOf[GpuScalar].getBase))
     }
   }
 

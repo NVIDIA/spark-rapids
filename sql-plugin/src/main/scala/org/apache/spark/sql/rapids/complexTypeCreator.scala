@@ -66,9 +66,8 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
     withResource(new Array[ColumnVector](children.size)) { columns =>
       val numRows = batch.numRows()
       children.indices.foreach { index =>
-        val result = children(index).columnarEval(batch)
         columns(index) =
-          GpuExpressionsUtils.resolveColumnVector(result, numRows, dataType.elementType).getBase
+          GpuExpressionsUtils.columnarEvalExprToColumn(children(index), batch).getBase
       }
       GpuColumnVector.from(ColumnVector.makeList(numRows,
         GpuColumnVector.getNonNestedRapidsType(dataType.elementType),

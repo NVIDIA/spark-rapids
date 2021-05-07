@@ -697,7 +697,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
               readAt += 1
             } else {
               newColumns(writeAt) =
-                GpuColumnVector.fromNull(table.getRowCount.toInt, readField.dataType).getBase
+                GpuColumnVector.columnVectorFromNull(table.getRowCount.toInt, readField.dataType)
             }
           })
           if (readAt != table.getNumberOfColumns) {

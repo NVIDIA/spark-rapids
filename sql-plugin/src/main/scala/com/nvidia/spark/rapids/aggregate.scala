@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, Scalar}
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -412,7 +412,7 @@ case class GpuHashAggregateExec(
             val defaultValues =
               aggregateFunctions.flatMap(_.initialValues)
             val vecs = defaultValues.safeMap { ref =>
-              withResource(GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType)) {
+              withResource(ref.columnarEval(null).asInstanceOf[GpuScalar]) {
                 scalar => GpuColumnVector.from(scalar, 1, ref.dataType)
               }
             }
@@ -780,7 +780,7 @@ case class GpuHashAggregateExec(
         // desired result compared to Spark-CPU.
         // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
         if (cvs.isEmpty) {
-          withResource(Scalar.fromLong(0L)) { ZERO =>
+          withResource(GpuScalar.from(0L, LongType)) { ZERO =>
             cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
           }
         }

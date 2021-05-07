@@ -66,6 +66,6 @@ case class GpuScalarSubquery(
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     require(updated, s"$this has not finished")
-    GpuScalar.from(result, dataType)
+    GpuScalar(result, dataType)
   }
 }

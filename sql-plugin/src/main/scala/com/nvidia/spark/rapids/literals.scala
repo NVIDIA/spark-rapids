@@ -25,6 +25,7 @@ import scala.reflect.runtime.universe.TypeTag
 import ai.rapids.cudf.{DType, Scalar}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
@@ -41,40 +42,24 @@ object LiteralHelper {
   }
 }
 
-object GpuScalar extends Arm {
-  @deprecated("This will be removed. Since no need to infer the type again because" +
-    " Spark does it already. Besides it is difficult to support nested type.", "")
-  private def scalaTypeToDType(v: Any): DType = {
-    v match {
-      case _: Long => DType.INT64
-      case _: Double => DType.FLOAT64
-      case _: Int => DType.INT32
-      case _: Float => DType.FLOAT32
-      case _: Short => DType.INT16
-      case _: Byte => DType.INT8
-      case _: Boolean => DType.BOOL8
-      case _: String | _: UTF8String => DType.STRING
-      case _ =>
-        throw new IllegalArgumentException(s"${v.getClass} '$v' is not supported as a scalar yet")
-    }
-  }
+object GpuScalar extends Arm with Logging {
 
-  def extract(v: Scalar): Any = v.getType match {
-    // This is only used in unit tests.
-    // It is not a good idea to pull the data out of GPU during computations, unless
-    // there is no ways to go.
-    case DType.BOOL8 => v.getBoolean
-    case DType.FLOAT32 => v.getFloat
-    case DType.FLOAT64 => v.getDouble
-    case DType.INT8 => v.getByte
-    case DType.INT16 => v.getShort
-    case DType.INT32 => v.getInt
-    case DType.INT64 => v.getLong
-    case DType.TIMESTAMP_DAYS => v.getInt
-    case DType.TIMESTAMP_MICROSECONDS => v.getLong
-    case DType.STRING => v.getJavaString
-    case dt: DType if dt.isDecimalType => Decimal(v.getBigDecimal)
-    case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
+  def extract(v: Scalar): Any = {
+    logWarning(s"Extracting data from the Scalar $v.")
+    v.getType match {
+      case DType.BOOL8 => v.getBoolean
+      case DType.FLOAT32 => v.getFloat
+      case DType.FLOAT64 => v.getDouble
+      case DType.INT8 => v.getByte
+      case DType.INT16 => v.getShort
+      case DType.INT32 => v.getInt
+      case DType.INT64 => v.getLong
+      case DType.TIMESTAMP_DAYS => v.getInt
+      case DType.TIMESTAMP_MICROSECONDS => v.getLong
+      case DType.STRING => v.getJavaString
+      case dt: DType if dt.isDecimalType => Decimal(v.getBigDecimal)
+      case t => throw new IllegalStateException(s"$t is not a supported rapids scalar type yet")
+    }
   }
 
   def castDateScalarToInt(s: Scalar): Scalar = {
@@ -86,73 +71,76 @@ object GpuScalar extends Arm {
     }
   }
 
-  @deprecated("This will be removed. Since no need to infer the type again because" +
-    " Spark does it already. Besides it is difficult to support nested type.", "")
-  def from(v: Any): Scalar = v match {
-    case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
-    case l: Long => Scalar.fromLong(l)
-    case d: Double => Scalar.fromDouble(d)
-    case i: Int => Scalar.fromInt(i)
-    case f: Float => Scalar.fromFloat(f)
-    case s: Short => Scalar.fromShort(s)
-    case b: Byte => Scalar.fromByte(b)
-    case b: Boolean => Scalar.fromBool(b)
-    case s: String => Scalar.fromString(s)
-    case s: UTF8String => Scalar.fromString(s.toString)
-    case dec: Decimal =>
-      if (dec.precision <= Decimal.MAX_INT_DIGITS) {
-        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong.toInt)
-      } else {
-        Scalar.fromDecimal(-dec.scale, dec.toUnscaledLong)
-      }
-    case dec: BigDecimal =>
-      Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
-    case _ =>
-      throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
-  }
+  /**
+   * The two `from` APIs are used to create a cudf Scalar from a Scala `Any`.
+   *
+   * Some nodes (e.g. nodes handling strings and predictions) require a cudf Scalar created
+   * from a literal value to run their computations. We do not want to go through the
+   * GpuLiteral to get one, so keep the APIs here.
+   *
+   * The parameter `converted` indicates whether the data `v` has been converted to the
+   * catalyst type. It can be set to true for most simple types,e.g. Int, Float, String.
+   * It is also true when the data is from GpuLiteral.
+   * However for nested types(will come soon), setting to false is recommended.
+   *
+   * The returned Scalar should be closed to avoid memory leak.
+   */
+  def from(v: Any, t: DataType): Scalar = from(v, t, true)
 
-  def from(v: Any, t: DataType): Scalar = v match {
-    case _ if v == null => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(t))
-    case _ if t.isInstanceOf[DecimalType] =>
-      var bigDec = v match {
-        case vv: Decimal => vv.toBigDecimal.bigDecimal
-        case vv: BigDecimal => vv.bigDecimal
-        case vv: Double => BigDecimal(vv).bigDecimal
-        case vv: Float => BigDecimal(vv.toDouble).bigDecimal
-        case vv: String => BigDecimal(vv).bigDecimal
-        case vv: Long => BigDecimal(vv).bigDecimal
-        case vv: Int => BigDecimal(vv).bigDecimal
-        case vv => throw new IllegalStateException(
-          s"${vv.getClass} '$vv' is not supported as a scalar yet")
-      }
-      bigDec = bigDec.setScale(t.asInstanceOf[DecimalType].scale)
-      if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
-        throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision constraint of $t")
-      }
-      if (!DecimalType.is32BitDecimalType(t.asInstanceOf[DecimalType])) {
-        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValue())
-      } else {
-        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().intValue())
-      }
-    case l: Long => t match {
-      case LongType => Scalar.fromLong(l)
-      case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
-      case _ => throw new IllegalArgumentException(s"$t not supported for long values")
+  def from(v: Any, t: DataType, converted: Boolean): Scalar = {
+    // Like the Spark, here also needs to do data conversion and type check before going ahead,
+    // leveraging the Spark APIs.
+    val convertedV = if (converted) {
+      v
+    } else {
+      // `CatalystTypeConverters.convertToCatalyst(v)` is public but the `validateLiteralValue`
+      // is not, so we have to get these done by creating a Literal first.
+      GpuLiteral.create(v, t).value
     }
-    case d: Double => Scalar.fromDouble(d)
-    case i: Int => t match {
-      case IntegerType => Scalar.fromInt(i)
-      case DateType => Scalar.timestampDaysFromInt(i)
-      case _ => throw new IllegalArgumentException(s"$t not supported for int values")
+    convertedV match {
+      case null => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(t))
+      case _ if t.isInstanceOf[DecimalType] =>
+        var bigDec = v match {
+          case vv: Decimal => vv.toBigDecimal.bigDecimal
+          case vv: BigDecimal => vv.bigDecimal
+          case vv: Double => BigDecimal(vv).bigDecimal
+          case vv: Float => BigDecimal(vv.toDouble).bigDecimal
+          case vv: String => BigDecimal(vv).bigDecimal
+          case vv: Long => BigDecimal(vv).bigDecimal
+          case vv: Int => BigDecimal(vv).bigDecimal
+          case vv => throw new IllegalStateException(
+            s"${vv.getClass} '$vv' is not supported as a scalar yet")
+        }
+        bigDec = bigDec.setScale(t.asInstanceOf[DecimalType].scale)
+        if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
+          throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision" +
+            s" constraint of $t")
+        }
+        if (!DecimalType.is32BitDecimalType(t.asInstanceOf[DecimalType])) {
+          Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValue())
+        } else {
+          Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().intValue())
+        }
+      case l: Long => t match {
+        case LongType => Scalar.fromLong(l)
+        case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
+        case _ => throw new IllegalArgumentException(s"$t not supported for long values")
+      }
+      case d: Double => Scalar.fromDouble(d)
+      case i: Int => t match {
+        case IntegerType => Scalar.fromInt(i)
+        case DateType => Scalar.timestampDaysFromInt(i)
+        case _ => throw new IllegalArgumentException(s"$t not supported for int values")
+      }
+      case f: Float => Scalar.fromFloat(f)
+      case s: Short => Scalar.fromShort(s)
+      case b: Byte => Scalar.fromByte(b)
+      case b: Boolean => Scalar.fromBool(b)
+      case s: String => Scalar.fromString(s)
+      case s: UTF8String => Scalar.fromString(s.toString)
+      case _ =>
+        throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
     }
-    case f: Float => Scalar.fromFloat(f)
-    case s: Short => Scalar.fromShort(s)
-    case b: Byte => Scalar.fromByte(b)
-    case b: Boolean => Scalar.fromBool(b)
-    case s: String => Scalar.fromString(s)
-    case s: UTF8String => Scalar.fromString(s.toString)
-    case _ =>
-      throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
   }
 
   def isNan(s: Scalar): Boolean = {
@@ -163,10 +151,139 @@ object GpuScalar extends Arm {
       case t => throw new IllegalStateException(s"$t is doesn't support NaNs")
     }
   }
+
+  /**
+   * The following 2 APIs are used to create a GpuScalar from a Scala `Any`.
+   *
+   * If the `Any` is a cudf Scalar, it will be taken over by the returned GpuScalar,
+   * so do not close it.
+   * But the returned GpuScalar should be closed to avoid memory leak.
+   */
+  def apply(any: Any, dataType: DataType): GpuScalar =
+    GpuScalar(any, dataType, true)
+
+  def apply(any: Any, dataType: DataType, converted: Boolean): GpuScalar = any match {
+    case s: Scalar => wrap(s, dataType)
+    case o => new GpuScalar(null, Some(o), dataType, converted)
+  }
+
+  /**
+   * Creates a GpuScalar from a cudf Scalar.
+   *
+   * This will not increase the reference count of the input cudf Scalar. Users should
+   * close either the cudf Scalar or the returned GpuScalar, not both.
+   */
+  def wrap(scalar: Scalar, dataType: DataType): GpuScalar = {
+    assert(scalar != null, "The cudf Scalar should NOT be null.")
+    assert(typeConversionAllowed(scalar, dataType), s"Type conversion is not allowed from " +
+      s" $scalar to $dataType")
+    new GpuScalar(scalar, None, dataType, true)
+  }
+
+  private def typeConversionAllowed(s: Scalar, sType: DataType): Boolean = {
+    s.getType match {
+      case dt if dt.isNestedType =>
+        sType match {
+          // Now supports only list for nested type.
+          case ArrayType(elementType, _) =>
+            if (DType.LIST.equals(dt)) {
+              withResource(s.getListAsColumnView) { elementView =>
+                GpuColumnVector.typeConversionAllowed(elementView, elementType)
+              }
+            } else {
+              false
+            }
+          case _ => false // Unsupported type
+        }
+      case nonNested =>
+        GpuColumnVector.getNonNestedRapidsType(sType).equals(nonNested)
+    }
+  }
+}
+
+/**
+ * The wrapper of a Scala value and its corresponding cudf Scalar, along with its DataType.
+ *
+ * This class is created because many expressions require both the cudf Scalar and its
+ * corresponding Scala value to complete their computations. e.g. 'GpuStringSplit',
+ * 'GpuStringLocate', 'GpuDivide', 'GpuDateAddInterval', 'GpuTimeMath' ...
+ * So only either a cudf Scalar or a Scala value can not support such cases, unless copying data
+ * between the host and the device each time being asked for.
+ *
+ * This GpuScalar can be created from either a cudf Scalar or a Scala value. By initializing the
+ * cudf Scalar or the Scala value lazily and caching them after being created, it can reduce the
+ * unnecessary data copies.
+ *
+ * If a GpuScalar is created from a Scala value and is used only on the host side, there will be
+ * no data copy and no cudf Scalar created. And if it is used on the device side, only need to
+ * copy data to the device once to create a cudf Scalar.
+ *
+ * Similarly, if a GpuScalar is created from a cudf Scalar, no need to copy data to the host if
+ * it is used only on the device side (This is the ideal case we like, since all is on the GPU).
+ * And only need to copy the data to the host once if it is used on the host side.
+ *
+ * So a GpuScalar will have at most one data copy but support all the cases. No round-trip
+ * happens.
+ *
+ * Another reason why storing the Scala value in addition to the cudf Scalar is
+ * `GpuDateAddInterval` and 'GpuTimeMath' have different algorithms with the 3 members of
+ * a `CalendarInterval`, which can not be supported by a single cudf Scalar now.
+ *
+ * Do not create a GpuScalar from the constructor, instead call the factory APIs above.
+ */
+class GpuScalar private(
+    private var scalar: Scalar,
+    private var value: Option[Any],
+    val dataType: DataType, converted: Boolean) extends Arm with AutoCloseable {
+
+  assert(scalar != null || value.nonEmpty, "GpuScalar requires at least a value or a Scalar")
+  assert(value.isEmpty || !value.get.isInstanceOf[Scalar], "Value should not be Scalar")
+
+  /**
+   * Gets the internal cudf Scala of this GpuScalar.
+   *
+   * This will not increase any reference count. So users need to close either the GpuScalar or
+   * the return cudf Scalar, not both.
+   */
+  def getBase: Scalar = {
+    if (scalar == null) {
+      scalar = GpuScalar.from(value.get, dataType, converted)
+    }
+    scalar
+  }
+
+  /**
+   * Gets the internal Scala value of this GpuScalar.
+   */
+  def getValue: Any = {
+    if (value.isEmpty) {
+      value = Some(GpuScalar.extract(scalar))
+    }
+    value.get
+  }
+
+  /**
+   * A handy API to get the validity of the internal cudf Scalar, who will be initialized
+   * automatically when needed.
+   */
+  def isValid: Boolean = getBase.isValid
+
+  /**
+   * A handy API to increase the reference count of the internal cudf Scalar, who will be
+   * initialized automatically when needed.
+   */
+  def incRefCount: this.type = {
+    getBase.incRefCount()
+    this
+  }
+
+  override def close(): Unit = {
+    if (scalar != null) scalar.close()
+  }
+
 }
 
 object GpuLiteral {
-
   /**
    * The following 3 APIs are used to create a `GpuLiteral` from a Scala value, by leveraging the
    * corresponding CPU APIs to do the data conversion and type checking, which are quite
@@ -276,7 +393,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
   override def columnarEval(batch: ColumnarBatch): Any = {
     // Returns a Scalar instead of the value to support the scalar of nested type, and
     // simplify the handling of result from a `expr.columnarEval`.
-    GpuScalar.from(value, dataType)
+    GpuScalar(value, dataType, true)
   }
 }
 

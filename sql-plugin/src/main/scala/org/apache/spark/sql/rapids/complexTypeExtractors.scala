@@ -115,19 +115,19 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, ordinal: GpuScalar): ColumnVector = {
     // Need to handle negative indexes...
-    if (ordinal.isValid && ordinal.getInt >= 0) {
-      lhs.getBase.extractListElement(ordinal.getInt)
+    if (ordinal.isValid && ordinal.getBase.getInt >= 0) {
+      lhs.getBase.extractListElement(ordinal.getBase.getInt)
     } else {
       GpuColumnVector.fromNull(lhs.getRowCount.toInt, dataType).getBase
     }
   }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
@@ -164,16 +164,16 @@ case class GpuGetMapValue(child: Expression, key: Expression)
 
   override def prettyName: String = "getMapValue"
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
-    lhs.getBase.getMapValue(rhs)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
+    lhs.getBase.getMapValue(rhs.getBase)
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
@@ -195,13 +195,13 @@ case class GpuArrayContains(left: Expression, right: Expression)
     left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
-    lhs.getBase.listContains(rhs)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
+    lhs.getBase.listContains(rhs.getBase)
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =

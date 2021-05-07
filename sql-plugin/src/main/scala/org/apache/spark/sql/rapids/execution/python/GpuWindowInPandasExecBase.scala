@@ -316,22 +316,22 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       lower match {
         case GpuSpecialFrameBoundary(UnboundedPreceding) =>
           // lower bound is always 0
-          withResource(cudf.Scalar.fromInt(0)) { zeroVal =>
+          withResource(GpuScalar.from(0, IntegerType)) { zeroVal =>
             GpuColumnVector.from(cudf.ColumnVector.fromScalar(zeroVal, numRows), IntegerType)
           }
         case GpuSpecialFrameBoundary(CurrentRow) =>
           // offset is 0, simply create a integer sequence starting with 0
-          withResource(cudf.Scalar.fromInt(0)) { zeroVal =>
+          withResource(GpuScalar.from(0, IntegerType)) { zeroVal =>
             GpuColumnVector.from(cudf.ColumnVector.sequence(zeroVal, numRows), IntegerType)
           }
         case GpuLiteral(offset, _) =>
           // 1) Create a integer sequence starting with (0 + offset)
           // 2) Replace the values less than 0 with 0 (offset is negative for lower bound)
           val startIndex = 0 + offset.asInstanceOf[Int]
-          withResource(cudf.Scalar.fromInt(startIndex)) { startVal =>
+          withResource(GpuScalar.from(startIndex, IntegerType)) { startVal =>
             withResource(cudf.ColumnVector.sequence(startVal, numRows)) { offsetCV =>
-              val loAndNullHi = Seq(cudf.Scalar.fromInt(0),
-                cudf.Scalar.fromNull(cudf.DType.INT32))
+              val loAndNullHi = Seq(GpuScalar.from(0, IntegerType),
+                GpuScalar.from(null, IntegerType))
               withResource(loAndNullHi) { loNullHi =>
                 val lowerCV = offsetCV.clamp(loNullHi.head, loNullHi.last)
                 GpuColumnVector.from(lowerCV, IntegerType)
@@ -347,12 +347,12 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
       upper match {
         case GpuSpecialFrameBoundary(UnboundedFollowing) =>
           // bound is always the length of the group, equal to numRows
-          withResource(cudf.Scalar.fromInt(numRows)) { numRowsVal =>
+          withResource(GpuScalar.from(numRows, IntegerType)) { numRowsVal =>
             GpuColumnVector.from(cudf.ColumnVector.fromScalar(numRowsVal, numRows), IntegerType)
           }
         case GpuSpecialFrameBoundary(CurrentRow) =>
           // offset is 0, simply create a integer sequence starting with 1 for upper bound
-          withResource(cudf.Scalar.fromInt(1)) { oneVal =>
+          withResource(GpuScalar.from(1, IntegerType)) { oneVal =>
             GpuColumnVector.from(cudf.ColumnVector.sequence(oneVal, numRows), IntegerType)
           }
         case GpuLiteral(offset, _) =>
@@ -360,10 +360,10 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
           // 2) Replace the values larger than numRows with numRows
           //    (offset is positive for upper bound)
           val startIndex = 1 + offset.asInstanceOf[Int]
-          withResource(cudf.Scalar.fromInt(startIndex)) { startVal =>
+          withResource(GpuScalar.from(startIndex, IntegerType)) { startVal =>
             withResource(cudf.ColumnVector.sequence(startVal, numRows)) { offsetCV =>
-              val nullLoAndHi = Seq(cudf.Scalar.fromNull(cudf.DType.INT32),
-                cudf.Scalar.fromInt(numRows))
+              val nullLoAndHi = Seq(GpuScalar.from(null, IntegerType),
+                GpuScalar.from(numRows, IntegerType))
               withResource(nullLoAndHi) { nullLoHi =>
                 val upperCV = offsetCV.clamp(nullLoHi.head, nullLoHi.last)
                 GpuColumnVector.from(upperCV, IntegerType)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuLeafExpression}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuLeafExpression, GpuScalar}
 
 import org.apache.spark.rdd.InputFileBlockHolder
 import org.apache.spark.sql.types.{DataType, LongType, StringType}
@@ -44,8 +44,8 @@ case class GpuInputFileName() extends GpuLeafExpression {
   override def disableCoalesceUntilInput(): Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(Scalar.fromString(InputFileBlockHolder.getInputFilePath.toString)) { scalar =>
-      GpuColumnVector.from(ColumnVector.fromScalar(scalar, batch.numRows()), dataType)
+    withResource(GpuScalar.from(InputFileBlockHolder.getInputFilePath.toString, StringType)) {
+      scalar => GpuColumnVector.from(ColumnVector.fromScalar(scalar, batch.numRows()), dataType)
     }
   }
 }
@@ -77,7 +77,7 @@ case class GpuInputFileBlockStart() extends GpuLeafExpression {
   override def disableCoalesceUntilInput(): Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(Scalar.fromLong(InputFileBlockHolder.getStartOffset)) { scalar =>
+    withResource(GpuScalar.from(InputFileBlockHolder.getStartOffset, LongType)) { scalar =>
       GpuColumnVector.from(ColumnVector.fromScalar(scalar, batch.numRows()), dataType)
     }
   }
@@ -104,7 +104,7 @@ case class GpuInputFileBlockLength() extends GpuLeafExpression {
   override def disableCoalesceUntilInput(): Boolean = true
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(Scalar.fromLong(InputFileBlockHolder.getLength)) { scalar =>
+    withResource(GpuScalar.from(InputFileBlockHolder.getLength, LongType)) { scalar =>
       GpuColumnVector.from(ColumnVector.fromScalar(scalar, batch.numRows()), dataType)
     }
   }
