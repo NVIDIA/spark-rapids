@@ -594,13 +594,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;
       // list of struct of key/value
-      if (!(dt.equals(DType.LIST))) {
+      if (!(dt.equals(DType.STRUCT))) {
         return false;
       }
-      try (ColumnView structCv = cv.getChildColumnView(0)) {
-        if (!(structCv.getType().equals(DType.STRUCT))) {
-          return false;
-        }
+      try (ColumnView structCv = cv) {
         if (structCv.getNumChildren() != 2) {
           return false;
         }
