@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
+import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -118,15 +119,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
-    // Need to handle negative indexes...
-    if (ordinal.isValid && ordinal.getInt >= 0) {
-      lhs.getBase.extractListElement(ordinal.getInt)
-    } else {
-      withResource(Scalar.fromNull(
-        GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
-        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
-      }
-    }
+    GetArrayItemUtil.evalColumnar(lhs, ordinal, dataType, zeroIndexed = true)
   }
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
@@ -167,7 +160,7 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def prettyName: String = "getMapValue"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
-    lhs.getBase.getMapValue(rhs)
+    GetMapValueUtil.evalColumnar(lhs, rhs)
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
@@ -210,4 +203,45 @@ case class GpuArrayContains(left: Expression, right: Expression)
     lhs.getBase.listContainsColumn(rhs.getBase)
 
   override def prettyName: String = "array_contains"
+}
+
+object GetArrayItemUtil {
+  def evalColumnar(array: GpuColumnVector, ordinal: Scalar, dataType: DataType,
+                   zeroIndexed: Boolean): ColumnVector = {
+    // for array index use case, index starts at 0
+    if (zeroIndexed) {
+      // Need to handle negative indexes...
+      if (ordinal.isValid && ordinal.getInt >= 0) {
+        array.getBase.extractListElement(ordinal.getInt)
+      } else {
+        withResource(Scalar.fromNull(
+          GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
+          ColumnVector.fromScalar(nullScalar, array.getRowCount.toInt)
+        }
+      }
+    } else {
+      // for element_at use case, index starts at 1
+      if (ordinal.isValid) {
+        if (ordinal.getInt > 0) {
+          // SQL 1-based index
+          array.getBase.extractListElement(ordinal.getInt - 1)
+        } else if (ordinal.getInt == 0) {
+          throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+        } else {
+          array.getBase.extractListElement(ordinal.getInt)
+        }
+      } else {
+        withResource(Scalar.fromNull(
+          GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
+          ColumnVector.fromScalar(nullScalar, array.getRowCount.toInt)
+        }
+      }
+    }
+  }
+}
+
+object GetMapValueUtil {
+  def evalColumnar(map: GpuColumnVector, key: Scalar): ColumnVector = {
+    map.getBase.getMapValue(key)
+  }
 }
