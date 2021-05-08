@@ -27,6 +27,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.Aggregation.SumAggregation
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -280,7 +281,10 @@ case class GpuPythonUDF(
     udfDeterministic: Boolean,
     resultId: ExprId = NamedExpression.newExprId)
     extends Expression with GpuUnevaluable with NonSQLExpression with UserDefinedExpression
-    with GpuAggregateWindowFunction {
+    // The generic parameter is here to enforce at compile time that we are doing something
+    // that is allowed, but this is a special case and we might want to rething the type
+    // hierarchy here a bit.
+    with GpuAggregateWindowFunction[SumAggregation] {
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 
@@ -299,7 +303,8 @@ case class GpuPythonUDF(
 
   // Support window things
   override val windowInputProjection: Seq[Expression] = Seq.empty
-  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[SumAggregation] = {
     throw new UnsupportedOperationException(s"GpuPythonUDF should run in a Python process.")
   }
 }

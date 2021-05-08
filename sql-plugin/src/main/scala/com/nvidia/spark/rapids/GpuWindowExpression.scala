@@ -16,7 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, WindowOptions}
+import scala.language.existentials
+
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, RollingAggregation, WindowOptions}
+import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import com.nvidia.spark.rapids.GpuWindowExpression.{getRangeBasedLower, getRangeBasedUpper}
 
@@ -146,9 +149,9 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
   private val windowFrameSpec = windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
   private val frameType : FrameType = windowFrameSpec.frameType
   private val windowFunc = windowFunction match {
-    case func: GpuAggregateWindowFunction => func
+    case func: GpuAggregateWindowFunction[_] => func
     case agg: GpuAggregateExpression => agg.aggregateFunction match {
-      case func: GpuAggregateWindowFunction => func
+      case func: GpuAggregateWindowFunction[_] => func
       case other =>
         throw new IllegalStateException(s"${other.getClass} is not a supported window aggregation")
     }
@@ -708,7 +711,8 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
  * in a single pass, where all of the data is available so instead we have out own set of
  * expressions.
  */
-trait GpuAggregateWindowFunction extends GpuUnevaluable {
+trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
+    extends GpuUnevaluable {
   /**
    * Using child references, define the shape of the vectors sent to the window operations
    */
@@ -720,17 +724,19 @@ trait GpuAggregateWindowFunction extends GpuUnevaluable {
    * returned by [[windowInputProjection]].  The index is the index into the Table for the
    * corresponding ColumnVector. Some aggregations need extra values.
    */
-  def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn
+  def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[T]
 }
 
-case class GpuRowNumber() extends GpuAggregateWindowFunction {
+case class GpuRowNumber() extends GpuAggregateWindowFunction[RowNumberAggregation] {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
   override def children: Seq[Expression] = Nil
 
   override val windowInputProjection: Seq[Expression] = Nil
-  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
+
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[RowNumberAggregation] = {
     assert(inputs.isEmpty, inputs)
     Aggregation.rowNumber().onColumn(0)
   }
@@ -781,7 +787,8 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
   }
 }
 
-trait GpuOffsetWindowFunction extends GpuAggregateWindowFunction {
+trait GpuOffsetWindowFunction[T <: Aggregation with RollingAggregation[T]]
+    extends GpuAggregateWindowFunction[T] {
   protected val input: Expression
   protected val offset: Expression
   protected val default: Expression
@@ -803,9 +810,10 @@ trait GpuOffsetWindowFunction extends GpuAggregateWindowFunction {
 }
 
 case class GpuLead(input: Expression, offset: Expression, default: Expression)
-    extends GpuOffsetWindowFunction {
+    extends GpuOffsetWindowFunction[LeadAggregation] {
 
-  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[LeadAggregation] = {
     val in = inputs.toArray
     if (in.length > 1) {
       // Has a default
@@ -817,9 +825,10 @@ case class GpuLead(input: Expression, offset: Expression, default: Expression)
 }
 
 case class GpuLag(input: Expression, offset: Expression, default: Expression)
-    extends GpuOffsetWindowFunction {
+    extends GpuOffsetWindowFunction[LagAggregation] {
 
-  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn = {
+  override def windowAggregation(
+      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[LagAggregation] = {
     val in = inputs.toArray
     if (in.length > 1) {
       // Has a default
