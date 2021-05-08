@@ -731,9 +731,28 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * but not both.
    */
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
-    assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " + cudfCv +
-        " to " + type;
+    assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " +
+        buildColumnTypeString(cudfCv) + " to " + type;
     return new GpuColumnVector(type, cudfCv);
+  }
+
+  private static String buildColumnTypeString(ai.rapids.cudf.ColumnView view) {
+    DType type = view.getType();
+    if (type.isNestedType()) {
+      StringBuilder sb = new StringBuilder(type.toString());
+      sb.append("(");
+      for (int i = 0; i < view.getNumChildren(); i++) {
+        if (i != 0) {
+          sb.append(",");
+        }
+        try (ColumnView childView = view.getChildColumnView(i)) {
+          sb.append(buildColumnTypeString(childView));
+        }
+      }
+      sb.append(")");
+      return sb.toString();
+    }
+    return type.toString();
   }
 
   /**
@@ -745,8 +764,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static GpuColumnVector fromChecked(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
     if (!typeConversionAllowed(cudfCv, type)) {
-      throw new IllegalArgumentException("Type conversion is not allowed from " + cudfCv +
-          " to " + type);
+      throw new IllegalArgumentException("Type conversion is not allowed from " +
+          buildColumnTypeString(cudfCv) + " to " + type);
     }
     return new GpuColumnVector(type, cudfCv);
   }
