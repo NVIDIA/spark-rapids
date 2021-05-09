@@ -239,13 +239,17 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
         val bases = GpuColumnVector.extractBases(finalCb).zipWithIndex
             .slice(totalExtraColumns, boundRowProjectList.length)
 
-        val agg = windowFunc.windowAggregation(bases)
-            .overWindow(GpuWindowExpression.getRowBasedWindowOptions(windowFrameSpec))
+        withResource(GpuWindowExpression.getRowBasedWindowOptions(windowFrameSpec)) {
+          windowOptions =>
 
-        withResource(table
-            .groupBy(0 until numGroupingColumns: _*)
-            .aggregateWindows(agg)) { aggResultTable =>
-          aggResultTable.getColumn(0).incRefCount()
+            val agg = windowFunc.windowAggregation(bases)
+              .overWindow(windowOptions)
+
+            withResource(table
+              .groupBy(0 until numGroupingColumns: _*)
+              .aggregateWindows(agg)) { aggResultTable =>
+              aggResultTable.getColumn(0).incRefCount()
+            }
         }
       }
     }
@@ -284,17 +288,18 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
 
         withResource(preceding) { preceding =>
           withResource(following) { following =>
-            val agg = windowFunc.windowAggregation(bases)
-              .overWindow(GpuWindowExpression.getRangeBasedWindowOptions(windowSpec.orderSpec,
-                numGroupingColumns,
-                isUnboundedPreceding,
-                preceding,
-                isUnBoundedFollowing,
-                following))
-            withResource(table
-              .groupBy(0 until numGroupingColumns: _*)
-              .aggregateWindowsOverRanges(agg)) { aggResultTable =>
-              aggResultTable.getColumn(0).incRefCount()
+            withResource(GpuWindowExpression.getRangeBasedWindowOptions(windowSpec.orderSpec,
+              numGroupingColumns,
+              isUnboundedPreceding,
+              preceding,
+              isUnBoundedFollowing,
+              following)) { windowOptions =>
+              val agg = windowFunc.windowAggregation(bases).overWindow(windowOptions)
+              withResource(table
+                .groupBy(0 until numGroupingColumns: _*)
+                .aggregateWindowsOverRanges(agg)) { aggResultTable =>
+                aggResultTable.getColumn(0).incRefCount()
+              }
             }
           }
         }
@@ -347,7 +352,6 @@ object GpuWindowExpression {
 
   def getRangeBasedLower(orderByType: DType, windowFrameSpec: GpuSpecifiedWindowFrame,
       constructScalar: Boolean = true): (Boolean, Scalar) = {
-    // FIXME: Currently, only negative or 0 values are supported.
     getRangeBoundaryValue(orderByType, windowFrameSpec.lower, constructScalar)
   }
 
