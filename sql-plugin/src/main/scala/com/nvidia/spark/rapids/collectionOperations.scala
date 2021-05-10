@@ -16,10 +16,75 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnVector
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, ColumnView}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
+
+case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
+
+  @transient override lazy val dataType: DataType = {
+    if (children.isEmpty) {
+      StringType
+    } else {
+      super.dataType
+    }
+  }
+
+  override def nullable: Boolean = children.exists(_.nullable)
+
+  override def columnarEval(batch: ColumnarBatch): Any = dataType match {
+    case StringType => stringConcat(batch)
+    case ArrayType(_, _) => listConcat(batch)
+  }
+
+  private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
+    val rows = batch.numRows()
+
+    withResource(ArrayBuffer[ColumnVector]()) { buffer =>
+      withResource(GpuScalar.from(null, StringType)) { nullScalar =>
+        // build input buffer
+        children.foreach { child =>
+          child.columnarEval(batch) match {
+            case cv: GpuColumnVector =>
+              buffer += cv.getBase
+            case null =>
+              buffer += GpuColumnVector.from(nullScalar, rows, StringType).getBase
+            case sv: Any =>
+              val scalar = GpuScalar.from(sv.asInstanceOf[UTF8String].toString, StringType)
+              withResource(scalar) { scalar =>
+                buffer += GpuColumnVector.from(scalar, rows, StringType).getBase
+              }
+          }
+        }
+        // run string concatenate
+        withResource(GpuScalar.from("", StringType)) { emptyScalar =>
+          GpuColumnVector.from(ColumnVector.stringConcatenate(emptyScalar, nullScalar,
+            buffer.toArray[ColumnView]), StringType)
+        }
+      }
+    }
+  }
+
+  private def listConcat(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(ArrayBuffer[ColumnVector]()) { buffer =>
+      // build input buffer
+      children.foreach { child =>
+        child.columnarEval(batch) match {
+          case cv: GpuColumnVector => buffer += cv.getBase
+          case _ => throw new UnsupportedOperationException("Unsupported GpuScalar of List")
+        }
+      }
+      // run list concatenate
+      GpuColumnVector.from(ColumnVector.listConcatenateByRow(buffer: _*), dataType)
+    }
+  }
+}
 
 case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   extends GpuUnaryExpression {

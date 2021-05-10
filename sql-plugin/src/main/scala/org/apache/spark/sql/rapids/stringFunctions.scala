@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
@@ -260,46 +256,6 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
 
   override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector =
     GpuColumnVector.from(column.getBase.rstrip(t), dataType)
-}
-
-case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
-  override def dataType: DataType = StringType
-  override def nullable: Boolean = children.exists(_.nullable)
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var nullStrScalar: Scalar = null
-    var emptyStrScalar: Scalar = null
-    val rows = batch.numRows()
-    val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
-    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
-    try {
-      nullStrScalar = GpuScalar.from(null, StringType)
-      children.foreach(childEvals += _.columnarEval(batch))
-      childEvals.foreach {
-        case vector: GpuColumnVector =>
-          columns += vector.getBase
-        case col => if (col == null) {
-          columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
-        } else {
-          withResource(GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)) {
-            stringScalar =>
-              columns += GpuColumnVector.from(stringScalar, rows, StringType).getBase
-          }
-        }
-      }
-      emptyStrScalar = GpuScalar.from("", StringType)
-      GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
-        columns.toArray[ColumnView]), dataType)
-    } finally {
-      columns.safeClose()
-      if (emptyStrScalar != null) {
-        emptyStrScalar.close()
-      }
-      if (nullStrScalar != null) {
-        nullStrScalar.close()
-      }
-    }
-  }
 }
 
 case class GpuContains(left: Expression, right: Expression) extends GpuBinaryExpression
