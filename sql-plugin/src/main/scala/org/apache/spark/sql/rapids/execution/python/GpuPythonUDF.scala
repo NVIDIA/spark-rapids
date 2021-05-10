@@ -20,6 +20,7 @@
 package org.apache.spark.sql.rapids.execution.python
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.Aggregation.SumAggregation
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.api.python._
