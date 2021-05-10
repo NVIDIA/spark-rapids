@@ -67,22 +67,18 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
-    val buffer = new RapidsDeviceMemoryBuffer(
-      id,
-      contigBuffer.getLength,
-      tableMeta,
-      Some(table),
-      contigBuffer,
-      initialSpillPriority,
-      spillCallback)
-    try {
+    freeOnExcept(
+      new RapidsDeviceMemoryBuffer(
+        id,
+        contigBuffer.getLength,
+        tableMeta,
+        Some(table),
+        contigBuffer,
+        initialSpillPriority,
+        spillCallback)) { buffer =>
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
       addBuffer(buffer)
-    } catch {
-      case t: Throwable =>
-        buffer.free()
-        throw t
     }
   }
 
@@ -106,23 +102,19 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
     contigBuffer.incRefCount()
-    val buffer = new RapidsDeviceMemoryBuffer(
-      id,
-      size,
-      meta,
-      None,
-      contigBuffer,
-      initialSpillPriority,
-      spillCallback)
-    try {
+    freeOnExcept(
+      new RapidsDeviceMemoryBuffer(
+        id,
+        size,
+        meta,
+        None,
+        contigBuffer,
+        initialSpillPriority,
+        spillCallback)) { buffer =>
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
           s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
           s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
       addBuffer(buffer)
-    } catch {
-      case t: Throwable =>
-        buffer.free()
-        throw t
     }
   }
 
@@ -141,24 +133,20 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit = {
-    val buff = new RapidsDeviceMemoryBuffer(
-      id,
-      buffer.getLength,
-      tableMeta,
-      None,
-      buffer,
-      initialSpillPriority,
-      spillCallback)
-    try {
+    freeOnExcept(
+      new RapidsDeviceMemoryBuffer(
+        id,
+        buffer.getLength,
+        tableMeta,
+        None,
+        buffer,
+        initialSpillPriority,
+        spillCallback)) { buff =>
       logDebug(s"Adding receive side table for: [id=$id, size=${buffer.getLength}, " +
           s"uncompressed=${buff.meta.bufferMeta.uncompressedSize}, " +
           s"meta_id=${tableMeta.bufferMeta.id}, " +
           s"meta_size=${tableMeta.bufferMeta.size}]")
       addBuffer(buff)
-    } catch {
-      case t: Throwable =>
-        buff.free()
-        throw t
     }
   }
 

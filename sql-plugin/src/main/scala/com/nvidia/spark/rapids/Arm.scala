@@ -113,4 +113,21 @@ trait Arm {
         throw t
     }
   }
+
+
+  /** Executes the provided code block, freeing the RapidsBuffer only if an exception occurs */
+  def freeOnExcept[T <: RapidsBuffer, V](r: T)(block: T => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        try {
+          r.free()
+        } catch {
+          case e: Throwable =>
+            t.addSuppressed(e)
+        }
+        throw t
+    }
+  }
 }
