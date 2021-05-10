@@ -130,15 +130,10 @@ abstract class RapidsBufferStore(
    */
   def copyBuffer(buffer: RapidsBuffer, memoryBuffer: MemoryBuffer, stream: Cuda.Stream)
   : RapidsBufferBase = {
-    val newBuffer = createBuffer(buffer, memoryBuffer, stream)
-    try {
+    freeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
       buffers.add(newBuffer)
       catalog.registerNewBuffer(newBuffer)
       newBuffer
-    } catch {
-      case e: Exception =>
-        newBuffer.free()
-        throw e
     }
   }
 

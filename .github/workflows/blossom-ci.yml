@@ -51,7 +51,6 @@ jobs:
       rongou,\
       rwlee,\
       sameerz,\
-      shotai,\
       sriramch,\
       tgravescs,\
       wbo4958,\
@@ -62,6 +61,7 @@ jobs:
       hyperbolic2346,\
       gerashegalov,\
       ttnghia,\
+      zhanga5,\
       ', format('{0},', github.actor)) && github.event.comment.body == 'build'
     steps:
       - name: Check if comment is issued by authorized person

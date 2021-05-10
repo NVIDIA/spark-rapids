@@ -146,25 +146,33 @@ object GpuFilter extends Arm {
     }
   }
 
+  private def allEntriesAreTrue(mask: GpuColumnVector): Boolean = {
+    if (mask.hasNull) {
+      false
+    } else {
+      withResource(mask.getBase.all()) { all =>
+        all.getBoolean
+      }
+    }
+  }
+
   def apply(batch: ColumnarBatch,
       boundCondition: Expression) : ColumnarBatch = {
     withResource(batch) { batch =>
-      val checkedFilterMap = withResource(
-        GpuProjectExec.projectSingle(batch, boundCondition)) { filterMap =>
-        // If  filter is a noop then return a None
-        withResource(filterMap.getBase.all()) { allIncluded =>
-          if (allIncluded.getBoolean) {
-            None
-          } else {
-            Some(filterMap.getBase.incRefCount())
-          }
+      val checkedFilterMask = withResource(
+        GpuProjectExec.projectSingle(batch, boundCondition)) { filterMask =>
+        // If  filter is a noop then return a None for the mask
+        if (allEntriesAreTrue(filterMask)) {
+          None
+        } else {
+          Some(filterMask.getBase.incRefCount())
         }
       }
-      checkedFilterMap.map { checkedFilterMap =>
-        withResource(checkedFilterMap) { checkedFilterMap =>
+      checkedFilterMask.map { checkedFilterMask =>
+        withResource(checkedFilterMask) { checkedFilterMask =>
           val colTypes = GpuColumnVector.extractTypes(batch)
           withResource(GpuColumnVector.from(batch)) { tbl =>
-            withResource(tbl.filter(checkedFilterMap)) { filteredData =>
+            withResource(tbl.filter(checkedFilterMask)) { filteredData =>
               GpuColumnVector.from(filteredData, colTypes)
             }
           }
