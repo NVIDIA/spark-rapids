@@ -1064,9 +1064,16 @@ object RapidsConf {
       .stringConf
       .createWithDefault("NONE")
 
+  val OPTIMIZER_DEFAULT_ROW_COUNT = conf("spark.rapids.sql.optimizer.defaultRowCount")
+    .internal()
+    .doc("The cost-based optimizer uses estimated row counts to calculate costs and sometimes " +
+      "there is no row count available so we need a default assumption to use in this case")
+    .longConf
+    .createWithDefault(1000000)
+
   val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.defaultExecGpuCost")
       .internal()
-      .doc("Default relative GPU cost of running an operator on the GPU")
+      .doc("Default per-row GPU cost of running an operator on the GPU")
       .doubleConf
       .createWithDefault(0.8)
 
@@ -1081,19 +1088,19 @@ object RapidsConf {
       .internal()
       .doc("Default relative GPU cost of running an expression on the GPU")
       .doubleConf
-      .createWithDefault(0.8)
+      .createWithDefault(0.01)
 
   val OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST = conf(
     "spark.rapids.sql.optimizer.defaultTransitionToCpuCost")
       .internal()
-      .doc("Default cost of transitioning from GPU to CPU")
+      .doc("Default per-row cost of transitioning from GPU to CPU")
       .doubleConf
       .createWithDefault(0.1)
 
   val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
     "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
       .internal()
-      .doc("Default cost of transitioning from CPU to GPU")
+      .doc("Default per-row cost of transitioning from CPU to GPU")
       .doubleConf
       .createWithDefault(0.1)
 
@@ -1465,6 +1472,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val optimizerClassName: String = get(OPTIMIZER_CLASS_NAME)
 
+  lazy val defaultRowCount: Long = get(OPTIMIZER_DEFAULT_ROW_COUNT)
+
   lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
 
   lazy val defaultExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
@@ -1483,17 +1492,32 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   /**
    * Get the GPU cost of an expression, for use in the cost-based optimizer.
    */
-  def getExpressionCost(operatorName: String): Option[Double] = {
-    val key = s"spark.rapids.sql.optimizer.expr.$operatorName"
+  def getGpuExpressionCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.gpu.expr.$operatorName"
     conf.get(key).map(toDouble(_, key))
   }
 
   /**
    * Get the GPU cost of an operator, for use in the cost-based optimizer.
    */
-  def getOperatorCost(operatorName: String): Option[Double] = {
-    val key = s"spark.rapids.sql.optimizer.exec.$operatorName"
+  def getGpuOperatorCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.gpu.exec.$operatorName"
     conf.get(key).map(toDouble(_, key))
   }
 
+  /**
+   * Get the CPU cost of an expression, for use in the cost-based optimizer.
+   */
+  def getCpuExpressionCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.cpu.expr.$operatorName"
+    conf.get(key).map(toDouble(_, key))
+  }
+
+  /**
+   * Get the CPU cost of an operator, for use in the cost-based optimizer.
+   */
+  def getCpuOperatorCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.cpu.exec.$operatorName"
+    conf.get(key).map(toDouble(_, key))
+  }
 }

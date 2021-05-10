@@ -42,12 +42,14 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
   test("Force section of plan back onto CPU, AQE on") {
     logError("Force section of plan back onto CPU, AQE on")
+    assumeSpark311orLater
+
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
-        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.15")
-        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.15")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.3")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.3")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
@@ -76,7 +78,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
       df.collect()
 
       // check that the expected optimization was applied
-      val opt = optimizations.last.last.asInstanceOf[ReplaceSection[_]]
+      val replacedSections = getReplacedSections(optimizations)
+      val opt = replacedSections.last
+
       assert(opt.totalGpuCost > opt.totalCpuCost)
       assert(opt.plan.wrapped.isInstanceOf[SortExec])
 
@@ -153,11 +157,13 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
   test("Force last section of plan back onto CPU, AQE on") {
     logError("Force last section of plan back onto CPU, AQE on")
+    assumeSpark311orLater
+
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
-        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.15")
-        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.15")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST.key, "0.3")
+        .set(RapidsConf.OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST.key, "0.3")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
@@ -178,13 +184,16 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
       df.collect()
 
       // check that the expected optimization was applied
-      val opt = optimizations.last.last.asInstanceOf[ReplaceSection[_]]
+      val replacedSections = getReplacedSections(optimizations)
+      val opt = replacedSections.last
       assert(opt.totalGpuCost > opt.totalCpuCost)
       assert(opt.plan.wrapped.isInstanceOf[SortExec])
 
       //assert that the top-level sort stayed on the CPU
-      df.queryExecution.executedPlan.asInstanceOf[AdaptiveSparkPlanExec]
-          .executedPlan.asInstanceOf[WholeStageCodegenExec]
+      val finalPlan = df.queryExecution.executedPlan
+        .asInstanceOf[AdaptiveSparkPlanExec]
+        .executedPlan
+      finalPlan.asInstanceOf[WholeStageCodegenExec]
           .child.asInstanceOf[SortExec]
 
       df
@@ -219,7 +228,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
       df.collect()
 
       // check that the expected optimization was applied
-      val opt = optimizations.last.last.asInstanceOf[ReplaceSection[_]]
+      val replacedSections = getReplacedSections(optimizations)
+      val opt = replacedSections.last
       assert(opt.totalGpuCost > opt.totalCpuCost)
       assert(opt.plan.wrapped.isInstanceOf[SortExec])
 
@@ -509,4 +519,9 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
     df
   }
 
+  private def getReplacedSections(optimizations: ListBuffer[Seq[Optimization]]) = {
+    optimizations.flatten
+      .filter(_.isInstanceOf[ReplaceSection[_]])
+      .map(_.asInstanceOf[ReplaceSection[_]])
+  }
 }
