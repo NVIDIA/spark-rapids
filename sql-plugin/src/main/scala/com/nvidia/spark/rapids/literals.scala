@@ -204,7 +204,7 @@ object GpuScalar extends Arm with Logging {
 /**
  * The wrapper of a Scala value and its corresponding cudf Scalar, along with its DataType.
  *
- * This class is created because many expressions require both the cudf Scalar and its
+ * This class is introduced because many expressions require both the cudf Scalar and its
  * corresponding Scala value to complete their computations. e.g. 'GpuStringSplit',
  * 'GpuStringLocate', 'GpuDivide', 'GpuDateAddInterval', 'GpuTimeMath' ...
  * So only either a cudf Scalar or a Scala value can not support such cases, unless copying data
