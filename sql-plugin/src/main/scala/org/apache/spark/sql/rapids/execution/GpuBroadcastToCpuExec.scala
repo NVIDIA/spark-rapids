@@ -28,14 +28,12 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.metric.SQLMetrics
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.KnownSizeEstimation
 
