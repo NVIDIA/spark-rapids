@@ -481,20 +481,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return result;
   }
 
-  public static DType getArrayNestedRapidsType(DataType type) {
-    DType result = toRapidsOrNull(type);
-    if (result == null) {
-      if (type instanceof ArrayType) {
-        result = DType.LIST;
-      }
-    }
-
-    if (result == null) {
-      throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
-    }
-    return result;
-  }
-
   /**
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.

@@ -16,10 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import ai.rapids.cudf.{ColumnVector, DType}
 
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FUNC_ALIAS
 import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, NamedExpression}
@@ -70,8 +70,10 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
           GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
       }
       GpuColumnVector.from(ColumnVector.makeList(numRows,
-        GpuColumnVector.getArrayNestedRapidsType(dataType.elementType),
-        columns: _*), dataType)
+        dataType.elementType match {
+          case _: ArrayType => DType.LIST
+          case _ => GpuColumnVector.getNonNestedRapidsType(dataType.elementType)
+        }, columns: _*), dataType)
     }
   }
 }
