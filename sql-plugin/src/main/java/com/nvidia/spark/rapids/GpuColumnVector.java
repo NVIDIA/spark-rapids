@@ -775,14 +775,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       sb.append("))");
     } else if (sparkType instanceof StructType) {
       StructType structType = (StructType) sparkType;
-      sb.append("STRUCT(");
-      for (int i = 0; i < structType.size(); i++) {
-        if (i != 0) {
-          sb.append(",");
-        }
-        sb.append(buildColumnTypeString(structType.apply(i).dataType()));
-      }
-      sb.append(")");
+      sb.append(structType.iterator().map(f -> buildColumnTypeString(f.dataType()))
+          .mkString("STRUCT(", ",", ")"));
     } else {
       throw new IllegalArgumentException("Unexpected data type: " + sparkType);
     }
@@ -798,8 +792,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static GpuColumnVector fromChecked(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
     if (!typeConversionAllowed(cudfCv, type)) {
-      throw new IllegalArgumentException("Type conversion error for " + type + ": expected " +
-          buildColumnTypeString(type) + " found " + buildColumnTypeString(cudfCv));
+      throw new IllegalArgumentException("Type conversion error to " + type +
+          ": expected cudf type " + buildColumnTypeString(type) +
+          " found cudf type " + buildColumnTypeString(cudfCv));
     }
     return new GpuColumnVector(type, cudfCv);
   }
