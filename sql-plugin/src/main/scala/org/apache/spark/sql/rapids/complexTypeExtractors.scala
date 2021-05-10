@@ -123,7 +123,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
     if (ordinal.isValid && ordinal.getBase.getInt >= 0) {
       lhs.getBase.extractListElement(ordinal.getBase.getInt)
     } else {
-      GpuColumnVector.fromNull(lhs.getRowCount.toInt, dataType).getBase
+      GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
     }
   }
 
