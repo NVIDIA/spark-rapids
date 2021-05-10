@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuExpression, GpuScalar}
 
-import org.apache.spark.sql.catalyst.expressions.{ Expression, ExprId}
+import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
