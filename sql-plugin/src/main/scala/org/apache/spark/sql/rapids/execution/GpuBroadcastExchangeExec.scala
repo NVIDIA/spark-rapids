@@ -252,7 +252,7 @@ abstract class GpuBroadcastExchangeExecBase(
   override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   @transient
-  private lazy val promise = Promise[Broadcast[Any]]()
+  protected lazy val promise = Promise[Broadcast[Any]]()
 
   /**
    * For registering callbacks on `relationFuture`.
@@ -262,7 +262,7 @@ abstract class GpuBroadcastExchangeExecBase(
   lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
 
   @transient
-  private val timeout: Long = SQLConf.get.broadcastTimeout
+  protected val timeout: Long = SQLConf.get.broadcastTimeout
 
   val _runId: UUID = UUID.randomUUID()
 
