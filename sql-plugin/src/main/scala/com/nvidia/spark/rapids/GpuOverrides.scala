@@ -2482,6 +2482,16 @@ object GpuOverrides {
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
       }),
+    expr[ConcatWs](
+      "Concatenates multiple input strings or array of strings into a single " +
+        "string using a given separator ",
+      ExprChecks.projectNotLambda(TypeSig.STRING,
+        (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING),
+        repeatingParamCheck = Some(RepeatingParamCheck("input", TypeSig.STRING,
+          (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING)))),
+      (a, conf, p, r) => new ExprMeta[ConcatWs](a, conf, p, r) {
+        override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcatWs(child)
+      }),
     expr[Murmur3Hash] (
       "Murmur3 hash operator",
       ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,

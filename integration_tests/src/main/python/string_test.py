@@ -161,6 +161,20 @@ def test_concat():
                 f.concat(f.lit(''), f.col('b')),
                 f.concat(f.col('a'), f.lit(''))))
 
+def test_concat_ws():
+    gen = mk_str_gen('.{0,5}')
+    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, gen).select(
+            f.concat_ws("-", f.col('a'), f.col('b')),
+            f.concat_ws("-", f.col('a'), f.col('b'), f.col('a')),
+            f.concat_ws("-", s1, f.col('b')),
+            f.concat_ws("-", f.col('a'), s2),
+            f.concat_ws("-", f.lit(None).cast('string'), f.col('b')),
+            f.concat_ws("-", f.col('a'), f.lit(None).cast('string')),
+            f.concat_ws("-", f.lit(''), f.col('b')),
+            f.concat_ws("-", f.col('a'), f.lit(''))))
+
 def test_substring():
     gen = mk_str_gen('.{0,30}')
     assert_gpu_and_cpu_are_equal_collect(
