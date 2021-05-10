@@ -732,7 +732,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
     assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " +
-        buildColumnTypeString(cudfCv) + " to " + type;
+        buildColumnTypeString(cudfCv) + " to " + type + " expected " + buildColumnTypeString(type);
     return new GpuColumnVector(type, cudfCv);
   }
 
@@ -755,6 +755,40 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return type.toString();
   }
 
+  private static String buildColumnTypeString(DataType sparkType) {
+    DType dtype = toRapidsOrNull(sparkType);
+    if (dtype != null) {
+      return dtype.toString();
+    }
+    StringBuilder sb = new StringBuilder();
+    if (sparkType instanceof ArrayType) {
+      ArrayType arrayType = (ArrayType) sparkType;
+      sb.append("LIST(");
+      sb.append(buildColumnTypeString(arrayType.elementType()));
+      sb.append(")");
+    } else if (sparkType instanceof MapType) {
+      MapType mapType = (MapType) sparkType;
+      sb.append("LIST(STRUCT(");
+      sb.append(buildColumnTypeString(mapType.keyType()));
+      sb.append(",");
+      sb.append(buildColumnTypeString(mapType.valueType()));
+      sb.append("))");
+    } else if (sparkType instanceof StructType) {
+      StructType structType = (StructType) sparkType;
+      sb.append("STRUCT(");
+      for (int i = 0; i < structType.size(); i++) {
+        if (i != 0) {
+          sb.append(",");
+        }
+        sb.append(buildColumnTypeString(structType.apply(i).dataType()));
+      }
+      sb.append(")");
+    } else {
+      throw new IllegalArgumentException("Unexpected data type: " + sparkType);
+    }
+    return sb.toString();
+  }
+
   /**
    * Converts a cudf internal vector to a Spark compatible vector. No reference counts
    * are incremented so you need to either close the returned value or the input value,
@@ -764,8 +798,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static GpuColumnVector fromChecked(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
     if (!typeConversionAllowed(cudfCv, type)) {
-      throw new IllegalArgumentException("Type conversion is not allowed from " +
-          buildColumnTypeString(cudfCv) + " to " + type);
+      throw new IllegalArgumentException("Type conversion error for " + type + ": expected " +
+          buildColumnTypeString(type) + " found " + buildColumnTypeString(cudfCv));
     }
     return new GpuColumnVector(type, cudfCv);
   }
