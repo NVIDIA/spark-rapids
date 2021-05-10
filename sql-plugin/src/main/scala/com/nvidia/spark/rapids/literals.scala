@@ -240,7 +240,7 @@ class GpuScalar private(
   assert(value.isEmpty || !value.get.isInstanceOf[Scalar], "Value should not be Scalar")
 
   /**
-   * Gets the internal cudf Scala of this GpuScalar.
+   * Gets the internal cudf Scalar of this GpuScalar.
    *
    * This will not increase any reference count. So users need to close either the GpuScalar or
    * the return cudf Scalar, not both.

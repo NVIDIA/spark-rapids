@@ -45,7 +45,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
   override def columnarEval(batch: ColumnarBatch): Any = {
     // runningResult has precedence over runningScalar
     var runningResult: ColumnVector = null
-    var runningScalar: Scalar = null
+    var runningScalar: GpuScalar = null
     try {
       children.reverse.foreach(expr => {
         expr.columnarEval(batch) match {
@@ -56,7 +56,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
                 runningResult.close()
                 runningResult = tmp
               } else if (runningScalar != null) {
-                runningResult = GpuNvl(data.getBase, runningScalar)
+                runningResult = GpuNvl(data.getBase, runningScalar.getBase)
               } else {
                 // They are both null
                 runningResult = data.getBase.incRefCount()
@@ -64,7 +64,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
             } finally {
               data.close()
             }
-          case s: Scalar =>
+          case s: GpuScalar =>
             // scalar now takes over
             if (runningResult != null) {
               runningResult.close()
@@ -76,7 +76,8 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
               runningScalar = null
             }
             runningScalar = s
-          case _ => // NOOP does not matter the current state is unchanged
+          case null => // NOOP does not matter the current state is unchanged
+          case u => throw new IllegalStateException(s"Unexpected data type ${u.getClass}")
         }
       })
 
@@ -84,7 +85,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
         GpuColumnVector.from(runningResult.incRefCount(), dataType)
       } else if (runningScalar != null) {
         // Wrap it as a GpuScalar instead of pulling data out of GPU.
-        GpuScalar.wrap(runningScalar.incRefCount(), dataType)
+        runningScalar.incRefCount
       } else {
         // null is not welcome, so use a null scalar instead
         GpuScalar(null, dataType)

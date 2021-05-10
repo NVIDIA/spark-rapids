@@ -388,8 +388,8 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
   // by checking if scaleV == null as well.
   private lazy val scaleV: Any = scale match {
     case _: GpuExpression =>
-      withResource(scale.columnarEval(null).asInstanceOf[Scalar]) { s =>
-        s.getInt
+      withResource(scale.columnarEval(null).asInstanceOf[GpuScalar]) { s =>
+        s.getValue
       }
     case _ => scale.eval(EmptyRow)
   }
