@@ -88,7 +88,6 @@ class Spark301dbShims extends Spark301Shims {
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
             winPy.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),
