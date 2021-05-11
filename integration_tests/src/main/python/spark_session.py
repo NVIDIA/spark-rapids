@@ -96,4 +96,4 @@ def with_gpu_session(func, conf={}):
 
 # databricks runtime 8.x and lower show 3.1.0 even though really 3.1.1
 def is_before_spark_311():
-    return spark_version() < "3.1.1" or (is_databricks_runtime() and spark_version() < "3.1.0")
+    return (is_databricks_runtime() and spark_version() < "3.1.0") or (not is_databricks_runtime() and spark_version() < "3.1.1")
