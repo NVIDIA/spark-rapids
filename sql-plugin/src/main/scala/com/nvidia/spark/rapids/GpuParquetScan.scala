@@ -737,7 +737,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     def convertDecimal64ToDecimal32(
        cv: ColumnView,
        precision: Int,
-       toClose: ArrayBuilder[ColumnView]): ColumnView = {
+       toClose: ArrayBuffer[ColumnView]): ColumnView = {
       val dt = cv.getType
       if (!dt.isNestedType) {
         if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
@@ -791,14 +791,13 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       }
     }
 
-    val toClose = ArrayBuilder.make[ColumnView]()
-    val tmp = convertDecimal64ToDecimal32(cv, precision, toClose)
-    if (tmp != cv) {
-      withResource(toClose.result()) { _ =>
+    withResource(new ArrayBuffer[ColumnView]) { toClose =>
+      val tmp = convertDecimal64ToDecimal32(cv, precision, toClose)
+      if (tmp != cv) {
         tmp.copyToColumnVector()
+      } else {
+        tmp.asInstanceOf[ColumnVector].incRefCount()
       }
-    } else {
-      tmp.asInstanceOf[ColumnVector].incRefCount()
     }
   }
 
