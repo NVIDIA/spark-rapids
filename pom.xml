@@ -128,14 +128,25 @@
         <profile>
             <id>databricks301</id>
             <properties>
-	        <rat.consoleOutput>true</rat.consoleOutput>
+                <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
         </profile>
-
+        <profile>
+            <id>databricks310</id>
+            <properties>
+                <rat.consoleOutput>true</rat.consoleOutput>
+            </properties>
+        </profile>
         <profile>
             <id>spark301dbtests</id>
             <properties>
                 <spark.test.version>${spark301db.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark310dbtests</id>
+            <properties>
+                <spark.test.version>${spark310db.version}</spark.test.version>
             </properties>
         </profile>
         <profile>
@@ -226,6 +237,7 @@
         <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <spark302.version>3.0.2</spark302.version>
         <spark303.version>3.0.3-SNAPSHOT</spark303.version>
+        <spark310db.version>3.1.0-databricks</spark310db.version>
         <spark311.version>3.1.1</spark311.version>
         <spark312.version>3.1.2-SNAPSHOT</spark312.version>
         <spark320.version>3.2.0-SNAPSHOT</spark320.version>

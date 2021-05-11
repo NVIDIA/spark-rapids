@@ -234,7 +234,7 @@ def test_group_apply_udf_more_types(data_gen):
         return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen, 5)\
+        lambda spark: binary_op_df(spark, data_gen, 5000)\
             .groupBy('a')\
             .applyInPandas(group_size_udf, schema="c long, d long, e long"),
         conf=arrow_udf_conf)
