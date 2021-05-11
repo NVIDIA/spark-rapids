@@ -216,18 +216,18 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
    * (2) Function from frame index to its upper bound column index in the python input row
    * (3) Seq from frame index to its window bound type
    */
-  private type WindowBoundHelpers = (Int => Int, Int => Int, Seq[WindowBoundType])
+  protected type WindowBoundHelpers = (Int => Int, Int => Int, Seq[WindowBoundType])
 
   /*
    * Enum for window bound types. Used only inside this class.
    */
-  private sealed case class WindowBoundType(value: String)
-  private object UnboundedWindow extends WindowBoundType("unbounded")
-  private object BoundedWindow extends WindowBoundType("bounded")
+  protected sealed case class WindowBoundType(value: String)
+  protected object UnboundedWindow extends WindowBoundType("unbounded")
+  protected object BoundedWindow extends WindowBoundType("bounded")
 
-  private val windowBoundTypeConf = "pandas_window_bound_types"
+  protected val windowBoundTypeConf = "pandas_window_bound_types"
 
-  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  protected def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
       case Seq(u: GpuPythonUDF) =>
         val (chained, children) = collectFunctions(u)
@@ -279,7 +279,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   /*
    * See [[WindowBoundHelpers]] for details.
    */
-  private def computeWindowBoundHelpers: WindowBoundHelpers = {
+  protected def computeWindowBoundHelpers: WindowBoundHelpers = {
 
     val windowBoundTypes = windowFramesWithExpressions.map(_._1).map { frame =>
       if (frame.isUnbounded) {
@@ -310,7 +310,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     (lowerBoundIndex, upperBoundIndex, windowBoundTypes)
   }
 
-  private def insertWindowBounds(batch: ColumnarBatch): ColumnarBatch = {
+  protected def insertWindowBounds(batch: ColumnarBatch): ColumnarBatch = {
     val numRows = batch.numRows()
     def buildLowerCV(lower: Expression): GpuColumnVector = {
       lower match {

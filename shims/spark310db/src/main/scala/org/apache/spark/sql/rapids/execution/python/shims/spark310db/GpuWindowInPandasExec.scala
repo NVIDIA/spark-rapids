@@ -27,8 +27,7 @@ import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.{BatchQueue, GpuWindowInPandasExecBase, GpuPythonHelper, GpuPythonUDF, GroupingIterator}
-import org.apache.spark.sql.rapids.execution.python.shims.spark310db.GpuArrowPythonRunner
+import org.apache.spark.sql.rapids.execution.python.{GpuWindowInPandasExecBase, GpuPythonHelper, GpuPythonUDF, GroupingIterator}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
