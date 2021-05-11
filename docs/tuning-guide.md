@@ -18,6 +18,14 @@ Apache Spark. For example, if the cluster nodes each have 24 CPU cores and 4 GPU
 `spark.executor.cores=6` will run each executor with 6 cores and 6 concurrent tasks per executor,
 assuming the default setting of one core per task, i.e.: `spark.task.cpus=1`.
 
+Note that when Apache Spark schedules GPU resources then the GPU resource amount per task,
+controlled by `spark.task.resource.gpu.amount`, can limit the number of concurrent tasks further.
+For example, if Apache Spark is scheduling for GPUs and `spark.task.resource.gpu.amount=1` then
+only one task will run concurrently per executor since the RAPIDS Accelerator only supports
+one GPU per executor. When Apache Spark is scheduling for GPUs, set
+`spark.task.resource.gpu.amount` to the reciprocal of the desired executor task concurrency, e.g.:
+`spark.task.resource.gpu.amount=0.125` will allow up to 8 concurrent tasks per executor.
+
 It is recommended to run more than one concurrent task per executor as this allows overlapping
 I/O and computation.  For example one task can be communicating with a distributed filesystem to
 fetch an input buffer while another task is decoding an input buffer on the GPU. Configuring too
@@ -87,7 +95,7 @@ Configuration key: [`spark.rapids.sql.concurrentGpuTasks`](configs.md#sql.concur
 
 Default value: `1`
 
-The number of concurrent tasks per executor can be further limited when tasks are sharing the GPU.
+The RAPIDS Accelerator can further limit the number of tasks that are actively sharing the GPU.
 This is useful for avoiding GPU out of memory errors while still allowing full concurrency for the
 portions of the job that are not executing on the GPU.  Some queries benefit significantly from
 setting this to a value between `2` and `4`, with `2` typically providing the most benefit, and
@@ -97,6 +105,11 @@ Setting this value to high can lead to GPU out of memory errors or poor runtime
 performance. Running multiple tasks concurrently on the GPU will reduce the memory available
 to each task as they will be sharing the GPU's total memory. As a result, some queries that fail
 to run with a higher concurrent task setting may run successfully with a lower setting.
+
+Note that when Apache Spark is scheduling GPUs as a resource, the configured GPU resource amount
+per task may be too low to achieve the desired concurrency. See the
+[section on configuring the number of tasks per executor](#number-of-tasks-per-executor) for more
+details.
 
 ## Shuffle Partitions
 Configuration key:
