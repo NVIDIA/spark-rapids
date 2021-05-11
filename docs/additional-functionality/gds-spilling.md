@@ -26,14 +26,10 @@ to install and configure GDS.
 
 ### Spark App Configuration
 After GDS is installed on the host, to enable GDS spilling:
-* Make sure the RAPIDS Shuffle Manager is enabled and configured correctly.
+* Make sure the [RAPIDS Shuffle Manager](rapids-shuffle.md) is enabled and configured correctly.
 * Make sure the Spark "scratch" directory configured by `spark.local.dir` supports GDS.
-* Add the following configuration to the Spark app:
-```shell
-...
---conf spark.rapids.memory.gpu.direct.storage.spill.enabled=true" \
-...
-```
+* Set `spark.rapids.memory.gpu.direct.storage.spill.enabled=true` in the Spark app.
+
 To verify that GDS spilling is working correctly, add the following line to
 `${SPARK_HOME}/conf/log4j.properties`:
 ```properties
@@ -47,9 +43,6 @@ To combat this issue, small device buffers are concatenated together before writ
 batch. The batch write buffer used for this purpose takes up PCI Base Address Register (BAR) space, 
 which can be very limited on some GPUs. For example, the NVIDIA T4 only has 256 MiB. On GPUs with a
 larger BAR space (e.g. the NVIDIA V100 or the NVIDIA A100), you can increase the size of the 
-batch write buffer, which may further improve spilling performance:
-```shell
-...
---conf spark.rapids.memory.gpu.direct.storage.spill.batchWriteBuffer.size=64m" \
-...
-```
+batch write buffer, which may further improve spilling performance. To change the batch write buffer
+size from the default 8 MiB to, say, 64 MiB, set
+`spark.rapids.memory.gpu.direct.storage.spill.batchWriteBuffer.size=64m` in the Spark app.
