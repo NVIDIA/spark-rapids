@@ -24,7 +24,7 @@ BUILD_PROFILES=$3
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=3.1.0
 BUILD_PROFILES=${BUILD_PROFILES:-'databricks310,!snapshot-shims'}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.1'}
-# the version of spark used when we install the databricks jars in .m2
+# the version of Spark used when we install the Databricks jars in .m2
 # 3.1.0-databricks is add because its actually based on Spark 3.1.1
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
 SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS-databricks

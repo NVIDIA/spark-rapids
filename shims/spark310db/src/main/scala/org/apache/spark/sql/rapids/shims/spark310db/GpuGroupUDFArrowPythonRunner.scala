@@ -49,7 +49,17 @@ import org.apache.spark.util.Utils
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 
 /**
- * Group Map UDF specific serializer for databricks.
+ * Group Map UDF specific serializer for Databricks because they have a special GroupUDFSerializer.
+ * The main difference here from the GpuArrowPythonRunner is that it creates a new Arrow
+ * Stream for each grouped data.
+ * The overall flow is:
+ *   - send a 1 to indicate more data is coming
+ *   - create a new Arrow Stream for each grouped data
+ *   - send the schema
+ *   - send that group of data
+ *   - close that Arrow stream
+ *   - Repeat starting at sending 1 if more data, otherwise send a 0 to indicate no
+ *     more data being sent.
  */
 class GpuGroupUDFArrowPythonRunner(
     funcs: Seq[ChainedPythonFunctions],
@@ -87,15 +97,13 @@ class GpuGroupUDFArrowPythonRunner(
       protected override def writeIteratorToStream(dataOut: DataOutputStream): Unit = {
         // write out number of columns
         Utils.tryWithSafeFinally {
-          // databricks uses special GroupUDFSerializer so we have to match the logic it expects,
-          // which is a arrow stream for each grouped data
           val builder = ArrowIPCWriterOptions.builder()
           builder.withMaxChunkSize(batchSize)
           builder.withCallback((table: Table) => {
             table.close()
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
-          // Flatten the names of nested struct columns, required by cudf arrow IPC writer.
+          // Flatten the names of nested struct columns, required by cudf Arrow IPC writer.
           flattenNames(pythonInSchema).foreach { case (name, nullable) =>
               if (nullable) {
                 builder.withColumnNames(name)

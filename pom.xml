@@ -126,19 +126,6 @@
             </build>
         </profile>
         <profile>
-            <id>databricks301</id>
-            <properties>
-	        <rat.consoleOutput>true</rat.consoleOutput>
-            </properties>
-        </profile>
-        <profile>
-            <id>databricks310</id>
-            <properties>
-	        <rat.consoleOutput>true</rat.consoleOutput>
-            </properties>
-        </profile>
-
-        <profile>
             <id>spark301dbtests</id>
             <properties>
                 <spark.test.version>${spark301db.version}</spark.test.version>
@@ -228,7 +215,7 @@
         <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
         <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
         <pytest.TEST_TYPE>developer</pytest.TEST_TYPE>
-        <rat.consoleOutput>false</rat.consoleOutput>
+        <rat.consoleOutput>true</rat.consoleOutput>
         <slf4j.version>1.7.30</slf4j.version>
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
