@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.execution.python
+package org.apache.spark.sql.rapids.execution.python.shims.spark310db
 
 import java.io.{DataInputStream, DataOutputStream}
 import java.net.Socket
@@ -37,13 +37,16 @@ import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.toPrettySQL
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.python.GpuPythonHelper
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 
 /**
  * This iterator will round incoming batches to multiples of targetRoundoff rows, if possible.
@@ -261,10 +264,12 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
       startTime: Long,
       env: SparkEnv,
       worker: Socket,
+      pid: Option[Int], // DB SPECIFIC
       releasedOrClosed: AtomicBoolean,
       context: TaskContext): Iterator[ColumnarBatch] = {
 
-    new ReaderIterator(stream, writerThread, startTime, env, worker, releasedOrClosed, context) {
+    // DB SPECIFIC - new parameter for pid
+    new ReaderIterator(stream, writerThread, startTime, env, worker, pid, releasedOrClosed, context) {
 
       private[this] var arrowReader: StreamedTableReader = _
 
@@ -328,7 +333,6 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
     }
   }
 }
-
 
 /**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
