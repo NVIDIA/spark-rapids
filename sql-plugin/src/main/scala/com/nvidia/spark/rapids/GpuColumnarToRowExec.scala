@@ -338,5 +338,13 @@ object GpuColumnarToRowExecParent {
   }
 }
 
+object ColumnarToRowIterator {
+  def simple(iter: Iterator[ColumnarBatch], schema: Seq[Attribute]): Iterator[InternalRow] = {
+    val f = GpuColumnarToRowExecParent.makeIteratorFunc(schema,
+      NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+    f(iter)
+  }
+}
+
 case class GpuColumnarToRowExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
    extends GpuColumnarToRowExecParent(child, exportColumnarRdd)

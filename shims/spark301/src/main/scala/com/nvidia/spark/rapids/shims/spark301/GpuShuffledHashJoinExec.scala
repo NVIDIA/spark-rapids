@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.{BuildLeft, BuildRight, BuildSide, ShuffledHashJoinExec}
-import org.apache.spark.sql.rapids.execution.GpuHashJoin
+import org.apache.spark.sql.rapids.execution.{CpuJoinInfo, GpuHashJoin}
 
 object GpuJoinUtils {
   def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
@@ -57,7 +57,7 @@ class GpuShuffledHashJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val Seq(left, right) = childPlans.map(_.convertIfNeeded)
+    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
@@ -66,6 +66,7 @@ class GpuShuffledHashJoinMeta(
       condition.map(_.convertToGpu()),
       left,
       right,
+      CpuJoinInfo(join.leftKeys, join.rightKeys, join.condition),
       isSkewJoin = false)
   }
 }
@@ -78,10 +79,10 @@ case class GpuShuffledHashJoinExec(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
+    cpu: CpuJoinInfo,
     override val isSkewJoin: Boolean)
   extends GpuShuffledHashJoinBase(
     leftKeys,
     rightKeys,
     buildSide,
-    condition,
     isSkewJoin = isSkewJoin)

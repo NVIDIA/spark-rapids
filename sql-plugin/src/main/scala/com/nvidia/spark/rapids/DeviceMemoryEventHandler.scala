@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,15 +81,26 @@ class DeviceMemoryEventHandler(
   private def heapDump(dumpDir: String): Unit = {
     val dumpPath = getDumpPath(dumpDir)
     logWarning(s"Dumping heap to $dumpPath")
+    System.gc()
+    Thread.sleep(1)
+    System.gc()
     val server = ManagementFactory.getPlatformMBeanServer
     val mxBean = ManagementFactory.newPlatformMXBeanProxy(server,
       "com.sun.management:type=HotSpotDiagnostic", classOf[HotSpotDiagnosticMXBean])
     mxBean.dumpHeap(dumpPath, false)
   }
 
+  private var dumpCount = 0
+
   private def getDumpPath(dumpDir: String): String = {
     // pid is typically before the '@' character in the name
     val pid = ManagementFactory.getRuntimeMXBean.getName.split('@').head
-    new File(dumpDir, s"gpu-oom-$pid.hprof").toString
+    val file = new File(dumpDir, s"gpu-oom-$pid.hprof")
+    dumpCount += 1
+    if (file.exists()) {
+      new File(dumpDir, s"gpu-oom-$pid-$dumpCount.hprof").toString
+    } else {
+      file.toString
+    }
   }
 }

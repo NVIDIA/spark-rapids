@@ -149,6 +149,15 @@ case class GpuSortEachBatchIterator(
   }
 }
 
+object GpuSortEachBatchIterator {
+  def simple(iter: Iterator[ColumnarBatch],
+      unboundOrder: Seq[SortOrder],
+      schema: Seq[Attribute]): GpuSortEachBatchIterator = {
+    val sorter = new GpuSorter(unboundOrder, schema)
+    GpuSortEachBatchIterator(iter, sorter)
+  }
+}
+
 /**
  * Holds data for the out of core sort. It includes the batch of data and the first row in that
  * batch so we can sort the batches.
@@ -190,6 +199,20 @@ class Pending(cpuOrd: LazilyGeneratedOrdering) extends AutoCloseable {
   def isEmpty: Boolean = pending.isEmpty
 
   override def close(): Unit = pending.forEach(_.close())
+}
+
+object GpuOutOfCoreSortIterator {
+  def simple(iter: Iterator[ColumnarBatch],
+      unboundOrder: Seq[SortOrder],
+      schema: Seq[Attribute],
+      targetSize: Long,
+      spillCallback: RapidsBuffer.SpillCallback): GpuOutOfCoreSortIterator = {
+    val sorter = new GpuSorter(unboundOrder, schema)
+    val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
+    GpuOutOfCoreSortIterator(iter, sorter, cpuOrd, targetSize,
+      NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
+      spillCallback)
+  }
 }
 
 /**
@@ -352,8 +375,11 @@ case class GpuOutOfCoreSortIterator(
   /**
    * First pass through the data. Read in all of the batches, sort each batch and split them up into
    * smaller chunks for later merge sorting.
+   *
+   * This is public as an ugly hack. Please do not call this unless you really know what you are
+   * doing.
    */
-  private final def firstPassReadBatches(): Unit = {
+  final def firstPassReadBatches(): Unit = {
     while(iter.hasNext) {
       var memUsed = 0L
       val sortedTbl = withResource(iter.next()) { batch =>

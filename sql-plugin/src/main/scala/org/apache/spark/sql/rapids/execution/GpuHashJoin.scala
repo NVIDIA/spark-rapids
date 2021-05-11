@@ -20,9 +20,11 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.joins.rapids.CpuSortMergeJoinFallback
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -187,9 +189,14 @@ class HashJoinIterator(
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     private val spillCallback: SpillCallback,
+    private val condition: Option[Expression],
+    private val fallback: Option[
+        (Iterator[ColumnarBatch], Iterator[ColumnarBatch]) => Iterator[ColumnarBatch]],
+    private val joinOutputRows: GpuMetric,
     private val streamTime: GpuMetric,
     private val joinTime: GpuMetric,
-    private val totalTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
+    private val totalTime: GpuMetric,
+    private val filterTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm with Logging {
   import scala.collection.JavaConverters._
 
   // For some join types even if there is no stream data we might output something
@@ -200,6 +207,7 @@ class HashJoinIterator(
   private val built = withResource(builtInput) { builtInput =>
     LazySpillableColumnarBatch(builtInput, spillCallback, "built")
   }
+  private var fallbackIter: Option[Iterator[ColumnarBatch]] = None
   private var closed = false
 
   def close(): Unit = {
@@ -230,8 +238,23 @@ class HashJoinIterator(
         // We are about to return something. We got everything we need from it so now let it spill
         // if there is more to be gathered later on.
         gathererStore.foreach(_.allowSpilling())
+        joinOutputRows += ret.get.numRows()
       }
-      ret
+
+      if (condition.isDefined && ret.isDefined) {
+        ret.flatMap { cb =>
+          withResource(
+            GpuFilter(cb, condition.get, NoopMetric, NoopMetric, filterTime)) { filtered =>
+            if (filtered.numRows == 0) {
+              None
+            } else {
+              Some(GpuColumnVector.incRefCounts(filtered))
+            }
+          }
+        }
+      } else {
+        ret
+      }
     }
   }
 
@@ -328,12 +351,16 @@ class HashJoinIterator(
       buildData: LazySpillableColumnarBatch,
       streamCb: ColumnarBatch): Option[JoinGatherer] = {
     withResource(GpuProjectExec.project(streamCb, boundStreamKeys)) { streamKeys =>
-      joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData),
-        streamKeys, LazySpillableColumnarBatch(streamCb, spillCallback, "stream_data"))
+      closeOnExcept(LazySpillableColumnarBatch(streamCb, spillCallback, "stream_data")) { sd =>
+        joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, sd)
+      }
     }
   }
 
   override def hasNext: Boolean = {
+    if (fallbackIter.isDefined) {
+      return fallbackIter.get.hasNext
+    }
     if (closed) {
       return false
     }
@@ -346,11 +373,31 @@ class HashJoinIterator(
         // Need to refill the gatherer
         gathererStore.foreach(_.close())
         gathererStore = None
+        var fallbackStreamIter: Option[Iterator[ColumnarBatch]] = None
+        var fallbackBuildIter: Option[Iterator[ColumnarBatch]] = None
         withResource(stream.next()) { cb =>
-          streamTime += (System.nanoTime() - startTime)
-          withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-            gathererStore = joinGatherer(builtKeys, built, cb)
+          try {
+            streamTime += (System.nanoTime() - startTime)
+            withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+              gathererStore = joinGatherer(builtKeys, built, cb)
+            }
+          } catch {
+            case _: OutOfMemoryError if fallback.isDefined =>
+              logWarning("Join was too large falling back to CPU")
+              fallbackStreamIter = Some(Seq(GpuColumnVector.incRefCounts(cb)).toIterator ++ stream)
+              fallbackBuildIter = Some(Seq(GpuColumnVector.incRefCounts(built.getBatch)).toIterator)
+              // As soon as we start the fallback the GpuSemaphore could be released so
+              // close everything now just to be sure
+              close()
           }
+        }
+        if (fallbackStreamIter.isDefined) {
+          val (left, right) = buildSide match {
+            case GpuBuildLeft => (fallbackBuildIter.get, fallbackStreamIter.get)
+            case GpuBuildRight => (fallbackStreamIter.get, fallbackBuildIter.get)
+          }
+          fallbackIter = fallback.map(f => f(left, right))
+          return fallbackIter.get.hasNext
         }
         nextCb = nextCbFromGatherer()
       } else if (initialJoin) {
@@ -374,6 +421,9 @@ class HashJoinIterator(
   }
 
   override def next(): ColumnarBatch = {
+    if (fallbackIter.isDefined) {
+      return fallbackIter.get.next
+    }
     if (!hasNext) {
       throw new NoSuchElementException()
     }
@@ -383,6 +433,10 @@ class HashJoinIterator(
   }
 }
 
+case class CpuJoinInfo(leftKeys: Seq[Expression],
+    rightKeys: Seq[Expression],
+    condition: Option[Expression])
+
 trait GpuHashJoin extends GpuExec {
   def left: SparkPlan
   def right: SparkPlan
@@ -391,6 +445,7 @@ trait GpuHashJoin extends GpuExec {
   def leftKeys: Seq[Expression]
   def rightKeys: Seq[Expression]
   def buildSide: GpuBuildSide
+  def cpu: CpuJoinInfo
 
   protected lazy val (buildPlan, streamedPlan) = buildSide match {
     case GpuBuildLeft => (left, right)
@@ -489,6 +544,12 @@ trait GpuHashJoin extends GpuExec {
     }
   }
 
+  private def getSpillThreshold: Int =
+    conf.sortMergeJoinExecBufferSpillThreshold
+
+  private def getInMemoryThreshold: Int =
+    conf.sortMergeJoinExecBufferInMemoryThreshold
+
   def doJoin(
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
@@ -518,34 +579,27 @@ trait GpuHashJoin extends GpuExec {
       GpuColumnVector.incRefCounts(builtBatch)
     }
 
+    val fallback = joinType match {
+      case _: InnerLike =>
+        val spill = getSpillThreshold
+        val inMem = getInMemoryThreshold
+        Some(CpuSortMergeJoinFallback.fallbackFunc(joinType,
+        left.output, leftKeys, cpu.leftKeys,
+        right.output, rightKeys, cpu.rightKeys,
+          cpu.condition, output, realTarget, spill, inMem, spillCallback, ()=>()))
+      case _ => None
+    }
+
     // The HashJoinIterator takes ownership of the built keys and built data. It will close
     // them when it is done
     val joinIterator =
-      new HashJoinIterator(nullFiltered, boundBuildKeys, stream, boundStreamKeys,
-        streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
-        streamTime, joinTime, totalTime)
-    if (boundCondition.isDefined) {
-      val condition = boundCondition.get
-      joinIterator.flatMap { cb =>
-        joinOutputRows += cb.numRows()
-        withResource(
-          GpuFilter(cb, condition, numOutputRows, numOutputBatches, filterTime)) { filtered =>
-          if (filtered.numRows == 0) {
-            // Not sure if there is a better way to work around this
-            numOutputBatches.set(numOutputBatches.value - 1)
-            None
-          } else {
-            Some(GpuColumnVector.incRefCounts(filtered))
-          }
-        }
-      }
-    } else {
-      joinIterator.map { cb =>
-        joinOutputRows += cb.numRows()
-        numOutputRows += cb.numRows()
-        numOutputBatches += 1
-        cb
-      }
+    new HashJoinIterator(nullFiltered, boundBuildKeys, stream, boundStreamKeys,
+      streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
+      boundCondition, fallback, joinOutputRows, streamTime, joinTime, totalTime, filterTime)
+    joinIterator.map { cb =>
+      numOutputRows += cb.numRows()
+      numOutputBatches += 1
+      cb
     }
   }
 }

@@ -29,7 +29,6 @@ abstract class GpuShuffledHashJoinBase(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     buildSide: GpuBuildSide,
-    override val condition: Option[Expression],
     val isSkewJoin: Boolean) extends BinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
