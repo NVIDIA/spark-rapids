@@ -76,6 +76,7 @@ case class GpuWindowInPandasExec(
       projectList.map(_.transform(unboundToRefMap)), child.output)
   }
 
+  // Override doExecuteColumnar so we use the correct GpuArrowPythonRunner
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
