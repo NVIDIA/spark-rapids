@@ -20,7 +20,7 @@ import scala.language.existentials
 
 import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
 import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
-import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
+import com.nvidia.spark.rapids.GpuOverrides.{isSupportedType, wrapExpr}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
@@ -58,17 +58,6 @@ class GpuWindowExpressionMeta(
     case _ =>
       willNotWorkOnGpu("unsupported window boundary type")
       -1
-  }
-
-  /**
-   * Check if the boundary is unbounded
-   * @param boundary boundary expression
-   * @return Boolean
-   */
-  private def rangeBoundaryIsUnBounded(boundary: Expression): Boolean = boundary match {
-    case UnboundedPreceding => true
-    case UnboundedFollowing => true
-    case _ => false
   }
 
   override def tagExprForGpu(): Unit = {
@@ -428,16 +417,25 @@ object GpuWindowExpression {
         createRangeWindowBoundary(_, special.value)))
     case GpuLiteral(value, CalendarIntervalType) =>
       // TimeStampDays -> DurationDays
-      val x = value.asInstanceOf[CalendarInterval].days
+      var x = value.asInstanceOf[CalendarInterval].days
+      if (x == Int.MinValue) x = Int.MaxValue
       (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
     case GpuLiteral(value, ByteType) =>
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Byte]))))
+      var x = value.asInstanceOf[Byte]
+      if (x == Byte.MinValue) x = Byte.MaxValue
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
     case GpuLiteral(value, ShortType) =>
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Short]))))
+      var x = value.asInstanceOf[Short]
+      if (x == Short.MinValue) x = Short.MaxValue
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
     case GpuLiteral(value, IntegerType) =>
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Int]))))
+      var x = value.asInstanceOf[Int]
+      if (x == Int.MinValue) x = Int.MaxValue
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
     case GpuLiteral(value, LongType) =>
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Long]))))
+      var x = value.asInstanceOf[Long]
+      if (x == Long.MinValue) x = Long.MaxValue
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
     case anything => throw new UnsupportedOperationException("Unsupported window frame" +
       s" expression $anything")
   }
@@ -569,22 +567,30 @@ class GpuSpecifiedWindowFrameMeta(
           return None
         }
 
-        bounds.dataType match {
-          case ByteType | ShortType | IntegerType | LongType => None
-          case CalendarIntervalType =>
-            val interval = bounds.asInstanceOf[Literal].value.asInstanceOf[CalendarInterval]
+        val value: Long = bounds match {
+          case Literal(value, ByteType) => value.asInstanceOf[Byte].toLong
+          case Literal(value, ShortType) => value.asInstanceOf[Short].toLong
+          case Literal(value, IntegerType) => value.asInstanceOf[Int].toLong
+          case Literal(value, LongType) => value.asInstanceOf[Long]
+          case Literal(value, CalendarIntervalType) =>
+            val interval = value.asInstanceOf[CalendarInterval]
             if (interval.microseconds != 0 || interval.months != 0) { // DAYS == 0 is permitted.
-              Some(s"Bounds for Range-based window frames must be specified only in DAYS. " +
-                s"Found $interval")
-            } else if (isLower && interval.days > 0) {
-              Some(s"Lower-bounds ahead of current row is not supported. Found: ${interval.days}")
-            } else if (!isLower && interval.days < 0) {
-              Some(s"Upper-bounds behind current row is not supported. Found: ${interval.days}")
-            } else {
-              None
+              willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified" +
+                s" only in DAYS. Found $interval")
             }
-          case _ => Some(s"Bounds for Range-based window frames must be specified in Integral" +
+            interval.days.toLong
+          case _ =>
+            willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
             s" type (Boolean exclusive) or DAYS. Found ${bounds.dataType}")
+            if (isLower) -1 else 1 // not check again
+        }
+
+        if (isLower && value > 0) {
+          Some(s"Lower-bounds ahead of current row is not supported. Found: $value")
+        } else if (!isLower && value < 0) {
+          Some(s"Upper-bounds behind current row is not supported. Found: $value")
+        } else {
+          None
         }
       }
 
