@@ -67,6 +67,39 @@ def test_legacy_cast_struct_to_string(data_gen):
             f.col('a').cast("STRING")),
             conf = legacy_complex_types_to_string)
 
+# https://github.com/NVIDIA/spark-rapids/issues/2309
+@pytest.mark.parametrize('cast_conf', ['LEGACY', 'SPARK311+'])
+def test_one_nested_null_field_legacy_cast(cast_conf):
+    def was_broken_for_nested_null(spark):
+        data = [
+            (('foo',),),
+            ((None,),),
+            (None,)
+        ]
+        df = spark.createDataFrame(data)
+        return df.select(df._1.cast(StringType()))
+
+    assert_gpu_and_cpu_are_equal_collect(was_broken_for_nested_null, {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_conf == 'LEGACY'
+    })
+
+
+# https://github.com/NVIDIA/spark-rapids/issues/2315
+@pytest.mark.parametrize('cast_conf', ['LEGACY', 'SPARK311+'])
+def test_two_col_struct_legacy_cast(cast_conf):
+    def broken_df(spark):
+        key_data_gen = StructGen([
+            ('a', IntegerGen(min_val=0, max_val=4)),
+            ('b', IntegerGen(min_val=5, max_val=9)),
+        ], nullable=False)
+        val_data_gen = IntegerGen()
+        df = two_col_df(spark, key_data_gen, val_data_gen)
+        return df.select(df.a.cast(StringType())).filter(df.b > 1)
+
+    assert_gpu_and_cpu_are_equal_collect(broken_df, {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_conf == 'LEGACY'
+    })
+
 @pytest.mark.parametrize('data_gen', [StructGen([["first", float_gen]])], ids=idfn)
 @pytest.mark.xfail(reason='casting float to string is not an exact match')
 def test_legacy_cast_struct_with_float_to_string(data_gen):
