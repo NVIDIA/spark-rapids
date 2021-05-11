@@ -28,8 +28,9 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, DataType, Metadata, NullType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
-    extends GpuExpression {
+case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean,
+    /* use refer type for children whose type can't be determined */
+    referType: Option[DataType] = None) extends GpuExpression {
 
   def this(children: Seq[Expression]) = {
     this(children, SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
@@ -44,10 +45,16 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
   }
 
   private val defaultElementType: DataType = {
-    if (useStringTypeWhenEmpty) {
-      StringType
-    } else {
-      NullType
+    referType match {
+      case Some(NullType) | None =>
+        // if the refer type is NullType which should be inferred by Spark
+        // and we need to check if need to change it accordingly
+        if (useStringTypeWhenEmpty) {
+          StringType
+        } else {
+          NullType
+        }
+      case Some(_) => referType.get
     }
   }
 
@@ -69,11 +76,15 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
         columns(index) =
           GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
       }
-      GpuColumnVector.from(ColumnVector.makeList(numRows,
-        dataType.elementType match {
-          case _: ArrayType => DType.LIST
-          case _ => GpuColumnVector.getNonNestedRapidsType(dataType.elementType)
-        }, columns: _*), dataType)
+
+      val elementDType = dataType.elementType match {
+        case _: ArrayType => DType.LIST
+        case _ => GpuColumnVector.getNonNestedRapidsType(dataType.elementType)
+      }
+      // calling makeList with a nested DType and no columns is an error, but we will never
+      // hit this case, because in Spark the type of `array()` is either `ArrayType(NullType)`
+      // or `ArrayType(StringType)`.
+      GpuColumnVector.from(ColumnVector.makeList(numRows, elementDType, columns: _*), dataType)
     }
   }
 }

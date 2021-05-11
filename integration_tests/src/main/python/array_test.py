@@ -63,7 +63,9 @@ def test_make_array_of_array(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
-                'array(array(b, a, null, {}, {}))'.format(s1, s2)))
+                'array(array(1), array(2), array(null), array())',
+                'array(array(), array(null))',
+                'array(array(b, a, null, {}, {}), array(a, b), array(), array(null))'.format(s1, s2)))
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array_unique(data_gen):
