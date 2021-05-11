@@ -68,31 +68,7 @@ class GpuWindowExpressionMeta(
   private def rangeBoundaryIsUnBounded(boundary: Expression): Boolean = boundary match {
     case UnboundedPreceding => true
     case UnboundedFollowing => true
-    case CurrentRow => false
-    case literal: Literal =>
-      literal.dataType match {
-        case CalendarIntervalType =>
-          // TimeStampDays -> DurationDays
-          val ci = literal.value.asInstanceOf[CalendarInterval]
-          if (ci.months != 0 || ci.microseconds != 0) {
-            willNotWorkOnGpu("only days are supported for window range intervals")
-            false
-          } else {
-            ci.days == Int.MinValue || ci.days == Int.MaxValue
-          }
-        case _ =>
-          val (isSupportedType, isUnBounded, _) = GpuWindowExpression.
-            getRangeBoundaryValueFromLiteral(boundary)
-          if (!isSupportedType) {
-            willNotWorkOnGpu(s"unsupported window boundary type ${literal.dataType}")
-            false
-          } else {
-            isUnBounded
-          }
-      }
-    case _ =>
-      willNotWorkOnGpu(s"unsupported window boundary type ${boundary}")
-      false
+    case _ => false
   }
 
   override def tagExprForGpu(): Unit = {
@@ -129,9 +105,7 @@ class GpuWindowExpressionMeta(
             // queries because https://github.com/NVIDIA/spark-rapids/issues/1039 makes it so
             // we cannot support nulls in range queries
             // Will also verify that the types are what we expect.
-            val lowerIsUnBounded = rangeBoundaryIsUnBounded(spec.lower)
-            val upperIsUnBounded = rangeBoundaryIsUnBounded(spec.upper)
-            if (lowerIsUnBounded && upperIsUnBounded) {
+            if (spec.isUnbounded) {
               // this is okay because we will translate it to be a row query
             } else {
               val orderSpec = wrapped.windowSpec.orderSpec
@@ -140,16 +114,29 @@ class GpuWindowExpressionMeta(
                 willNotWorkOnGpu("only a single date/time or integral (Boolean exclusive)" +
                   "based column in window range functions is supported")
               }
-              val supported = orderSpec.forall { so =>
+              val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
                   case ByteType | ShortType | IntegerType | LongType => true
                   case DateType | TimestampType => true
                   case _ => false
                 }
               }
-              if (!supported) {
+              if (!orderByTypeSupported) {
                 willNotWorkOnGpu(s"the type of orderBy column is not supported in a window" +
                   s" range function, found ${orderSpec(0).dataType}")
+              }
+
+              Seq(spec.lower, spec.upper).foreach {
+                case Literal(_, ByteType | ShortType | IntegerType | LongType) =>
+                case Literal(value, CalendarIntervalType) =>
+                  val ci = value.asInstanceOf[CalendarInterval]
+                  if (ci.months != 0 || ci.microseconds != 0) {
+                    willNotWorkOnGpu("only days are supported for window range intervals")
+                  }
+                case UnboundedFollowing | UnboundedPreceding | CurrentRow =>
+                case anythings =>
+                  willNotWorkOnGpu(s"the type of boundary is not supported in a window range" +
+                  s" function, found $anythings")
               }
             }
         }
@@ -205,9 +192,7 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     frameType match {
       case RowFrame   => evaluateRowBasedWindowExpression(cb)
       case RangeFrame =>
-        val (isUnBoundedLower, _) = GpuWindowExpression.getRangeBasedLower(windowFrameSpec, None)
-        val (isUnBoundedUpper, _) = GpuWindowExpression.getRangeBasedUpper(windowFrameSpec, None)
-        if (isUnBoundedLower && isUnBoundedUpper) {
+        if (windowFrameSpec.isUnbounded) {
           // We already verified that this will be okay...
           evaluateRowBasedWindowExpression(cb)
         } else {
@@ -428,39 +413,6 @@ object GpuWindowExpression {
   }
 
   /**
-   * Get the range boundary value from Literal or GpuLiteral
-   * @param boundary boundary expression
-   * @return (r1, r2, r3)
-   *         r1: if the datatype is supported
-   *         r2: if the boundary is unbounded.
-   *         r3: the boundary value
-   */
-  def getRangeBoundaryValueFromLiteral(boundary: Expression): (Boolean, Boolean, Long) = {
-    val (value, dataType) = boundary match {
-      case gl: GpuLiteral => (gl.value, gl.dataType)
-      case l: Literal => (l.value, l.dataType)
-      case _ => return (false, false, 0) // this function checks Literal or GpuLiteral
-    }
-    dataType match {
-      case ByteType =>
-        val x = value.asInstanceOf[Byte]
-        (true, x == Byte.MinValue || x == Byte.MaxValue, Math.abs(x))
-      case ShortType =>
-        val x = value.asInstanceOf[Short]
-        (true, x == Short.MinValue || x == Short.MaxValue, Math.abs(x))
-      case IntegerType =>
-        val x = value.asInstanceOf[Int]
-        (true, x == Int.MinValue || x == Int.MaxValue, Math.abs(x))
-      case LongType =>
-        val x = value.asInstanceOf[Long]
-        (true, x == Long.MinValue || x == Long.MaxValue, Math.abs(x))
-      case _ =>
-        // not support type
-        (false, false, 0)
-    }
-  }
-
-  /**
    * Get the range boundary tuple
    * @param boundary boundary expression
    * @param orderByType the type of order by column
@@ -471,21 +423,23 @@ object GpuWindowExpression {
   def getRangeBoundaryValue(boundary: Expression, orderByType: Option[DType]):
       (Boolean, Option[Scalar]) = boundary match {
     case special: GpuSpecialFrameBoundary =>
-      val x = special.value
-      val isUnBounded = x == Int.MinValue || x == Int.MaxValue
-      (isUnBounded, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
+      val isUnBounded = special.isUnBounded
+      (isUnBounded, if (isUnBounded) None else orderByType.map(
+        createRangeWindowBoundary(_, special.value)))
     case GpuLiteral(value, CalendarIntervalType) =>
       // TimeStampDays -> DurationDays
       val x = value.asInstanceOf[CalendarInterval].days
-      val isUnbounded = x == Int.MinValue || x == Int.MaxValue
-      (isUnbounded, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
-    case anythingElse =>
-      val (isSupportedType, isUnBounded, value) = getRangeBoundaryValueFromLiteral(boundary)
-      if (!isSupportedType) {
-        throw new UnsupportedOperationException("Unsupported window frame" +
-          s" expression $anythingElse")
-      }
-      (isUnBounded, orderByType.map(createRangeWindowBoundary(_, Math.abs(value))))
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
+    case GpuLiteral(value, ByteType) =>
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Byte]))))
+    case GpuLiteral(value, ShortType) =>
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Short]))))
+    case GpuLiteral(value, IntegerType) =>
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Int]))))
+    case GpuLiteral(value, LongType) =>
+      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(value.asInstanceOf[Long]))))
+    case anything => throw new UnsupportedOperationException("Unsupported window frame" +
+      s" expression $anything")
   }
 }
 
@@ -824,6 +778,14 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
       case CurrentRow => 0
       case anythingElse =>
         throw new UnsupportedOperationException(s"Unsupported window-bound $anythingElse!")
+    }
+  }
+
+  def isUnBounded: Boolean = {
+    boundary match {
+      case UnboundedPreceding => true
+      case UnboundedPreceding => true
+      case _ => false
     }
   }
 }
