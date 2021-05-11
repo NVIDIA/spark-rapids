@@ -42,16 +42,16 @@ object ShiftHelper extends Arm {
   }
 
   def fixupDistanceNoClose(t: DType, distance: ColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(maskForDistance(t), IntegerType)) { mask =>
+    withResource(Scalar.fromInt(maskForDistance(t))) { mask =>
       distance.bitAnd(mask)
     }
   }
 
-  def fixupDistanceNoClose(t: DType, distance: Scalar): Scalar = {
+  def fixupDistanceNoClose(t: DType, distance: GpuScalar): Scalar = {
     if (distance.isValid) {
-      GpuScalar.from(distance.getInt & maskForDistance(t), IntegerType)
+      Scalar.fromInt(distance.getValue.asInstanceOf[Int] & maskForDistance(t))
     } else {
-      distance.incRefCount()
+      distance.getBase.incRefCount()
     }
   }
 }
@@ -74,7 +74,7 @@ trait GpuShiftBase extends GpuBinaryExpression with ImplicitCastInputTypes {
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val lBase = lhs.getBase
-    withResource(ShiftHelper.fixupDistanceNoClose(lBase.getType, rhs.getBase)) { distance =>
+    withResource(ShiftHelper.fixupDistanceNoClose(lBase.getType, rhs)) { distance =>
       lBase.binaryOp(shiftOp, distance, lBase.getType)
     }
   }

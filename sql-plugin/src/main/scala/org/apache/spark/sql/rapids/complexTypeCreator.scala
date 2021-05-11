@@ -67,7 +67,10 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
       val numRows = batch.numRows()
       children.indices.foreach { index =>
         columns(index) =
-          GpuExpressionsUtils.columnarEvalExprToColumn(children(index), batch).getBase
+          withResource(GpuExpressionsUtils.columnarEvalExprToColumn(children(index), batch)) {
+            // Increase the reference count since `getBase` does not do it.
+            gcv => gcv.getBase.incRefCount
+          }
       }
       GpuColumnVector.from(ColumnVector.makeList(numRows,
         GpuColumnVector.getNonNestedRapidsType(dataType.elementType),
@@ -137,7 +140,10 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
         val dt = dataType.fields(index).dataType
         val ret = valExprs(index).columnarEval(batch)
         columns(index) =
-          GpuExpressionsUtils.resolveColumnVector(ret, numRows, dt).getBase
+          withResource(GpuExpressionsUtils.resolveColumnVector(ret, numRows, dt)) { gcv =>
+            // Increase the reference count since `getBase` does not do it.
+            gcv.getBase.incRefCount
+          }
       }
       GpuColumnVector.from(ColumnVector.makeStruct(numRows, columns: _*), dataType)
     }

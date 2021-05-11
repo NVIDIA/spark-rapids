@@ -66,10 +66,8 @@ object GpuProjectExec extends Arm {
     }
   }
 
-  def projectSingle(cb: ColumnarBatch, boundExpr: Expression): GpuColumnVector = {
-    val result = boundExpr.columnarEval(cb)
-    GpuExpressionsUtils.resolveColumnVector(result, cb.numRows(), boundExpr.dataType)
-  }
+  def projectSingle(cb: ColumnarBatch, boundExpr: Expression): GpuColumnVector =
+    GpuExpressionsUtils.columnarEvalExprToColumn(boundExpr, cb)
 
   def project(cb: ColumnarBatch, boundExprs: Seq[Expression]): ColumnarBatch = {
     if (isNoopProject(cb, boundExprs)) {
@@ -336,8 +334,8 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                       done = true
                     }
 
-                    val ret = withResource(GpuScalar.from(start, LongType)) { startScalar =>
-                      withResource(GpuScalar.from(step, LongType)) { stepScalar =>
+                    val ret = withResource(Scalar.fromLong(start)) { startScalar =>
+                      withResource(Scalar.fromLong(step)) { stepScalar =>
                         withResource(
                           ai.rapids.cudf.ColumnVector.sequence(
                             startScalar, stepScalar, rowsThisBatch.toInt)) { vec =>

@@ -48,29 +48,33 @@ object GpuExpressionsUtils extends Arm {
   }
 
   /**
-    * Tries to resolve a `GpuColumnVector` from a Scala `Any`.
-    *
-    * This is a common handling of the result from the `columnarEval`.
-    * And it is recommended to return only one of the two types from a GPU expression's
-    * `columnarEval`.
-    *
-    * @param any the input value. It will be closed if it is a closeable after the call done.
-    * @param numRows the expected row number of the output column, used when 'any' is a Scalar.
-    * @param dType the data type of the output column, used when 'any' is a Scalar.
-    * @return a `GpuColumnVector` if it succeeds. Users should close the column vector to avoid
-    *         memory leak.
-    */
+   * Tries to resolve a `GpuColumnVector` from a Scala `Any`.
+   *
+   * This is a common handling of the result from the `columnarEval`, allowing one of
+   *   - A GpuColumnVector
+   *   - A GpuScalar
+   *   - Null
+   * For other types, it will blow up. Null is legitimate in case of exceptions.
+   *
+   * It is recommended to return only a `GpuScalar` or a `GpuColumnVector` from a GPU
+   * expression's `columnarEval`, to keep the result handling simple. Besides, `GpuScalar` can
+   * be created from a cudf Scalar or a Scala value, So the 'GpuScalar' and 'GpuColumnVector'
+   * should cover all the cases for GPU pipelines.
+   *
+   * @param any the input value. It will be closed if it is a closeable after the call done.
+   * @param numRows the expected row number of the output column, used when 'any' is a Scalar.
+   * @param dType the data type of the output column, used when 'any' is a Scalar.
+   * @return a `GpuColumnVector` if it succeeds. Users should close the column vector to avoid
+   *         memory leak.
+   */
   def resolveColumnVector(any: Any, numRows: Int, dType: DataType): GpuColumnVector = {
     withResourceIfAllowed(any) {
       case c: GpuColumnVector => c.incRefCount()
       case s: GpuScalar => GpuColumnVector.from(s, numRows, dType)
+      case null => GpuColumnVector.fromNull(numRows, dType)
       case other =>
-        // FIXME Seems we are still going to support both the GpuScalar and the Scala value.
-        // What is the best way to handle other cases here? Since we want to support only the
-        // GpuScalar.
-        withResource(GpuScalar.from(other, dType)) { s =>
-          GpuColumnVector.from(s, numRows, dType)
-        }
+        throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
+          s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
     }
   }
 
@@ -155,8 +159,7 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val column = GpuExpressionsUtils.columnarEvalExprToColumn(child, batch)
-    withResource(column) { col =>
+    withResource(GpuExpressionsUtils.columnarEvalExprToColumn(child, batch)) { col =>
       doItColumnar(col)
     }
   }
@@ -190,9 +193,9 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
           // null is not welcome, return a null Column instead.
           case (l, r) if l == null || r == null =>
             GpuColumnVector.fromNull(batch.numRows(), dataType)
-          case other =>
-            throw new UnsupportedOperationException(s"Unsupported data '$other" +
-              s"(${other.getClass})' for GPU binary expression.")
+          case (l, r) =>
+            throw new UnsupportedOperationException(s"Unsupported data '($l: " +
+              s"${l.getClass}, $r: ${r.getClass})' for GPU binary expression.")
         }
       }
     }
@@ -327,9 +330,9 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
             // null is not welcome, return a null column instead.
             case (v0, v1, v2) if v0 == null || v1 == null || v2 == null =>
               GpuColumnVector.fromNull(batch.numRows(), dataType)
-            case other =>
-              throw new UnsupportedOperationException(s"Unsupported data '$other" +
-                s"(${other.getClass})' for GPU ternary expression.")
+            case (v0, v1, v2) =>
+              throw new UnsupportedOperationException(s"Unsupported data '($v0: ${v0.getClass}," +
+                s" $v1: ${v1.getClass}, $v2: ${v2.getClass})' for GPU ternary expression.")
           }
         }
       }

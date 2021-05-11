@@ -46,7 +46,7 @@ case class GpuAcos(child: Expression) extends CudfUnaryMathExpression("ACOS") {
 case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGREES") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(180d / Math.PI, DoubleType)) { multiplier =>
+    withResource(Scalar.fromDouble(180d / Math.PI)) { multiplier =>
       input.getBase.mul(multiplier)
     }
   }
@@ -55,7 +55,7 @@ case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGRE
 case class GpuToRadians(child: Expression) extends GpuUnaryMathExpression("RADIANS") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(Math.PI / 180d, DoubleType)) { multiplier =>
+    withResource(Scalar.fromDouble(Math.PI / 180d)) { multiplier =>
       input.getBase.mul(multiplier)
     }
   }
@@ -75,7 +75,7 @@ case class GpuAcoshCompat(child: Expression) extends GpuUnaryMathExpression("ACO
     // StrictMath.log(x + math.sqrt(x * x - 1.0))
     val base = input.getBase
     withResource(base.mul(base)) { squared =>
-      withResource(GpuScalar.from(1.0, DoubleType)) { one =>
+      withResource(Scalar.fromDouble(1.0)) { one =>
         withResource(squared.sub(one)) { squaredMinOne =>
           withResource(squaredMinOne.sqrt()) { sqrt =>
             withResource(base.add(sqrt)) { sum =>
@@ -102,7 +102,7 @@ case class GpuAsinhCompat(child: Expression) extends GpuUnaryMathExpression("ASI
 
   def computeBasic(input: ColumnVector): ColumnVector =
     withResource(input.mul(input)) { squared =>
-      withResource(GpuScalar.from(1.0d, DoubleType)) { one =>
+      withResource(Scalar.fromDouble(1.0)) { one =>
         withResource(squared.add(one)) { squaredPlusOne =>
           withResource(squaredPlusOne.sqrt()) { sqrt =>
             withResource(input.add(sqrt)) { sum =>
@@ -122,7 +122,7 @@ case class GpuAsinhCompat(child: Expression) extends GpuUnaryMathExpression("ASI
     //    case _ => StrictMath.log(x + math.sqrt(x * x + 1.0)) }
     val base = input.getBase
     withResource(computeBasic(base)) { basic =>
-      withResource(GpuScalar.from(Double.NegativeInfinity, DoubleType)) { negInf =>
+      withResource(Scalar.fromDouble(Double.NegativeInfinity)) { negInf =>
         withResource(base.equalTo(negInf)) { eqNegInf =>
           eqNegInf.ifElse(negInf, basic)
         }
@@ -192,7 +192,7 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     withResource(input.getBase.unaryOp(unaryOp)) { cv =>
-      withResource(GpuScalar.from(1, IntegerType)) { sc =>
+      withResource(Scalar.fromInt(1)) { sc =>
         cv.binaryOp(BinaryOp.SUB, sc, outputTypeOverride)
       }
     }
@@ -252,9 +252,9 @@ object GpuLogarithm extends Arm {
    * returned GpuColumnVector.
    */
   def fixUpLhs(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(0.0d, DoubleType)) { zero =>
+    withResource(Scalar.fromDouble(0)) { zero =>
       withResource(input.getBase.binaryOp(BinaryOp.LESS_EQUAL, zero, DType.BOOL8)) { zeroOrLess =>
-        withResource(GpuScalar.from(null, DoubleType)) { nullScalar =>
+        withResource(Scalar.fromNull(DType.FLOAT64)) { nullScalar =>
           zeroOrLess.ifElse(nullScalar, input.getBase)
         }
       }
@@ -266,10 +266,10 @@ object GpuLogarithm extends Arm {
    * returned Scalar.
    */
   def fixUpLhs(input: GpuScalar): GpuScalar = {
-    if (input.isValid && input.getBase.getDouble <= 0) {
+    if (input.isValid && input.getValue.asInstanceOf[Double] <= 0) {
       GpuScalar(null, DoubleType)
     } else {
-      input.incRefCount
+      input.copy
     }
   }
 }
@@ -307,9 +307,9 @@ case class GpuSin(child: Expression) extends CudfUnaryMathExpression("SIN") {
 case class GpuSignum(child: Expression) extends GpuUnaryMathExpression("SIGNUM") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(0.0d, DoubleType)) { num =>
-      withResource(GpuScalar.from(1.0d, DoubleType)) { hiReplace =>
-        withResource(GpuScalar.from(-1.0d, DoubleType)) { loReplace =>
+    withResource(Scalar.fromDouble(0)) { num =>
+      withResource(Scalar.fromDouble(1)) { hiReplace =>
+        withResource(Scalar.fromDouble(-1)) { loReplace =>
           input.getBase.clamp(num, loReplace, num, hiReplace)
         }
       }
@@ -352,7 +352,7 @@ case class GpuTan(child: Expression) extends CudfUnaryMathExpression("TAN") {
 case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuScalar.from(1, IntegerType)) { one =>
+    withResource(Scalar.fromInt(1)) { one =>
       withResource(input.getBase.unaryOp(UnaryOp.TAN)) { tan =>
         one.div(tan)
       }
@@ -401,7 +401,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
     val scaleVal = dataType match {
       case DecimalType.Fixed(_, s) => s
       case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType =>
-        scale.getBase.getInt
+        scale.getValue.asInstanceOf[Int]
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }
     val lhsValue = value.getBase

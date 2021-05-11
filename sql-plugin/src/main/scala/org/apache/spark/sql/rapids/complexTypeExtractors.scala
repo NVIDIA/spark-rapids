@@ -118,10 +118,11 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, ordinal: GpuScalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, ordinalS: GpuScalar): ColumnVector = {
     // Need to handle negative indexes...
-    if (ordinal.isValid && ordinal.getBase.getInt >= 0) {
-      lhs.getBase.extractListElement(ordinal.getBase.getInt)
+    val ordinal = ordinalS.getValue.asInstanceOf[Int]
+    if (ordinalS.isValid && ordinal >= 0) {
+      lhs.getBase.extractListElement(ordinal)
     } else {
       GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
     }

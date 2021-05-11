@@ -51,7 +51,7 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
           }
         }
       case _ =>
-        withResource(GpuScalar.from(0.toByte, ByteType)) { scalar =>
+        withResource(Scalar.fromByte(0.toByte)) { scalar =>
           scalar.sub(input.getBase)
         }
     }
@@ -163,8 +163,7 @@ case class GpuMultiply(
         val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
         val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
         val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
-        //TODO Improvement: Scalar supports `castTo` (from decimal to int)
-        withResource(GpuScalar.from(rhs.getBase.getBigDecimal().intValue(), sparkDecimalType)) {
+        withResource(GpuScalar.from(rhs.getValue, sparkDecimalType)) {
           decimalRhs =>
             withResource(lhs.getBase.castTo(decimalType)) { decimalLhs =>
               val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
@@ -192,8 +191,7 @@ case class GpuMultiply(
         val sparkDecimalType = DecimalType(10, Math.max(l .scale, r.scale))
         val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
         val cudfOutputType = GpuColumnVector.getNonNestedRapidsType(dataType)
-        // TODO Improvement: Scalar supports `castTo` (from decimal to int.)
-        withResource(GpuScalar.from(lhs.getBase.getBigDecimal().intValue(), sparkDecimalType)) {
+        withResource(GpuScalar.from(lhs.getValue, sparkDecimalType)) {
           decimalLhs =>
             withResource(rhs.getBase.castTo(decimalType)) { decimalRhs =>
               val tmp = decimalLhs.mul(decimalRhs, cudfOutputType)
@@ -241,7 +239,6 @@ object GpuDivModLike {
     }
   }
 
-  // TODO To be removed
   def isScalarZero(s: Scalar): Boolean = {
     s.getType match {
       case DType.INT8 => s.getByte == 0
@@ -256,7 +253,6 @@ object GpuDivModLike {
     }
   }
 
-  //TODO To be updated
   def makeZeroScalar(dtype: DType): Scalar = {
     dtype match {
       case DType.INT8 => Scalar.fromByte(0.toByte)
@@ -311,7 +307,6 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       if (failOnError) {
         divByZeroError()
       } else {
-        // TODO To be updated
         withResource(Scalar.fromNull(outputType(lhs.getBase, rhs.getBase))) { nullScalar =>
           ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
         }
@@ -402,7 +397,7 @@ case class GpuDivide(left: Expression, right: Expression,
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
           (lhs.getBase.castTo(decimalType),
-            GpuScalar(rhs.getBase.getBigDecimal().intValue().toLong, sparkDecimalType))
+            GpuScalar(rhs.getValue, sparkDecimalType))
         } else {
           (lhs.getBase(), rhs)
         }
@@ -427,8 +422,7 @@ case class GpuDivide(left: Expression, right: Expression,
           // we are casting to the smallest 64-bit decimal so the answer doesn't overflow
           val sparkDecimalType = DecimalType(10, r.scale)
           val decimalType = GpuColumnVector.getNonNestedRapidsType(sparkDecimalType)
-          // TODO Support Scalar 'castTo'
-          (GpuScalar(lhs.getBase.getBigDecimal().intValue().toLong, sparkDecimalType),
+          (GpuScalar(lhs.getValue, sparkDecimalType),
            GpuColumnVector.from(rhs.getBase.castTo(decimalType), sparkDecimalType))
         } else {
           (lhs, rhs)
@@ -436,8 +430,7 @@ case class GpuDivide(left: Expression, right: Expression,
         val newType = getIntermediaryType(r)
         withResource(upcastedRhs) { upcastedRhs =>
           withResource(upcastedLhs) { upcastedLhs =>
-            // TODO Let Scalar support `castTo`
-            withResource(GpuScalar(upcastedLhs.getBase.getBigDecimal.longValue(), newType)) {
+            withResource(GpuScalar(upcastedLhs.getValue, newType)) {
               modLhs => super.doColumnar(modLhs, upcastedRhs)
             }
           }
@@ -529,23 +522,26 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
       expandScalar: Boolean,
       rows: Int): AutoCloseable =
     a match {
-      case gcv: GpuColumnVector => gcv.getBase
-      case s: GpuScalar =>
-        if (expandScalar) {
-          withResource(s) { s =>
+      case cv: ColumnVector => cv
+      case gcv: GpuColumnVector => withResource(gcv) { gv =>
+        gv.getBase.incRefCount()
+      }
+      case gs: GpuScalar => withResource(gs) { s =>
+          if (expandScalar) {
             ColumnVector.fromScalar(s.getBase, rows)
+          } else {
+            gs.getBase.incRefCount()
           }
-        } else {
-          s.getBase
-        }
-      case a =>
+      }
+      case null =>
         if (expandScalar) {
-          withResource(GpuScalar.from(a, dataType)) { s =>
-            ColumnVector.fromScalar(s, rows)
-          }
+          GpuColumnVector.columnVectorFromNull(rows, dataType)
         } else {
-          GpuScalar.from(a, dataType)
+          GpuScalar.from(null, dataType)
         }
+      case o =>
+        // It should not be here. since other things here should be converted to a GpuScalar
+        throw new IllegalStateException(s"Unexpected inputs: $o")
     }
 
   /**

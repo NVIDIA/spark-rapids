@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.{NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -448,10 +448,9 @@ case class GpuHashAggregateExec(
             // Perform the last project to get the correct shape that Spark expects. Note this will
             // add things like literals, that were not part of the aggregate into the batch.
             resultCvs = boundExpression.boundResultReferences.map { ref =>
-              val result = ref.columnarEval(finalCb)
               // Result references can be virtually anything, we need to coerce
               // them to be vectors since this is going into a ColumnarBatch
-              GpuExpressionsUtils.resolveColumnVector(result, finalCb.numRows, ref.dataType)
+              GpuExpressionsUtils.columnarEvalExprToColumn(ref, finalCb)
             }
             finalCb.close()
             finalCb = null
@@ -501,8 +500,7 @@ case class GpuHashAggregateExec(
   private def processIncomingBatch(batch: ColumnarBatch,
       boundInputReferences: Seq[Expression]): Seq[GpuColumnVector] = {
     boundInputReferences.safeMap { ref =>
-      val in = ref.columnarEval(batch)
-      val childCv = GpuExpressionsUtils.resolveColumnVector(in, batch.numRows, ref.dataType)
+      val childCv = GpuExpressionsUtils.columnarEvalExprToColumn(ref, batch)
       if (childCv.dataType == ref.dataType) {
         childCv
       } else {
@@ -780,7 +778,7 @@ case class GpuHashAggregateExec(
         // desired result compared to Spark-CPU.
         // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
         if (cvs.isEmpty) {
-          withResource(GpuScalar.from(0L, LongType)) { ZERO =>
+          withResource(Scalar.fromLong(0L)) { ZERO =>
             cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
           }
         }

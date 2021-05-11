@@ -97,26 +97,29 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
     } else if (!val0.isValid) {
       //if null substring // or null column? <-- needs to be looked for/tested
       GpuColumnVector.columnVectorFromNull(val1.getRowCount().toInt, IntegerType)
-    //FIXME Here the data is read back to CPU
-    } else if (val2.getBase.getInt() < 1 || val0.getBase.getJavaString().isEmpty()) {
-      withResource(val1.getBase.isNotNull()) { isNotNullColumn =>
-        withResource(GpuScalar.from(null, IntegerType)) { nullScalar =>
-          if (val2.getBase.getInt() >= 1) {
-            withResource(GpuScalar.from(1, IntegerType)) { sv1 =>
-              isNotNullColumn.ifElse(sv1, nullScalar)
-            }
-          } else {
-            withResource(GpuScalar.from(0, IntegerType)) { sv0 =>
-              isNotNullColumn.ifElse(sv0, nullScalar)
+    } else {
+      val val2Int = val2.getValue.asInstanceOf[Int]
+      val val0Str = val0.getValue.asInstanceOf[UTF8String]
+      if (val2Int < 1 || val0Str.numChars() == 0) {
+        withResource(val1.getBase.isNotNull()) { isNotNullColumn =>
+          withResource(GpuScalar.from(null, IntegerType)) { nullScalar =>
+            if (val2Int >= 1) {
+              withResource(GpuScalar.from(1, IntegerType)) { sv1 =>
+                isNotNullColumn.ifElse(sv1, nullScalar)
+              }
+            } else {
+              withResource(GpuScalar.from(0, IntegerType)) { sv0 =>
+                isNotNullColumn.ifElse(sv0, nullScalar)
+              }
             }
           }
         }
-      }
-    } else {
-      // FIXME Here the data is read back to CPU
-      withResource(val1.getBase.stringLocate(val0.getBase, val2.getBase.getInt() - 1, -1)) {
-        skewedResult => withResource(GpuScalar.from(1, IntegerType)) { sv1 =>
-          skewedResult.add(sv1)
+      } else {
+        withResource(val1.getBase.stringLocate(val0.getBase, val2Int - 1, -1)) {
+          skewedResult =>
+            withResource(GpuScalar.from(1, IntegerType)) { sv1 =>
+              skewedResult.add(sv1)
+            }
         }
       }
     }
@@ -271,11 +274,12 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
     var emptyStrScalar: Scalar = null
-    val rows = batch.numRows()
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector](children.size)
     try {
       children.foreach { childExpr =>
-        columns += GpuExpressionsUtils.columnarEvalExprToColumn(childExpr, batch).getBase
+        withResource(GpuExpressionsUtils.columnarEvalExprToColumn(childExpr, batch)) {
+          gcv => columns += gcv.getBase.incRefCount()
+        }
       }
       emptyStrScalar = GpuScalar.from("", StringType)
       nullStrScalar = GpuScalar.from(null, StringType)
@@ -365,8 +369,8 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   override def doColumnar(column: GpuColumnVector,
                           position: GpuScalar,
                           length: GpuScalar): ColumnVector = {
-    val substringPos = position.getBase.getInt
-    val substringLen = length.getBase.getInt
+    val substringPos = position.getValue.asInstanceOf[Int]
+    val substringLen = length.getValue.asInstanceOf[Int]
     if (substringLen < 0) { // Spark returns empty string if length is negative
       column.getBase.substring(0, 0)
     } else if (substringPos >= 0) { // If position is non negative
@@ -454,7 +458,7 @@ case class GpuStringReplace(
     // When search or replace string is null, return all nulls like the CPU does.
     if (!searchExpr.isValid || !replaceExpr.isValid) {
       GpuColumnVector.columnVectorFromNull(strExpr.getRowCount.toInt, StringType)
-    } else if (searchExpr.getBase.getJavaString.isEmpty) {
+    } else if (searchExpr.getValue.asInstanceOf[UTF8String].numChars() == 0) {
       // Return original string if search string is empty
       strExpr.getBase.asStrings()
     } else {
@@ -513,8 +517,12 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
       "Cannot have a scalar as left side operand in Like")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    // FIXME The data is read back to CPU from the Scalar
-    val regexStr = escapeLikeRegex(rhs.getBase.getJavaString, escapeChar)
+    val likeStr = if (rhs.isValid) {
+      rhs.getValue.asInstanceOf[UTF8String].toString
+    } else {
+      null
+    }
+    val regexStr = escapeLikeRegex(likeStr, escapeChar)
     lhs.getBase.matchesRe(regexStr)
   }
 
@@ -646,7 +654,7 @@ case class GpuSubstringIndex(strExpr: Expression,
       count: GpuScalar): ColumnVector = {
     if (regexp == null) {
       withResource(str.getBase.isNull) { isNull =>
-        withResource(GpuScalar.from("", StringType)) { emptyString =>
+        withResource(Scalar.fromString("")) { emptyString =>
           isNull.ifElse(str.getBase, emptyString)
         }
       }
@@ -719,9 +727,13 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
 
   override def doColumnar(str: GpuColumnVector, len: GpuScalar, pad: GpuScalar): ColumnVector = {
     if (len.isValid && pad.isValid) {
-      // FIXME The data is read back to CPU
-      val l = math.max(0, len.getBase.getInt)
-      withResource(str.getBase.pad(l, direction, pad.getBase.getJavaString)) { padded =>
+      val l = math.max(0, len.getValue.asInstanceOf[Int])
+      val padStr = if (pad.isValid) {
+        pad.getValue.asInstanceOf[UTF8String].toString
+      } else {
+        null
+      }
+      withResource(str.getBase.pad(l, direction, padStr)) { padded =>
         padded.substring(0, l)
       }
     } else {
@@ -836,8 +848,7 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
 
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
-    // FIXME Here the data is read back
-    val intLimit = limit.getBase.getInt
+    val intLimit = limit.getValue.asInstanceOf[Int]
     str.getBase.stringSplitRecord(regex.getBase, intLimit)
   }
 

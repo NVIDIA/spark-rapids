@@ -85,7 +85,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
         GpuColumnVector.from(runningResult.incRefCount(), dataType)
       } else if (runningScalar != null) {
         // Wrap it as a GpuScalar instead of pulling data out of GPU.
-        runningScalar.incRefCount
+        runningScalar.copy
       } else {
         // null is not welcome, so use a null scalar instead
         GpuScalar(null, dataType)
@@ -251,13 +251,7 @@ case class GpuNaNvl(left: Expression, right: Expression) extends GpuBinaryExpres
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
     val isNull = !lhs.isValid
-    // TODO Let Scalar support `isNan`
-    val isNan = lhs.getBase.getType match {
-      case DType.FLOAT32 => lhs.getBase.getFloat.isNaN
-      case DType.FLOAT64 => lhs.getBase.getDouble.isNaN
-      case t => throw new IllegalStateException(s"Something very bad happened and " +
-        s"a scalar of type $t showed up when only floats and doubles are supported")
-    }
+    val isNan = lhs.isNan
     if (isNull || !isNan) {
       ColumnVector.fromScalar(lhs.getBase, rhs.getRowCount.toInt)
     } else {
