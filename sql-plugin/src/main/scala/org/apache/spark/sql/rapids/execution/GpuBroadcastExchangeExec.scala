@@ -365,6 +365,11 @@ abstract class GpuBroadcastExchangeExecBase(
   }
 
   protected def checkRowLimit(numRows: Int) = {
+    // Spark restricts the size of broadcast relations to be less than 512000000 rows and we
+    // enforce the same limit
+    // scalastyle:off line.size.limit
+    // https://github.com/apache/spark/blob/v3.1.1/sql/core/src/main/scala/org/apache/spark/sql/execution/joins/HashedRelation.scala#L586
+    // scalastyle:on line.size.limit
     if (numRows >= 512000000) {
       throw new SparkException(
         s"Cannot broadcast the table with 512 million or more rows: $numRows rows")
