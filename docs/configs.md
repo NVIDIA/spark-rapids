@@ -167,6 +167,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.DayOfWeek"></a>spark.rapids.sql.expression.DayOfWeek|`dayofweek`|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|
 <a name="sql.expression.DayOfYear"></a>spark.rapids.sql.expression.DayOfYear|`dayofyear`|Returns the day of the year from a date or timestamp|true|None|
 <a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|`/`|Division|true|None|
+<a name="sql.expression.ElementAt"></a>spark.rapids.sql.expression.ElementAt|`element_at`|Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map.|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith| |Ends with|true|None|
 <a name="sql.expression.EqualNullSafe"></a>spark.rapids.sql.expression.EqualNullSafe|`<=>`|Check if the values are equal including nulls <=>|true|None|
 <a name="sql.expression.EqualTo"></a>spark.rapids.sql.expression.EqualTo|`=`, `==`|Check if the values are equal|true|None|
@@ -320,7 +321,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.CartesianProductExec"></a>spark.rapids.sql.exec.CartesianProductExec|Implementation of join using brute force|true|None|
 <a name="sql.exec.ShuffledHashJoinExec"></a>spark.rapids.sql.exec.ShuffledHashJoinExec|Implementation of join using hashed shuffled data|true|None|
 <a name="sql.exec.SortMergeJoinExec"></a>spark.rapids.sql.exec.SortMergeJoinExec|Sort merge join, replacing with shuffled hash join|true|None|
-<a name="sql.exec.AggregateInPandasExec"></a>spark.rapids.sql.exec.AggregateInPandasExec|The backend for Grouped Aggregation Pandas UDF, it runs on CPU itself now but supports scheduling GPU resources for the Python process when enabled|false|This is disabled by default because Performance is not ideal now|
+<a name="sql.exec.AggregateInPandasExec"></a>spark.rapids.sql.exec.AggregateInPandasExec|The backend for an Aggregation Pandas UDF, this accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.|true|None|
 <a name="sql.exec.ArrowEvalPythonExec"></a>spark.rapids.sql.exec.ArrowEvalPythonExec|The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled|true|None|
 <a name="sql.exec.FlatMapCoGroupsInPandasExec"></a>spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec|The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports scheduling GPU resources for the Python process when enabled|false|This is disabled by default because Performance is not ideal now|
 <a name="sql.exec.FlatMapGroupsInPandasExec"></a>spark.rapids.sql.exec.FlatMapGroupsInPandasExec|The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.|true|None|

@@ -47,7 +47,6 @@ import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
-import org.apache.spark.sql.execution.python.rapids.GpuAggregateInPandasExecMeta
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
@@ -2272,6 +2271,50 @@ object GpuOverrides {
         ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
+    expr[ElementAt](
+      "Returns element of array at given(1-based) index in value if column is array. " +
+        "Returns value for the given key in value if column is map.",
+      ExprChecks.binaryProjectNotLambda(
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+          TypeSig.DECIMAL + TypeSig.MAP).nested(), TypeSig.all,
+        ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP) +
+          TypeSig.MAP.nested(TypeSig.STRING)
+            .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
+          TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
+        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+          .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
+            "not as maps keys")
+          .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
+            "not array indexes"),
+          TypeSig.all)),
+      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // To distinguish the supported nested type between Array and Map
+          val checks = in.left.dataType match {
+            case _: MapType =>
+              // Match exactly with the checks for GetMapValue
+              ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
+                ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
+                ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all))
+            case _: ArrayType =>
+              // Match exactly with the checks for GetArrayItem
+              ExprChecks.binaryProjectNotLambda(
+                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+                  TypeSig.DECIMAL + TypeSig.MAP).nested(),
+                TypeSig.all,
+                ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
+                  TypeSig.ARRAY.nested(TypeSig.all)),
+                ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
+            case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
+          }
+          checks.tag(this)
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuElementAt(lhs, rhs)
+        }
+      }),
     expr[CreateNamedStruct](
       "Creates a struct with the given field names and values",
       CreateNamedStructCheck,
@@ -2949,11 +2992,11 @@ object GpuOverrides {
       ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
       (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
     exec[AggregateInPandasExec](
-      "The backend for Grouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+      "The backend for an Aggregation Pandas UDF, this accelerates the data transfer between" +
+        " the Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled.",
+      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
+      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",
