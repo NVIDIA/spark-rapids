@@ -356,7 +356,6 @@ leveraging [Unified Communication X (UCX)](https://www.openucx.org/).
 You can find out how to enable the accelerated shuffle in the 
 [RAPIDS Shuffle Manager documentation](../additional-functionality/rapids-shuffle.md).
 
-
 ## Advanced Configuration
 
 See the [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md) for details on all
