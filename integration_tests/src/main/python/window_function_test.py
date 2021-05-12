@@ -233,12 +233,10 @@ part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
 
-
 def meta_idfn(meta):
     def tmp(something):
         return meta + idfn(something)
     return tmp
-
 
 @ignore_order
 @approximate_float
@@ -273,7 +271,6 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_gen, b_gen, c_gen):
                 .withColumn('lag_def_c', f.lag('c', 4, defaultVal).over(baseWindowSpec)) \
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
-
 
 # lead and lag don't currently work for string columns, so redo the tests, but just for strings
 # without lead and lag
@@ -348,7 +345,6 @@ def test_window_aggs_for_ranges(data_gen):
         'from window_agg_table',
         conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
-
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over non-timestamp columns "
                           "(https://github.com/NVIDIA/spark-rapids/issues/216)")
 @ignore_order
@@ -363,7 +359,6 @@ def test_window_aggs_for_ranges_of_dates(data_gen):
         '       range between 1 preceding and 1 following) as sum_c_asc '
         'from window_agg_table'
     )
-
 
 _gen_data_for_collect = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
