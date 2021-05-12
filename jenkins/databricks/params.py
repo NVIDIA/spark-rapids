@@ -23,6 +23,11 @@ script_dest = '/home/ubuntu/build.sh'
 source_tgz = 'spark-rapids-ci.tgz'
 tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
 base_spark_pom_version = '3.0.1'
+# this is odd but with Databricks 8.2 it reports Spark version 3.1.0
+# but its really 3.1.1, so base Spark pom will be 3.1.1 but we want to
+# install them as 3.1.0-databricks. Other Databricks versions
+# this is the same as base_spark_pom_version.
+base_spark_version_to_install_databricks_jars = base_spark_pom_version
 clusterid = ''
 build_profiles = 'databricks,!snapshot-shims'
 jar_path = ''
@@ -30,17 +35,17 @@ jar_path = ''
 spark_conf = ''
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:',
-                               ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles=', 'jarpath', 'sparkconf'])
+    opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:',
+                               ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles=', 'jarpath', 'sparkconf', 'sparkinstallver='])
 except getopt.GetoptError:
     print(
-        'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -j <jarpath> -f <sparkconf>')
+        'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -j <jarpath> -f <sparkconf> -i <sparkinstallver>')
     sys.exit(2)
 
 for opt, arg in opts:
     if opt == '-h':
         print(
-            'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -f <sparkconf>')
+            'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -f <sparkconf> -i <sparkinstallver>')
         sys.exit()
     elif opt in ('-w', '--workspace'):
         workspace = arg
@@ -64,6 +69,8 @@ for opt, arg in opts:
         jar_path = arg
     elif opt in ('-f', '--sparkconf'):
         spark_conf = arg
+    elif opt in ('-i', '--sparkinstallver'):
+        base_spark_version_to_install_databricks_jars = arg
 
 print('-w is ' + workspace)
 print('-c is ' + clusterid)
@@ -74,3 +81,4 @@ print('-z is ' + source_tgz)
 print('-v is ' + base_spark_pom_version)
 print('-j is ' + jar_path)
 print('-f is ' + spark_conf)
+print('-i is ' + base_spark_version_to_install_databricks_jars)

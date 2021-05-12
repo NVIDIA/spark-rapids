@@ -177,11 +177,10 @@ object GpuHashJoin extends Arm {
  * An iterator that does a hash join against a stream of batches.
  */
 class HashJoinIterator(
-    inputBuiltKeys: ColumnarBatch,
-    inputBuiltData: ColumnarBatch,
+    builtInput: ColumnarBatch,
+    val boundBuiltKeys: Seq[Expression],
     private val stream: Iterator[ColumnarBatch],
     val boundStreamKeys: Seq[Expression],
-    val boundStreamData: Seq[Expression],
     val streamAttributes: Seq[Attribute],
     val targetSize: Long,
     val joinType: JoinType,
@@ -197,20 +196,15 @@ class HashJoinIterator(
   private var initialJoin = true
   private var nextCb: Option[ColumnarBatch] = None
   private var gathererStore: Option[JoinGatherer] = None
-  // Close the input keys, the lazy spillable batch now owns it.
-  private val builtKeys = withResource(inputBuiltKeys) { inputBuiltKeys =>
-    LazySpillableColumnarBatch(inputBuiltKeys, spillCallback, "build_keys")
-  }
   // Close the input data, the lazy spillable batch now owns it.
-  private val builtData = withResource(inputBuiltData) { inputBuiltData =>
-    LazySpillableColumnarBatch(inputBuiltData, spillCallback, "build_data")
+  private val built = withResource(builtInput) { builtInput =>
+    LazySpillableColumnarBatch(builtInput, spillCallback, "built")
   }
   private var closed = false
 
   def close(): Unit = {
     if (!closed) {
-      builtKeys.close()
-      builtData.close()
+      built.close()
       nextCb.foreach(_.close())
       nextCb = None
       gathererStore.foreach(_.close())
@@ -334,10 +328,8 @@ class HashJoinIterator(
       buildData: LazySpillableColumnarBatch,
       streamCb: ColumnarBatch): Option[JoinGatherer] = {
     withResource(GpuProjectExec.project(streamCb, boundStreamKeys)) { streamKeys =>
-      withResource(GpuProjectExec.project(streamCb, boundStreamData)) { streamData =>
-        joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData),
-          streamKeys, LazySpillableColumnarBatch(streamData, spillCallback, "stream_data"))
-      }
+      joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData),
+        streamKeys, LazySpillableColumnarBatch(streamCb, spillCallback, "stream_data"))
     }
   }
 
@@ -356,12 +348,16 @@ class HashJoinIterator(
         gathererStore = None
         withResource(stream.next()) { cb =>
           streamTime += (System.nanoTime() - startTime)
-          gathererStore = joinGatherer(builtKeys.getBatch, builtData, cb)
+          withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+            gathererStore = joinGatherer(builtKeys, built, cb)
+          }
         }
         nextCb = nextCbFromGatherer()
       } else if (initialJoin) {
         withResource(GpuColumnVector.emptyBatch(streamAttributes.asJava)) { cb =>
-          gathererStore = joinGatherer(builtKeys.getBatch, builtData, cb)
+          withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+            gathererStore = joinGatherer(builtKeys, built, cb)
+          }
         }
         nextCb = nextCbFromGatherer()
       } else {
@@ -373,8 +369,6 @@ class HashJoinIterator(
     if (nextCb.isEmpty) {
       // Nothing is left to return so close ASAP.
       close()
-    } else {
-      builtKeys.allowSpilling()
     }
     nextCb.isDefined
   }
@@ -483,77 +477,15 @@ trait GpuHashJoin extends GpuExec {
   protected lazy val compareNullsEqual: Boolean = (joinType != FullOuter) &&
       GpuHashJoin.anyNullableStructChild(buildKeys)
 
-  /**
-   * Spark does joins rather simply. They do it row by row, and as such don't really worry
-   * about how much space is being taken up. We are doing this in batches, and have the option to
-   * deduplicate columns that we know are the same to save even more memory.
-   *
-   * As such we do the join in a few different stages.
-   *
-   * 1. We separate out the join keys from the data that will be gathered. The join keys are used
-   * to produce a gather map, and then can be released. The data needs to stay until it has been
-   * gathered. Depending on the type of join and what is being done the join output is likely to
-   * contain the join keys twice. We don't want to do this because it takes up too much memory
-   * so we remove the keys from the data for one side of the join.
-   *
-   * 2. After this we will do the join. We can produce multiple batches from a single
-   * pair of input batches. The output of this stage is called the intermediate output and is the
-   * data columns from each side of the join smashed together.
-   *
-   * 3. In some cases there is a condition that filters out data from the join that should not be
-   * included. In the CPU code the condition will operate on the intermediate output. In some cases
-   * the condition may need to be rewritten to point to the deduplicated key column.
-   *
-   * 4. Finally we need to fix up the data to produce the correct output. This should be a simple
-   * projection that puts the deduplicated keys back to where they need to be.
-   */
-  protected lazy val (leftData, rightData, intermediateOutput, finalProject) = {
-    require(leftKeys.map(_.dataType) == rightKeys.map(_.dataType),
-      "Join keys from two sides should have same types")
-    val (leftData, remappedLeftOutput, rightData, remappedRightOutput) = joinType match {
-      case FullOuter | RightOuter | LeftOuter =>
-        // We cannot dedupe anything here because we can get nulls in the key columns on
-        // at least one side, so they do not match
-        (left.output, left.output, right.output, right.output)
-      case LeftSemi | LeftAnti =>
-        // These only need the keys from the right hand side, in fact there should only be keys on
-        // the right hand side, except if there is a condition, but we don't support conditions for
-        // these joins, so it is OK
-        (left.output, left.output, Seq.empty, Seq.empty)
-      case _: InnerLike =>
-        val (rightData, remappedRightData) = dedupDataFromKeys(right.output, rightKeys, leftKeys)
-        (left.output, left.output, rightData, remappedRightData)
-      case x =>
-        throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
-    }
-
-    val intermediateOutput = leftData ++ rightData
-
-    val finalProject: Seq[Expression] = joinType match {
-      case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
-        remappedLeftOutput ++ remappedRightOutput
-      case LeftExistence(_) =>
-        remappedLeftOutput
-      case x =>
-        throw new IllegalArgumentException(s"GpuHashJoin should not take $x as the JoinType")
-    }
-    (leftData, rightData, intermediateOutput, finalProject)
-  }
-
-  protected lazy val (boundBuildKeys, boundBuildData,
-      boundStreamKeys, boundStreamData,
-      boundCondition, boundFinalProject) = {
+  protected lazy val (boundBuildKeys, boundStreamKeys, boundCondition) = {
     val lkeys = GpuBindReferences.bindGpuReferences(leftKeys, left.output)
-    val ldata = GpuBindReferences.bindGpuReferences(leftData, left.output)
     val rkeys = GpuBindReferences.bindGpuReferences(rightKeys, right.output)
-    val rdata = GpuBindReferences.bindGpuReferences(rightData, right.output)
     val boundCondition =
-      condition.map(c => GpuBindReferences.bindGpuReference(c, intermediateOutput))
-    val boundFinalProject = GpuBindReferences.bindGpuReferences(finalProject, intermediateOutput)
+      condition.map(c => GpuBindReferences.bindGpuReference(c, output))
 
     buildSide match {
-      case GpuBuildLeft => (lkeys, ldata, rkeys, rdata, boundCondition, boundFinalProject)
-      case GpuBuildRight => (rkeys, rdata, lkeys, ldata, boundCondition, boundFinalProject)
+      case GpuBuildLeft => (lkeys, rkeys, boundCondition)
+      case GpuBuildRight => (rkeys, lkeys, boundCondition)
     }
   }
 
@@ -572,35 +504,26 @@ trait GpuHashJoin extends GpuExec {
     // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
     val realTarget = Math.max(targetSize, 10 * 1024)
 
-    val (builtKeys, builtData) = {
-      // Filtering nulls on the build side is a workaround.
-      // 1) For a performance issue in LeftSemi and LeftAnti joins
-      // https://github.com/rapidsai/cudf/issues/7300
-      // 2) As a work around to Struct joins with nullable children
-      // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
-      val builtAnyNullable = (compareNullsEqual || joinType == LeftSemi || joinType == LeftAnti) &&
-          buildKeys.exists(_.nullable)
+    // Filtering nulls on the build side is a workaround.
+    // 1) For a performance issue in LeftSemi and LeftAnti joins
+    // https://github.com/rapidsai/cudf/issues/7300
+    // 2) As a work around to Struct joins with nullable children
+    // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
+    val builtAnyNullable = (compareNullsEqual || joinType == LeftSemi || joinType == LeftAnti) &&
+        buildKeys.exists(_.nullable)
 
-      val cb = if (builtAnyNullable) {
-        GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
-      } else {
-        GpuColumnVector.incRefCounts(builtBatch)
-      }
-
-      withResource(cb) { cb =>
-        closeOnExcept(GpuProjectExec.project(cb, boundBuildKeys)) { builtKeys =>
-          (builtKeys, GpuProjectExec.project(cb, boundBuildData))
-        }
-      }
+    val nullFiltered = if (builtAnyNullable) {
+      GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
+    } else {
+      GpuColumnVector.incRefCounts(builtBatch)
     }
 
     // The HashJoinIterator takes ownership of the built keys and built data. It will close
     // them when it is done
     val joinIterator =
-      new HashJoinIterator(builtKeys, builtData, stream, boundStreamKeys, boundStreamData,
+      new HashJoinIterator(nullFiltered, boundBuildKeys, stream, boundStreamKeys,
         streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
         streamTime, joinTime, totalTime)
-    val boundFinal = boundFinalProject
     if (boundCondition.isDefined) {
       val condition = boundCondition.get
       joinIterator.flatMap { cb =>
@@ -612,18 +535,16 @@ trait GpuHashJoin extends GpuExec {
             numOutputBatches.set(numOutputBatches.value - 1)
             None
           } else {
-            Some(GpuProjectExec.project(filtered, boundFinal))
+            Some(GpuColumnVector.incRefCounts(filtered))
           }
         }
       }
     } else {
       joinIterator.map { cb =>
-        withResource(cb) { cb =>
-          joinOutputRows += cb.numRows()
-          numOutputRows += cb.numRows()
-          numOutputBatches += 1
-          GpuProjectExec.project(cb, boundFinal)
-        }
+        joinOutputRows += cb.numRows()
+        numOutputRows += cb.numRows()
+        numOutputBatches += 1
+        cb
       }
     }
   }

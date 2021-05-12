@@ -725,10 +725,19 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * @return
    */
   private def convertDecimal64ToDecimal32Wrapper(cv: ColumnVector, precision: Int): ColumnVector = {
+    /**
+     * This method returns a ColumnView that should be copied out to a ColumnVector before closing
+     * the `toClose` views otherwise it will close the returned view and it's children as well.
+     *
+     * @param cv          ColumnView to be checked if it has Decimal32 values stored as Decimal64
+     * @param precision   precision list of all the Decimal columns in this ColumnVector
+     * @param toClose     The ColumnViews to be closed after this method is done. This will also
+     *                    contain the returned view
+     */
     def convertDecimal64ToDecimal32(
-        cv: ColumnView,
-        precision: Int,
-        newCols: ArrayBuilder[ColumnView]): ColumnView = {
+       cv: ColumnView,
+       precision: Int,
+       toClose: ArrayBuffer[ColumnView]): ColumnView = {
       val dt = cv.getType
       if (!dt.isNestedType) {
         if (dt.getTypeId == DTypeEnum.DECIMAL64 && precision <= DType.DECIMAL32_MAX_PRECISION) {
@@ -738,18 +747,21 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
           // the entire nested type. So we store them temporarily in this array and close it after
           // `copyToColumnVector` is called
           val col = cv.castTo(DecimalUtil.createCudfDecimal(precision, -dt.getScale()))
-          newCols += col
+          toClose += col
           col
         } else {
           cv
         }
       } else if (dt == DType.LIST) {
         val child = cv.getChildColumnView(0)
-        val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+        toClose += child
+        val newChild = convertDecimal64ToDecimal32(child, precision, toClose)
         if (child == newChild) {
           cv
         } else {
-          cv.replaceListChild(newChild)
+          val newView = cv.replaceListChild(newChild)
+          toClose += newView
+          newView
         }
       } else if (dt == DType.STRUCT) {
         val newColumns = ArrayBuilder.make[ColumnView]()
@@ -758,7 +770,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
         newColIndices.sizeHint(cv.getNumChildren)
         (0 until cv.getNumChildren).foreach { i =>
           val child = cv.getChildColumnView(i)
-          val newChild = convertDecimal64ToDecimal32(child, precision, newCols)
+          toClose += child
+          val newChild = convertDecimal64ToDecimal32(child, precision, toClose)
           if (newChild != child) {
             newColumns += newChild
             newColIndices += i
@@ -767,27 +780,24 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
         val cols = newColumns.result()
         if (cols.nonEmpty) {
           // create a new struct column with the new ones
-          cv.replaceChildrenWithViews(newColIndices.result(), cols)
+          val newView = cv.replaceChildrenWithViews(newColIndices.result(), cols)
+          toClose += newView
+          newView
         } else {
           cv
         }
       } else {
-        throw new IllegalArgumentException("Unknown data type")
+        throw new IllegalArgumentException(s"Unsupported data type ${dt.getTypeId}")
       }
     }
 
-    val newColumns = ArrayBuilder.make[ColumnView]()
-    val tmp = convertDecimal64ToDecimal32(cv, precision, newColumns)
-    if (tmp != cv) {
-      val result = withResource(newColumns.result()) { _ =>
+    withResource(new ArrayBuffer[ColumnView]) { toClose =>
+      val tmp = convertDecimal64ToDecimal32(cv, precision, toClose)
+      if (tmp != cv) {
         tmp.copyToColumnVector()
+      } else {
+        tmp.asInstanceOf[ColumnVector].incRefCount()
       }
-      if (tmp.getType.isNestedType) {
-        tmp.close()
-      }
-      result
-    } else {
-      tmp.asInstanceOf[ColumnVector].incRefCount()
     }
   }
 

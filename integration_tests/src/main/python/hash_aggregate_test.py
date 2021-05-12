@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
+from conftest import get_non_gpu_allowed
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
@@ -227,7 +228,7 @@ def test_hash_grpby_avg(data_gen, conf):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize('ansi_enabled', ['true', 'false']) 
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 def test_hash_grpby_avg_nulls(data_gen, conf, ansi_enabled):
     conf.update({'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_collect(
@@ -239,7 +240,7 @@ def test_hash_grpby_avg_nulls(data_gen, conf, ansi_enabled):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize('ansi_enabled', ['true', 'false']) 
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 def test_hash_reduction_avg_nulls(data_gen, conf, ansi_enabled):
     conf.update({'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_collect(
@@ -283,7 +284,7 @@ def test_hash_grpby_pivot(data_gen, conf):
 
 @approximate_float
 @ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem', 
+@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
         'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
         'NormalizeNaNAndZero')
 @incompat
@@ -327,7 +328,7 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
 
 @approximate_float
 @ignore_order(local=True)
-@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem', 
+@allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
         'Literal', 'ShuffleExchangeExec')
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
@@ -602,3 +603,94 @@ def test_subquery_in_agg(adaptive, expr):
     assert_gpu_and_cpu_are_equal_collect(
       lambda spark: subquery_create_temp_views(spark, expr),
         conf = {"spark.sql.adaptive.enabled" : adaptive})
+
+
+@allow_non_gpu(any = True)
+@pytest.mark.parametrize('key_data_gen', [
+    StructGen([
+        ('a', StructGen([
+            ('aa', IntegerGen(min_val=0, max_val=9))
+        ]))], nullable=False),
+    StructGen([
+        ('a', StructGen([
+            ('aa', IntegerGen(min_val=0, max_val=4)),
+            ('ab', IntegerGen(min_val=5, max_val=9)),
+        ]))], nullable=False),
+], ids=idfn)
+def test_struct_groupby_count(key_data_gen):
+    def group_by_count(spark):
+        df = two_col_df(spark, key_data_gen, IntegerGen())
+        return df.groupBy(df.a).count()
+    assert_gpu_and_cpu_are_equal_collect(group_by_count)
+
+
+@pytest.mark.parametrize('cast_struct_tostring', [
+    pytest.param('LEGACY', marks=pytest.mark.xfail(
+        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
+    pytest.param('SPARK311+', marks=pytest.mark.xfail(condition=is_before_spark_311(),
+        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
+    ])
+@pytest.mark.parametrize('key_data_gen', [
+    StructGen([
+        ('a', IntegerGen(min_val=0, max_val=9)),
+    ], nullable=False),
+    StructGen([
+        ('a', IntegerGen(min_val=0, max_val=4)),
+        ('b', IntegerGen(min_val=5, max_val=9)),
+    ], nullable=False)
+], ids=idfn)
+@ignore_order(local=True)
+def test_struct_cast_groupby_count(cast_struct_tostring, key_data_gen):
+    def _group_by_struct_or_cast(spark):
+        df = two_col_df(spark, key_data_gen, IntegerGen())
+        return df.groupBy(df.a.cast(StringType())).count()
+    assert_gpu_and_cpu_are_equal_collect(_group_by_struct_or_cast, {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
+    })
+
+
+@allow_non_gpu(any = True)
+@pytest.mark.parametrize('key_data_gen', [
+    StructGen([
+        ('a', StructGen([
+            ('aa', IntegerGen(min_val=0, max_val=9))
+        ]))], nullable=False),
+    StructGen([
+        ('a', StructGen([
+            ('aa', IntegerGen(min_val=0, max_val=4)),
+            ('ab', IntegerGen(min_val=5, max_val=9)),
+        ]))], nullable=False),
+], ids=idfn)
+@ignore_order(local=True)
+def test_struct_count_distinct(key_data_gen):
+    def _count_distinct_by_struct(spark):
+        df = gen_df(spark, key_data_gen)
+        return df.agg(f.countDistinct(df.a))
+    assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct)
+
+
+@pytest.mark.parametrize('cast_struct_tostring', [
+    pytest.param('LEGACY', marks=pytest.mark.xfail(
+        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
+    pytest.param('SPARK311+', marks=pytest.mark.xfail(condition=is_before_spark_311(),
+        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
+])
+@pytest.mark.parametrize('key_data_gen', [
+    StructGen([
+        ('a', StructGen([
+            ('aa', IntegerGen(min_val=0, max_val=9))
+        ]))], nullable=False),
+    StructGen([
+        ('a', StructGen([
+            ('aa', IntegerGen(min_val=0, max_val=4)),
+            ('ab', IntegerGen(min_val=5, max_val=9)),
+        ]))], nullable=False),
+], ids=idfn)
+@ignore_order(local=True)
+def test_struct_count_distinct_cast(cast_struct_tostring, key_data_gen):
+    def _count_distinct_by_struct(spark):
+        df = gen_df(spark, key_data_gen)
+        return df.agg(f.countDistinct(df.a.cast(StringType())))
+    assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct, {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
+    })
