@@ -27,6 +27,19 @@ Spark's guarantee. It may not be 100% identical if the ordering is ambiguous.
 In versions of Spark prior to 3.1.0 `-0.0` is always < `0.0` but in 3.1.0 and above this is
 not true for sorting. For all versions of the plugin `-0.0` == `0.0` for sorting.
 
+Spark's sorting is typically a [stable](https://en.wikipedia.org/wiki/Sorting_algorithm#Stability)
+sort. Sort stability cannot be guaranteed in distributed work loads because the order in which
+upstream data arrives to a task is not guaranteed. Sort stability is only
+guaranteed in one situation which is reading and sorting data from a file using a single 
+task/partition. The RAPIDS Accelerator does an unstable
+[out of core](https://en.wikipedia.org/wiki/External_memory_algorithm) sort by default. This
+simply means that the sort algorithm allows for spilling parts of the data if it is larger than
+can fit in the GPU's memory, but it does not guarantee ordering of rows when the ordering of the
+keys is ambiguous. If you do rely on a stable sort in your processing you can request this by
+setting [spark.rapids.sql.stableSort.enabled](configs.md#sql.stableSort.enabled) to `true` and
+RAPIDS will try to sort all the data for a given task/partition at once on the GPU. This may change
+in the future to allow for a spillable stable sort.
+
 ## Floating Point
 
 For most basic floating-point operations like addition, subtraction, multiplication, and division
@@ -90,15 +103,40 @@ will produce a different result compared to the plugin.
 
 ## CSV Reading
 
-Spark is very strict when reading CSV and if the data does not conform with the expected format
-exactly it will result in a `null` value. The underlying parser that the SQL plugin uses is much
-more lenient. If you have badly formatted CSV data you may get data back instead of nulls.  If this
-is a problem you can disable the CSV reader by setting the config
-[`spark.rapids.sql.format.csv.read.enabled`](configs.md#sql.format.csv.read.enabled) to `false`.
-Because the speed up is so large and the issues typically only show up in error conditions we felt
-it was worth having the CSV reader enabled by default.
+Due to inconsistencies between how CSV data is parsed CSV parsing is off by default.
+Each data type can be enabled or disabled independently using the following configs.
+
+ * [spark.rapids.sql.csv.read.bool.enabled](configs.md#sql.csv.read.bool.enabled)
+ * [spark.rapids.sql.csv.read.byte.enabled](configs.md#sql.csv.read.byte.enabled)
+ * [spark.rapids.sql.csv.read.date.enabled](configs.md#sql.csv.read.date.enabled)
+ * [spark.rapids.sql.csv.read.double.enabled](configs.md#sql.csv.read.double.enabled)
+ * [spark.rapids.sql.csv.read.float.enabled](configs.md#sql.csv.read.float.enabled)
+ * [spark.rapids.sql.csv.read.integer.enabled](configs.md#sql.csv.read.integer.enabled)
+ * [spark.rapids.sql.csv.read.long.enabled](configs.md#sql.csv.read.long.enabled)
+ * [spark.rapids.sql.csv.read.short.enabled](configs.md#sql.csv.read.short.enabled)
+ * [spark.rapids.sql.csvTimestamps.enabled](configs.md#sql.csvTimestamps.enabled)
+
+If you know that your particular data type will be parsed correctly enough, you may enable each
+type you expect to use. Often the performance improvement is so good that it is worth
+checking if it is parsed correctly.
+
+Spark is generally very strict when reading CSV and if the data does not conform with the 
+expected format exactly it will result in a `null` value. The underlying parser that the RAPIDS Accelerator
+uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
+nulls.
+
+Spark allows for stripping leading and trailing white space using various options that are off by
+default. The plugin will strip leading and trailing space for all values except strings.
 
 There are also discrepancies/issues with specific types that are detailed below.
+
+### CSV Boolean
+
+Invalid values like `BAD` show up as `true` as described by this 
+[issue](https://github.com/NVIDIA/spark-rapids/issues/2071)
+
+This is the same for all other types, but because that is the only issue with boolean parsing
+we have called it out specifically here.
 
 ### CSV Strings
 Writing strings to a CSV file in general for Spark can be problematic unless you can ensure that
@@ -127,7 +165,12 @@ Only a limited set of formats are supported when parsing dates.
 The reality is that all of these formats are supported at the same time. The plugin will only
 disable itself if you set a format that it does not support.
 
-As a work around you can parse the column as a timestamp and then cast it to a date.
+As a workaround you can parse the column as a timestamp and then cast it to a date.
+
+Invalid dates in Spark, values that have the correct format, but the numbers produce invalid dates,
+can result in an exception by default, and how they are parsed can be controlled through a config.
+The RAPIDS Accelerator does not support any of this and will produce an incorrect date. Typically,
+one that overflowed.
 
 ### CSV Timestamps
 The CSV parser does not support time zones.  It will ignore any trailing time zone information,
@@ -150,9 +193,14 @@ portion followed by one of the following formats:
 Just like with dates all timestamp formats are actually supported at the same time.  The plugin will
 disable itself if it sees a format it cannot support.
 
+Invalid timestamps in Spark, ones that have the correct format, but the numbers produce invalid
+dates or times, can result in an exception by default and how they are parsed can be controlled
+through a config. The RAPIDS Accelerator does not support any of this and will produce an incorrect
+date. Typically, one that overflowed.
+
 ### CSV Floating Point
 
-The CSV parser is not able to parse `Infinity`, `-Infinity`, or `NaN` values.  All of these are
+The CSV parser is not able to parse `NaN` values.  These are
 likely to be turned into null values, as described in this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/125).
 
@@ -160,6 +208,10 @@ Some floating-point values also appear to overflow but do not for the CPU as des
 [issue](https://github.com/NVIDIA/spark-rapids/issues/124).
 
 Any number that overflows will not be turned into a null value.
+
+Also parsing of some values will not produce bit for bit identical results to what the CPU does.
+They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
+then results in a number being returned when the CPU would have returned null.
 
 ### CSV Integer
 
@@ -222,8 +274,13 @@ from one run to another if the ordering is ambiguous on a window function too.
 ## Parsing strings as dates or timestamps
 
 When converting strings to dates or timestamps using functions like `to_date` and `unix_timestamp`,
-only a subset of possible formats are supported on GPU with full compatibility with Spark. The
-supported formats are:
+the specified format string will fall into one of three categories:
+
+- Supported on GPU and 100% compatible with Spark
+- Supported on GPU but may produce different results to Spark
+- Unsupported on GPU
+
+The formats which are supported on GPU and 100% compatible with Spark are :
 
 - `dd/MM/yyyy`
 - `yyyy/MM`
@@ -231,17 +288,60 @@ supported formats are:
 - `yyyy-MM`
 - `yyyy-MM-dd`
 - `yyyy-MM-dd HH:mm:ss`
+- `MM-dd`
+- `MM/dd`
+- `dd-MM`
+- `dd/MM`
 
-Other formats may result in incorrect results and will not run on the GPU by default. Some
-specific issues with other formats are:
+Examples of supported formats that may produce different results are:
 
-- Spark supports partial microseconds but the plugin does not
-- The plugin will produce incorrect results for input data that is not in the correct format in
-some cases
+- Trailing characters (including whitespace) may return a non-null value on GPU and Spark will 
+  return null 
 
-To enable all formats on GPU, set
+To attempt to use other formats on the GPU, set
 [`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
 to `true`.
+
+Formats that contain any of the following characters are unsupported and will fall back to CPU:
+
+```
+'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N',
+'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y'
+```
+
+Formats that contain any of the following words are unsupported and will fall back to CPU:
+
+```
+"u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
+"y", "yy", yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+"D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
+"d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
+```
+
+## Formatting dates and timestamps as strings
+
+When formatting dates and timestamps as strings using functions such as `from_unixtime`, only a
+subset of valid format strings are supported on the GPU.
+
+Formats that contain any of the following characters are unsupported and will fall back to CPU:
+
+```
+'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N',
+'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y'
+```
+
+Formats that contain any of the following words are unsupported and will fall back to CPU:
+
+```
+"u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
+"y", yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
+"D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
+"d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
+```
+
+Note that this list differs very slightly from the list given in the previous section for parsing
+strings to dates because the two-digit year format `"yy"` is supported when formatting dates as
+strings but not when parsing strings to dates.
 
 ## Casting between types
 
@@ -296,15 +396,6 @@ Also, the GPU does not support casting from strings containing hex values.
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `true`.
-       
-### String to Integral Types
-
-The GPU will return incorrect results for strings representing values greater than Long.MaxValue or
-less than Long.MinValue. The correct behavior would be to return null for these values, but the GPU
-currently overflows and returns an incorrect integer value.
-
-To enable this operation on the GPU, set
-[`spark.rapids.sql.castStringToInteger.enabled`](configs.md#sql.castStringToInteger.enabled) to `true`.
 
 ### String to Date
 
@@ -359,3 +450,10 @@ ConstantFolding is an operator optimization rule in Catalyst that replaces expre
 be statically evaluated with their equivalent literal values. The RAPIDS Accelerator relies
 on constant folding and parts of the query will not be accelerated if 
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
+
+## JSON string handling
+The 0.5 release introduces the `get_json_object` operation.  The JSON specification only allows
+double quotes around strings in JSON data, whereas Spark allows single quotes around strings in JSON
+data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None` in PySpark or
+`Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
+updated in a future release to more closely match Spark.
