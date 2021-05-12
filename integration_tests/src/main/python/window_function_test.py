@@ -57,6 +57,144 @@ _grpkey_decimals_with_nulls = [
     # the max decimal precision supported by sum operation is 8
     ('c', DecimalGen(precision=8, scale=3, nullable=True))]
 
+_grpkey_byte_with_nulls = [
+    ('a', IntegerGen()),
+    ('b', ByteGen(nullable=True, min_val=-98, max_val=98, special_cases=[]))]
+
+_grpkey_short_with_nulls = [
+    ('a', IntegerGen()),
+    ('b', ShortGen(nullable=True, min_val=-32700, max_val=32700, special_cases=[]))]
+
+_grpkey_int_with_nulls = [
+    ('a', IntegerGen()),
+    ('b', IntegerGen(nullable=True, min_val=-2147483000, max_val=2147483000, special_cases=[]))]
+
+_grpkey_long_with_nulls = [
+    ('a', IntegerGen()),
+    ('b', LongGen(nullable=True, min_val=-9223372036854775000, max_val=9223372036854775000, special_cases=[]))]
+
+_grpkey_byte_with_nulls_with_overflow = [
+    ('a', IntegerGen()),
+    ('b', ByteGen(nullable=True))]
+
+_grpkey_short_with_nulls_with_overflow = [
+    ('a', IntegerGen()),
+    ('b', ShortGen(nullable=True))]
+
+_grpkey_int_with_nulls_with_overflow = [
+    ('a', IntegerGen()),
+    ('b', IntegerGen(nullable=True))]
+
+_grpkey_long_with_nulls_with_overflow = [
+    ('a', IntegerGen()),
+    ('b', LongGen(nullable=True))]
+
+
+@pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
+                          "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_byte_with_nulls_with_overflow], ids=idfn)
+def test_window_aggs_for_ranges_numeric_byte_overflow(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select '
+        ' sum(b) over '
+        '   (partition by a order by b asc  '
+        '      range between 127 preceding and 127 following) as sum_c_asc, '
+        'from window_agg_table',
+        conf={'spark.rapids.sql.window.range.byte.enabled': True})
+
+
+@pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by short column overflow "
+                          "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_short_with_nulls_with_overflow], ids=idfn)
+def test_window_aggs_for_ranges_numeric_short_overflow(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select '
+        ' sum(b) over '
+        '   (partition by a order by b asc  '
+        '      range between 32767 preceding and 32767 following) as sum_c_asc, '
+        'from window_agg_table',
+        conf={'spark.rapids.sql.window.range.short.enabled': True})
+
+
+@pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by int column overflow "
+                          "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_int_with_nulls_with_overflow], ids=idfn)
+def test_window_aggs_for_ranges_numeric_int_overflow(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select '
+        ' sum(b) over '
+        '   (partition by a order by b asc  '
+        '      range between 2147483647 preceding and 2147483647 following) as sum_c_asc, '
+        'from window_agg_table')
+
+
+@pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by long column overflow "
+                          "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_long_with_nulls_with_overflow], ids=idfn)
+def test_window_aggs_for_ranges_numeric_long_overflow(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select '
+        ' sum(b) over '
+        '   (partition by a order by b asc  '
+        '      range between 9223372036854775807 preceding and 9223372036854775807 following) as sum_c_asc, '
+        'from window_agg_table')
+
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [
+                                      _grpkey_byte_with_nulls,
+                                      _grpkey_short_with_nulls,
+                                      _grpkey_int_with_nulls,
+                                      _grpkey_long_with_nulls
+                                    ], ids=idfn)
+def test_window_aggs_for_range_numeric(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select '
+        ' sum(b) over '
+        '   (partition by a order by b asc  '
+        '      range between 1 preceding and 3 following) as sum_c_asc, '
+        ' avg(b) over '
+        '   (partition by a order by b asc  '
+        '       range between 1 preceding and 3 following) as avg_b_asc, '
+        ' max(b) over '
+        '   (partition by a order by b asc '
+        '       range between 1 preceding and 3 following) as max_b_desc, '
+        ' min(b) over '
+        '   (partition by a order by b asc  '
+        '       range between 1 preceding and 3 following) as min_b_asc, '
+        ' count(1) over '
+        '   (partition by a order by b asc  '
+        '       range between  CURRENT ROW and UNBOUNDED following) as count_1_asc, '
+        ' count(b) over '
+        '   (partition by a order by b asc  '
+        '       range between  CURRENT ROW and UNBOUNDED following) as count_b_asc, '
+        ' avg(b) over '
+        '   (partition by a order by b asc  '
+        '       range between UNBOUNDED preceding and CURRENT ROW) as avg_b_unbounded, '
+        ' sum(b) over '
+        '   (partition by a order by b asc  '
+        '       range between UNBOUNDED preceding and CURRENT ROW) as sum_b_unbounded, '
+        ' max(b) over '
+        '   (partition by a order by b asc  '
+        '       range between UNBOUNDED preceding and UNBOUNDED following) as max_b_unbounded '
+        'from window_agg_table ',
+        conf={'spark.rapids.sql.window.range.byte.enabled': True,
+              'spark.rapids.sql.window.range.short.enabled': True})
+
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
@@ -95,10 +233,12 @@ part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
 
+
 def meta_idfn(meta):
     def tmp(something):
         return meta + idfn(something)
     return tmp
+
 
 @ignore_order
 @approximate_float
@@ -133,6 +273,7 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_gen, b_gen, c_gen):
                 .withColumn('lag_def_c', f.lag('c', 4, defaultVal).over(baseWindowSpec)) \
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
+
 
 # lead and lag don't currently work for string columns, so redo the tests, but just for strings
 # without lead and lag
@@ -207,6 +348,7 @@ def test_window_aggs_for_ranges(data_gen):
         'from window_agg_table',
         conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
+
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over non-timestamp columns "
                           "(https://github.com/NVIDIA/spark-rapids/issues/216)")
 @ignore_order
@@ -221,6 +363,7 @@ def test_window_aggs_for_ranges_of_dates(data_gen):
         '       range between 1 preceding and 1 following) as sum_c_asc '
         'from window_agg_table'
     )
+
 
 _gen_data_for_collect = [
     ('a', RepeatSeqGen(LongGen(), length=20)),

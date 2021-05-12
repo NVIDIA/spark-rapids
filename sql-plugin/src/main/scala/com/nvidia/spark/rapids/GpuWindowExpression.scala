@@ -282,14 +282,14 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
         val (isUnBoundedFollowing, following) = GpuWindowExpression.getRangeBasedUpper(
           windowFrameSpec, Some(orderByType))
 
-        withResource(preceding.get) { preceding =>
-          withResource(following.get) { following =>
+        withResource(preceding) { preceding =>
+          withResource(following) { following =>
             withResource(GpuWindowExpression.getRangeBasedWindowOptions(windowSpec.orderSpec,
               numGroupingColumns,
               isUnboundedPreceding,
-              preceding,
+              preceding.getOrElse(null),
               isUnBoundedFollowing,
-              following)) { windowOptions =>
+              following.getOrElse(null))) { windowOptions =>
               val agg = windowFunc.windowAggregation(bases).overWindow(windowOptions)
               withResource(table
                 .groupBy(0 until numGroupingColumns: _*)
@@ -814,7 +814,7 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
   def isUnBounded: Boolean = {
     boundary match {
       case UnboundedPreceding => true
-      case UnboundedPreceding => true
+      case UnboundedFollowing => true
       case _ => false
     }
   }

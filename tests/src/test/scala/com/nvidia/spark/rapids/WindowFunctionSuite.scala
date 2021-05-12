@@ -349,8 +349,8 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Short Type]",
-    windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Short Type]", windowTestDfOrc,
+      new SparkConf().set("spark.rapids.sql.window.range.short.enabled", "true")) {
 
     val windowClause =
       """
@@ -375,8 +375,8 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
-  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Byte Type]",
-    windowTestDfOrc) {
+  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Byte Type]", windowTestDfOrc,
+      new SparkConf().set("spark.rapids.sql.window.range.byte.enabled", "true")) {
 
     val windowClause =
       """
