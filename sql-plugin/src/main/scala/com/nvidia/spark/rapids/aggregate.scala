@@ -98,12 +98,13 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
         resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    val groupingDataTypes = agg.groupingExpressions.map(_.dataType)
-    if (groupingDataTypes.exists(dtype =>
-      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
-          || dtype.isInstanceOf[MapType])) {
-      willNotWorkOnGpu("Nested types in grouping expressions are not supported")
-    }
+    agg.groupingExpressions
+      .find(_.dataType match {
+        case _@(ArrayType(_, _) | MapType(_, _, _)) | _@StructType(_) => true
+        case _ => false
+      })
+      .foreach(_ =>
+        willNotWorkOnGpu("Nested types in grouping expressions are not supported"))
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
     }
