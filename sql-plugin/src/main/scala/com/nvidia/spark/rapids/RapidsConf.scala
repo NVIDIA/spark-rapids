@@ -808,6 +808,82 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  private def getRangeWindowTypeDesc(dt: String, lower: String, upper: String) = {
+    s"""
+      |When order by column is $dt type and the range calculated for a row has overflow," +
+      |Spark considers the overflow and get incorrect answer.
+      |
+      |For example, let's assume we have two columns, one partition column named "uid" and the other
+      |column named "dollars". And the data is like below,
+      |
+      |```
+      |+------+---------+
+      || id   | dollars |
+      |+------+---------+
+      ||    1 |    NULL |
+      ||    1 |      13 |
+      ||    1 |      14 |
+      ||    1 |      15 |
+      ||    1 |      15 |
+      ||    1 |      17 |
+      ||    1 |      18 |
+      ||    1 |      52 |
+      ||    1 |      53 |
+      ||    1 |      61 |
+      ||    1 |      65 |
+      ||    1 |      72 |
+      ||    1 |      73 |
+      ||    1 |      75 |
+      ||    1 |      78 |
+      ||    1 |      84 |
+      ||    1 |      85 |
+      ||    1 |      86 |
+      ||    1 |      92 |
+      ||    1 |      98 |
+      |+------+---------+
+      |```
+      |"After executing below SQL statement,
+      |
+      |```
+      |SELECT
+      |   COUNT(dollars) over (PARTITION BY id
+      |                        ORDER BY CAST (dollars AS Byte) ASC
+      |                        RANGE BETWEEN $lower PRECEDING AND $upper FOLLOWING)
+      |FROM table
+      |```
+      |
+      |"We can get below result,
+      |```
+      |CPU: ([0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0])
+      |GPU: ([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19])
+      |```
+      |
+      |When spark.rapids.sql.window.range.${dt}.enabled is set to false, the range window function
+      |will fall back to CPU.
+      |""".stripMargin
+
+  }
+
+  val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
+    .doc(getRangeWindowTypeDesc("byte", "127", "127"))
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_RANGE_WINDOW_SHORT = conf("spark.rapids.sql.window.range.short.enabled")
+    .doc(getRangeWindowTypeDesc("byte", "32767", "32767"))
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_RANGE_WINDOW_INT = conf("spark.rapids.sql.window.range.int.enabled")
+    .doc(getRangeWindowTypeDesc("byte", "2147483647", "2147483647"))
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_RANGE_WINDOW_LONG = conf("spark.rapids.sql.window.range.long.enabled")
+    .doc(getRangeWindowTypeDesc("byte", "9223372036854775807", "9223372036854775807"))
+    .booleanConf
+    .createWithDefault(true)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -1095,6 +1171,8 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(true)
+
+
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -1463,6 +1541,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+
+  lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
+
+  lazy val isRangeWindowShortEnabled: Boolean = get(ENABLE_RANGE_WINDOW_SHORT)
+
+  lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
+
+  lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

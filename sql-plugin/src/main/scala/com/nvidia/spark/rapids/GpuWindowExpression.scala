@@ -20,7 +20,7 @@ import scala.language.existentials
 
 import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
 import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
-import com.nvidia.spark.rapids.GpuOverrides.{isSupportedType, wrapExpr}
+import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
@@ -97,6 +97,7 @@ class GpuWindowExpressionMeta(
             if (spec.isUnbounded) {
               // this is okay because we will translate it to be a row query
             } else {
+              // check whether order by column is supported or not
               val orderSpec = wrapped.windowSpec.orderSpec
               if (orderSpec.length > 1) {
                 // We only support a single time column
@@ -115,8 +116,31 @@ class GpuWindowExpressionMeta(
                   s" range function, found ${orderSpec(0).dataType}")
               }
 
+              def checkRangeBoundaryConfig(dt: DataType): Unit = {
+                dt match {
+                  case ByteType => if (!conf.isRangeWindowByteEnabled) willNotWorkOnGpu(
+                    s"Range window frame is not 100% compatible when the order by type is byte." +
+                      s" To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_BYTES} to true.")
+                  case ShortType =>
+                    if (!conf.isRangeWindowShortEnabled) willNotWorkOnGpu(s"Range window frame" +
+                      s" is not 100% compatible when the order by type is short. To enable it" +
+                      " please set ${RapidsConf.ENABLE_RANGE_WINDOW_SHORT} to true.")
+                  case IntegerType =>
+                    if (!conf.isRangeWindowIntEnabled) willNotWorkOnGpu(
+                      s"Range window frame is not 100% compatible when the order by type is int." +
+                        s" To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_INT} to true.")
+                  case LongType =>
+                    if (!conf.isRangeWindowLongEnabled) willNotWorkOnGpu(
+                      s"Range window frame is not 100% compatible when the order by type is long." +
+                        s" To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
+                  case _ => // never reach here
+                }
+              }
+
+              // check whether the boundaries are supported or not.
               Seq(spec.lower, spec.upper).foreach {
-                case Literal(_, ByteType | ShortType | IntegerType | LongType) =>
+                case l @ Literal(_, ByteType | ShortType | IntegerType | LongType) =>
+                  checkRangeBoundaryConfig(l.dataType)
                 case Literal(value, CalendarIntervalType) =>
                   val ci = value.asInstanceOf[CalendarInterval]
                   if (ci.months != 0 || ci.microseconds != 0) {
