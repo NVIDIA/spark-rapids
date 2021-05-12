@@ -304,39 +304,33 @@ case class GpuConcatWs(children: Seq[Expression])
   // TODO - foldable??
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val separator = children.head
     var nullStrScalar: Scalar = null
     var emptyStrScalar: Scalar = null
     val rows = batch.numRows()
     val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
-    try {
-      nullStrScalar = GpuScalar.from(null, StringType)
-      children.foreach(childEvals += _.columnarEval(batch))
-      childEvals.foreach {
-        case vector: GpuColumnVector =>
-          columns += vector.getBase
-        case col => if (col == null) {
-          columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
-        } else {
-          withResource(GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)) {
-            stringScalar =>
-              columns += GpuColumnVector.from(stringScalar, rows, StringType).getBase
-          }
+
+    nullStrScalar = GpuScalar.from(null, StringType)
+    children.foreach(childEvals += _.columnarEval(batch))
+    childEvals.foreach {
+      case vector: GpuColumnVector =>
+        columns += vector.getBase
+      case col => if (col == null) {
+        columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
+      } else {
+        withResource(GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)) {
+          stringScalar =>
+            columns += GpuColumnVector.from(stringScalar, rows, StringType).getBase
         }
       }
-      emptyStrScalar = GpuScalar.from("", StringType)
-      GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
-        columns.toArray[ColumnView]), dataType)
-    } finally {
-      columns.safeClose()
-      if (emptyStrScalar != null) {
-        emptyStrScalar.close()
-      }
-      if (nullStrScalar != null) {
-        nullStrScalar.close()
-      }
     }
+    emptyStrScalar = GpuScalar.from("", StringType)
+    GpuColumnVector.from(ColumnVector.concatenateWs(emptyStrScalar, nullStrScalar,
+      columns.toArray[ColumnView]), dataType)
+
+    // evaluate the expression against each column
+    val inputs = children.tail
+
   }
 }
 
