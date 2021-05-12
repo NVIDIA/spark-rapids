@@ -119,20 +119,21 @@ class GpuWindowExpressionMeta(
               def checkRangeBoundaryConfig(dt: DataType): Unit = {
                 dt match {
                   case ByteType => if (!conf.isRangeWindowByteEnabled) willNotWorkOnGpu(
-                    s"Range window frame is not 100% compatible when the order by type is byte." +
-                      s" To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_BYTES} to true.")
-                  case ShortType =>
-                    if (!conf.isRangeWindowShortEnabled) willNotWorkOnGpu(s"Range window frame" +
-                      s" is not 100% compatible when the order by type is short. To enable it" +
-                      " please set ${RapidsConf.ENABLE_RANGE_WINDOW_SHORT} to true.")
-                  case IntegerType =>
-                    if (!conf.isRangeWindowIntEnabled) willNotWorkOnGpu(
-                      s"Range window frame is not 100% compatible when the order by type is int." +
-                        s" To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_INT} to true.")
-                  case LongType =>
-                    if (!conf.isRangeWindowLongEnabled) willNotWorkOnGpu(
-                      s"Range window frame is not 100% compatible when the order by type is long." +
-                        s" To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
+                    s"Range window frame is not 100% compatible when the order by type is " +
+                      s"byte and the range value calculated has overflow. " +
+                      s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_BYTES} to true.")
+                  case ShortType => if (!conf.isRangeWindowShortEnabled) willNotWorkOnGpu(
+                    s"Range window frame is not 100% compatible when the order by type is " +
+                      s"short and the range value calculated has overflow. " +
+                      s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_SHORT} to true.")
+                  case IntegerType => if (!conf.isRangeWindowIntEnabled) willNotWorkOnGpu(
+                    s"Range window frame is not 100% compatible when the order by type is " +
+                      s"int and the range value calculated has overflow. " +
+                      s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_INT} to true.")
+                  case LongType => if (!conf.isRangeWindowLongEnabled) willNotWorkOnGpu(
+                    s"Range window frame is not 100% compatible when the order by type is " +
+                      s"long and the range value calculated has overflow. " +
+                      s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
                   case _ => // never reach here
                 }
               }
@@ -421,7 +422,7 @@ object GpuWindowExpression {
       case DType.TIMESTAMP_MICROSECONDS =>
         Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value)
       case DType.TIMESTAMP_NANOSECONDS => Scalar.durationFromLong(DType.DURATION_NANOSECONDS, value)
-      case _ => Scalar.fromNull(orderByType)
+      case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
     }
   }
 

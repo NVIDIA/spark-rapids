@@ -808,65 +808,35 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
-  private def getRangeWindowTypeDesc(dt: String, lower: String, upper: String) =
-    s"When order by column is $dt type and the range boundary calculated for a row has overflow, " +
-      s"Spark CPU will get different result comparing GPU.<br>For example, let's assume we have " +
-      s"two columns, one partition column named `uid` and the other column named `dollars`. " +
-      s"And the data is like below,<br>" +
-      s"<code>" +
-      s"+----+---------+<br>" +
-      s"| id | dollars |<br>" +
-      s"+----+---------+<br>" +
-      s"|  1 |    NULL |<br>" +
-      s"|  1 |      13 |<br>" +
-      s"|  1 |      14 |<br>" +
-      s"|  1 |      15 |<br>" +
-      s"|  1 |      15 |<br>" +
-      s"|  1 |      17 |<br>" +
-      s"|  1 |      18 |<br>" +
-      s"|  1 |      52 |<br>" +
-      s"|  1 |      53 |<br>" +
-      s"|  1 |      61 |<br>" +
-      s"|  1 |      65 |<br>" +
-      s"|  1 |      72 |<br>" +
-      s"|  1 |      73 |<br>" +
-      s"|  1 |      75 |<br>" +
-      s"|  1 |      78 |<br>" +
-      s"|  1 |      84 |<br>" +
-      s"|  1 |      85 |<br>" +
-      s"|  1 |      86 |<br>" +
-      s"|  1 |      92 |<br>" +
-      s"|  1 |      98 |<br>" +
-      s"+----+---------+<br></code>" +
-      "After executing below SQL statement,<br>" +
-      s"`SELECT COUNT(dollars) over (PARTITION BY id ORDER BY CAST (dollars AS Byte) ASC " +
-      s"RANGE BETWEEN $lower PRECEDING AND $upper FOLLOWING) FROM table`" +
-      s"We can get below result for both CPU and GPU,<br>" +
-      s"<code>CPU: ([0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0]," +
-      s" [0], [0], [0], [0], [0])<br>" +
-      s"GPU: ([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], " +
-      s"[19], [19], [19], [19], [19], [19])<br></code>" +
-      s"When spark.rapids.sql.window.range.${dt}.enabled is set to false, the range window " +
-      "function will fall back to CPU."
-
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
-    .doc(getRangeWindowTypeDesc("byte", "127", "127").replace("|", "\\|"))
+    .doc("When the order-by column of a range based window is byte type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "byte type order-by column")
     .booleanConf
     .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_SHORT = conf("spark.rapids.sql.window.range.short.enabled")
-    .doc(getRangeWindowTypeDesc("short", "32767", "32767").replace("|", "\\|"))
+    .doc("When the order-by column of a range based window is short type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "short type order-by column")
     .booleanConf
     .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_INT = conf("spark.rapids.sql.window.range.int.enabled")
-    .doc(getRangeWindowTypeDesc("int", "2147483647", "2147483647").replace("|", "\\|"))
+    .doc("When the order-by column of a range based window is int type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "int type order-by column")
     .booleanConf
     .createWithDefault(true)
 
   val ENABLE_RANGE_WINDOW_LONG = conf("spark.rapids.sql.window.range.long.enabled")
-    .doc(getRangeWindowTypeDesc("long", "9223372036854775807", "9223372036854775807")
-      .replace("|", "\\|"))
+    .doc("When the order-by column of a range based window is long type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "long type order-by column")
     .booleanConf
     .createWithDefault(true)
 
@@ -1157,8 +1127,6 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(true)
-
-
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
