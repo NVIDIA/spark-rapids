@@ -82,7 +82,14 @@ def test_repartition_df(data_gen, num_parts, length):
 
 @allow_non_gpu('ShuffleExchangeExec', 'RoundRobinPartitioning')
 @pytest.mark.parametrize('data_gen', [[('a', ArrayGen(string_gen))],
-    [('a', StructGen([('a_1', StructGen([('a_1_1', int_gen)]))]))],
+    [('a', StructGen([
+      ('a_1', StructGen([
+        ('a_1_1', int_gen),
+        ('a_1_2', float_gen),
+        ('a_1_3', double_gen)
+      ])),
+      ('b_1', long_gen)
+    ]))],
     [('a', simple_string_to_string_map_gen)]], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 def test_round_robin_sort_fallback(data_gen):
@@ -91,7 +98,6 @@ def test_round_robin_sort_fallback(data_gen):
             # Add a computed column to avoid shuffle being optimized back to a CPU shuffle like in test_repartition_df
             lambda spark : gen_df(spark, data_gen).withColumn('x', lit(1)).repartition(13),
             'ShuffleExchangeExec')
-
 
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)

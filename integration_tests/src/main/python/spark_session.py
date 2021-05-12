@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime
 from pyspark.sql import SparkSession, DataFrame
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 
@@ -94,5 +94,6 @@ def with_gpu_session(func, conf={}):
     copy['spark.rapids.sql.decimalType.enabled'] = 'true'
     return with_spark_session(func, conf=copy)
 
+# databricks runtime 8.x and lower show 3.1.0 even though really 3.1.1
 def is_before_spark_311():
-    return spark_version() < "3.1.1"
+    return (is_databricks_runtime() and spark_version() < "3.1.0") or (not is_databricks_runtime() and spark_version() < "3.1.1")
