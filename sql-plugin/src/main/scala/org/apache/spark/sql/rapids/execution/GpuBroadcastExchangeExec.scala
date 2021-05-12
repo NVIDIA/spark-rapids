@@ -252,7 +252,7 @@ abstract class GpuBroadcastExchangeExecBase(
   override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   @transient
-  private lazy val promise = Promise[Broadcast[Any]]()
+  protected lazy val promise = Promise[Broadcast[Any]]()
 
   /**
    * For registering callbacks on `relationFuture`.
@@ -262,7 +262,7 @@ abstract class GpuBroadcastExchangeExecBase(
   lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
 
   @transient
-  private val timeout: Long = SQLConf.get.broadcastTimeout
+  protected val timeout: Long = SQLConf.get.broadcastTimeout
 
   val _runId: UUID = UUID.randomUUID()
 
@@ -302,10 +302,7 @@ abstract class GpuBroadcastExchangeExecBase(
             }
 
             val numRows = batch.numRows
-            if (numRows >= 512000000) {
-              throw new SparkException(
-                s"Cannot broadcast the table with 512 million or more rows: $numRows rows")
-            }
+            checkRowLimit(numRows)
             numOutputBatches += 1
             numOutputRows += numRows
 
@@ -339,12 +336,7 @@ abstract class GpuBroadcastExchangeExecBase(
             // SparkFatalException, which is a subclass of Exception. ThreadUtils.awaitResult
             // will catch this exception and re-throw the wrapped fatal throwable.
             case oe: OutOfMemoryError =>
-              val ex = new Exception(
-                new OutOfMemoryError("Not enough memory to build and broadcast the table to all " +
-                    "worker nodes. As a workaround, you can either disable broadcast by setting " +
-                    s"${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1 or increase the spark " +
-                    s"driver memory by setting ${SparkLauncher.DRIVER_MEMORY} to a higher value.")
-                    .initCause(oe.getCause))
+              val ex = createOutOfMemoryException(oe)
               promise.failure(ex)
               throw ex
             case e if !NonFatal(e) =>
@@ -361,6 +353,27 @@ abstract class GpuBroadcastExchangeExecBase(
       }
     }
     GpuBroadcastExchangeExec.executionContext.submit[Broadcast[Any]](task)
+  }
+
+  protected def createOutOfMemoryException(oe: OutOfMemoryError) = {
+    new Exception(
+      new OutOfMemoryError("Not enough memory to build and broadcast the table to all " +
+        "worker nodes. As a workaround, you can either disable broadcast by setting " +
+        s"${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1 or increase the spark " +
+        s"driver memory by setting ${SparkLauncher.DRIVER_MEMORY} to a higher value.")
+        .initCause(oe.getCause))
+  }
+
+  protected def checkRowLimit(numRows: Int) = {
+    // Spark restricts the size of broadcast relations to be less than 512000000 rows and we
+    // enforce the same limit
+    // scalastyle:off line.size.limit
+    // https://github.com/apache/spark/blob/v3.1.1/sql/core/src/main/scala/org/apache/spark/sql/execution/joins/HashedRelation.scala#L586
+    // scalastyle:on line.size.limit
+    if (numRows >= 512000000) {
+      throw new SparkException(
+        s"Cannot broadcast the table with 512 million or more rows: $numRows rows")
+    }
   }
 
   override protected def doPrepare(): Unit = {
