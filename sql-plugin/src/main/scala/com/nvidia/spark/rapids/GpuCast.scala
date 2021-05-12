@@ -529,8 +529,7 @@ case class GpuCast(
       spaceColumn: ColumnVector,
       leftColumn: ColumnVector,
       rightColumn: ColumnVector) = {
-      val columns = ArrayBuffer.empty[ColumnVector]
-      try {
+      withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
         // legacy: [firstCol
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
@@ -555,8 +554,6 @@ case class GpuCast(
         withResource(ColumnVector.stringConcatenate(emptyScalar, nullScalar, columns.toArray))(
           _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
         )
-      } finally {
-        columns.safeClose()
       }
     }
 
