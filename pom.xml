@@ -72,7 +72,8 @@
 
     <modules>
         <module>api_validation</module>
-        <module>dist</module>
+	<module>dist</module>
+	<module>event_log_profiling</module>
         <module>integration_tests</module>
         <module>shims</module>
         <module>shuffle-plugin</module>
