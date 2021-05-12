@@ -119,7 +119,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
-    GetArrayItemUtil.evalColumnar(lhs, ordinal, dataType, zeroIndexed = true)
+    GetArrayItemUtil.evalColumnar(lhs, ordinal, dataType, zeroIndexed = true, failOnError)
   }
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
@@ -207,12 +207,26 @@ case class GpuArrayContains(left: Expression, right: Expression)
 
 object GetArrayItemUtil {
   def evalColumnar(array: GpuColumnVector, ordinal: Scalar, dataType: DataType,
-                   zeroIndexed: Boolean): ColumnVector = {
+                   zeroIndexed: Boolean, failOnError: Boolean): ColumnVector = {
     // for array index use case, index starts at 0
     if (zeroIndexed) {
       // Need to handle negative indexes...
-      if (ordinal.isValid && ordinal.getInt >= 0) {
-        array.getBase.extractListElement(ordinal.getInt)
+      if (ordinal.isValid) {
+        withResource(array.getBase.countElements) { numElementsCV =>
+          withResource(numElementsCV.min) {
+            minScalar =>
+              val minNumElements = minScalar.getInt
+              if ( (ordinal.getInt < 0 || minNumElements < ordinal.getInt + 1) &&
+                numElementsCV.getRowCount != numElementsCV.getRowCount &&
+                failOnError) {
+                throw new ArrayIndexOutOfBoundsException(
+                  s"Invalid index: ${ordinal.getInt}, minimum numElements in this ColumnVector: " +
+                    s"$minNumElements")
+              } else {
+                array.getBase.extractListElement(ordinal.getInt)
+              }
+          }
+        }
       } else {
         withResource(Scalar.fromNull(
           GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>

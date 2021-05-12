@@ -102,7 +102,7 @@ case class GpuElementAt(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     lhs.dataType match {
       case _: ArrayType => {
-        GetArrayItemUtil.evalColumnar(lhs, rhs, dataType, zeroIndexed = false)
+        GetArrayItemUtil.evalColumnar(lhs, rhs, dataType, zeroIndexed = false, failOnError = false)
       }
       case _: MapType => {
         GetMapValueUtil.evalColumnar(lhs, rhs)
