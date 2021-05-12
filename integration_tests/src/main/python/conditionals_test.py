@@ -138,8 +138,8 @@ def test_ifnull(data_gen):
                 'ifnull({}, b)'.format(null_lit),
                 'ifnull(a, {})'.format(null_lit)))
 
-# Scalar of array type is not supported yet, so make it separate from the above one.
-# Supporting scalar of array type is tracked by
+# GpuLiteral does not support array type yet, so make the test separate from the above one.
+# Supporting GpuLiteral of array type is tracked by
 #     https://github.com/NVIDIA/spark-rapids/issues/1902
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 def test_case_when_array(data_gen):
