@@ -22,6 +22,7 @@ import java.time.DateTimeException
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -519,7 +520,7 @@ case class GpuCast(
     val separatorStr = if (legacyCastToString) "," else ", "
     val spaceStr = " "
     val numRows = input.getRowCount.toInt
-    val numInputColumns = input.getNumChildren()
+    val numInputColumns = input.getNumChildren
 
     def doCastStructToString(
       emptyScalar: Scalar,
@@ -551,30 +552,26 @@ case class GpuCast(
         }
 
         columns += rightColumn.incRefCount()
-        withResource(
-          ColumnVector.stringConcatenate(emptyScalar, nullScalar, columns.toArray)
-        ) { res =>
-          // null rows
-          res.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-        }
+        withResource(ColumnVector.stringConcatenate(emptyScalar, nullScalar, columns.toArray))(
+          _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+        )
       } finally {
-        columns.foreach(_.close())
+        columns.safeClose()
       }
     }
 
-    withResource(Array(
-      Scalar.fromString(emptyStr),
-      Scalar.fromString(nullStr),
-      Scalar.fromString(separatorStr),
-      Scalar.fromString(spaceStr),
-      Scalar.fromString(leftStr),
-      Scalar.fromString(rightStr)
-    )) { case Array(emptyScalar, nullScalar, columnScalars@_*) =>
-      withResource(columnScalars.map(s => ColumnVector.fromScalar(s, numRows)))(columns => {
-        val Seq(sepColumn, spaceColumn, leftColumn, rightColumn) = columns
-        doCastStructToString(emptyScalar, nullScalar,
-          sepColumn, spaceColumn, leftColumn, rightColumn)
-      })
+    withResource(
+      Seq(emptyStr, nullStr, separatorStr, spaceStr, leftStr, rightStr)
+        .safeMap(Scalar.fromString _)
+    ) { case Seq(emptyScalar, nullScalar, columnScalars@_*) =>
+
+      withResource(
+        columnScalars.safeMap(s => ColumnVector.fromScalar(s, numRows))
+      ) { case Seq(sepColumn, spaceColumn, leftColumn, rightColumn) =>
+
+        doCastStructToString(emptyScalar, nullScalar, sepColumn,
+          spaceColumn, leftColumn, rightColumn)
+      }
     }
   }
 
