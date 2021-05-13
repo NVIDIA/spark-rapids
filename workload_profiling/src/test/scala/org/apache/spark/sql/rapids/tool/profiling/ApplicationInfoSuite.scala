@@ -16,7 +16,9 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import org.apache.log4j.Level
 import org.scalatest.FunSuite
+
 import scala.collection.mutable.ArrayBuffer
 
 class ApplicationInfoSuite extends FunSuite {

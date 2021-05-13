@@ -20,23 +20,31 @@ import org.rogach.scallop.{ScallopConf, ScallopOption}
 class ProfileArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
 
   banner("""
-Spark event log profiling tool
+Spark profiling tool
 
 Example:
 
 # Input 1 or more event logs from local path:
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar /path/to/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain
+<Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar
+ /path/to/eventlog1 /path/to/eventlog2
 
 # If any event log is from S3:
 export AWS_ACCESS_KEY_ID=xxx
 export AWS_SECRET_ACCESS_KEY=xxx
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain
+<Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar
+s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
 # Generate query visualizations in DOT format:
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar -g /path/to/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain
+<Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar
+-g /path/to/eventlog1 /path/to/eventlog2
 
 # Change output directory to /tmp
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar -o /tmp /path/to/eventlog1
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain
+ <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar
+ -o /tmp /path/to/eventlog1
 
 For usage see below:
     """)

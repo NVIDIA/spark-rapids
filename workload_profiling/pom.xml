@@ -19,40 +19,33 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!--<parent>
+    <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
         <version>0.6.0-SNAPSHOT</version>
-    </parent>-->
+    </parent>
     <groupId>com.nvidia</groupId>
-    <artifactId>event_log_profiling_2.12</artifactId>
-    <name>RAPIDS Accelerator for Apache Spark Event Log Profiling</name>
-    <description>RAPIDS Accelerator for Apache Spark Event Log Profiling</description>
+    <artifactId>rapids-4-spark-tools</artifactId>
+    <name>RAPIDS Accelerator for Apache Spark Workload Profiling</name>
+    <description>RAPIDS Accelerator for Apache Spark Workload Profiling</description>
     <version>0.6.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <!--<properties>
+    <properties>
         <hadoop.version>3.1.1</hadoop.version>
-        <assembly.descriptor>src/assembly/assembly-no-scala.xml</assembly.descriptor>
+        <!--<assembly.descriptor>src/assembly/assembly-no-scala.xml</assembly.descriptor>-->
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark311.version}</spark.test.version>
-    </properties>-->
-    <properties>
-        <spark.version>3.1.1</spark.version>
-        <hadoop.version>3.1.1</hadoop.version>
-        <scala.version>2.12.8</scala.version>
-        <scala.binary.version>2.12</scala.binary.version>
-        <assembly.descriptor>src/assembly/assembly-no-scala.xml</assembly.descriptor>
     </properties>
 
-    <profiles>
+    <!--<profiles>
         <profile>
             <id>standalone</id>
             <properties>
                 <assembly.descriptor>src/assembly/assembly.xml</assembly.descriptor>
             </properties>
         </profile>
-    </profiles>
+    </profiles>-->
 
     <dependencies>
         <dependency>
@@ -112,8 +105,6 @@
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
                 <version>1.0</version>
-                <configuration>
-                </configuration>
                 <executions>
                     <execution>
                         <id>test</id>
@@ -125,25 +116,36 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>2.6</version>
-                <configuration>
-                    <descriptors>
-                        <descriptor>${assembly.descriptor}</descriptor>
-                    </descriptors>
-                    <archive>
-                        <manifest>
-                            <mainClass>org.apache.spark.sql.rapids.tool.profiling.ProfileMain</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.2.4</version>
                 <executions>
                     <execution>
-                        <id>assembly</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>single</goal>
+                            <goal>shade</goal>
                         </goals>
+                        <configuration>
+                            <artifactSet>
+                                <includes>
+                                    <include>org.rogach:scallop_${scala.binary.version}</include>
+                                </includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <mainClass>org.apache.spark.sql.rapids.tool.profiling.ProfileMain</mainClass>
+                            </transformer>
+                            </transformers>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

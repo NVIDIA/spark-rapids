@@ -1,14 +1,16 @@
-# Spark event log profiling tool
+# Spark profiling tool
 
 This is a profiling tool to parse and analyze Spark event logs. 
+It generates information which can be used for debugging and profiling. Information such as Spark version, executor information, Properties and so on.
+Works with both cpu and gpu generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## How to compile and use with Spark
 1. `mvn clean package`
-2. Copy event_log_profiling_2.12-0.6.0-SNAPSHOT.jar to $SPARK_HOME/jars/
+2. Copy rapids-4-spark-tools-<version>.jar to $SPARK_HOME/jars/
 
-`cp target/event_log_profiling_2.12-0.6.0-SNAPSHOT.jar $SPARK_HOME/jars/`
+`cp target/rapids-4-spark-tools-0.6.0-SNAPSHOT.jar $SPARK_HOME/jars/`
 
 3. Add below entries in $SPARK_HOME/conf/log4j.properties
 ```
@@ -31,30 +33,31 @@ org.apache.spark.sql.rapids.tool.profiling.ProfileMain.main(Array("/path/to/even
 ```
 
 ## How to compile and use from command-line
-1. `mvn clean package -Pstandalone`
-2. `java -jar target/event_log_profiling_2.12-0.6.0-SNAPSHOT-jar-with-dependencies.jar /path/to/eventlog1 /path/to/eventlog2`
+1. `mvn clean package`
+2. `cd $SPARK_HOME (Download Apache Spark if reequired)`
+3. `./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1`
 
 ## Options
 ```
-$ java -jar target/event_log_profiling_2.12-0.6.0-SNAPSHOT-jar-with-dependencies.jar --help
+$ ./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar --help
 
 Spark event log profiling tool
 
 Example:
 
 # Input 1 or more event logs from local path:
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar /path/to/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1 /path/to/eventlog2
 
 # If any event log is from S3:
 export AWS_ACCESS_KEY_ID=xxx
 export AWS_SECRET_ACCESS_KEY=xxx
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
 # Generate query visualizations in DOT format:
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar -g /path/to/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar -g /path/to/eventlog1 /path/to/eventlog2
 
 # Change output directory to /tmp
-java -jar event_log_profiling_2.12-<version>-jar-with-dependencies.jar -o /tmp /path/to/eventlog1
+./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar -o /tmp /path/to/eventlog1
 
 
 For usage see below:
@@ -74,18 +77,6 @@ For usage see below:
 - Print Application Information
 - Print Executors information
 - Print Rapids related parameters
-
-All the analysis and healthcheck functions are done using Spark-SQL.
-
-- SparkListenerLogStart
-- SparkListenerResourceProfileAdded
-- SparkListenerBlockManagerAdded
-- SparkListenerBlockManagerRemoved
-- SparkListenerEnvironmentUpdate
-- SparkListenerApplicationStart
-- SparkListenerApplicationEnd
-- SparkListenerExecutorAdded
-- SparkListenerExecutorRemoved
 
 **1. GPU run vs CPU run performance comparison or different runs with different parameters**
 
@@ -135,5 +126,3 @@ We can input multiple Spark event logs and this tool can compare enviroments, ex
 |spark.rapids.sql.variableFloatAgg.enabled  |null      |TRUE      |
 +-------------------------------------------+----------+----------+
 ```
-
-
