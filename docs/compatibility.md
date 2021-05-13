@@ -337,9 +337,9 @@ To disable byte-range windowing on the GPU, set
 
 We also provide configurations for other integral range types:
 
-- [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled),
-- [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled),
-- [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled).
+- [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled)
+- [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled)
 
 ## Parsing strings as dates or timestamps
 
