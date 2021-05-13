@@ -332,13 +332,14 @@ CPU: WrappedArray([0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0
 GPU: WrappedArray([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19])
 ```
 
-To disable this operation on the GPU, set
+To disable byte-range windowing on the GPU, set
 [`spark.rapids.sql.window.range.byte.enabled`](configs.md#sql.window.range.byte.enabled) to true.
 
-We also provide the similar configurations:
-[`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled),
-[`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled),
-[`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled).
+We also provide configurations for other integral range types:
+
+- [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled),
+- [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled),
+- [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled).
 
 ## Parsing strings as dates or timestamps
 
