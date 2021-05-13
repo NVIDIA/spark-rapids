@@ -282,9 +282,10 @@ from one run to another if the ordering is ambiguous on a window function too.
 
 ### Range Window
 
-When the order-by column of a range based window is numeric type like `byte/short/int/long` and the range boundary calculated for a value has overflow, CPU and GPU will get different results.
+When the order-by column of a range based window is numeric type like `byte/short/int/long` and
+the range boundary calculated for a value has overflow, CPU and GPU will get different results.
 
-For example, let's assume we have two columns, one partition-by column named `uid` and the other order-by column named `dollars`. And the dataset is as below.
+For example, consider the following dataset:
 
 ``` console
 +------+---------+
@@ -313,7 +314,7 @@ For example, let's assume we have two columns, one partition-by column named `ui
 +------+---------+
 ```
 
-After executing below SQL statement,
+After executing the SQL statement:
 
 ``` sql
 SELECT
@@ -321,15 +322,23 @@ SELECT
     (PARTITION BY id
     ORDER BY CAST (dollars AS Byte) ASC
     RANGE BETWEEN 127 PRECEDING AND 127 FOLLOWING)
-From table
+FROM table
 ```
 
-We can get below different results for both CPU and GPU.
+The results will differ between the CPU and GPU due to overflow handling.
 
 ``` console
 CPU: WrappedArray([0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0])
 GPU: WrappedArray([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19])
 ```
+
+To disable this operation on the GPU, set
+[`spark.rapids.sql.window.range.byte.enabled`](configs.md#sql.window.range.byte.enabled) to true.
+
+We also provide the similar configurations:
+[`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled),
+[`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled),
+[`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled).
 
 ## Parsing strings as dates or timestamps
 
