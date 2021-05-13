@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
 import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
 import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
+import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
@@ -127,7 +128,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
 
         // if the GPU cost including transition is more than the CPU cost then avoid this
         // transition and reset the GPU cost
-        if (operatorGpuCost + transitionCost > operatorCpuCost && !consumesQueryStage(plan)) {
+        if (operatorGpuCost + transitionCost > operatorCpuCost && !isExchangeOp(plan)) {
           // avoid transition and keep this operator on CPU
           optimizations.append(AvoidTransition(plan))
           plan.costPreventsRunningOnGpu()
@@ -146,7 +147,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
             val (childCpuCost, childGpuCost) = childCosts
             val transitionCost = transitionToCpuCost(conf, child)
             val childGpuTotal = childGpuCost + transitionCost
-            if (child.canThisBeReplaced && !consumesQueryStage(child)
+            if (child.canThisBeReplaced && !isExchangeOp(child)
                 && childGpuTotal > childCpuCost) {
               // force this child plan back onto CPU
               optimizations.append(ReplaceSection(
@@ -172,7 +173,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     if (totalGpuCost > totalCpuCost) {
       // we have reached a point where we have transitioned onto GPU for part of this
       // plan but with no benefit from doing so, so we want to undo this and go back to CPU
-      if (plan.canThisBeReplaced && !consumesQueryStage(plan)) {
+      if (plan.canThisBeReplaced && !isExchangeOp(plan)) {
         // this plan would have been on GPU so we move it and onto CPU and recurse down
         // until we reach a part of the plan that is already on CPU and then stop
         optimizations.append(ReplaceSection(plan, totalCpuCost, totalGpuCost))
@@ -182,7 +183,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
       }
     }
 
-    if (!plan.canThisBeReplaced || consumesQueryStage(plan)) {
+    if (!plan.canThisBeReplaced || isExchangeOp(plan)) {
       // reset the costs because this section of the plan was not moved to GPU
       totalGpuCost = totalCpuCost
     }
@@ -209,15 +210,18 @@ class CostBasedOptimizer extends Optimizer with Logging {
   }
 
   /**
-   * Determines whether the specified operator will read from a query stage.
+   * Determines whether the specified operator is an exchange, or will read from an
+   * exchange / query stage. CBO needs to avoid moving these operators back onto
+   * CPU because it could result in an invalid plan.
    */
-  private def consumesQueryStage(plan: SparkPlanMeta[_]): Boolean = {
+  private def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the
     // next operator on GPU in these cases
     SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
         case _: CustomShuffleReaderExec
              | _: ShuffledHashJoinExec
              | _: BroadcastHashJoinExec
+             | _: BroadcastExchangeExec
              | _: BroadcastNestedLoopJoinExec => true
         case _ => false
       })
