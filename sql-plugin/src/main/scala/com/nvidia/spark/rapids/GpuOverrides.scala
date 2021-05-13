@@ -1934,7 +1934,7 @@ object GpuOverrides {
       ExprChecks.fullAgg(
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
-          "input", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all))),
+          "input", _commonTypes + TypeSig.STRUCT.nested(_commonTypes), TypeSig.all))),
       (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (count.children.size > 1) {
@@ -2859,8 +2859,12 @@ object GpuOverrides {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP + TypeSig.ARRAY)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+            .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
