@@ -46,7 +46,7 @@ object GpuScalar extends Arm with Logging {
 
   // TODO Support interpreting the value to a Spark DataType
   def extract(v: Scalar): Any = {
-    if (v.isValid) {
+    if (v != null && v.isValid) {
       logDebug(s"Extracting data from the Scalar $v.")
       v.getType match {
         case DType.BOOL8 => v.getBoolean
@@ -277,6 +277,7 @@ class GpuScalar private(
       if (refCount == 0) {
         scalar.foreach(_.close())
         scalar = Some(null)
+        value = Some(null)
       } else if (refCount < 0) {
         throw new IllegalStateException(s"Close called too many times $this")
       }
