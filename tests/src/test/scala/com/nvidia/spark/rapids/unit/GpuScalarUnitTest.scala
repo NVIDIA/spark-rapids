@@ -49,4 +49,14 @@ class GpuScalarUnitTest extends GpuUnitTests {
       assert(!gs.getBase.isValid)
     }
   }
+
+  test("Test closed is invalid") {
+    val gsv = GpuScalar(1, IntegerType)
+    gsv.close()
+    assert(!gsv.isValid)
+
+    val gsc = GpuScalar(Scalar.fromInt(1), IntegerType)
+    gsc.close()
+    assert(!gsc.isValid)
+  }
 }

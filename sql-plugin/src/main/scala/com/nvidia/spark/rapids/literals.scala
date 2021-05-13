@@ -266,9 +266,9 @@ class GpuScalar private(
   def isNotNan: Boolean = !isNan
 
   /**
-    * Increment the reference count for this scalar. You need to call close on this
-    * to decrement the reference count again.
-    */
+   * Increment the reference count for this scalar. You need to call close on this
+   * to decrement the reference count again.
+   */
   def incRefCount: this.type = incRefCountInternal(false)
 
   override def close(): Unit = {
