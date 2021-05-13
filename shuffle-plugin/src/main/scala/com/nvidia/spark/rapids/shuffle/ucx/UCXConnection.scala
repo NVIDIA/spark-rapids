@@ -230,22 +230,22 @@ class UCXConnection(peerExecutorId: Int, val ucx: UCX) extends Connection with L
    * 2) then comes the type, which gets 4 bits
    * 3) the remaining 32 bits are used for buffer specific tags
    */
-  private val bufferMsgType:   Long = 0x0000000000000000BL
+  private final val bufferMsgType: Long = 0x0000000000000000BL
 
   // message type mask for UCX tags. The only message type using tags
   // is `bufferMsgType`
-  val msgTypeMask    = 0x000000000000000FL
+  private final val msgTypeMask: Long   = 0x000000000000000FL
 
   // UCX Active Message masks (we can use up to 5 bits for these ids)
-  val amRequestMask  = 0x0000000F
-  val amResponseMask = 0x0000001F
+  private final val amRequestMask: Int  = 0x0000000F
+  private final val amResponseMask: Int = 0x0000001F
 
   // We pick the 5th bit set to 1 as a "response" active message
-  val amResponseFlag = 0x00000010
+  private final val amResponseFlag: Int = 0x00000010
 
   // pick up the lower and upper parts of a long
-  val lowerBitsMask  = 0x00000000FFFFFFFFL
-  val upperBitsMask  = 0xFFFFFFFF00000000L
+  private final val lowerBitsMask: Long = 0x00000000FFFFFFFFL
+  private final val upperBitsMask: Long = 0xFFFFFFFF00000000L
 
   protected def composeBufferTag(peerClientId: Long, bufferTag: Long): Long = {
     // buffer tags are [peerClientId, 0, bufferTag]

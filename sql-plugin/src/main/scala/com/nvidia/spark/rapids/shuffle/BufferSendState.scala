@@ -62,18 +62,16 @@ class BufferSendState(
     override def size: Long = tableSize
   }
 
-  private[this] var bufferMetas: Array[BufferMeta] = null
-
   private[this] var isClosed = false
 
-  private[this] val blocksToSend: Seq[SendBlock] = {
+  private[this] val (bufferMetas: Array[BufferMeta], blocksToSend: Seq[SendBlock]) = {
     withResource(transaction.releaseMessage()) { msg =>
       val transferRequest = ShuffleMetadata.getTransferRequest(msg.getBuffer())
 
-      bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
+      val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
 
       val btr = new BufferTransferRequest() // for reuse
-      (0 until transferRequest.requestsLength()).map { ix =>
+      val blocksToSend = (0 until transferRequest.requestsLength()).map { ix =>
         val bufferTransferRequest = transferRequest.requests(btr, ix)
         withResource(requestHandler.acquireShuffleBuffer(
           bufferTransferRequest.bufferId())) { table =>
@@ -82,6 +80,8 @@ class BufferSendState(
             bufferTransferRequest.tag(), table.size)
         }
       }
+
+      (bufferMetas, blocksToSend)
     }
   }
 
