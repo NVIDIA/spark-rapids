@@ -46,7 +46,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
     val rows = batch.numRows()
 
-    withResource(ArrayBuffer[ColumnVector]()) { buffer =>
+    withResource(ArrayBuffer.empty[ColumnVector]) { buffer =>
       withResource(GpuScalar.from(null, StringType)) { nullScalar =>
         // build input buffer
         children.foreach { child =>
