@@ -386,7 +386,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
    *   are sent out.
    *
    *   - The Active Message header is used to pick the correct callback to call. In this case
-   *   there could be serveral expected responses, for a single response `activeMessageId`, so the
+   *   there could be several expected responses, for a single response `activeMessageId`, so the
    *   server echoes back our header so we can invoke the correct response callback.
    *
    *   - Each response received at the response activeMessageId, will be demuxed using the header:
@@ -549,7 +549,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         0L
       case _ =>
         throw new IllegalArgumentException(
-          s"${rapidsConf.shuffleUcxActiveMessagesMode} is an invalid Active Message mode. ")
+          s"${rapidsConf.shuffleUcxActiveMessagesMode} is an invalid Active Message mode. " +
+          s"Please ensure that ${RapidsConf.SHUFFLE_UCX_ACTIVE_MESSAGES_MODE.key} is set correctly")
     }
   }
 
