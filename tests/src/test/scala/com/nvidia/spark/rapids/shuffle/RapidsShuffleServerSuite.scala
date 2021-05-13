@@ -120,8 +120,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       }
       bounceBuffer
     }
-    assertResult(true)(bb.deviceBounceBuffer.isClosed)
-    assertResult(true)(transferRequest.isClosed)
+    assert(bb.deviceBounceBuffer.isClosed)
+    assert(transferRequest.isClosed)
     newMocks()
   }
 
@@ -157,8 +157,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       }
       bounceBuffer
     }
-    assertResult(true)(bb.deviceBounceBuffer.isClosed)
-    assertResult(true)(transferRequest.isClosed)
+    assert(bb.deviceBounceBuffer.isClosed)
+    assert(transferRequest.isClosed)
   }
 
   test("sending buffers larger than bounce buffer") {
@@ -187,7 +187,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       }
       bounceBuffer
     }
-    assertResult(true)(bb.deviceBounceBuffer.isClosed)
-    assertResult(true)(transferRequest.isClosed)
+    assert(bb.deviceBounceBuffer.isClosed)
+    assert(transferRequest.isClosed)
   }
 }

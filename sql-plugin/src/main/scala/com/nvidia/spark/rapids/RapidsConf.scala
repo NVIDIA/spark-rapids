@@ -908,6 +908,7 @@ object RapidsConf {
       "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
       "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
     .stringConf
+    .checkValues(Set("rndv", "eager", "auto"))
     .createWithDefault("rndv")
 
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")

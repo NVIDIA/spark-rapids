@@ -369,7 +369,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   var callbackCalled: Boolean = false
 
-  var activeMessageData: Option[RefCountedDirectByteBuffer] = None
+  private var activeMessageData: Option[RefCountedDirectByteBuffer] = None
 
   override def respond(response: ByteBuffer,
                        cb: TransactionCallback): Transaction = {

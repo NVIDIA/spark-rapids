@@ -99,7 +99,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       verifyTableMeta(expected, tm)
     }
 
-    assertResult(true)(response.isClosed)
+    assert(response.isClosed)
   }
 
   test("successful degenerate metadata fetch") {
@@ -150,7 +150,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       // the transport will receive no pending requests (for buffers) for queuing
       verify(mockTransport, times(0)).queuePending(any())
 
-      assertResult(true)(response.isClosed)
+      assert(response.isClosed)
 
       newMocks()
     }
@@ -177,7 +177,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     // the transport will receive no pending requests (for buffers) for queuing
     verify(mockTransport, times(0)).queuePending(any())
 
-    assertResult(true)(response.isClosed)
+    assert(response.isClosed)
 
     newMocks()
   }
@@ -257,7 +257,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         }
 
         // after closing, we should have freed our bounce buffers.
-        assertResult(true)(bounceBuffer.isClosed)
+        assert(bounceBuffer.isClosed)
       }
     }
   }
@@ -310,7 +310,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
 
       // after closing, we should have freed our bounce buffers.
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
   }
 
@@ -371,7 +371,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)
 
       // after closing, we should have freed our bounce buffers.
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
   }
 
@@ -433,7 +433,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)
 
       // after closing, we should have freed our bounce buffers.
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
   }
 
@@ -471,7 +471,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         verify(mockConnection, times(1)).request(any(), any(), any())
 
         // ensure we closed the BufferReceiveState => releasing the bounce buffers
-        assertResult(true)(bounceBuffer.isClosed)
+        assert(bounceBuffer.isClosed)
       }
 
       newMocks()
@@ -509,7 +509,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       verify(mockConnection, times(1)).request(any(), any(), any())
 
       // ensure we closed the BufferReceiveState => releasing the bounce buffers
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
 
     newMocks()
@@ -532,8 +532,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       mockTable: TableMeta,
       consumed: ConsumedBatchFromBounceBuffer): Unit = {
     assertResult(mockTable.bufferMeta().size())(consumed.contigBuffer.getLength)
-    assertResult(true)(
-      areBuffersEqual(source, consumed.contigBuffer))
+    assert(areBuffersEqual(source, consumed.contigBuffer))
   }
 
   class MockBlock(val hmb: HostMemoryBuffer) extends BlockWithSize {

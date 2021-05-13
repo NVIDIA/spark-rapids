@@ -390,7 +390,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               }
             })
       }
-      }
+    }
   }
 
   override def close(): Unit = {
