@@ -114,6 +114,14 @@ else
           $RUN_TEST_PARAMS
           "$@")
 
+    NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
+    MB_PER_EXEC=${MB_PER_EXEC:-1024}
+    CORES_PER_EXEC=${CORES_PER_EXEC:-1}
+
+    if ((NUM_LOCAL_EXECS > 0)); then
+      export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
+    fi
+
     export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
     export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
