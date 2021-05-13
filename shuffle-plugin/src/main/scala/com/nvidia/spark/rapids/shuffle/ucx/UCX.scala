@@ -28,7 +28,7 @@ import scala.util.Random
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{Arm, GpuDeviceManager, RapidsConf}
-import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, ClientConnection, MemoryRegistrationCallback, , TransportUtils}
+import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, ClientConnection, MemoryRegistrationCallback, TransportUtils}
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
 import org.openucx.jucx.ucs.UcsConstants
@@ -553,7 +553,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId,
     onWorkerThreadAsync(() => {
       val ep = endpoints.get(endpointId)
       if (ep == null) {
-        throw new IllegalStateException(s"Trying to send a message to an endpoint that doesn't exist ${endpointId}")
+        throw new IllegalStateException(
+          s"Trying to send a message to an endpoint that doesn't exist ${endpointId}")
       }
       logDebug(s"Sending $am msg of size $dataSize")
 

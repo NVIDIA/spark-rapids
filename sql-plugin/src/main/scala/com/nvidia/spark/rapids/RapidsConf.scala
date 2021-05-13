@@ -904,8 +904,9 @@ object RapidsConf {
       .createWithDefault(1024 * 1024 * 1024)
 
   val SHUFFLE_UCX_ACTIVE_MESSAGES_MODE = conf("spark.rapids.shuffle.ucx.activeMessages.mode")
-    .doc("UCX Active Messages can be RNDV, EAGER, or automatic. We set RNDV by default " +
-      "because version 1.10.x of UCX does not well with EAGER modes (or automatic).")
+    .doc("Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to " +
+      "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
+      "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
     .stringConf
     .createWithDefault("rndv")
 
