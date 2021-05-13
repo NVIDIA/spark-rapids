@@ -41,12 +41,116 @@ object LiteralHelper {
     case u: UTF8String => Literal(u, StringType)
     case allOthers => Literal(allOthers)
   }
+
+  /**
+   * Resolves a cudf `HostColumnVector.DataType` from a Spark `DataType`.
+   * The returned type will be used by the `ColumnVector.fromXXX` family.
+   */
+  private[rapids] def resolveElementType(dt: DataType): HostColumnVector.DataType = dt match {
+    case ArrayType(elementType, _) =>
+      new HostColumnVector.ListType(true, resolveElementType(elementType))
+    case StructType(fields) =>
+      new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
+    case other =>
+      new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
+  }
+
+  /**
+   * The "convertXXXTo" functions are used to convert the data from Catalyst type
+   * to the Java type required by the `ColumnVector.fromXXX` family.
+   *
+   * The data received from the CPU `Literal` has been converted to Catalyst type already.
+   * The mapping from DataType to Catalyst data type can be found in the function
+   * 'validateLiteralValue' in Spark.
+   */
+  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = dec match {
+    case d if d.precision > dt.precision =>
+      throw new IllegalArgumentException(s"Decimal $d exceeds precision constraint of $dt")
+    case null => null
+    case _ if DecimalType.is32BitDecimalType(dt) => Left(dec.toUnscaledLong.toInt)
+    case _ => Right(dec.toUnscaledLong)
+  }
+
+  /** Converts an element for nested lists */
+  private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
+    // StructData does not support utf8 string yet, so parses it here instead of calling the
+    //  `convertUTF8StringTo`. Tracked by https://github.com/rapidsai/cudf/issues/8137
+    case StringType => element.asInstanceOf[UTF8String] match {
+      case null => null
+      case s => s.toString
+    }
+    case dt: DecimalType => convertDecimalTo(element.asInstanceOf[Decimal], dt) match {
+      case Left(i) => i
+      case Right(l) => l
+    }
+    case ArrayType(eType, _) => element.asInstanceOf[ArrayData] match {
+      case null => null
+      case ar => ar.array.map(convertElementTo(_, eType)).toList.asJava
+    }
+    case StructType(fields) => element.asInstanceOf[InternalRow] match {
+      case null => null
+      case row =>
+        val data = fields.zipWithIndex.map { case (f, id) =>
+          convertElementTo(row.get(id, f.dataType), f.dataType)
+        }
+        new HostColumnVector.StructData(data.asInstanceOf[Array[Object]]: _*)
+    }
+    case _ => element
+  }
+
+  /**
+   * Creates a cudf ColumnVector from the literal values in `seq`.
+   *
+   * @param seq the sequence of the literal values.
+   * @param elementType the data type of each value in the `seq`
+   * @return a cudf ColumnVector, its length is equal to the size of the `seq`.
+   */
+  def columnVectorFromLiterals(seq: Seq[Any], elementType: DataType): ColumnVector = {
+    elementType match {
+      // Uses the boxed version for primitive types to keep the nulls.
+      case ByteType => ColumnVector.fromBoxedBytes(seq.asInstanceOf[Seq[JByte]]: _*)
+      case LongType => ColumnVector.fromBoxedLongs(seq.asInstanceOf[Seq[JLong]]: _*)
+      case ShortType => ColumnVector.fromBoxedShorts(seq.asInstanceOf[Seq[JShort]]: _*)
+      case FloatType => ColumnVector.fromBoxedFloats(seq.asInstanceOf[Seq[JFloat]]: _*)
+      case DoubleType => ColumnVector.fromBoxedDoubles(seq.asInstanceOf[Seq[JDouble]]: _*)
+      case IntegerType => ColumnVector.fromBoxedInts(seq.asInstanceOf[Seq[Integer]]: _*)
+      case BooleanType => ColumnVector.fromBoxedBooleans(seq.asInstanceOf[Seq[JBoolean]]: _*)
+      case DateType => ColumnVector.timestampDaysFromBoxedInts(seq.asInstanceOf[Seq[Integer]]: _*)
+      case TimestampType =>
+        ColumnVector.timestampMicroSecondsFromBoxedLongs(seq.asInstanceOf[Seq[JLong]]: _*)
+      case StringType =>
+        // To be updated. https://github.com/rapidsai/cudf/issues/8137
+        ColumnVector.build(DType.STRING, seq.length, b => {
+          seq.asInstanceOf[Seq[UTF8String]].foreach {
+            case null => b.appendNull()
+            case s => b.appendUTF8String(s.getBytes)
+          }
+        })
+      case dt: DecimalType =>
+        val decs = seq.asInstanceOf[Seq[Decimal]]
+        if (DecimalType.is32BitDecimalType(dt)) {
+          val rows = decs.map(convertDecimalTo(_, dt).left.get)
+          ColumnVector.decimalFromBoxedInts(-dt.scale, rows: _*)
+        } else {
+          val rows = decs.map(convertDecimalTo(_, dt).right.get)
+          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows: _*)
+        }
+      case ArrayType(_, _) =>
+        val colType = resolveElementType(elementType)
+        val rows = seq.map(convertElementTo(_, elementType))
+        ColumnVector.fromLists(colType, rows.asInstanceOf[Seq[JList[_]]]: _*)
+      case StructType(_) =>
+        val colType = resolveElementType(elementType)
+        val rows = seq.map(convertElementTo(_, elementType))
+        ColumnVector.fromStructs(colType, rows.asInstanceOf[Seq[HostColumnVector.StructData]]: _*)
+      case u =>
+        throw new IllegalStateException(s"Unsupported element type ($u) to create a ColumnVector.")
+    }
+  }
 }
 
 object GpuScalar extends Arm {
 
-  @deprecated("This will be removed. Since no need to infer the type again because" +
-    " Spark does it already. Besides it is difficult to support nested type.", "")
   def scalaTypeToDType(v: Any): DType = {
     v match {
       case _: Long => DType.INT64
@@ -63,11 +167,6 @@ object GpuScalar extends Arm {
   }
 
   def extract(v: Scalar): Any = v.getType match {
-    // We are not going to support list type for this 'extract', which is used for
-    // Scalar unit tests only now.
-    // It is not a good idea pulling data out of GPU unless there is no other ways to go.
-    // And all the GPU expressions/operators should take care of the result of an expression,
-    // it can be a Scalar or ColumnVector or Any.
     case DType.BOOL8 => v.getBoolean
     case DType.FLOAT32 => v.getFloat
     case DType.FLOAT64 => v.getDouble
@@ -92,79 +191,6 @@ object GpuScalar extends Arm {
   }
 
   /**
-   * Resolves a cudf `HostColumnVector.DataType` from a Spark `DataType`.
-   * The returned type will be used by the `ColumnVector.fromXXX` family.
-   */
-  private def resolveElementType(dt: DataType): HostColumnVector.DataType = dt match {
-    case ArrayType(elementType, _) =>
-      new HostColumnVector.ListType(true, resolveElementType(elementType))
-    case StructType(fields) =>
-      new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
-    case other =>
-      new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
-  }
-
-  /** Casts each element in `data` array to type T */
-  private def castTo[T](data: Array[Any]): Seq[T] = data.map(_.asInstanceOf[T])
-
-  /** Casts each element in `data` array to type T, and applies 'f' on the casted element */
-  private def castTo[T, R](data: Array[Any])(f: T => R): Seq[R] =
-    data.map(e => f(e.asInstanceOf[T]))
-
-  /** Applies 'f' on each element in `data` array, and casts the result to type T */
-  private def castTo[T](f: Any => Any)(data: Array[Any]): Seq[T] =
-    data.map(e => f(e).asInstanceOf[T])
-
-  /**
-   * The "convertXXXTo" functions are used to convert the array data from catalyst type
-   * to the Java type required by the `ColumnVector.fromXXX` family.
-   *
-   * The data received from the CPU `Literal` has been converted to catalyst type already.
-   * The mapping from DataType to catalyst data type can be found in the function
-   * 'validateLiteralValue' in Spark.
-   */
-  private def convertUTF8StringTo(us: UTF8String): Array[Byte] = us match {
-    case null => null
-    case s => s.asInstanceOf[UTF8String].getBytes
-  }
-
-  private def convertDecimalTo(dec: Decimal, dt: DecimalType): JLong = dec match {
-    case null => null
-    case d if d.precision > dt.precision =>
-      throw new IllegalArgumentException(s"Decimal $d exceeds precision constraint of $dt")
-    case _ => dec.toUnscaledLong
-  }
-
-  /** Converts an element for nested lists */
-  private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
-    // StructData does not support utf8 string yet, so parses it here instead of calling the
-    //  `convertUTF8StringTo`. Tracked by https://github.com/rapidsai/cudf/issues/8137
-    case StringType => element.asInstanceOf[UTF8String] match {
-      case null => null
-      case s => s.toString
-    }
-    case dt: DecimalType =>
-      if (DecimalType.is32BitDecimalType(dt)) {
-        convertDecimalTo(element.asInstanceOf[Decimal], dt).intValue()
-      } else {
-        convertDecimalTo(element.asInstanceOf[Decimal], dt)
-      }
-    case ArrayType(eType, _) => element.asInstanceOf[ArrayData] match {
-      case null => null
-      case ar => ar.array.map(convertElementTo(_, eType)).toList.asJava
-    }
-    case StructType(fields) => element.asInstanceOf[InternalRow] match {
-      case null => null
-      case row =>
-        val data = fields.zipWithIndex.map { case (f, id) =>
-          convertElementTo(row.get(id, f.dataType), f.dataType)
-        }
-        new HostColumnVector.StructData(data.asInstanceOf[Array[Object]]: _*)
-    }
-    case _ => element
-  }
-
-  /**
    * Creates a cudf Scalar from a ArrayData.
    *
    * It does not handle null because null is filtered out in 'from'.
@@ -172,64 +198,15 @@ object GpuScalar extends Arm {
    * NOTE: This is done by leveraging the `ColumnVector.fromXXX` API family. These APIs are
    * designed for test only according to its doc, but it is ok to use here, since the size
    * of the literal values will not be large in most cases.
-   *
-   * @param data the data to build the Scalar. Should not be null.
-   * @param elementType the element type
-   * @return a cudf Scalar contains the array data.
    */
   private def createScalarFromArray(data: ArrayData, elementType: DataType): Scalar = {
-    val array = data.array
-    val listView = elementType match {
-      // Uses the boxed version for primitive types to keep the nulls.
-      case ByteType => ColumnVector.fromBoxedBytes(castTo[JByte](array): _*)
-      case DateType => ColumnVector.timestampDaysFromBoxedInts(castTo[Integer](array): _*)
-      case LongType => ColumnVector.fromBoxedLongs(castTo[JLong](array): _*)
-      case ShortType => ColumnVector.fromBoxedShorts(castTo[JShort](array): _*)
-      case FloatType => ColumnVector.fromBoxedFloats(castTo[JFloat](array): _*)
-      case DoubleType => ColumnVector.fromBoxedDoubles(castTo[JDouble](array): _*)
-      case IntegerType => ColumnVector.fromBoxedInts(castTo[Integer](array): _*)
-      case BooleanType => ColumnVector.fromBoxedBooleans(castTo[JBoolean](array): _*)
-      case TimestampType =>
-        ColumnVector.timestampMicroSecondsFromBoxedLongs(castTo[JLong](array): _*)
-      case StringType =>
-        // To be updated. https://github.com/rapidsai/cudf/issues/8137
-        val rows = castTo[UTF8String, Array[Byte]](array)(convertUTF8StringTo(_))
-        ColumnVector.build(DType.STRING, rows.length, b => {
-          rows.foreach {
-            case null => b.appendNull()
-            case s => b.appendUTF8String(s.asInstanceOf[Array[Byte]])
-          }
-        })
-      case dt: DecimalType =>
-        if (DecimalType.is32BitDecimalType(dt)) {
-          val rows = castTo[Decimal, Integer](array)(convertDecimalTo(_, dt).intValue())
-          ColumnVector.decimalFromBoxedInts(-dt.scale, rows: _*)
-        } else {
-          val rows = castTo[Decimal, JLong](array)(convertDecimalTo(_, dt))
-          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows: _*)
-        }
-      case ArrayType(_, _) =>
-        val colType = resolveElementType(elementType)
-        val rows = castTo[JList[_]](convertElementTo(_, elementType))(array)
-        ColumnVector.fromLists(colType, rows: _*)
-      case StructType(_) =>
-        val colType = resolveElementType(elementType)
-        val rows = castTo[HostColumnVector.StructData](convertElementTo(_, elementType))(array)
-        ColumnVector.fromStructs(colType, rows: _*)
-      case u =>
-        throw new IllegalStateException(s"Unsupported element type ($u) for the list scalar.")
-    }
-
-    withResource(listView) { list =>
-      Scalar.listFromColumnView(list);
+    withResource(LiteralHelper.columnVectorFromLiterals(data.array, elementType)) { list =>
+      Scalar.listFromColumnView(list)
     }
   }
 
-  @deprecated("This will be removed. Since no need to infer the type again because" +
-    " Spark does it already. Besides it is difficult to support nested type.", "")
   def from(v: Any): Scalar = v match {
     case _ if v == null => Scalar.fromNull(scalaTypeToDType(v))
-    case s: Scalar => s.incRefCount()
     case l: Long => Scalar.fromLong(l)
     case d: Double => Scalar.fromDouble(d)
     case i: Int => Scalar.fromInt(i)
@@ -248,8 +225,6 @@ object GpuScalar extends Arm {
     case dec: BigDecimal =>
       Scalar.fromDecimal(-dec.scale, dec.bigDecimal.unscaledValue().longValueExact())
     case _: ArrayData =>
-      // Not sure why there are two independent `from`s. A little confused that why this one
-      // is needed since Spark has already inferred the DataType for the literal value.
       throw new IllegalStateException("Please calls 'from(Any, DataType)' instead to" +
         " create a Scalar of array type.")
     case _ =>
@@ -257,7 +232,12 @@ object GpuScalar extends Arm {
   }
 
   def from(v: Any, t: DataType): Scalar = v match {
-    case _ if v == null => Scalar.fromNull(GpuColumnVector.toRapidsType(t))
+    case null => t match {
+      case ArrayType(elementType, _) =>
+        Scalar.listFromNull(LiteralHelper.resolveElementType(elementType))
+      case _ =>
+        Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(t))
+    }
     case s: Scalar => s.incRefCount()
     case _ if t.isInstanceOf[DecimalType] =>
       var bigDec = v match {

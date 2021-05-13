@@ -482,20 +482,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
-   * Converts the Spark DataType to Rapids DType. It will cover the nested types, which are
-   * being supported more and more.
-   */
-  public static DType toRapidsType(DataType type) {
-    if (type instanceof ArrayType) {
-      return DType.LIST;
-    } else if (type instanceof StructType) {
-      return DType.STRUCT;
-    } else {
-      return getNonNestedRapidsType(type);
-    }
-  }
-
-  /**
    * Create an empty batch from the given format.  This should be used very sparingly because
    * returning an empty batch from an operator is almost always the wrong thing to do.
    */

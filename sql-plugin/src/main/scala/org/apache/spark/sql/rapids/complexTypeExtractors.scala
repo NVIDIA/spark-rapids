@@ -51,10 +51,6 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
           withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
             GpuColumnVector.from(view.copyToColumnVector(), dt)
           }
-        case scalar: Scalar if scalar != null =>
-          withResource(scalar) { s =>
-            GpuColumnVector.from(s, batch.numRows(), dt)
-          }
         case null => null
         case ir: InternalRow =>
           // Literal struct values are not currently supported, but just in case...

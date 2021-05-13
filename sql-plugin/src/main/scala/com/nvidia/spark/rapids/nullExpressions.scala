@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,11 +79,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
                 runningScalar = null
               }
 
-              runningScalar = other match {
-                case s: Scalar => s
-                case _ => GpuScalar.from(other, expr.dataType)
-              }
-
+              runningScalar = GpuScalar.from(other, expr.dataType)
             }
         }
       })
@@ -91,8 +87,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
       if (runningResult != null) {
         GpuColumnVector.from(runningResult.incRefCount(), dataType)
       } else if (runningScalar != null) {
-        // Returns the Scalar directly instead of pulling data out of GPU.
-        runningScalar.incRefCount()
+        GpuScalar.extract(runningScalar)
       } else {
         null
       }
