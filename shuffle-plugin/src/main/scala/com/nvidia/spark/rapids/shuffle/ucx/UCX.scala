@@ -43,8 +43,13 @@ case class WorkerAddress(address: ByteBuffer)
 case class Rkeys(rkeys: Seq[ByteBuffer])
 
 /**
- * A simple wrapper specifically for an Active Message Id and a small (Long) header
- * we are using per message.
+ * A simple wrapper for an Active Message Id and a header. This pair
+ * is used together when dealing with Active Messages, with `activeMessageId`
+ * being a fire-and-forget registration with UCX, and `header` being a dynamic long
+ * we continue to update (it contains the local executor id, and the transaction id).
+ *
+ * This allows us to send a request (with a header that the response handler knows about),
+ * and for the request handler to echo back that header when it's done.
  */
 case class UCXActiveMessage(activeMessageId: Int, header: Long) {
   override def toString: String =
@@ -135,6 +140,11 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   // when this flag is set to true, an async call to `register` hasn't completed in
   // the worker thread. We need this to complete prior to getting the `rkeys`.
   private var pendingRegistration = false
+
+  // There will be 1 entry in this map per UCX-registered Active Message. Presently
+  // that means: 2 request active messages (Metadata and Transfer Request), and 2
+  // response active messages (Metadata and Transfer response).
+  private val amRegistrations = new ConcurrentHashMap[Int, ActiveMessageRegistration]()
 
   // Error handler that would be invoked on endpoint failure.
   private val epErrorHandler = new UcpEndpointErrorHandler {
@@ -382,7 +392,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
    *   - Each response received at the response activeMessageId, will be demuxed using the header:
    *   responseActiveMessageId1 -> [callbackForHeader1, callbackForHeader2, ..., callbackForHeaderN]
    */
-  private class ActiveMessageRegistration(activeMessageId: Int) {
+  private class ActiveMessageRegistration(val activeMessageId: Int) {
     private var requestCallbackGen: () => UCXAmCallback = null
     private val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
 
@@ -409,8 +419,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     }
   }
 
-  private val amRegistrations = new ConcurrentHashMap[Int, ActiveMessageRegistration]()
-
   /**
    * Register a response handler (clients will use this)
    *
@@ -427,7 +435,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     val reg = amRegistrations.computeIfAbsent(activeMessageId,
       _ => {
         val reg = new ActiveMessageRegistration(activeMessageId)
-        registerActiveMessage(activeMessageId, reg)
+        registerActiveMessage(reg)
         reg
       })
     reg.addResponseActiveMessageHandler(header, responseCallback)
@@ -449,14 +457,14 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       _ => {
         val reg = new ActiveMessageRegistration(activeMessageId)
         reg.setRequestActiveMessageHandler(requestCallbackGen)
-        registerActiveMessage(activeMessageId, reg)
+        registerActiveMessage(reg)
         reg
       })
   }
 
-  private def registerActiveMessage(activeMessageId: Int, reg: ActiveMessageRegistration): Unit = {
+  private def registerActiveMessage(reg: ActiveMessageRegistration): Unit = {
     onWorkerThreadAsync(() => {
-      worker.setAmRecvHandler(activeMessageId,
+      worker.setAmRecvHandler(reg.activeMessageId,
         (headerAddr, headerSize, amData: UcpAmData, _) => {
           if (headerSize != 8) {
             // this is a coding error, so I am just blowing up. It should never happen.
@@ -464,7 +472,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
               s"Received message with wrong header size $headerSize")
           } else {
             val header = UcxUtils.getByteBufferView(headerAddr, headerSize).getLong
-            val am = UCXActiveMessage(activeMessageId, header)
+            val am = UCXActiveMessage(reg.activeMessageId, header)
 
             logDebug(s"Active Message received: $am")
 
@@ -501,7 +509,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
                         if (ucsStatus == UCX.UCS_ERR_CANCELED) {
                           logWarning(
                             s"Cancelled Active Message " +
-                              s"${TransportUtils.toHex(activeMessageId)}" +
+                              s"${TransportUtils.toHex(reg.activeMessageId)}" +
                               s" status=$ucsStatus, msg=$errorMsg")
                           cb.onCancel(am)
                         } else {
@@ -529,12 +537,12 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   // If we are not forcing RNDV (i.e. we are in auto or eager) other handling
   // can happen when we receive an Active Message message (it can contain
   // inline data that must be copied out in the callback).
-  private def notForcingAmRndv: Boolean = {
+  private lazy val notForcingAmRndv: Boolean = {
     !rapidsConf.shuffleUcxActiveMessagesMode
       .equalsIgnoreCase("rndv")
   }
 
-  private def activeMessageMode: Long = {
+  private lazy val activeMessageMode: Long = {
     rapidsConf.shuffleUcxActiveMessagesMode match {
       case "eager" =>
         UcpConstants.UCP_AM_SEND_FLAG_EAGER
@@ -542,6 +550,9 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         UcpConstants.UCP_AM_SEND_FLAG_RNDV
       case "auto" =>
         0L
+      case _ =>
+        throw new IllegalArgumentException(
+          s"${rapidsConf.shuffleUcxActiveMessagesMode} is an invalid Active Message mode. ")
     }
   }
 
@@ -832,7 +843,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   override def close(): Unit = {
     onWorkerThreadAsync(() => {
       amRegistrations.forEach { (activeMessageId, _) =>
-        logInfo(s"Removing Active Message registration for " +
+        logDebug(s"Removing Active Message registration for " +
           s"${TransportUtils.toHex(activeMessageId)}")
         worker.removeAmRecvHandler(activeMessageId)
       }
