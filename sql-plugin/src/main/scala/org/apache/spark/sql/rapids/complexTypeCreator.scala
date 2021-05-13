@@ -20,6 +20,7 @@ import ai.rapids.cudf.{ColumnVector, DType}
 
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FUNC_ALIAS
 import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, NamedExpression}
@@ -29,8 +30,25 @@ import org.apache.spark.sql.types.{ArrayType, DataType, Metadata, NullType, Stri
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean,
-    /* use refer type for children whose type can't be determined */
     referType: Option[DataType] = None) extends GpuExpression {
+  /**
+   * For the case array(array(1), array()
+   * it will be converted to
+   *
+   *   GpuCreateArray
+   *       |--children(0):  GpuCreateArray
+   *                 |-- GpuLiteral(value = 1, dataType=IntegerType).
+   *       |--children(1):  GpuCreateArray no children
+   * the dataType of child(0) will be ArrayType(IntegerType) and
+   * the dataType of child(1) will be ArrayType(NullType) or ArrayType(StringType) that depends on
+   *      LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE
+   *
+   * Later in somewhere, GpuCreateArray will be resolved and call checkInputDataTypes which
+   * requires all the children should have the same data type. If no, the GpuCreateArray will
+   * become un-resolved and cause some issues.
+   *
+   * So add a refer type for array() case, Let it be the same type with other arrays like array(1)
+   */
 
   def this(children: Seq[Expression]) = {
     this(children, SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
@@ -47,7 +65,7 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
   private val defaultElementType: DataType = {
     referType match {
       case Some(NullType) | None =>
-        // if the refer type is NullType which should be inferred by Spark
+        // If the refer type itself is NullType which should be set by Spark
         // and we need to check if need to change it accordingly
         if (useStringTypeWhenEmpty) {
           StringType

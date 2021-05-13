@@ -2369,9 +2369,8 @@ object GpuOverrides {
                 TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP),
           TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
-        override def convertToGpu(): GpuExpression = {
+        override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
-        }
       }),
     expr[StringLocate](
       "Substring search operator",
