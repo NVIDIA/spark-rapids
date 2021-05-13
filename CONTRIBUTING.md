@@ -152,13 +152,14 @@ Please visit the [testing doc](tests/README.md) for details about how to run tes
 
 
 ### Pre-commit hooks
-We provide a basic config `.pre-commit-config.yaml` for [pre-commit](https://pre-commit.com/) to automate some aspects of the development process. As a convenience you can enable automatic copyright year updates by following the installation instructions on the pre-commit homepage, and setting the envrionment variable:
-
+We provide a basic config `.pre-commit-config.yaml` for [pre-commit](https://pre-commit.com/) to
+automate some aspects of the development process. As a convenience you can enable automatic 
+copyright year updates by following the installation instructions on the
+[pre-commit homepage](https://pre-commit.com/), and setting the environment variable:
 ```bash
 export SPARK_RAPIDS_AUTO_COPYRIGHTER=ON
 ```
-
-The default value of `SPARK_RAPIDS_AUTO_COPYRIGHTER` is OFF
+The default value of `SPARK_RAPIDS_AUTO_COPYRIGHTER` is `OFF`.
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md
