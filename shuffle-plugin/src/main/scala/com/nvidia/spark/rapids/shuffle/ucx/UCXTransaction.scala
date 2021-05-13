@@ -448,6 +448,6 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   override def peerExecutorId(): Long =
-    conn.extractExecutorId(getHeader)
+    UCXConnection.extractExecutorId(getHeader)
 }
 

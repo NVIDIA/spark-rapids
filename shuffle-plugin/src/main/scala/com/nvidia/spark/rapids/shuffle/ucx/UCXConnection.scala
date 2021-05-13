@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.shuffle.{RequestType, _}
+import com.nvidia.spark.rapids.shuffle._
 import org.openucx.jucx.UcxCallback
 import org.openucx.jucx.ucp.UcpRequest
 
@@ -61,7 +61,7 @@ private[ucx] abstract class UCXAmCallback {
 }
 
 class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
-  extends UCXConnection(ucx) with ServerConnection {
+  extends UCXConnection(ucx) with ServerConnection with Logging {
   override def startManagementPort(host: String): Int = {
     ucx.startManagementPort(host)
   }
@@ -73,7 +73,8 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
   override def registerRequestHandler(
       requestType: RequestType.Value, cb: TransactionCallback): Unit = {
 
-    ucx.registerRequestHandler(composeRequestAmId(requestType), () => new UCXAmCallback {
+    ucx.registerRequestHandler(
+        UCXConnection.composeRequestAmId(requestType), () => new UCXAmCallback {
       private val tx = createTransaction
 
       tx.start(UCXTransactionType.Request, 1, cb)
@@ -114,7 +115,8 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
     logDebug(s"Responding to ${peerExecutorId} at ${TransportUtils.toHex(header)} " +
       s"with ${response}")
 
-    val responseAm = UCXActiveMessage(composeResponseAmId(messageType), header)
+    val responseAm = UCXActiveMessage(
+      UCXConnection.composeResponseAmId(messageType), header)
 
     ucx.sendActiveMessage(peerExecutorId, responseAm,
       TransportUtils.getAddress(response), response.remaining(),
@@ -146,7 +148,8 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
 
   logInfo(s"UCX Client $this started")
 
-  override def assignBufferTag(msgId: Int): Long = composeBufferTag(peerClientId, msgId)
+  override def assignBufferTag(msgId: Int): Long =
+    UCXConnection.composeBufferTag(peerClientId, msgId)
 
   override def getPeerExecutorId: Long = peerExecutorId
 
@@ -158,7 +161,7 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
 
     // this header is unique, so we can send it with the request
     // expecting it to be echoed back in the response
-    val requestHeader = composeRequestHeader(ucx.getExecutorId.toLong, tx.txId)
+    val requestHeader = UCXConnection.composeRequestHeader(ucx.getExecutorId.toLong, tx.txId)
 
     // This is the response active message handler, when the response shows up
     // we'll create a transaction, and set header/message and complete it.
@@ -188,10 +191,11 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
     // is expected to come back with the response, and is used to find the
     // correct callback (this is an implementation detail in UCX.scala)
     ucx.registerResponseHandler(
-      composeRequestAmId(requestType), requestHeader, amCallback)
+      UCXConnection.composeRequestAmId(requestType), requestHeader, amCallback)
 
     // kick-off the request
-    val requestAm = UCXActiveMessage(composeRequestAmId(requestType), requestHeader)
+    val requestAm = UCXActiveMessage(
+      UCXConnection.composeRequestAmId(requestType), requestHeader)
 
     logDebug(s"Performing a ${requestType} request of size ${request.remaining()} " +
       s"with tx ${tx}. Active messages: request $requestAm")
@@ -216,81 +220,6 @@ class UCXConnection(peerExecutorId: Int, val ucx: UCX) extends Connection with L
   def this(ucx: UCX) = this(-1, ucx)
 
   private[this] val pendingTransactions = new ConcurrentHashMap[Long, UCXTransaction]()
-
-  /**
-   * 1) client gets upper 28 bits
-   * 2) then comes the type, which gets 4 bits
-   * 3) the remaining 32 bits are used for buffer specific tags
-   */
-  private final val bufferMsgType: Long = 0x0000000000000000BL
-
-  // message type mask for UCX tags. The only message type using tags
-  // is `bufferMsgType`
-  private final val msgTypeMask: Long   = 0x000000000000000FL
-
-  // UCX Active Message masks (we can use up to 5 bits for these ids)
-  private final val amRequestMask: Int  = 0x0000000F
-  private final val amResponseMask: Int = 0x0000001F
-
-  // We pick the 5th bit set to 1 as a "response" active message
-  private final val amResponseFlag: Int = 0x00000010
-
-  // pick up the lower and upper parts of a long
-  private final val lowerBitsMask: Long = 0x00000000FFFFFFFFL
-  private final val upperBitsMask: Long = 0xFFFFFFFF00000000L
-
-  protected def composeBufferTag(peerClientId: Long, bufferTag: Long): Long = {
-    // buffer tags are [peerClientId, 0, bufferTag]
-    composeTag(composeUpperBits(peerClientId, bufferMsgType), bufferTag)
-  }
-
-  protected def composeRequestAmId(requestType: RequestType.Value): Int = {
-    val amId = requestType.id
-    if ((amId & amRequestMask) != amId) {
-      throw new IllegalArgumentException(
-        s"Invalid request amId, it must be 4 bits: ${TransportUtils.toHex(amId)}")
-    }
-    amId
-  }
-
-  protected def composeRequestHeader(executorId: Long, txId: Long): Long = {
-    composeTag(executorId << 32, txId)
-  }
-
-  def extractExecutorId(header: Long): Long = {
-    (header & upperBitsMask) >> 32
-  }
-
-  def composeResponseAmId(requestType: RequestType.Value): Int = {
-    val amId = amResponseFlag | composeRequestAmId(requestType)
-    if ((amId & amResponseMask) != amId) {
-      throw new IllegalArgumentException(
-        s"Invalid response amId, it must be 5 bits: ${TransportUtils.toHex(amId)}")
-    }
-    amId
-  }
-
-  def composeTag(upperBits: Long, lowerBits: Long): Long = {
-    if ((upperBits & upperBitsMask) != upperBits) {
-     throw new IllegalArgumentException(
-       s"Invalid tag, upperBits would alias: ${TransportUtils.toHex(upperBits)}")
-    }
-    // the lower 32bits aliasing is not a big deal, we expect it with msg rollover
-    // so we don't check for it
-    upperBits | (lowerBits & lowerBitsMask)
-  }
-
-  private def composeUpperBits(peerClientId: Long, msgType: Long): Long = {
-    if ((peerClientId & lowerBitsMask) != peerClientId) {
-      throw new IllegalArgumentException(
-        s"Invalid tag, peerClientId would alias: ${TransportUtils.toHex(peerClientId)}")
-    }
-    if ((msgType & msgTypeMask) != msgType) {
-      throw new IllegalArgumentException(
-        s"Invalid tag, msgType would alias: ${TransportUtils.toHex(msgType)}")
-    }
-    (peerClientId << 36) | (msgType << 32)
-  }
 
   private[ucx] def send(executorId: Long, alt: AddressLengthTag,
     ucxCallback: UCXTagCallback): Unit = {
@@ -417,6 +346,80 @@ class UCXConnection(peerExecutorId: Int, val ucx: UCX) extends Connection with L
 }
 
 object UCXConnection extends Logging {
+  /**
+   * 1) client gets upper 28 bits
+   * 2) then comes the type, which gets 4 bits
+   * 3) the remaining 32 bits are used for buffer specific tags
+   */
+  private final val bufferMsgType: Long = 0x0000000000000000BL
+
+  // message type mask for UCX tags. The only message type using tags
+  // is `bufferMsgType`
+  private final val msgTypeMask: Long   = 0x000000000000000FL
+
+  // UCX Active Message masks (we can use up to 5 bits for these ids)
+  private final val amRequestMask: Int  = 0x0000000F
+  private final val amResponseMask: Int = 0x0000001F
+
+  // We pick the 5th bit set to 1 as a "response" active message
+  private final val amResponseFlag: Int = 0x00000010
+
+  // pick up the lower and upper parts of a long
+  private final val lowerBitsMask: Long = 0x00000000FFFFFFFFL
+  private final val upperBitsMask: Long = 0xFFFFFFFF00000000L
+
+  def composeBufferTag(peerClientId: Long, bufferTag: Long): Long = {
+    // buffer tags are [peerClientId, 0, bufferTag]
+    composeTag(composeUpperBits(peerClientId, bufferMsgType), bufferTag)
+  }
+
+  def composeRequestAmId(requestType: RequestType.Value): Int = {
+    val amId = requestType.id
+    if ((amId & amRequestMask) != amId) {
+      throw new IllegalArgumentException(
+        s"Invalid request amId, it must be 4 bits: ${TransportUtils.toHex(amId)}")
+    }
+    amId
+  }
+
+  def composeResponseAmId(requestType: RequestType.Value): Int = {
+    val amId = amResponseFlag | composeRequestAmId(requestType)
+    if ((amId & amResponseMask) != amId) {
+      throw new IllegalArgumentException(
+        s"Invalid response amId, it must be 5 bits: ${TransportUtils.toHex(amId)}")
+    }
+    amId
+  }
+
+  def composeTag(upperBits: Long, lowerBits: Long): Long = {
+    if ((upperBits & upperBitsMask) != upperBits) {
+      throw new IllegalArgumentException(
+        s"Invalid tag, upperBits would alias: ${TransportUtils.toHex(upperBits)}")
+    }
+    // the lower 32bits aliasing is not a big deal, we expect it with msg rollover
+    // so we don't check for it
+    upperBits | (lowerBits & lowerBitsMask)
+  }
+
+  private def composeUpperBits(peerClientId: Long, msgType: Long): Long = {
+    if ((peerClientId & lowerBitsMask) != peerClientId) {
+      throw new IllegalArgumentException(
+        s"Invalid tag, peerClientId would alias: ${TransportUtils.toHex(peerClientId)}")
+    }
+    if ((msgType & msgTypeMask) != msgType) {
+      throw new IllegalArgumentException(
+        s"Invalid tag, msgType would alias: ${TransportUtils.toHex(msgType)}")
+    }
+    (peerClientId << 36) | (msgType << 32)
+  }
+
+  def composeRequestHeader(executorId: Long, txId: Long): Long = {
+    composeTag(executorId << 32, txId)
+  }
+
+  def extractExecutorId(header: Long): Long = {
+    (header & upperBitsMask) >> 32
+  }
   //
   // Handshake message code. This, I expect, could be folded into the [[BlockManagerId]],
   // but I have not tried this. If we did, it would eliminate the extra TCP connection
