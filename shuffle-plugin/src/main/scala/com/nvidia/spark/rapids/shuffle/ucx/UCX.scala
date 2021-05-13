@@ -451,15 +451,12 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   def registerRequestHandler(activeMessageId: Int,
       requestCallbackGen: () => UCXAmCallback): Unit = {
     logDebug(s"Register Active Message $TransportUtils.request handler")
-    require(!amRegistrations.containsKey(activeMessageId),
+    val reg = new ActiveMessageRegistration(activeMessageId)
+    reg.setRequestActiveMessageHandler(requestCallbackGen)
+    val oldReg = amRegistrations.putIfAbsent(activeMessageId, reg)
+    require(oldReg == null,
       s"Tried to re-register a request handler for $activeMessageId")
-    amRegistrations.computeIfAbsent(activeMessageId,
-      _ => {
-        val reg = new ActiveMessageRegistration(activeMessageId)
-        reg.setRequestActiveMessageHandler(requestCallbackGen)
-        registerActiveMessage(reg)
-        reg
-      })
+    registerActiveMessage(reg)
   }
 
   private def registerActiveMessage(reg: ActiveMessageRegistration): Unit = {
