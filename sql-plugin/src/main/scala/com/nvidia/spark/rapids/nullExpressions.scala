@@ -85,7 +85,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
         GpuColumnVector.from(runningResult.incRefCount(), dataType)
       } else if (runningScalar != null) {
         // Wrap it as a GpuScalar instead of pulling data out of GPU.
-        runningScalar.copy
+        runningScalar.incRefCount
       } else {
         // null is not welcome, so use a null scalar instead
         GpuScalar(null, dataType)
@@ -208,7 +208,7 @@ case class GpuAtLeastNNonNulls(
     var scalar : Scalar = null
     try {
       addColumnVectorsQ(nonNullNanCounts)
-      scalar = GpuScalar.from(n, IntegerType)
+      scalar = Scalar.fromInt(n)
       if (nonNullNanCounts.nonEmpty) {
         ret = GpuColumnVector.from(nonNullNanCounts.head.greaterOrEqualTo(scalar), dataType)
       }

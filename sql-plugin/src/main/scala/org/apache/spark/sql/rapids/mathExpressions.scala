@@ -269,7 +269,7 @@ object GpuLogarithm extends Arm {
     if (input.isValid && input.getValue.asInstanceOf[Double] <= 0) {
       GpuScalar(null, DoubleType)
     } else {
-      input.copy
+      input.incRefCount
     }
   }
 }

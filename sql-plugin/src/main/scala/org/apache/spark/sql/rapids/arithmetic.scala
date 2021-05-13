@@ -523,9 +523,7 @@ trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpressi
       rows: Int): AutoCloseable =
     a match {
       case cv: ColumnVector => cv
-      case gcv: GpuColumnVector => withResource(gcv) { gv =>
-        gv.getBase.incRefCount()
-      }
+      case gcv: GpuColumnVector => gcv.getBase
       case gs: GpuScalar => withResource(gs) { s =>
           if (expandScalar) {
             ColumnVector.fromScalar(s.getBase, rows)

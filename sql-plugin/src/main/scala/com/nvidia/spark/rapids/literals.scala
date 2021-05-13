@@ -47,7 +47,7 @@ object GpuScalar extends Arm with Logging {
   // TODO Support interpreting the value to a Spark DataType
   def extract(v: Scalar): Any = {
     if (v.isValid) {
-      logInfo(s"Extracting data from the Scalar $v.")
+      logDebug(s"Extracting data from the Scalar $v.")
       v.getType match {
         case DType.BOOL8 => v.getBoolean
         case DType.FLOAT32 => v.getFloat
@@ -139,7 +139,7 @@ object GpuScalar extends Arm with Logging {
    */
   def apply(any: Any, dataType: DataType): GpuScalar = any match {
     case s: Scalar => wrap(s, dataType)
-    case o => new GpuScalar(null, Some(o), dataType)
+    case o => new GpuScalar(None, Some(o), dataType)
   }
 
   /**
@@ -152,7 +152,7 @@ object GpuScalar extends Arm with Logging {
     assert(scalar != null, "The cudf Scalar should NOT be null.")
     assert(typeConversionAllowed(scalar, dataType), s"Type conversion is not allowed from " +
       s" $scalar to $dataType")
-    new GpuScalar(scalar, None, dataType)
+    new GpuScalar(Some(scalar), None, dataType)
   }
 
   private def typeConversionAllowed(s: Scalar, sType: DataType): Boolean = {
@@ -207,11 +207,11 @@ object GpuScalar extends Arm with Logging {
  * Do not create a GpuScalar from the constructor, instead call the factory APIs above.
  */
 class GpuScalar private(
-    private var scalar: Scalar,
+    private var scalar: Option[Scalar],
     private var value: Option[Any],
     val dataType: DataType) extends Arm with AutoCloseable {
 
-  if(scalar == null && value.isEmpty) {
+  if(scalar.isEmpty && value.isEmpty) {
     throw new IllegalArgumentException("GpuScalar requires at least a value or a Scalar")
   }
   if (value.isDefined && value.get.isInstanceOf[Scalar]) {
@@ -225,10 +225,10 @@ class GpuScalar private(
    * the return cudf Scalar, not both.
    */
   def getBase: Scalar = {
-    if (scalar == null) {
-      scalar = GpuScalar.from(value.get, dataType)
+    if (scalar.isEmpty) {
+      scalar = Some(GpuScalar.from(value.get, dataType))
     }
-    scalar
+    scalar.get
   }
 
   /**
@@ -236,7 +236,7 @@ class GpuScalar private(
    */
   def getValue: Any = {
     if (value.isEmpty) {
-      value = Some(GpuScalar.extract(scalar))
+      value = Some(GpuScalar.extract(scalar.get))
     }
     value.get
   }
@@ -248,16 +248,6 @@ class GpuScalar private(
    * Because a cudf Scalar created from a null is invalid.
    */
   def isValid: Boolean = value.map(_ != null).getOrElse(getBase.isValid)
-
-  /**
-   * Get a copy of this GpuScalar.
-   */
-  def copy: GpuScalar = {
-    if (scalar != null) {
-      scalar.incRefCount()
-    }
-    new GpuScalar(scalar, value, dataType)
-  }
 
   /**
    * Whether the GpuScalar is Nan. It works only for float and double types, otherwise
@@ -275,10 +265,38 @@ class GpuScalar private(
    */
   def isNotNan: Boolean = !isNan
 
+  /**
+    * Increment the reference count for this scalar. You need to call close on this
+    * to decrement the reference count again.
+    */
+  def incRefCount: this.type = incRefCountInternal(false)
+
   override def close(): Unit = {
-    if (scalar != null) scalar.close()
+    this.synchronized {
+      refCount -= 1
+      if (refCount == 0) {
+        scalar.foreach(_.close())
+        scalar = Some(null)
+      } else if (refCount < 0) {
+        throw new IllegalStateException(s"Close called too many times $this")
+      }
+    }
   }
 
+  private def incRefCountInternal(isFirstTime: Boolean): this.type = {
+    this.synchronized {
+      if (refCount <= 0 && !isFirstTime) {
+        throw new IllegalStateException("GpuScalar is already closed")
+      }
+      refCount += 1
+    }
+    this
+  }
+
+  // Scala executes line by line, so `refCount` should be defined before
+  // the 'incRefCountInternal'
+  private var refCount: Int = 0
+  incRefCountInternal(true)
 }
 
 object GpuLiteral {

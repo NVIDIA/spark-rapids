@@ -44,7 +44,7 @@ trait GpuUserDefinedFunction extends GpuExpression with UserDefinedExpression wi
   private[this] lazy val outputType = dataType.catalogString
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val cols = children.safeMap(GpuExpressionsUtils.columnarEvalExprToColumn(_, batch))
+    val cols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
     withResource(cols) { exprResults =>
       val funcInputs = exprResults.map(_.getBase()).toArray
       withResource(new NvtxRange(nvtxRangeName, NvtxColor.PURPLE)) { _ =>

@@ -89,7 +89,7 @@ object GpuExpressionsUtils extends Arm {
    * @return a `GpuColumnVector` if it succeeds. Users should close the column vector to avoid
    *         memory leak.
    */
-  def columnarEvalExprToColumn(expr: Expression, batch: ColumnarBatch): GpuColumnVector =
+  def columnarEvalToColumn(expr: Expression, batch: ColumnarBatch): GpuColumnVector =
     resolveColumnVector(expr.columnarEval(batch), batch.numRows, expr.dataType)
 }
 
@@ -159,7 +159,7 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuExpressionsUtils.columnarEvalExprToColumn(child, batch)) { col =>
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(child, batch)) { col =>
       doItColumnar(col)
     }
   }
@@ -285,7 +285,7 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
       } else if (trim.isEmpty) {
         column.incRefCount() // This is a noop
       } else {
-        withResource(GpuScalar.from(trim, StringType)) { t =>
+        withResource(Scalar.fromString(trim)) { t =>
           strippedColumnVector(column, t)
         }
       }

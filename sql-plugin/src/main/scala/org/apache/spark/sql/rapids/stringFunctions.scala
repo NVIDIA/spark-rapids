@@ -91,7 +91,7 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
   override def doColumnar(val0: GpuScalar, val1: GpuColumnVector,
       val2: GpuScalar): ColumnVector = {
     if (!val2.isValid) {
-      withResource(GpuScalar.from(0, IntegerType)) { zeroScalar =>
+      withResource(Scalar.fromInt(0)) { zeroScalar =>
         ColumnVector.fromScalar(zeroScalar, val1.getRowCount().toInt)
       }
     } else if (!val0.isValid) {
@@ -102,13 +102,13 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
       val val0Str = val0.getValue.asInstanceOf[UTF8String]
       if (val2Int < 1 || val0Str.numChars() == 0) {
         withResource(val1.getBase.isNotNull()) { isNotNullColumn =>
-          withResource(GpuScalar.from(null, IntegerType)) { nullScalar =>
+          withResource(Scalar.fromNull(DType.INT32)) { nullScalar =>
             if (val2Int >= 1) {
-              withResource(GpuScalar.from(1, IntegerType)) { sv1 =>
+              withResource(Scalar.fromInt(1)) { sv1 =>
                 isNotNullColumn.ifElse(sv1, nullScalar)
               }
             } else {
-              withResource(GpuScalar.from(0, IntegerType)) { sv0 =>
+              withResource(Scalar.fromInt(0)) { sv0 =>
                 isNotNullColumn.ifElse(sv0, nullScalar)
               }
             }
@@ -117,7 +117,7 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
       } else {
         withResource(val1.getBase.stringLocate(val0.getBase, val2Int - 1, -1)) {
           skewedResult =>
-            withResource(GpuScalar.from(1, IntegerType)) { sv1 =>
+            withResource(Scalar.fromInt(1)) { sv1 =>
               skewedResult.add(sv1)
             }
         }
@@ -277,12 +277,12 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector](children.size)
     try {
       children.foreach { childExpr =>
-        withResource(GpuExpressionsUtils.columnarEvalExprToColumn(childExpr, batch)) {
+        withResource(GpuExpressionsUtils.columnarEvalToColumn(childExpr, batch)) {
           gcv => columns += gcv.getBase.incRefCount()
         }
       }
-      emptyStrScalar = GpuScalar.from("", StringType)
-      nullStrScalar = GpuScalar.from(null, StringType)
+      emptyStrScalar = Scalar.fromString("")
+      nullStrScalar = Scalar.fromNull(DType.STRING)
       GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
         columns.toArray[ColumnView]), dataType)
     } finally {

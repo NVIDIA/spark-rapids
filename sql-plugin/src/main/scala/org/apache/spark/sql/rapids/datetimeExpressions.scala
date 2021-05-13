@@ -141,9 +141,10 @@ abstract class GpuTimeMath(
       withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
         (lhs, rhs) match {
           case (l: GpuColumnVector, intvlS: GpuScalar)
-              if intvlS.getValue.isInstanceOf[CalendarInterval] =>
+              if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
             // Scalar does not support 'CalendarInterval' now, so use
             // the Scala value instead.
+            // Skip the null check because it wll be detected by the following calls.
             val intvl = intvlS.getValue.asInstanceOf[CalendarInterval]
             if (intvl.months != 0) {
               throw new UnsupportedOperationException("Months aren't supported at the moment")
@@ -222,9 +223,10 @@ case class GpuDateAddInterval(start: Expression,
       withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
         (lhs, rhs) match {
           case (l: GpuColumnVector, intvlS: GpuScalar)
-              if intvlS.getValue.isInstanceOf[CalendarInterval] =>
+              if intvlS.dataType.isInstanceOf[CalendarIntervalType] =>
             // Scalar does not support 'CalendarInterval' now, so use
             // the Scala value instead.
+            // Skip the null check because it wll be detected by the following calls.
             val intvl = intvlS.getValue.asInstanceOf[CalendarInterval]
             if (intvl.months != 0) {
               throw new UnsupportedOperationException("Months aren't supported at the moment")
