@@ -21,10 +21,9 @@ import scala.collection.mutable.ListBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
-import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, ProjectExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
+import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
 import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
@@ -191,20 +190,20 @@ class CostBasedOptimizer extends Optimizer with Logging {
     (totalCpuCost, totalGpuCost)
   }
 
-  private def transitionToGpuCost(conf: RapidsConf, plan: SparkPlanMeta[_]): Double = {
-    // this is a placeholder for now - we would want to try and calculate the transition cost
-    // based on the data types and size (if known)
+  private def transitionToGpuCost(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    conf.defaultTransitionToGpuCost * rowCount
+    val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
+    conf.getGpuOperatorCost("GpuRowToColumnarExec").getOrElse(0d) * rowCount +
+      dataSize * conf.cpuReadMemoryCost + dataSize * conf.gpuWriteMemoryCost
   }
 
-  private def transitionToCpuCost(conf: RapidsConf, plan: SparkPlanMeta[_]): Double = {
-    // this is a placeholder for now - we would want to try and calculate the transition cost
-    // based on the data types and size (if known)
+  private def transitionToCpuCost(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    conf.defaultTransitionToCpuCost * rowCount
+    val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
+    conf.getGpuOperatorCost("GpuColumnarToRowExec").getOrElse(0d) * rowCount +
+      dataSize * conf.gpuReadMemoryCost + dataSize * conf.cpuWriteMemoryCost
   }
 
   /**
@@ -240,99 +239,96 @@ trait CostModel {
 
 class CpuCostModel(conf: RapidsConf) extends CostModel {
 
-  private val attrRefCost = conf.getCpuExpressionCost("AttributeReference").getOrElse(0d)
-  private val structFieldCost = conf.getCpuExpressionCost("GetStructField").getOrElse(0.05d)
-
   def getCost(plan: SparkPlanMeta[_]): Double = {
+
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    plan.conf.getGpuOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
-      plan.wrapped match {
-        case _: ProjectExec =>
-          // the cost of a projection is the sum of its expressions
-          plan.childExprs
-            .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
-            .sum
-        case _ => 1.0 * rowCount
-      }
-    }
+
+    val operatorCost = plan.conf
+      .getCpuOperatorCost(plan.wrapped.getClass.getSimpleName)
+      .getOrElse(conf.defaultCpuOperatorCost) * rowCount
+
+    val exprEvalCost = plan.childExprs
+      .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
+      .sum
+
+    operatorCost + exprEvalCost
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
-    val childExprCost: Double = expr.childExprs
-      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
-    // always check for user overrides first
-    val totalExprCost = childExprCost + expr.conf.getGpuExpressionCost(
-      expr.getClass.getSimpleName).getOrElse {
-      expr match {
-        case _ =>
-          // many of our BaseExprMeta implementations are anonymous classes so we look directly at
-          // the wrapped expressions in some cases
-          expr.wrapped match {
-            case _: Alias =>
-              exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
-            case _: AttributeReference => attrRefCost
-            case _: GetStructField => structFieldCost
-            case _ => conf.defaultExpressionCost
-          }
-      }
+
+    val memoryReadCost = expr.wrapped match {
+      case _: Alias =>
+        // alias has no cost, we just evaluate the cost of the aliased expression
+        exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
+
+      case _: AttributeReference | _: GetStructField =>
+        conf.cpuReadMemoryCost * GpuBatchUtils.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount.toLong)
+
+      case _ =>
+        expr.childExprs
+          .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
     }
-    rowCount * totalExprCost
+
+    // the output of evaluating the expression needs to be written out to rows
+    val memoryWriteCost = conf.cpuWriteMemoryCost * GpuBatchUtils.estimateGpuMemory(
+      expr.dataType, nullable = false, rowCount.toLong)
+
+    // optional additional per-row overhead of evaluating the expression
+    val exprEvalCost = rowCount *
+      expr.conf.getCpuExpressionCost(expr.getClass.getSimpleName)
+        .getOrElse(conf.defaultCpuExpressionCost)
+
+    exprEvalCost + memoryReadCost + memoryWriteCost
   }
 }
 
 class GpuCostModel(conf: RapidsConf) extends CostModel {
 
-  private val attrRefCost = conf.getGpuExpressionCost("AttributeReference").getOrElse(0d)
-  private val structFieldCost = conf.getGpuExpressionCost("GetStructField").getOrElse(0.05d)
-
   def getCost(plan: SparkPlanMeta[_]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    plan.conf.getGpuOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
-      plan.wrapped match {
-        case _: ProjectExec =>
-          // the cost of a projection is the sum of its expressions
-          plan.childExprs
-            .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
-            .sum
 
-        case _: ShuffleExchangeExec =>
-          // setting the GPU cost of ShuffleExchangeExec to 1.0 avoids moving from CPU to GPU for
-          // a shuffle. This must happen before the join consistency or we risk running into issues
-          // with disabling one exchange that would make a join inconsistent
-          1.0 * rowCount
+    val operatorCost = plan.conf
+      .getGpuOperatorCost(plan.wrapped.getClass.getSimpleName)
+      .getOrElse(conf.defaultGpuOperatorCost) * rowCount
 
-        case _ => conf.defaultOperatorCost * rowCount
-      }
-    }
+    val exprEvalCost = plan.childExprs
+      .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
+      .sum
+
+    operatorCost + exprEvalCost
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
-    val childExprCost = expr.childExprs
-      .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
-    // always check for user overrides first
-    val totalExprCost = childExprCost + expr.conf
-        .getGpuExpressionCost(expr.getClass.getSimpleName).getOrElse {
-      expr match {
-        case cast: CastExprMeta[_] =>
-          // different CAST operations have different costs, so we allow these to be configured
-          // based on the data types involved
-          expr.conf.getGpuExpressionCost(s"Cast${cast.fromType}To${cast.toType}")
-            .getOrElse(conf.defaultExpressionCost)
-        case _ =>
-          // many of our BaseExprMeta implementations are anonymous classes so we look directly at
-          // the wrapped expressions in some cases
-          expr.wrapped match {
-            case _: Alias =>
-              exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
-            case _: AttributeReference => attrRefCost
-            case _: GetStructField => structFieldCost
-            case _ => conf.defaultExpressionCost
-          }
-      }
+
+    var memoryReadCost = 0d
+    var memoryWriteCost = 0d
+
+    expr.wrapped match {
+      case _: Alias =>
+        // alias has no cost, we just evaluate the cost of the aliased expression
+        exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
+
+      case _: AttributeReference =>
+        // referencing an existing column on GPU is almost free since we're
+        // just increasing a reference count and not actually copying any data
+
+      case _ =>
+        memoryReadCost = expr.childExprs
+          .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
+
+        memoryWriteCost += conf.gpuWriteMemoryCost * GpuBatchUtils.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount.toLong)
     }
-    rowCount * totalExprCost
+
+    // optional additional per-row overhead of evaluating the expression
+    val exprEvalCost = rowCount *
+      expr.conf.getGpuExpressionCost(expr.getClass.getSimpleName)
+        .getOrElse(conf.defaultGpuExpressionCost)
+
+    exprEvalCost + memoryReadCost + memoryWriteCost
   }
 }
 
