@@ -418,6 +418,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
       header = hdr,
       message = message)
   }
+
   // Reference count is not updated here. The caller is responsible to close
   private[ucx] def setActiveMessageData(data: Option[RefCountedDirectByteBuffer]): Unit = {
     activeMessageData = data
