@@ -56,8 +56,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
             case null =>
               buffer += GpuColumnVector.from(nullScalar, rows, StringType).getBase
             case sv: Any =>
-              val scalar = GpuScalar.from(sv.asInstanceOf[UTF8String].toString, StringType)
-              withResource(scalar) { scalar =>
+              withResource(Scalar.fromString(sv.asInstanceOf[UTF8String].toString)) { scalar =>
                 buffer += GpuColumnVector.from(scalar, rows, StringType).getBase
               }
           }
