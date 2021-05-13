@@ -73,13 +73,15 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
   override def registerRequestHandler(
       requestType: RequestType.Value, cb: TransactionCallback): Unit = {
 
-    class RequestAmCallback extends UCXAmCallback {
-      val tx = createTransaction
+    ucx.registerRequestHandler(composeRequestAmId(requestType), () => new UCXAmCallback {
+      private val tx = createTransaction
+
       tx.start(UCXTransactionType.Request, 1, cb)
+
       override def onSuccess(am: UCXActiveMessage, buff: RefCountedDirectByteBuffer): Unit = {
         logDebug(s"At requestHandler for ${requestType} and am: " +
           s"$am")
-        tx.completeWithSuccess(requestType, am.header, Option(buff))
+        tx.completeWithSuccess(requestType, Option(am.header), Option(buff))
       }
 
       override def onHostMessageReceived(size: Long): RefCountedDirectByteBuffer = {
@@ -97,11 +99,7 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
       override def onMessageStarted(receiveAm: UcpRequest): Unit = {
         tx.registerPendingMessage(receiveAm)
       }
-    }
-
-    ucx.registerRequestHandler(
-      UCXActiveMessage(composeRequestAmId(requestType),
-        singleShotCallbackGen = Option(() => new RequestAmCallback)))
+    })
   }
 
   override def respond(peerExecutorId: Long,
@@ -116,7 +114,7 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
     logDebug(s"Responding to ${peerExecutorId} at ${TransportUtils.toHex(header)} " +
       s"with ${response}")
 
-    val responseAm = UCXActiveMessage(composeResponseAmId(messageType), Option(header))
+    val responseAm = UCXActiveMessage(composeResponseAmId(messageType), header)
 
     ucx.sendActiveMessage(peerExecutorId, responseAm,
       TransportUtils.getAddress(response), response.remaining(),
@@ -170,7 +168,7 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
       }
 
       override def onSuccess(am: UCXActiveMessage, buff: RefCountedDirectByteBuffer): Unit = {
-        tx.completeWithSuccess(requestType, am.header, Option(buff))
+        tx.completeWithSuccess(requestType, Option(am.header), Option(buff))
       }
 
       override def onError(am: UCXActiveMessage, ucsStatus: Int, errorMsg: String): Unit = {
@@ -189,20 +187,14 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
     // Register the active message response handler. Note that the `requestHeader`
     // is expected to come back with the response, and is used to find the
     // correct callback (this is an implementation detail in UCX.scala)
-    val responseAm = UCXActiveMessage(
-      composeResponseAmId(requestType),
-      Option(requestHeader),
-      Option(amCallback))
-
-    ucx.registerResponseHandler(responseAm)
+    ucx.registerResponseHandler(
+      composeRequestAmId(requestType), requestHeader, amCallback)
 
     // kick-off the request
-    val requestAm = UCXActiveMessage(
-      composeRequestAmId(requestType),
-      Option(requestHeader))
+    val requestAm = UCXActiveMessage(composeRequestAmId(requestType), requestHeader)
 
     logDebug(s"Performing a ${requestType} request of size ${request.remaining()} " +
-      s"with tx ${tx}. Active messages: request $requestAm response $responseAm")
+      s"with tx ${tx}. Active messages: request $requestAm")
 
     ucx.sendActiveMessage(peerExecutorId, requestAm,
         TransportUtils.getAddress(request), request.remaining(),

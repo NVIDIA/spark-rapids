@@ -403,10 +403,10 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
       errorMessage = Option(errorMsg))
   }
 
-  def completeCancelled(requestType: RequestType.Value, hdr: Option[Long]): Unit = {
+  def completeCancelled(requestType: RequestType.Value, hdr: Long): Unit = {
     complete(TransactionStatus.Cancelled,
       messageType = Option(requestType),
-      header = hdr)
+      header = Option(hdr))
   }
 
   def completeWithSuccess(

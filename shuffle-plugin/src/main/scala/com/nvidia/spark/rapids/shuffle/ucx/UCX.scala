@@ -46,30 +46,9 @@ case class Rkeys(rkeys: Seq[ByteBuffer])
  * A simple wrapper specifically for an Active Message Id and a small (Long) header
  * we are using per message.
  */
-case class UCXActiveMessage(activeMessageId: Int,
-                            header: Option[Long] = None,
-                            cb: Option[UCXAmCallback] = None,
-                            singleShotCallbackGen: Option[() => UCXAmCallback] = None) {
-  /**
-   * Request transactions need to be indepenent of each other. This function
-   * creates callbacks (which in turn creates transactions), so that each request
-   * can be handled independently.
-   * @return a brand new callback instance
-   */
-  def getSingleShotCallback: () => UCXAmCallback = {
-    require(singleShotCallbackGen.nonEmpty,
-      s"Tried to generate a single shot callback with an invalid UCXActiveMessage $this")
-    singleShotCallbackGen.get
-  }
-
-  override def toString: String = {
-    val hdrString = if (header.isDefined) {
-      TransportUtils.toHex(header.get)
-    } else {
-      "N/A"
-    }
-    s"[amId=${TransportUtils.toHex(activeMessageId)}, hdr=$hdrString]"
-  }
+case class UCXActiveMessage(activeMessageId: Int, header: Long) {
+  override def toString: String =
+    UCX.formatAmIdAndHeader(activeMessageId, header)
 }
 
 /**
@@ -87,8 +66,7 @@ case class UCXActiveMessage(activeMessageId: Int,
  * @param executor blockManagerId of the local executorId
  * @param rapidsConf rapids configuration
  */
-class UCX(transport: UCXShuffleTransport, executor: BlockManagerId,
-                       rapidsConf: RapidsConf)
+class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: RapidsConf)
     extends AutoCloseable with Logging with Arm {
   private[this] val context = {
     val contextParams = new UcpParams()
@@ -375,81 +353,102 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId,
   }
 
   /**
-   * Wraps interest in an Active Message Id, and potential callback(s) that should
+   * This represents the mapping between an Active Message Id and the callback that should
    * be triggered when a message is received.
    *
-   * Note that if a `singleCallback` is called, header is ignored, since this is a
-   * request we are handling => the request echoes headers to the response (who do need
-   * to pay attention to different callbacks)
+   * There are two types of Active Messages we care about: requests and responses.
+   *
+   * For requests:
+   *   - `activeMessageId` for requests is the value of the `RequestType` enum, and it is
+   *   set once when the `RapidsShuffleServer` is initialized, and no new request handlers
+   *   are established.
+   *
+   *   - The Active Message header is handed to the request handler, via the transaction.
+   *   The request handler needs to echo the header back for the response handler on the
+   *   other side of the request.
+   *
+   *   - On a request, a callback is instantiated using `requestCallbackGen`, which creates
+   *   a transaction each time. This is one way to handle several requests inbound to a server.
+   *
+   * For responses:
+   *   - `activeMessageId` for responses is the value of the `RequestType` enum with an extra
+   *   bit flipped (see `UCXConnection.composeResponseAmId`). These are also set once, as requests
+   *   are sent out.
+   *
+   *   - The Active Message header is used to pick the correct callback to call. In this case
+   *   there could be serveral expected responses, for a single response `activeMessageId`, so the
+   *   server echoes back our header so we can invoke the correct response callback.
+   *
+   *   - Each response received at the response activeMessageId, will be demuxed using the header:
+   *   responseActiveMessageId1 -> [callbackForHeader1, callbackForHeader2, ..., callbackForHeaderN]
    */
   private class ActiveMessageRegistration(activeMessageId: Int) {
-    def getCallback(hdr: Option[Long]): UCXAmCallback = {
-      if (singleCallback != null) {
-        singleCallback()
+    private var requestCallbackGen: () => UCXAmCallback = null
+    private val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
+
+    def getCallback(header: Long): UCXAmCallback = {
+      if (requestCallbackGen != null) {
+        requestCallbackGen()
       } else {
-        require(hdr.isDefined, "Attempting to handle a response but the header was not valid!")
-        // responses need a callback per header
-        val cb = perHeaderCallbacks.get(hdr.get)
+        val cb = responseCallbacks.get(header)
         require (cb != null,
-          s"Failed to get an Active Message callback for $activeMessageId and header $hdr")
+          s"Failed to get an Active Message callback for " +
+            s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
         cb
       }
     }
 
-    def setSingleActiveMessageHandler(am: UCXActiveMessage): Unit = {
-      require(perHeaderCallbacks.isEmpty)
-      singleCallback = am.getSingleShotCallback
+    def setRequestActiveMessageHandler(requestCbGen: () => UCXAmCallback): Unit = {
+      require(responseCallbacks.isEmpty)
+      requestCallbackGen = requestCallbackGen
     }
 
-    def addActiveMessageHandler(am: UCXActiveMessage): Unit = {
-      // used to match an incoming header with a callback to trigger
-      require(am.header.isDefined,
-        "Attempting to set an Active Message response handler without a header")
-      require(am.cb.isDefined,
-        "Attempting to set an Active Message response handler without a callback")
-      require(singleCallback == null)
-      perHeaderCallbacks.put(am.header.get, am.cb.get)
+    def addResponseActiveMessageHandler(header: Long, responseCallback: UCXAmCallback): Unit = {
+      require(requestCallbackGen == null)
+      responseCallbacks.put(header, responseCallback)
     }
-
-    private var singleCallback: () => UCXAmCallback = null
-    private val perHeaderCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
   }
 
   private val amRegistrations = new ConcurrentHashMap[Int, ActiveMessageRegistration]()
 
   /**
    * Register a response handler (clients will use this)
+   *
    * @note This function will be called for each client, with the same `am.activeMessageId`
-   * @param activeMessage - An Active Message to register response interest for
+   * @param activeMessageId (up to 5 bits) used to register with UCX an Active Message
+   * @param header a long used to demux responses arriving at `activeMessageId`
+   * @param responseCallback callback to handle a particular response
    */
-  def registerResponseHandler(activeMessage: UCXActiveMessage): Unit = {
-    logDebug(s"Register Active Message $activeMessage response handler")
+  def registerResponseHandler(
+      activeMessageId: Int, header: Long, responseCallback: UCXAmCallback): Unit = {
+    logDebug(s"Register Active Message " +
+      s"${UCX.formatAmIdAndHeader(activeMessageId, header)} response handler")
 
-    val reg = amRegistrations.computeIfAbsent(activeMessage.activeMessageId,
+    val reg = amRegistrations.computeIfAbsent(activeMessageId,
       _ => {
-        val reg = new ActiveMessageRegistration(activeMessage.activeMessageId)
-        registerActiveMessage(activeMessage.activeMessageId, reg)
+        val reg = new ActiveMessageRegistration(activeMessageId)
+        registerActiveMessage(activeMessageId, reg)
         reg
       })
-
-    reg.addActiveMessageHandler(activeMessage)
+    reg.addResponseActiveMessageHandler(header, responseCallback)
   }
 
   /**
    * Register a request handler (the server will use this)
    * @note This function will be called once for the server for an `activeMessageId`
-   * @param activeMessage
+   * @param activeMessageId (up to 5 bits) used to register with UCX an Active Message
+   * @param requestCallbackGen a function that instantiates a callback to handle
+   *                           a particular request
    */
-  def registerRequestHandler(activeMessage: UCXActiveMessage): Unit = {
-    logDebug(s"Register Active Message $activeMessage request handler")
-    val activeMessageId = activeMessage.activeMessageId
-
+  def registerRequestHandler(activeMessageId: Int,
+      requestCallbackGen: () => UCXAmCallback): Unit = {
+    logDebug(s"Register Active Message $TransportUtils.request handler")
     require(!amRegistrations.containsKey(activeMessageId),
       s"Tried to re-register a request handler for $activeMessageId")
     amRegistrations.computeIfAbsent(activeMessageId,
       _ => {
         val reg = new ActiveMessageRegistration(activeMessageId)
-        reg.setSingleActiveMessageHandler(activeMessage)
+        reg.setRequestActiveMessageHandler(requestCallbackGen)
         registerActiveMessage(activeMessageId, reg)
         reg
       })
@@ -459,68 +458,69 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId,
     onWorkerThreadAsync(() => {
       worker.setAmRecvHandler(activeMessageId,
         (headerAddr, headerSize, amData: UcpAmData, _) => {
-          val hdr = if (headerSize == 8) {
-            Option(UcxUtils.getByteBufferView(headerAddr, headerSize).getLong)
+          if (headerSize != 8) {
+            // this is a coding error, so I am just blowing up. It should never happen.
+            throw new IllegalStateException(
+              s"Received message with wrong header size $headerSize")
           } else {
-            None
-          }
+            val header = UcxUtils.getByteBufferView(headerAddr, headerSize).getLong
+            val am = UCXActiveMessage(activeMessageId, header)
 
-          val am = UCXActiveMessage(activeMessageId, hdr)
+            logDebug(s"Active Message received: $am")
 
-          logDebug(s"Active Message callback: $am")
+            val cb = reg.getCallback(header)
 
-          val cb = reg.getCallback(hdr)
+            if (amData.isDataValid) {
+              require(notForcingAmRndv,
+                s"Handling an eager Active Message, but we are using " +
+                  s"'${rapidsConf.shuffleUcxActiveMessagesMode}' as our configured mode.")
+              logDebug(s"Handling an EAGER active message receive ${amData}")
+              val resp = UcxUtils.getByteBufferView(amData.getDataAddress, amData.getLength)
 
-          if (amData.isDataValid) {
-            require(notForcingAmRndv,
-              s"Handling an eager Active Message, but we are using " +
-                s"'${rapidsConf.shuffleUcxActiveMessagesMode}' as our configured mode.")
-            logDebug(s"Handling an EAGER active message receive ${amData}")
-            val resp = UcxUtils.getByteBufferView(amData.getDataAddress, amData.getLength)
+              // copy the data onto a buffer we own because it is going to be reused
+              // in UCX
+              val dbb = cb.onHostMessageReceived(amData.getLength)
+              val bb = dbb.getBuffer()
+              bb.put(resp)
+              bb.rewind()
+              cb.onSuccess(am, dbb)
 
-            // copy the data onto a buffer we own because it is going to be reused
-            // in UCX
-            val dbb = cb.onHostMessageReceived(amData.getLength)
-            val bb = dbb.getBuffer()
-            bb.put(resp)
-            bb.rewind()
-            cb.onSuccess(am, dbb)
+              // we return OK telling UCX `amData` is ok to be closed, along with the eagerly
+              // received data
+              UcsConstants.STATUS.UCS_OK
+            } else {
+              // RNDV case: we get a direct buffer and UCX will fill it with data at `receive`
+              // callback
+              val resp = cb.onHostMessageReceived(amData.getLength)
 
-            // we return OK telling UCX `amData` is ok to be closed, along with the eagerly
-            // received data
-            UcsConstants.STATUS.UCS_OK
-          } else {
-            // RNDV case: we get a direct buffer and UCX will fill it with data at `receive`
-            // callback
-            val resp = cb.onHostMessageReceived(amData.getLength)
-
-            val receiveAm = amData.receive(UcxUtils.getAddress(resp.getBuffer()),
-              new UcxCallback {
-                override def onError(ucsStatus: Int, errorMsg: String): Unit = {
-                  withResource(resp) { _ =>
-                    withResource(amData) { _ =>
-                      logError(s"Error receiving: $ucsStatus $errorMsg => $activeMessageId ${hdr}")
-                      if (ucsStatus == UCX.UCS_ERR_CANCELED) {
-                        logWarning(
-                          s"Cancelled Active Message " +
-                            s"${TransportUtils.toHex(activeMessageId)}" +
-                            s" status=$ucsStatus, msg=$errorMsg")
-                        cb.onCancel(am)
-                      } else {
-                        cb.onError(am, ucsStatus, errorMsg)
+              val receiveAm = amData.receive(UcxUtils.getAddress(resp.getBuffer()),
+                new UcxCallback {
+                  override def onError(ucsStatus: Int, errorMsg: String): Unit = {
+                    withResource(resp) { _ =>
+                      withResource(amData) { _ =>
+                        if (ucsStatus == UCX.UCS_ERR_CANCELED) {
+                          logWarning(
+                            s"Cancelled Active Message " +
+                              s"${TransportUtils.toHex(activeMessageId)}" +
+                              s" status=$ucsStatus, msg=$errorMsg")
+                          cb.onCancel(am)
+                        } else {
+                          cb.onError(am, ucsStatus, errorMsg)
+                        }
                       }
                     }
                   }
-                }
-                override def onSuccess(request: UcpRequest): Unit = {
-                  withResource(amData) { _ =>
-                    cb.onSuccess(am, resp)
-                  }
-                }
-              })
 
-            cb.onMessageStarted(receiveAm)
-            UcsConstants.STATUS.UCS_INPROGRESS
+                  override def onSuccess(request: UcpRequest): Unit = {
+                    withResource(amData) { _ =>
+                      cb.onSuccess(am, resp)
+                    }
+                  }
+                })
+
+              cb.onMessageStarted(receiveAm)
+              UcsConstants.STATUS.UCS_INPROGRESS
+            }
           }
         })
     })
@@ -547,9 +547,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId,
 
   def sendActiveMessage(endpointId: Long, am: UCXActiveMessage,
                         dataAddress: Long, dataSize: Long, cb: UcxCallback): Unit = {
-    require(am.header.isDefined,
-      "An Active Message request must include a header so the response can find the " +
-        "correct callback.")
     onWorkerThreadAsync(() => {
       val ep = endpoints.get(endpointId)
       if (ep == null) {
@@ -563,7 +560,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId,
       // TODO: since we no longer have metadata limits, the pool can be managed using the
       //   address-space allocator, so we should obtain this direct buffer from that pool
       val header = ByteBuffer.allocateDirect(8)
-      header.putLong(am.header.get)
+      header.putLong(am.header)
       header.rewind()
 
       ep.sendAmNonBlocking(
@@ -895,4 +892,7 @@ object UCX {
 
   // We may consider matching tags partially for different request types
   private val MATCH_FULL_TAG: Long = 0xFFFFFFFFFFFFFFFFL
+
+  def formatAmIdAndHeader(activeMessageId: Int, header: Long) =
+    s"[amId=${TransportUtils.toHex(activeMessageId)}, hdr=${TransportUtils.toHex(header)}]"
 }
