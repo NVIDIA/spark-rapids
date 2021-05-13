@@ -62,7 +62,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
           }
         }
         // run string concatenate
-        withResource(GpuScalar.from("", StringType)) { emptyScalar =>
+        withResource(Scalar.fromString("")) { emptyScalar =>
           GpuColumnVector.from(ColumnVector.stringConcatenate(emptyScalar, nullScalar,
             buffer.toArray[ColumnView]), StringType)
         }
