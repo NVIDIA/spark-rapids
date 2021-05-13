@@ -65,8 +65,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
-        .set(TRANSITION_TO_CPU_COST, "0.3")
-        .set(TRANSITION_TO_GPU_COST, "0.3")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
         .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
@@ -270,8 +268,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   test("Avoid move to GPU for trivial projection, AQE on") {
     logError("Avoid move to GPU for trivial projection, AQE on")
     val conf = new SparkConf()
-        .set(TRANSITION_TO_CPU_COST, "0.1")
-        .set(TRANSITION_TO_GPU_COST, "0.1")
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
@@ -375,8 +371,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   test("Avoid move to GPU for shuffle, AQE off") {
     logError("Avoid move to GPU for shuffle, AQE off")
     val conf = new SparkConf()
-        .set(TRANSITION_TO_CPU_COST, "0.1")
-        .set(TRANSITION_TO_GPU_COST, "0.1")
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
