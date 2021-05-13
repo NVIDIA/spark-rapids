@@ -155,7 +155,15 @@ Please visit the [testing doc](tests/README.md) for details about how to run tes
 We provide a basic config `.pre-commit-config.yaml` for [pre-commit](https://pre-commit.com/) to
 automate some aspects of the development process. As a convenience you can enable automatic 
 copyright year updates by following the installation instructions on the
-[pre-commit homepage](https://pre-commit.com/), and setting the environment variable:
+[pre-commit homepage](https://pre-commit.com/), e.g.: 
+
+```bash
+conda install -c conda-forge pre-commit
+pre-commit install --allow-missing-config
+```
+
+and setting the environment variable:
+
 ```bash
 export SPARK_RAPIDS_AUTO_COPYRIGHTER=ON
 ```
