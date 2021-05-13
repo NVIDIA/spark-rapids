@@ -29,7 +29,6 @@ correspondingly"
     ON)
         ;;
 
-
     *)
         echo "Invalid value of SPARK_RAPIDS_AUTO_COPYRIGHTER=$SPARK_RAPIDS_AUTO_COPYRIGHTER.
         Only ON or OFF are allowed"
