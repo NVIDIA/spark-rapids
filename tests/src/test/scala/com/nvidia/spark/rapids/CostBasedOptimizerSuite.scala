@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
+import org.scalactic.Tolerance
 import org.scalatest.BeforeAndAfter
 
 import org.apache.spark.SparkConf
@@ -30,7 +31,10 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 import org.apache.spark.sql.types.DataTypes
 
-class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndAfter with Logging {
+class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
+  with Tolerance
+  with BeforeAndAfter
+  with Logging {
 
   // these tests currently rely on setting expensive transitions to force desired outcomes
   // and were written before we had the concept of memory access costs, so for now we use these
@@ -44,6 +48,13 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
 
   after {
     GpuOverrides.removeAllListeners()
+  }
+
+  test("Memory cost algorithm") {
+    val GIGABYTE = 1024 * 1024 * 1024
+    assert(2d === MemoryCostHelper.calculateCost(GIGABYTE, 0.5) +- 0.01)
+    assert(1d === MemoryCostHelper.calculateCost(GIGABYTE, 1) +- 0.01)
+    assert(0.5d === MemoryCostHelper.calculateCost(GIGABYTE, 2) +- 0.01)
   }
 
   test("Force section of plan back onto CPU, AQE on") {
@@ -398,12 +409,10 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite with BeforeAndA
         .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
         .set(RapidsConf.OPTIMIZER_EXPLAIN.key, "ALL")
         .set(RapidsConf.EXPLAIN.key, "ALL")
-        .set(TRANSITION_TO_CPU_COST, "0")
-        .set(TRANSITION_TO_GPU_COST, "0")
         .set("spark.rapids.sql.optimizer.gpu.exec.GpuCustomShuffleReaderExec", "99999999")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
-              "RoundRobinPartitioning")
+              "RoundRobinPartitioning,HashPartitioning")
 
     withGpuSparkSession(spark => {
       val df1: DataFrame = createQuery(spark).alias("l")

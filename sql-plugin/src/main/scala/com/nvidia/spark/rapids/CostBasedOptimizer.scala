@@ -195,7 +195,8 @@ class CostBasedOptimizer extends Optimizer with Logging {
       .getOrElse(conf.defaultRowCount.toDouble)
     val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
     conf.getGpuOperatorCost("GpuRowToColumnarExec").getOrElse(0d) * rowCount +
-      dataSize * conf.cpuReadMemoryCost + dataSize * conf.gpuWriteMemoryCost
+      MemoryCostHelper.calculateCost(dataSize, conf.cpuReadMemorySpeed) +
+      MemoryCostHelper.calculateCost(dataSize, conf.gpuWriteMemorySpeed)
   }
 
   private def transitionToCpuCost(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Double = {
@@ -203,7 +204,8 @@ class CostBasedOptimizer extends Optimizer with Logging {
       .getOrElse(conf.defaultRowCount.toDouble)
     val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
     conf.getGpuOperatorCost("GpuColumnarToRowExec").getOrElse(0d) * rowCount +
-      dataSize * conf.gpuReadMemoryCost + dataSize * conf.cpuWriteMemoryCost
+      MemoryCostHelper.calculateCost(dataSize, conf.gpuReadMemorySpeed) +
+      MemoryCostHelper.calculateCost(dataSize, conf.cpuWriteMemorySpeed)
   }
 
   /**
@@ -263,8 +265,8 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
         exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
 
       case _: AttributeReference | _: GetStructField =>
-        conf.cpuReadMemoryCost * GpuBatchUtils.estimateGpuMemory(
-          expr.dataType, nullable = false, rowCount.toLong)
+        MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount.toLong), conf.cpuReadMemorySpeed)
 
       case _ =>
         expr.childExprs
@@ -272,8 +274,8 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
     }
 
     // the output of evaluating the expression needs to be written out to rows
-    val memoryWriteCost = conf.cpuWriteMemoryCost * GpuBatchUtils.estimateGpuMemory(
-      expr.dataType, nullable = false, rowCount.toLong)
+    val memoryWriteCost = MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
+      expr.dataType, nullable = false, rowCount.toLong), conf.cpuWriteMemorySpeed)
 
     // optional additional per-row overhead of evaluating the expression
     val exprEvalCost = rowCount *
@@ -319,8 +321,8 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
         memoryReadCost = expr.childExprs
           .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
 
-        memoryWriteCost += conf.gpuWriteMemoryCost * GpuBatchUtils.estimateGpuMemory(
-          expr.dataType, nullable = false, rowCount.toLong)
+        memoryWriteCost += MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount.toLong), conf.gpuWriteMemorySpeed)
     }
 
     // optional additional per-row overhead of evaluating the expression
@@ -332,6 +334,20 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
   }
 }
 
+object MemoryCostHelper {
+  private val GIGABYTE = 1024d * 1024d * 1024d
+
+  /**
+   * Calculate the cost (time) of transferring data at a given memory speed.
+   *
+   * @param dataSize Size of data to transfer, in bytes.
+   * @param memorySpeed Memory speed, in GB/s.
+   * @return Time in seconds.
+   */
+  def calculateCost(dataSize: Long, memorySpeed: Double): Double = {
+    (dataSize / GIGABYTE) / memorySpeed
+  }
+}
 
 /**
  * Estimate the number of rows that an operator will output. Note that these row counts are

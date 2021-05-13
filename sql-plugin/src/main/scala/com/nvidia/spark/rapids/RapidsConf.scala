@@ -1134,33 +1134,33 @@ object RapidsConf {
       .doubleConf
       .createWithDefault(0.0)
 
-  val OPTIMIZER_CPU_READ_COST = conf(
+  val OPTIMIZER_CPU_READ_SPEED = conf(
     "spark.rapids.sql.optimizer.cpuReadSpeed")
       .internal()
-      .doc("Cost of reading data from CPU memory")
+      .doc("Speed of reading data from CPU memory in GB/s")
       .doubleConf
-      .createWithDefault(0.0)
+      .createWithDefault(30.0)
 
-  val OPTIMIZER_CPU_WRITE_COST = conf(
+  val OPTIMIZER_CPU_WRITE_SPEED = conf(
     "spark.rapids.sql.optimizer.cpuWriteSpeed")
     .internal()
-    .doc("Cost of writing data to CPU memory")
+    .doc("Speed of writing data to CPU memory in GB/s")
     .doubleConf
-    .createWithDefault(0.0)
+    .createWithDefault(30.0)
 
-  val OPTIMIZER_GPU_READ_COST = conf(
+  val OPTIMIZER_GPU_READ_SPEED = conf(
     "spark.rapids.sql.optimizer.gpuReadSpeed")
     .internal()
-    .doc("Cost of reading data from GPU memory")
+    .doc("Speed of reading data from GPU memory in GB/s")
     .doubleConf
-    .createWithDefault(0.0)
+    .createWithDefault(320.0)
 
-  val OPTIMIZER_GPU_WRITE_COST = conf(
+  val OPTIMIZER_GPU_WRITE_SPEED = conf(
     "spark.rapids.sql.optimizer.gpuWriteSpeed")
     .internal()
-    .doc("Cost of writing data to GPU memory")
+    .doc("Speed of writing data to GPU memory in GB/s")
     .doubleConf
-    .createWithDefault(0.0)
+    .createWithDefault(320.0)
 
   val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
@@ -1540,13 +1540,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val defaultGpuExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
 
-  lazy val cpuReadMemoryCost: Double = get(OPTIMIZER_CPU_READ_COST)
+  lazy val cpuReadMemorySpeed: Double = get(OPTIMIZER_CPU_READ_SPEED)
 
-  lazy val cpuWriteMemoryCost: Double = get(OPTIMIZER_CPU_WRITE_COST)
+  lazy val cpuWriteMemorySpeed: Double = get(OPTIMIZER_CPU_WRITE_SPEED)
 
-  lazy val gpuReadMemoryCost: Double = get(OPTIMIZER_GPU_READ_COST)
+  lazy val gpuReadMemorySpeed: Double = get(OPTIMIZER_GPU_READ_SPEED)
 
-  lazy val gpuWriteMemoryCost: Double = get(OPTIMIZER_GPU_WRITE_COST)
+  lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
