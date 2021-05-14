@@ -410,7 +410,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
     def setRequestActiveMessageHandler(requestCbGen: () => UCXAmCallback): Unit = {
       require(responseCallbacks.isEmpty)
-      requestCallbackGen = requestCallbackGen
+      requestCallbackGen = requestCbGen
     }
 
     def addResponseActiveMessageHandler(header: Long, responseCallback: UCXAmCallback): Unit = {

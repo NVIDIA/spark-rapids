@@ -191,7 +191,7 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
     // is expected to come back with the response, and is used to find the
     // correct callback (this is an implementation detail in UCX.scala)
     ucx.registerResponseHandler(
-      UCXConnection.composeRequestAmId(requestType), requestHeader, amCallback)
+      UCXConnection.composeResponseAmId(requestType), requestHeader, amCallback)
 
     // kick-off the request
     val requestAm = UCXActiveMessage(
