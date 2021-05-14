@@ -33,19 +33,9 @@
 
     <properties>
         <hadoop.version>3.1.1</hadoop.version>
-        <!--<assembly.descriptor>src/assembly/assembly-no-scala.xml</assembly.descriptor>-->
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark311.version}</spark.test.version>
     </properties>
-
-    <!--<profiles>
-        <profile>
-            <id>standalone</id>
-            <properties>
-                <assembly.descriptor>src/assembly/assembly.xml</assembly.descriptor>
-            </properties>
-        </profile>
-    </profiles>-->
 
     <dependencies>
         <dependency>
@@ -141,10 +131,11 @@
                                 </filter>
                             </filters>
                             <transformers>
-                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                <mainClass>org.apache.spark.sql.rapids.tool.profiling.ProfileMain</mainClass>
-                            </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>org.apache.spark.sql.rapids.tool.profiling.ProfileMain</mainClass>
+                                </transformer>
                             </transformers>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                         </configuration>
                     </execution>
                 </executions>
