@@ -67,14 +67,14 @@ specified by the configuration `spark.master`. It can be provided by various mea
 as via `--master` argument of `spark-submit`.
 
 By default, the [local mode](
-https://github.com/apache/spark/blob/1a042cc414c0c720535798b9a1197fe8885d6f6e/core/src/main/scala/org/apache/spark/deploy/SparkSubmitArguments.scala#L214
+https://github.com/apache/spark/blob/v3.1.1/core/src/main/scala/org/apache/spark/deploy/SparkSubmitArguments.scala#L214
 ) is used to run the Driver and Executors in the same JVM. Albeit convenient, this mode sometimes
 masks problems occurring in fully distributed production deployments. These are often bugs related
 to object serialization and hash code implementation.
 
 Thus, Apache Spark provides another lightweight way to test applications in the pseudo-distributed
 [local-cluster[numWorkers,coresPerWorker,memoryPerWorker]](
-https://github.com/apache/spark/blob/master/core/src/main/scala/org/apache/spark/SparkContext.scala#L3025
+https://github.com/apache/spark/blob/v3.1.1/core/src/main/scala/org/apache/spark/SparkContext.scala#L2993
 ) mode where executors are run in separate JVMs on your local machine.
 
 The following environment variables control the behavior in the `run_pyspark_from_build.sh` script
