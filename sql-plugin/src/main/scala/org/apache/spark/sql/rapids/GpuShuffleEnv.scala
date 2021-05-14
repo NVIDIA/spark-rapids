@@ -27,9 +27,11 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
 
+  private lazy val conf = SparkEnv.get.conf
+
   lazy val isRapidsShuffleConfigured: Boolean = {
-    rapidsConf.get("spark.shuffle.manager").isDefined &&
-      rapidsConf.get("spark.shuffle.manager").get == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
+    conf.contains("spark.shuffle.manager") &&
+      conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
 
   lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
@@ -43,7 +45,7 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   def init(): Unit = {
     if (isRapidsShuffleConfigured) {
-      val diskBlockManager = new RapidsDiskBlockManager(SparkEnv.get.conf)
+      val diskBlockManager = new RapidsDiskBlockManager(conf)
       shuffleCatalog =
           new ShuffleBufferCatalog(RapidsBufferCatalog.singleton, diskBlockManager)
       shuffleReceivedBufferCatalog =
@@ -56,7 +58,7 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = shuffleReceivedBufferCatalog
 
   def getShuffleFetchTimeoutSeconds: Long = {
-    SparkEnv.get.conf.getTimeAsSeconds("spark.network.timeout", "120s")
+    conf.getTimeAsSeconds("spark.network.timeout", "120s")
   }
 }
 

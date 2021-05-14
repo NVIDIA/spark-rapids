@@ -216,7 +216,7 @@ object UcxBenchTest {
   def main(args: Array[String]): Unit = {
     val perfOptions = parseOptions(args)
 
-    GpuDeviceManager.initializeMemory(Option(perfOptions.gpuId), Option(rapidsConf))
+    GpuDeviceManager.setGpuDevice(perfOptions.gpuId)
 
     var host = System.getenv("SPARK_LOCAL_IP")
     if (host == null) {
