@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import scala.language.existentials
+import scala.concurrent.duration.{DAYS, Duration}
+import scala.language.{existentials, implicitConversions}
 
 import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
 import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
@@ -403,6 +404,7 @@ object GpuWindowExpression {
       throw new UnsupportedOperationException(s"Unsupported window frame expression $anythingElse")
   }
 
+
   /**
    * Create a Scalar from boundary value according to order by column type
    * @param orderByType the type of order by column
@@ -410,18 +412,21 @@ object GpuWindowExpression {
    * @return Scalar holding boundary value
    */
   def createRangeWindowBoundary(orderByType: DType, value: Long): Scalar = {
+    implicit def daysToDuration(days: Long) = Duration(value, DAYS)
     orderByType match {
       case DType.INT8 => Scalar.fromByte(value.toByte)
       case DType.INT16 => Scalar.fromShort(value.toShort)
       case DType.INT32 => Scalar.fromInt(value.toInt)
       case DType.INT64 => Scalar.fromLong(value)
-      case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value)
-      case DType.TIMESTAMP_SECONDS => Scalar.durationFromLong(DType.DURATION_SECONDS, value)
+      case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value.toDays)
+      case DType.TIMESTAMP_SECONDS => Scalar.durationFromLong(DType.DURATION_SECONDS,
+        value.toSeconds)
       case DType.TIMESTAMP_MILLISECONDS =>
-        Scalar.durationFromLong(DType.DURATION_MILLISECONDS, value)
+        Scalar.durationFromLong(DType.DURATION_MILLISECONDS, value.toMillis)
       case DType.TIMESTAMP_MICROSECONDS =>
-        Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value)
-      case DType.TIMESTAMP_NANOSECONDS => Scalar.durationFromLong(DType.DURATION_NANOSECONDS, value)
+        Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value.toMicros)
+      case DType.TIMESTAMP_NANOSECONDS => Scalar.durationFromLong(DType.DURATION_NANOSECONDS,
+        value.toNanos)
       case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
     }
   }
