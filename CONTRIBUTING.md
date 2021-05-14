@@ -155,10 +155,14 @@ Please visit the [testing doc](tests/README.md) for details about how to run tes
 We provide a basic config `.pre-commit-config.yaml` for [pre-commit](https://pre-commit.com/) to
 automate some aspects of the development process. As a convenience you can enable automatic 
 copyright year updates by following the installation instructions on the
-[pre-commit homepage](https://pre-commit.com/), e.g.: 
+[pre-commit homepage](https://pre-commit.com/).
+
+To this end, first install `pre-commit` itself using the method most suitable for your development
+environment. Then you will need to run `pre-commit install` to enable it in your local git
+repository. Using `--allow-missing-config` will make it easy to work with older branches
+that do not have `.pre-commit-config.yaml`.
 
 ```bash
-conda install -c conda-forge pre-commit
 pre-commit install --allow-missing-config
 ```
 
