@@ -102,10 +102,24 @@ case class GpuElementAt(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     lhs.dataType match {
       case _: ArrayType => {
-        GetArrayItemUtil.evalColumnar(lhs, rhs, dataType, zeroIndexed = false)
+        if (rhs.isValid) {
+          if (rhs.getInt > 0) {
+            // SQL 1-based index
+            lhs.getBase.extractListElement(rhs.getInt - 1)
+          } else if (rhs.getInt == 0) {
+            throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+          } else {
+            lhs.getBase.extractListElement(rhs.getInt)
+          }
+        } else {
+          withResource(Scalar.fromNull(
+            GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
+            ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+          }
+        }
       }
       case _: MapType => {
-        GetMapValueUtil.evalColumnar(lhs, rhs)
+        lhs.getBase.getMapValue(rhs)
       }
     }
   }
