@@ -36,11 +36,6 @@ export AWS_SECRET_ACCESS_KEY=xxx
 <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar
 s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
-# Generate query visualizations in DOT format:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
-<Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar
--g /path/to/eventlog1 /path/to/eventlog2
-
 # Change output directory to /tmp
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar
@@ -49,9 +44,6 @@ s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 For usage see below:
     """)
 
-  val generateDot: ScallopOption[Boolean] =
-    opt[Boolean](required = false,
-      descr = "Generate query visualizations in DOT format. Default is false")
   val outputDirectory: ScallopOption[String] =
     opt[String](required = false,
       descr = "Output directory. Default is current directory",

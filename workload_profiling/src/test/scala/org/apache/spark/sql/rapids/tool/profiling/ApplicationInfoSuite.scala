@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-
 import java.io.PrintWriter
 
 import com.nvidia.spark.rapids.tool.profiling.ProfileArgs
@@ -43,4 +42,5 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.head.sparkVersion.equals("3.1.1"))
     assert(apps.head.gpuMode.equals(true))
   }
+
 }

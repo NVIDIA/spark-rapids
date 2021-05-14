@@ -23,14 +23,13 @@ import org.apache.spark.sql.SparkSession
  * object Utils provides toolkit functions
  *
  */
-
 object ProfileUtils {
 
   // Create a SparkSession in local mode
   def createSparkSession: SparkSession = {
     SparkSession
         .builder()
-        .master("local")
+        .master("local[*]")
         .appName("Rapids Spark Profiling Tool")
         .getOrCreate()
   }
@@ -49,16 +48,10 @@ object ProfileUtils {
     case _: NoSuchElementException => ""
   }
 
-
   // Check if the job/stage is GPU mode is on
   def isGPUMode(properties: collection.mutable.Map[String, String]): Boolean = {
-    if (properties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin")
-        && properties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean) {
-      true
-    }
-    else {
-      false
-    }
+    (properties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin")
+        && properties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean)
   }
 
   // Return None if either of them are None
