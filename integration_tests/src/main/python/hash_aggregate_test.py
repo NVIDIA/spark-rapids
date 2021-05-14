@@ -617,6 +617,7 @@ def test_subquery_in_agg(adaptive, expr):
             ('ab', IntegerGen(min_val=5, max_val=9)),
         ]))], nullable=False),
 ], ids=idfn)
+@ignore_order(local=True)
 def test_struct_groupby_count(key_data_gen):
     def group_by_count(spark):
         df = two_col_df(spark, key_data_gen, IntegerGen())
