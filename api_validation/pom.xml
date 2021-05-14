@@ -42,9 +42,9 @@
             </properties>
         </profile>
         <profile>
-            <id>spark311cloud</id>
+            <id>spark311cdh</id>
             <properties>
-                <spark.version>${spark311cloud.version}</spark.version>
+                <spark.version>${spark311cdh.version}</spark.version>
             </properties>
         </profile>
         <profile>

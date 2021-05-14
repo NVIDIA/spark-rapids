@@ -144,7 +144,7 @@
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-spark311cloud_${scala.binary.version}</artifactId>
+            <artifactId>rapids-4-spark-shims-spark311cdh_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>compile</scope>
         </dependency>
