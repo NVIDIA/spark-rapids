@@ -211,6 +211,8 @@ class GpuScalar private(
     private var value: Option[Any],
     val dataType: DataType) extends Arm with AutoCloseable {
 
+  private var refCount: Int = 0
+
   if(scalar.isEmpty && value.isEmpty) {
     throw new IllegalArgumentException("GpuScalar requires at least a value or a Scalar")
   }
@@ -276,8 +278,8 @@ class GpuScalar private(
       refCount -= 1
       if (refCount == 0) {
         scalar.foreach(_.close())
-        scalar = Some(null)
-        value = Some(null)
+        scalar = null
+        value = null
       } else if (refCount < 0) {
         throw new IllegalStateException(s"Close called too many times $this")
       }
@@ -293,10 +295,6 @@ class GpuScalar private(
     }
     this
   }
-
-  // Scala executes line by line, so `refCount` should be defined before
-  // the 'incRefCountInternal'
-  private var refCount: Int = 0
   incRefCountInternal(true)
 }
 

@@ -19,18 +19,24 @@ package com.nvidia.spark.rapids.unit
 import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.{FloatType, IntegerType}
 
 class GpuScalarUnitTest extends GpuUnitTests {
 
-  test("Test internal scalar is null after closed") {
-    val gsv = GpuScalar(1, IntegerType)
+  test("Test throws exception after closed") {
+    val gsv = GpuScalar(1, FloatType)
     gsv.close()
-    assert(gsv.getBase == null)
+    assertThrows[NullPointerException](gsv.getBase)
+    assertThrows[NullPointerException](gsv.getValue)
+    assertThrows[NullPointerException](gsv.isValid)
+    assertThrows[NullPointerException](gsv.isNan)
 
-    val gsc = GpuScalar(Scalar.fromInt(1), IntegerType)
+    val gsc = GpuScalar(Scalar.fromFloat(1), FloatType)
     gsc.close()
-    assert(gsc.getBase == null)
+    assertThrows[NullPointerException](gsc.getBase)
+    assertThrows[NullPointerException](gsc.getValue)
+    assertThrows[NullPointerException](gsc.isValid)
+    assertThrows[NullPointerException](gsc.isNan)
   }
 
   test("Test closed too many times") {
@@ -50,13 +56,13 @@ class GpuScalarUnitTest extends GpuUnitTests {
     }
   }
 
-  test("Test closed is invalid") {
+  test("Test incRefCount throws exception after closed") {
     val gsv = GpuScalar(1, IntegerType)
     gsv.close()
-    assert(!gsv.isValid)
+    assertThrows[IllegalStateException](gsv.incRefCount)
 
     val gsc = GpuScalar(Scalar.fromInt(1), IntegerType)
     gsc.close()
-    assert(!gsc.isValid)
+    assertThrows[IllegalStateException](gsc.incRefCount)
   }
 }
