@@ -112,8 +112,7 @@ case class GpuElementAt(left: Expression, right: Expression)
             lhs.getBase.extractListElement(rhs.getInt)
           }
         } else {
-          withResource(Scalar.fromNull(
-            GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
+          withResource(GpuScalar.from(null, dataType)) { nullScalar =>
             ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
           }
         }

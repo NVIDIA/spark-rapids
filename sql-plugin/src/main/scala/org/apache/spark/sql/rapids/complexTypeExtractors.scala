@@ -122,8 +122,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
     if (ordinal.isValid && ordinal.getInt >= 0) {
       lhs.getBase.extractListElement(ordinal.getInt)
     } else {
-      withResource(Scalar.fromNull(
-        GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
+      withResource(GpuScalar.from(null, dataType)) { nullScalar =>
         ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
       }
     }
