@@ -1352,10 +1352,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     entry.get(conf)
   }
 
-  def get(entry: String): Option[String] = {
-    conf.get(entry)
-  }
-
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).asJava
 

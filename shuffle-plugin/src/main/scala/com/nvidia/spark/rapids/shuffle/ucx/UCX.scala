@@ -198,7 +198,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
             endpoints.computeIfAbsent(backwardEpId.decrementAndGet(),
               _ => worker.newEndpoint(getEpParams.setConnectionRequest(connectionRequest)))
           })
-        val maxRetries = rapidsConf.get("spark.port.maxRetries").getOrElse("16").toInt
+        val maxRetries = 100
         val startPort = if (rapidsConf.shuffleUcxListenerStartPort != 0) {
           rapidsConf.shuffleUcxListenerStartPort
         } else {
