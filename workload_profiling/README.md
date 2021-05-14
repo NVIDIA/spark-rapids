@@ -12,16 +12,7 @@ Works with both cpu and gpu generated event logs.
 
 `cp target/rapids-4-spark-tools-0.6.0-SNAPSHOT.jar $SPARK_HOME/jars/`
 
-3. Add below entries in $SPARK_HOME/conf/log4j.properties
-```
-log4j.logger.org.apache.spark.sql.rapids.tool.profiling=INFO, fileAppender
-log4j.appender.fileAppender=org.apache.log4j.RollingFileAppender
-log4j.appender.fileAppender.layout=org.apache.log4j.PatternLayout
-log4j.appender.fileAppender.layout.ConversionPattern=[%t] %-5p %c %x - %m%n
-log4j.appender.fileAppender.File=/tmp/event_log_profiling.log
-```
-
-4.  In spark-shell:
+3.  In spark-shell:
 For a single event log analysis:
 ```
 org.apache.spark.sql.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))

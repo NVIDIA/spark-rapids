@@ -16,34 +16,37 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import java.io.PrintWriter
+
 import scala.collection.mutable.ArrayBuffer
+
+import org.apache.spark.internal.Logging
 
 /**
  * A profiling tool to parse Spark Event Log
  * This is the Main function.
  */
-
-object ProfileMain {
+object ProfileMain extends Logging {
   def main(args: Array[String]) {
 
     // This tool's output log file name
-    val logFileName = "event_log_profiling.log"
+    val logFileName = "workload_profiling.log"
 
     // Parsing args
     val appArgs = new ProfileArgs(args)
     val eventlogPaths = appArgs.eventlog()
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
-    // Create the same logger and sparkSession used for ALL Applications.
-    val logger = ProfileUtils.createLogger(outputDirectory, logFileName)
+    // Create the PrintWriter and sparkSession used for ALL Applications.
+    val fileWriter = new PrintWriter(s"$outputDirectory/$logFileName")
     val sparkSession = ProfileUtils.createSparkSession
-    logger.info(s"Output directory:  $outputDirectory")
+    logInfo(s"Output directory:  $outputDirectory")
 
     // Create an Array of Applications(with an index starting from 1)
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     var index: Int = 1
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs, sparkSession, logger, path, index)
+      apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
       index += 1
     }
     require(apps.nonEmpty)
@@ -52,23 +55,24 @@ object ProfileMain {
     // A. Information Collected
     val collect = new CollectInformation(apps)
     if (apps.size == 1) {
-      logger.info(s"### A. Information Collected ###")
+      logInfo(s"### A. Information Collected ###")
       collect.printAppInfo()
       collect.printExecutorInfo()
       collect.printRapidsProperties()
     } else {
       val compare = new CompareApplications(apps)
       // Compare Applications
-      logger.info(s"### A. Compare Information Collected ###")
+      logInfo(s"### A. Compare Information Collected ###")
       compare.compareAppInfo()
       compare.compareExecutorInfo()
       compare.compareRapidsProperties()
     }
 
     for (app <- apps) {
-      logger.info("========================================================================")
-      logger.info(s"==============  ${app.appId} (index=${app.index})  ==============")
-      logger.info("========================================================================")
+      logInfo("========================================================================")
+      logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
+      logInfo("========================================================================")
     }
+    fileWriter.close()
   }
 }

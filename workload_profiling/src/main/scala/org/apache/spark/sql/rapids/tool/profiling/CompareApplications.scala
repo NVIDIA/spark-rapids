@@ -17,17 +17,19 @@ package org.apache.spark.sql.rapids.tool.profiling
 
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.internal.Logging
+
 /**
  * CompareApplications compares multiple ApplicationInfo objects
  */
-class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) {
+class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
 
   require(apps.size>1)
-  private val logger = apps.head.logger
+  private val fileWriter = apps.head.fileWriter
 
   // Compare the App Information.
   def compareAppInfo(): Unit = {
-    logger.info("Compare Application Information:")
+    fileWriter.println("Compare Application Information:")
     var query = ""
     var i = 1
     for (app <- apps) {
@@ -44,7 +46,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Compare Executors information
   def compareExecutorInfo(): Unit = {
-    logger.info("Compare Executor Information:")
+    fileWriter.println("Compare Executor Information:")
     var query = ""
     var i = 1
     for (app <- apps) {
@@ -61,7 +63,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Compare Rapids Properties which are set explicitly
   def compareRapidsProperties(): Unit ={
-    logger.info("Compare Rapids Properties which are set explicitly:")
+    fileWriter.println("Compare Rapids Properties which are set explicitly:")
     var withClauseAllKeys = "with allKeys as \n ("
     val selectKeyPart = "select allKeys.key"
     var selectValuePart = ""
@@ -93,7 +95,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) {
 
     query = withClauseAllKeys + selectKeyPart + selectValuePart +
         " from (\n" + query + "\n) order by key"
-    apps.head.logger.debug("Running query " + query)
+    logDebug("Running query " + query)
     apps.head.runQuery(query)
   }
 }

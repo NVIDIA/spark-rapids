@@ -24,11 +24,11 @@ import scala.collection.mutable.ArrayBuffer
 class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   require(apps.nonEmpty)
-  private val logger = apps.head.logger
+  private val fileWriter = apps.head.fileWriter
 
   // Print Application Information
   def printAppInfo(): Unit = {
-    logger.info("Application Information:")
+    fileWriter.println("Application Information:")
     for (app <- apps) {
       app.runQuery(app.generateAppInfo)
     }
@@ -38,16 +38,16 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
   def printRapidsJAR(): Unit = {
     for (app <- apps) {
       if (app.gpuMode) {
-        logger.info(s"Application ${app.appId} (index=${app.index}) 's" +
+        fileWriter.println(s"Application ${app.appId} (index=${app.index}) 's" +
             " Rapids Accelerator Jar and cuDF Jar:")
         // Look for rapids-4-spark and cuDF jar
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
         if (rapidsJar.nonEmpty) {
-          rapidsJar.keys.foreach(k => logger.info(k))
+          rapidsJar.keys.foreach(k => fileWriter.println(k))
         }
         if (cuDFJar.nonEmpty) {
-          cuDFJar.keys.foreach(k => logger.info(k))
+          cuDFJar.keys.foreach(k => fileWriter.println(k))
         }
       }
     }
@@ -55,7 +55,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Print executor related information
   def printExecutorInfo(): Unit = {
-    logger.info("Executor Information:")
+    fileWriter.println("Executor Information:")
     for (app <- apps) {
       app.runQuery(app.generateExecutorInfo + " order by cast(executorID as long)")
     }
@@ -63,7 +63,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Print Rapids related Spark Properties
   def printRapidsProperties(): Unit = {
-    logger.info("Spark Rapids parameters set explicitly:")
+    fileWriter.println("Spark Rapids parameters set explicitly:")
     for (app <- apps) {
       app.runQuery(app.generateRapidsProperties + " order by key")
     }

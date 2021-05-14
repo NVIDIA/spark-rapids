@@ -16,10 +16,6 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.io.IOException
-
-import org.apache.log4j._
-
 import org.apache.spark.internal.config
 import org.apache.spark.sql.SparkSession
 
@@ -29,28 +25,6 @@ import org.apache.spark.sql.SparkSession
  */
 
 private object ProfileUtils {
-
-  // Create a logger
-  def createLogger(outputDir: String, logFileName: String): Logger = {
-    val rootLogger = Logger.getRootLogger
-    rootLogger.setLevel(Level.ERROR)
-    val logger = Logger.getLogger(this.getClass.getName)
-    logger.setLevel(Level.INFO)
-
-    val layout = new PatternLayout("[%t] %-5p %c %x - %m%n")
-    rootLogger.addAppender(new ConsoleAppender(layout))
-
-    try {
-      val fileAppender = new RollingFileAppender(layout, s"$outputDir/$logFileName")
-      logger.addAppender(fileAppender)
-    }
-    catch {
-      case e: IOException =>
-        println("ERROR: Failed to add appender! Exiting... " + e.toString)
-        System.exit(1)
-    }
-    logger
-  }
 
   // Create a SparkSession in local mode
   def createSparkSession: SparkSession = {

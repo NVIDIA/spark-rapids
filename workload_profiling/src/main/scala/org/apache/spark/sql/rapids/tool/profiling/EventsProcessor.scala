@@ -16,13 +16,14 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.scheduler._
 
 /**
  * This object is to process all events and do validation in the end.
  */
-object EventsProcessor {
+object EventsProcessor extends Logging {
 
   def processAnyEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
     event match {
@@ -57,7 +58,7 @@ object EventsProcessor {
   }
 
   def doSparkListenerLogStart(app: ApplicationInfo, event: SparkListenerLogStart): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     app.sparkVersion = event.sparkVersion
   }
 
@@ -65,8 +66,7 @@ object EventsProcessor {
       app: ApplicationInfo,
       event: SparkListenerResourceProfileAdded): Unit = {
 
-    app.logger.debug("Processing event: " + event.getClass)
-
+    logDebug("Processing event: " + event.getClass)
     val res = event.resourceProfile
     val thisResourceProfile = ResourceProfileCase(
       res.id,
@@ -83,7 +83,7 @@ object EventsProcessor {
   def doSparkListenerBlockManagerAdded(
       app: ApplicationInfo,
       event: SparkListenerBlockManagerAdded): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     val thisBlockManager = BlockManagerCase(
       event.blockManagerId.executorId,
       event.blockManagerId.host,
@@ -98,7 +98,7 @@ object EventsProcessor {
   def doSparkListenerBlockManagerRemoved(
       app: ApplicationInfo,
       event: SparkListenerBlockManagerRemoved): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     val thisBlockManagerRemoved = BlockManagerRemovedCase(
       event.blockManagerId.executorId,
       event.blockManagerId.host,
@@ -111,7 +111,7 @@ object EventsProcessor {
   def doSparkListenerEnvironmentUpdate(
       app: ApplicationInfo,
       event: SparkListenerEnvironmentUpdate): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     app.sparkProperties = event.environmentDetails("Spark Properties").toMap
     app.hadoopProperties = event.environmentDetails("Hadoop Properties").toMap
     app.systemProperties = event.environmentDetails("System Properties").toMap
@@ -121,16 +121,16 @@ object EventsProcessor {
     //Decide if this application is on GPU Mode
     if (ProfileUtils.isGPUMode(collection.mutable.Map() ++= app.sparkProperties)) {
       app.gpuMode = true
-      app.logger.debug("App's GPU Mode = TRUE")
+      logDebug("App's GPU Mode = TRUE")
     } else {
-      app.logger.debug("App's GPU Mode = FALSE")
+      logDebug("App's GPU Mode = FALSE")
     }
   }
 
   def doSparkListenerApplicationStart(
       app: ApplicationInfo,
       event: SparkListenerApplicationStart): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     val thisAppStart = ApplicationCase(
       event.appName,
       event.appId,
@@ -149,14 +149,14 @@ object EventsProcessor {
   def doSparkListenerApplicationEnd(
       app: ApplicationInfo,
       event: SparkListenerApplicationEnd): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     app.appEndTime = Some(event.time)
   }
 
   def doSparkListenerExecutorAdded(
       app: ApplicationInfo,
       event: SparkListenerExecutorAdded): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     val executor = ExecutorCase(
       event.executorId,
       event.executorInfo.executorHost,
@@ -169,7 +169,7 @@ object EventsProcessor {
   def doSparkListenerExecutorRemoved(
       app: ApplicationInfo,
       event: SparkListenerExecutorRemoved): Unit = {
-    app.logger.debug("Processing event: " + event.getClass)
+    logDebug("Processing event: " + event.getClass)
     val thisExecutorRemoved = ExecutorRemovedCase(
       event.executorId,
       event.reason,
@@ -180,33 +180,7 @@ object EventsProcessor {
 
   // To process all other unknown events
   def doOtherEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
-    app.logger.info("Processing other event: " + event.getClass)
+    logInfo("Processing other event: " + event.getClass)
     app.otherEvents += event
-  }
-
-  // Print all details the ApplicationInfo object to validate data.
-  // This is just for debug
-  def validateApp(app: ApplicationInfo): Unit = {
-    val logger = app.logger
-    logger.debug("Application version: " + app.sparkVersion)
-
-    //Print all Dataframes
-    for ((name, df) <- app.allDataFrames) {
-      logger.debug(name + ":")
-      df.createOrReplaceTempView(name)
-      logger.debug("\n" + df.showString(10))
-      logger.debug("\n" + df.schema.treeString)
-    }
-
-    logger.debug("sparkProperties: " + app.sparkProperties)
-    logger.debug("hadoopProperties: " + app.hadoopProperties)
-    logger.debug("systemProperties: " + app.systemProperties)
-    logger.debug("jvmInfo: " + app.jvmInfo)
-    logger.debug("classpathEntries: " + app.classpathEntries)
-
-    logger.debug("Rapids Accelerator Parameters:")
-    logger.debug("spark.plugins=" + app.sparkProperties.getOrElse("spark.plugins", ""))
-    logger.debug("spark.rapids.sql.enabled=" +
-        app.sparkProperties.getOrElse("spark.rapids.sql.enabled", ""))
   }
 }

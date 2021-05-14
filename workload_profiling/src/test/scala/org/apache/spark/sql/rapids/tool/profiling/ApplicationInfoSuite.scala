@@ -16,23 +16,26 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import org.apache.log4j.Level
-import org.scalatest.FunSuite
+import java.io.PrintWriter
 
 import scala.collection.mutable.ArrayBuffer
 
-class ApplicationInfoSuite extends FunSuite {
+import org.scalatest.FunSuite
+
+import org.apache.spark.internal.Logging
+
+class ApplicationInfoSuite extends FunSuite with Logging {
 
   val sparkSession = ProfileUtils.createSparkSession
   var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
   val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
-  val logger = ProfileUtils.createLogger("src/test/resources/", "profile_log")
+  val fileWriter = new PrintWriter("src/test/resources/workload_profiling")
 
   test("testing single event log count") {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs, sparkSession, logger, path, index)
+      apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
       index += 1
     }
     assert(apps.size == 1)

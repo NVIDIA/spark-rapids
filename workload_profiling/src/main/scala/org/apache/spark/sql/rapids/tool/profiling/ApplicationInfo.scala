@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import java.io.PrintWriter
 import java.net.URI
 
 import scala.collection.Map
@@ -24,10 +25,10 @@ import scala.io.{Codec, Source}
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.log4j.Logger
 import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.deploy.history.EventLogFileReader
+import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.ui.UIUtils
@@ -40,9 +41,9 @@ import org.apache.spark.util._
 class ApplicationInfo(
     val args: ProfileArgs,
     val sparkSession: SparkSession,
-    val logger: Logger,
+    val fileWriter: PrintWriter,
     val eventlog: String,
-    val index: Int) {
+    val index: Int) extends Logging {
 
   // From SparkListenerLogStart
   var sparkVersion: String = ""
@@ -102,7 +103,7 @@ class ApplicationInfo(
    * Functions to process all the events
    */
   def processEvents(): Unit = {
-    logger.info("Parsing Event Log File: " + eventlog)
+    logInfo("Parsing Event Log File: " + eventlog)
     // Convert a String to org.apache.hadoop.fs.Path
     val uri = URI.create(eventlog)
     val config = new Configuration()
@@ -117,15 +118,15 @@ class ApplicationInfo(
         try {
           val event = JsonProtocol.sparkEventFromJson(parse(line))
           EventsProcessor.processAnyEvent(this, event)
-          logger.debug(line)
+          logDebug(line)
         }
         catch {
           case e: ClassNotFoundException =>
-            logger.warn(s"ClassNotFoundException: ${e.getMessage}")
+            logWarning(s"ClassNotFoundException: ${e.getMessage}")
         }
       }
     }
-    logger.info("Total number of events parsed: " + totalNumEvents)
+    logInfo("Total number of events parsed: " + totalNumEvents)
   }
 
   /**
@@ -166,7 +167,7 @@ class ApplicationInfo(
       this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
       this.resourceProfiles.clear()
     } else {
-      logger.warn("resourceProfiles is empty!")
+      logWarning("resourceProfiles is empty!")
     }
 
     // For blockManagersDF
@@ -174,7 +175,7 @@ class ApplicationInfo(
       this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
       this.blockManagers.clear()
     } else {
-      logger.warn("blockManagers is empty!")
+      logWarning("blockManagers is empty!")
     }
 
     // For blockManagersRemovedDF
@@ -182,7 +183,7 @@ class ApplicationInfo(
       this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
       this.blockManagersRemoved.clear()
     } else {
-      logger.debug("blockManagersRemoved is empty!")
+      logDebug("blockManagersRemoved is empty!")
     }
 
     // For propertiesDF
@@ -190,7 +191,7 @@ class ApplicationInfo(
       this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
       this.allProperties.clear()
     } else {
-      logger.error("propertiesDF is empty! Existing...")
+      logError("propertiesDF is empty! Existing...")
       System.exit(1)
     }
 
@@ -212,7 +213,7 @@ class ApplicationInfo(
       this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
       this.appStart.clear()
     } else {
-      logger.error("Application is empty! Exiting...")
+      logError("Application is empty! Exiting...")
       System.exit(1)
     }
 
@@ -221,7 +222,7 @@ class ApplicationInfo(
       this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
       this.executors.clear()
     } else {
-      logger.error("executors is empty! Exiting...")
+      logError("executors is empty! Exiting...")
       System.exit(1)
     }
 
@@ -230,7 +231,7 @@ class ApplicationInfo(
       this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
       this.executorsRemoved.clear()
     } else {
-      logger.debug("executorsRemoved is empty!")
+      logDebug("executorsRemoved is empty!")
     }
 
     for ((name, df) <- this.allDataFrames) {
@@ -241,15 +242,16 @@ class ApplicationInfo(
 
   // Function to run a query and show the result -- limit 1000 rows.
   def runQuery(query: String, vertical: Boolean = false): DataFrame = {
-    logger.debug("Running:" + query)
+    logDebug("Running:" + query)
     val df = sparkSession.sql(query)
-    logger.info("\n" + df.showString(1000, 0, vertical))
+    logInfo("\n" + df.showString(1000, 0, vertical))
+    fileWriter.println(df.showString(1000, 0, vertical))
     df
   }
 
   // Function to return a DataFrame based on query text
   def queryToDF(query: String): DataFrame = {
-    logger.debug("Creating a DataFrame based on query : \n" + query)
+    logDebug("Creating a DataFrame based on query : \n" + query)
     sparkSession.sql(query)
   }
 
