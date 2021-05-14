@@ -53,8 +53,7 @@ object GpuExpressionsUtils extends Arm {
    * This is a common handling of the result from the `columnarEval`, allowing one of
    *   - A GpuColumnVector
    *   - A GpuScalar
-   *   - Null
-   * For other types, it will blow up. Null is legitimate in case of exceptions.
+   * For other types, it will blow up.
    *
    * It is recommended to return only a `GpuScalar` or a `GpuColumnVector` from a GPU
    * expression's `columnarEval`, to keep the result handling simple. Besides, `GpuScalar` can
@@ -71,7 +70,6 @@ object GpuExpressionsUtils extends Arm {
     withResourceIfAllowed(any) {
       case c: GpuColumnVector => c.incRefCount()
       case s: GpuScalar => GpuColumnVector.from(s, numRows, dType)
-      case null => GpuColumnVector.fromNull(numRows, dType)
       case other =>
         throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
           s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
@@ -190,9 +188,6 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
             GpuColumnVector.from(doColumnar(l, r), dataType)
           case (l: GpuScalar, r: GpuScalar) =>
             GpuColumnVector.from(doColumnar(batch.numRows(), l, r), dataType)
-          // null is not welcome, return a null Column instead.
-          case (l, r) if l == null || r == null =>
-            GpuColumnVector.fromNull(batch.numRows(), dataType)
           case (l, r) =>
             throw new UnsupportedOperationException(s"Unsupported data '($l: " +
               s"${l.getClass}, $r: ${r.getClass})' for GPU binary expression.")
@@ -327,9 +322,6 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
               GpuColumnVector.from(doColumnar(v0, v1, v2), dataType)
             case (v0: GpuScalar, v1: GpuScalar, v2: GpuScalar) =>
               GpuColumnVector.from(doColumnar(batch.numRows(), v0, v1, v2), dataType)
-            // null is not welcome, return a null column instead.
-            case (v0, v1, v2) if v0 == null || v1 == null || v2 == null =>
-              GpuColumnVector.fromNull(batch.numRows(), dataType)
             case (v0, v1, v2) =>
               throw new UnsupportedOperationException(s"Unsupported data '($v0: ${v0.getClass}," +
                 s" $v1: ${v1.getClass}, $v2: ${v2.getClass})' for GPU ternary expression.")
