@@ -404,7 +404,6 @@ object GpuWindowExpression {
       throw new UnsupportedOperationException(s"Unsupported window frame expression $anythingElse")
   }
 
-
   /**
    * Create a Scalar from boundary value according to order by column type
    * @param orderByType the type of order by column
