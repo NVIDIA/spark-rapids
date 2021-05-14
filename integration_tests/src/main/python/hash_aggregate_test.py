@@ -625,12 +625,7 @@ def test_struct_groupby_count(key_data_gen):
     assert_gpu_and_cpu_are_equal_collect(group_by_count)
 
 
-@pytest.mark.parametrize('cast_struct_tostring', [
-    pytest.param('LEGACY', marks=pytest.mark.xfail(
-        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
-    pytest.param('SPARK311+', marks=pytest.mark.xfail(condition=is_before_spark_311(),
-        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
-    ])
+@pytest.mark.parametrize('cast_struct_tostring', ['LEGACY', 'SPARK311+'])
 @pytest.mark.parametrize('key_data_gen', [
     StructGen([
         ('a', IntegerGen(min_val=0, max_val=9)),
@@ -670,12 +665,7 @@ def test_struct_count_distinct(key_data_gen):
     assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct)
 
 
-@pytest.mark.parametrize('cast_struct_tostring', [
-    pytest.param('LEGACY', marks=pytest.mark.xfail(
-        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
-    pytest.param('SPARK311+', marks=pytest.mark.xfail(condition=is_before_spark_311(),
-        reason='https://github.com/NVIDIA/spark-rapids/issues/2315')),
-])
+@pytest.mark.parametrize('cast_struct_tostring', ['LEGACY', 'SPARK311+'])
 @pytest.mark.parametrize('key_data_gen', [
     StructGen([
         ('a', StructGen([
