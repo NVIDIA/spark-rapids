@@ -41,6 +41,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   override def columnarEval(batch: ColumnarBatch): Any = dataType match {
     case StringType => stringConcat(batch)
     case ArrayType(_, _) => listConcat(batch)
+    case _ => throw new IllegalArgumentException(s"unsupported dataType $dataType")
   }
 
   private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
@@ -54,17 +55,19 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
             case cv: GpuColumnVector =>
               buffer += cv.getBase
             case null =>
-              buffer += GpuColumnVector.from(nullScalar, rows, StringType).getBase
-            case sv: Any =>
-              withResource(Scalar.fromString(sv.asInstanceOf[UTF8String].toString)) { scalar =>
-                buffer += GpuColumnVector.from(scalar, rows, StringType).getBase
+              buffer += ColumnVector.fromScalar(nullScalar, rows)
+            case sv: UTF8String =>
+              withResource(Scalar.fromString(sv.toString)) { scalar =>
+                buffer += ColumnVector.fromScalar(scalar, rows)
               }
+            case _ =>
+              throw new IllegalArgumentException("unexpected result type from child expressions")
           }
         }
         // run string concatenate
         withResource(Scalar.fromString("")) { emptyScalar =>
-          GpuColumnVector.from(ColumnVector.stringConcatenate(emptyScalar, nullScalar,
-            buffer.toArray[ColumnView]), StringType)
+          GpuColumnVector.from(
+            ColumnVector.stringConcatenate(buffer.toArray[ColumnView]), StringType)
         }
       }
     }
