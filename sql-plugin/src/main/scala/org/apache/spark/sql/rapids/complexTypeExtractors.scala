@@ -17,8 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
-import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -205,7 +204,9 @@ case class GpuArrayContains(left: Expression, right: Expression)
   override def prettyName: String = "array_contains"
 }
 
-object GetArrayItemUtil {
+/** Core static methods for GetArrayItem and ElementAt
+ */
+object GetArrayItemUtil extends Arm{
   def evalColumnar(array: GpuColumnVector, ordinal: Scalar, dataType: DataType,
                    zeroIndexed: Boolean, failOnError: Boolean): ColumnVector = {
     // for array index use case, index starts at 0
@@ -254,6 +255,8 @@ object GetArrayItemUtil {
   }
 }
 
+/** Core static methods for GetMapValue and ElementAt
+ */
 object GetMapValueUtil {
   def evalColumnar(map: GpuColumnVector, key: Scalar): ColumnVector = {
     map.getBase.getMapValue(key)
