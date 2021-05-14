@@ -33,7 +33,6 @@ import org.openucx.jucx._
 import org.openucx.jucx.ucp._
 import org.openucx.jucx.ucs.UcsConstants
 
-import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.storage.BlockManagerId
@@ -115,10 +114,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   // management port socket
   private var serverSocket: ServerSocket = _
   private val acceptService = Executors.newSingleThreadExecutor(
-    new ThreadFactoryBuilder().setNameFormat("ucx-mgmt-thread-%d").build)
+    new ThreadFactoryBuilder().setDaemon(true).setNameFormat("ucx-mgmt-thread-%d").build)
 
   private val serverService = Executors.newCachedThreadPool(
-    new ThreadFactoryBuilder().setNameFormat("ucx-connection-server-%d").build)
+    new ThreadFactoryBuilder().setDaemon(true).setNameFormat("ucx-connection-server-%d").build)
 
   // The pending queues are used to enqueue [[PendingReceive]] or [[PendingSend]], from executor
   // task threads and [[progressThread]] will hand them to the UcpWorker thread.
@@ -199,7 +198,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
             endpoints.computeIfAbsent(backwardEpId.decrementAndGet(),
               _ => worker.newEndpoint(getEpParams.setConnectionRequest(connectionRequest)))
           })
-        val maxRetries = SparkEnv.get.conf.getInt("spark.port.maxRetries", 16)
+        val maxRetries = rapidsConf.get("spark.port.maxRetries").getOrElse("16").toInt
         val startPort = if (rapidsConf.shuffleUcxListenerStartPort != 0) {
           rapidsConf.shuffleUcxListenerStartPort
         } else {
@@ -274,7 +273,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
    * @param mgmtHost String the hostname to bind to
    * @return port bound
    */
-  def startManagementPort(mgmtHost: String): Int = {
+  def startManagementPort(mgmtHost: String, port: Int = 0): Int = {
     var portBindAttempts = 100
     var portBound = false
     while (!portBound && portBindAttempts > 0) {
@@ -286,7 +285,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         // send the worker address to the client who wants to talk to us
         // associate with [[onNewConnection]]
         try {
-          serverSocket.bind(new InetSocketAddress(mgmtHost, 0))
+          serverSocket.bind(new InetSocketAddress(mgmtHost, port))
         } catch {
           case ioe: IOException =>
             logError(s"Unable to bind using host [$mgmtHost]", ioe)
@@ -899,6 +898,11 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     }
 
     endpoints.values().forEach(ep => ep.close())
+
+    if (listener.isDefined) {
+      listener.get.close()
+      listener = Option(null)
+    }
 
     if (worker != null) {
       worker.close()
