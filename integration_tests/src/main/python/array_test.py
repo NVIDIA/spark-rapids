@@ -135,3 +135,20 @@ def test_array_element_at(data_gen):
                                element_at(col('a'), -1)),
                                conf={'spark.sql.ansi.enabled':False,
                                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+@pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, array index throws on out of range indexes")
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_array_element_at_ansi_fail(data_gen):
+    assert_gpu_and_cpu_error(lambda spark: unary_op_df(
+        spark, data_gen).select(element_at(col('a'), 100)).collect(),
+                               conf={'spark.sql.ansi.enabled':True,
+                                     'spark.sql.legacy.allowNegativeScaleOfDecimal': True},
+                               error_message='java.lang.ArrayIndexOutOfBoundsException')
+
+@pytest.mark.skipif(not is_before_spark_311(), reason="For Spark before 3.1.1 + ANSI mode, null will be returned instead of an exception if index is out of range")
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_array_element_at_ansi_not_fail(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
+        spark, data_gen).select(element_at(col('a'), 100)),
+                               conf={'spark.sql.ansi.enabled':True,
+                               'spark.sql.legacy.allowNegativeScaleOfDecimal': True})

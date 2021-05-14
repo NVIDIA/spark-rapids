@@ -17,11 +17,13 @@
 package com.nvidia.spark.rapids.shims.spark311
 
 import java.nio.ByteBuffer
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
+
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.Resolver

@@ -19,11 +19,11 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayItem, GetMapValue, ImplicitCastInputTypes, NullIntolerant, UnaryExpression}
-import org.apache.spark.sql.catalyst.util.{TypeUtils, quoteIdentifier}
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
