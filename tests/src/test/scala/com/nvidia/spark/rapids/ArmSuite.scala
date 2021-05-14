@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,21 @@ class ArmSuite extends FunSuite with Arm {
     }
   }
 
+  test("withResource for Option[AutoCloseable]") {
+    val resource = Some(new TestResource)
+    withResource(resource) { r =>
+      assertResult(resource)(r)
+      assertResult(false)(r.get.closed)
+    }
+    assert(resource.get.closed)
+
+    val resource1 = None
+    // test no exception
+    withResource(resource1) { r =>
+      assertResult(resource1)(r)
+    }
+    assert(resource1.isEmpty)
+  }
 
   test("closeOnExcept single instance") {
     val resource = new TestResource
