@@ -22,6 +22,7 @@ import java.time.DateTimeException
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -271,7 +272,7 @@ case class GpuCast(
       case (TimestampType, StringType) =>
         castTimestampToString(input)
       case (StructType(fields), StringType) =>
-        castStructToString(input, legacyCastToString, fields)
+        castStructToString(input, fields)
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
@@ -510,126 +511,64 @@ case class GpuCast(
     }
   }
 
-  private def legacyStructToString(input: ColumnView,
-    inputSchema: Array[StructField]): ColumnVector = {
-    var separatorColumn: ColumnVector = null
-    var spaceColumn: ColumnVector = null
-    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
-    // coreColumns tracks the casted child columns
-    val coreColumns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
-
-    try {
-      withResource(GpuScalar.from(",", StringType)) { separatorScalar =>
-        separatorColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount.toInt)
-      }
-      withResource(GpuScalar.from(" ", StringType)) { separatorScalar =>
-        spaceColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount.toInt)
-      }
-      withResource(GpuScalar.from("[", StringType)) { bracketScalar =>
-        columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount.toInt)
-      }
-
-      withResource(input.getChildColumnView(0)) { childView =>
-        columns += doColumnar(childView, inputSchema(0).dataType)
-        coreColumns += columns.last
-      }
-      for(childIndex <- 1 until input.getNumChildren()) {
-        withResource(input.getChildColumnView(childIndex)) { childView =>
-          columns += separatorColumn
-          // Copies the whitespace column's validity with the current column's validity.
-          // Mimics the Spark null behavior of consecutive commas with no space between them
-          columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, childView)
-          columns += doColumnar(childView, inputSchema(childIndex).dataType)
-          coreColumns += columns.last
-        }
-      }
-      withResource(GpuScalar.from("]", StringType)) { bracketScalar =>
-        columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount.toInt)
-      }
-
-      // Merge casted child columns
-      withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
-        withResource(ColumnVector.stringConcatenate(emptyStrScalar, emptyStrScalar,
-          columns.toArray[ColumnView])) { fullResult =>
-          // Merge the validity of all child columns, fully null rows are null in the result
-          withResource(fullResult.mergeAndSetValidity(BinaryOp.BITWISE_OR,
-            coreColumns: _*)) { nulledResult =>
-            // Reflect the struct column's validity vector in the result
-            nulledResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input, nulledResult)
-          }
-        }
-      }
-    } finally {
-      if (separatorColumn != null) {
-        columns.foreach(col =>
-          if(col.getNativeView() != separatorColumn.getNativeView()) {
-            col.close()
-          })
-        separatorColumn.close()
-      }
-      if (spaceColumn != null) {
-        spaceColumn.close()
-      }
-    }
-  }
-
-  private def modernStructToString(input: ColumnView,
-    inputSchema: Array[StructField]): ColumnVector = {
-    var separatorColumn: ColumnVector = null
-    var spaceColumn: ColumnVector = null
-    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
-
-    try {
-      withResource(GpuScalar.from(", ", StringType)) { separatorScalar =>
-        separatorColumn = ColumnVector.fromScalar(separatorScalar, input.getRowCount.toInt)
-      }
-      withResource(GpuScalar.from("{", StringType)) { bracketScalar =>
-        columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount.toInt)
-      }
-
-      withResource(input.getChildColumnView(0)) { childView =>
-        columns += doColumnar(childView, inputSchema(0).dataType)
-      }
-      for(childIndex <- 1 until input.getNumChildren()) {
-        withResource(input.getChildColumnView(childIndex)) { childView =>
-          columns += separatorColumn
-          columns += doColumnar(childView, inputSchema(childIndex).dataType)
-        }
-      }
-      withResource(GpuScalar.from("}", StringType)) { bracketScalar =>
-        columns += ColumnVector.fromScalar(bracketScalar, input.getRowCount.toInt)
-      }
-
-      // Merge casted child columns
-      withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
-        withResource(GpuScalar.from("null", StringType)) { nullStringScalar =>
-          withResource(ColumnVector.stringConcatenate(emptyStrScalar, nullStringScalar,
-            columns.toArray[ColumnView])) { fullResult =>
-            // Reflect the struct column's validity vector in the result
-            fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-          }
-        }
-      }
-    } finally {
-      if (separatorColumn != null) {
-        columns.foreach(col =>
-          if(col.getNativeView() != separatorColumn.getNativeView()) {
-            col.close()
-          })
-        separatorColumn.close()
-      }
-      if (spaceColumn != null) {
-        spaceColumn.close()
-      }
-    }
-  }
-
   private def castStructToString(input: ColumnView,
-    legacyCastToString: Boolean, inputSchema: Array[StructField]): ColumnVector = {
-    if (legacyCastToString) {
-      legacyStructToString(input, inputSchema)
-    } else {
-      modernStructToString(input,inputSchema)
+    inputSchema: Array[StructField]): ColumnVector = {
+
+    val (leftStr, rightStr) = if (legacyCastToString) ("[", "]") else ("{", "}")
+    val emptyStr = ""
+    val nullStr = if (legacyCastToString) "" else "null"
+    val separatorStr = if (legacyCastToString) "," else ", "
+    val spaceStr = " "
+    val numRows = input.getRowCount.toInt
+    val numInputColumns = input.getNumChildren
+
+    def doCastStructToString(
+      emptyScalar: Scalar,
+      nullScalar: Scalar,
+      sepColumn: ColumnVector,
+      spaceColumn: ColumnVector,
+      leftColumn: ColumnVector,
+      rightColumn: ColumnVector) = {
+      withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+        // legacy: [firstCol
+        //   3.1+: {firstCol
+        columns += leftColumn.incRefCount()
+        withResource(input.getChildColumnView(0)) { firstColumnView =>
+          columns += doColumnar(firstColumnView, inputSchema.head.dataType)
+        }
+        for (nonFirstIndex <- 1 until numInputColumns) {
+          withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
+            // legacy: ","
+            //   3.1+: ", "
+            columns += sepColumn.incRefCount()
+            val nonFirstColumn = doColumnar(nonFirstColumnView, inputSchema(nonFirstIndex).dataType)
+            if (legacyCastToString) {
+              // " " if non-null
+              columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
+            }
+            columns += nonFirstColumn
+          }
+        }
+
+        columns += rightColumn.incRefCount()
+        withResource(ColumnVector.stringConcatenate(emptyScalar, nullScalar, columns.toArray))(
+          _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input) // original whole row is null
+        )
+      }
+    }
+
+    withResource(
+      Seq(emptyStr, nullStr, separatorStr, spaceStr, leftStr, rightStr)
+        .safeMap(Scalar.fromString _)
+    ) { case Seq(emptyScalar, nullScalar, columnScalars@_*) =>
+
+      withResource(
+        columnScalars.safeMap(s => ColumnVector.fromScalar(s, numRows))
+      ) { case Seq(sepColumn, spaceColumn, leftColumn, rightColumn) =>
+
+        doCastStructToString(emptyScalar, nullScalar, sepColumn,
+          spaceColumn, leftColumn, rightColumn)
+      }
     }
   }
 
