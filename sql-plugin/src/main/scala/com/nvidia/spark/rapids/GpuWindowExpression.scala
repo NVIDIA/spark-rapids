@@ -405,7 +405,10 @@ object GpuWindowExpression {
   }
 
   /**
-   * Create a Scalar from boundary value according to order by column type
+   * Create a Scalar from boundary value according to order by column type.
+   *
+   * For the timestamp types, only days are supported for window range intervals
+   *
    * @param orderByType the type of order by column
    * @param value boundary value
    * @return Scalar holding boundary value
