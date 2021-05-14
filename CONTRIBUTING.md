@@ -150,5 +150,28 @@ By making a contribution to this project, I certify that:
 ### Testing Your Code
 Please visit the [testing doc](tests/README.md) for details about how to run tests
 
+
+### Pre-commit hooks
+We provide a basic config `.pre-commit-config.yaml` for [pre-commit](https://pre-commit.com/) to
+automate some aspects of the development process. As a convenience you can enable automatic 
+copyright year updates by following the installation instructions on the
+[pre-commit homepage](https://pre-commit.com/).
+
+To this end, first install `pre-commit` itself using the method most suitable for your development
+environment. Then you will need to run `pre-commit install` to enable it in your local git
+repository. Using `--allow-missing-config` will make it easy to work with older branches
+that do not have `.pre-commit-config.yaml`.
+
+```bash
+pre-commit install --allow-missing-config
+```
+
+and setting the environment variable:
+
+```bash
+export SPARK_RAPIDS_AUTO_COPYRIGHTER=ON
+```
+The default value of `SPARK_RAPIDS_AUTO_COPYRIGHTER` is `OFF`.
+
 ## Attribution
-Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md  
+Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md
