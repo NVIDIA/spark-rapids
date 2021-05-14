@@ -114,7 +114,8 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 // Note: when the column is containing all null arrays, CPU will not throw, so make
                 // GPU to behave the same.
                 if (minNumElements < math.abs(rhs.getInt) &&
-                  numElementsCV.getNullCount != numElementsCV.getRowCount) {
+                  lhs.getBase.getNullCount != lhs.getBase.getRowCount &&
+                  failOnError) {
                   throw new ArrayIndexOutOfBoundsException(
                     s"Invalid index: ${rhs.getInt}, minimum numElements in this ColumnVector: " +
                       s"$minNumElements")

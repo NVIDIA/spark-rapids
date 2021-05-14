@@ -152,3 +152,12 @@ def test_array_element_at_ansi_not_fail(data_gen):
         spark, data_gen).select(element_at(col('a'), 100)),
                                conf={'spark.sql.ansi.enabled':True,
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+# This corner case is for both Spark 3.0.x and 3.1.x
+# CPU version will return `null` for null[100], not throwing an exception
+@pytest.mark.parametrize('data_gen', [ArrayGen(null_gen,all_null=True)], ids=idfn)
+def test_array_element_at_all_null_ansi_not_fail(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
+        spark, data_gen).select(element_at(col('a'), 100)),
+                               conf={'spark.sql.ansi.enabled':True,
+                               'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
