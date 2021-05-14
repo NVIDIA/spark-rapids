@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.io.PrintWriter
+import java.io.{File, PrintWriter}
 
 import com.nvidia.spark.rapids.tool.profiling.ProfileArgs
 import org.scalatest.FunSuite
@@ -29,18 +29,22 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   val sparkSession = ProfileUtils.createSparkSession
   var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
   val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
-  val fileWriter = new PrintWriter("src/test/resources/workload_profiling")
 
   test("test single event") {
-    var index: Int = 1
-    val eventlogPaths = appArgs.eventlog()
-    for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
-      index += 1
+    val tempFile = new File("src/test/resources/workload_profiling")
+    try {
+      val fileWriter = new PrintWriter(tempFile)
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      assert(apps.head.sparkVersion.equals("3.1.1"))
+      assert(apps.head.gpuMode.equals(true))
+    } finally  {
+      tempFile.delete()
     }
-    assert(apps.size == 1)
-    assert(apps.head.sparkVersion.equals("3.1.1"))
-    assert(apps.head.gpuMode.equals(true))
   }
-
 }
