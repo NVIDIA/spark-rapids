@@ -102,10 +102,55 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     lhs.dataType match {
       case _: ArrayType => {
-        GetArrayItemUtil.evalColumnar(lhs, rhs, dataType, zeroIndexed = false, failOnError)
+        if (rhs.isValid) {
+          if (rhs.getInt == 0) {
+            throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+          } else  {
+            // Positive or negative index
+            withResource(lhs.getBase.countElements) { numElementsCV =>
+              withResource(numElementsCV.min) { minScalar =>
+                val minNumElements = minScalar.getInt
+                // index out of bound
+                // Note: when the column is containing all null arrays, CPU will not throw, so make
+                // GPU to behave the same.
+                if (minNumElements < math.abs(rhs.getInt) &&
+                  numElementsCV.getNullCount != numElementsCV.getRowCount) {
+                  throw new ArrayIndexOutOfBoundsException(
+                    s"Invalid index: ${rhs.getInt}, minimum numElements in this ColumnVector: " +
+                      s"$minNumElements")
+                } else {
+                  if (rhs.getInt > 0) {
+                    // Positive index
+                    lhs.getBase.extractListElement(rhs.getInt - 1)
+                  } else {
+                    // Negative index
+                    lhs.getBase.extractListElement(rhs.getInt)
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          withResource(GpuScalar.from(null, dataType)) { nullScalar =>
+            ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+          }
+        }
       }
       case _: MapType => {
-        GetMapValueUtil.evalColumnar(lhs, rhs, failOnError)
+        if (failOnError) {
+          withResource(lhs.getBase.getMapKeyExistence(rhs)){ keyExistenceColumn =>
+            withResource(keyExistenceColumn.all()) { exist =>
+              if (exist.getBoolean) {
+                return lhs.getBase.getMapValue(rhs)
+              } else {
+                throw new NoSuchElementException(s"Key: ${rhs.getJavaString} does not exist in " +
+                  s"one of the rows in the map column")
+              }
+            }
+          }
+        } else {
+          lhs.getBase.getMapValue(rhs)
+        }
       }
     }
   }
