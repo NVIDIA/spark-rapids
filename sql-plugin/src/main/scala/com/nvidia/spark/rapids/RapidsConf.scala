@@ -817,6 +817,38 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
+    .doc("When the order-by column of a range based window is byte type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "byte type order-by column")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_RANGE_WINDOW_SHORT = conf("spark.rapids.sql.window.range.short.enabled")
+    .doc("When the order-by column of a range based window is short type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "short type order-by column")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_RANGE_WINDOW_INT = conf("spark.rapids.sql.window.range.int.enabled")
+    .doc("When the order-by column of a range based window is int type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "int type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_RANGE_WINDOW_LONG = conf("spark.rapids.sql.window.range.long.enabled")
+    .doc("When the order-by column of a range based window is long type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "long type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -1483,6 +1515,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+
+  lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
+
+  lazy val isRangeWindowShortEnabled: Boolean = get(ENABLE_RANGE_WINDOW_SHORT)
+
+  lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
+
+  lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)

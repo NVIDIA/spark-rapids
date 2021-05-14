@@ -271,12 +271,78 @@ Spark stores timestamps internally relative to the JVM time zone.  Converting an
 between time zones is not currently supported on the GPU. Therefore operations involving timestamps
 will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
-## Window Functions
+## Windowing
+
+### Window Functions
 
 Because of ordering differences between the CPU and the GPU window functions especially row based
 window functions like `row_number`, `lead`, and `lag` can produce different results if the ordering
 includes both `-0.0` and `0.0`, or if the ordering is ambiguous. Spark can produce different results
 from one run to another if the ordering is ambiguous on a window function too.
+
+### Range Window
+
+When the order-by column of a range based window is numeric type like `byte/short/int/long` and
+the range boundary calculated for a value has overflow, CPU and GPU will get different results.
+
+For example, consider the following dataset:
+
+``` console
++------+---------+
+| id   | dollars |
++------+---------+
+|    1 |    NULL |
+|    1 |      13 |
+|    1 |      14 |
+|    1 |      15 |
+|    1 |      15 |
+|    1 |      17 |
+|    1 |      18 |
+|    1 |      52 |
+|    1 |      53 |
+|    1 |      61 |
+|    1 |      65 |
+|    1 |      72 |
+|    1 |      73 |
+|    1 |      75 |
+|    1 |      78 |
+|    1 |      84 |
+|    1 |      85 |
+|    1 |      86 |
+|    1 |      92 |
+|    1 |      98 |
++------+---------+
+```
+
+After executing the SQL statement:
+
+``` sql
+SELECT
+ COUNT(dollars) over
+    (PARTITION BY id
+    ORDER BY CAST (dollars AS Byte) ASC
+    RANGE BETWEEN 127 PRECEDING AND 127 FOLLOWING)
+FROM table
+```
+
+The results will differ between the CPU and GPU due to overflow handling.
+
+``` console
+CPU: WrappedArray([0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0])
+GPU: WrappedArray([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19])
+```
+
+To enable byte-range windowing on the GPU, set
+[`spark.rapids.sql.window.range.byte.enabled`](configs.md#sql.window.range.byte.enabled) to true.
+
+We also provide configurations for other integral range types:
+
+- [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled)
+- [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled)
+
+The reason why we default the configurations to false for byte/short and to true for int/long is that
+we think the most real-world queries are based on int or long.
 
 ## Parsing strings as dates or timestamps
 
