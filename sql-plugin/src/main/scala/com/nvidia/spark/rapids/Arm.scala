@@ -36,7 +36,7 @@ trait Arm {
     try {
       block(r)
     } finally {
-      r.map(_.close())
+      r.foreach(_.close())
     }
   }
 

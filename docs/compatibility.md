@@ -332,7 +332,7 @@ CPU: WrappedArray([0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0
 GPU: WrappedArray([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19])
 ```
 
-To disable byte-range windowing on the GPU, set
+To enable byte-range windowing on the GPU, set
 [`spark.rapids.sql.window.range.byte.enabled`](configs.md#sql.window.range.byte.enabled) to true.
 
 We also provide configurations for other integral range types:
@@ -340,6 +340,9 @@ We also provide configurations for other integral range types:
 - [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled)
 - [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled)
 - [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled)
+
+The reason why we default the configurations to false for byte/short and to true for int/long is that
+we think the most real-world queries are based on int or long.
 
 ## Parsing strings as dates or timestamps
 

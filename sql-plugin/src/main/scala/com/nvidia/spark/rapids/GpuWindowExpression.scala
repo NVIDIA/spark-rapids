@@ -421,14 +421,8 @@ object GpuWindowExpression {
       case DType.INT32 => Scalar.fromInt(value.toInt)
       case DType.INT64 => Scalar.fromLong(value)
       case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value.toDays)
-      case DType.TIMESTAMP_SECONDS => Scalar.durationFromLong(DType.DURATION_SECONDS,
-        value.toSeconds)
-      case DType.TIMESTAMP_MILLISECONDS =>
-        Scalar.durationFromLong(DType.DURATION_MILLISECONDS, value.toMillis)
       case DType.TIMESTAMP_MICROSECONDS =>
         Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value.toMicros)
-      case DType.TIMESTAMP_NANOSECONDS => Scalar.durationFromLong(DType.DURATION_NANOSECONDS,
-        value.toNanos)
       case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
     }
   }
