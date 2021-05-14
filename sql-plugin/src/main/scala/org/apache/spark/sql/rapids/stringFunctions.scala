@@ -306,6 +306,7 @@ case class GpuConcatWs(children: Seq[Expression])
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
     var emptyStrScalar: Scalar = null
+    // TODO - if no columns then column of empty strings
     val rows = batch.numRows()
     val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
@@ -324,9 +325,10 @@ case class GpuConcatWs(children: Seq[Expression])
         }
       }
     }
+    val sep_column = columns.head
     emptyStrScalar = GpuScalar.from("", StringType)
-    GpuColumnVector.from(ColumnVector.concatenateWs(emptyStrScalar, nullStrScalar,
-      columns.toArray[ColumnView]), dataType)
+    GpuColumnVector.from(ColumnVector.stringConcatenateWs(columns.tail.toArray[ColumnView],
+      sep_column), dataType)
 
     // evaluate the expression against each column
     val inputs = children.tail
