@@ -301,38 +301,55 @@ case class GpuConcatWs(children: Seq[Expression])
     extends GpuExpression with ImplicitCastInputTypes {
   override def dataType: DataType = StringType
   override def nullable: Boolean = children.head.nullable
-  // TODO - foldable??
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  /** The 1st child (separator) is str, and rest are either str or array of str. */
+  override def inputTypes: Seq[AbstractDataType] = {
+    val arrayOrStr = TypeCollection(ArrayType(StringType), StringType)
+    StringType +: Seq.fill(children.size - 1)(arrayOrStr)
+  }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
     var emptyStrScalar: Scalar = null
-    // TODO - if no columns then column of empty strings
     val rows = batch.numRows()
     val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
 
-    nullStrScalar = GpuScalar.from(null, StringType)
-    children.foreach(childEvals += _.columnarEval(batch))
-    childEvals.foreach {
-      case vector: GpuColumnVector =>
-        columns += vector.getBase
-      case col => if (col == null) {
-        columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
-      } else {
-        withResource(GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)) {
-          stringScalar =>
-            columns += GpuColumnVector.from(stringScalar, rows, StringType).getBase
+    try {
+      nullStrScalar = GpuScalar.from(null, StringType)
+      children.foreach(childEvals += _.columnarEval(batch))
+      childEvals.foreach {
+        case vector: GpuColumnVector =>
+          columns += vector.getBase
+        case col => if (col == null) {
+          columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
+        } else {
+          withResource(GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)) {
+            stringScalar =>
+              columns += GpuColumnVector.from(stringScalar, rows, StringType).getBase
+          }
         }
       }
+      val sep_column = columns.head
+      val value_columns = columns.tail
+      if (value_columns.size == 0) {
+        // if no columns then column of empty strings
+        emptyStrScalar = GpuScalar.from("", StringType)
+        GpuColumnVector.from(emptyStrScalar, rows, StringType).getBase
+      } else {
+        GpuColumnVector.from(ColumnVector.stringConcatenateWs(value_columns.toArray[ColumnView],
+          sep_column), dataType)
+      }
+    } finally {
+      columns.safeClose()
+      if (emptyStrScalar != null) {
+        emptyStrScalar.close()
+      }
+      if (nullStrScalar != null) {
+        nullStrScalar.close()
+      }
     }
-    val sep_column = columns.head
-    emptyStrScalar = GpuScalar.from("", StringType)
-    GpuColumnVector.from(ColumnVector.stringConcatenateWs(columns.tail.toArray[ColumnView],
-      sep_column), dataType)
-
-    // evaluate the expression against each column
-    val inputs = children.tail
-
   }
 }
 
