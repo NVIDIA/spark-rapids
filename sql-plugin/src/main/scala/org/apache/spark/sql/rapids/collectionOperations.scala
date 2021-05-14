@@ -50,7 +50,7 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   }
 }
 
-case class GpuElementAt(left: Expression, right: Expression)
+case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ExpectsInputTypes {
 
   override lazy val dataType: DataType = left.dataType match {
@@ -102,10 +102,10 @@ case class GpuElementAt(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
     lhs.dataType match {
       case _: ArrayType => {
-        GetArrayItemUtil.evalColumnar(lhs, rhs, dataType, zeroIndexed = false, failOnError = false)
+        GetArrayItemUtil.evalColumnar(lhs, rhs, dataType, zeroIndexed = false, failOnError)
       }
       case _: MapType => {
-        GetMapValueUtil.evalColumnar(lhs, rhs)
+        GetMapValueUtil.evalColumnar(lhs, rhs, failOnError)
       }
     }
   }

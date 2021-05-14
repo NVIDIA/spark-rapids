@@ -87,6 +87,7 @@ class GpuGetArrayItemMeta(
   override def convertToGpu(
       arr: Expression,
       ordinal: Expression): GpuExpression =
+    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
     GpuGetArrayItem(arr, ordinal, failOnError = false)
 }
 
@@ -135,11 +136,13 @@ class GpuGetMapValueMeta(
   rule: DataFromReplacementRule)
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
 
-  override def convertToGpu(child: Expression, key: Expression): GpuExpression =
-    GpuGetMapValue(child, key)
+  override def convertToGpu(child: Expression, key: Expression): GpuExpression = {
+    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
+    GpuGetMapValue(child, key, failOnError = false)
+  }
 }
 
-case class GpuGetMapValue(child: Expression, key: Expression)
+case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
   private def keyType = child.dataType.asInstanceOf[MapType].keyType
@@ -159,7 +162,7 @@ case class GpuGetMapValue(child: Expression, key: Expression)
   override def prettyName: String = "getMapValue"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
-    GetMapValueUtil.evalColumnar(lhs, rhs)
+    GetMapValueUtil.evalColumnar(lhs, rhs, failOnError)
 
   override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
@@ -206,7 +209,7 @@ case class GpuArrayContains(left: Expression, right: Expression)
 
 /** Core static methods for GetArrayItem and ElementAt
  */
-object GetArrayItemUtil extends Arm{
+object GetArrayItemUtil extends Arm {
   def evalColumnar(array: GpuColumnVector, ordinal: Scalar, dataType: DataType,
                    zeroIndexed: Boolean, failOnError: Boolean): ColumnVector = {
     // for array index use case, index starts at 0
@@ -257,8 +260,20 @@ object GetArrayItemUtil extends Arm{
 
 /** Core static methods for GetMapValue and ElementAt
  */
-object GetMapValueUtil {
-  def evalColumnar(map: GpuColumnVector, key: Scalar): ColumnVector = {
+object GetMapValueUtil extends Arm {
+  def evalColumnar(map: GpuColumnVector, key: Scalar, failOnError: Boolean): ColumnVector = {
+    if (failOnError) {
+      withResource(map.getBase.getMapKeyExistence(key)){ keyExistenceColumn =>
+        withResource(keyExistenceColumn.all()) { exist =>
+          if (exist.getBoolean) {
+            return map.getBase.getMapValue(key)
+          } else {
+            throw new NoSuchElementException(s"Key: ${key.getJavaString} does not exist in one of "
+              + s"the rows in the map column")
+          }
+        }
+      }
+    }
     map.getBase.getMapValue(key)
   }
 }
