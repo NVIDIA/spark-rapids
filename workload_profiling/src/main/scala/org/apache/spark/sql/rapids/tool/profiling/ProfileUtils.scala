@@ -24,7 +24,7 @@ import org.apache.spark.sql.SparkSession
  *
  */
 
-private object ProfileUtils {
+object ProfileUtils {
 
   // Create a SparkSession in local mode
   def createSparkSession: SparkSession = {

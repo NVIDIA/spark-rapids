@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.tool.profiling
+package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.PrintWriter
 
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * A profiling tool to parse Spark Event Log

@@ -19,13 +19,13 @@ package org.apache.spark.sql.rapids.tool.profiling
 import java.io.PrintWriter
 import java.net.URI
 
-import scala.collection.Map
-import scala.collection.mutable.{ArrayBuffer, HashMap, SortedMap}
-import scala.io.{Codec, Source}
-
+import com.nvidia.spark.rapids.tool.profiling.ProfileArgs
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
+import scala.collection.Map
+import scala.collection.mutable.{ArrayBuffer, HashMap}
+import scala.io.{Codec, Source}
 
 import org.apache.spark.deploy.history.EventLogFileReader
 import org.apache.spark.internal.Logging

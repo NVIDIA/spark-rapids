@@ -37,18 +37,18 @@ Spark event log profiling tool
 Example:
 
 # Input 1 or more event logs from local path:
-./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1 /path/to/eventlog2
 
 # If any event log is from S3:
 export AWS_ACCESS_KEY_ID=xxx
 export AWS_SECRET_ACCESS_KEY=xxx
-./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
 # Generate query visualizations in DOT format:
-./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar -g /path/to/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar -g /path/to/eventlog1 /path/to/eventlog2
 
 # Change output directory to /tmp
-./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar -o /tmp /path/to/eventlog1
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar -o /tmp /path/to/eventlog1
 
 
 For usage see below:
@@ -75,9 +75,9 @@ We can input multiple Spark event logs and this tool can compare enviroments, ex
 
 - Compare the durations/versions/gpuMode on or off:
 ```
-[main] INFO  org.apache.spark.sql.rapids.tool.profiling.ProfileMain$  - ### A. Compare Information Collected ###
-[main] INFO  org.apache.spark.sql.rapids.tool.profiling.ProfileMain$  - Compare Application Information:
-[main] INFO  org.apache.spark.sql.rapids.tool.profiling.ProfileMain$  -
+[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - ### A. Compare Information Collected ###
+[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - Compare Application Information:
+[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  -
 +--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
 |appIndex|appId                  |startTime    |endTime      |duration|durationStr|sparkVersion|gpuMode|
 +--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
@@ -89,8 +89,8 @@ We can input multiple Spark event logs and this tool can compare enviroments, ex
 
 - Compare Executor informations:
 ```
-[main] INFO  org.apache.spark.sql.rapids.tool.profiling.ProfileMain$  - Compare Executor Information:
-[main] INFO  org.apache.spark.sql.rapids.tool.profiling.ProfileMain$  -
+[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - Compare Executor Information:
+[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  -
 +--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
 |appIndex|executorID|totalCores|maxMem     |maxOnHeapMem|maxOffHeapMem|exec_cpu|exec_mem|exec_gpu|exec_offheap|task_cpu|task_gpu|
 +--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
@@ -101,8 +101,8 @@ We can input multiple Spark event logs and this tool can compare enviroments, ex
 
 - Compare Rapids related Spark properties side-by-side:
 ```
-[main] INFO  org.apache.spark.sql.rapids.tool.profiling.ProfileMain$  - Compare Rapids Properties which are set explicitly:
-[main] INFO  org.apache.spark.sql.rapids.tool.profiling.ProfileMain$  -
+[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - Compare Rapids Properties which are set explicitly:
+[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  -
 +-------------------------------------------+----------+----------+
 |key                                        |value_app1|value_app2|
 +-------------------------------------------+----------+----------+

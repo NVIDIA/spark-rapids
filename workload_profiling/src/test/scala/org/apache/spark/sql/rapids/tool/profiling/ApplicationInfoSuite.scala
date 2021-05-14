@@ -16,11 +16,12 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+
 import java.io.PrintWriter
 
-import scala.collection.mutable.ArrayBuffer
-
+import com.nvidia.spark.rapids.tool.profiling.ProfileArgs
 import org.scalatest.FunSuite
+import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
 
@@ -31,7 +32,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
   val fileWriter = new PrintWriter("src/test/resources/workload_profiling")
 
-  test("testing single event log count") {
+  test("test single event") {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
@@ -39,5 +40,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 1)
+    assert(apps.head.sparkVersion.equals("3.1.1"))
+    assert(apps.head.gpuMode.equals(true))
   }
 }
