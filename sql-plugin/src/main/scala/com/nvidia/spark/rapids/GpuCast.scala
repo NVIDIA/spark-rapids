@@ -408,6 +408,14 @@ case class GpuCast(
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
 
+      case (ArrayType(_@FloatType, _), ArrayType(nestedTo@DoubleType, _)) =>
+        val rapidsType = GpuColumnVector.getNonNestedRapidsType(nestedTo)
+        withResource(input.getChildColumnView(0)) { childView =>
+          withResource(childView.castTo(rapidsType)) { castChildView =>
+            withResource(input.replaceListChild(castChildView))(_.copyToColumnVector())
+          }
+        }
+
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
     }
