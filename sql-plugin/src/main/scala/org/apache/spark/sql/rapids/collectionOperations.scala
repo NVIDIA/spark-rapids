@@ -103,13 +103,14 @@ case class GpuElementAt(left: Expression, right: Expression)
     lhs.dataType match {
       case _: ArrayType => {
         if (rhs.isValid) {
-          if (rhs.getBase.getInt > 0) {
+          val ordinalValue = rhs.getValue.asInstanceOf[Int]
+          if (ordinalValue > 0) {
             // SQL 1-based index
-            lhs.getBase.extractListElement(rhs.getBase.getInt - 1)
-          } else if (rhs.getValue == 0) {
+            lhs.getBase.extractListElement(ordinalValue - 1)
+          } else if (ordinalValue == 0) {
             throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
           } else {
-            lhs.getBase.extractListElement(rhs.getBase.getInt)
+            lhs.getBase.extractListElement(ordinalValue)
           }
         } else {
           GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
