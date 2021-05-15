@@ -123,6 +123,4 @@ def test_array_cast_float_to_double():
         df = two_col_df(spark, int_gen, ArrayGen(float_gen))
         res = df.select(df.b.cast(ArrayType(DoubleType())))
         return res
-    assert_gpu_and_cpu_are_equal_collect(cast_float_to_double, {
-        'spark.rapids.sql.explain': 'ALL'
-    })
+    assert_gpu_and_cpu_are_equal_collect(cast_float_to_double)
