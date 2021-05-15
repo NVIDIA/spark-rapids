@@ -16,12 +16,11 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from data_gen import *
-from datetime import date
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_spark_300
+from spark_session import with_cpu_session, with_gpu_session
 from join_test import create_df
-from generate_expr_test import four_op_df
 from marks import incompat, allow_non_gpu, ignore_order
+from parquet_write_test import parquet_decimal_struct_gen
 
 enableVectorizedConf = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "true"},
                         {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "false"}]
@@ -50,16 +49,16 @@ double_special_cases = [
 ]
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-           pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]), pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]), BooleanGen(), DateGen(), TimestampGen()]
+           pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
+           pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
+           BooleanGen(), DateGen(), TimestampGen(), decimal_gen_default, decimal_gen_scale_precision,
+           decimal_gen_same_scale_precision, decimal_gen_64bit]
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @ignore_order
 def test_cache_join(data_gen, join_type, enableVectorizedConf):
-    if is_spark_300() and data_gen.data_type == BooleanType():
-        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
-
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
@@ -78,9 +77,6 @@ def test_cache_join(data_gen, join_type, enableVectorizedConf):
 @ignore_order
 def test_cached_join_filter(data_gen, join_type, enableVectorizedConf):
     data = data_gen
-    if is_spark_300() and data.data_type == BooleanType():
-        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
-
     def do_join(spark):
         left, right = create_df(spark, data, 500, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
@@ -94,9 +90,6 @@ def test_cached_join_filter(data_gen, join_type, enableVectorizedConf):
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_broadcast_hash_join(data_gen, join_type, enableVectorizedConf):
-    if is_spark_300() and data_gen.data_type == BooleanType():
-        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
-
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         cached = left.join(right.hint("broadcast"), left.a == right.r_a, join_type).cache()
@@ -107,17 +100,13 @@ def test_cache_broadcast_hash_join(data_gen, join_type, enableVectorizedConf):
 
 shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
                  "spark.sql.join.preferSortMergeJoin": "false",
-                 "spark.sql.shuffle.partitions": "2",
-                 "spark.rapids.sql.exec.BroadcastNestedLoopJoinExec": "true"}
+                 "spark.sql.shuffle.partitions": "2"}
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_shuffled_hash_join(data_gen, join_type, enableVectorizedConf):
-    if is_spark_300() and data_gen.data_type == BooleanType():
-        pytest.xfail("https://issues.apache.org/jira/browse/SPARK-32672")
-
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
@@ -130,8 +119,6 @@ def test_cache_shuffled_hash_join(data_gen, join_type, enableVectorizedConf):
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
 def test_cache_broadcast_nested_loop_join(data_gen, join_type, enableVectorizedConf):
-    enableVectorizedConf.update({'spark.rapids.sql.exec.BroadcastNestedLoopJoinExec':
-                                            'true'})
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         cached = left.crossJoin(right.hint("broadcast")).cache()
@@ -152,7 +139,8 @@ def test_cache_expand_exec(data_gen, enableVectorizedConf):
 
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
+                                      parquet_decimal_struct_gen] + all_gen, ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(data_gen, enableVectorizedConf):

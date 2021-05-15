@@ -39,6 +39,12 @@
             </modules>
         </profile>
         <profile>
+            <id>databricks310</id>
+            <modules>
+                <module>spark310db</module>
+            </modules>
+        </profile>
+        <profile>
             <id>spark320</id>
             <modules>
                 <module>spark320</module>
@@ -57,8 +63,6 @@
     </profiles>
 
     <modules>
-        <module>spark300</module>
-        <module>spark300emr</module>
         <module>spark301emr</module>
         <module>spark301</module>
         <module>spark302</module>

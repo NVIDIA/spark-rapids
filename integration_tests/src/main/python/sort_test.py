@@ -68,8 +68,7 @@ def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort
                 **allow_negative_scale_of_decimal_conf,
                 **{
                     'spark.sql.shuffle.partitions': shuffle_parts,
-                    'spark.rapids.sql.stableSort.enabled': stable_sort,
-                    'spark.rapids.allowCpuRangePartitioning': False
+                    'spark.rapids.sql.stableSort.enabled': stable_sort
                 }
             })
 

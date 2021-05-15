@@ -58,15 +58,15 @@ class GpuShuffledHashJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val Seq(leftChild, rightChild) = childPlans.map(_.convertIfNeeded())
+    val Seq(left, right) = childPlans.map(_.convertIfNeeded)
     GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       GpuJoinUtils.getGpuBuildSide(join.buildSide),
       condition.map(_.convertToGpu()),
-      leftChild,
-      rightChild)
+      left,
+      right)
   }
 }
 
@@ -75,12 +75,12 @@ case class GpuShuffledHashJoinExec(
     rightKeys: Seq[Expression],
     joinType: JoinType,
     buildSide: GpuBuildSide,
-    condition: Option[Expression],
+    override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan)
-    extends GpuShuffledHashJoinBase(
-      leftKeys,
-      rightKeys,
-      buildSide,
-      condition,
-      isSkewJoin = false)
+  extends GpuShuffledHashJoinBase(
+    leftKeys,
+    rightKeys,
+    buildSide,
+    condition,
+    isSkewJoin = false)

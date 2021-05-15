@@ -888,7 +888,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           case Failure(e) if clazz.isAssignableFrom(e.getClass) =>
             assert(expectedException(e.asInstanceOf[T]))
           case Failure(e) => throw e
-          case _ => fail("Expected an exception")
+          case _ => fail("Expected an exception, but got none")
         }
       }
   }
@@ -1825,6 +1825,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   /** most of the AQE tests requires Spark 3.0.1 or later */
   def assumeSpark301orLater =
     assume(cmpSparkVersion(3, 0, 1) >= 0)
+
+  def assumeSpark311orLater =
+    assume(cmpSparkVersion(3, 1, 1) >= 0)
 
   def assumePriorToSpark320 =
     assume(cmpSparkVersion(3, 2, 0) < 0)

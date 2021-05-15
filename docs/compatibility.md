@@ -244,6 +244,14 @@ values occurring before the transition between the Julian and Gregorian calendar
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
 
+When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and 
+result in an `IllegalArgumentException` thrown, if any value is before 
+September 21, 1677 12:12:43 AM or it is after April 11, 2262 11:47:17 PM. To get around this
+issue, turn off the ParquetWriter acceleration for timestamp columns by either setting 
+`spark.rapids.sql.format.parquet.writer.int96.enabled` to false or 
+set `spark.sql.parquet.outputTimestampType` to `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS` to by
+-pass the issue entirely.
+
 The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
 fall back to the CPU when reading an unsupported compression format, and will error out in that
@@ -263,12 +271,78 @@ Spark stores timestamps internally relative to the JVM time zone.  Converting an
 between time zones is not currently supported on the GPU. Therefore operations involving timestamps
 will only be GPU-accelerated if the time zone used by the JVM is UTC.
 
-## Window Functions
+## Windowing
+
+### Window Functions
 
 Because of ordering differences between the CPU and the GPU window functions especially row based
 window functions like `row_number`, `lead`, and `lag` can produce different results if the ordering
 includes both `-0.0` and `0.0`, or if the ordering is ambiguous. Spark can produce different results
 from one run to another if the ordering is ambiguous on a window function too.
+
+### Range Window
+
+When the order-by column of a range based window is numeric type like `byte/short/int/long` and
+the range boundary calculated for a value has overflow, CPU and GPU will get different results.
+
+For example, consider the following dataset:
+
+``` console
++------+---------+
+| id   | dollars |
++------+---------+
+|    1 |    NULL |
+|    1 |      13 |
+|    1 |      14 |
+|    1 |      15 |
+|    1 |      15 |
+|    1 |      17 |
+|    1 |      18 |
+|    1 |      52 |
+|    1 |      53 |
+|    1 |      61 |
+|    1 |      65 |
+|    1 |      72 |
+|    1 |      73 |
+|    1 |      75 |
+|    1 |      78 |
+|    1 |      84 |
+|    1 |      85 |
+|    1 |      86 |
+|    1 |      92 |
+|    1 |      98 |
++------+---------+
+```
+
+After executing the SQL statement:
+
+``` sql
+SELECT
+ COUNT(dollars) over
+    (PARTITION BY id
+    ORDER BY CAST (dollars AS Byte) ASC
+    RANGE BETWEEN 127 PRECEDING AND 127 FOLLOWING)
+FROM table
+```
+
+The results will differ between the CPU and GPU due to overflow handling.
+
+``` console
+CPU: WrappedArray([0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0], [0])
+GPU: WrappedArray([0], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19], [19])
+```
+
+To enable byte-range windowing on the GPU, set
+[`spark.rapids.sql.window.range.byte.enabled`](configs.md#sql.window.range.byte.enabled) to true.
+
+We also provide configurations for other integral range types:
+
+- [`spark.rapids.sql.window.range.short.enabled`](configs.md#sql.window.range.short.enabled)
+- [`spark.rapids.sql.window.range.int.enabled`](configs.md#sql.window.range.int.enabled)
+- [`spark.rapids.sql.window.range.long.enabled`](configs.md#sql.window.range.short.enabled)
+
+The reason why we default the configurations to false for byte/short and to true for int/long is that
+we think the most real-world queries are based on int or long.
 
 ## Parsing strings as dates or timestamps
 
@@ -449,3 +523,10 @@ ConstantFolding is an operator optimization rule in Catalyst that replaces expre
 be statically evaluated with their equivalent literal values. The RAPIDS Accelerator relies
 on constant folding and parts of the query will not be accelerated if 
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
+
+## JSON string handling
+The 0.5 release introduces the `get_json_object` operation.  The JSON specification only allows
+double quotes around strings in JSON data, whereas Spark allows single quotes around strings in JSON
+data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None` in PySpark or
+`Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
+updated in a future release to more closely match Spark.

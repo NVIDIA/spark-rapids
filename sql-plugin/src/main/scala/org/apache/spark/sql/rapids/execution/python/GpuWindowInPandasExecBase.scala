@@ -20,8 +20,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, OrderByArg}
-import ai.rapids.cudf.Aggregation.NullPolicy
+import ai.rapids.cudf.{Aggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -51,8 +50,7 @@ abstract class GpuWindowInPandasExecMetaBase(
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
-  val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
-    winPandas.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  val windowExpressions: Seq[BaseExprMeta[NamedExpression]]
 
   val partitionSpec: Seq[BaseExprMeta[Expression]] =
     winPandas.partitionSpec.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -217,18 +215,18 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
    * (2) Function from frame index to its upper bound column index in the python input row
    * (3) Seq from frame index to its window bound type
    */
-  private type WindowBoundHelpers = (Int => Int, Int => Int, Seq[WindowBoundType])
+  protected type WindowBoundHelpers = (Int => Int, Int => Int, Seq[WindowBoundType])
 
   /*
    * Enum for window bound types. Used only inside this class.
    */
-  private sealed case class WindowBoundType(value: String)
-  private object UnboundedWindow extends WindowBoundType("unbounded")
-  private object BoundedWindow extends WindowBoundType("bounded")
+  protected sealed case class WindowBoundType(value: String)
+  protected object UnboundedWindow extends WindowBoundType("unbounded")
+  protected object BoundedWindow extends WindowBoundType("bounded")
 
-  private val windowBoundTypeConf = "pandas_window_bound_types"
+  protected val windowBoundTypeConf = "pandas_window_bound_types"
 
-  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  protected def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
     udf.children match {
       case Seq(u: GpuPythonUDF) =>
         val (chained, children) = collectFunctions(u)
@@ -262,7 +260,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
           function match {
             case GpuAggregateExpression(_, _, _, _, _) => collect("AGGREGATE", frame, e)
             // GpuPythonUDF is a GpuAggregateWindowFunction, so it is covered here.
-            case _: GpuAggregateWindowFunction => collect("AGGREGATE", frame, e)
+            case _: GpuAggregateWindowFunction[_] => collect("AGGREGATE", frame, e)
             // OffsetWindowFunction is not supported yet, no harm to keep it here
             case _: OffsetWindowFunction => collect("OFFSET", frame, e)
             case f => sys.error(s"Unsupported window function: $f")
@@ -280,7 +278,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   /*
    * See [[WindowBoundHelpers]] for details.
    */
-  private def computeWindowBoundHelpers: WindowBoundHelpers = {
+  protected def computeWindowBoundHelpers: WindowBoundHelpers = {
 
     val windowBoundTypes = windowFramesWithExpressions.map(_._1).map { frame =>
       if (frame.isUnbounded) {
@@ -311,7 +309,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
     (lowerBoundIndex, upperBoundIndex, windowBoundTypes)
   }
 
-  private def insertWindowBounds(batch: ColumnarBatch): ColumnarBatch = {
+  protected def insertWindowBounds(batch: ColumnarBatch): ColumnarBatch = {
     val numRows = batch.numRows()
     def buildLowerCV(lower: Expression): GpuColumnVector = {
       lower match {

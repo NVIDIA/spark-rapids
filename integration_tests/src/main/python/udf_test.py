@@ -42,7 +42,8 @@ from typing import Iterator, Tuple
 
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
-    'spark.rapids.sql.exec.WindowInPandasExec': 'true'
+    'spark.rapids.sql.exec.WindowInPandasExec': 'true',
+    'spark.rapids.sql.exec.AggregateInPandasExec': 'true'
 }
 
 data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
@@ -91,8 +92,8 @@ def test_pandas_scalar_udf_nested_type(data_gen):
         conf=arrow_udf_conf)
 
 
+# ======= Test aggregate in Pandas =======
 @approximate_float
-@allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_single_aggregate_udf(data_gen):
     @f.pandas_udf('double')
@@ -105,8 +106,20 @@ def test_single_aggregate_udf(data_gen):
             conf=arrow_udf_conf)
 
 
+@approximate_float
+@pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+def test_single_aggregate_udf_more_types(data_gen):
+    @f.pandas_udf('double')
+    def group_size_udf(to_process: pd.Series) -> float:
+        return len(to_process)
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(
+                group_size_udf(f.col('a'))),
+            conf=arrow_udf_conf)
+
+
 @ignore_order
-@allow_non_gpu('AggregateInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_group_aggregate_udf(data_gen):
     @f.pandas_udf('long')
@@ -120,6 +133,20 @@ def test_group_aggregate_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .agg(pandas_sum(f.col('b'))),
+            conf=arrow_udf_conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', arrow_common_gen, ids=idfn)
+def test_group_aggregate_udf_more_types(data_gen):
+    @f.pandas_udf('long')
+    def group_size_udf(to_process: pd.Series) -> int:
+        return len(to_process)
+
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen, 430)\
+                    .groupBy('a')\
+                    .agg(group_size_udf(f.col('b'))),
             conf=arrow_udf_conf)
 
 
@@ -207,7 +234,7 @@ def test_group_apply_udf_more_types(data_gen):
         return pd.DataFrame([[len(key), len(pdf), len(pdf.columns)]])
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen, 5)\
+        lambda spark: binary_op_df(spark, data_gen, 5000)\
             .groupBy('a')\
             .applyInPandas(group_size_udf, schema="c long, d long, e long"),
         conf=arrow_udf_conf)

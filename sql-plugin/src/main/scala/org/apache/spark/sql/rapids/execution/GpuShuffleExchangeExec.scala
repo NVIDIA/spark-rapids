@@ -54,14 +54,16 @@ class GpuShuffleMeta(
     // previously stored on the spark plan to determine whether this exchange can run on GPU
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
 
-    if (shuffle.outputPartitioning.isInstanceOf[RoundRobinPartitioning] &&
-        shuffle.sqlContext.conf.sortBeforeRepartition) {
-      val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
-      shuffle.output.map(_.dataType)
-          .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
-          .foreach { dataType =>
-            willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType")
-          }
+    shuffle.outputPartitioning match {
+      case _: RoundRobinPartitioning if shuffle.sqlContext.conf.sortBeforeRepartition =>
+        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
+        shuffle.output.map(_.dataType)
+            .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
+            .foreach { dataType =>
+              willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType to run " +
+                  s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")
+            }
+      case _ =>
     }
   }
 

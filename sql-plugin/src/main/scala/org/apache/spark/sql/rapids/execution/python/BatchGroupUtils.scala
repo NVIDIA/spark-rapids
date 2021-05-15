@@ -360,3 +360,58 @@ private[python] object BatchGroupedIterator extends Arm {
   }
 
 }
+
+/**
+ * An iterator combines the batches in a `inputBatchQueue` and the result batches
+ * in `pythonOutputIter` one by one.
+ *
+ * Both the batches from  `inputBatchQueue` and `pythonOutputIter` should have the same row
+ * number.
+ *
+ * In each batch returned by calling to the `next`, the columns of the result batch
+ * are appended to the columns of the input batch.
+ *
+ * @param inputBatchQueue the queue caching the original input batches.
+ * @param pythonOutputIter the iterator of the result batches from the python side.
+ * @param pythonArrowReader the gpu arrow reader to read batches from the python side.
+ * @param numOutputRows a metric for output rows.
+ * @param numOutputBatches a metric for output batches
+ */
+private[python] class CombiningIterator(
+    inputBatchQueue: BatchQueue,
+    pythonOutputIter: Iterator[ColumnarBatch],
+    pythonArrowReader: GpuPythonArrowOutput,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
+
+  // For `hasNext` we are waiting on the queue to have something inserted into it
+  // instead of waiting for a result to be ready from Python. The reason for this
+  // is to let us know the target number of rows in the batch that we want when reading.
+  // It is a bit hacked up but it works. In the future when we support spilling we should
+  // store the number of rows separate from the batch. That way we can get the target batch
+  // size out without needing to grab the GpuSemaphore which we cannot do if we might block
+  // on a read operation.
+  override def hasNext: Boolean = inputBatchQueue.hasNext || pythonOutputIter.hasNext
+
+  override def next(): ColumnarBatch = {
+    val numRows = inputBatchQueue.peekBatchSize
+    // Updates the expected batch size for next read
+    pythonArrowReader.updateMinReadTargetBatchSize(numRows)
+    // Reads next batch from Python and combines it with the input batch by the left side.
+    withResource(pythonOutputIter.next()) { cbFromPython =>
+      assert(cbFromPython.numRows() == numRows)
+      withResource(inputBatchQueue.remove()) { origBatch =>
+        numOutputBatches += 1
+        numOutputRows += numRows
+        combine(origBatch, cbFromPython)
+      }
+    }
+  }
+
+  private def combine(lBatch: ColumnarBatch, rBatch: ColumnarBatch): ColumnarBatch = {
+    val lColumns = GpuColumnVector.extractColumns(lBatch).map(_.incRefCount())
+    val rColumns = GpuColumnVector.extractColumns(rBatch).map(_.incRefCount())
+    new ColumnarBatch(lColumns ++ rColumns, lBatch.numRows())
+  }
+
+}

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, Scalar}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types._
@@ -36,7 +36,7 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
     // MapData is represented as List of Struct in terms of cuDF.
     withResource(input.getBase.countElements()) { collectionSize =>
       if (legacySizeOfNull) {
-        withResource(GpuScalar.from(-1)) { nullScalar =>
+        withResource(Scalar.fromInt(-1)) { nullScalar =>
           withResource(input.getBase.isNull) { inputIsNull =>
             inputIsNull.ifElse(nullScalar, collectionSize)
           }

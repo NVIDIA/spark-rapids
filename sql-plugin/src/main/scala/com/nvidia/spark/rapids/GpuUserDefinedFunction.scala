@@ -43,18 +43,9 @@ trait GpuUserDefinedFunction extends GpuExpression with UserDefinedExpression wi
   private[this] lazy val inputTypesString = children.map(_.dataType.catalogString).mkString(", ")
   private[this] lazy val outputType = dataType.catalogString
 
-  private[this] def evalExpr(expr: Expression, batch: ColumnarBatch): GpuColumnVector = {
-    expr.columnarEval(batch) match {
-      case v: GpuColumnVector => v
-      case other =>
-        withResource(GpuScalar.from(other, expr.dataType)) { s =>
-          GpuColumnVector.from(s, batch.numRows(), expr.dataType)
-        }
-    }
-  }
-
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(children.safeMap(evalExpr(_, batch))) { exprResults =>
+    val cols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
+    withResource(cols) { exprResults =>
       val funcInputs = exprResults.map(_.getBase()).toArray
       withResource(new NvtxRange(nvtxRangeName, NvtxColor.PURPLE)) { _ =>
         try {

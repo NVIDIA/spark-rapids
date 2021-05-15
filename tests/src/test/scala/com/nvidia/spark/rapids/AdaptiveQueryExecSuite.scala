@@ -22,11 +22,12 @@ import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import org.scalatest.BeforeAndAfterEach
 
 import org.apache.spark.SparkConf
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
-import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
@@ -40,7 +41,8 @@ object AdaptiveQueryExecSuite {
 class AdaptiveQueryExecSuite
     extends SparkQueryCompareTestSuite
     with AdaptiveSparkPlanHelper
-    with BeforeAndAfterEach {
+    with BeforeAndAfterEach
+    with Logging {
 
   override def beforeEach(): Unit = {
     TEST_FILES_ROOT.mkdirs()
@@ -83,7 +85,7 @@ class AdaptiveQueryExecSuite
 
   private def findTopLevelGpuBroadcastHashJoin(plan: SparkPlan): Seq[GpuExec] = {
     collect(plan) {
-      case j: GpuExec if ShimLoader.getSparkShims.isBroadcastExchangeLike(j) => j
+      case j: GpuExec with BroadcastExchangeLike => j
     }
   }
 
@@ -104,12 +106,11 @@ class AdaptiveQueryExecSuite
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
-      val shuffleExchanges = ShimLoader.getSparkShims
-          .findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
-          .map(_.asInstanceOf[ShuffleQueryStageExec])
+      val shuffleExchanges =
+          PlanUtils.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+              .map(_.asInstanceOf[ShuffleQueryStageExec])
       assert(shuffleExchanges.length === 2)
-      val shim = ShimLoader.getSparkShims
-      val stats = shuffleExchanges.map(e => shim.getQueryStageRuntimeStatistics(e))
+      val stats = shuffleExchanges.map(_.getRuntimeStatistics)
       assert(stats.forall(_.rowCount.contains(1000)))
     }
   }
@@ -294,11 +295,12 @@ class AdaptiveQueryExecSuite
   }
 
   test("Avoid transitions to row when writing to Parquet") {
-
+    logError("Avoid transitions to row when writing to Parquet")
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
         .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,RoundRobinPartitioning")
 
     withGpuSparkSession(spark => {
       import spark.implicits._
@@ -343,11 +345,12 @@ class AdaptiveQueryExecSuite
   }
 
   test("Keep transition to row when collecting results") {
-
+    logError("Keep transition to row when collecting results")
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
         .set(RapidsConf.METRICS_LEVEL.key, "DEBUG")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,RoundRobinPartitioning")
 
     withGpuSparkSession(spark => {
       import spark.implicits._
@@ -380,13 +383,14 @@ class AdaptiveQueryExecSuite
   }
 
   test("Exchange reuse") {
-
+    logError("Exchange reuse")
     assumeSpark301orLater
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -406,14 +410,14 @@ class AdaptiveQueryExecSuite
       // one of the GPU exchanges should have been re-used
       val ex = findReusedExchange(adaptivePlan)
       assert(ex.size == 1)
-      assert(ShimLoader.getSparkShims.isShuffleExchangeLike(ex.head.child))
+      assert(ex.head.child.isInstanceOf[ShuffleExchangeLike])
       assert(ex.head.child.isInstanceOf[GpuExec])
 
     }, conf)
   }
 
   test("Change merge join to broadcast join without local shuffle reader") {
-
+    logError("Change merge join to broadcast join without local shuffle reader")
     assumeSpark301orLater
 
     val conf = new SparkConf()
@@ -424,6 +428,7 @@ class AdaptiveQueryExecSuite
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -444,7 +449,7 @@ class AdaptiveQueryExecSuite
   }
 
   test("Verify the reader is LocalShuffleReaderExec") {
-
+    logError("Verify the reader is LocalShuffleReaderExec")
     assumeSpark301orLater
 
     val conf = new SparkConf()
@@ -455,7 +460,8 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
       .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
-      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)

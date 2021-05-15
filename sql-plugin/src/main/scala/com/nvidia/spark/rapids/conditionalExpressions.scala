@@ -58,11 +58,9 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       try {
         val result = trueResult match {
           case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValues.getBase)
-          case t: Scalar => predicate.getBase.ifElse(t, falseValues.getBase)
-          case t =>
-            withResource(GpuScalar.from(t, trueExpr.dataType)) { tscalar =>
-              predicate.getBase.ifElse(tscalar, falseValues.getBase)
-            }
+          case t: GpuScalar => predicate.getBase.ifElse(t.getBase, falseValues.getBase)
+          case u =>
+            throw new IllegalStateException(s"Unexpected inputs $u")
         }
         GpuColumnVector.from(result, dataType)
       } finally {
@@ -84,11 +82,9 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       try {
         val result = trueResult match {
           case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValue)
-          case t: Scalar => predicate.getBase.ifElse(t, falseValue)
-          case t =>
-            withResource(GpuScalar.from(t, trueExpr.dataType)) { tscalar =>
-              predicate.getBase.ifElse(tscalar, falseValue)
-            }
+          case t: GpuScalar => predicate.getBase.ifElse(t.getBase, falseValue)
+          case u =>
+            throw new IllegalStateException(s"Unexpected inputs $u")
         }
         GpuColumnVector.from(result, dataType)
       } finally {
@@ -109,11 +105,9 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
     try {
       falseResult match {
         case f: GpuColumnVector => computeIfElse(batch, predicateExpr, trueExpr, f)
-        case f: Scalar => computeIfElse(batch, predicateExpr, trueExpr, f)
-        case f =>
-          withResource(GpuScalar.from(f, falseExpr.dataType)) { scalar =>
-            computeIfElse(batch, predicateExpr, trueExpr, scalar)
-          }
+        case f: GpuScalar => computeIfElse(batch, predicateExpr, trueExpr, f.getBase)
+        case u =>
+          throw new IllegalStateException(s"Unexpected inputs $u")
       }
     } finally {
       falseResult match {

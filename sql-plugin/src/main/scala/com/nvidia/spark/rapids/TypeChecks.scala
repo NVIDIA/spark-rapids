@@ -21,7 +21,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.catalyst.expressions.{CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 
@@ -486,6 +486,29 @@ abstract class TypeChecks[RET] {
   def support(dataType: TypeEnum.Value): RET
 
   val shown: Boolean = true
+
+  private def stringifyTypeAttributeMap(groupedByType: Map[DataType, Set[String]]): String = {
+    groupedByType.map { case (dataType, nameSet) =>
+      dataType + " " + nameSet.mkString("[", ", ", "]")
+    }.mkString(", ")
+  }
+
+  protected def tagUnsupportedTypes(
+    meta: RapidsMeta[_, _, _],
+    sig: TypeSig,
+    allowDecimal: Boolean,
+    fields: Seq[StructField],
+    msgFormat: String
+    ): Unit = {
+    val unsupportedTypes: Map[DataType, Set[String]] = fields
+      .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
+      .groupBy(_.dataType)
+      .mapValues(_.map(_.name).toSet)
+
+    if (unsupportedTypes.nonEmpty) {
+      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
+    }
+  }
 }
 
 /**
@@ -571,15 +594,8 @@ class FileFormatChecks private (
       fileType: FileFormatType,
       op: FileFormatOp): Unit = {
     val allowDecimal = meta.conf.decimalTypeEnabled
-
-    val unsupportedOutputTypes = schema.fields
-        .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
-        .toSet
-
-    if (unsupportedOutputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu("unsupported data types " +
-          unsupportedOutputTypes.mkString(", ") + s" in $op for $fileType")
-    }
+    tagUnsupportedTypes(meta, sig, allowDecimal, schema.fields,
+      s"unsupported data types %s in $op for $fileType")
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
@@ -631,23 +647,14 @@ class ExecChecks private(
     val plan = meta.wrapped.asInstanceOf[SparkPlan]
     val allowDecimal = meta.conf.decimalTypeEnabled
 
-    val unsupportedOutputTypes = plan.output
-      .filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
-      .toSet
+    // expression.toString to capture ids in not-on-GPU tags
+    def toStructField(a: Attribute) = StructField(name = a.toString(), dataType = a.dataType)
 
-    if (unsupportedOutputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu("unsupported data types in output: " +
-        unsupportedOutputTypes.mkString(", "))
-    }
-
-    val unsupportedInputTypes = plan.children.flatMap { childPlan =>
-      childPlan.output.filterNot(attr => check.isSupportedByPlugin(attr.dataType, allowDecimal))
-    }.toSet
-
-    if (unsupportedInputTypes.nonEmpty) {
-      meta.willNotWorkOnGpu("unsupported data types in input: " +
-        unsupportedInputTypes.mkString(", "))
-    }
+    tagUnsupportedTypes(meta, check, allowDecimal, plan.output.map(toStructField),
+      "unsupported data types in output: %s")
+    tagUnsupportedTypes(meta, check, allowDecimal,
+      plan.children.flatMap(_.output.map(toStructField)),
+      "unsupported data types in input: %s")
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
@@ -744,7 +751,8 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  * This is specific to CaseWhen, because it does not follow the typical parameter convention.
  */
 object CaseWhenCheck extends ExprChecks {
-  val check: TypeSig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+  val check: TypeSig = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+    TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL)
   val sparkSig: TypeSig = TypeSig.all
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
@@ -1258,6 +1266,26 @@ object SupportedOpsDocs {
     println("decimals are disabled by default in the plugin, because it is supported by a small")
     println("number of operations presently, which can result in a lot of data movement to and")
     println("from the GPU, slowing down processing in some cases.")
+    println("Result `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:")
+    println()
+    println("```")
+    println(" * In particular, if we have expressions e1 and e2 with precision/scale p1/s1 and p2/s2")
+    println(" * respectively, then the following operations have the following precision / scale:")
+    println(" *")
+    println(" *   Operation    Result Precision                        Result Scale")
+    println(" *   ------------------------------------------------------------------------")
+    println(" *   e1 + e2      max(s1, s2) + max(p1-s1, p2-s2) + 1     max(s1, s2)")
+    println(" *   e1 - e2      max(s1, s2) + max(p1-s1, p2-s2) + 1     max(s1, s2)")
+    println(" *   e1 * e2      p1 + p2 + 1                             s1 + s2")
+    println(" *   e1 / e2      p1 - s1 + s2 + max(6, s1 + p2 + 1)      max(6, s1 + p2 + 1)")
+    println(" *   e1 % e2      min(p1-s1, p2-s2) + max(s1, s2)         max(s1, s2)")
+    println(" *   e1 union e2  max(s1, s2) + max(p1-s1, p2-s2)         max(s1, s2)")
+    println("```")
+    println()
+    println("However Spark inserts `PromotePrecision` to CAST both sides to the same type.")
+    println("GPU mode may fall back to CPU even if the result Decimal precision is within 18 digits.")
+    println("For example, `Decimal(8,2)` x `Decimal(6,3)` resulting in `Decimal (15,5)` runs on CPU,")
+    println("because due to `PromotePrecision`, GPU mode assumes the result is `Decimal(19,6)`.")
     println()
     println("## `Timestamp`")
     println("Timestamps in Spark will all be converted to the local time zone before processing")

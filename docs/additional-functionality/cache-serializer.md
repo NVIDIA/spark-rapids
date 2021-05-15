@@ -29,22 +29,29 @@ nav_order: 2
   `spark.sql.inMemoryColumnarStorage.enableVectorizedReader` will not be honored as the GPU
   data is always read in as columnar. If `spark.rapids.sql.enabled` is set to false
   the cached objects will still be compressed on the CPU as a part of the caching process.
-  Also note that Parquet doesn't support CalendarIntervalType or NullType out of the box, but
-  ParquetCachedBatchSerializer does by decomposing intervals to struct containing the
-  months, days and microseconds and NullType to Int column containing nulls.
+  
+  Please note that ParquetCachedBatchSerializer doesn't support negative decimal scale, so if 
+  `spark.sql.legacy.allowNegativeScaleOfDecimal` is set to true ParquetCachedBatchSerializer
+  should not be used.  Using the serializer with negative decimal scales will generate
+  an error at runtime.
 
-  Please make sure to use the right package corresponding to the spark version you are using. To use
+  Make sure to use the right package corresponding to the spark version you are using. To use
   this serializer with Spark 3.1.1 please run Spark with the following conf.
   ```
   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
   ```
-  Please see the below table for all the names of the serializers corresponding to the Spark
+  See the below table for all the names of the serializers corresponding to the Spark
   versions
-
+ 
   | Spark version | Serializer name |
   | ------ | -----|
   | 3.1.1 | com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer |
   | 3.1.2 | com.nvidia.spark.rapids.shims.spark312.ParquetCachedBatchSerializer |
-  | 3.2.0 | com.nvidia.spark.rapids.shims.spark320.ParquetCachedBatchSerializer |
+  | 3.2.0 | com.nvidia.spark.rapids.shims.spark320.ParquetCachedBatchSerializer | 
+  
+##          Supported Types                       
+ 
+ All types are supported on the CPU, on the Gpu, ArrayType, MapType and BinaryType are not
+ supported. If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall 
+ back to using the CPU for caching. 
 
-  To use the default serializer don't set the `spark.sql.cache.serializer` conf
