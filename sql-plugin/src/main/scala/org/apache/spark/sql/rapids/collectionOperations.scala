@@ -112,11 +112,9 @@ case class GpuElementAt(left: Expression, right: Expression)
             lhs.getBase.extractListElement(rhs.getBase.getInt)
           }
         } else {
-          withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-            ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+          GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
           }
         }
-      }
       case _: MapType => {
         lhs.getBase.getMapValue(rhs.getBase)
       }
