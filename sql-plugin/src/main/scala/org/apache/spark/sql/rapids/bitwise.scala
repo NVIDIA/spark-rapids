@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, Scalar, UnaryOp}
-import com.nvidia.spark.rapids.{Arm, CudfUnaryExpression, GpuBinaryExpression, GpuColumnVector}
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.types._
@@ -47,11 +47,11 @@ object ShiftHelper extends Arm {
     }
   }
 
-  def fixupDistanceNoClose(t: DType, distance: Scalar): Scalar = {
+  def fixupDistanceNoClose(t: DType, distance: GpuScalar): Scalar = {
     if (distance.isValid) {
-      Scalar.fromInt(distance.getInt & maskForDistance(t))
+      Scalar.fromInt(distance.getValue.asInstanceOf[Int] & maskForDistance(t))
     } else {
-      distance.incRefCount()
+      distance.getBase.incRefCount()
     }
   }
 }
@@ -66,20 +66,20 @@ trait GpuShiftBase extends GpuBinaryExpression with ImplicitCastInputTypes {
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(ShiftHelper.fixupDistanceNoClose(lhs.getType, rhs.getBase)) { distance =>
-      lhs.binaryOp(shiftOp, distance, lhs.getType)
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(ShiftHelper.fixupDistanceNoClose(lhs.getBase.getType, rhs.getBase)) { distance =>
+      lhs.getBase.binaryOp(shiftOp, distance, lhs.getBase.getType)
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val lBase = lhs.getBase
     withResource(ShiftHelper.fixupDistanceNoClose(lBase.getType, rhs)) { distance =>
       lBase.binaryOp(shiftOp, distance, lBase.getType)
     }
   }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
