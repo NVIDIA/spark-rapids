@@ -586,7 +586,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   /**
    * Returns true if the cudf column can be used for the specified Spark type.
    */
-  private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
+  static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
     if (!dt.isNestedType()) {
       return getNonNestedRapidsType(colType).equals(dt);
@@ -801,6 +801,46 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static GpuColumnVector from(Scalar scalar, int count, DataType sparkType) {
     return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count), sparkType);
+  }
+
+  /**
+   * Creates a GpuColumnVector from a GpuScalar
+   *
+   * @param scalar the input GpuScalar
+   * @param count the row number of the output column
+   * @param sparkType the type of the output column
+   * @return a GpuColumnVector. It should be closed to avoid memory leak.
+   */
+  public static GpuColumnVector from(GpuScalar scalar, int count, DataType sparkType) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count), sparkType);
+  }
+
+  /**
+   * Creates a cudf ColumnVector where the elements are filled with nulls.
+   *
+   * NOTE: It only supports non-nested types now.
+   *
+   * @param count the row number of the output column
+   * @param sparkType the expected data type of the output column
+   * @return a ColumnVector filled with nulls. It should be closed to avoid memory leak.
+   */
+  public static ai.rapids.cudf.ColumnVector columnVectorFromNull(int count, DataType sparkType) {
+    try (Scalar s = GpuScalar.from(null, sparkType)) {
+      return ai.rapids.cudf.ColumnVector.fromScalar(s, count);
+    }
+  }
+
+  /**
+   * Creates a GpuColumnVector where the elements are filled with nulls.
+   *
+   * NOTE: It only supports non-nested types now.
+   *
+   * @param count the row number of the output column
+   * @param sparkType the data type of the output column
+   * @return a GpuColumnVector filled with nulls. It should be closed to avoid memory leak.
+   */
+  public static GpuColumnVector fromNull(int count, DataType sparkType) {
+    return GpuColumnVector.from(columnVectorFromNull(count, sparkType), sparkType);
   }
 
   /**

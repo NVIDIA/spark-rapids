@@ -146,14 +146,11 @@ class GpuExpandIterator(
        * a boolean indicating whether an existing vector was re-used.
        */
       def getOrCreateNullCV(dataType: DataType): (GpuColumnVector, Boolean) = {
-        val rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType)
         nullCVs.get(dataType) match {
           case Some(cv) =>
             (cv.incRefCount(), true)
           case None =>
-            val cv = withResource(Scalar.fromNull(rapidsType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows(), dataType)
-            }
+            val cv = GpuColumnVector.fromNull(cb.numRows(), dataType)
             nullCVs.put(dataType, cv)
             (cv, false)
         }
@@ -163,18 +160,8 @@ class GpuExpandIterator(
         val sparkType = expr.dataType
         val (cv, nullColumnReused) = expr.columnarEval(cb) match {
           case null => getOrCreateNullCV(sparkType)
-          case lit: GpuLiteral if lit.value == null => getOrCreateNullCV(sparkType)
-          case lit: GpuLiteral =>
-            val cv = withResource(GpuScalar.from(lit.value, lit.dataType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows(), sparkType)
-            }
-            (cv, false)
-          case cv: GpuColumnVector => (cv, false)
           case other =>
-            val cv = withResource(GpuScalar.from(other, sparkType)) { scalar =>
-              GpuColumnVector.from(scalar, cb.numRows(), sparkType)
-            }
-            (cv, false)
+            (GpuExpressionsUtils.resolveColumnVector(other, cb.numRows, sparkType), false)
         }
         if (!nullColumnReused) {
           uniqueDeviceColumns += cv
