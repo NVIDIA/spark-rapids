@@ -31,6 +31,15 @@ trait Arm {
     }
   }
 
+  /** Executes the provided code block and then closes the Option[resource] */
+  def withResource[T <: AutoCloseable, V](r: Option[T])(block: Option[T] => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.foreach(_.close())
+    }
+  }
+
   /** Executes the provided code block and then closes the sequence of resources */
   def withResource[T <: AutoCloseable, V](r: Seq[T])(block: Seq[T] => V): V = {
     try {

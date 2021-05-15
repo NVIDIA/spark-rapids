@@ -336,6 +336,72 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
     testAllWindowAggregations(windowClause)
   }
 
+  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Integral Type]",
+    windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY dollars ASC
+        | RANGE BETWEEN 20 PRECEDING AND 20 FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Short Type]", windowTestDfOrc,
+      new SparkConf().set("spark.rapids.sql.window.range.short.enabled", "true")) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST (dollars AS SHORT) ASC
+        | RANGE BETWEEN 20 PRECEDING AND 20 FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Long Type]",
+    windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST (dollars AS LONG) ASC
+        | RANGE BETWEEN 20 PRECEDING AND 20 FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Byte Type]", windowTestDfOrc,
+      new SparkConf().set("spark.rapids.sql.window.range.byte.enabled", "true")) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY CAST (dollars AS Byte) ASC
+        | RANGE BETWEEN 20 PRECEDING AND 20 FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+  testSparkResultsAreEqual("[Window] [RANGE] [ASC] [Date Type]",
+    windowTestDfOrc) {
+
+    val windowClause =
+      """
+        | (PARTITION BY uid
+        | ORDER BY dt ASC
+        | RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING)
+        |""".stripMargin
+
+    testAllWindowAggregations(windowClause)
+  }
+
+
   /* There is no easy way to make dateLong not nullable with how these test are written
   Very similar functionality is covered by the python integration tests.  When
   https://github.com/NVIDIA/spark-rapids/issues/1039 is fixed then we can enable these tests again
