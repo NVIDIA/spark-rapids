@@ -48,7 +48,8 @@ on an executor at the same time and assigned to the same GPU you can set this to
 less than 1. You would want this setting to correspond to the `spark.executor.cores` setting.  For
 instance, if you have `spark.executor.cores=2` which would allow 2 tasks to run on each executor
 and you want those 2 tasks to run on the same GPU then you would set
-`spark.task.resource.gpu.amount=0.5`.
+`spark.task.resource.gpu.amount=0.5`. See the [Tuning Guide](../tuning-guide.md) for more details
+on controlling the task concurrency for each executor.
 
 You can also refer to the official Apache Spark documentation.
 - [Overview](https://github.com/apache/spark/blob/master/docs/configuration.md#custom-resource-scheduling-and-configuration-overview)

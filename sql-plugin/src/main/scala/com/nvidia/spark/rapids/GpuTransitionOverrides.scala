@@ -158,6 +158,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
+  private def isGpuShuffleLike(execNode: SparkPlan): Boolean =
+    execNode.isInstanceOf[GpuShuffleExchangeExecBase] ||
+      execNode.isInstanceOf[GpuCustomShuffleReaderExec]
+
   /**
    * This optimizes the plan to remove [[GpuCoalesceBatches]] nodes that are unnecessary
    * or undesired in some situations.
@@ -170,10 +174,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    *       not unusual.
    */
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
-    case c2r: GpuColumnarToRowExecParent if c2r.child.isInstanceOf[GpuCoalesceBatches] =>
-      // Don't build a batch if we are just going to go back to ROWS
-      val co = c2r.child.asInstanceOf[GpuCoalesceBatches]
-      c2r.withNewChildren(co.children.map(optimizeCoalesce))
+    case c2r @ GpuColumnarToRowExecParent(gpuCoalesce: GpuCoalesceBatches, _)
+      if !isGpuShuffleLike(gpuCoalesce.child) =>
+        // Don't build a batch if we are just going to go back to ROWS
+        // and there isn't a GPU shuffle involved
+        c2r.withNewChildren(gpuCoalesce.children.map(optimizeCoalesce))
     case GpuCoalesceBatches(r2c: GpuRowToColumnarExec, goal: TargetSize) =>
       // TODO in the future we should support this for all goals, but
       // GpuRowToColumnarExec preallocates all of the memory, and the builder does not
@@ -184,7 +189,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case GpuCoalesceBatches(co: GpuCoalesceBatches, goal) =>
       GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.max(goal, co.goal))
     case GpuCoalesceBatches(child: GpuExec, goal)
-      if (CoalesceGoal.satisfies(child.outputBatching, goal)) =>
+      if CoalesceGoal.satisfies(child.outputBatching, goal) =>
       // The goal is already satisfied so remove the batching
       child.withNewChildren(child.children.map(optimizeCoalesce))
     case p =>

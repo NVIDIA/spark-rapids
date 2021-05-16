@@ -1934,7 +1934,7 @@ object GpuOverrides {
       ExprChecks.fullAgg(
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
-          "input", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all))),
+          "input", _commonTypes + TypeSig.STRUCT.nested(_commonTypes), TypeSig.all))),
       (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (count.children.size > 1) {
@@ -2828,31 +2828,6 @@ object GpuOverrides {
           override def convertToGpu(): GpuExec =
             GpuLocalLimitExec(localLimitExec.limit, childPlans.head.convertIfNeeded())
         }),
-    exec[ArrowEvalPythonExec](
-      "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled",
-      ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-        TypeSig.all),
-      (e, conf, p, r) =>
-        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
-          val udfs: Seq[BaseExprMeta[PythonUDF]] =
-            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
-
-          override def replaceMessage: String = "partially run on GPU"
-          override def noReplacementPossibleMessage(reasons: String): String =
-            s"cannot run even partially on the GPU because $reasons"
-
-          override def convertToGpu(): GpuExec =
-            GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
-              resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-              childPlans.head.convertIfNeeded(),
-              e.evalType)
-        }),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
@@ -2930,8 +2905,12 @@ object GpuOverrides {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP + TypeSig.ARRAY)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+            .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
@@ -2980,25 +2959,6 @@ object GpuOverrides {
             exec.partitionSpecs)
         }
       }),
-    exec[MapInPandasExec](
-      "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-        TypeSig.all),
-      (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
-    exec[FlatMapGroupsInPandasExec](
-      "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-      (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
-    exec[AggregateInPandasExec](
-      "The backend for an Aggregation Pandas UDF, this accelerates the data transfer between" +
-        " the Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
-      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-      (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",

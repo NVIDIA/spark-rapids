@@ -38,7 +38,7 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
     // MapData is represented as List of Struct in terms of cuDF.
     withResource(input.getBase.countElements()) { collectionSize =>
       if (legacySizeOfNull) {
-        withResource(GpuScalar.from(-1)) { nullScalar =>
+        withResource(Scalar.fromInt(-1)) { nullScalar =>
           withResource(input.getBase.isNull) { inputIsNull =>
             inputIsNull.ifElse(nullScalar, collectionSize)
           }
@@ -96,53 +96,52 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     lhs.dataType match {
       case _: ArrayType => {
         if (rhs.isValid) {
-          if (rhs.getInt == 0) {
+          if (rhs.getValue.asInstanceOf[Int] == 0) {
             throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
           } else  {
             // Positive or negative index
+            val ordinalValue = rhs.getValue.asInstanceOf[Int]
             withResource(lhs.getBase.countElements) { numElementsCV =>
               withResource(numElementsCV.min) { minScalar =>
-                val minNumElements = minScalar.getInt
+                val minNumElements = minScalar.getValue.asInstanceOf[Int]
                 // index out of bound
                 // Note: when the column is containing all null arrays, CPU will not throw, so make
                 // GPU to behave the same.
-                if (minNumElements < math.abs(rhs.getInt) &&
+                if (minNumElements < math.abs(ordinalValue) &&
                   lhs.getBase.getNullCount != lhs.getBase.getRowCount &&
                   failOnError) {
                   throw new ArrayIndexOutOfBoundsException(
-                    s"Invalid index: ${rhs.getInt}, minimum numElements in this ColumnVector: " +
+                    s"Invalid index: ${ordinalValue}, minimum numElements in this ColumnVector: " +
                       s"$minNumElements")
                 } else {
-                  if (rhs.getInt > 0) {
+                  if (ordinalValue > 0) {
                     // Positive index
-                    lhs.getBase.extractListElement(rhs.getInt - 1)
+                    lhs.getBase.extractListElement(ordinalValue - 1)
                   } else {
                     // Negative index
-                    lhs.getBase.extractListElement(rhs.getInt)
+                    lhs.getBase.extractListElement(ordinalValue)
                   }
                 }
               }
             }
           }
         } else {
-          withResource(GpuScalar.from(null, dataType)) { nullScalar =>
-            ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
-          }
+          GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
         }
       }
       case _: MapType => {
         if (failOnError) {
-          withResource(lhs.getBase.getMapKeyExistence(rhs)){ keyExistenceColumn =>
+          withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)){ keyExistenceColumn =>
             withResource(keyExistenceColumn.all()) { exist =>
               if (exist.getBoolean) {
-                return lhs.getBase.getMapValue(rhs)
+                return lhs.getBase.getMapValue(rhs.getBase)
               } else {
                 throw new NoSuchElementException(s"Key: ${rhs.getJavaString} does not exist in " +
                   s"one of the rows in the map column")
@@ -150,13 +149,13 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
             }
           }
         } else {
-          lhs.getBase.getMapValue(rhs)
+          lhs.getBase.getMapValue(rhs.getBase)
         }
       }
     }
   }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
