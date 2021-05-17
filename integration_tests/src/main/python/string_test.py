@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -161,22 +161,104 @@ def test_concat():
                 f.concat(f.lit(''), f.col('b')),
                 f.concat(f.col('a'), f.lit(''))))
 
-@allow_non_gpu('CollectLimitExec')
-def test_concat_ws_no_nulls():
+def test_concat_ws_no_null_values():
     # TODO - null handling messed up
     gen = StringGen(nullable=False)
     (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: debug_df(binary_op_df(spark, gen)).select(
+            lambda spark: binary_op_df(spark, gen).select(
+                f.concat_ws("-"),
                 f.concat_ws("-", f.col('a')),
+                f.concat_ws(None, f.col('a')),
                 f.concat_ws("-", f.col('a'), f.col('b')),
+                f.concat_ws("-", f.col('a'), f.lit('')),
                 f.concat_ws("*", f.col('a'), f.col('b'), f.col('a')),
                 f.concat_ws("*", s1, f.col('b')),
                 f.concat_ws("+", f.col('a'), s2),
                 f.concat_ws("-", f.lit(None).cast('string'), f.col('b')),
                 f.concat_ws("+", f.col('a'), f.lit(None).cast('string')),
-                f.concat_ws("+", f.lit(''), f.col('b')),
+                f.concat_ws(None, f.col('a'), f.col('b')),
                 f.concat_ws("+", f.col('a'), f.lit(''))))
+
+def test_concat_ws_null_as_arraytype():
+    # TODO - null handling messed up
+    gen = StringGen(nullable=False)
+    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: binary_op_df(spark, gen).select(
+                f.concat_ws("*", f.lit(None))))
+
+def test_concat_ws_arrays():
+    # TODO - null handling messed up
+    gen = ArrayGen(StringGen(nullable=False), nullable=False)
+    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: binary_op_df(spark, gen).select(
+                f.concat_ws("*", f.array(f.lit('2'), f.lit(''), f.lit('3'), f.lit('Z'))),
+                f.concat_ws("*", f.lit('z'), s1, f.lit('b'), s2, f.array(), f.col('b')),
+                f.concat_ws("*", f.col('b')),
+                f.concat_ws("-", f.array()),
+                f.concat_ws("-", f.array(f.lit(None))),
+                f.concat_ws("-", f.array(f.lit(''))),
+                f.concat_ws(None, f.lit('z'), s1, f.lit('b'), s2, f.array()),
+                f.concat_ws("*", s1, s2)))
+
+def test_concat_ws_nulls_arrays():
+    # TODO - null handling messed up
+    gen = ArrayGen(StringGen(nullable=False), nullable=False)
+    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: binary_op_df(spark, gen).select(
+                f.concat_ws("*", f.lit('z'), f.array(f.lit('2'), f.lit(None), f.lit('Z'))),
+                f.concat_ws("*", f.array(f.lit(None), f.lit(None))),
+                f.concat_ws("*", f.array(f.lit(None), f.lit(None)), f.lit('a'))))
+
+@allow_non_gpu('CollectLimitExec')
+def test_concat_ws_null_lit_array():
+    # spark by default create null literal of type Array[String]
+    # TODO - null handling messed up for arraytype[string] for gpu lit null
+    gen = StringGen(nullable=False)
+    (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: debug_df(binary_op_df(spark, gen)).select(
+                f.concat_ws("-", f.lit(None)),
+                f.concat_ws("-", f.lit(None), f.col('b'))))
+
+def test_concat_ws_sql_no_null_values():
+    # TODO - null handling messed up
+    gen = StringGen(nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: binary_op_df(spark, gen),
+            'concat_ws_table',
+            'select ' +
+                'concat_ws("-"), ' +
+                'concat_ws("-", a), ' +
+                'concat_ws(null, a), ' +
+                'concat_ws("-", a, b), ' +
+                'concat_ws("+", \'aaa\', \'bbb\', \'zzz\'), ' +
+                'concat_ws(null, b, \'aaa\', \'bbb\', \'zzz\'), ' +
+                'concat_ws("=", b, \'\', \'bbb\', \'zzz\'), ' +
+                'concat_ws("*", b, a, cast(null as string)) from concat_ws_table')
+
+
+
+#good:
+                #'concat_ws("+", array(b, \'A\')), ' +
+#bad:
+                #'concat_ws("+", array(b, \'A\', null)), ' +
+
+# todo need column of sepearators
+# todo need to test null values and array of null values
+def test_concat_ws_sql_arrays():
+    # TODO - null handling messed up
+    gen = ArrayGen(StringGen(nullable=False), nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: three_col_df(spark, gen, gen, StringGen(nullable=False)),
+            'concat_ws_table',
+            'select ' +
+                'concat_ws("-", array()), ' +
+                'concat_ws(null, c, c, array(c)), ' +
+                'concat_ws("*", array(\'2\', \'\', \'3\', \'Z\', c)) from concat_ws_table')
 
 def test_substring():
     gen = mk_str_gen('.{0,30}')

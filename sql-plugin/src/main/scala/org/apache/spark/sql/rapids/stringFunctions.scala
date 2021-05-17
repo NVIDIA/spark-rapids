@@ -322,11 +322,24 @@ case class GpuConcatWs(children: Seq[Expression])
       nullStrScalar = GpuScalar.from(null, StringType)
       children.foreach(childEvals += _.columnarEval(batch))
       childEvals.foreach {
-        case vector: GpuColumnVector =>
-          columns += vector.getBase
+        case vector: GpuColumnVector => {
+          vector.dataType() match {
+            case ArrayType(st: StringType, nullable) =>
+              // we have to first concatenate any array types
+              // TODO - taking head of columns ok because sep always first
+              logWarning("gpu vector array")
+              withResource(vector) { vec =>
+                columns += ColumnVector.stringConcatenateListElementsWs(vec.getBase, columns.head, nullStrScalar, nullStrScalar)
+              }
+            case _ =>
+              columns += vector.getBase
+          }
+        }
         case col => if (col == null) {
+          logWarning("null col")
           columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
         } else {
+          logWarning("scalar")
           withResource(GpuScalar.from(col.asInstanceOf[UTF8String].toString, StringType)) {
             stringScalar =>
               columns += GpuColumnVector.from(stringScalar, rows, StringType).getBase
@@ -342,7 +355,6 @@ case class GpuConcatWs(children: Seq[Expression])
         GpuColumnVector.from(emptyStrScalar, rows, StringType).getBase
       } else {
         */
-        logWarning("calling stringConcatenateWs in gpu concat ws")
         GpuColumnVector.from(ColumnVector.stringConcatenateWs(value_columns.toArray[ColumnView],
           sep_column), dataType)
       // }

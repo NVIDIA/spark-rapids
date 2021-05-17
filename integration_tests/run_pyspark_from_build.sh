@@ -129,6 +129,7 @@ else
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
     export PYSP_TEST_spark_sql_shuffle_partitions='12'
+    export PYSP_TEST_spark_rapids_sql_explain='NOT_ON_GPU'
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
@@ -136,7 +137,7 @@ else
         python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-            --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
+            --conf spark.rapids.sql.explain=NOT_ON_GPU --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
             $SPARK_SUBMIT_FLAGS "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi
