@@ -16,36 +16,62 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuScalar, GpuUnaryExpression}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
+import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
-  extends GpuUnaryExpression {
+case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
 
-  require(child.dataType.isInstanceOf[ArrayType] || child.dataType.isInstanceOf[MapType],
-    s"The size function doesn't support the operand type ${child.dataType}")
+  @transient override lazy val dataType: DataType = {
+    if (children.isEmpty) {
+      StringType
+    } else {
+      super.dataType
+    }
+  }
 
-  override def dataType: DataType = IntegerType
-  override def nullable: Boolean = if (legacySizeOfNull) false else super.nullable
+  override def nullable: Boolean = children.exists(_.nullable)
 
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+  override def columnarEval(batch: ColumnarBatch): Any = dataType match {
+    // Explicitly return null for empty concat as Spark, since cuDF doesn't support empty concat.
+    case dt if children.isEmpty => GpuScalar.from(null, dt)
+    // For single column concat, we pass the result of child node to avoid extra cuDF call.
+    case _ if children.length == 1 => children.head.columnarEval(batch)
+    case StringType => stringConcat(batch)
+    case ArrayType(_, _) => listConcat(batch)
+    case _ => throw new IllegalArgumentException(s"unsupported dataType $dataType")
+  }
 
-    // Compute sizes of cuDF.ListType to get sizes of each ArrayData or MapData, considering
-    // MapData is represented as List of Struct in terms of cuDF.
-    withResource(input.getBase.countElements()) { collectionSize =>
-      if (legacySizeOfNull) {
-        withResource(Scalar.fromInt(-1)) { nullScalar =>
-          withResource(input.getBase.isNull) { inputIsNull =>
-            inputIsNull.ifElse(nullScalar, collectionSize)
-          }
-        }
-      } else {
-        collectionSize.incRefCount()
+  private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(ArrayBuffer.empty[ColumnVector]) { buffer =>
+      // build input buffer
+      children.foreach {
+        buffer += GpuExpressionsUtils.columnarEvalToColumn(_, batch).getBase
       }
+      // run string concatenate
+      GpuColumnVector.from(
+        ColumnVector.stringConcatenate(buffer.toArray[ColumnView]), StringType)
+    }
+  }
+
+  private def listConcat(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(ArrayBuffer[ColumnVector]()) { buffer =>
+      // build input buffer
+      children.foreach { child =>
+        child.columnarEval(batch) match {
+          case cv: GpuColumnVector => buffer += cv.getBase
+          case _ => throw new UnsupportedOperationException("Unsupported GpuScalar of List")
+        }
+      }
+      // run list concatenate
+      GpuColumnVector.from(ColumnVector.listConcatenateByRow(buffer: _*), dataType)
     }
   }
 }
@@ -128,4 +154,31 @@ case class GpuElementAt(left: Expression, right: Expression)
     }
 
   override def prettyName: String = "element_at"
+}
+
+case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
+    extends GpuUnaryExpression {
+
+  require(child.dataType.isInstanceOf[ArrayType] || child.dataType.isInstanceOf[MapType],
+    s"The size function doesn't support the operand type ${child.dataType}")
+
+  override def dataType: DataType = IntegerType
+  override def nullable: Boolean = if (legacySizeOfNull) false else super.nullable
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+
+    // Compute sizes of cuDF.ListType to get sizes of each ArrayData or MapData, considering
+    // MapData is represented as List of Struct in terms of cuDF.
+    withResource(input.getBase.countElements()) { collectionSize =>
+      if (legacySizeOfNull) {
+        withResource(Scalar.fromInt(-1)) { nullScalar =>
+          withResource(input.getBase.isNull) { inputIsNull =>
+            inputIsNull.ifElse(nullScalar, collectionSize)
+          }
+        }
+      } else {
+        collectionSize.incRefCount()
+      }
+    }
+  }
 }
