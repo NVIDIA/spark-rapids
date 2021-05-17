@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -903,6 +904,21 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
     if (GpuOverrides.extractLit(expr.offset).isEmpty) { // Not a literal offset.
       willNotWorkOnGpu(
         s"Only integer literal offsets are supported for LEAD/LAG. Found: ${expr.offset}")
+    }
+
+    GpuOverrides.extractLit(expr.default).map { l =>
+      l.dataType match {
+        case ArrayType(ArrayType(_, _), _) =>
+          willNotWorkOnGpu(s"Multi-dimensional array default value is not supported for LEAD/LAG")
+        case ArrayType(_, _) =>
+          val litArray = l.value.asInstanceOf[ArrayData].array
+          // LEAD(a, 2, array()) is not supported for now
+          if (litArray == null || litArray.length == 0) {
+            willNotWorkOnGpu(
+              s"empty array default value is not supported for LEAD/LAG")
+          }
+        case _ =>
+      }
     }
   }
 }
