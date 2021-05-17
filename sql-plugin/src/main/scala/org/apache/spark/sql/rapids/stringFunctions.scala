@@ -22,6 +22,7 @@ import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -298,10 +299,11 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
 }
 
 case class GpuConcatWs(children: Seq[Expression])
-    extends GpuExpression with ImplicitCastInputTypes {
+    extends GpuExpression with ImplicitCastInputTypes with Logging {
   override def dataType: DataType = StringType
   override def nullable: Boolean = children.head.nullable
   override def foldable: Boolean = children.forall(_.foldable)
+  logWarning("in gpu concat ws")
 
   /** The 1st child (separator) is str, and rest are either str or array of str. */
   override def inputTypes: Seq[AbstractDataType] = {
@@ -333,14 +335,17 @@ case class GpuConcatWs(children: Seq[Expression])
       }
       val sep_column = columns.head
       val value_columns = columns.tail
+      /*
       if (value_columns.size == 0) {
         // if no columns then column of empty strings
         emptyStrScalar = GpuScalar.from("", StringType)
         GpuColumnVector.from(emptyStrScalar, rows, StringType).getBase
       } else {
+        */
+        logWarning("calling stringConcatenateWs in gpu concat ws")
         GpuColumnVector.from(ColumnVector.stringConcatenateWs(value_columns.toArray[ColumnView],
           sep_column), dataType)
-      }
+      // }
     } finally {
       columns.safeClose()
       if (emptyStrScalar != null) {
