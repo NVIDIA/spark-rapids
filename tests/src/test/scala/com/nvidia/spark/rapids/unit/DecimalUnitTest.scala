@@ -59,7 +59,7 @@ class DecimalUnitTest extends GpuUnitTests {
       }
     }
     // test exception throwing due to unsupported type
-    assertThrows[IllegalStateException] {
+    assertThrows[IllegalArgumentException] {
       withResource(GpuScalar.from(true, DecimalType(10, 1))) { _ => }
     }
     // test exception throwing due to exceeded precision

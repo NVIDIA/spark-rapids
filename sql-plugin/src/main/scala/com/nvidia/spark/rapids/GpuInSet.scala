@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, Predicate
 
 case class GpuInSet(
     child: Expression,
-    list: Seq[Literal]) extends GpuUnaryExpression with Predicate {
+    list: Seq[Any]) extends GpuUnaryExpression with Predicate {
   @transient private[this] lazy val _needles: ThreadLocal[ColumnVector] =
     new ThreadLocal[ColumnVector]
 
@@ -47,7 +47,7 @@ case class GpuInSet(
   }
 
   private def buildNeedles: ColumnVector =
-    LiteralHelper.columnVectorFromLiterals(list.map(_.value), child.dataType)
+    GpuScalar.columnVectorFromLiterals(list, child.dataType)
 
   override def toString: String = s"$child INSET ${list.mkString("(", ",", ")")}"
 

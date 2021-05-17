@@ -1654,7 +1654,7 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(): GpuExpression =
-          GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]])
+          GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]].map(_.value))
       }),
     expr[InSet](
       "INSET operator",
@@ -1667,7 +1667,7 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(): GpuExpression =
-          GpuInSet(childExprs.head.convertToGpu(), in.hset.map(LiteralHelper(_)).toSeq)
+          GpuInSet(childExprs.head.convertToGpu(), in.hset.toSeq)
       }),
     expr[LessThan](
       "< operator",
