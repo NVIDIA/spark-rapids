@@ -115,9 +115,9 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                 // index out of bound
                 // Note: when the column is containing all null arrays, CPU will not throw, so make
                 // GPU to behave the same.
-                if (minNumElements < math.abs(ordinalValue) &&
-                  lhs.getBase.getNullCount != lhs.getBase.getRowCount &&
-                  failOnError) {
+                if (failOnError &&
+                  minNumElements < math.abs(ordinalValue) &&
+                  lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
                   throw new ArrayIndexOutOfBoundsException(
                     s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
                       s"$minNumElements")

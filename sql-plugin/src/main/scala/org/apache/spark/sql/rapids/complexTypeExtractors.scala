@@ -126,9 +126,9 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
       withResource(lhs.getBase.countElements) { numElementsCV =>
         withResource(numElementsCV.min) { minScalar =>
           val minNumElements = minScalar.getInt
-          if ((ordinal < 0 || minNumElements < ordinal + 1) &&
-            numElementsCV.getRowCount != numElementsCV.getNullCount &&
-            failOnError) {
+          if (failOnError &&
+            (ordinal < 0 || minNumElements < ordinal + 1) &&
+            numElementsCV.getRowCount != numElementsCV.getNullCount) {
             throw new ArrayIndexOutOfBoundsException(
               s"Invalid index: ${ordinal}, minimum numElements in this ColumnVector: " +
                 s"$minNumElements")
