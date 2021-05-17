@@ -121,7 +121,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
 
   override def doColumnar(lhs: GpuColumnVector, ordinalS: GpuScalar): ColumnVector = {
     val ordinal = ordinalS.getValue.asInstanceOf[Int]
-    if (ordinal.isValid) {
+    if (ordinalS.isValid) {
       withResource(lhs.getBase.countElements) { numElementsCV =>
         withResource(numElementsCV.min) {
           minScalar =>
@@ -140,7 +140,6 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
     } else {
       GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
       }
-    }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -182,27 +181,22 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
 
   override def prettyName: String = "getMapValue"
 
-<<<<<<< HEAD
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (failOnError){
-      withResource(lhs.getBase.getMapKeyExistence(rhs)) { keyExistenceColumn =>
+      withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
           if (exist.getBoolean) {
-            return lhs.getBase.getMapValue(rhs)
+            return lhs.getBase.getMapValue(rhs.getBase)
           } else {
-            throw new NoSuchElementException(s"Key: ${rhs.getJavaString} does not exist in one of "
-              + s"the rows in the map column")
+            throw new NoSuchElementException(s"Key: ${rhs.getValue.asInstanceOf[String]} does " +
+              s"not exist in one of the rows in the map column")
           }
         }
       }
     } else {
-      lhs.getBase.getMapValue(rhs)
+      lhs.getBase.getMapValue(rhs.getBase)
     }
   }
-=======
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
-    lhs.getBase.getMapValue(rhs.getBase)
->>>>>>> origin/branch-0.6
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>

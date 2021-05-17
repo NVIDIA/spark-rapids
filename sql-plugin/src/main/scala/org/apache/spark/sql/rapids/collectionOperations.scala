@@ -18,10 +18,10 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuScalar, GpuUnaryExpression}
-
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   extends GpuUnaryExpression {
@@ -110,7 +110,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
             val ordinalValue = rhs.getValue.asInstanceOf[Int]
             withResource(lhs.getBase.countElements) { numElementsCV =>
               withResource(numElementsCV.min) { minScalar =>
-                val minNumElements = minScalar.getValue.asInstanceOf[Int]
+                val minNumElements = minScalar.getInt
                 // index out of bound
                 // Note: when the column is containing all null arrays, CPU will not throw, so make
                 // GPU to behave the same.
@@ -118,7 +118,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
                   lhs.getBase.getNullCount != lhs.getBase.getRowCount &&
                   failOnError) {
                   throw new ArrayIndexOutOfBoundsException(
-                    s"Invalid index: ${ordinalValue}, minimum numElements in this ColumnVector: " +
+                    s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
                       s"$minNumElements")
                 } else {
                   if (ordinalValue > 0) {
@@ -143,8 +143,9 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
               if (exist.getBoolean) {
                 return lhs.getBase.getMapValue(rhs.getBase)
               } else {
-                throw new NoSuchElementException(s"Key: ${rhs.getJavaString} does not exist in " +
-                  s"one of the rows in the map column")
+                throw new NoSuchElementException(
+                  s"Key: ${rhs.getValue.asInstanceOf[UTF8String].toString} " +
+                    s"does not exist in one of the rows in the map column")
               }
             }
           }
