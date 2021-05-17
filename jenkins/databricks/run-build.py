@@ -38,7 +38,7 @@ def main():
   print("rsync command: %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
-  ssh_command = "bash -c 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi'" % (master_addr, params.private_key_file, params.script_dest, params.tgz_dest, params.base_spark_pom_version, params.build_profiles)
+  ssh_command = "bash -c 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s %s %s 2>&1 | tee buildout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi'" % (master_addr, params.private_key_file, params.script_dest, params.tgz_dest, params.base_spark_pom_version, params.build_profiles, params.base_spark_version_to_install_databricks_jars)
   print("ssh command: %s" % ssh_command)
   subprocess.check_call(ssh_command, shell = True)
 

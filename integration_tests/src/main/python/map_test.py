@@ -30,3 +30,15 @@ def test_simple_get_map_value(data_gen):
                 'a["key_9"]',
                 'a["NOT_FOUND"]',
                 'a["key_5"]'))
+
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_simple_element_at_map(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'element_at(a, "key_0")',
+                'element_at(a, "key_1")',
+                'element_at(a, "null")',
+                'element_at(a, "key_9")',
+                'element_at(a, "NOT_FOUND")',
+                'element_at(a, "key_5")'),
+                conf={'spark.sql.ansi.enabled':False})

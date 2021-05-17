@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,11 +42,6 @@ class DecimalUnitTest extends GpuUnitTests {
 
   test("test decimal as scalar") {
     Array(dec32Data, dec64Data).flatten.foreach { dec =>
-      // test GpuScalar.from(v: Any)
-      withResource(GpuScalar.from(dec)) { s =>
-        assertResult(-dec.scale)(s.getType.getScale)
-        assertResult(dec)(GpuScalar.extract(s).asInstanceOf[Decimal])
-      }
       // test GpuScalar.from(v: Any, t: DataType)
       val dt = DecimalType(DType.DECIMAL64_MAX_PRECISION, dec.scale)
       withResource(GpuScalar.from(dec.toDouble, dt)) { s =>
@@ -158,7 +153,9 @@ class DecimalUnitTest extends GpuUnitTests {
     wrapperLit.tagForGpu()
     assertResult(true)(wrapperLit.canExprTreeBeReplaced)
     val gpuLit = wrapperLit.convertToGpu().asInstanceOf[GpuLiteral]
-    assertResult(lit.eval(null))(gpuLit.columnarEval(null))
+    withResourceIfAllowed(gpuLit.columnarEval(null)) { s =>
+      assertResult(lit.eval(null))(s.asInstanceOf[GpuScalar].getValue)
+    }
     assertResult(lit.sql)(gpuLit.sql)
 
     // inconvertible because of precision overflow
@@ -175,7 +172,9 @@ class DecimalUnitTest extends GpuUnitTests {
     val gpuAlias = wrapperAlias.convertToGpu().asInstanceOf[GpuAlias]
     assertResult(cpuAlias.dataType)(gpuAlias.dataType)
     assertResult(cpuAlias.sql)(gpuAlias.sql)
-    assertResult(cpuAlias.eval(null))(gpuAlias.columnarEval(null))
+    withResourceIfAllowed(gpuAlias.columnarEval(null)) { s =>
+      assertResult(cpuAlias.eval(null))(s.asInstanceOf[GpuScalar].getValue)
+    }
   }
 
   test("test AttributeReference with decimal") {

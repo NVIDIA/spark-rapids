@@ -33,7 +33,7 @@ class ClusterUtils(object):
         templ['spark_version'] = runtime
         if (cloud_provider == 'aws'):
             templ['aws_attributes'] = {
-                        "zone_id": "us-west-2a",
+                        "zone_id": "us-west-2c",
                         "first_on_demand": 1,
                         "availability": "SPOT_WITH_FALLBACK",
                         "spot_bid_price_percent": 100,

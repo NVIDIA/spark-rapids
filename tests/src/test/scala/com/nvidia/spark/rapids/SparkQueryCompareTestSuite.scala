@@ -1826,6 +1826,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def assumeSpark301orLater =
     assume(cmpSparkVersion(3, 0, 1) >= 0)
 
+  def assumeSpark311orLater =
+    assume(cmpSparkVersion(3, 1, 1) >= 0)
+
   def assumePriorToSpark320 =
     assume(cmpSparkVersion(3, 2, 0) < 0)
 
