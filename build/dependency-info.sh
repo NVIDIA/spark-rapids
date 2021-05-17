@@ -28,14 +28,14 @@ set -e
 CUDF_VER=$1
 CUDA_CLASSIFIER=$2
 SERVER_ID=snapshots
-# set defualt values for 'M2DIR' & 'WORKSPACE' so that shims can get the correct cudf/spark dependnecy
+# set defualt values for 'M2DIR' & 'CURRENTPATH' so that shims can get the correct cudf/spark dependnecy
 M2DIR=${M2DIR:-"$HOME/.m2/repository"}
 MY_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-WORKSPACE=${WORKSPACE:-"$MY_PATH/.."}
-${WORKSPACE}/jenkins/printJarVersion.sh "cudf_version" "${M2DIR}/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
+CURRENTPATH=${CURRENTPATH:-"$MY_PATH/.."}
+${CURRENTPATH}/jenkins/printJarVersion.sh "cudf_version" "${M2DIR}/ai/rapids/cudf/${CUDF_VER}" "cudf-${CUDF_VER}" "-${CUDA_CLASSIFIER}.jar" $SERVER_ID
 
 SPARK_VER=$3
-SPARK_SQL_VER=`${WORKSPACE}/jenkins/printJarVersion.sh "spark_version" "${M2DIR}/org/apache/spark/spark-sql_2.12/${SPARK_VER}" "spark-sql_2.12-${SPARK_VER}" ".jar" $SERVER_ID`
+SPARK_SQL_VER=`${CURRENTPATH}/jenkins/printJarVersion.sh "spark_version" "${M2DIR}/org/apache/spark/spark-sql_2.12/${SPARK_VER}" "spark-sql_2.12-${SPARK_VER}" ".jar" $SERVER_ID`
 
 # Split spark version from spark-sql_2.12 jar filename
 echo ${SPARK_SQL_VER/"-sql_2.12"/}
