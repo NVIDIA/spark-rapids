@@ -18,9 +18,8 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType}
 
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
-
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FUNC_ALIAS
 import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, NamedExpression}
