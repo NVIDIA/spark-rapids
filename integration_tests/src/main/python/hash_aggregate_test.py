@@ -605,22 +605,28 @@ def test_subquery_in_agg(adaptive, expr):
         conf = {"spark.sql.adaptive.enabled" : adaptive})
 
 
+def assert_single_level_struct(df):
+    first_level_dt = df.schema['a'].dataType
+    second_level_dt = first_level_dt['aa'].dataType
+    assert isinstance(first_level_dt, StructType)
+    assert isinstance(second_level_dt, IntegerType)
+
+
 @allow_non_gpu(any = True)
 @pytest.mark.parametrize('key_data_gen', [
     StructGen([
-        ('a', StructGen([
-            ('aa', IntegerGen(min_val=0, max_val=9))
-        ]))], nullable=False),
+        ('aa', IntegerGen(min_val=0, max_val=9)),
+    ], nullable=False),
     StructGen([
-        ('a', StructGen([
-            ('aa', IntegerGen(min_val=0, max_val=4)),
-            ('ab', IntegerGen(min_val=5, max_val=9)),
-        ]))], nullable=False),
+        ('aa', IntegerGen(min_val=0, max_val=4)),
+        ('ab', IntegerGen(min_val=5, max_val=9)),
+    ], nullable=False),
 ], ids=idfn)
 @ignore_order(local=True)
 def test_struct_groupby_count(key_data_gen):
     def group_by_count(spark):
         df = two_col_df(spark, key_data_gen, IntegerGen())
+        assert_single_level_struct(df)
         return df.groupBy(df.a).count()
     assert_gpu_and_cpu_are_equal_collect(group_by_count)
 
@@ -628,17 +634,18 @@ def test_struct_groupby_count(key_data_gen):
 @pytest.mark.parametrize('cast_struct_tostring', ['LEGACY', 'SPARK311+'])
 @pytest.mark.parametrize('key_data_gen', [
     StructGen([
-        ('a', IntegerGen(min_val=0, max_val=9)),
+        ('aa', IntegerGen(min_val=0, max_val=9)),
     ], nullable=False),
     StructGen([
-        ('a', IntegerGen(min_val=0, max_val=4)),
-        ('b', IntegerGen(min_val=5, max_val=9)),
+        ('aa', IntegerGen(min_val=0, max_val=4)),
+        ('ab', IntegerGen(min_val=5, max_val=9)),
     ], nullable=False)
 ], ids=idfn)
 @ignore_order(local=True)
 def test_struct_cast_groupby_count(cast_struct_tostring, key_data_gen):
     def _group_by_struct_or_cast(spark):
         df = two_col_df(spark, key_data_gen, IntegerGen())
+        assert_single_level_struct(df)
         return df.groupBy(df.a.cast(StringType())).count()
     assert_gpu_and_cpu_are_equal_collect(_group_by_struct_or_cast, {
         'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
@@ -661,6 +668,7 @@ def test_struct_cast_groupby_count(cast_struct_tostring, key_data_gen):
 def test_struct_count_distinct(key_data_gen):
     def _count_distinct_by_struct(spark):
         df = gen_df(spark, key_data_gen)
+        assert_single_level_struct(df)
         return df.agg(f.countDistinct(df.a))
     assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct)
 
@@ -681,6 +689,7 @@ def test_struct_count_distinct(key_data_gen):
 def test_struct_count_distinct_cast(cast_struct_tostring, key_data_gen):
     def _count_distinct_by_struct(spark):
         df = gen_df(spark, key_data_gen)
+        assert_single_level_struct(df)
         return df.agg(f.countDistinct(df.a.cast(StringType())))
     assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct, {
         'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
