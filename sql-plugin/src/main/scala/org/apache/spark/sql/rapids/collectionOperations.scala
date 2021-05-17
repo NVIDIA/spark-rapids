@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuScalar, GpuUnaryExpression}
+
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types._
@@ -141,7 +142,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
           withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)){ keyExistenceColumn =>
             withResource(keyExistenceColumn.all()) { exist =>
               if (exist.getBoolean) {
-                return lhs.getBase.getMapValue(rhs.getBase)
+                lhs.getBase.getMapValue(rhs.getBase)
               } else {
                 throw new NoSuchElementException(
                   s"Key: ${rhs.getValue.asInstanceOf[UTF8String].toString} " +

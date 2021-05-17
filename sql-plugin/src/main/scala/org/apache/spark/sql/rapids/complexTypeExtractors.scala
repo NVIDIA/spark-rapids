@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends UnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
@@ -123,23 +124,22 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
     val ordinal = ordinalS.getValue.asInstanceOf[Int]
     if (ordinalS.isValid) {
       withResource(lhs.getBase.countElements) { numElementsCV =>
-        withResource(numElementsCV.min) {
-          minScalar =>
-            val minNumElements = minScalar.getInt
-            if ( (ordinal < 0 || minNumElements < ordinal + 1) &&
-              numElementsCV.getRowCount != numElementsCV.getNullCount &&
-              failOnError) {
-              throw new ArrayIndexOutOfBoundsException(
-                s"Invalid index: ${ordinal}, minimum numElements in this ColumnVector: " +
-                  s"$minNumElements")
-            } else {
-              lhs.getBase.extractListElement(ordinal)
-            }
+        withResource(numElementsCV.min) { minScalar =>
+          val minNumElements = minScalar.getInt
+          if ((ordinal < 0 || minNumElements < ordinal + 1) &&
+            numElementsCV.getRowCount != numElementsCV.getNullCount &&
+            failOnError) {
+            throw new ArrayIndexOutOfBoundsException(
+              s"Invalid index: ${ordinal}, minimum numElements in this ColumnVector: " +
+                s"$minNumElements")
+          } else {
+            lhs.getBase.extractListElement(ordinal)
+          }
         }
       }
     } else {
       GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
-      }
+    }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -185,17 +185,15 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
     if (failOnError){
       withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
         withResource(keyExistenceColumn.all) { exist =>
-          if (exist.getBoolean) {
-            return lhs.getBase.getMapValue(rhs.getBase)
-          } else {
-            throw new NoSuchElementException(s"Key: ${rhs.getValue.asInstanceOf[String]} does " +
-              s"not exist in one of the rows in the map column")
+          if (!exist.getBoolean) {
+            throw new NoSuchElementException(
+              s"Key: ${rhs.getValue.asInstanceOf[UTF8String].toString} " +
+                s"does not exist in any one of the rows in the map column")
           }
         }
       }
-    } else {
-      lhs.getBase.getMapValue(rhs.getBase)
     }
+    lhs.getBase.getMapValue(rhs.getBase)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
