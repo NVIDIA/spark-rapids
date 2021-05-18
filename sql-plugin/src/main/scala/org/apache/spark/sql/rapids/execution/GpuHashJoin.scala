@@ -395,7 +395,7 @@ class HashJoinIterator(
     val batchSize = cb.numRows() / numBatches
     if (oom.isDefined && batchSize < 100) {
       // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
-      // small but we want to at least give it a change to work (mostly for tests where the
+      // small but we want to at least give it a chance to work (mostly for tests where the
       // targetSize can be set really small)
       throw oom.get
     }
@@ -433,8 +433,8 @@ class HashJoinIterator(
         gathererStore = None
         val cb = if (pendingSplits.isEmpty) {
           val cb = stream.next()
-          // This is arbitrary, just do avoid doing duplicate work
           val estimatedBatches = estimatedNumBatches(cb)
+          // The cutoff is arbitrary, just to avoid doing duplicate work
           if (estimatedBatches > 2) {
             withResource(cb) { cb =>
               splitAndSave(cb, estimatedBatches)
@@ -457,10 +457,9 @@ class HashJoinIterator(
               gathererStore = joinGatherer(builtKeys, built, cb)
             }
           } catch {
-            // For now we are only going to look at Inner joins. THis should work for all join
-            // types except for FullOuter. There should be no need to do this for any of the
-            // existence joins because the output rows will never be larger than the input rows
-            // on the stream side.
+            // This should work for all join types except for FullOuter. There should be no need
+            // to do this for any of the existence joins because the output rows will never be
+            // larger than the input rows on the stream side.
             case oom: OutOfMemoryError if joinType.isInstanceOf[InnerLike]
                 || joinType == LeftOuter
                 || joinType == RightOuter =>
