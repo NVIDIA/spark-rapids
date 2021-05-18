@@ -90,8 +90,11 @@ object GpuScalar extends Arm with Logging {
    */
   /** Converts a decimal, `dec` should not be null. */
   private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
-    if (dec.precision > dt.precision) {
-      throw new IllegalArgumentException(s"Decimal $dec exceeds precision constraint of $dt")
+    if (dec.scale > dt.scale) {
+      throw new IllegalArgumentException(s"Unexpected decimals rounding.")
+    }
+    if (!dec.changePrecision(dt.precision, dt.scale)) {
+      throw new IllegalArgumentException(s"Cannot change precision to $dt for decimal: $dec")
     }
     if (DecimalType.is32BitDecimalType(dt)) {
       Left(dec.toUnscaledLong.toInt)
@@ -187,7 +190,7 @@ object GpuScalar extends Arm with Logging {
    * the GpuLiteral or the GpuScalar to get one.
    *
    * @param v the Scala value
-   * @param t the data type of this value
+   * @param t the data type of the scalar
    * @return a cudf Scalar. It should be closed to avoid memory leak.
    */
   def from(v: Any, t: DataType): Scalar = t match {
@@ -196,18 +199,17 @@ object GpuScalar extends Arm with Logging {
       case _ => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(nullType))
     }
     case decType: DecimalType =>
-      val bigDec = v match {
-        // Go through the `BigDecimal` to set the `scale`
-        case vv: Decimal => vv.toBigDecimal
-        case vv: Int => BigDecimal(vv)
-        case vv: Long => BigDecimal(vv)
-        case vv: Double => BigDecimal(vv)
-        case vv: String => BigDecimal(vv)
-        case vv: BigDecimal => vv
+      val dec = v match {
+        case de: Decimal => de
+        case vi: Int => Decimal(vi)
+        case vl: Long => Decimal(vl)
+        case vd: Double => Decimal(vd)
+        case vs: String => Decimal(vs)
+        case bd: BigDecimal => Decimal(bd)
         case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
           s" for DecimalType, expecting Decimal, Int, Long, Double, String, or BigDecimal.")
       }
-      convertDecimalTo(Decimal(bigDec.setScale(decType.scale)), decType) match {
+      convertDecimalTo(dec, decType) match {
         case Left(i) => Scalar.fromDecimal(-decType.scale, i)
         case Right(l) => Scalar.fromDecimal(-decType.scale, l)
       }
