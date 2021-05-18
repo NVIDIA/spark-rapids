@@ -73,7 +73,7 @@
     <modules>
         <module>api_validation</module>
         <module>dist</module>
-        <module>workload_profiling</module>
+        <module>rapids-4-spark-tools</module>
         <module>integration_tests</module>
         <module>shims</module>
         <module>shuffle-plugin</module>
