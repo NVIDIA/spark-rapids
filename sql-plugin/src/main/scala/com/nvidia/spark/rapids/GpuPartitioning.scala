@@ -111,7 +111,7 @@ trait GpuPartitioning extends Partitioning with Arm {
         sliceInternalOnGpu(numRows, partitionIndexes, partitionColumns)
       } else {
         sliceInternalOnCpu(numRows, partitionIndexes, partitionColumns)
-      }
+      }.filter(_ != null)
     } finally {
       sliceRange.close()
     }
