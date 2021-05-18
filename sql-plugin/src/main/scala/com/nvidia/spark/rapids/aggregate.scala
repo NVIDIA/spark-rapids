@@ -98,12 +98,13 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
         resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    val groupingDataTypes = agg.groupingExpressions.map(_.dataType)
-    if (groupingDataTypes.exists(dtype =>
-      dtype.isInstanceOf[ArrayType] || dtype.isInstanceOf[StructType]
-          || dtype.isInstanceOf[MapType])) {
-      willNotWorkOnGpu("Nested types in grouping expressions are not supported")
-    }
+    agg.groupingExpressions
+      .find(_.dataType match {
+        case _@(ArrayType(_, _) | MapType(_, _, _)) | _@StructType(_) => true
+        case _ => false
+      })
+      .foreach(_ =>
+        willNotWorkOnGpu("Nested types in grouping expressions are not supported"))
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
     }
@@ -448,16 +449,9 @@ case class GpuHashAggregateExec(
             // Perform the last project to get the correct shape that Spark expects. Note this will
             // add things like literals, that were not part of the aggregate into the batch.
             resultCvs = boundExpression.boundResultReferences.map { ref =>
-              val result = ref.columnarEval(finalCb)
               // Result references can be virtually anything, we need to coerce
               // them to be vectors since this is going into a ColumnarBatch
-              result match {
-                case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-                case _ =>
-                  withResource(GpuScalar.from(result, ref.dataType)) { scalar =>
-                    GpuColumnVector.from(scalar, finalCb.numRows, ref.dataType)
-                  }
-              }
+              GpuExpressionsUtils.columnarEvalToColumn(ref, finalCb)
             }
             finalCb.close()
             finalCb = null
@@ -507,14 +501,7 @@ case class GpuHashAggregateExec(
   private def processIncomingBatch(batch: ColumnarBatch,
       boundInputReferences: Seq[Expression]): Seq[GpuColumnVector] = {
     boundInputReferences.safeMap { ref =>
-      val in = ref.columnarEval(batch)
-      val childCv = in match {
-        case cv: ColumnVector => cv.asInstanceOf[GpuColumnVector]
-        case _ =>
-          withResource(GpuScalar.from(in, ref.dataType)) { scalar =>
-            GpuColumnVector.from(scalar, batch.numRows, ref.dataType)
-          }
-      }
+      val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
       if (childCv.dataType == ref.dataType) {
         childCv
       } else {

@@ -551,11 +551,12 @@ class TimestampGen(DataGen):
 
 class ArrayGen(DataGen):
     """Generate Arrays of data."""
-    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True):
+    def __init__(self, child_gen, min_length=0, max_length=20, nullable=True, all_null=False):
         super().__init__(ArrayType(child_gen.data_type, containsNull=child_gen.nullable), nullable=nullable)
         self._min_length = min_length
         self._max_length = max_length
         self._child_gen = child_gen
+        self.all_null = all_null
 
     def __repr__(self):
         return super().__repr__() + '(' + str(self._child_gen) + ')'
@@ -563,6 +564,8 @@ class ArrayGen(DataGen):
     def start(self, rand):
         self._child_gen.start(rand)
         def gen_array():
+            if self.all_null:
+                return None
             length = rand.randint(self._min_length, self._max_length)
             return [self._child_gen.gen() for _ in range(0, length)]
         self._start(rand, gen_array)

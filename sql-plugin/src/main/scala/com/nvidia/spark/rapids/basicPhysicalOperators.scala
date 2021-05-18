@@ -66,15 +66,8 @@ object GpuProjectExec extends Arm {
     }
   }
 
-  def projectSingle(cb: ColumnarBatch, boundExpr: Expression): GpuColumnVector = {
-    boundExpr.columnarEval(cb) match {
-      case cv: GpuColumnVector => cv
-      case other =>
-        withResource(GpuScalar.from(other, boundExpr.dataType)) { scalar =>
-          GpuColumnVector.from(scalar, cb.numRows(), boundExpr.dataType)
-        }
-    }
-  }
+  def projectSingle(cb: ColumnarBatch, boundExpr: Expression): GpuColumnVector =
+    GpuExpressionsUtils.columnarEvalToColumn(boundExpr, cb)
 
   def project(cb: ColumnarBatch, boundExprs: Seq[Expression]): ColumnarBatch = {
     if (isNoopProject(cb, boundExprs)) {

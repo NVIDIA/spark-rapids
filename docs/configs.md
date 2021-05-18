@@ -10,7 +10,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,cudf-0.20-SNAPSHOT-cuda11.jar' \
+${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,cudf-21.06-SNAPSHOT-cuda11.jar' \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.incompatibleOps.enabled=true
 ```
@@ -107,6 +107,10 @@ Name | Description | Default Value
 <a name="sql.stableSort.enabled"></a>spark.rapids.sql.stableSort.enabled|Enable or disable stable sorting. Apache Spark's sorting is typically a stable sort, but sort stability cannot be guaranteed in distributed work loads because the order in which upstream data arrives to a task is not guaranteed. Sort stability then only matters when reading and sorting data from a file using a single task/partition. Because of limitations in the plugin when you enable stable sorting all of the data for a single task will be combined into a single batch before sorting. This currently disables spilling from GPU memory if the data size is too large.|false
 <a name="sql.udfCompiler.enabled"></a>spark.rapids.sql.udfCompiler.enabled|When set to true, Scala UDFs will be considered for compilation as Catalyst expressions|false
 <a name="sql.variableFloatAgg.enabled"></a>spark.rapids.sql.variableFloatAgg.enabled|Spark assumes that all operations produce the exact same result each time. This is not true for some floating point aggregations, which can produce slightly different results on the GPU as the aggregation is done in parallel.  This can enable those operations if you know the query is only computing it once.|false
+<a name="sql.window.range.byte.enabled"></a>spark.rapids.sql.window.range.byte.enabled|When the order-by column of a range based window is byte type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the byte type order-by column|false
+<a name="sql.window.range.int.enabled"></a>spark.rapids.sql.window.range.int.enabled|When the order-by column of a range based window is int type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the int type order-by column|true
+<a name="sql.window.range.long.enabled"></a>spark.rapids.sql.window.range.long.enabled|When the order-by column of a range based window is long type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the long type order-by column|true
+<a name="sql.window.range.short.enabled"></a>spark.rapids.sql.window.range.short.enabled|When the order-by column of a range based window is short type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the short type order-by column|false
 
 ## Supported GPU Operators and Fine Tuning
 _The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific
@@ -168,6 +172,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.DayOfWeek"></a>spark.rapids.sql.expression.DayOfWeek|`dayofweek`|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|
 <a name="sql.expression.DayOfYear"></a>spark.rapids.sql.expression.DayOfYear|`dayofyear`|Returns the day of the year from a date or timestamp|true|None|
 <a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|`/`|Division|true|None|
+<a name="sql.expression.ElementAt"></a>spark.rapids.sql.expression.ElementAt|`element_at`|Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map.|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith| |Ends with|true|None|
 <a name="sql.expression.EqualNullSafe"></a>spark.rapids.sql.expression.EqualNullSafe|`<=>`|Check if the values are equal including nulls <=>|true|None|
 <a name="sql.expression.EqualTo"></a>spark.rapids.sql.expression.EqualTo|`=`, `==`|Check if the values are equal|true|None|
