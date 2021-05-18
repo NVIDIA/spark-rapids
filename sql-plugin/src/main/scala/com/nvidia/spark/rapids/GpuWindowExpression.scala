@@ -319,33 +319,35 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
   }
 }
 
-object GpuWindowExpression {
+object GpuWindowExpression extends Arm {
 
-  def getRowBasedLower(windowFrameSpec : GpuSpecifiedWindowFrame): Int = {
+  def getRowBasedLower(windowFrameSpec : GpuSpecifiedWindowFrame): Scalar = {
     val lower = getBoundaryValue(windowFrameSpec.lower)
 
     // Translate the lower bound value to CUDF semantics:
     // In spark 0 is the current row and lower bound is negative relative to that
     // In CUDF the preceding window starts at the current row with 1 and up from there the
     // further from the current row.
-    if (lower >= Int.MaxValue) {
+    val ret = if (lower >= Int.MaxValue) {
       Int.MinValue
     } else if (lower <= Int.MinValue) {
       Int.MaxValue
     } else {
       -(lower-1)
     }
+    Scalar.fromInt(ret)
   }
 
-  def getRowBasedUpper(windowFrameSpec : GpuSpecifiedWindowFrame): Int =
-    getBoundaryValue(windowFrameSpec.upper)
+  def getRowBasedUpper(windowFrameSpec : GpuSpecifiedWindowFrame): Scalar =
+    Scalar.fromInt(getBoundaryValue(windowFrameSpec.upper))
 
   def getRowBasedWindowOptions(windowFrameSpec : GpuSpecifiedWindowFrame): WindowOptions = {
-    val lower = getRowBasedLower(windowFrameSpec)
-    val upper = getRowBasedUpper(windowFrameSpec)
-
-    WindowOptions.builder().minPeriods(1)
-        .window(lower, upper).build()
+    withResource(getRowBasedLower(windowFrameSpec)) { lower =>
+      withResource(getRowBasedUpper(windowFrameSpec)) { upper =>
+        WindowOptions.builder().minPeriods(1)
+            .window(lower, upper).build()
+      }
+    }
   }
 
   def getRangeBasedLower(windowFrameSpec: GpuSpecifiedWindowFrame, orderByType: Option[DType]):
