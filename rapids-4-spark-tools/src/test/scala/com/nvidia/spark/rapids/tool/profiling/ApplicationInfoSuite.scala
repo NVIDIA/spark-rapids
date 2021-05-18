@@ -51,8 +51,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(apps.head.sparkVersion.equals("3.1.1"))
       assert(apps.head.gpuMode.equals(true))
 
-    } finally  {
-      fileWriter.flush()
+    } finally {
+      fileWriter.close()
       tempFile.deleteOnExit()
     }
   }
