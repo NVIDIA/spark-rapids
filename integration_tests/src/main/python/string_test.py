@@ -182,7 +182,7 @@ def test_concat_ws_no_null_values():
 
 def test_concat_ws_arrays():
     # TODO - null handling messed up
-    gen = ArrayGen(StringGen('[a-z]', nullable=False), nullable=False)
+    gen = ArrayGen(StringGen(nullable=False), nullable=False)
     (s1, s2) = gen_scalars(gen, 2, force_no_nulls=True)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: binary_op_df(spark, gen).select(
@@ -240,7 +240,21 @@ def test_concat_ws_sql_no_null_values():
 #bad:
                 #'concat_ws("+", array(b, \'A\', null)), ' +
 
-# todo need column of sepearators
+def test_concat_ws_sql_col_sep():
+    # TODO - null handling messed up
+    gen = StringGen(nullable=False)
+    sep = StringGen('[-,*,+,!]', nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: three_col_df(spark, gen, gen, sep),
+            'concat_ws_table',
+            'select ' +
+                'concat_ws(c), ' +
+                'concat_ws(c, a), ' +
+                'concat_ws(c, a, b), ' +
+                'concat_ws(c, \'aaa\', \'bbb\', \'zzz\'), ' +
+                'concat_ws(c, b, \'\', \'bbb\', \'zzz\'), ' +
+                'concat_ws(c, b, a, cast(null as string)) from concat_ws_table')
+
 # todo need to test null values and array of null values
 def test_concat_ws_sql_arrays():
     # TODO - null handling messed up
@@ -253,10 +267,25 @@ def test_concat_ws_sql_arrays():
                 'concat_ws(null, c, c, array(c)), ' +
                 'concat_ws("*", array(\'2\', \'\', \'3\', \'Z\', c)) from concat_ws_table')
 
+    # unresolved
+                #'concat_ws("-", array(), c), ' +
                 # issue with empty array and columns with unresolved
                 #'concat_ws("-", a, b), ' +
-                #'concat_ws("-", array(), c), ' +
                 #'concat_ws("-", a, array(), b, array()), ' +
+
+def test_concat_ws_sql_arrays_col_sep():
+    # TODO - null handling messed up
+    gen = ArrayGen(StringGen(nullable=False), nullable=False)
+    sep = StringGen('[-,*,+,!]', nullable=False)
+    assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: three_col_df(spark, gen, StringGen(nullable=False), sep),
+            'concat_ws_table',
+            'select ' +
+                'concat_ws(c, array()) as emptyCon, ' +
+                'concat_ws(c, b, b, array(b)), ' +
+                'concat_ws(c, array(\'2\', \'\', \'3\', \'Z\', b)) from concat_ws_table')
+
+    # unresolved error:
 
 def test_substring():
     gen = mk_str_gen('.{0,30}')

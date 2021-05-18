@@ -20,6 +20,7 @@ import java.lang.reflect.Method
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -32,12 +33,13 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.internal.Logging
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
  * These rules insert transitions to and from the GPU, and then optimize various transitions.
  */
-class GpuTransitionOverrides extends Rule[SparkPlan] {
+class GpuTransitionOverrides extends Rule[SparkPlan] with Logging {
   var conf: RapidsConf = null
 
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
@@ -507,6 +509,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         // The plan itself is not currently checked.
         updatedPlan.canonicalized
         validateExecsInGpuPlan(updatedPlan, conf)
+      }
+      logWarning("done apply updated plan is: " + updatedPlan)
+      logWarning("done apply updated plan is: " + updatedPlan.output.head)
+      logWarning("plan output head datatype: " + plan.output.head)
+      logWarning("plan output head datatype: " + plan.output)
+      logWarning("plan output head datatype: " + plan)
+      if (plan.output.head.isInstanceOf[UnresolvedAttribute]) {
+         logWarning("plan output head is unresolved attribute")
       }
       updatedPlan
     } else {

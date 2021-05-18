@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -302,14 +303,22 @@ case class GpuConcatWs(children: Seq[Expression])
     extends GpuExpression with ImplicitCastInputTypes with Logging {
   override def dataType: DataType = StringType
   override def nullable: Boolean = children.head.nullable
-  override def foldable: Boolean = children.forall(_.foldable)
+  // override def foldable: Boolean = children.forall(_.foldable)
   logWarning("in gpu concat ws")
 
   /** The 1st child (separator) is str, and rest are either str or array of str. */
   override def inputTypes: Seq[AbstractDataType] = {
     logWarning("getting input types")
+      children.foreach { child => 
+        logWarning("child is : " + child)
+        if (child.isInstanceOf[UnresolvedAttribute]) {
+          logWarning("child is unresolved attribute: " + child)
+        }
+      }
     val arrayOrStr = TypeCollection(ArrayType(StringType), StringType)
-    StringType +: Seq.fill(children.size - 1)(arrayOrStr)
+    val ret = StringType +: Seq.fill(children.size - 1)(arrayOrStr)
+    logWarning("done getting input types")
+    ret
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -324,6 +333,9 @@ case class GpuConcatWs(children: Seq[Expression])
       logWarning("in column eval before columnarEval " + children)
       // children.foreach(childEvals += _.columnarEval(batch))
       children.foreach { child => 
+        if (child.isInstanceOf[UnresolvedAttribute]) {
+          logWarning("child is unresolved attribute: " + child)
+        }
         logWarning("on child: " + child)
         childEvals += child.columnarEval(batch)
       }
