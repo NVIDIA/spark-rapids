@@ -605,6 +605,7 @@ def test_subquery_in_agg(adaptive, expr):
         conf = {"spark.sql.adaptive.enabled" : adaptive})
 
 
+# TODO support multi-level structs https://github.com/NVIDIA/spark-rapids/issues/2438
 def assert_single_level_struct(df):
     first_level_dt = df.schema['a'].dataType
     second_level_dt = first_level_dt['aa'].dataType
