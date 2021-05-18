@@ -30,7 +30,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Print Application Information
   def printAppInfo(): Unit = {
-    fileWriter.write("\n\nApplication Information:")
+    fileWriter.write("Application Information:\n")
     for (app <- apps) {
       app.runQuery(app.generateAppInfo)
     }
@@ -57,7 +57,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Print executor related information
   def printExecutorInfo(): Unit = {
-    fileWriter.write("\n\nExecutor Information:")
+    fileWriter.write("\n\nExecutor Information:\n")
     for (app <- apps) {
       app.runQuery(app.generateExecutorInfo + " order by cast(executorID as long)")
     }
@@ -65,7 +65,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Print Rapids related Spark Properties
   def printRapidsProperties(): Unit = {
-    fileWriter.write("\n\nSpark Rapids parameters set explicitly:")
+    fileWriter.write("\n\nSpark Rapids parameters set explicitly:\n")
     for (app <- apps) {
       app.runQuery(app.generateRapidsProperties + " order by key")
     }

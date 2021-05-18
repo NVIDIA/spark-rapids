@@ -30,7 +30,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
 
   // Compare the App Information.
   def compareAppInfo(): Unit = {
-    fileWriter.append("\n\nCompare Application Information:")
+    fileWriter.append("Compare Application Information:\n")
     var query = ""
     var i = 1
     for (app <- apps) {
@@ -47,7 +47,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
 
   // Compare Executors information
   def compareExecutorInfo(): Unit = {
-    fileWriter.write("\n\nCompare Executor Information:")
+    fileWriter.write("\n\nCompare Executor Information:\n")
     var query = ""
     var i = 1
     for (app <- apps) {
@@ -64,7 +64,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
 
   // Compare Rapids Properties which are set explicitly
   def compareRapidsProperties(): Unit ={
-    fileWriter.write("\n\nCompare Rapids Properties which are set explicitly:")
+    fileWriter.write("\n\nCompare Rapids Properties which are set explicitly:\n")
     var withClauseAllKeys = "with allKeys as \n ("
     val selectKeyPart = "select allKeys.key"
     var selectValuePart = ""

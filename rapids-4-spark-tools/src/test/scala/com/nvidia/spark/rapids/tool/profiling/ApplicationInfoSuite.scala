@@ -22,11 +22,18 @@ import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
 
 class ApplicationInfoSuite extends FunSuite with Logging {
 
-  val sparkSession = ProfileUtils.createSparkSession
+  val sparkSession = {
+    SparkSession
+        .builder()
+        .master("local[*]")
+        .appName("Rapids Spark Profiling Tool Unit Tests")
+        .getOrCreate()
+  }
   var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
   val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
 
