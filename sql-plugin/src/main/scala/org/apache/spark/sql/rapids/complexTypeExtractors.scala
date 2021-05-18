@@ -132,6 +132,8 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
             throw new ArrayIndexOutOfBoundsException(
               s"Invalid index: ${ordinal}, minimum numElements in this ColumnVector: " +
                 s"$minNumElements")
+          } else if (!failOnError && ordinal < 0) {
+            GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
           } else {
             lhs.getBase.extractListElement(ordinal)
           }
