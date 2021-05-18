@@ -37,5 +37,5 @@ jobs:
           OWNER: NVIDIA
           REPO_NAME: spark-rapids
           HEAD: branch-0.5
-          BASE: branch-0.6
+          BASE: branch-21.06
           AUTOMERGE_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }} # use to merge PR
