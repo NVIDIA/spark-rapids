@@ -208,10 +208,14 @@ class HashJoinIterator(
   }
 
   // We can cache this because the build side is not changing
-  private lazy val estimatedRowsPerStream = {
-    withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-      guessJoinRowsForTargetSize(builtKeys)
-    }
+  private lazy val estimatedRowsPerStreamBatch = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter =>
+      withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+        guessJoinRowsForTargetSize(builtKeys)
+      }
+    case _ =>
+      // existence joins don't change size, and FullOuter cannot be split
+      1.0
   }
   private var closed = false
 
@@ -379,6 +383,41 @@ class HashJoinIterator(
     Math.min(Int.MaxValue, approximateStreamRowCount)
   }
 
+  private def estimatedNumBatches(cb: ColumnarBatch): Int = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter =>
+      Math.ceil(cb.numRows() / estimatedRowsPerStreamBatch).toInt
+    case _ => 1
+  }
+
+  private def splitAndSave(cb: ColumnarBatch,
+      numBatches: Int,
+      oom: Option[OutOfMemoryError] = None): Unit = {
+    val batchSize = cb.numRows() / numBatches
+    if (oom.isDefined && batchSize < 100) {
+      // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
+      // small but we want to at least give it a change to work (mostly for tests where the
+      // targetSize can be set really small)
+      throw oom.get
+    }
+    val msg = s"Split stream batch into $numBatches batches of about $batchSize rows"
+    if (oom.isDefined) {
+      logWarning(s"OOM Encountered: $msg")
+    } else {
+      logInfo(msg)
+    }
+    val splits = withResource(GpuColumnVector.from(cb)) { tab =>
+      val splitIndexes = (1 until numBatches).map(num => num * batchSize)
+      tab.contiguousSplit(splitIndexes: _*)
+    }
+    withResource(splits) { splits =>
+      val schema = GpuColumnVector.extractTypes(cb)
+      pendingSplits ++= splits.map { ct =>
+        SpillableColumnarBatch(ct, schema,
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+      }
+    }
+  }
+
   override def hasNext: Boolean = {
     if (closed) {
       return false
@@ -393,7 +432,19 @@ class HashJoinIterator(
         gathererStore.foreach(_.close())
         gathererStore = None
         val cb = if (pendingSplits.isEmpty) {
-          stream.next()
+          val cb = stream.next()
+          // This is arbitrary, just do avoid doing duplicate work
+          val estimatedBatches = estimatedNumBatches(cb)
+          if (estimatedBatches > 2) {
+            withResource(cb) { cb =>
+              splitAndSave(cb, estimatedBatches)
+            }
+            withResource(pendingSplits.dequeue()) { scb =>
+              scb.getColumnarBatch()
+            }
+          } else {
+            cb
+          }
         } else {
           withResource(pendingSplits.dequeue()) { scb =>
             scb.getColumnarBatch()
@@ -410,31 +461,15 @@ class HashJoinIterator(
             // types except for FullOuter. There should be no need to do this for any of the
             // existence joins because the output rows will never be larger than the input rows
             // on the stream side.
-            case oom: OutOfMemoryError if joinType == Inner =>
+            case oom: OutOfMemoryError if joinType.isInstanceOf[InnerLike]
+                || joinType == LeftOuter
+                || joinType == RightOuter =>
               // Because this is just an estimate, it is possible for us to get this wrong, so
               // make sure we at least split the batch in half.
-              val numBatches = Math.max(2, Math.ceil(cb.numRows() / estimatedRowsPerStream).toInt)
-              val batchSize = cb.numRows() / numBatches
-              if (batchSize < 100) {
-                // We just need some kind of cutoff to not get stuck in a loop
-                logError("Could not cut stream batch small enough to for join to succeed")
-                throw oom
-              }
-              logWarning(s"Out Of Memory on join split stream batch into $numBatches batches " +
-                  s"of about $batchSize rows")
-              val splits = withResource(GpuColumnVector.from(cb)) { tab =>
-                val splitIndexes = (1 until numBatches).map(num => num * batchSize)
-                tab.contiguousSplit(splitIndexes: _*)
-              }
-              withResource(splits) { splits =>
-                val schema = GpuColumnVector.extractTypes(cb)
-                pendingSplits ++= splits.map { ct =>
-                  SpillableColumnarBatch(ct, schema,
-                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
-                }
-              }
+              val numBatches = Math.max(2, estimatedNumBatches(cb))
               // Now try again nextCbFromGatherer will return None, but there will be more to do
               // so the loop will not finish
+              splitAndSave(cb, numBatches, Some(oom))
           }
         }
         nextCb = nextCbFromGatherer()
