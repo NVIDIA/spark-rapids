@@ -307,29 +307,37 @@ case class GpuConcatWs(children: Seq[Expression])
 
   /** The 1st child (separator) is str, and rest are either str or array of str. */
   override def inputTypes: Seq[AbstractDataType] = {
+    logWarning("getting input types")
     val arrayOrStr = TypeCollection(ArrayType(StringType), StringType)
     StringType +: Seq.fill(children.size - 1)(arrayOrStr)
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
-    var emptyStrScalar: Scalar = null
     val rows = batch.numRows()
     val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
+    logWarning("in columnar eval")
 
     try {
       nullStrScalar = GpuScalar.from(null, StringType)
-      children.foreach(childEvals += _.columnarEval(batch))
+      logWarning("in column eval before columnarEval " + children)
+      // children.foreach(childEvals += _.columnarEval(batch))
+      children.foreach { child => 
+        logWarning("on child: " + child)
+        childEvals += child.columnarEval(batch)
+      }
       childEvals.foreach {
         case vector: GpuColumnVector => {
+          logWarning("gpu column vector going to get datatype vec: " + vector)
           vector.dataType() match {
             case ArrayType(st: StringType, nullable) =>
               // we have to first concatenate any array types
               // TODO - taking head of columns ok because sep always first
               logWarning("gpu vector array")
               withResource(vector) { vec =>
-                columns += ColumnVector.stringConcatenateListElementsWs(vec.getBase, columns.head, nullStrScalar, nullStrScalar)
+                columns += ColumnVector.stringConcatenateListElementsWs(vector.getBase,
+                  columns.head, nullStrScalar, nullStrScalar)
               }
             case _ =>
               columns += vector.getBase
@@ -348,21 +356,19 @@ case class GpuConcatWs(children: Seq[Expression])
       }
       val sep_column = columns.head
       val value_columns = columns.tail
-      /*
       if (value_columns.size == 0) {
+        logWarning("column values size is 0")
         // if no columns then column of empty strings
-        emptyStrScalar = GpuScalar.from("", StringType)
-        GpuColumnVector.from(emptyStrScalar, rows, StringType).getBase
+        withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
+          GpuColumnVector.from(emptyStrScalar, rows, StringType)
+        }
       } else {
-        */
+        logWarning("calling stringConcateWs")
         GpuColumnVector.from(ColumnVector.stringConcatenateWs(value_columns.toArray[ColumnView],
           sep_column), dataType)
-      // }
+      }
     } finally {
       columns.safeClose()
-      if (emptyStrScalar != null) {
-        emptyStrScalar.close()
-      }
       if (nullStrScalar != null) {
         nullStrScalar.close()
       }
