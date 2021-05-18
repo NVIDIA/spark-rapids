@@ -2485,13 +2485,10 @@ object GpuOverrides {
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
         "string using a given separator ",
-      ExprChecks.projectNotLambda((TypeSig.STRING + TypeSig.ARRAY).nested(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
-        (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all),
+      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.STRING + TypeSig.ARRAY).nested(
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
-          (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
+          (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING),
+          (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING)))),
       (a, conf, p, r) => new ExprMeta[ConcatWs](a, conf, p, r) {
         override final def convertToGpu(): GpuExpression =
           convertToGpu(childExprs.map(_.convertToGpu()))
