@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
+from marks import allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
 
@@ -121,6 +122,15 @@ def test_array_element_at(data_gen):
 def test_array_cast_float_to_double():
     def cast_float_to_double(spark):
         df = two_col_df(spark, int_gen, ArrayGen(float_gen))
+        res = df.select(df.b.cast(ArrayType(DoubleType())))
+        return res
+    assert_gpu_and_cpu_are_equal_collect(cast_float_to_double)
+
+
+@allow_non_gpu(any=True)
+def test_array_cast_fallback():
+    def cast_float_to_double(spark):
+        df = two_col_df(spark, int_gen, ArrayGen(int_gen))
         res = df.select(df.b.cast(ArrayType(DoubleType())))
         return res
     assert_gpu_and_cpu_are_equal_collect(cast_float_to_double)

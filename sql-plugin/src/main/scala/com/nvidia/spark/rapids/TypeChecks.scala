@@ -911,7 +911,8 @@ class CastChecks extends ExprChecks {
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-  val arrayChecks: TypeSig = ARRAY.nested(DOUBLE)
+  val arrayChecks: TypeSig = ARRAY.nested(FLOAT + DOUBLE)
+
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
   val mapChecks: TypeSig = none

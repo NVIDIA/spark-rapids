@@ -46,7 +46,7 @@ class CastExprMeta[INPUT <: CastBase](
     recursiveTagExprForGpuCheck(fromType)
   }
 
-  def recursiveTagExprForGpuCheck(fromDataType: DataType) {
+  private def recursiveTagExprForGpuCheck(fromDataType: DataType) {
     if (!conf.isCastFloatToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
       (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
@@ -102,6 +102,13 @@ class CastExprMeta[INPUT <: CastBase](
           }
         }
       }
+    }
+
+    (fromDataType, toType) match {
+      case (ArrayType(_@(FloatType|DoubleType), _), ArrayType(_@(FloatType|DoubleType), _)) => ()
+      case (ArrayType(_, _), ArrayType(_, _)) => willNotWorkOnGpu(
+        s"casting from ${fromDataType.catalogString} to ${toType.catalogString} is not supported")
+      case _ => ()
     }
   }
 
@@ -411,8 +418,8 @@ case class GpuCast(
       case (ArrayType(_@FloatType, _), ArrayType(nestedTo@DoubleType, _)) =>
         val rapidsType = GpuColumnVector.getNonNestedRapidsType(nestedTo)
         withResource(input.getChildColumnView(0)) { childView =>
-          withResource(childView.castTo(rapidsType)) { castChildView =>
-            withResource(input.replaceListChild(castChildView))(_.copyToColumnVector())
+          withResource(childView.castTo(rapidsType)) { castChildColumnVector =>
+            withResource(input.replaceListChild(castChildColumnVector))(_.copyToColumnVector())
           }
         }
 
