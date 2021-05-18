@@ -15,12 +15,12 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
-from conftest import get_non_gpu_allowed
 from data_gen import *
+from functools import reduce
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import with_spark_session, is_before_spark_311
+from spark_session import is_before_spark_311
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -611,6 +611,14 @@ def assert_single_level_struct(df):
     assert isinstance(first_level_dt, StructType)
     assert isinstance(second_level_dt, IntegerType)
 
+# Prevent value deduplication bug across rows and struct columns
+# https://github.com/apache/spark/pull/31778 by injecting
+# extra literal columns
+#
+def workaround_dedupe_by_value(df, num_cols):
+    col_id_rng = range(0, num_cols)
+    return reduce(lambda df, i: df.withColumn(f"fake_col_{i}", f.lit(i)), col_id_rng, df)
+
 
 @allow_non_gpu(any = True)
 @pytest.mark.parametrize('key_data_gen', [
@@ -627,7 +635,7 @@ def test_struct_groupby_count(key_data_gen):
     def group_by_count(spark):
         df = two_col_df(spark, key_data_gen, IntegerGen())
         assert_single_level_struct(df)
-        return df.groupBy(df.a).count()
+        return workaround_dedupe_by_value(df.groupBy(df.a).count(), 3)
     assert_gpu_and_cpu_are_equal_collect(group_by_count)
 
 
