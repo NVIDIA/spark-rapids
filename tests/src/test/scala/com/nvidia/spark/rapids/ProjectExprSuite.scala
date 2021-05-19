@@ -61,6 +61,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
             Array(StructField("id", IntegerType), StructField("name", StringType)))))),
         new Column(Literal.create(List(BigDecimal(123L, 2), BigDecimal(-1444L, 2)),
           ArrayType(DecimalType(10, 2)))))
+        .selectExpr("array(null)", "array(array(null))", "array()")
   }
 
   testSparkResultsAreEqual("project time", frameFromParquet("timestamp-date-test.parquet"),
