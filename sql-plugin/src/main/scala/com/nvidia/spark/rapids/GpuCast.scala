@@ -118,6 +118,9 @@ class CastExprMeta[INPUT <: CastBase](
           IntegerType |
           ArrayType(_, _)), _)) => recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
 
+      case (nestedFrom@ArrayType(_, _), nestedTo@ArrayType(_, _)) =>
+        willNotWorkOnGpu(s"casting from $nestedFrom to $nestedTo is not supported")
+
       case _ => ()
     }
   }
@@ -238,23 +241,23 @@ case class GpuCast(
   }
 
   private def recursiveDoColumnar(
-    input: ColumnView,
-    fromDataType: DataType,
-    dataType: DataType = dataType
+                                   input: ColumnView,
+                                   fromDataType: DataType,
+                                   toDataType: DataType = dataType
   ): ColumnVector = {
-    (fromDataType, dataType) match {
+    (fromDataType, toDataType) match {
       case (NullType, to) =>
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, to)
       case (DateType, BooleanType | _: NumericType) =>
         // casts from date type to numerics are always null
-        GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, dataType)
+        GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, toDataType)
       case (DateType, StringType) =>
         input.asStrings("%Y-%m-%d")
       case (TimestampType, FloatType | DoubleType) =>
         withResource(input.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromDouble(1000000)) { microsPerSec =>
             // Use trueDiv to ensure cast to double before division for full precision
-            asLongs.trueDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(dataType))
+            asLongs.trueDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
       case (TimestampType, ByteType | ShortType | IntegerType) =>
@@ -264,7 +267,7 @@ case class GpuCast(
           withResource(Scalar.fromInt(1000000)) { microsPerSec =>
             withResource(asLongs.floorDiv(microsPerSec, DType.INT64)) { cv =>
               if (ansiMode) {
-                dataType match {
+                toDataType match {
                   case IntegerType =>
                     assertValuesInRange(cv, Scalar.fromInt(Int.MinValue),
                       Scalar.fromInt(Int.MaxValue))
@@ -276,14 +279,14 @@ case class GpuCast(
                       Scalar.fromByte(Byte.MaxValue))
                 }
               }
-              cv.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+              cv.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
             }
           }
         }
       case (TimestampType, _: LongType) =>
         withResource(input.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromInt(1000000)) { microsPerSec =>
-            asLongs.floorDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(dataType))
+            asLongs.floorDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
       case (TimestampType, StringType) =>
@@ -295,43 +298,43 @@ case class GpuCast(
       case (LongType, IntegerType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
           Scalar.fromInt(Int.MaxValue))
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral types, to short
       case (LongType | IntegerType, ShortType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral types, to byte
       case (LongType | IntegerType | ShortType, ByteType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to byte
       case (FloatType | DoubleType, ByteType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to short
       case (FloatType | DoubleType, ShortType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to integer
       case (FloatType | DoubleType, IntegerType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
           Scalar.fromInt(Int.MaxValue))
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to long
       case (FloatType | DoubleType, LongType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromLong(Long.MinValue),
           Scalar.fromLong(Long.MaxValue))
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       case (FloatType | DoubleType, TimestampType) =>
         // Spark casting to timestamp from double assumes value is in microseconds
@@ -359,34 +362,34 @@ case class GpuCast(
       case (BooleanType, TimestampType) =>
         // cudf requires casting to a long first.
         withResource(input.castTo(DType.INT64)) { longs =>
-          longs.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+          longs.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (BooleanType | ByteType | ShortType | IntegerType, TimestampType) =>
         // cudf requires casting to a long first
         withResource(input.castTo(DType.INT64)) { longs =>
           withResource(longs.castTo(DType.TIMESTAMP_SECONDS)) { timestampSecs =>
-            timestampSecs.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+            timestampSecs.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
       case (_: NumericType, TimestampType) =>
         // Spark casting to timestamp assumes value is in seconds, but timestamps
         // are tracked in microseconds.
         withResource(input.castTo(DType.TIMESTAMP_SECONDS)) { timestampSecs =>
-          timestampSecs.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+          timestampSecs.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (FloatType, LongType) | (DoubleType, IntegerType | LongType) =>
         // Float.NaN => Int is casted to a zero but float.NaN => Long returns a small negative
         // number Double.NaN => Int | Long, returns a small negative number so Nans have to be
         // converted to zero first
         withResource(FloatUtils.nanToZero(input)) { inputWithNansToZero =>
-          inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+          inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
         }
       case (FloatType | DoubleType, StringType) =>
         castFloatingTypeToString(input)
       case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
                         | DoubleType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
-          dataType match {
+          toDataType match {
             case BooleanType =>
               castStringToBool(trimmed, ansiMode)
             case DateType =>
@@ -395,10 +398,10 @@ case class GpuCast(
               castStringToTimestamp(trimmed)
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode,
-                GpuColumnVector.getNonNestedRapidsType(dataType))
+                GpuColumnVector.getNonNestedRapidsType(toDataType))
             case ByteType | ShortType | IntegerType | LongType =>
               castStringToInts(trimmed, ansiMode,
-                GpuColumnVector.getNonNestedRapidsType(dataType))
+                GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
       case (StringType, dt: DecimalType) =>
@@ -447,7 +450,7 @@ case class GpuCast(
       }
 
       case _ =>
-        input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
+        input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
   }
 
