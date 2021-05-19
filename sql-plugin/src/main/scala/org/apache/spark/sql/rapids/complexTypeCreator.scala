@@ -28,26 +28,8 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, DataType, Metadata, NullType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean,
-    referType: Option[DataType] = None) extends GpuExpression {
-  /**
-   * For the case array(array(1), array()
-   * it will be converted to
-   *
-   *   GpuCreateArray
-   *       |--children(0):  GpuCreateArray
-   *                 |-- GpuLiteral(value = 1, dataType=IntegerType).
-   *       |--children(1):  GpuCreateArray no children
-   * the dataType of child(0) will be ArrayType(IntegerType) and
-   * the dataType of child(1) will be ArrayType(NullType) or ArrayType(StringType) that depends on
-   *      LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE
-   *
-   * Later in somewhere, GpuCreateArray will be resolved and call checkInputDataTypes which
-   * requires all the children should have the same data type. If no, the GpuCreateArray will
-   * become un-resolved and cause some issues.
-   *
-   * So add a refer type for array() case, Let it be the same type with other arrays like array(1)
-   */
+case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
+    extends GpuExpression {
 
   def this(children: Seq[Expression]) = {
     this(children, SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
@@ -62,16 +44,10 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
   }
 
   private val defaultElementType: DataType = {
-    referType match {
-      case Some(NullType) | None =>
-        // If the refer type itself is NullType which should be set by Spark
-        // and we need to check if need to change it accordingly
-        if (useStringTypeWhenEmpty) {
-          StringType
-        } else {
-          NullType
-        }
-      case Some(_) => referType.get
+    if (useStringTypeWhenEmpty) {
+      StringType
+    } else {
+      NullType
     }
   }
 
@@ -172,4 +148,5 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
       GpuColumnVector.from(ColumnVector.makeStruct(numRows, columns: _*), dataType)
     }
   }
+
 }
