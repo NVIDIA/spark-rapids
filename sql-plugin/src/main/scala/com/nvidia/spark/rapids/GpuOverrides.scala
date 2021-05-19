@@ -774,7 +774,8 @@ object GpuOverrides {
       "Holds a static value from the query",
       ExprChecks.projectNotLambda(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR
-          + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+          + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+          + TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](
@@ -1653,7 +1654,7 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(): GpuExpression =
-          GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]])
+          GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]].map(_.value))
       }),
     expr[InSet](
       "INSET operator",
@@ -1666,7 +1667,7 @@ object GpuOverrides {
           }
         }
         override def convertToGpu(): GpuExpression =
-          GpuInSet(childExprs.head.convertToGpu(), in.hset.map(LiteralHelper(_)).toSeq)
+          GpuInSet(childExprs.head.convertToGpu(), in.hset.toSeq)
       }),
     expr[LessThan](
       "< operator",

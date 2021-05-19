@@ -16,31 +16,27 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat,
+  Long => JLong, Short => JShort}
 import java.util
-import java.util.Objects
+import java.util.{List => JList, Objects}
 import javax.xml.bind.DatatypeConverter
 
+import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.TypeTag
 
-import ai.rapids.cudf.{DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuCreateArray
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
-
-object LiteralHelper {
-  def apply(v: Any): Literal = v match {
-    case u: UTF8String => Literal(u, StringType)
-    case allOthers => Literal(allOthers)
-  }
-}
 
 object GpuScalar extends Arm with Logging {
 
@@ -60,11 +56,129 @@ object GpuScalar extends Arm with Logging {
         case DType.TIMESTAMP_MICROSECONDS => v.getLong
         case DType.STRING => UTF8String.fromBytes(v.getUTF8)
         case dt: DType if dt.isDecimalType => Decimal(v.getBigDecimal)
-        case t => throw new IllegalStateException(s"Extracting data from a cudf Scalar is not" +
-          s" supported for type $t.")
+        // Extracting data for a list scalar is not supported, until there is a requirement
+        // from expression computations on host side.
+        // For now, it is only used to expand to a list column vector.
+        case t => throw new UnsupportedOperationException(s"Extracting data from a cudf Scalar" +
+          s" is not supported for type $t.")
       }
     } else {
       null
+    }
+  }
+
+  /**
+   * Resolves a cudf `HostColumnVector.DataType` from a Spark `DataType`.
+   * The returned type will be used by the `ColumnVector.fromXXX` family.
+   */
+  private[rapids] def resolveElementType(dt: DataType): HostColumnVector.DataType = dt match {
+    case ArrayType(elementType, _) =>
+      new HostColumnVector.ListType(true, resolveElementType(elementType))
+    case StructType(fields) =>
+      new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
+    case other =>
+      new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
+  }
+
+  /**
+   * The "convertXXXTo" functions are used to convert the data from Catalyst type
+   * to the Java type required by the `ColumnVector.fromXXX` family.
+   *
+   * The data received from the CPU `Literal` has been converted to Catalyst type already.
+   * The mapping from DataType to Catalyst data type can be found in the function
+   * 'validateLiteralValue' in Spark.
+   */
+  /** Converts a decimal, `dec` should not be null. */
+  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
+    if (dec.scale > dt.scale) {
+      throw new IllegalArgumentException(s"Unexpected decimals rounding.")
+    }
+    if (!dec.changePrecision(dt.precision, dt.scale)) {
+      throw new IllegalArgumentException(s"Cannot change precision to $dt for decimal: $dec")
+    }
+    if (DecimalType.is32BitDecimalType(dt)) {
+      Left(dec.toUnscaledLong.toInt)
+    } else {
+      Right(dec.toUnscaledLong)
+    }
+  }
+
+  /** Converts an element for nested lists */
+  private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
+    case _ if element == null => null
+    // StructData does not support utf8 string yet, so parses it here instead of calling the
+    //  `convertUTF8StringTo`. Tracked by https://github.com/rapidsai/cudf/issues/8137
+    case StringType => element.asInstanceOf[UTF8String].toString
+    case dt: DecimalType => convertDecimalTo(element.asInstanceOf[Decimal], dt) match {
+      case Left(i) => i
+      case Right(l) => l
+    }
+    case ArrayType(eType, _) =>
+      val data = element.asInstanceOf[ArrayData]
+      data.array.map(convertElementTo(_, eType)).toList.asJava
+    case StructType(fields) =>
+      val data = element.asInstanceOf[InternalRow]
+      val row = fields.zipWithIndex.map { case (f, id) =>
+        convertElementTo(data.get(id, f.dataType), f.dataType)
+      }
+      new HostColumnVector.StructData(row.asInstanceOf[Array[Object]]: _*)
+    case _ => element
+  }
+
+  /**
+   * Creates a cudf ColumnVector from the literal values in `seq`.
+   *
+   * @param seq the sequence of the literal values.
+   * @param elementType the data type of each value in the `seq`
+   * @return a cudf ColumnVector, its length is equal to the size of the `seq`.
+   */
+  def columnVectorFromLiterals(seq: Seq[Any], elementType: DataType): ColumnVector = {
+    elementType match {
+      // Uses the boxed version for primitive types to keep the nulls.
+      case ByteType => ColumnVector.fromBoxedBytes(seq.asInstanceOf[Seq[JByte]]: _*)
+      case LongType => ColumnVector.fromBoxedLongs(seq.asInstanceOf[Seq[JLong]]: _*)
+      case ShortType => ColumnVector.fromBoxedShorts(seq.asInstanceOf[Seq[JShort]]: _*)
+      case FloatType => ColumnVector.fromBoxedFloats(seq.asInstanceOf[Seq[JFloat]]: _*)
+      case DoubleType => ColumnVector.fromBoxedDoubles(seq.asInstanceOf[Seq[JDouble]]: _*)
+      case IntegerType => ColumnVector.fromBoxedInts(seq.asInstanceOf[Seq[Integer]]: _*)
+      case BooleanType => ColumnVector.fromBoxedBooleans(seq.asInstanceOf[Seq[JBoolean]]: _*)
+      case DateType => ColumnVector.timestampDaysFromBoxedInts(seq.asInstanceOf[Seq[Integer]]: _*)
+      case TimestampType =>
+        ColumnVector.timestampMicroSecondsFromBoxedLongs(seq.asInstanceOf[Seq[JLong]]: _*)
+      case StringType =>
+        // To be updated. https://github.com/rapidsai/cudf/issues/8137
+        ColumnVector.build(DType.STRING, seq.length, b => {
+          seq.asInstanceOf[Seq[UTF8String]].foreach {
+            case null => b.appendNull()
+            case s => b.appendUTF8String(s.getBytes)
+          }
+        })
+      case dt: DecimalType =>
+        val decs = seq.asInstanceOf[Seq[Decimal]]
+        if (DecimalType.is32BitDecimalType(dt)) {
+          val rows = decs.map {
+            case null => null
+            case d => convertDecimalTo(d, dt).left.get
+          }
+          ColumnVector.decimalFromBoxedInts(-dt.scale, rows: _*)
+        } else {
+          val rows = decs.map {
+            case null => null
+            case d => convertDecimalTo(d, dt).right.get
+          }
+          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows: _*)
+        }
+      case ArrayType(_, _) =>
+        val colType = resolveElementType(elementType)
+        val rows = seq.map(convertElementTo(_, elementType))
+        ColumnVector.fromLists(colType, rows.asInstanceOf[Seq[JList[_]]]: _*)
+      case StructType(_) =>
+        val colType = resolveElementType(elementType)
+        val rows = seq.map(convertElementTo(_, elementType))
+        ColumnVector.fromStructs(colType, rows.asInstanceOf[Seq[HostColumnVector.StructData]]: _*)
+      case u =>
+        throw new IllegalArgumentException(s"Unsupported element type ($u) to create a" +
+          s" ColumnVector.")
     }
   }
 
@@ -76,52 +190,99 @@ object GpuScalar extends Arm with Logging {
    * the GpuLiteral or the GpuScalar to get one.
    *
    * @param v the Scala value
-   * @param t the data type of this value
+   * @param t the data type of the scalar
    * @return a cudf Scalar. It should be closed to avoid memory leak.
    */
-  def from(v: Any, t: DataType): Scalar = v match {
-    case null => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(t))
-    case _ if t.isInstanceOf[DecimalType] =>
-      var bigDec = v match {
-        case vv: Decimal => vv.toBigDecimal.bigDecimal
-        case vv: BigDecimal => vv.bigDecimal
-        case vv: Double => BigDecimal(vv).bigDecimal
-        case vv: Float => BigDecimal(vv.toDouble).bigDecimal
-        case vv: String => BigDecimal(vv).bigDecimal
-        case vv: Long => BigDecimal(vv).bigDecimal
-        case vv: Int => BigDecimal(vv).bigDecimal
-        case vv => throw new IllegalStateException(
-          s"${vv.getClass} '$vv' is not supported for decimal values")
-      }
-      bigDec = bigDec.setScale(t.asInstanceOf[DecimalType].scale)
-      if (bigDec.precision() > t.asInstanceOf[DecimalType].precision) {
-        throw new IllegalArgumentException(s"BigDecimal $bigDec exceeds precision" +
-          s" constraint of $t")
-      }
-      if (!DecimalType.is32BitDecimalType(t.asInstanceOf[DecimalType])) {
-        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().longValue())
-      } else {
-        Scalar.fromDecimal(-bigDec.scale(), bigDec.unscaledValue().intValue())
-      }
-    case l: Long => t match {
-      case LongType => Scalar.fromLong(l)
-      case TimestampType => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
-      case _ => throw new IllegalArgumentException(s"$t not supported for long values")
+  def from(v: Any, t: DataType): Scalar = t match {
+    case nullType if v == null => nullType match {
+      case ArrayType(elementType, _) => Scalar.listFromNull(resolveElementType(elementType))
+      case _ => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(nullType))
     }
-    case d: Double => Scalar.fromDouble(d)
-    case i: Int => t match {
-      case IntegerType => Scalar.fromInt(i)
-      case DateType => Scalar.timestampDaysFromInt(i)
-      case _ => throw new IllegalArgumentException(s"$t not supported for int values")
+    case decType: DecimalType =>
+      val dec = v match {
+        case de: Decimal => de
+        case vi: Int => Decimal(vi)
+        case vl: Long => Decimal(vl)
+        case vd: Double => Decimal(vd)
+        case vs: String => Decimal(vs)
+        case bd: BigDecimal => Decimal(bd)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for DecimalType, expecting Decimal, Int, Long, Double, String, or BigDecimal.")
+      }
+      convertDecimalTo(dec, decType) match {
+        case Left(i) => Scalar.fromDecimal(-decType.scale, i)
+        case Right(l) => Scalar.fromDecimal(-decType.scale, l)
+      }
+    case LongType => v match {
+      case l: Long => Scalar.fromLong(l)
+      case i: Int => Scalar.fromLong(i.toLong)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for LongType, expecting Long, or Int.")
     }
-    case f: Float => Scalar.fromFloat(f)
-    case s: Short => Scalar.fromShort(s)
-    case b: Byte => Scalar.fromByte(b)
-    case b: Boolean => Scalar.fromBool(b)
-    case s: String => Scalar.fromString(s)
-    case s: UTF8String => Scalar.fromString(s.toString)
-    case _ =>
-      throw new IllegalStateException(s"${v.getClass} '$v' is not supported as a scalar yet")
+    case DoubleType => v match {
+        case d: Double => Scalar.fromDouble(d)
+        case f: Float => Scalar.fromDouble(f.toDouble)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for DoubleType, expecting Double or Float.")
+    }
+    case TimestampType => v match {
+      // Usually the timestamp will be used by the `add/sub` operators for date/time related
+      // calculations. But cuDF native does not support these for timestamp type, needing to
+      // cast to long type.
+      case l: Long => Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, l)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for TimestampType, expecting Long.")
+    }
+    case IntegerType => v match {
+      case i: Int =>  Scalar.fromInt(i)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for IntegerType, expecting Int.")
+    }
+    case DateType => v match {
+      // Usually the days will be used by the `add/sub` operators for date/time related
+      // calculations. But cuDF native does not support these for timestamp days type, needing
+      // to cast to int type.
+      case i: Int =>  Scalar.timestampDaysFromInt(i)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for DateType, expecting Int.")
+    }
+    case FloatType => v match {
+      case f: Float => Scalar.fromFloat(f)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for FloatType, expecting Float.")
+    }
+    case ShortType => v match {
+      case s: Short => Scalar.fromShort(s)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for ShortType, expecting Short.")
+    }
+    case ByteType => v match {
+      case b: Byte => Scalar.fromByte(b)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for ByteType, expecting Byte.")
+    }
+    case BooleanType => v match {
+      case b: Boolean => Scalar.fromBool(b)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for BooleanType, expecting Boolean.")
+    }
+    case StringType => v match {
+      case s: String => Scalar.fromString(s)
+      // TODO JNI supports creating a scalar from UTF8 String bytes directly.
+      case us: UTF8String => Scalar.fromString(us.toString)
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for StringType, expecting String or UTF8String.")
+    }
+    case ArrayType(elementType, _) => v match {
+      case array: ArrayData =>
+        withResource(columnVectorFromLiterals(array.array, elementType)) { list =>
+          Scalar.listFromColumnView(list)
+        }
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+        s" for ArrayType, expecting ArrayData")
+    }
+    case _ => throw new UnsupportedOperationException(s"${v.getClass} '$v' is not supported" +
+        s" as a Scalar yet")
   }
 
   def isNan(s: Scalar): Boolean = s.getType match {
@@ -329,6 +490,7 @@ object GpuLiteral {
     val cpuLiteral = Literal.default(dataType)
     GpuLiteral(cpuLiteral.value, cpuLiteral.dataType)
   }
+
 }
 
 /**
@@ -429,20 +591,7 @@ class LiteralExprMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends ExprMeta[Literal](lit, conf, p, r) {
 
-  override def convertToGpu(): GpuExpression = {
-    lit.dataType match {
-      // NOTICE: There is a temporary transformation from Literal(ArrayType(BaseType)) into
-      // CreateArray(Literal(BaseType):_*). The transformation is a walkaround support for Literal
-      // of ArrayData under GPU runtime, because cuDF scalar doesn't support nested types.
-      // related issue: https://github.com/NVIDIA/spark-rapids/issues/1902
-      case ArrayType(baseType, _) =>
-        val litArray = lit.value.asInstanceOf[ArrayData]
-          .array.map(GpuLiteral(_, baseType))
-        GpuCreateArray(litArray, useStringTypeWhenEmpty = false)
-      case _ =>
-        GpuLiteral(lit.value, lit.dataType)
-    }
-  }
+  override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
 
   // There are so many of these that we don't need to print them out, unless it
   // will not work on the GPU
