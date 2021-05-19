@@ -15,11 +15,14 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{GatherMap, NvtxColor, Table}
+import scala.collection.mutable
+
+import ai.rapids.cudf.{Aggregation, DType, GatherMap, NullPolicy, NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
@@ -189,16 +192,30 @@ class HashJoinIterator(
     private val spillCallback: SpillCallback,
     private val streamTime: GpuMetric,
     private val joinTime: GpuMetric,
-    private val totalTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
+    private val totalTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm with Logging {
   import scala.collection.JavaConverters._
 
   // For some join types even if there is no stream data we might output something
   private var initialJoin = true
+  // If the join explodes this holds batches from the stream side split into smaller
+  // pieces.
+  private val pendingSplits = mutable.Queue[SpillableColumnarBatch]()
   private var nextCb: Option[ColumnarBatch] = None
   private var gathererStore: Option[JoinGatherer] = None
   // Close the input data, the lazy spillable batch now owns it.
   private val built = withResource(builtInput) { builtInput =>
     LazySpillableColumnarBatch(builtInput, spillCallback, "built")
+  }
+
+  // We can cache this because the build side is not changing
+  private lazy val estimatedRowsPerStreamBatch = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter =>
+      withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+        guessJoinRowsForTargetSize(builtKeys)
+      }
+    case _ =>
+      // existence joins don't change size, and FullOuter cannot be split
+      1.0
   }
   private var closed = false
 
@@ -209,6 +226,8 @@ class HashJoinIterator(
       nextCb = None
       gathererStore.foreach(_.close())
       gathererStore = None
+      pendingSplits.foreach(_.close())
+      pendingSplits.clear()
       closed = true
     }
   }
@@ -328,8 +347,74 @@ class HashJoinIterator(
       buildData: LazySpillableColumnarBatch,
       streamCb: ColumnarBatch): Option[JoinGatherer] = {
     withResource(GpuProjectExec.project(streamCb, boundStreamKeys)) { streamKeys =>
-      joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData),
-        streamKeys, LazySpillableColumnarBatch(streamCb, spillCallback, "stream_data"))
+      closeOnExcept(LazySpillableColumnarBatch(streamCb, spillCallback, "stream_data")) { sd =>
+        joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, sd)
+      }
+    }
+  }
+
+  private def countGroups(keys: ColumnarBatch): Table = {
+    withResource(GpuColumnVector.from(keys)) { keysTable =>
+      keysTable.groupBy(0 until keysTable.getNumberOfColumns: _*)
+          .aggregate(Aggregation.count(NullPolicy.INCLUDE).onColumn(0))
+    }
+  }
+
+  /**
+   * Guess how large a stream side batch should be to avoid really huge gather maps.
+   * This is temporary until cudf gives us APIs to get the actual gather map size.
+   */
+  private def guessJoinRowsForTargetSize(builtKeys: ColumnarBatch): Double = {
+    // Based off of the keys on the build side guess at how many output rows there
+    // will be for each input row on the stream side. This does not take into account
+    // the join type, data skew or even if the keys actually match.
+    val averageStreamSizeExpansion = withResource(countGroups(builtKeys)) { builtCount =>
+      val counts = builtCount.getColumn(builtCount.getNumberOfColumns - 1)
+      withResource(counts.reduce(Aggregation.mean(), DType.FLOAT64)) { scalarAverage =>
+        scalarAverage.getDouble
+      }
+    }
+
+    // We want the gather map size to be around the target size. There are two gather maps
+    // that are made up of ints, so estimate how many rows per batch on the stream side
+    // will produce the desired gather map size.
+    val approximateStreamRowCount = ((targetSize.toDouble / 2) /
+        DType.INT32.getSizeInBytes) / averageStreamSizeExpansion
+    Math.min(Int.MaxValue, approximateStreamRowCount)
+  }
+
+  private def estimatedNumBatches(cb: ColumnarBatch): Int = joinType match {
+    case _: InnerLike | LeftOuter | RightOuter =>
+      Math.ceil(cb.numRows() / estimatedRowsPerStreamBatch).toInt
+    case _ => 1
+  }
+
+  private def splitAndSave(cb: ColumnarBatch,
+      numBatches: Int,
+      oom: Option[OutOfMemoryError] = None): Unit = {
+    val batchSize = cb.numRows() / numBatches
+    if (oom.isDefined && batchSize < 100) {
+      // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
+      // small but we want to at least give it a chance to work (mostly for tests where the
+      // targetSize can be set really small)
+      throw oom.get
+    }
+    val msg = s"Split stream batch into $numBatches batches of about $batchSize rows"
+    if (oom.isDefined) {
+      logWarning(s"OOM Encountered: $msg")
+    } else {
+      logInfo(msg)
+    }
+    val splits = withResource(GpuColumnVector.from(cb)) { tab =>
+      val splitIndexes = (1 until numBatches).map(num => num * batchSize)
+      tab.contiguousSplit(splitIndexes: _*)
+    }
+    withResource(splits) { splits =>
+      val schema = GpuColumnVector.extractTypes(cb)
+      pendingSplits ++= splits.map { ct =>
+        SpillableColumnarBatch(ct, schema,
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+      }
     }
   }
 
@@ -342,14 +427,48 @@ class HashJoinIterator(
       val startTime = System.nanoTime()
       if (gathererStore.exists(!_.isDone)) {
         nextCb = nextCbFromGatherer()
-      } else if (stream.hasNext) {
+      } else if (pendingSplits.nonEmpty || stream.hasNext) {
         // Need to refill the gatherer
         gathererStore.foreach(_.close())
         gathererStore = None
-        withResource(stream.next()) { cb =>
+        val cb = if (pendingSplits.isEmpty) {
+          val cb = stream.next()
+          val estimatedBatches = estimatedNumBatches(cb)
+          // The cutoff is arbitrary, just to avoid doing duplicate work
+          if (estimatedBatches > 2) {
+            withResource(cb) { cb =>
+              splitAndSave(cb, estimatedBatches)
+            }
+            withResource(pendingSplits.dequeue()) { scb =>
+              scb.getColumnarBatch()
+            }
+          } else {
+            cb
+          }
+        } else {
+          withResource(pendingSplits.dequeue()) { scb =>
+            scb.getColumnarBatch()
+          }
+        }
+        withResource(cb) { cb =>
           streamTime += (System.nanoTime() - startTime)
-          withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-            gathererStore = joinGatherer(builtKeys, built, cb)
+          try {
+            withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+              gathererStore = joinGatherer(builtKeys, built, cb)
+            }
+          } catch {
+            // This should work for all join types except for FullOuter. There should be no need
+            // to do this for any of the existence joins because the output rows will never be
+            // larger than the input rows on the stream side.
+            case oom: OutOfMemoryError if joinType.isInstanceOf[InnerLike]
+                || joinType == LeftOuter
+                || joinType == RightOuter =>
+              // Because this is just an estimate, it is possible for us to get this wrong, so
+              // make sure we at least split the batch in half.
+              val numBatches = Math.max(2, estimatedNumBatches(cb))
+              // Now try again nextCbFromGatherer will return None, but there will be more to do
+              // so the loop will not finish
+              splitAndSave(cb, numBatches, Some(oom))
           }
         }
         nextCb = nextCbFromGatherer()
