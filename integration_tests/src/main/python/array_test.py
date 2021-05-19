@@ -56,7 +56,8 @@ def test_make_array(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'array(null)',
                 'array(a, b)',
-                'array(b, a, null, {}, {})'.format(s1, s2)))
+                'array(b, a, null, {}, {})'.format(s1, s2),
+                'array(array(b, a, null, {}, {}), array(a), array(null))'.format(s1, s2)))
 
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
