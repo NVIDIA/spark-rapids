@@ -45,9 +45,9 @@ class CastExprMeta[INPUT <: CastBase](
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
   private def recursiveTagExprForGpuCheck(
-     fromDataType: DataType = fromType,
-     toDataType: DataType = toType
-  ) {
+      fromDataType: DataType = fromType,
+      toDataType: DataType = toType)
+  : Unit = {
     if (!conf.isCastFloatToDecimalEnabled && toDataType.isInstanceOf[DecimalType] &&
       (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
@@ -241,10 +241,10 @@ case class GpuCast(
   }
 
   private def recursiveDoColumnar(
-                                   input: ColumnView,
-                                   fromDataType: DataType,
-                                   toDataType: DataType = dataType
-  ): ColumnVector = {
+      input: ColumnView,
+      fromDataType: DataType,
+      toDataType: DataType = dataType)
+  : ColumnVector = {
     (fromDataType, toDataType) match {
       case (NullType, to) =>
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, to)
