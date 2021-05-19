@@ -56,17 +56,8 @@ def test_make_array(data_gen):
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'array(null)',
                 'array(a, b)',
-                'array(b, a, null, {}, {})'.format(s1, s2)))
-
-
-@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_default, decimal_gen_scale_precision], ids=idfn)
-def test_make_array_of_array(data_gen):
-    (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).selectExpr(
-                'array(array(1, 2, 3), array(2), array(null), array())',
-                'array(array(), array(null), array(a, b))',
-                'array(array(b, a, null, {}, {}), array(a, b), array(), array(null))'.format(s1, s2)))
+                'array(b, a, null, {}, {})'.format(s1, s2),
+                'array(array(b, a, null, {}, {}), array(a), array(null))'.format(s1, s2)))
 
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)

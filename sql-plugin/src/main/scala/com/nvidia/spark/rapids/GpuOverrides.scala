@@ -2366,9 +2366,19 @@ object GpuOverrides {
           TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
               TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP +
               TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
-                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP),
+                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
           TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
+
+        override def tagExprForGpu(): Unit = {
+          wrapped.dataType match {
+            case ArrayType(ArrayType(ArrayType(_, _), _), _) =>
+              willNotWorkOnGpu("Only support to create array or array of array, Found: " +
+                s"${wrapped.dataType}")
+            case _ =>
+          }
+        }
+
         override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
