@@ -106,10 +106,18 @@ class CastExprMeta[INPUT <: CastBase](
     }
 
     (fromDataType, toDataType) match {
-      case (ArrayType(nestedFrom@(FloatType | DoubleType | IntegerType), _),
-            ArrayType(nestedTo@(FloatType | DoubleType | IntegerType), _)) => {
-        recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
-      }
+      case (
+        ArrayType(nestedFrom@(
+          FloatType |
+          DoubleType |
+          IntegerType |
+          ArrayType(_, _)), _),
+        ArrayType(nestedTo@(
+          FloatType |
+          DoubleType |
+          IntegerType |
+          ArrayType(_, _)), _)) => recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
+
       case _ => ()
     }
   }

@@ -174,15 +174,17 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
     DoubleType(),
     IntegerType(),
 ], ids=idfn)
-def test_array_cast_recursive(child_gen, child_to_type):
+@pytest.mark.parametrize('depth', [1, 2], ids=idfn)
+def test_array_cast_recursive(child_gen, child_to_type, depth):
     def cast_func(spark):
+        reduce
         df = two_col_df(spark, int_gen, ArrayGen(child_gen))
         res = df.select(df.b.cast(ArrayType(child_to_type)))
         return res
     assert_gpu_and_cpu_are_equal_collect(cast_func)
 
 
-@allow_non_gpu(any=True)
+@allow_non_gpu('ProjectExec', 'Alias', 'Cast')
 def test_array_cast_fallback():
     def cast_float_to_double(spark):
         df = two_col_df(spark, int_gen, ArrayGen(int_gen))
