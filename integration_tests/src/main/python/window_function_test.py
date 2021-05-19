@@ -272,6 +272,41 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_gen, b_gen, c_gen):
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
+
+lead_lag_array_data_gens =\
+    [ArrayGen(sub_gen, max_length=10) for sub_gen in lead_lag_data_gens] + \
+    [ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in lead_lag_data_gens] + \
+    [ArrayGen(ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10), max_length=10) \
+        for sub_gen in lead_lag_data_gens]
+
+# lead and lag are supported for arrays, but the other window operations like min and max are not right now
+# once they are all supported the tests should be combined.
+@ignore_order(local=True)
+@pytest.mark.parametrize('d_gen', lead_lag_array_data_gens, ids=meta_idfn('agg:'))
+@pytest.mark.parametrize('c_gen', [long_gen], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
+def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
+    data_gen = [
+            ('a', RepeatSeqGen(a_gen, length=20)),
+            ('b', b_gen),
+            ('c', c_gen),
+            ('d', d_gen),
+            ('d_default', d_gen)]
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        '''
+        SELECT
+            LEAD(d, 5) OVER (PARTITION by a ORDER BY b,c) lead_d_5,
+            LEAD(d, 2, d_default) OVER (PARTITION by a ORDER BY b,c) lead_d_2_default,
+            LAG(d, 5) OVER (PARTITION by a ORDER BY b,c) lag_d_5,
+            LAG(d, 2, d_default) OVER (PARTITION by a ORDER BY b,c) lag_d_2_default
+        FROM window_agg_table
+        ''')
+
+
 # lead and lag don't currently work for string columns, so redo the tests, but just for strings
 # without lead and lag
 @ignore_order

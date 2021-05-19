@@ -201,13 +201,14 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
+            TypeSig.all))),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -215,13 +216,14 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
+            TypeSig.all))),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
