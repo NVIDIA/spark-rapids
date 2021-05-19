@@ -176,8 +176,8 @@ object GpuScalar extends Arm with Logging {
         val colType = resolveElementType(elementType)
         val rows = seq.map(convertElementTo(_, elementType))
         ColumnVector.fromStructs(colType, rows.asInstanceOf[Seq[HostColumnVector.StructData]]: _*)
-      case NullType => // Byte is used for NullType
-        ColumnVector.fromBoxedBytes(seq.asInstanceOf[Seq[JByte]]: _*)
+      case NullType =>
+        GpuColumnVector.columnVectorFromNull(seq.size, NullType)
       case u =>
         throw new IllegalArgumentException(s"Unsupported element type ($u) to create a" +
           s" ColumnVector.")
