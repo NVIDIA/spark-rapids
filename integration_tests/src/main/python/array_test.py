@@ -15,8 +15,8 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
-from conftest import is_dataproc_runtime
 from data_gen import *
+from functools import reduce
 from spark_session import is_before_spark_311
 from marks import allow_non_gpu
 from pyspark.sql.types import *
@@ -174,12 +174,15 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
     DoubleType(),
     IntegerType(),
 ], ids=idfn)
-@pytest.mark.parametrize('depth', [1, 2], ids=idfn)
+@pytest.mark.parametrize('depth', [1, 2, 3], ids=idfn)
 def test_array_cast_recursive(child_gen, child_to_type, depth):
     def cast_func(spark):
-        reduce
-        df = two_col_df(spark, int_gen, ArrayGen(child_gen))
-        res = df.select(df.b.cast(ArrayType(child_to_type)))
+        depth_rng = range(0, depth)
+        nested_gen = reduce(lambda dg, i: ArrayGen(dg, max_length=int(max(1, 16 / (2 ** i)))),
+            depth_rng, child_gen)
+        nested_type = reduce(lambda t, _: ArrayType(t), depth_rng, child_to_type)
+        df = two_col_df(spark, int_gen, nested_gen)
+        res = df.select(df.b.cast(nested_type))
         return res
     assert_gpu_and_cpu_are_equal_collect(cast_func)
 

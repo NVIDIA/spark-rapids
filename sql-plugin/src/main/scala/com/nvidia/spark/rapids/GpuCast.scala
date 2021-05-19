@@ -282,7 +282,7 @@ case class GpuCast(
         }
       case (TimestampType, _: LongType) =>
         withResource(input.castTo(DType.INT64)) { asLongs =>
-          withResource(Scalar.fromInt(1000000)) {  microsPerSec =>
+          withResource(Scalar.fromInt(1000000)) { microsPerSec =>
             asLongs.floorDiv(microsPerSec, GpuColumnVector.getNonNestedRapidsType(dataType))
           }
         }
@@ -298,37 +298,37 @@ case class GpuCast(
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from larger-than-short integral types, to short
-      case (LongType|IntegerType, ShortType) if ansiMode =>
+      case (LongType | IntegerType, ShortType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from larger-than-byte integral types, to byte
-      case (LongType|IntegerType|ShortType, ByteType) if ansiMode =>
+      case (LongType | IntegerType | ShortType, ByteType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to byte
-      case (FloatType|DoubleType, ByteType) if ansiMode =>
+      case (FloatType | DoubleType, ByteType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to short
-      case (FloatType|DoubleType, ShortType) if ansiMode =>
+      case (FloatType | DoubleType, ShortType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to integer
-      case (FloatType|DoubleType, IntegerType) if ansiMode =>
+      case (FloatType | DoubleType, IntegerType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
           Scalar.fromInt(Int.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
 
       // ansi cast from floating-point types, to long
-      case (FloatType|DoubleType, LongType) if ansiMode =>
+      case (FloatType | DoubleType, LongType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromLong(Long.MinValue),
           Scalar.fromLong(Long.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
@@ -340,7 +340,7 @@ case class GpuCast(
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
               inputWithoutNanAndInfinity =>
                 if (fromDataType == FloatType &&
-                    ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
+                  ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
                   withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
                     withResource(doubles.mul(microsPerSec, DType.INT64)) {
                       inputTimesMicrosCv =>
@@ -381,7 +381,7 @@ case class GpuCast(
         withResource(FloatUtils.nanToZero(input)) { inputWithNansToZero =>
           inputWithNansToZero.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
         }
-      case (FloatType|DoubleType, StringType) =>
+      case (FloatType | DoubleType, StringType) =>
         castFloatingTypeToString(input)
       case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
                         | DoubleType | DateType | TimestampType) =>
@@ -429,13 +429,21 @@ case class GpuCast(
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
 
-      case (ArrayType(nestedFrom@(FloatType | DoubleType | IntegerType), _),
-            ArrayType(nestedTo@(FloatType | DoubleType | IntegerType), _)) => {
-        withResource(input.getChildColumnView(0)) { childView =>
-          withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo))(
-            childColumnVector =>
-              withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector()))
-        }
+      case (
+        ArrayType(nestedFrom@(
+          FloatType |
+          DoubleType |
+          IntegerType |
+          ArrayType(_, _)), _),
+        ArrayType(nestedTo@(
+          FloatType |
+          DoubleType |
+          IntegerType |
+          ArrayType(_, _)), _)) => {
+
+        withResource(input.getChildColumnView(0))(childView =>
+          withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo))(childColumnVector =>
+            withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())))
       }
 
       case _ =>
