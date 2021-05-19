@@ -42,19 +42,20 @@ class CastExprMeta[INPUT <: CastBase](
   val toType = cast.dataType
   var legacyCastToString = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
 
-  override def tagExprForGpu(): Unit = {
-    recursiveTagExprForGpuCheck(fromType)
-  }
+  override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
-  private def recursiveTagExprForGpuCheck(fromDataType: DataType) {
-    if (!conf.isCastFloatToDecimalEnabled && toType.isInstanceOf[DecimalType] &&
+  private def recursiveTagExprForGpuCheck(
+     fromDataType: DataType = fromType,
+     toDataType: DataType = toType
+  ) {
+    if (!conf.isCastFloatToDecimalEnabled && toDataType.isInstanceOf[DecimalType] &&
       (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
         "floating point data types to decimals and this can produce results that slightly " +
         "differ from the default behavior in Spark.  To enable this operation on the GPU, set " +
         s"${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
     }
-    if (!conf.isCastFloatToStringEnabled && toType == DataTypes.StringType &&
+    if (!conf.isCastFloatToStringEnabled && toDataType == DataTypes.StringType &&
       (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
       willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
         "converting floating point data types to strings and this can produce results that " +
@@ -71,8 +72,8 @@ class CastExprMeta[INPUT <: CastBase](
         "CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this operation on " +
         "the GPU, set" + s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
     }
-    if (!conf.isCastStringToTimestampEnabled && fromType == DataTypes.StringType
-      && toType == DataTypes.TimestampType) {
+    if (!conf.isCastStringToTimestampEnabled && fromDataType == DataTypes.StringType
+      && toDataType == DataTypes.TimestampType) {
       willNotWorkOnGpu("the GPU only supports a subset of formats " +
         "when casting strings to timestamps. Refer to the CAST documentation " +
         "for more details. To enable this operation on the GPU, set" +
@@ -94,20 +95,21 @@ class CastExprMeta[INPUT <: CastBase](
       val checks = rule.getChecks.get.asInstanceOf[CastChecks]
       fromDataType.asInstanceOf[StructType].foreach{field =>
         recursiveTagExprForGpuCheck(field.dataType)
-        if (toType == StringType) {
-          if (!checks.gpuCanCast(field.dataType, toType)) {
+        if (toDataType == StringType) {
+          if (!checks.gpuCanCast(field.dataType, toDataType)) {
             willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
-              s"Casting ${field.dataType} to ${toType} not currently supported. Refer to " +
+              s"Casting ${field.dataType} to ${toDataType} not currently supported. Refer to " +
               "CAST documentation for more details.")
           }
         }
       }
     }
 
-    (fromDataType, toType) match {
-      case (ArrayType(_@(FloatType|DoubleType), _), ArrayType(_@(FloatType|DoubleType), _)) => ()
-      case (ArrayType(_, _), ArrayType(_, _)) => willNotWorkOnGpu(
-        s"casting from ${fromDataType.catalogString} to ${toType.catalogString} is not supported")
+    (fromDataType, toDataType) match {
+      case (ArrayType(nestedFrom@(FloatType | DoubleType | IntegerType), _),
+            ArrayType(nestedTo@(FloatType | DoubleType | IntegerType), _)) => {
+        recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
+      }
       case _ => ()
     }
   }
@@ -223,12 +225,16 @@ case class GpuCast(
         castDecimalToDecimal(input.getBase, from, to)
 
       case _ =>
-        doColumnar(input.getBase, input.dataType())
+        recursiveDoColumnar(input.getBase, input.dataType())
     }
   }
 
-  def doColumnar(input: ColumnView, sparkType: DataType): ColumnVector = {
-    (sparkType, dataType) match {
+  private def recursiveDoColumnar(
+    input: ColumnView,
+    fromDataType: DataType,
+    dataType: DataType = dataType
+  ): ColumnVector = {
+    (fromDataType, dataType) match {
       case (NullType, to) =>
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, to)
       case (DateType, BooleanType | _: NumericType) =>
@@ -325,7 +331,7 @@ case class GpuCast(
           withResource(input.nansToNulls()) { inputWithNansToNull =>
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
               inputWithoutNanAndInfinity =>
-                if (sparkType == FloatType &&
+                if (fromDataType == FloatType &&
                     ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
                   withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
                     withResource(doubles.mul(microsPerSec, DType.INT64)) {
@@ -415,13 +421,14 @@ case class GpuCast(
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
 
-      case (ArrayType(_@FloatType, _), ArrayType(nestedTo@DoubleType, _)) =>
-        val rapidsType = GpuColumnVector.getNonNestedRapidsType(nestedTo)
+      case (ArrayType(nestedFrom@(FloatType | DoubleType | IntegerType), _),
+            ArrayType(nestedTo@(FloatType | DoubleType | IntegerType), _)) => {
         withResource(input.getChildColumnView(0)) { childView =>
-          withResource(childView.castTo(rapidsType)) { castChildColumnVector =>
-            withResource(input.replaceListChild(castChildColumnVector))(_.copyToColumnVector())
-          }
+          withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo))(
+            childColumnVector =>
+              withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector()))
         }
+      }
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(dataType))
@@ -545,14 +552,15 @@ case class GpuCast(
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += doColumnar(firstColumnView, inputSchema.head.dataType)
+          columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
           withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
             // legacy: ","
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
-            val nonFirstColumn = doColumnar(nonFirstColumnView, inputSchema(nonFirstIndex).dataType)
+            val nonFirstColumn = recursiveDoColumnar(nonFirstColumnView,
+              inputSchema(nonFirstIndex).dataType)
             if (legacyCastToString) {
               // " " if non-null
               columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)

@@ -119,18 +119,28 @@ def test_array_element_at(data_gen):
                                      'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
 
-def test_array_cast_float_to_double():
-    def cast_float_to_double(spark):
-        df = two_col_df(spark, int_gen, ArrayGen(float_gen))
-        res = df.select(df.b.cast(ArrayType(DoubleType())))
+@pytest.mark.parametrize('child_gen', [
+    float_gen,
+    double_gen,
+    int_gen
+], ids=idfn)
+@pytest.mark.parametrize('child_to_type', [
+    FloatType(),
+    DoubleType(),
+    IntegerType(),
+], ids=idfn)
+def test_array_cast_recursive(child_gen, child_to_type):
+    def cast_func(spark):
+        df = two_col_df(spark, int_gen, ArrayGen(child_gen))
+        res = df.select(df.b.cast(ArrayType(child_to_type)))
         return res
-    assert_gpu_and_cpu_are_equal_collect(cast_float_to_double)
+    assert_gpu_and_cpu_are_equal_collect(cast_func)
 
 
 @allow_non_gpu(any=True)
 def test_array_cast_fallback():
     def cast_float_to_double(spark):
         df = two_col_df(spark, int_gen, ArrayGen(int_gen))
-        res = df.select(df.b.cast(ArrayType(DoubleType())))
+        res = df.select(df.b.cast(ArrayType(StringType())))
         return res
     assert_gpu_and_cpu_are_equal_collect(cast_float_to_double)
