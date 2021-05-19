@@ -54,6 +54,7 @@ def test_make_array(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
+                'array(null)',
                 'array(a, b)',
                 'array(b, a, null, {}, {})'.format(s1, s2)))
 
