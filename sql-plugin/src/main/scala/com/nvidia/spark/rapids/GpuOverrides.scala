@@ -2312,7 +2312,9 @@ object GpuOverrides {
           checks.tag(this)
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuElementAt(lhs, rhs)
+          // This will be called under 3.0.x version, so set failOnError to false to match CPU
+          // behavior
+          GpuElementAt(lhs, rhs, failOnError = false)
         }
       }),
     expr[CreateNamedStruct](

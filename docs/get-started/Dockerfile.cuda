@@ -50,7 +50,7 @@ COPY spark-3.0.2-bin-hadoop3.2/examples /opt/spark/examples
 COPY spark-3.0.2-bin-hadoop3.2/kubernetes/tests /opt/spark/tests
 COPY spark-3.0.2-bin-hadoop3.2/data /opt/spark/data
 
-COPY cudf-0.20-SNAPSHOT-cuda11.jar /opt/sparkRapidsPlugin
+COPY cudf-21.06-SNAPSHOT-cuda11.jar /opt/sparkRapidsPlugin
 COPY rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
 
