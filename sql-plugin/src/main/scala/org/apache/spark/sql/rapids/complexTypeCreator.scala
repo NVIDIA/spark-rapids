@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.{ColumnVector, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
@@ -69,9 +69,15 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
         columns(index) =
           GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
       }
-      GpuColumnVector.from(ColumnVector.makeList(numRows,
-        GpuColumnVector.getNonNestedRapidsType(dataType.elementType),
-        columns: _*), dataType)
+
+      val elementDType = dataType.elementType match {
+        case _: ArrayType => DType.LIST
+        case _ => GpuColumnVector.getNonNestedRapidsType(dataType.elementType)
+      }
+      // calling makeList with a nested DType and no columns is an error, but we will never
+      // hit this case, because in Spark the type of `array()` is either `ArrayType(NullType)`
+      // or `ArrayType(StringType)`.
+      GpuColumnVector.from(ColumnVector.makeList(numRows, elementDType, columns: _*), dataType)
     }
   }
 }
@@ -142,4 +148,5 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
       GpuColumnVector.from(ColumnVector.makeStruct(numRows, columns: _*), dataType)
     }
   }
+
 }
