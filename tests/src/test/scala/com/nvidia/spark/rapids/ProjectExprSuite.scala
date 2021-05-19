@@ -20,10 +20,10 @@ import java.io.File
 import java.nio.file.Files
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{Column, DataFrame, SparkSession}
+import org.apache.spark.sql.{Column, DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{ArrayType, DecimalType}
+import org.apache.spark.sql.types._
 
 class ProjectExprSuite extends SparkQueryCompareTestSuite {
   def forceHostColumnarToGpu(): SparkConf = {
@@ -54,6 +54,11 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
         lit(BigDecimal(-2.12314e-8)),
         lit(Array(1, 2, 3, 4, 5)), lit(Array(1.2, 3.4, 5.6)),
         lit(Array("a", "b", null, "")),
+        lit(Array(Array(1, 2), null, Array(3, 4))),
+        lit(Array(Array(Array(1, 2), Array(2, 3), null), null)),
+        new Column(Literal.create(Array(Row(1, "s1"), Row(2, "s2"), null),
+          ArrayType(StructType(
+            Array(StructField("id", IntegerType), StructField("name", StringType)))))),
         new Column(Literal.create(List(BigDecimal(123L, 2), BigDecimal(-1444L, 2)),
           ArrayType(DecimalType(10, 2)))))
   }
