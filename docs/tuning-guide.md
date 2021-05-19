@@ -111,8 +111,8 @@ spilling to a slow disk can be especially expensive. If you see spilling to disk
 your query, and you are not using GPU Direct storage for spilling, you may want to add more
 spill storage.
 
-You can configure this larger than the amount of pinned memory you have, and the Accelerator will
-end up using non-pinned memory when this happens.
+You can configure this larger than the amount of pinned memory. This number is just an upper limit.
+If the pinned memory is used up then it allocates and uses non-pinned memory.
 
 ## Locality Wait
 Configuration key:
@@ -237,7 +237,7 @@ min(2GiB - 1 byte, (gpu_memory - 1 GiB) / gpu_concurrency / 4)
 ```
 
 Where `gpu_memory` is the amount of memory on the GPU, or the maximum pool size if using pooling.
-We then subtract from that 1 GiB for overhead in holding cuda kernels/etc and divide by the
+We then subtract from that 1 GiB for overhead in holding CUDA kernels/etc and divide by the
 [`gpu_concurrency`](#number-of-concurrent-tasks-per-gpu). Finally, we divide by 4. This is set
 by the amount of working memory that different algorithms need to succeed. Joins need a
 batch for the left-hand side, one for the right-hand side, one for working memory to do the join,
