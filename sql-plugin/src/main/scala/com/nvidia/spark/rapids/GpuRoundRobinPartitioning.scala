@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,7 +80,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
         sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
       partitionColumns.safeClose()
       // Close the partition columns we copied them as a part of the slice
-      ret.zipWithIndex.filter(_._1 != null)
+      ret.zipWithIndex
     } finally {
       totalRange.close()
     }

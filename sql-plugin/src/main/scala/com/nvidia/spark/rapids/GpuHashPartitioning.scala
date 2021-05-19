@@ -86,7 +86,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
         sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
       }
       // Close the partition columns we copied them as a part of the slice
-      ret.zipWithIndex.filter(_._1 != null)
+      ret.zipWithIndex
     }
   }
 }

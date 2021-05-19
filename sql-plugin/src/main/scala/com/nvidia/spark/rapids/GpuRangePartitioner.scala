@@ -202,7 +202,7 @@ case class GpuRangePartitioner(
       withResource(sortedBatch) { sortedBatch =>
         val partitionColumns = GpuColumnVector.extractColumns(sortedBatch)
         val slicedCb = sliceInternalGpuOrCpu(sortedBatch.numRows(), parts, partitionColumns)
-        slicedCb.zipWithIndex.filter(_._1 != null)
+        slicedCb.zipWithIndex
       }
     } else {
       withResource(batch) { cb =>
