@@ -273,13 +273,15 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_gen, b_gen, c_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
 
-lead_lag_array_data_gens = [ArrayGen(int_gen, max_length=10),
-                            ArrayGen(ArrayGen(int_gen, max_length=10), max_length=10),
-                            ArrayGen(ArrayGen(ArrayGen(int_gen, max_length=10), max_length=10), max_length=10)]
-# lead and lag now support array type, so redo the tests, but just for array
-# SortExec does not support array type, so sort the result locally.
+lead_lag_array_data_gens =\
+    [ArrayGen(sub_gen, max_length=10) for sub_gen in lead_lag_data_gens] + \
+    [ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in lead_lag_data_gens] + \
+    [ArrayGen(ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10), max_length=10) \
+        for sub_gen in lead_lag_data_gens]
+
+# lead and lag are supported for arrays, but the other window operations like min and max are not right now
+# once they are all supported the tests should be combined.
 @ignore_order(local=True)
-@approximate_float
 @pytest.mark.parametrize('d_gen', lead_lag_array_data_gens, ids=meta_idfn('agg:'))
 @pytest.mark.parametrize('c_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
