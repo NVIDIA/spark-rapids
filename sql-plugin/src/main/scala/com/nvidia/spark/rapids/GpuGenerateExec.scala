@@ -250,7 +250,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
 
   override def fixedLenLazyExpressions: Seq[Expression] = child match {
     // GpuLiteral of ArrayData will be converted to GpuCreateArray with GpuLiterals
-    case GpuCreateArray(expressions, __) => expressions
+    case GpuCreateArray(expressions, _) => expressions
     case GpuAlias(GpuCreateArray(expressions, _), _) => expressions
     case _ => Nil
   }
