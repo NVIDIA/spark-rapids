@@ -34,11 +34,11 @@ object GenerateDot {
    * @param includeCodegen Include WholeStageCodegen and InputAdapter nodes, if true
    */
   def generateDotGraph(
-                        plan: QueryPlanWithMetrics,
-                        comparisonPlan: Option[QueryPlanWithMetrics],
-                        dir: File,
-                        filename: String,
-                        includeCodegen: Boolean): Unit = {
+      plan: QueryPlanWithMetrics,
+      comparisonPlan: Option[QueryPlanWithMetrics],
+      dir: File,
+      filename: String,
+      includeCodegen: Boolean): Unit = {
 
     var nextId = 1
 
@@ -82,10 +82,10 @@ object GenerateDot {
 
     /** Recursively graph the operator nodes in the spark plan */
     def writeGraph(
-                    w: FileWriter,
-                    node: QueryPlanWithMetrics,
-                    comparisonNode: QueryPlanWithMetrics,
-                    id: Int = 0): Unit = {
+        w: FileWriter,
+        node: QueryPlanWithMetrics,
+        comparisonNode: QueryPlanWithMetrics,
+        id: Int = 0): Unit = {
 
       val nodeNormalized = normalize(node.plan)
       val comparisonNodeNormalized = normalize(comparisonNode.plan)
