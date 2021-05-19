@@ -22,10 +22,10 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.6.0-SNAPSHOT</version>
+        <version>21.06.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-api-validation</artifactId>
-    <version>0.6.0-SNAPSHOT</version>
+    <version>21.06.0-SNAPSHOT</version>
 
     <profiles>
         <profile>
@@ -78,7 +78,7 @@
         <dependency>
             <groupId>com.nvidia</groupId>
 	        <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
-            <version>0.6.0-SNAPSHOT</version>
+            <version>21.06.0-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
