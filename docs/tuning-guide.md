@@ -41,7 +41,7 @@ Be aware that even if you restrict the concurrency of GPU tasks having many task
 per executor can result in spilling from GPU memory. Because of I/O and the fairness of the
 semaphore that restricts GPU access, tasks tend to run on the GPU in a round-robin fashion.
 Some algorithms, in order to be able to support processing more data than can fit in GPU memory
-like sort or join, can keep part of the data cached on the GPU in between outputting a batches.
+like sort or join, can keep part of the data cached on the GPU in between outputting batches.
 If there are too many tasks this can increase the memory pressure on the GPU and result in more
 spilling.
 
@@ -227,7 +227,7 @@ in a series of columnar batches. During processing multiple batches may be conca
 into a single batch to make the GPU processing more efficient, or in other cases the output size
 of an operation like join or sort will target that batch size for output. This setting controls the upper
 limit on batches that are output by these tasks.  Setting this value too low can result in a
-large amount of  GPU processing overhead and slower task execution.  Setting this value too high
+large amount of GPU processing overhead and slower task execution. Setting this value too high
 can lead to GPU out of memory errors.  If tasks fail due to GPU out of memory errors after the
 query input partitions have been read, try setting this to a lower value. The maximum size is just
 under 2 GiB. In general, we recommend setting the batch size to
