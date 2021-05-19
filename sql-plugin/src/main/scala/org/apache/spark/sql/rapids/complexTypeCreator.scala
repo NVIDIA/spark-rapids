@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuLiteral}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -88,13 +88,9 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
   }.toList.unzip
 
   private lazy val names = nameExprs.map {
-    case g: GpuExpression =>
-      val ret = g.columnarEval(null)
-      if (ret.isInstanceOf[GpuScalar]) {
-        ret.asInstanceOf[GpuScalar].getValue
-      } else {
-        ret
-      }
+    case gl: GpuLiteral => gl.value
+    case ge: GpuExpression =>
+      throw new IllegalStateException(s"Unexpected GPU expression $ge")
     case e => e.eval(EmptyRow)
   }
 
