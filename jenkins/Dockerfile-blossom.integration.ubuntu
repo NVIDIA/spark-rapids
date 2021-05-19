@@ -21,7 +21,7 @@
 # Arguments:
 #    CUDA_VER=11.0, 11.1 or 11.2.x
 #    UBUNTU_VER=18.04 or 20.04
-#    CUDF_VER=0.20
+#    CUDF_VER=21.06
 ###
 
 ARG CUDA_VER=11.0

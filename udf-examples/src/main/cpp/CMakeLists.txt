@@ -90,9 +90,9 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -w --expt-extended-lambda --expt-relax
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
 CPMAddPackage(NAME  cudf
-        VERSION         "0.20.0"
+        VERSION         "21.06.00"
         GIT_REPOSITORY  https://github.com/rapidsai/cudf.git
-        GIT_TAG         branch-0.20
+        GIT_TAG         branch-21.06
         GIT_SHALLOW     TRUE
         SOURCE_SUBDIR   cpp
         OPTIONS         "BUILD_TESTS OFF"

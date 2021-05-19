@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuScalar,
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   extends GpuUnaryExpression {
@@ -50,7 +51,7 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   }
 }
 
-case class GpuElementAt(left: Expression, right: Expression)
+case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ExpectsInputTypes {
 
   override lazy val dataType: DataType = left.dataType match {
@@ -103,21 +104,55 @@ case class GpuElementAt(left: Expression, right: Expression)
     lhs.dataType match {
       case _: ArrayType => {
         if (rhs.isValid) {
-          val ordinalValue = rhs.getValue.asInstanceOf[Int]
-          if (ordinalValue > 0) {
-            // SQL 1-based index
-            lhs.getBase.extractListElement(ordinalValue - 1)
-          } else if (ordinalValue == 0) {
+          if (rhs.getValue.asInstanceOf[Int] == 0) {
             throw new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
-          } else {
-            lhs.getBase.extractListElement(ordinalValue)
+          } else  {
+            // Positive or negative index
+            val ordinalValue = rhs.getValue.asInstanceOf[Int]
+            withResource(lhs.getBase.countElements) { numElementsCV =>
+              withResource(numElementsCV.min) { minScalar =>
+                val minNumElements = minScalar.getInt
+                // index out of bound
+                // Note: when the column is containing all null arrays, CPU will not throw, so make
+                // GPU to behave the same.
+                if (failOnError &&
+                  minNumElements < math.abs(ordinalValue) &&
+                  lhs.getBase.getNullCount != lhs.getBase.getRowCount) {
+                  throw new ArrayIndexOutOfBoundsException(
+                    s"Invalid index: $ordinalValue, minimum numElements in this ColumnVector: " +
+                      s"$minNumElements")
+                } else {
+                  if (ordinalValue > 0) {
+                    // Positive index
+                    lhs.getBase.extractListElement(ordinalValue - 1)
+                  } else {
+                    // Negative index
+                    lhs.getBase.extractListElement(ordinalValue)
+                  }
+                }
+              }
+            }
           }
         } else {
           GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
         }
       }
       case _: MapType => {
-        lhs.getBase.getMapValue(rhs.getBase)
+        if (failOnError) {
+          withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)){ keyExistenceColumn =>
+            withResource(keyExistenceColumn.all()) { exist =>
+              if (exist.getBoolean) {
+                lhs.getBase.getMapValue(rhs.getBase)
+              } else {
+                throw new NoSuchElementException(
+                  s"Key: ${rhs.getValue.asInstanceOf[UTF8String].toString} " +
+                    s"does not exist in one of the rows in the map column")
+              }
+            }
+          }
+        } else {
+          lhs.getBase.getMapValue(rhs.getBase)
+        }
       }
     }
   }
