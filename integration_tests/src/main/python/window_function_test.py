@@ -289,22 +289,20 @@ def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
             ('a', RepeatSeqGen(a_gen, length=20)),
             ('b', b_gen),
             ('c', c_gen),
-            ('d', d_gen)]
+            ('d', d_gen),
+            ('d_default', d_gen)]
 
-    # Ordering needs to include c because with nulls and especially on booleans
-    # it is possible to get a different ordering when it is ambiguous.
-    baseWindowSpec = Window.partitionBy('a').orderBy('b', 'c')
-
-    # Literal Scala is not supported yet, See https://github.com/NVIDIA/spark-rapids/issues/1902
-    # and https://github.com/NVIDIA/spark-rapids/pull/2313
-
-    # defaultVal = gen_scalar_value(d_gen, force_no_nulls=False)
-
-    def do_it(spark):
-        return gen_df(spark, data_gen, length=2048) \
-                .withColumn('lead_5_c', f.lead('d', 5).over(baseWindowSpec)) \
-                # .withColumn('lead_def_c', f.lead('d', 2, defaultVal).over(baseWindowSpec))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        '''
+        SELECT
+            LEAD(d, 5) OVER (PARTITION by a ORDER BY b,c) lead_d_5,
+            LEAD(d, 2, d_default) OVER (PARTITION by a ORDER BY b,c) lead_d_2_default,
+            LAG(d, 5) OVER (PARTITION by a ORDER BY b,c) lag_d_5,
+            LAG(d, 2, d_default) OVER (PARTITION by a ORDER BY b,c) lag_d_2_default
+        FROM window_agg_table
+        ''')
 
 
 # lead and lag don't currently work for string columns, so redo the tests, but just for strings
