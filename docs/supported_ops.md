@@ -3463,7 +3463,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="4">Concat</td>
 <td rowSpan="4">`concat`</td>
-<td rowSpan="4">String concatenate NO separator</td>
+<td rowSpan="4">List/String concatenate</td>
 <td rowSpan="4">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
@@ -3481,7 +3481,7 @@ Accelerator support is described below.
 <td> </td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -3502,7 +3502,7 @@ Accelerator support is described below.
 <td> </td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
