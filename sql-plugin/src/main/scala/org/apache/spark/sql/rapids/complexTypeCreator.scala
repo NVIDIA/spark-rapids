@@ -94,10 +94,11 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
   // And on the other hand, the calling for columnarEval(null) in the driver side is
   // dangerous for GpuExpressions, we'll have to pull it apart manually.
   private lazy val names = nameExprs.map {
-    case gl: GpuLiteral => gl.value
-    case GpuAlias(gl: GpuLiteral, _) => gl.value
     case ge: GpuExpression =>
-      throw new IllegalStateException(s"Unexpected GPU expression $ge")
+      GpuExpressionsUtils.extractGpuLit(ge) match {
+        case Some(gpuLiteral) => gpuLiteral.value
+        case None => throw new IllegalStateException(s"Unexpected GPU expression $ge")
+      }
     case e => e.eval(EmptyRow)
   }
 
