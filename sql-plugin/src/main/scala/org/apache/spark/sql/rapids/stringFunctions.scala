@@ -312,16 +312,13 @@ case class GpuConcatWs(children: Seq[Expression])
     StringType +: Seq.fill(children.size - 1)(arrayOrStr)
   }
 
-  private def arrayColumnConcatColSep(cv: ColumnView, separator: Any): ColumnVector = {
-    separator match {
-      case s: GpuScalar => {
-        withResource(Scalar.fromString("")) { emptyStrScalar =>
-          cv.stringConcatenateListElements(s.getBase, emptyStrScalar, false, false)
-        }
+  private def arrayColumnConcatColSep(cv: ColumnView, sepCol: GpuColumnVector, sepScalar: GpuScalar): ColumnVector = {
+    if (sepScalar != null) {
+      withResource(Scalar.fromString("")) { emptyStrScalar =>
+        cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar, false, false)
       }
-      case sep_vec: GpuColumnVector => {
-        cv.stringConcatenateListElements(sep_vec.getBase)
-      }
+    } else {
+      cv.stringConcatenateListElements(sepCol.getBase)
     }
   }
 
@@ -343,6 +340,20 @@ case class GpuConcatWs(children: Seq[Expression])
       }
 
       val separator = childEvals.head
+      separator match {
+        case s: GpuScalar => {
+          sepScalar = s
+          logWarning("separator is: " + s.getBase.getJavaString() + " valid: " + s.getBase.isValid())
+          if (s.getBase.isValid() == false) {
+            // cudf doesn't handle null scalar in stringConcat api
+            // we are just going to return column of all nulls anyway so just make it ourselves
+            return GpuColumnVector.from(s, numRows, dataType)
+          }
+        }
+        case sepVec: GpuColumnVector => {
+          sepCol = sepVec
+        }
+      }
       childEvals.tail.foreach {
         case vector: GpuColumnVector => {
           vector.dataType() match {
@@ -351,9 +362,10 @@ case class GpuConcatWs(children: Seq[Expression])
               // TODO - taking head of columns ok because sep always first
               logWarning("gpu vector array")
               withResource(vector) { vec =>
-                columns += arrayColumnConcatColSep(vec.getBase, separator)
+                columns += arrayColumnConcatColSep(vec.getBase, sepCol, sepScalar)
               }
             case _ =>
+              logWarning("pgu vector just get base")
               columns += vector.getBase
           }
         }
@@ -368,7 +380,7 @@ case class GpuConcatWs(children: Seq[Expression])
               // we have to first concatenate any array types
               logWarning("gpu vector array")
               withResource(GpuColumnVector.from(s, numRows, s.dataType)) { vec =>
-                columns += arrayColumnConcatColSep(vec.getBase, separator)
+                columns += arrayColumnConcatColSep(vec.getBase, sepCol, sepScalar)
               }
             case _ =>
               columns += GpuColumnVector.from(s, numRows, s.dataType).getBase
@@ -379,6 +391,13 @@ case class GpuConcatWs(children: Seq[Expression])
             s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
       }
       val value_columns = columns
+      if (value_columns.size == 1) {
+        // just return that column
+        logWarning("column size 1 returning same col")
+        value_columns.head.incRefCount()
+        val ret = GpuColumnVector.from(value_columns.head, dataType)
+        return ret
+      }
 
       separator match {
         case s: GpuScalar => {
