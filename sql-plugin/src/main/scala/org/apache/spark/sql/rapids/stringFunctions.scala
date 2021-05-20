@@ -269,36 +269,6 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
     GpuColumnVector.from(column.getBase.rstrip(t), dataType)
 }
 
-case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
-  override def dataType: DataType = StringType
-  override def nullable: Boolean = children.exists(_.nullable)
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var nullStrScalar: Scalar = null
-    var emptyStrScalar: Scalar = null
-    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector](children.size)
-    try {
-      children.foreach { childExpr =>
-        withResource(GpuExpressionsUtils.columnarEvalToColumn(childExpr, batch)) {
-          gcv => columns += gcv.getBase.incRefCount()
-        }
-      }
-      emptyStrScalar = Scalar.fromString("")
-      nullStrScalar = Scalar.fromNull(DType.STRING)
-      GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
-        columns.toArray[ColumnView]), dataType)
-    } finally {
-      columns.safeClose()
-      if (emptyStrScalar != null) {
-        emptyStrScalar.close()
-      }
-      if (nullStrScalar != null) {
-        nullStrScalar.close()
-      }
-    }
-  }
-}
-
 case class GpuConcatWs(children: Seq[Expression])
     extends GpuExpression with ImplicitCastInputTypes with Logging {
   override def dataType: DataType = StringType

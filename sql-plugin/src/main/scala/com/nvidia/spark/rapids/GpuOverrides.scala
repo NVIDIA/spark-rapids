@@ -840,11 +840,13 @@ object GpuOverrides {
         "\"window\") of rows",
       ExprChecks.windowOnly(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
+            TypeSig.ARRAY),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
           TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
+              TypeSig.ARRAY),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -897,26 +899,27 @@ object GpuOverrides {
       }),
     expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-              TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
+              TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
+            TypeSig.all))),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }),
     expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-              TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN + TypeSig.DATE +
+            TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(), TypeSig.all))),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -1698,6 +1701,17 @@ object GpuOverrides {
           if (anyLit) {
             willNotWorkOnGpu("literal predicates are not supported")
           }
+          if (dataType.isInstanceOf[ArrayType]) {
+            // We don't support literal arrays yet
+            if (a.elseValue.map(isLit).getOrElse(false)) {
+              willNotWorkOnGpu("literal arrays are not currently supported")
+            } else {
+              val anyLit = a.branches.exists { case (_, value) => isLit(value) }
+              if (anyLit) {
+                willNotWorkOnGpu("literal arrays are not currently supported")
+              }
+            }
+          }
         }
         override def convertToGpu(): GpuExpression = {
           val branches = childExprs.grouped(2).flatMap {
@@ -2360,13 +2374,25 @@ object GpuOverrides {
       " Returns an array with the given elements",
       ExprChecks.projectNotLambda(
         TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
-            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP),
+            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("arg",
           TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
-              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP,
+              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP +
+              TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.NULL + TypeSig.STRING +
+                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
           TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
+
+        override def tagExprForGpu(): Unit = {
+          wrapped.dataType match {
+            case ArrayType(ArrayType(ArrayType(_, _), _), _) =>
+              willNotWorkOnGpu("Only support to create array or array of array, Found: " +
+                s"${wrapped.dataType}")
+            case _ =>
+          }
+        }
+
         override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
@@ -2474,10 +2500,13 @@ object GpuOverrides {
           GpuEndsWith(lhs, rhs)
       }),
     expr[Concat](
-      "String concatenate NO separator",
-      ExprChecks.projectNotLambda(TypeSig.STRING,
+      "List/String concatenate",
+      ExprChecks.projectNotLambda((TypeSig.STRING + TypeSig.ARRAY).nested(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
         (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all),
-        repeatingParamCheck = Some(RepeatingParamCheck("input", TypeSig.STRING,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          (TypeSig.STRING + TypeSig.ARRAY).nested(
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
           (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
@@ -2958,7 +2987,8 @@ object GpuOverrides {
       ExecChecks(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL +
           TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
+            + TypeSig.ARRAY),
         TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
