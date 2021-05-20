@@ -391,21 +391,22 @@ case class GpuConcatWs(children: Seq[Expression])
             s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
       }
       val value_columns = columns
-      if (value_columns.size == 1) {
-        // just return that column
-        logWarning("column size 1 returning same col")
-        value_columns.head.incRefCount()
-        val ret = GpuColumnVector.from(value_columns.head, dataType)
-        return ret
-      }
-
       separator match {
         case s: GpuScalar => {
           sepScalar = s
-          logWarning("separator is scalar type:" + s.dataType)
-          withResource(Scalar.fromString("")) { emptyStrScalar =>
-            GpuColumnVector.from(ColumnVector.stringConcatenate(s.getBase, emptyStrScalar,
-              value_columns.toArray[ColumnView], false), dataType)
+          if (value_columns.size > 1) {
+            logWarning("separator is scalar type:" + s.dataType)
+            withResource(Scalar.fromString("")) { emptyStrScalar =>
+              GpuColumnVector.from(ColumnVector.stringConcatenate(s.getBase, emptyStrScalar,
+                value_columns.toArray[ColumnView], false), dataType)
+            }
+          } else {
+            // cudf concatenate with scalar has an issue with single column where it doesn't replace
+            // the nulls with empty strings, probably could use find and replace instead
+            withResource(GpuColumnVector.from(sepScalar, numRows, s.dataType)) { sep =>
+              GpuColumnVector.from(ColumnVector.stringConcatenate(value_columns.toArray[ColumnView],
+                sep.getBase), dataType)
+            }
           }
         }
         case sepVec: GpuColumnVector => {
