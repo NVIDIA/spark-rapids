@@ -327,7 +327,8 @@ case class GpuConcatWs(children: Seq[Expression])
               // we have to first concatenate any array types
               withResource(vector.getBase) { cv =>
                 if (sepScalar != null) {
-                  columns += cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar, false, false)
+                  columns += cv.stringConcatenateListElements(sepScalar.getBase,
+                    emptyStrScalar, false, false)
                 } else {
                   columns += cv.stringConcatenateListElements(sepCol.getBase)
                 }
@@ -345,7 +346,8 @@ case class GpuConcatWs(children: Seq[Expression])
               // we have to first concatenate any array types
               withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
                 if (sepScalar != null) {
-                  columns += cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar, false, false)
+                  columns += cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar,
+                    false, false)
                 } else {
                   columns += cv.stringConcatenateListElements(sepCol.getBase)
                 }
@@ -374,8 +376,8 @@ case class GpuConcatWs(children: Seq[Expression])
         }
         case sepVec: GpuColumnVector => {
           logWarning("separator is column vector")
-          // GpuOverrides doesn't allow only specifying a separator, you have to specify at least one
-          // value column
+          // GpuOverrides doesn't allow only specifying a separator, you have to specify at
+          // least one value column
           GpuColumnVector.from(ColumnVector.stringConcatenate(columns.toArray[ColumnView],
             sepVec.getBase), dataType)
         }
