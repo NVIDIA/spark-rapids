@@ -400,14 +400,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   class RequestActiveMessageRegistration(override val activeMessageId: Int,
                                          requestCbGen: () => UCXAmCallback)
       extends ActiveMessageRegistration {
-    private var requestCallbackGen: () => UCXAmCallback = null
 
-    def getCallback(header: Long): UCXAmCallback = {
-      require (requestCallbackGen != null,
-        s"Failed to get a request Active Message callback for " +
-          s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
-      requestCallbackGen()
-    }
+    def getCallback(header: Long): UCXAmCallback = requestCbGen()
   }
 
   class ResponseActiveMessageRegistration(override val activeMessageId: Int)
