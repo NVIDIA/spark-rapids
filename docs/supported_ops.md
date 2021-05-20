@@ -880,9 +880,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 </table>
@@ -3999,7 +3999,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -4020,7 +4020,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -5367,6 +5367,164 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="6">ElementAt</td>
+<td rowSpan="6">`element_at`</td>
+<td rowSpan="6">Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map.</td>
+<td rowSpan="6">None</td>
+<td rowSpan="3">project</td>
+<td>array/map</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (If it's map, only string is supported.; missing nested BINARY, CALENDAR, UDT)</em></td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>index/key</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS (ints are only supported as array indexes, not as maps keys; Literal value only)</em></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS (strings are only supported as map keys, not array indexes; Literal value only)</em></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td rowSpan="3">lambda</td>
+<td>array/map</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>index/key</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="6">EndsWith</td>
 <td rowSpan="6"> </td>
 <td rowSpan="6">Ends with</td>
@@ -5497,32 +5655,6 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="6">EqualNullSafe</td>
@@ -5789,6 +5921,32 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="4">Exp</td>
 <td rowSpan="4">`exp`</td>
 <td rowSpan="4">Euler's number e raised to a power</td>
@@ -5877,32 +6035,6 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="2">Explode</td>
@@ -8560,7 +8692,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested STRING, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -8602,7 +8734,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested STRING, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -8623,7 +8755,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested STRING, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -8765,7 +8897,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested STRING, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -8807,7 +8939,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested STRING, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -8828,7 +8960,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested STRING, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -9456,7 +9588,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td>S</td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -17246,7 +17378,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -17288,7 +17420,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -19623,7 +19755,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (missing nested BOOLEAN, BYTE, SHORT, LONG, DATE, TIMESTAMP, STRING, DECIMAL, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20027,7 +20159,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (missing nested BOOLEAN, BYTE, SHORT, LONG, DATE, TIMESTAMP, STRING, DECIMAL, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>

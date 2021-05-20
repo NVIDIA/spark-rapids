@@ -18,8 +18,8 @@ package org.apache.spark.sql.rapids
 
 import java.io.Serializable
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, RoundMode, Scalar, UnaryOp}
-import com.nvidia.spark.rapids.{Arm, CudfBinaryExpression, CudfUnaryExpression, DecimalUtil, FloatUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuUnaryExpression}
+import ai.rapids.cudf._
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
 import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, ImplicitCastInputTypes}
@@ -265,11 +265,11 @@ object GpuLogarithm extends Arm {
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned Scalar.
    */
-  def fixUpLhs(input: Scalar): Scalar = {
-    if (input.isValid && input.getDouble <= 0) {
-      Scalar.fromNull(DType.FLOAT64)
+  def fixUpLhs(input: GpuScalar): GpuScalar = {
+    if (input.isValid && input.getValue.asInstanceOf[Double] <= 0) {
+      GpuScalar(null, DoubleType)
     } else {
-      input.incRefCount()
+      input.incRefCount
     }
   }
 }
@@ -286,13 +286,13 @@ case class GpuLogarithm(left: Expression, right: Expression)
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
     withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
       super.doColumnar(fixedLhs, rhs)
     }
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
       super.doColumnar(GpuColumnVector.from(fixedLhs, left.dataType), rhs)
     }
@@ -387,17 +387,21 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
   // avoid unnecessary `child` evaluation in both codegen and non-codegen eval
   // by checking if scaleV == null as well.
   private lazy val scaleV: Any = scale match {
-    case _: GpuExpression => scale.columnarEval(null)
+    case _: GpuExpression =>
+      withResource(scale.columnarEval(null).asInstanceOf[GpuScalar]) { s =>
+        s.getValue
+      }
     case _ => scale.eval(EmptyRow)
   }
   private lazy val _scale: Int = scaleV.asInstanceOf[Int]
 
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
 
-  override def doColumnar(value: GpuColumnVector, scale: Scalar): ColumnVector = {
+  override def doColumnar(value: GpuColumnVector, scale: GpuScalar): ColumnVector = {
     val scaleVal = dataType match {
       case DecimalType.Fixed(_, s) => s
-      case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => scale.getInt
+      case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType =>
+        scale.getValue.asInstanceOf[Int]
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }
     val lhsValue = value.getBase
@@ -409,12 +413,12 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
       "the round operator to work")
   }
 
-  override def doColumnar(value: Scalar, scale: GpuColumnVector): ColumnVector = {
+  override def doColumnar(value: GpuScalar, scale: GpuColumnVector): ColumnVector = {
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
       "the round operator to work")
   }
 
-  override def doColumnar(numRows: Int, value: Scalar, scale: Scalar): ColumnVector = {
+  override def doColumnar(numRows: Int, value: GpuScalar, scale: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(value, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, scale)
     }

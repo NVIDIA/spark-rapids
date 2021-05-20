@@ -60,6 +60,33 @@ The python tests run with pytest and the script honors pytest parameters. Some h
 - `-r fExXs` Show extra test summary info as specified by chars: (f)ailed, (E)rror, (x)failed, (X)passed, (s)kipped
 - For other options and more details please visit [pytest-usage](https://docs.pytest.org/en/stable/usage.html) or type `pytest --help`
 
+### Spark execution mode
+
+Spark Applications (pytest in this case) can be run against different cluster backends
+specified by the configuration `spark.master`. It can be provided by various means such
+as via `--master` argument of `spark-submit`.
+
+By default, the [local mode](
+https://github.com/apache/spark/blob/v3.1.1/core/src/main/scala/org/apache/spark/deploy/SparkSubmitArguments.scala#L214
+) is used to run the Driver and Executors in the same JVM. Albeit convenient, this mode sometimes
+masks problems occurring in fully distributed production deployments. These are often bugs related
+to object serialization and hash code implementation.
+
+Thus, Apache Spark provides another lightweight way to test applications in the pseudo-distributed
+[local-cluster[numWorkers,coresPerWorker,memoryPerWorker]](
+https://github.com/apache/spark/blob/v3.1.1/core/src/main/scala/org/apache/spark/SparkContext.scala#L2993
+) mode where executors are run in separate JVMs on your local machine.
+
+The following environment variables control the behavior in the `run_pyspark_from_build.sh` script
+
+- `NUM_LOCAL_EXECS` if set to a positive integer value activates the `local-cluster` mode
+  and sets the number of workers to `NUM_LOCAL_EXECS`
+- `CORES_PER_EXEC` determines the number of cores per executor if `local-cluster` is activated
+- `MB_PER_EXEC` determines the amount of memory per executor in megabyte if `local-cluster`
+  is activated
+
+### Pytest execution mode
+
 By default the tests try to use the python packages `pytest-xdist` and `findspark` to oversubscribe
 your GPU and run the tests in Spark local mode. This can speed up these tests significantly as all
 of the tests that run by default process relatively small amounts of data. Be careful because if
@@ -131,7 +158,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.6.0-SNAPSHOT.jar,cudf-0.20-SNAPSHOT-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.6.0-SNAPSHOT.jar,cudf-21.06-SNAPSHOT-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -205,7 +232,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.6.0-SNAPSHOT.jar,cudf-0.20-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-0.6.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-0.6.0-SNAPSHOT.jar,cudf-21.06-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-0.6.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests

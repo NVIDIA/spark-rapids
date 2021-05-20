@@ -40,7 +40,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.{GpuElementAt, GpuFileSourceScanExec, GpuGetArrayItem, GpuGetArrayItemMeta, GpuGetMapValue, GpuGetMapValueMeta, GpuStringReplace, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark311._
 import org.apache.spark.sql.types._
@@ -201,13 +201,14 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
+            TypeSig.all))),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -215,16 +216,84 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
+            TypeSig.all))),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+        }
+      }),
+  GpuOverrides.expr[GetArrayItem](
+    "Gets the field at `ordinal` in the Array",
+    ExprChecks.binaryProjectNotLambda(
+      (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+        TypeSig.DECIMAL + TypeSig.MAP).nested(),
+      TypeSig.all,
+      ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+    (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
+      override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
+        GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
+    }),
+    GpuOverrides.expr[GetMapValue](
+      "Gets Value from a Map based on a key",
+      ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
+        ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
+        ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
+      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r){
+        override def convertToGpu(map: Expression, key: Expression): GpuExpression =
+          GpuGetMapValue(map, key, SQLConf.get.ansiEnabled)
+      }),
+    GpuOverrides.expr[ElementAt](
+      "Returns element of array at given(1-based) index in value if column is array. " +
+        "Returns value for the given key in value if column is map.",
+      ExprChecks.binaryProjectNotLambda(
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+          TypeSig.DECIMAL + TypeSig.MAP).nested(), TypeSig.all,
+        ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP) +
+          TypeSig.MAP.nested(TypeSig.STRING)
+            .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
+          TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
+        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+          .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
+            "not as maps keys")
+          .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
+            "not array indexes"),
+          TypeSig.all)),
+      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // To distinguish the supported nested type between Array and Map
+          val checks = in.left.dataType match {
+            case _: MapType =>
+              // Match exactly with the checks for GetMapValue
+              ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
+                ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
+                ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all))
+            case _: ArrayType =>
+              // Match exactly with the checks for GetArrayItem
+              ExprChecks.binaryProjectNotLambda(
+                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+                  TypeSig.DECIMAL + TypeSig.MAP).nested(),
+                TypeSig.all,
+                ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
+                  TypeSig.ARRAY.nested(TypeSig.all)),
+                ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
+            case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
+          }
+          checks.tag(this)
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
