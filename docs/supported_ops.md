@@ -19755,7 +19755,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (missing nested BOOLEAN, BYTE, SHORT, LONG, DATE, TIMESTAMP, STRING, DECIMAL, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20159,7 +20159,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS (missing nested BOOLEAN, BYTE, SHORT, LONG, DATE, TIMESTAMP, STRING, DECIMAL, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
