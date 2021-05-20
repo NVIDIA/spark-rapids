@@ -28,7 +28,25 @@ import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 
-/** A buffer store using GPUDirect Storage (GDS). */
+/**
+ * A buffer store using GPUDirect Storage (GDS).
+ *
+ * GDS is more efficient when IO is aligned.
+ *
+ * An IO is unaligned if one of the following conditions is true:
+ * - The file_offset that was issued in cuFileRead/cuFileWrite is not 4K aligned.
+ * - The size that was issued in cuFileRead/cuFileWrite is not 4K aligned.
+ * - The devPtr_base that was issued in cuFileRead/cuFileWrite is not 4K aligned.
+ * - The devPtr_offset that was issued in cuFileRead/cuFileWrite is not 4K aligned.
+ *
+ * To avoid unaligned IO, when GDS spilling is enabled, the RMM `aligned_resource_adapter` is used
+ * so that large buffers above certain size threshold are allocated with 4K aligned base pointer
+ * and size.
+ *
+ * When reading and writing these large buffers through GDS, the size is aligned up to the next 4K
+ * boundary. Although the aligned size appears to be out of bound, the extra space needed is held
+ * in reserve by the RMM `aligned_resource_adapter`.
+ */
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     batchWriteBufferSize: Long,
