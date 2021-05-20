@@ -155,7 +155,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Ceil"></a>spark.rapids.sql.expression.Ceil|`ceiling`, `ceil`|Ceiling of a number|true|None|
 <a name="sql.expression.CheckOverflow"></a>spark.rapids.sql.expression.CheckOverflow| |CheckOverflow after arithmetic operations between DecimalType data|true|None|
 <a name="sql.expression.Coalesce"></a>spark.rapids.sql.expression.Coalesce|`coalesce`|Returns the first non-null argument if exists. Otherwise, null|true|None|
-<a name="sql.expression.Concat"></a>spark.rapids.sql.expression.Concat|`concat`|String concatenate NO separator|true|None|
+<a name="sql.expression.Concat"></a>spark.rapids.sql.expression.Concat|`concat`|List/String concatenate|true|None|
 <a name="sql.expression.Contains"></a>spark.rapids.sql.expression.Contains| |Contains|true|None|
 <a name="sql.expression.Cos"></a>spark.rapids.sql.expression.Cos|`cos`|Cosine|true|None|
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|`cosh`|Hyperbolic cosine|true|None|

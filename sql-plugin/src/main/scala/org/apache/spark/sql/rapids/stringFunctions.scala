@@ -16,15 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
+import ai.rapids.cudf.{ColumnVector, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
@@ -265,36 +261,6 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
 
   override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector =
     GpuColumnVector.from(column.getBase.rstrip(t), dataType)
-}
-
-case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
-  override def dataType: DataType = StringType
-  override def nullable: Boolean = children.exists(_.nullable)
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    var nullStrScalar: Scalar = null
-    var emptyStrScalar: Scalar = null
-    val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector](children.size)
-    try {
-      children.foreach { childExpr =>
-        withResource(GpuExpressionsUtils.columnarEvalToColumn(childExpr, batch)) {
-          gcv => columns += gcv.getBase.incRefCount()
-        }
-      }
-      emptyStrScalar = Scalar.fromString("")
-      nullStrScalar = Scalar.fromNull(DType.STRING)
-      GpuColumnVector.from(ColumnVector.stringConcatenate(emptyStrScalar, nullStrScalar,
-        columns.toArray[ColumnView]), dataType)
-    } finally {
-      columns.safeClose()
-      if (emptyStrScalar != null) {
-        emptyStrScalar.close()
-      }
-      if (nullStrScalar != null) {
-        nullStrScalar.close()
-      }
-    }
-  }
 }
 
 case class GpuContains(left: Expression, right: Expression) extends GpuBinaryExpression
