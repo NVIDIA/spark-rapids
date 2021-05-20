@@ -397,7 +397,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     def getCallback(header: Long): UCXAmCallback
   }
 
-  class RequestActiveMessageRegistration(override val activeMessageId: Int)
+  class RequestActiveMessageRegistration(override val activeMessageId: Int,
+                                         requestCbGen: () => UCXAmCallback)
       extends ActiveMessageRegistration {
     private var requestCallbackGen: () => UCXAmCallback = null
 
@@ -406,12 +407,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         s"Failed to get a request Active Message callback for " +
           s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
       requestCallbackGen()
-    }
-
-    def setRequestActiveMessageHandler(requestCbGen: () => UCXAmCallback): Unit = {
-      require (requestCallbackGen == null,
-        s"Attempted to reset a request Active Message callback.")
-      requestCallbackGen = requestCbGen
     }
   }
 
@@ -473,8 +468,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   def registerRequestHandler(activeMessageId: Int,
       requestCallbackGen: () => UCXAmCallback): Unit = {
     logDebug(s"Register Active Message $TransportUtils.request handler")
-    val reg = new RequestActiveMessageRegistration(activeMessageId)
-    reg.setRequestActiveMessageHandler(requestCallbackGen)
+    val reg = new RequestActiveMessageRegistration(activeMessageId, requestCallbackGen)
     val oldReg = amRegistrations.putIfAbsent(activeMessageId, reg)
     require(oldReg == null,
       s"Tried to re-register a request handler for $activeMessageId")
