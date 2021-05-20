@@ -70,7 +70,8 @@ class RapidsGdsStore(
 
     override def materializeMemoryBuffer: MemoryBuffer = {
       closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-        CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
+        CuFile.readFileToDeviceMemory(
+          buffer.getAddress, RapidsGdsStore.alignBufferSize(buffer), path, fileOffset)
         logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
         buffer
       }
@@ -83,7 +84,8 @@ class RapidsGdsStore(
           val dm = dmOriginal.slice(dstOffset, length)
           // TODO: switch to async API when it's released, using the passed in CUDA stream.
           stream.sync()
-          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+          CuFile.readFileToDeviceMemory(
+            dm.getAddress, RapidsGdsStore.alignBufferSize(dm), path, fileOffset + srcOffset)
           logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
         case _ => throw new IllegalStateException(
           s"GDS can only copy to device buffer, not ${dst.getClass}")
@@ -102,17 +104,18 @@ class RapidsGdsStore(
   }
 
   private def singleShotSpill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer)
-      : RapidsBufferBase = {
+  : RapidsBufferBase = {
     val id = other.id
     val path = id.getDiskPath(diskBlockManager)
+    val alignedSize = RapidsGdsStore.alignBufferSize(deviceBuffer)
     // When sharing files, append to the file; otherwise, write from the beginning.
     val fileOffset = if (id.canShareDiskPaths) {
       // only one writer at a time for now when using shared files
       path.synchronized {
-        CuFile.appendDeviceBufferToFile(path, deviceBuffer)
+        CuFile.appendDeviceMemoryToFile(path, deviceBuffer.getAddress, alignedSize)
       }
     } else {
-      CuFile.writeDeviceBufferToFile(path, 0, deviceBuffer)
+      CuFile.writeDeviceMemoryToFile(path, 0, deviceBuffer.getAddress, alignedSize)
       0
     }
     logDebug(s"Spilled to $path $fileOffset:${other.size} via GDS")
@@ -121,7 +124,6 @@ class RapidsGdsStore(
   }
 
   class BatchSpiller() {
-    private val blockSize = 4096
     private[this] val spilledBuffers = new ConcurrentHashMap[File, Set[RapidsBufferId]]
     private[this] val pendingBuffers = ArrayBuffer.empty[RapidsGdsBatchedBuffer]
     private[this] val batchWriteBuffer = CuFileBuffer.allocate(batchWriteBufferSize, true)
@@ -149,14 +151,10 @@ class RapidsGdsStore(
         addBuffer(currentFile, id)
         val gdsBuffer = new RapidsGdsBatchedBuffer(id, currentFile, currentOffset,
           other.size, other.meta, other.getSpillPriority, other.spillCallback)
-        currentOffset += alignUp(deviceBuffer.getLength)
+        currentOffset += RapidsGdsStore.alignUp(deviceBuffer.getLength)
         pendingBuffers += gdsBuffer
         gdsBuffer
       }
-
-    private def alignUp(length: Long): Long = {
-      (length + blockSize - 1) & ~(blockSize - 1)
-    }
 
     private def copyToBuffer(
         buffer: MemoryBuffer, offset: Long, size: Long, stream: Cuda.Stream): Unit = {
@@ -208,7 +206,8 @@ class RapidsGdsStore(
             Cuda.DEFAULT_STREAM.sync()
             logDebug(s"Created device buffer $size from batch write buffer")
           } else {
-            CuFile.readFileToDeviceBuffer(buffer, path, fileOffset)
+            CuFile.readFileToDeviceMemory(
+              buffer.getAddress, RapidsGdsStore.alignBufferSize(buffer), path, fileOffset)
             logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
           }
           buffer
@@ -227,7 +226,8 @@ class RapidsGdsStore(
             } else {
               // TODO: switch to async API when it's released, using the passed in CUDA stream.
               stream.sync()
-              CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+              CuFile.readFileToDeviceMemory(
+                dm.getAddress, RapidsGdsStore.alignBufferSize(dm), path, fileOffset + srcOffset)
               logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
             }
           case _ => throw new IllegalStateException(
@@ -250,6 +250,23 @@ class RapidsGdsStore(
           }
         }
       }
+    }
+  }
+}
+
+object RapidsGdsStore {
+  val AllocationAlignment = 4096L
+  val AlignmentThreshold = 65536L
+
+  def alignUp(length: Long): Long = {
+    (length + AllocationAlignment - 1) & ~(AllocationAlignment - 1)
+  }
+
+  def alignBufferSize(buffer: DeviceMemoryBuffer): Long = {
+    if (buffer.getLength < AlignmentThreshold) {
+      buffer.getLength
+    } else {
+      alignUp(buffer.getLength)
     }
   }
 }
