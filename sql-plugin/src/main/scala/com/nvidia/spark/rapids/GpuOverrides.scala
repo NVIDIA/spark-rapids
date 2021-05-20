@@ -2490,8 +2490,17 @@ object GpuOverrides {
           (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING),
           (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING)))),
       (a, conf, p, r) => new ExprMeta[ConcatWs](a, conf, p, r) {
-        override final def convertToGpu(): GpuExpression =
+        override def tagExprForGpu(): Unit = {
+          if (a.children.size <= 1) {
+            // If only a separator specified and its a column Spark returns empty 
+            // string for all entries unless they are null, then it returns null.
+            // This seems like edge case so instead of handling on GPU just fallback.
+            willNotWorkOnGpu("Only specifying separator column not supported on GPU")
+          }
+        }
+        override final def convertToGpu(): GpuExpression = {
           convertToGpu(childExprs.map(_.convertToGpu()))
+        }
         def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcatWs(child)
       }),
     expr[Murmur3Hash] (
