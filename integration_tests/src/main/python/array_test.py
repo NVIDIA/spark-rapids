@@ -15,9 +15,10 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
-from conftest import is_dataproc_runtime
 from data_gen import *
+from functools import reduce
 from spark_session import is_before_spark_311
+from marks import allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
 
@@ -163,3 +164,54 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
         spark, data_gen).select(element_at(col('a'), 100)),
                                conf={'spark.sql.ansi.enabled':True,
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+
+@pytest.mark.parametrize('child_gen', [
+    float_gen,
+    double_gen,
+    int_gen
+], ids=idfn)
+@pytest.mark.parametrize('child_to_type', [
+    FloatType(),
+    DoubleType(),
+    IntegerType(),
+], ids=idfn)
+@pytest.mark.parametrize('depth', [1, 2, 3], ids=idfn)
+def test_array_cast_recursive(child_gen, child_to_type, depth):
+    def cast_func(spark):
+        depth_rng = range(0, depth)
+        nested_gen = reduce(lambda dg, i: ArrayGen(dg, max_length=int(max(1, 16 / (2 ** i)))),
+            depth_rng, child_gen)
+        nested_type = reduce(lambda t, _: ArrayType(t), depth_rng, child_to_type)
+        df = two_col_df(spark, int_gen, nested_gen)
+        res = df.select(df.b.cast(nested_type))
+        return res
+    assert_gpu_and_cpu_are_equal_collect(cast_func)
+
+
+@allow_non_gpu('ProjectExec', 'Alias', 'Cast')
+def test_array_cast_fallback():
+    def cast_float_to_double(spark):
+        df = two_col_df(spark, int_gen, ArrayGen(int_gen))
+        res = df.select(df.b.cast(ArrayType(StringType())))
+        return res
+    assert_gpu_and_cpu_are_equal_collect(cast_float_to_double)
+
+
+@pytest.mark.parametrize('child_gen', [
+    byte_gen,
+    string_gen,
+    decimal_gen_default,
+], ids=idfn)
+@pytest.mark.parametrize('child_to_type', [
+    FloatType(),
+    DoubleType(),
+    IntegerType(),
+], ids=idfn)
+@allow_non_gpu('ProjectExec', 'Alias', 'Cast')
+def test_array_cast_bad_from_good_to_fallback(child_gen, child_to_type):
+    def cast_array(spark):
+        df = two_col_df(spark, int_gen, ArrayGen(child_gen))
+        res = df.select(df.b.cast(ArrayType(child_to_type)))
+        return res
+    assert_gpu_and_cpu_are_equal_collect(cast_array)
