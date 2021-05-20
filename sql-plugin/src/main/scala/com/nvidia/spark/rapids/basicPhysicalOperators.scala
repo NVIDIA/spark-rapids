@@ -35,8 +35,8 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuProjectExec extends Arm {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
-      totalTime: GpuMetric): ColumnarBatch = {
-    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
+      gpuOpTime: GpuMetric): ColumnarBatch = {
+    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, gpuOpTime)
     try {
       project(cb, boundExprs)
     } finally {
@@ -93,6 +93,13 @@ case class GpuProjectExec(
    child: SparkPlan
  ) extends UnaryExecNode with GpuExec {
 
+  // we do not record totalTime for this operator
+  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME)
+  )
+
   override def output: Seq[Attribute] = {
     projectList.collect { case ne: NamedExpression => ne.toAttribute }
   }
@@ -107,13 +114,13 @@ case class GpuProjectExec(
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val rdd = child.executeColumnar()
     rdd.map { cb =>
       numOutputBatches += 1
       numOutputRows += cb.numRows()
-      GpuProjectExec.projectAndClose(cb, boundProjectList, totalTime)
+      GpuProjectExec.projectAndClose(cb, boundProjectList, gpuOpTime)
     }
   }
 
