@@ -263,10 +263,11 @@ object RapidsGdsStore {
   }
 
   def alignBufferSize(buffer: DeviceMemoryBuffer): Long = {
-    if (buffer.getLength < AlignmentThreshold) {
-      buffer.getLength
+    val length = buffer.getLength
+    if (length < AlignmentThreshold) {
+      length
     } else {
-      alignUp(buffer.getLength)
+      alignUp(length)
     }
   }
 }
