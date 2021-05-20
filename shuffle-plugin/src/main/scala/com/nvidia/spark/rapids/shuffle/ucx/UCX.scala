@@ -392,30 +392,46 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
    *   - Each response received at the response activeMessageId, will be demuxed using the header:
    *   responseActiveMessageId1 -> [callbackForHeader1, callbackForHeader2, ..., callbackForHeaderN]
    */
-  private class ActiveMessageRegistration(val activeMessageId: Int) {
+  trait ActiveMessageRegistration {
+    val activeMessageId: Int
+    def getCallback(header: Long): UCXAmCallback
+  }
+
+  class RequestActiveMessageRegistration(override val activeMessageId: Int)
+      extends ActiveMessageRegistration {
     private var requestCallbackGen: () => UCXAmCallback = null
-    private val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
 
     def getCallback(header: Long): UCXAmCallback = {
-      if (requestCallbackGen != null) {
-        requestCallbackGen()
-      } else {
-        val cb = responseCallbacks.get(header)
-        require (cb != null,
-          s"Failed to get an Active Message callback for " +
-            s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
-        cb
-      }
+      require (requestCallbackGen != null,
+        s"Failed to get a request Active Message callback for " +
+          s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
+      requestCallbackGen()
     }
 
     def setRequestActiveMessageHandler(requestCbGen: () => UCXAmCallback): Unit = {
-      require(responseCallbacks.isEmpty)
+      require (requestCallbackGen == null,
+        s"Attempted to reset a request Active Message callback.")
       requestCallbackGen = requestCbGen
+    }
+  }
+
+  class ResponseActiveMessageRegistration(override val activeMessageId: Int)
+      extends ActiveMessageRegistration {
+    private val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
+
+    def getCallback(header: Long): UCXAmCallback = {
+      val cb = responseCallbacks.remove(header) // 1 callback per header
+      require (cb != null,
+        s"Failed to get a response Active Message callback for " +
+          s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
+      cb
     }
 
     def addResponseActiveMessageHandler(header: Long, responseCallback: UCXAmCallback): Unit = {
-      require(requestCallbackGen == null)
-      responseCallbacks.put(header, responseCallback)
+      val prior = responseCallbacks.putIfAbsent(header, responseCallback)
+      require(prior == null,
+        s"Invalid Active Message re-registration of response handler for " +
+          s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
     }
   }
 
@@ -432,13 +448,19 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     logDebug(s"Register Active Message " +
       s"${UCX.formatAmIdAndHeader(activeMessageId, header)} response handler")
 
-    val reg = amRegistrations.computeIfAbsent(activeMessageId,
+    amRegistrations.computeIfAbsent(activeMessageId,
       _ => {
-        val reg = new ActiveMessageRegistration(activeMessageId)
+        val reg = new ResponseActiveMessageRegistration(activeMessageId)
         registerActiveMessage(reg)
         reg
-      })
-    reg.addResponseActiveMessageHandler(header, responseCallback)
+      }) match {
+      case reg: ResponseActiveMessageRegistration =>
+        reg.addResponseActiveMessageHandler(header, responseCallback)
+      case other =>
+        throw new IllegalStateException(
+          s"Attempted to add a response Active Message handler to existing registration $other " +
+            s"for ${UCX.formatAmIdAndHeader(activeMessageId, header)}")
+    }
   }
 
   /**
@@ -451,7 +473,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   def registerRequestHandler(activeMessageId: Int,
       requestCallbackGen: () => UCXAmCallback): Unit = {
     logDebug(s"Register Active Message $TransportUtils.request handler")
-    val reg = new ActiveMessageRegistration(activeMessageId)
+    val reg = new RequestActiveMessageRegistration(activeMessageId)
     reg.setRequestActiveMessageHandler(requestCallbackGen)
     val oldReg = amRegistrations.putIfAbsent(activeMessageId, reg)
     require(oldReg == null,
