@@ -414,11 +414,15 @@ object UCXConnection extends Logging {
   }
 
   def composeRequestHeader(executorId: Long, txId: Long): Long = {
+    require(executorId >= 0,
+      s"Attempted to pack negative $executorId")
+    require((executorId & lowerBitsMask) == executorId,
+        s"ExecutorId would alias: ${TransportUtils.toHex(executorId)}")
     composeTag(executorId << 32, txId)
   }
 
   def extractExecutorId(header: Long): Long = {
-    (header & upperBitsMask) >> 32
+    (header >> 32) & lowerBitsMask
   }
   //
   // Handshake message code. This, I expect, could be folded into the [[BlockManagerId]],
