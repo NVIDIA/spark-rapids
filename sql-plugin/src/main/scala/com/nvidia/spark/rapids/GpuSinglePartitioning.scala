@@ -44,7 +44,7 @@ case object GpuSinglePartitioning extends GpuExpression with GpuPartitioning {
           batch.numRows,
           Array(0),
           GpuColumnVector.extractColumns(batch))
-        sliced.zipWithIndex
+        sliced.zipWithIndex.filter(_._1 != null)
       }
     }
   }

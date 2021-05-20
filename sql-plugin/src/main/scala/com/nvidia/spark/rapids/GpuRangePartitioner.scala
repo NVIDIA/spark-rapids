@@ -210,7 +210,7 @@ case class GpuRangePartitioner(
         // slice will produce.
         val sliced = sliceInternalGpuOrCpu(cb.numRows, Array(0),
           GpuColumnVector.extractColumns(cb))
-        sliced.zipWithIndex
+        sliced.zipWithIndex.filter(_._1 != null)
       }
     }
   }
