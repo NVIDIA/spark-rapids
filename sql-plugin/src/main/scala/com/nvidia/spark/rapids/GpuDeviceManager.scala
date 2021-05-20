@@ -168,7 +168,7 @@ object GpuDeviceManager extends Logging {
     // Align workaround for https://github.com/rapidsai/rmm/issues/527
     def truncateToAlignment(x: Long): Long = x & ~511L
 
-    var initialAllocation = truncateToAlignment((conf.rmmAllocFraction * info.total).toLong)
+    var initialAllocation = truncateToAlignment((conf.rmmAllocFraction * info.free).toLong)
     if (initialAllocation > info.free) {
       logWarning(s"Initial RMM allocation (${toMB(initialAllocation)} MB) is " +
           s"larger than free memory (${toMB(info.free)} MB)")

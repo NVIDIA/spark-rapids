@@ -323,7 +323,7 @@ object RapidsConf {
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
-    .doc("The fraction of total GPU memory that should be initially allocated " +
+    .doc("The fraction of available GPU memory that should be initially allocated " +
       "for pooled memory. Extra memory will be allocated as needed, but it may " +
       "result in more fragmentation. This must be less than or equal to the maximum limit " +
       s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
