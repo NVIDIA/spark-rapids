@@ -89,9 +89,16 @@ class GpuKeyBatchingIterator private (
   override def next(): ColumnarBatch = {
     while (iter.hasNext) {
       withResource(iter.next()) { cb =>
+        if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
+          // No need to do a split on the final row and create extra work this is the last batch
+          withResource(GpuColumnVector.from(cb)) { table =>
+            return concatPending(Some(table))
+          }
+        }
+        // else not the last batch split so the final key group is not in this batch...
         val cutoff = getKeyCutoff(cb)
         if (cutoff <= 0) {
-          // Everything is for a single key...
+          // Everything is for a single key, so save it away and try the next batch...
           pending +=
               SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
                 SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
@@ -109,7 +116,7 @@ class GpuKeyBatchingIterator private (
         }
       }
     }
-    // At the end of the iterator...
+    // At the end of the iterator, nothing more to process
     concatPending()
   }
 }

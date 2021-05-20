@@ -108,6 +108,7 @@ case class GpuSortExec(
     val outputBatch = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val outOfCore = sortType == OutOfCoreSort
+    val singleBatch = sortType == FullSortSingleBatch
     child.executeColumnar().mapPartitions { cbIter =>
       if (outOfCore) {
         val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
@@ -120,8 +121,8 @@ case class GpuSortExec(
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
         iter
       } else {
-        GpuSortEachBatchIterator(cbIter, sorter, totalTime, sortTime, outputBatch, outputRows,
-          peakDevMemory)
+        GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
+          totalTime, sortTime, outputBatch, outputRows, peakDevMemory)
       }
     }
   }
@@ -130,6 +131,7 @@ case class GpuSortExec(
 case class GpuSortEachBatchIterator(
     iter: Iterator[ColumnarBatch],
     sorter: GpuSorter,
+    singleBatch: Boolean,
     totalTime: GpuMetric = NoopMetric,
     sortTime: GpuMetric = NoopMetric,
     outputBatches: GpuMetric = NoopMetric,
@@ -143,7 +145,11 @@ case class GpuSortEachBatchIterator(
           val ret = sorter.fullySortBatch(cb, sortTime, peakDevMemory)
           outputBatches += 1
           outputRows += ret.numRows()
-          ret
+          if (singleBatch) {
+            GpuColumnVector.tagAsFinalBatch(ret)
+          } else {
+            ret
+          }
         }
     }
   }
@@ -498,7 +504,12 @@ case class GpuOutOfCoreSortIterator(
         outputBatches += 1
         outputRows += ret.numRows()
         peakDevMemory.set(Math.max(peakMemory, peakDevMemory.value))
-        ret
+        // We already read in all of the data so calling hasNext is cheap
+        if (hasNext) {
+          ret
+        } else {
+          GpuColumnVector.tagAsFinalBatch(ret)
+        }
       }
     }
   }

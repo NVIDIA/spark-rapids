@@ -858,6 +858,29 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Tag a batch that it is known to be the final batch for a partition.
+   */
+  public static ColumnarBatch tagAsFinalBatch(ColumnarBatch batch) {
+    int numCols = batch.numCols();
+    for (int col = 0; col < numCols; col++) {
+      ((GpuColumnVectorBase)batch.column(col)).setFinalBatch(true);
+    }
+    return batch;
+  }
+
+  /**
+   * Check if a batch is tagged as being the final batch in a partition.
+   */
+  public static boolean isTaggedAsFinalBatch(ColumnarBatch batch) {
+    int numCols = batch.numCols();
+    boolean ret = numCols > 0;
+    for (int col = 0; col < numCols; col++) {
+      ret &= ((GpuColumnVectorBase)batch.column(col)).isKnownFinalBatch();
+    }
+    return ret;
+  }
+
+  /**
    * Increment the reference count for all columns in the input batch.
    */
   public static ColumnarBatch incRefCounts(ColumnarBatch batch) {
