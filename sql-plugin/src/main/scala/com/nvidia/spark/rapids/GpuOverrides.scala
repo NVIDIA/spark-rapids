@@ -1701,6 +1701,17 @@ object GpuOverrides {
           if (anyLit) {
             willNotWorkOnGpu("literal predicates are not supported")
           }
+          if (dataType.isInstanceOf[ArrayType]) {
+            // We don't support literal arrays yet
+            if (a.elseValue.map(isLit).getOrElse(false)) {
+              willNotWorkOnGpu("literal arrays are not currently supported")
+            } else {
+              val anyLit = a.branches.exists { case (_, value) => isLit(value) }
+              if (anyLit) {
+                willNotWorkOnGpu("literal arrays are not currently supported")
+              }
+            }
+          }
         }
         override def convertToGpu(): GpuExpression = {
           val branches = childExprs.grouped(2).flatMap {
