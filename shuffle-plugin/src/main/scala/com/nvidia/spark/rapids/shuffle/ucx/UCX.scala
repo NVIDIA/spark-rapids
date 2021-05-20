@@ -363,8 +363,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   }
 
   /**
-   * This represents the mapping between an Active Message Id and the callback that should
-   * be triggered when a message is received.
+   * This trait and next two implementations represent the mapping between an Active Message Id
+   * and the callback that should be triggered when a message is received.
    *
    * There are two types of Active Messages we care about: requests and responses.
    *
