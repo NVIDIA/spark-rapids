@@ -308,40 +308,50 @@ case class GpuConcatWs(children: Seq[Expression])
 
   /** The 1st child (separator) is str, and rest are either str or array of str. */
   override def inputTypes: Seq[AbstractDataType] = {
-    logWarning("getting input types")
     val arrayOrStr = TypeCollection(ArrayType(StringType), StringType)
-    val ret = StringType +: Seq.fill(children.size - 1)(arrayOrStr)
-    logWarning("done getting input types")
-    ret
+    StringType +: Seq.fill(children.size - 1)(arrayOrStr)
+  }
+
+  private def arrayColumnConcatColSep(cv: ColumnView, separator: Any): ColumnVector = {
+    separator match {
+      case s: GpuScalar => {
+        withResource(Scalar.fromString("")) { emptyStrScalar =>
+          cv.stringConcatenateListElements(s.getBase, emptyStrScalar, false, false)
+        }
+      }
+      case sep_vec: GpuColumnVector => {
+        cv.stringConcatenateListElements(sep_vec.getBase)
+      }
+    }
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     var nullStrScalar: Scalar = null
-    val rows = batch.numRows()
+    var sepScalar: GpuScalar = null
+    var sepCol: GpuColumnVector = null
+    val numRows = batch.numRows()
     val childEvals: ArrayBuffer[Any] = new ArrayBuffer[Any](children.length)
     val columns: ArrayBuffer[ColumnVector] = new ArrayBuffer[ColumnVector]()
     logWarning("in columnar eval")
 
     try {
       nullStrScalar = GpuScalar.from(null, StringType)
-      logWarning("in column eval before columnarEval " + children)
       // children.foreach(childEvals += _.columnarEval(batch))
       children.foreach { child => 
-        logWarning("on child: " + child)
+        logWarning("eval on child: " + child)
         childEvals += child.columnarEval(batch)
       }
-      childEvals.foreach {
+
+      val separator = childEvals.head
+      childEvals.tail.foreach {
         case vector: GpuColumnVector => {
-          logWarning("gpu column vector going to get datatype vec: " + vector)
           vector.dataType() match {
             case ArrayType(st: StringType, nullable) =>
               // we have to first concatenate any array types
               // TODO - taking head of columns ok because sep always first
               logWarning("gpu vector array")
               withResource(vector) { vec =>
-                withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
-                  columns += ColumnVector.stringConcatenateListElements(vec.getBase, columns.head)
-                }
+                columns += arrayColumnConcatColSep(vec.getBase, separator)
               }
             case _ =>
               columns += vector.getBase
@@ -349,44 +359,53 @@ case class GpuConcatWs(children: Seq[Expression])
         }
         case col if (col == null) => {
           logWarning("null col")
-          columns += GpuColumnVector.from(nullStrScalar, rows, StringType).getBase
+          columns += GpuColumnVector.from(nullStrScalar, numRows, StringType).getBase
         }
         case s: GpuScalar => {
           logWarning("GpuScalar data type: " + s.dataType)
           s.dataType match {
             case ArrayType(st: StringType, nullable) =>
               // we have to first concatenate any array types
-              // TODO - taking head of columns ok because sep always first
               logWarning("gpu vector array")
-              withResource(GpuColumnVector.from(s, rows, s.dataType)) { vec =>
-                withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
-                  columns += ColumnVector.stringConcatenateListElements(vec.getBase, columns.head)
-                }
+              withResource(GpuColumnVector.from(s, numRows, s.dataType)) { vec =>
+                columns += arrayColumnConcatColSep(vec.getBase, separator)
               }
             case _ =>
-              columns += GpuColumnVector.from(s, rows, s.dataType).getBase
+              columns += GpuColumnVector.from(s, numRows, s.dataType).getBase
           }
         }
         case other =>
           throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
             s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
       }
-      val sep_column = columns.head
-      val value_columns = columns.tail
-      /* if (value_columns.size == 0) {
-        logWarning("column values size is 0")
-        // TODO - fix when nulls in separator column
-        // if no columns then column of empty strings except when null values in separator colum
-        // then it needs to have null value
-        withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
-          GpuColumnVector.from(emptyStrScalar, rows, StringType)
+      val value_columns = columns
+
+      separator match {
+        case s: GpuScalar => {
+          sepScalar = s
+          logWarning("separator is scalar type:" + s.dataType)
+          withResource(Scalar.fromString("")) { emptyStrScalar =>
+            GpuColumnVector.from(ColumnVector.stringConcatenate(s.getBase, emptyStrScalar,
+              value_columns.toArray[ColumnView], false), dataType)
+          }
         }
-      } else { */
-        logWarning("calling stringConcateWs")
-        GpuColumnVector.from(ColumnVector.stringConcatenate(value_columns.toArray[ColumnView],
-          sep_column), dataType)
-      // }
+        case sepVec: GpuColumnVector => {
+          sepCol = sepVec 
+          logWarning("separator is column vector")
+          // GpuOverrides doesn't allow only specifying a separator, you have to specify at least one
+          // value column
+          GpuColumnVector.from(ColumnVector.stringConcatenate(value_columns.toArray[ColumnView],
+            sepVec.getBase), dataType)
+        }
+      }
+
     } finally {
+      if (sepScalar != null) {
+        sepScalar.close()
+      }
+      if (sepCol != null) {
+        sepCol.close()
+      }
       columns.safeClose()
       if (nullStrScalar != null) {
         nullStrScalar.close()
