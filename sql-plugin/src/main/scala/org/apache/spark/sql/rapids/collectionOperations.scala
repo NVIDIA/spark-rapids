@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
 import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -54,7 +55,7 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
     withResource(ArrayBuffer.empty[ColumnVector]) { buffer =>
       // build input buffer
       children.foreach {
-        buffer += GpuExpressionsUtils.columnarEvalToColumn(_, batch).getBase
+        buffer += columnarEvalToColumn(_, batch).getBase
       }
       // run string concatenate
       GpuColumnVector.from(
@@ -65,11 +66,8 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   private def listConcat(batch: ColumnarBatch): GpuColumnVector = {
     withResource(ArrayBuffer[ColumnVector]()) { buffer =>
       // build input buffer
-      children.foreach { child =>
-        child.columnarEval(batch) match {
-          case cv: GpuColumnVector => buffer += cv.getBase
-          case _ => throw new UnsupportedOperationException("Unsupported GpuScalar of List")
-        }
+      children.foreach {
+        buffer += columnarEvalToColumn(_, batch).getBase
       }
       // run list concatenate
       GpuColumnVector.from(ColumnVector.listConcatenateByRow(buffer: _*), dataType)
