@@ -89,6 +89,18 @@ object GpuExpressionsUtils extends Arm {
    */
   def columnarEvalToColumn(expr: Expression, batch: ColumnarBatch): GpuColumnVector =
     resolveColumnVector(expr.columnarEval(batch), batch.numRows, expr.dataType)
+
+  /**
+   * Extract the GpuLiteral
+   * @param exp the input expression to be extracted
+   * @return an optional GpuLiteral
+   */
+  @scala.annotation.tailrec
+  def extractGpuLit(exp: Expression): Option[GpuLiteral] = exp match {
+    case gl: GpuLiteral => Some(gl)
+    case ga: GpuAlias => extractGpuLit(ga.child)
+    case _ => None
+  }
 }
 
 /**
