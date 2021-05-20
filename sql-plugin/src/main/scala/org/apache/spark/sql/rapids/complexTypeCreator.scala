@@ -95,10 +95,8 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
   // dangerous for GpuExpressions, we'll have to pull it apart manually.
   private lazy val names = nameExprs.map {
     case ge: GpuExpression =>
-      GpuExpressionsUtils.extractGpuLit(ge) match {
-        case Some(gpuLiteral) => gpuLiteral.value
-        case None => throw new IllegalStateException(s"Unexpected GPU expression $ge")
-      }
+      GpuExpressionsUtils.extractGpuLit(ge).map(_.value)
+        .getOrElse(throw new IllegalStateException(s"Unexpected GPU expression $ge"))
     case e => e.eval(EmptyRow)
   }
 
