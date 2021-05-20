@@ -303,7 +303,7 @@ case class GpuConcatWs(children: Seq[Expression])
     extends GpuExpression with ImplicitCastInputTypes with Logging {
   override def dataType: DataType = StringType
   override def nullable: Boolean = children.head.nullable
-  // override def foldable: Boolean = children.forall(_.foldable)
+  override def foldable: Boolean = children.forall(_.foldable)
   logWarning("in gpu concat ws")
 
   /** The 1st child (separator) is str, and rest are either str or array of str. */
@@ -336,9 +336,10 @@ case class GpuConcatWs(children: Seq[Expression])
           if (s.getBase.isValid() == false) {
             // cudf doesn't handle null scalar in stringConcat api
             // we are just going to return column of all nulls anyway so just make it ourselves
+            // close any existing column
             childEvals.tail.foreach {
               case vector: GpuColumnVector => vector.close()
-              case _ => 
+              case _ =>
             }
             return GpuColumnVector.from(s, numRows, dataType)
           }
@@ -389,21 +390,19 @@ case class GpuConcatWs(children: Seq[Expression])
       }
       separator match {
         case s: GpuScalar => {
-          sepScalar = s
-          if (columns.size > 1) {
-            logWarning("separator is scalar type:" + s.dataType)
-            GpuColumnVector.from(ColumnVector.stringConcatenate(s.getBase, emptyStrScalar,
-              columns.toArray[ColumnView], false), dataType)
-          } else {
-            // single column just replace nulls with empty string
+          if (columns.size == 1) {
+            // single column replace any nulls with empty string
             withResource(Scalar.fromString("")) { emptyStrScalar =>
               val oneCol = columns.head
               GpuColumnVector.from(oneCol.replaceNulls(emptyStrScalar), dataType)
             }
+          } else {
+            logWarning("separator is scalar type:" + s.dataType)
+            GpuColumnVector.from(ColumnVector.stringConcatenate(s.getBase, emptyStrScalar,
+              columns.toArray[ColumnView], false), dataType)
           }
         }
         case sepVec: GpuColumnVector => {
-          sepCol = sepVec 
           logWarning("separator is column vector")
           // GpuOverrides doesn't allow only specifying a separator, you have to specify at least one
           // value column
