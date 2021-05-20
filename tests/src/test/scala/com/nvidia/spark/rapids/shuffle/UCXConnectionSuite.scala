@@ -21,10 +21,25 @@ import org.scalatest.FunSuite
 
 class UCXConnectionSuite extends FunSuite {
   test("generate active message id") {
-    Seq(Int.MaxValue, -1 * Int.MaxValue, 
-        -1, -1L, 0, 100000).foreach { intValueToPack: Long =>
-      assertResult(intValueToPack)(
-        extractExecutorId(composeRequestHeader(intValueToPack, intValueToPack)))
+    Seq(0, 1, 2, 100000, Int.MaxValue).foreach { eId =>
+      assertResult(eId)(
+        extractExecutorId(composeRequestHeader(eId, 123L)))
     }
+  }
+
+  test("negative executor ids are invalid") {
+    Seq(-1, -1 * Int.MaxValue).foreach { eId =>
+      assertThrows[IllegalArgumentException](
+        extractExecutorId(composeRequestHeader(eId, 123L)))
+    }
+  }
+
+  test("executor id longer that doesn't fit in an int is invalid") {
+    assertThrows[IllegalArgumentException](composeRequestHeader(Long.MaxValue, 123L))
+  }
+
+  test("transaction ids can rollover") {
+    assertResult(0)(composeRequestHeader(0,  0x0000000100000000L))
+    assertResult(10)(composeRequestHeader(0, 0x000000010000000AL))
   }
 }
