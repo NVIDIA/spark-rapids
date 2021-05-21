@@ -279,22 +279,6 @@ case class GpuConcatWs(children: Seq[Expression])
     StringType +: Seq.fill(children.size - 1)(arrayOrStr)
   }
 
-  private def processSeparator(sepExpr: Expression, batch: ColumnarBatch,
-      numRows: Int): (Either[GpuScalar, GpuColumnVector], Option[GpuColumnVector]) = {
-    sepExpr.columnarEval(batch) match {
-      case sepScalar: GpuScalar =>
-        val cvOption = if (sepScalar.getBase.isValid() == false) {
-          // if null scalar separator just return a column of all nulls
-          Some(GpuColumnVector.from(sepScalar, numRows, dataType))
-        } else {
-          None
-        }
-        (Left(sepScalar), cvOption)
-      case sepVec: GpuColumnVector =>
-        (Right(sepVec), None)
-    }
-  }
-
   private def concatArrayCol( sep: Either[GpuScalar, GpuColumnVector],
       cv: ColumnView): GpuColumnVector = {
     sep match {
@@ -361,10 +345,21 @@ case class GpuConcatWs(children: Seq[Expression])
     val numRows = batch.numRows()
     var sep: Either[GpuScalar, GpuColumnVector] = null
     try {
-      val (sepEither, sepScalarNullOption) = processSeparator(children.head, batch, numRows)
-      sep = sepEither
-      // if we had a scalar separator that was null we just return a column of all nulls
-      sepScalarNullOption match {
+      // get the separator and check for null scalar separator
+      val sepScalarNullOpt = children.head.columnarEval(batch) match {
+        case sepScalar: GpuScalar =>
+          sep = Left(sepScalar)
+          if (sepScalar.getBase.isValid() == false) {
+            // if null scalar separator just return a column of all nulls
+            Some(GpuColumnVector.from(sepScalar, numRows, dataType))
+          } else {
+            None
+          }
+        case sepVec: GpuColumnVector =>
+          sep = Right(sepVec)
+          None
+      }
+      sepScalarNullOpt match {
         case Some(col) => col
         case None =>
           withResource(ArrayBuffer.empty[ColumnVector]) { columns =>

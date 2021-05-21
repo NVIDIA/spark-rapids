@@ -2513,7 +2513,7 @@ object GpuOverrides {
       }),
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
-        "string using a given separator ",
+        "string using a given separator",
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING),
