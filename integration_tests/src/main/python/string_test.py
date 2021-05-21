@@ -258,6 +258,17 @@ def test_concat_ws_sql_arrays_col_sep():
                 'concat_ws(c, a, array(null), b, array()), ' +
                 'concat_ws(c, array(\'2\', \'\', \'3\', \'Z\', b)) from concat_ws_table')
 
+def test_concat_ws_sql_arrays_all_null_col_sep():
+    gen = ArrayGen(StringGen(nullable=True), nullable=True)
+    sep = NullGen()
+    assert_gpu_and_cpu_are_equal_sql(
+            lambda spark: three_col_df(spark, gen, StringGen(nullable=True), sep),
+            'concat_ws_table',
+            'select ' +
+                'concat_ws(c, array(null, null)), ' +
+                'concat_ws(c, a, array(null), b, array()), ' +
+                'concat_ws(c, b, b, array(b)) from concat_ws_table')
+
 def test_substring():
     gen = mk_str_gen('.{0,30}')
     assert_gpu_and_cpu_are_equal_collect(
