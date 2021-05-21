@@ -183,16 +183,16 @@ class UCX(executor: BlockManagerId, rapidsConf: RapidsConf) extends AutoCloseabl
         var attempt = 0
         while (listener.isEmpty && attempt < maxRetries) {
           val sockAddress = new InetSocketAddress(executor.host, startPort + attempt)
+          attempt += 1
           try {
             ucpListenerParams.setSockAddr(sockAddress)
             listener = Option(worker.newListener(ucpListenerParams))
           } catch {
             case _: UcxException =>
               logDebug(s"Failed to bind UcpListener on $sockAddress. " +
-                s"Attempt ${attempt + 1} out of $maxRetries.")
+                s"Attempt $attempt out of $maxRetries.")
               listener = None
           }
-          attempt += 1
         }
         if (listener.isEmpty) {
           throw new BindException(s"Couldn't start UcpListener " +
