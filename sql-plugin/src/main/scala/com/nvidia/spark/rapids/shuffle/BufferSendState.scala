@@ -16,10 +16,10 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.{Cuda, MemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, RapidsBuffer, ShuffleMetadata, StorageTier}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest, TransferRequest}
+import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest}
 
 import org.apache.spark.internal.Logging
 
@@ -44,14 +44,14 @@ import org.apache.spark.internal.Logging
  * start, it lasts through all buffers being transmitted, and ultimately finishes when a
  * TransferResponse is sent back to the client.
  *
- * @param request a transfer request
+ * @param transaction a request transaction
  * @param sendBounceBuffers - an object that contains a device and potentially a host
  *                          buffer also
  * @param requestHandler - impl of trait that interfaces to the catalog
  * @param serverStream - CUDA stream to use for copies.
  */
 class BufferSendState(
-    request: RefCountedDirectByteBuffer,
+    transaction: Transaction,
     sendBounceBuffers: SendBounceBuffers,
     requestHandler: RapidsShuffleRequestHandler,
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
@@ -62,20 +62,26 @@ class BufferSendState(
     override def size: Long = tableSize
   }
 
-  private[this] val transferRequest = ShuffleMetadata.getTransferRequest(request.getBuffer())
-  private[this] val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
   private[this] var isClosed = false
 
-  private[this] val blocksToSend: Seq[SendBlock] = {
-    val btr = new BufferTransferRequest() // for reuse
-    (0 until transferRequest.requestsLength()).map { ix  =>
-      val bufferTransferRequest = transferRequest.requests(btr, ix)
-      withResource(requestHandler.acquireShuffleBuffer(
-        bufferTransferRequest.bufferId())) { table =>
-        bufferMetas(ix) = table.meta.bufferMeta()
-        new SendBlock(bufferTransferRequest.bufferId(),
-          bufferTransferRequest.tag(), table.size)
+  private[this] val (bufferMetas: Array[BufferMeta], blocksToSend: Seq[SendBlock]) = {
+    withResource(transaction.releaseMessage()) { msg =>
+      val transferRequest = ShuffleMetadata.getTransferRequest(msg.getBuffer())
+
+      val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
+
+      val btr = new BufferTransferRequest() // for reuse
+      val blocksToSend = (0 until transferRequest.requestsLength()).map { ix =>
+        val bufferTransferRequest = transferRequest.requests(btr, ix)
+        withResource(requestHandler.acquireShuffleBuffer(
+          bufferTransferRequest.bufferId())) { table =>
+          bufferMetas(ix) = table.meta.bufferMeta()
+          new SendBlock(bufferTransferRequest.bufferId(),
+            bufferTransferRequest.tag(), table.size)
+        }
       }
+
+      (bufferMetas, blocksToSend)
     }
   }
 
@@ -96,8 +102,8 @@ class BufferSendState(
 
   private[this] var acquiredBuffs: Seq[RangeBuffer] = Seq.empty
 
-  def getTransferRequest: TransferRequest = synchronized {
-    transferRequest
+  def getRequestTransaction: Transaction = synchronized {
+    transaction
   }
 
   def hasNext: Boolean = synchronized { hasMoreBlocks }
@@ -120,7 +126,6 @@ class BufferSendState(
     }
     isClosed = true
     freeBounceBuffers()
-    request.close()
     releaseAcquiredToCatalog()
   }
 
@@ -195,7 +200,7 @@ class BufferSendState(
     }
 
     logDebug(s"Sending ${buffsToSend} for transfer request, " +
-        s" [peer_executor_id=${transferRequest.executorId()}]")
+        s" [peer_executor_id=${transaction.peerExecutorId()}]")
 
     buffsToSend
   }

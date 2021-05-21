@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle.ucx
 
+import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
@@ -24,7 +25,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportUtils}
+import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, RefCountedDirectByteBuffer, RequestType, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportUtils}
 import org.openucx.jucx.ucp.UcpRequest
 
 import org.apache.spark.internal.Logging
@@ -41,6 +42,12 @@ private[ucx] object UCXTransactionType extends Enumeration {
 
 private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   extends Transaction with Logging {
+
+  // Active Messages: header used to disambiguate responses for a request
+  private var header: Option[Long] = None
+
+  // Type of request this transaction is handling, used to simplify the `respond` method
+  private var messageType: Option[RequestType.Value] = None
 
   // various threads can access the status during the course of a Transaction
   // the UCX progress thread, client/server pools, and the executor task thread
@@ -67,14 +74,12 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
    * This will mark the tag as having an error for debugging purposes.
    *
    * @param tag      the tag involved in the error
-   * @param errorMsg error description from UCX
    */
-  def handleTagError(tag: Long, errorMsg: String): Unit = {
+  def handleTagError(tag: Long): Unit = {
     if (registeredByTag.contains(tag)) {
       val origBuff = registeredByTag(tag)
       errored += origBuff
     }
-    errorMessage = Some(errorMsg)
   }
 
   /**
@@ -106,7 +111,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   private var hadError: Boolean = false
 
-  private[ucx] var txCallback: TransactionStatus.Value => Unit = _
+  private var txCallback: TransactionStatus.Value => Unit = _
 
   // Start and end times used for metrics
   private var start: Long = 0
@@ -244,7 +249,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   def registerForSend(alt: AddressLengthTag): Unit = {
     registeredByTag.put(alt.tag, alt)
     registered += alt
-    logTrace(s"Assigned tag for send ${TransportUtils.formatTag(alt.tag)} for message at " +
+    logTrace(s"Assigned tag for send ${TransportUtils.toHex(alt.tag)} for message at " +
       s"buffer ${alt.address} with size ${alt.length}")
   }
 
@@ -254,7 +259,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   def registerForReceive(alt: AddressLengthTag): Unit = {
     registered += alt
     registeredByTag.put(alt.tag, alt)
-    logTrace(s"Assigned tag for receive ${TransportUtils.formatTag(alt.tag)} for message at " +
+    logTrace(s"Assigned tag for receive ${TransportUtils.toHex(alt.tag)} for message at " +
       s"buffer ${alt.address} with size ${alt.length}")
   }
 
@@ -323,6 +328,9 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
               hadError = true
             }
           }
+          // close any active message we may have
+          activeMessageData.foreach(_.close())
+          activeMessageData = None
         } catch {
           case t: Throwable =>
             if (ex == null) {
@@ -360,5 +368,86 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   var callbackCalled: Boolean = false
+
+  private var activeMessageData: Option[RefCountedDirectByteBuffer] = None
+
+  override def respond(response: ByteBuffer,
+                       cb: TransactionCallback): Transaction = {
+    logDebug(s"Responding to ${peerExecutorId} at ${TransportUtils.toHex(this.getHeader)} " +
+      s"with ${response}")
+
+    conn match {
+      case serverConnection: UCXServerConnection =>
+        serverConnection.respond(peerExecutorId(), messageType.get, this.getHeader, response, cb)
+      case _ =>
+        throw new IllegalStateException("Tried to respond using a client connection. " +
+          "This is not supported.")
+    }
+  }
+
+  def complete(status: TransactionStatus.Value,
+               messageType: Option[RequestType.Value] = None,
+               header: Option[Long] = None,
+               message: Option[RefCountedDirectByteBuffer] = None,
+               errorMessage: Option[String] = None): Unit = {
+    setHeader(header)
+    setActiveMessageData(message)
+    setMessageType(messageType)
+    setErrorMessage(errorMessage)
+    setHeader(header)
+    txCallback(status)
+  }
+
+  def completeWithError(errorMsg: String): Unit = {
+    complete(TransactionStatus.Error,
+      errorMessage = Option(errorMsg))
+  }
+
+  def completeCancelled(requestType: RequestType.Value, hdr: Long): Unit = {
+    complete(TransactionStatus.Cancelled,
+      messageType = Option(requestType),
+      header = Option(hdr))
+  }
+
+  def completeWithSuccess(
+    messageType: RequestType.Value,
+    hdr: Option[Long],
+    message: Option[RefCountedDirectByteBuffer]): Unit = {
+    complete(TransactionStatus.Success,
+      messageType = Option(messageType),
+      header = hdr,
+      message = message)
+  }
+
+  // Reference count is not updated here. The caller is responsible to close
+  private[ucx] def setActiveMessageData(data: Option[RefCountedDirectByteBuffer]): Unit = {
+    activeMessageData = data
+  }
+
+  // Reference count is not updated here. The caller is responsible to close
+  override def releaseMessage(): RefCountedDirectByteBuffer = {
+    val msg = activeMessageData.get
+    activeMessageData = None
+    msg
+  }
+
+  private[ucx] def setHeader(id: Option[Long]): Unit = header = id
+
+  override def getHeader: Long = {
+    require(header.nonEmpty,
+      "Attempted to get an Active Message header, but it was not set!")
+    header.get
+  }
+
+  private[ucx] def setMessageType(msgType: Option[RequestType.Value]): Unit = {
+    messageType = msgType
+  }
+
+  private[ucx] def setErrorMessage(errorMsg: Option[String]): Unit = {
+    errorMessage = errorMessage
+  }
+
+  override def peerExecutorId(): Long =
+    UCXConnection.extractExecutorId(getHeader)
 }
 

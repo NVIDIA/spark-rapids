@@ -28,7 +28,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
 
-
 /**
  * Trait used for the server to get buffer metadata (for metadata requests), and
  * also to acquire a buffer (for transfer requests)
@@ -97,10 +96,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
      * When a transfer request is received during a callback, the handle code is offloaded via this
      * event to the server thread.
      * @param tx the live transaction that should be closed by the handler
-     * @param metaRequestBuffer contains the metadata request that should be closed by the
-     *                          handler
      */
-    case class HandleMeta(tx: Transaction, metaRequestBuffer: RefCountedDirectByteBuffer)
+    case class HandleMeta(tx: Transaction)
 
     /**
      * When transfer request is received (to begin sending buffers), the handling is offloaded via
@@ -133,16 +130,17 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   def start(): Unit = {
     port = serverConnection.startManagementPort(originalShuffleServerId.host)
-    // kick off our first receives
-    doIssueReceive(RequestType.MetadataRequest)
-    doIssueReceive(RequestType.TransferRequest)
+
+    // register request type interest against the transport
+    registerRequestHandler(RequestType.MetadataRequest)
+    registerRequestHandler(RequestType.TransferRequest)
   }
 
   def handleOp(serverTask: Any): Unit = {
     try {
       serverTask match {
-        case HandleMeta(tx, metaRequestBuffer) =>
-          doHandleMeta(tx, metaRequestBuffer)
+        case HandleMeta(tx) =>
+          doHandleMetadataRequest(tx)
         case HandleTransferRequest(wt: Seq[BufferSendState]) =>
           doHandleTransferRequest(wt)
       }
@@ -203,7 +201,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           if (sendBounceBuffers.nonEmpty) {
             val pendingTransfer = pendingTransfersQueue.poll()
             bssToIssue.append(new BufferSendState(
-              pendingTransfer.metaRequest,
+              pendingTransfer.tx,
               sendBounceBuffers.head, // there's only one bounce buffer here for now
               pendingTransfer.requestHandler,
               serverStream))
@@ -238,125 +236,82 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    *
    * @param requestType The request type received
    */
-  private def doIssueReceive(requestType: RequestType.Value): Unit = {
-    logDebug(s"Waiting for a new connection. Posting ${requestType} receive.")
-    val metaRequest = transport.getMetaBuffer(rapidsConf.shuffleMaxMetadataSize)
-
-    val alt = AddressLengthTag.from(
-      metaRequest.acquire(),
-      serverConnection.composeRequestTag(requestType))
-
-    serverConnection.receive(alt,
-      tx => {
-        val handleMetaRange = new NvtxRange("Handle Meta Request", NvtxColor.PURPLE)
-        try {
-          if (requestType == RequestType.MetadataRequest) {
-            doIssueReceive(RequestType.MetadataRequest)
-            doHandleMeta(tx, metaRequest)
-          } else {
-            val pendingTransfer = PendingTransferResponse(metaRequest, requestHandler)
-            // tell the bssExec to wake up to try to handle the new BufferSendState
+  private def registerRequestHandler(requestType: RequestType.Value): Unit = {
+    logDebug(s"Registering ${requestType} request callback")
+    serverConnection.registerRequestHandler(requestType, tx => {
+      withResource(new NvtxRange("Handle Meta Request", NvtxColor.PURPLE)) { _ =>
+        requestType match {
+          case RequestType.MetadataRequest =>
+            doHandleMetadataRequest(tx)
+          case RequestType.TransferRequest =>
+            val pendingTransfer = PendingTransferResponse(tx, requestHandler)
             bssExec.synchronized {
               pendingTransfersQueue.add(pendingTransfer)
               bssExec.notifyAll()
             }
             logDebug(s"Got a transfer request ${pendingTransfer} from ${tx}. " +
               s"Pending requests [new=${pendingTransfersQueue.size}, " +
-                s"continuing=${bssContinueQueue.size}]")
-            doIssueReceive(RequestType.TransferRequest)
-          }
-        } finally {
-          handleMetaRange.close()
-          tx.close()
+              s"continuing=${bssContinueQueue.size}]")
         }
-      })
-  }
-
-  case class PendingTransferResponse(
-      metaRequest: RefCountedDirectByteBuffer,
-      requestHandler: RapidsShuffleRequestHandler)
-
-  /**
-   * Function to handle `MetadataRequest`s. It will populate and issue a
-   * `MetadataResponse` response for the appropriate client.
-   *
-   * @param tx the inbound [[Transaction]]
-   * @param metaRequest a [[RefCountedDirectByteBuffer]] holding a `MetadataRequest` message.
-   */
-  def doHandleMeta(tx: Transaction, metaRequest: RefCountedDirectByteBuffer): Unit = {
-    val doHandleMetaRange = new NvtxRange("doHandleMeta", NvtxColor.PURPLE)
-    val start = System.currentTimeMillis()
-    try {
-      if (tx.getStatus == TransactionStatus.Error) {
-        logError("error getting metadata request: " + tx)
-        metaRequest.close() // the buffer is not going to be handed anywhere else, so lets close it
-      } else {
-        logDebug(s"Received metadata request: $tx => $metaRequest")
-        handleMetadataRequest(metaRequest)
       }
-    } finally {
-      logDebug(s"Metadata request handled in ${TransportUtils.timeDiffMs(start)} ms")
-      doHandleMetaRange.close()
-    }
+    })
   }
+
+  case class PendingTransferResponse(tx: Transaction, requestHandler: RapidsShuffleRequestHandler)
 
   /**
    * Handles the very first message that a client will send, in order to request Table/Buffer info.
-   * @param metaRequest a [[RefCountedDirectByteBuffer]] holding a `MetadataRequest` message.
+   * @param tx: [[Transaction]] - a transaction object that carries status and payload
    */
-  def handleMetadataRequest(metaRequest: RefCountedDirectByteBuffer): Unit = {
-    try {
-      val req = ShuffleMetadata.getMetadataRequest(metaRequest.getBuffer())
-
-      // target executor to respond to
-      val peerExecutorId = req.executorId()
-
-      // tag to use for the response message
-      val responseTag = req.responseTag()
-
-      logDebug(s"Received request req:\n: ${ShuffleMetadata.printRequest(req)}")
-      logDebug(s"HandleMetadataRequest for peerExecutorId $peerExecutorId and " +
-        s"responseTag ${TransportUtils.formatTag(req.responseTag())}")
-
-      // NOTE: MetaUtils will have a simpler/better way of handling creating a response.
-      // That said, at this time, I see some issues with that approach from the flatbuffer
-      // library, so the code to create the metadata response will likely change.
-      val responseTables = (0 until req.blockIdsLength()).flatMap { i =>
-        val blockId = req.blockIds(i)
-        // this is getting shuffle buffer ids
-        requestHandler.getShuffleBufferMetas(
-          ShuffleBlockBatchId(blockId.shuffleId(), blockId.mapId(),
-            blockId.startReduceId(), blockId.endReduceId()))
-      }
-
-      val metadataResponse = 
-        ShuffleMetadata.buildMetaResponse(responseTables, req.maxResponseSize())
-      // Wrap the buffer so we keep a reference to it, and we destroy it later on .close
-      val respBuffer = new RefCountedDirectByteBuffer(metadataResponse)
-      val materializedResponse = ShuffleMetadata.getMetadataResponse(metadataResponse)
-
-      logDebug(s"Response will be at tag ${TransportUtils.formatTag(responseTag)}:\n"+
-        s"${ShuffleMetadata.printResponse("responding", materializedResponse)}")
-
-      val response = AddressLengthTag.from(respBuffer.acquire(), responseTag)
-
-      // Issue the send against [[peerExecutorId]] as described by the metadata message
-      val tx = serverConnection.send(peerExecutorId, response, tx => {
-        try {
+  def doHandleMetadataRequest(tx: Transaction): Unit = {
+    withResource(tx) { _ =>
+      withResource(new NvtxRange("doHandleMeta", NvtxColor.PURPLE)) { _ =>
+        withResource(tx.releaseMessage()) { metaRequest =>
           if (tx.getStatus == TransactionStatus.Error) {
-            logError(s"Error sending metadata response in tx $tx")
+            logError("error getting metadata request: " + tx)
           } else {
-            val stats = tx.getStats
-            logDebug(s"Sent metadata ${stats.sendSize} in ${stats.txTimeMs} ms")
+            val req = ShuffleMetadata.getMetadataRequest(metaRequest.getBuffer())
+
+            logDebug(s"Received request req:\n: ${ShuffleMetadata.printRequest(req)}")
+            logDebug(s"HandleMetadataRequest for peerExecutorId ${tx.peerExecutorId()} and " +
+              s"tx ${tx}")
+
+            // NOTE: MetaUtils will have a simpler/better way of handling creating a response.
+            // That said, at this time, I see some issues with that approach from the flatbuffer
+            // library, so the code to create the metadata response will likely change.
+            val responseTables = (0 until req.blockIdsLength()).flatMap { i =>
+              val blockId = req.blockIds(i)
+              // this is getting shuffle buffer ids
+              requestHandler.getShuffleBufferMetas(
+                ShuffleBlockBatchId(blockId.shuffleId(), blockId.mapId(),
+                  blockId.startReduceId(), blockId.endReduceId()))
+            }
+
+            val metadataResponse =
+              ShuffleMetadata.buildMetaResponse(responseTables)
+            // Wrap the buffer so we keep a reference to it, and we destroy it later on .close
+            val respBuffer = new RefCountedDirectByteBuffer(metadataResponse)
+            val materializedResponse = ShuffleMetadata.getMetadataResponse(metadataResponse)
+
+            logDebug(s"Response will be at header ${TransportUtils.toHex(tx.getHeader)}:\n" +
+              s"${ShuffleMetadata.printResponse("responding", materializedResponse)}")
+
+            val responseTx = tx.respond(respBuffer.getBuffer(), responseTx => {
+                withResource(responseTx) { responseTx =>
+                  withResource(respBuffer) { _ =>
+                    if (responseTx.getStatus == TransactionStatus.Error) {
+                      logError(s"Error sending metadata response in tx $tx")
+                    } else {
+                      val stats = responseTx.getStats
+                      logDebug(s"Sent metadata ${stats.sendSize} in ${stats.txTimeMs} ms")
+                    }
+                  }
+                }
+              })
+            logDebug(s"Waiting for send metadata to complete: $responseTx")
           }
-        } finally {
-          respBuffer.close()
-          tx.close()
         }
-      })
-      logDebug(s"Waiting for send metadata to complete: $tx")
-    } finally {
-      metaRequest.close()
+      }
     }
   }
 
@@ -388,15 +343,15 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
       bssBuffers.foreach {
         case (bufferSendState, buffersToSend) =>
-          val transferRequest = bufferSendState.getTransferRequest
-          serverConnection.send(transferRequest.executorId(), buffersToSend, bufferTx =>
-            try {
+          val peerExecutorId = bufferSendState.getRequestTransaction.peerExecutorId()
+          serverConnection.send(peerExecutorId, buffersToSend, bufferTx =>
+            withResource(bufferTx) { _ =>
               logDebug(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
 
               if (bufferSendState.hasNext) {
                 // continue issuing sends.
                 logDebug(s"Buffer send state ${bufferSendState} is NOT done. " +
-                    s"Still pending: ${pendingTransfersQueue.size}.")
+                  s"Still pending: ${pendingTransfersQueue.size}.")
                 bssExec.synchronized {
                   bssContinueQueue.add(bufferSendState)
                   bssExec.notifyAll()
@@ -404,28 +359,35 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               } else {
                 val transferResponse = bufferSendState.getTransferResponse()
 
-                logDebug(s"Handling transfer request for ${transferRequest.executorId()} " +
-                    s"with ${buffersToSend}")
+                val requestTx = bufferSendState.getRequestTransaction
+
+                logDebug(s"Handling transfer request ${requestTx} for " +
+                  s"${peerExecutorId} " +
+                  s"with ${buffersToSend}")
 
                 // send the transfer response
-                serverConnection.send(
-                  transferRequest.executorId,
-                  AddressLengthTag.from(transferResponse.acquire(), transferRequest.responseTag()),
+                requestTx.respond(transferResponse.acquire(),
                   transferResponseTx => {
-                    transferResponse.close()
-                    transferResponseTx.close()
+                    withResource(transferResponseTx) { _ =>
+                      withResource(transferResponse) { _ =>
+                        transferResponseTx.getStatus match {
+                          case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                            logError(s"Error while handling TransferResponse: " +
+                              s"${transferResponseTx.getErrorMessage}")
+                          case _ =>
+                        }
+                      }
+                    }
                   })
 
                 // wake up the bssExec since bounce buffers became available
-                logDebug(s"Buffer send state ${buffersToSend.tag} is done. Closing. " +
-                    s"Still pending: ${pendingTransfersQueue.size}.")
+                logDebug(s"Buffer send state ${buffersToSend} is done. Closing. " +
+                  s"Still pending: ${pendingTransfersQueue.size}.")
                 bssExec.synchronized {
                   bufferSendState.close()
                   bssExec.notifyAll()
                 }
               }
-            } finally {
-              bufferTx.close()
             })
       }
     }
