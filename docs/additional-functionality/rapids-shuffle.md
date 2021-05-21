@@ -101,53 +101,49 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-1. Without RDMA:   
+##### Without RDMA:   
+The following is an example of a Docker container with UCX 1.10.1 and cuda-11.0 support, built
+for a setup without RDMA capable hardware:
 
-   <a name="ucx-minimal-no-rdma-dockerfile"></a> 
-   The following is an example of a Docker container with UCX 1.10.1 and cuda-11.0 support, built
-   for a setup without RDMA capable hardware:
-   
-   ```
-   ARG CUDA_VER=11.0
-   
-   # Now start the main container
-   FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
-   
-   RUN apt update
-   RUN apt-get install -y wget libnuma1
-   RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-   RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
-   ```
+```
+ARG CUDA_VER=11.0
 
-2. With RDMA:
+# Now start the main container
+FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
 
-   <a name="ucx-minimal-rdma-dockerfile"></a>
-   The following is an example of a Docker container that shows how to install `rdma-core` and 
-   UCX 1.10.1 with `cuda-11.0` support. You can use this as a base layer for containers that your 
-   executors will use.
-   
-   ```
-   ARG CUDA_VER=11.0
-   
-   # Throw away image to build rdma_core
-   FROM ubuntu:18.04 as rdma_core
-   
-   RUN apt update
-   RUN apt-get install -y dh-make git build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
-   
-   RUN git clone --depth 1 --branch v33.0 https://github.com/linux-rdma/rdma-core
-   RUN cd rdma-core && debian/rules binary
-   
-   # Now start the main container
-   FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
-   
-   COPY --from=rdma_core /*.deb /tmp/
-   
-   RUN apt update
-   RUN apt-get install -y cuda-compat-11-0 wget udev dh-make libnuma1 libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
-   RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-   RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
-   ```
+RUN apt update
+RUN apt-get install -y wget libnuma1
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
+RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
+```
+
+##### With RDMA:
+The following is an example of a Docker container that shows how to install `rdma-core` and 
+UCX 1.10.1 with `cuda-11.0` support. You can use this as a base layer for containers that your 
+executors will use.
+
+```
+ARG CUDA_VER=11.0
+
+# Throw away image to build rdma_core
+FROM ubuntu:18.04 as rdma_core
+
+RUN apt update
+RUN apt-get install -y dh-make git build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
+
+RUN git clone --depth 1 --branch v33.0 https://github.com/linux-rdma/rdma-core
+RUN cd rdma-core && debian/rules binary
+
+# Now start the main container
+FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
+
+COPY --from=rdma_core /*.deb /tmp/
+
+RUN apt update
+RUN apt-get install -y cuda-compat-11-0 wget udev dh-make libnuma1 libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
+RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
+```
    
 ### Validating UCX Environment
 
