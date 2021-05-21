@@ -181,6 +181,12 @@ object GpuFilter extends Arm {
 case class GpuFilterExec(condition: Expression, child: SparkPlan)
     extends UnaryExecNode with GpuPredicateHelper with GpuExec {
 
+  // we do not record totalTime for this operator
+  override lazy val allMetrics: Map[String, GpuMetric] = Map(
+    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
+    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME))
+
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
     case GpuIsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
@@ -224,11 +230,11 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
     rdd.map { batch =>
-      GpuFilter(batch, boundCondition, numOutputRows, numOutputBatches, totalTime)
+      GpuFilter(batch, boundCondition, numOutputRows, numOutputBatches, gpuOpTime)
     }
   }
 }
