@@ -87,8 +87,16 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
     case Seq(name, value) => (name, value)
   }.toList.unzip
 
+  // Names will be serialized before Spark scheduling, and the returned type GpuScalar
+  // from GpuLiteral.columnarEval(null) can't be serializable, which causes
+  // `org.apache.spark.SparkException: Task not serializable` issue.
+  //
+  // And on the other hand, the calling for columnarEval(null) in the driver side is
+  // dangerous for GpuExpressions, we'll have to pull it apart manually.
   private lazy val names = nameExprs.map {
-    case g: GpuExpression => g.columnarEval(null)
+    case ge: GpuExpression =>
+      GpuExpressionsUtils.extractGpuLit(ge).map(_.value)
+        .getOrElse(throw new IllegalStateException(s"Unexpected GPU expression $ge"))
     case e => e.eval(EmptyRow)
   }
 

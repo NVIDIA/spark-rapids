@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>0.6.0-SNAPSHOT</version>
+        <version>21.06.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>rapids-4-spark-shuffle_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Shuffle Plugin</name>
     <description>Accelerated shuffle plugin for the RAPIDS plugin for Apache Spark</description>
-    <version>0.6.0-SNAPSHOT</version>
+    <version>21.06.0-SNAPSHOT</version>
 
     <dependencies>
         <dependency>

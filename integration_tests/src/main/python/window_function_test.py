@@ -281,6 +281,12 @@ lead_lag_array_data_gens =\
 
 # lead and lag are supported for arrays, but the other window operations like min and max are not right now
 # once they are all supported the tests should be combined.
+@pytest.mark.skip(reason="If some rows of order-by columns (here is a,b,c) are equal, then it may fail because"
+                          "CPU and GPU can't guarantee the order for the same rows, while lead/lag is typically"
+                          "depending on row's order. The solution is we should add the d and d_default columns"
+                          "into the order-by to guarantee the order. But for now, sorting on array has not been"
+                          "supported yet, see https://github.com/NVIDIA/spark-rapids/issues/2470."
+                          "Once the issue is resolved, we should remove skip mark")
 @ignore_order(local=True)
 @pytest.mark.parametrize('d_gen', lead_lag_array_data_gens, ids=meta_idfn('agg:'))
 @pytest.mark.parametrize('c_gen', [long_gen], ids=meta_idfn('orderBy:'))

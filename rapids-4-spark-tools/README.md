@@ -10,7 +10,7 @@ Works with both cpu and gpu generated event logs.
 1. `mvn clean package`
 2. Copy rapids-4-spark-tools-<version>.jar to $SPARK_HOME/jars/
 
-`cp target/rapids-4-spark-tools-0.6.0-SNAPSHOT.jar $SPARK_HOME/jars/`
+`cp target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar $SPARK_HOME/jars/`
 
 3.  In spark-shell:
 For a single event log analysis:

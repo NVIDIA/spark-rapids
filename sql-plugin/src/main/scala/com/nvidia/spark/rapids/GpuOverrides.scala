@@ -2500,10 +2500,13 @@ object GpuOverrides {
           GpuEndsWith(lhs, rhs)
       }),
     expr[Concat](
-      "String concatenate NO separator",
-      ExprChecks.projectNotLambda(TypeSig.STRING,
+      "List/String concatenate",
+      ExprChecks.projectNotLambda((TypeSig.STRING + TypeSig.ARRAY).nested(
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
         (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all),
-        repeatingParamCheck = Some(RepeatingParamCheck("input", TypeSig.STRING,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          (TypeSig.STRING + TypeSig.ARRAY).nested(
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
           (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
