@@ -64,6 +64,13 @@ requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module.
    UCX versions 1.10.1 requires the user to install `libnuma1`. RDMA packages have extra 
    requirements that should be satisfied by MLNX_OFED.
    
+   Please note that the RAPIDS Shuffle Manager is built against 
+   [JUCX 1.11.0](https://search.maven.org/artifact/org.openucx/jucx/1.11.0/jar). This is the JNI
+   component of UCX, and was published ahead of the native library UCX 1.11.0. JUCX 1.11.0 is 
+   actually compatible with UCX starting version 1.10.0. Please disregard the 
+   startup [warning](https://github.com/openucx/ucx/issues/6694) compatibility warning in this case, 
+   as the JUCX usage within the RAPIDS Shuffle Manager is compatible with UCX 1.10.x.
+   
 #### Docker containers
 
 Running with UCX in containers imposes certain requirements. In a multi-GPU system, all GPUs that 
