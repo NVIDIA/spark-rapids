@@ -10,7 +10,7 @@ This is a getting started guide for the RAPIDS Accelerator for Apache Spark on A
 of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA
 GPUs on AWS EMR.
 
-Different versions of EMR ship with different versions of Spark, Rapids accelerator jar , cuDF jar and xgboost4j-spark jar:
+Different versions of EMR ship with different versions of Spark, RAPIDS Accelerator, cuDF and xgboost4j-spark:
 
 | EMR | Spark | Rapids Accelerator jar | cuDF jar | xgboost4j-spark jar
 | --- | --- | --- | ---| --- |
