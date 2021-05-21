@@ -49,6 +49,7 @@ Name | Description | Default Value
 <a name="shuffle.transport.earlyStart"></a>spark.rapids.shuffle.transport.earlyStart|Enable early connection establishment for RAPIDS Shuffle|true
 <a name="shuffle.transport.earlyStart.heartbeatInterval"></a>spark.rapids.shuffle.transport.earlyStart.heartbeatInterval|Shuffle early start heartbeat interval (milliseconds)|5000
 <a name="shuffle.transport.maxReceiveInflightBytes"></a>spark.rapids.shuffle.transport.maxReceiveInflightBytes|Maximum aggregate amount of bytes that be fetched at any given time from peers during shuffle|1073741824
+<a name="shuffle.ucx.activeMessages.mode"></a>spark.rapids.shuffle.ucx.activeMessages.mode|Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' fully.  This restriction can be lifted if the user is running UCX 1.11+.|rndv
 <a name="shuffle.ucx.managementServerHost"></a>spark.rapids.shuffle.ucx.managementServerHost|The host to be used to start the management server|null
 <a name="shuffle.ucx.useWakeup"></a>spark.rapids.shuffle.ucx.useWakeup|When set to true, use UCX's event-based progress (epoll) in order to wake up the progress thread when needed, instead of a hot loop.|true
 <a name="sql.batchSizeBytes"></a>spark.rapids.sql.batchSizeBytes|Set the target number of bytes for a GPU batch. Splits sizes for input data is covered by separate configs. The maximum setting is 2 GB to avoid exceeding the cudf row count limit of a column.|2147483647

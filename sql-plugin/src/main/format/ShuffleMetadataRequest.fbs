@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2020, NVIDIA CORPORATION.
+// Copyright (c) 2019-2021, NVIDIA CORPORATION.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,15 +24,6 @@ table BlockIdMeta {
 
 /// Flat buffer for Rapids UCX Shuffle Metadata Request.
 table MetadataRequest {
-  /// Spark executor ID
-  executor_id: long;
-
-  /// UCX message tag to use when sending the response
-  response_tag: long;
-
-  /// maximum size in bytes for the response message.
-  max_response_size: long;
-
   /// array of shuffle block descriptors for which metadata is needed
   block_ids : [BlockIdMeta];
 }

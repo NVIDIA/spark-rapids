@@ -30,11 +30,6 @@ table TableMeta {
 
 /// Flat buffer for Rapids UCX Shuffle Metadata Response
 table MetadataResponse {
-  /// Buffer size in bytes required to hold the full response. If this value is larger than the
-  /// maximum response size sent in the corresponding request then the metadata contents in this
-  /// response are incomplete and must be re-requested with a larger response buffer allocated.
-  full_response_size: long;
-
   /// metadata for each table
   table_metas: [TableMeta];
 }
