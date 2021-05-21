@@ -35,8 +35,8 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuProjectExec extends Arm {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
-      totalTime: GpuMetric): ColumnarBatch = {
-    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
+      gpuOpTime: GpuMetric): ColumnarBatch = {
+    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, gpuOpTime)
     try {
       project(cb, boundExprs)
     } finally {
