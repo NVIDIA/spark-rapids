@@ -38,8 +38,8 @@ in these scenarios:
 ### System Setup
 
 In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its dependencies must 
-be installed on the host and within Docker containers. A host has additional requirements, like the 
-MLNX_OFED driver and `nv_peer_mem` kernel module.
+be installed on the host and inside Docker containers (if not baremetal). A host has additional 
+requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module.
 
 #### Baremetal
 
@@ -58,24 +58,11 @@ MLNX_OFED driver and `nv_peer_mem` kernel module.
    [file a GitHub issue](https://github.com/NVIDIA/spark-rapids/issues) so we can investigate 
    further.
     
-2. (skip if you followed Step 1) For setups without RoCE/Infiniband, UCX 1.9.0 packaging 
-   requires RDMA packages for installation. UCX 1.10.0+ will relax these requirements for these
-   types of environments, so this step should not be needed in the future.
+2. Fetch and install the UCX package for your OS and CUDA version 
+   [UCX 1.10.1](https://github.com/openucx/ucx/releases/tag/v1.10.1).
    
-   If you still want to install UCX 1.9.0 in a machine without RoCE/Infiniband hardware, please 
-   build and install `rdma-core`. You can use the [Docker sample below](#ucx-minimal-dockerfile) 
-   as reference.
-    
-3. Fetch and install the UCX package for your OS and CUDA version 
-   [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
-   
-   UCX versions 1.9 and below require the user to install the cuda-compat package
-   matching the cuda version of the UCX package (i.e. `cuda-compat-11-1`), in addition to: 
-   `ibverbs-providers`, `libgomp1`, `libibverbs1`, `libnuma1`, `librdmacm1`. 
-   
-   For UCX versions 1.10.0+, UCX will drop the `cuda-compat` requirement, and remove explicit 
-   RDMA dependencies greatly simplifying installation in some cases. Note that these dependencies 
-   have been met if you followed Steps 1 or 2 above.
+   UCX versions 1.10.1 requires the user to install `libnuma1`. RDMA packages have extra 
+   requirements that should be satisfied by MLNX_OFED.
    
 #### Docker containers
 
@@ -94,15 +81,36 @@ essentially turns off all isolation. We are also assuming `--network=host` is sp
 the container to share the host's network. We will revise this document to include any new 
 configurations as we are able to test different scenarios.
 
-1. A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the 
-   host system.
+NOTE: A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the host 
+system if you have RDMA capable hardware.
 
-2. Within the Docker container we need to install UCX and its requirements. The following is an 
-   example of a Docker container that shows how to install `rdma-core` and UCX 1.9.0 with 
-   `cuda-11.0` support. You can use this as a base layer for containers that your executors
-   will use.
+Within the Docker container we need to install UCX and its requirements. These are Dockerfile
+examples for Ubuntu 18.04:
+
+1. Without RDMA:   
+
+   <a name="ucx-minimal-no-rdma-dockerfile"></a> 
+   The following is an example of a Docker container with UCX 1.10.1 and cuda-11.0 support, built
+   for a setup without RDMA capable hardware:
    
-   <a name="ucx-minimal-dockerfile"></a>
+   ```
+   ARG CUDA_VER=11.0
+   
+   # Now start the main container
+   FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
+   
+   RUN apt update
+   RUN apt-get install -y wget libnuma1
+   RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
+   RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
+   ```
+
+2. With RDMA:
+
+   <a name="ucx-minimal-rdma-dockerfile"></a>
+   The following is an example of a Docker container that shows how to install `rdma-core` and 
+   UCX 1.10.1 with `cuda-11.0` support. You can use this as a base layer for containers that your 
+   executors will use.
    
    ```
    ARG CUDA_VER=11.0
@@ -126,7 +134,7 @@ configurations as we are able to test different scenarios.
    RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.9.0/ucx-v1.9.0-ubuntu18.04-mofed5.0-1.0.0.0-cuda11.0.deb
    RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
    ```
-  
+   
 ### Validating UCX Environment
 
 After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate the installation.
@@ -134,7 +142,8 @@ After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate t
 In this section, we are using a docker container built using the sample dockerfile above. 
 
 1. Start the docker container with `--privileged` mode. In this example, we are also adding 
-   `--device /dev/infiniband` to make Mellanox devices available for our test:
+   `--device /dev/infiniband` to make Mellanox devices available for our test, but this is only 
+   required if you are using RDMA:
     ```
     nvidia-docker run \
      --network=host \
@@ -260,7 +269,7 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
     | 3.2.0      | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
 
-2. Recommended settings for UCX 1.9.0+
+2. Recommended settings for UCX 1.10.1+
 ```shell
 ...
 --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
