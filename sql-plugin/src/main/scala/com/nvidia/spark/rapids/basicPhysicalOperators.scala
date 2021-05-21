@@ -35,8 +35,8 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object GpuProjectExec extends Arm {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
-      gpuOpTime: GpuMetric): ColumnarBatch = {
-    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, gpuOpTime)
+      totalTime: GpuMetric): ColumnarBatch = {
+    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, totalTime)
     try {
       project(cb, boundExprs)
     } finally {
@@ -93,12 +93,8 @@ case class GpuProjectExec(
    child: SparkPlan
  ) extends UnaryExecNode with GpuExec {
 
-  // we do not record totalTime for this operator
-  override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME)
-  )
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME))
 
   override def output: Seq[Attribute] = {
     projectList.collect { case ne: NamedExpression => ne.toAttribute }
@@ -188,6 +184,9 @@ object GpuFilter extends Arm {
 case class GpuFilterExec(condition: Expression, child: SparkPlan)
     extends UnaryExecNode with GpuPredicateHelper with GpuExec {
 
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME))
+
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
     case GpuIsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
@@ -231,11 +230,11 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val boundCondition = GpuBindReferences.bindReference(condition, child.output)
     val rdd = child.executeColumnar()
     rdd.map { batch =>
-      GpuFilter(batch, boundCondition, numOutputRows, numOutputBatches, totalTime)
+      GpuFilter(batch, boundCondition, numOutputRows, numOutputBatches, gpuOpTime)
     }
   }
 }
@@ -258,6 +257,10 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 
   override protected val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
+  )
 
   override def outputOrdering: Seq[SortOrder] = range.outputOrdering
 
@@ -375,6 +378,11 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 
 
 case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
+  )
+
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {
     children.map(_.output).transpose.map { attrs =>
