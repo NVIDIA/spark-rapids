@@ -24,12 +24,6 @@ table BufferTransferRequest {
 
 /// Flat buffer for Rapids UCX Shuffle Transfer Request.
 table TransferRequest {
-  /// peer executor id to send response to
-  executor_id: long;
-
-  /// UCX message tag to use when sending the response
-  response_tag: long;
-
   /// array of table requests to transfer
   requests : [BufferTransferRequest];
 }

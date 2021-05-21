@@ -935,6 +935,14 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
+  val SHUFFLE_UCX_ACTIVE_MESSAGES_MODE = conf("spark.rapids.shuffle.ucx.activeMessages.mode")
+    .doc("Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to " +
+      "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
+      "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
+    .stringConf
+    .checkValues(Set("rndv", "eager", "auto"))
+    .createWithDefault("rndv")
+
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
@@ -1014,10 +1022,11 @@ object RapidsConf {
     .createWithDefault(1000)
 
   val SHUFFLE_MAX_METADATA_SIZE = conf("spark.rapids.shuffle.maxMetadataSize")
-    .doc("The maximum size of a metadata message used in the shuffle.")
+    .doc("The maximum size of a metadata message that the shuffle plugin will keep in its " +
+      "direct message pool. ")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(50 * 1024)
+    .createWithDefault(500 * 1024)
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
@@ -1483,6 +1492,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
+
+  lazy val shuffleUcxActiveMessagesMode: String = get(SHUFFLE_UCX_ACTIVE_MESSAGES_MODE)
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
