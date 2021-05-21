@@ -515,7 +515,10 @@ class TimestampGen(DataGen):
         if start is None:
             # spark supports times starting at
             # "0001-01-01 00:00:00.000000"
-            start = datetime(1, 1, 1, tzinfo=timezone.utc)
+            # but if has issues if you get really close to that because it tries to do things
+            # in a differnt fromat which causes roundoff, so we have to add a few days,
+            # just to be sure
+            start = datetime(1, 1, 3, tzinfo=timezone.utc)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
