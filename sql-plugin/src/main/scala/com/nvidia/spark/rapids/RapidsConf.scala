@@ -935,6 +935,14 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
+  val SHUFFLE_UCX_ACTIVE_MESSAGES_MODE = conf("spark.rapids.shuffle.ucx.activeMessages.mode")
+    .doc("Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to " +
+      "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
+      "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
+    .stringConf
+    .checkValues(Set("rndv", "eager", "auto"))
+    .createWithDefault("rndv")
+
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
@@ -1014,10 +1022,11 @@ object RapidsConf {
     .createWithDefault(1000)
 
   val SHUFFLE_MAX_METADATA_SIZE = conf("spark.rapids.shuffle.maxMetadataSize")
-    .doc("The maximum size of a metadata message used in the shuffle.")
+    .doc("The maximum size of a metadata message that the shuffle plugin will keep in its " +
+      "direct message pool. ")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(50 * 1024)
+    .createWithDefault(500 * 1024)
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
@@ -1103,12 +1112,6 @@ object RapidsConf {
     .longConf
     .createWithDefault(1000000)
 
-  val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.defaultExecGpuCost")
-      .internal()
-      .doc("Default per-row GPU cost of running an operator on the GPU")
-      .doubleConf
-      .createWithDefault(0.8)
-
   val OPTIMIZER_CLASS_NAME = conf("spark.rapids.sql.optimizer.className")
     .internal()
     .doc("Optimizer implementation class name. The class must implement the " +
@@ -1116,25 +1119,57 @@ object RapidsConf {
     .stringConf
     .createWithDefault("com.nvidia.spark.rapids.CostBasedOptimizer")
 
-  val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.defaultExprGpuCost")
-      .internal()
-      .doc("Default relative GPU cost of running an expression on the GPU")
-      .doubleConf
-      .createWithDefault(0.01)
+  val OPTIMIZER_DEFAULT_CPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.cpu.exec.default")
+    .internal()
+    .doc("Default per-row CPU cost of executing an operator")
+    .doubleConf
+    .createWithDefault(0.0)
 
-  val OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST = conf(
-    "spark.rapids.sql.optimizer.defaultTransitionToCpuCost")
-      .internal()
-      .doc("Default per-row cost of transitioning from GPU to CPU")
-      .doubleConf
-      .createWithDefault(0.1)
+  val OPTIMIZER_DEFAULT_CPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.cpu.expr.default")
+    .internal()
+    .doc("Default per-row CPU cost of evaluating an expression")
+    .doubleConf
+    .createWithDefault(0.0)
 
-  val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
-    "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
+  val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.gpu.exec.default")
       .internal()
-      .doc("Default per-row cost of transitioning from CPU to GPU")
+      .doc("Default per-row GPU cost of executing an operator")
       .doubleConf
-      .createWithDefault(0.1)
+      .createWithDefault(0.0)
+
+  val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.gpu.expr.default")
+      .internal()
+      .doc("Default per-row GPU cost of evaluating an expression")
+      .doubleConf
+      .createWithDefault(0.0)
+
+  val OPTIMIZER_CPU_READ_SPEED = conf(
+    "spark.rapids.sql.optimizer.cpuReadSpeed")
+      .internal()
+      .doc("Speed of reading data from CPU memory in GB/s")
+      .doubleConf
+      .createWithDefault(30.0)
+
+  val OPTIMIZER_CPU_WRITE_SPEED = conf(
+    "spark.rapids.sql.optimizer.cpuWriteSpeed")
+    .internal()
+    .doc("Speed of writing data to CPU memory in GB/s")
+    .doubleConf
+    .createWithDefault(30.0)
+
+  val OPTIMIZER_GPU_READ_SPEED = conf(
+    "spark.rapids.sql.optimizer.gpuReadSpeed")
+    .internal()
+    .doc("Speed of reading data from GPU memory in GB/s")
+    .doubleConf
+    .createWithDefault(320.0)
+
+  val OPTIMIZER_GPU_WRITE_SPEED = conf(
+    "spark.rapids.sql.optimizer.gpuWriteSpeed")
+    .internal()
+    .doc("Speed of writing data to GPU memory in GB/s")
+    .doubleConf
+    .createWithDefault(320.0)
 
   val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
@@ -1174,7 +1209,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.6.0-SNAPSHOT.jar,cudf-21.06-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.06.0-SNAPSHOT.jar,cudf-21.06.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1458,6 +1493,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
+  lazy val shuffleUcxActiveMessagesMode: String = get(SHUFFLE_UCX_ACTIVE_MESSAGES_MODE)
+
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
   lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_LISTENER_ENABLED)
@@ -1506,13 +1543,21 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val defaultRowCount: Long = get(OPTIMIZER_DEFAULT_ROW_COUNT)
 
-  lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
+  lazy val defaultCpuOperatorCost: Double = get(OPTIMIZER_DEFAULT_CPU_OPERATOR_COST)
 
-  lazy val defaultExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
+  lazy val defaultCpuExpressionCost: Double = get(OPTIMIZER_DEFAULT_CPU_EXPRESSION_COST)
 
-  lazy val defaultTransitionToCpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST)
+  lazy val defaultGpuOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
 
-  lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
+  lazy val defaultGpuExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
+
+  lazy val cpuReadMemorySpeed: Double = get(OPTIMIZER_CPU_READ_SPEED)
+
+  lazy val cpuWriteMemorySpeed: Double = get(OPTIMIZER_CPU_WRITE_SPEED)
+
+  lazy val gpuReadMemorySpeed: Double = get(OPTIMIZER_GPU_READ_SPEED)
+
+  lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
@@ -1534,7 +1579,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    */
   def getGpuExpressionCost(operatorName: String): Option[Double] = {
     val key = s"spark.rapids.sql.optimizer.gpu.expr.$operatorName"
-    conf.get(key).map(toDouble(_, key))
+    getOptionalCost(key)
   }
 
   /**
@@ -1542,7 +1587,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    */
   def getGpuOperatorCost(operatorName: String): Option[Double] = {
     val key = s"spark.rapids.sql.optimizer.gpu.exec.$operatorName"
-    conf.get(key).map(toDouble(_, key))
+    getOptionalCost(key)
   }
 
   /**
@@ -1550,7 +1595,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    */
   def getCpuExpressionCost(operatorName: String): Option[Double] = {
     val key = s"spark.rapids.sql.optimizer.cpu.expr.$operatorName"
-    conf.get(key).map(toDouble(_, key))
+    getOptionalCost(key)
   }
 
   /**
@@ -1558,6 +1603,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    */
   def getCpuOperatorCost(operatorName: String): Option[Double] = {
     val key = s"spark.rapids.sql.optimizer.cpu.exec.$operatorName"
+    getOptionalCost(key)
+  }
+
+  private def getOptionalCost(key: String) = {
     conf.get(key).map(toDouble(_, key))
   }
 }

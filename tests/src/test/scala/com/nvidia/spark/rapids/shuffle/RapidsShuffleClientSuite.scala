@@ -73,14 +73,14 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
     val contigBuffSize = 100000
     val numBatches = 3
-    val tableMetas =
-      RapidsShuffleTestHelper.mockMetaResponse(mockTransport, contigBuffSize, numBatches)
+    val (tableMetas, response) =
+      RapidsShuffleTestHelper.mockMetaResponse(mockTransaction, contigBuffSize, numBatches)
 
     // initialize metadata fetch
     client.doFetch(shuffleRequests.map(_._1), mockHandler)
 
     // the connection saw one request (for metadata)
-    assertResult(1)(mockConnection.requests.size)
+    assertResult(1)(mockConnection.requests)
 
     // upon a successful response, the `start()` method in the fetch handler
     // will be called with 3 expected batches
@@ -98,6 +98,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       val tm = ptrs(t).tableMeta
       verifyTableMeta(expected, tm)
     }
+
+    assert(response.isClosed)
   }
 
   test("successful degenerate metadata fetch") {
@@ -106,13 +108,13 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     val numRows = 100000
     val numBatches = 3
 
-    RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransport, numBatches)
+    RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransaction, numBatches)
 
     // initialize metadata fetch
     client.doFetch(shuffleRequests.map(_._1), mockHandler)
 
     // the connection saw one request (for metadata)
-    assertResult(1)(mockConnection.requests.size)
+    assertResult(1)(mockConnection.requests)
 
     // upon a successful response, the `start()` method in the fetch handler
     // will be called with 3 expected batches
@@ -132,12 +134,12 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
       val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
       val contigBuffSize = 100000
-      RapidsShuffleTestHelper.mockMetaResponse(
-        mockTransport, contigBuffSize, 3)
+      val (_, response) = RapidsShuffleTestHelper.mockMetaResponse(
+        mockTransaction, contigBuffSize, 3)
 
       client.doFetch(shuffleRequests.map(_._1), mockHandler)
 
-      assertResult(1)(mockConnection.requests.size)
+      assertResult(1)(mockConnection.requests)
 
       // upon an errored response, the start handler will not be called
       verify(mockHandler, times(0)).start(any())
@@ -148,6 +150,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       // the transport will receive no pending requests (for buffers) for queuing
       verify(mockTransport, times(0)).queuePending(any())
 
+      assert(response.isClosed)
+
       newMocks()
     }
   }
@@ -156,12 +160,12 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
     val contigBuffSize = 100000
-    RapidsShuffleTestHelper.mockMetaResponse(
-      mockTransport, contigBuffSize, 3)
+    var (_, response) = RapidsShuffleTestHelper.mockMetaResponse(
+      mockTransaction, contigBuffSize, 3)
 
     client.doFetch(shuffleRequests.map(_._1), mockHandler)
 
-    assertResult(1)(mockConnection.requests.size)
+    assertResult(1)(mockConnection.requests)
 
     // upon an errored response, the start handler will not be called
     verify(mockHandler, times(0)).start(any())
@@ -173,6 +177,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     // the transport will receive no pending requests (for buffers) for queuing
     verify(mockTransport, times(0)).queuePending(any())
 
+    assert(response.isClosed)
+
     newMocks()
   }
 
@@ -181,7 +187,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     val numRows = 25001
     val tableMeta =
-      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
 
     // 10000 in bytes ~ 2500 rows (minus validity/offset buffers) worth of contiguous
     // single column int table, so we need 10 buffer-lengths to receive all of 25000 rows,
@@ -251,7 +257,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         }
 
         // after closing, we should have freed our bounce buffers.
-        assertResult(true)(bounceBuffer.isClosed)
+        assert(bounceBuffer.isClosed)
       }
     }
   }
@@ -262,7 +268,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     val numRows = 100
     val tableMeta =
-      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
     val sizePerBuffer = 10000
     val expectedReceives = 1
     closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
@@ -304,7 +310,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
 
       // after closing, we should have freed our bounce buffers.
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
   }
 
@@ -314,7 +320,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     val numRows = 500
     val tableMetas =
       (0 until 5).map {
-        _ => RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+        _ => RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
       }
 
     // 20000 in bytes ~ 5000 rows (minus validity/offset buffers) worth of contiguous
@@ -365,7 +371,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)
 
       // after closing, we should have freed our bounce buffers.
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
   }
 
@@ -375,7 +381,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     val numRows = 500
     val tableMetas =
       (0 until 20).map {
-        _ => RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+        _ => RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
       }
 
     // 20000 in bytes ~ 5000 rows (minus validity/offset buffers) worth of contiguous
@@ -427,7 +433,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)
 
       // after closing, we should have freed our bounce buffers.
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
   }
 
@@ -438,7 +444,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
       val numRows = 100000
       val tableMeta =
-        RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+        RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
 
       // error condition, so it doesn't matter much what we set here, only the first
       // receive will happen
@@ -465,7 +471,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         verify(mockConnection, times(1)).request(any(), any(), any())
 
         // ensure we closed the BufferReceiveState => releasing the bounce buffers
-        assertResult(true)(bounceBuffer.isClosed)
+        assert(bounceBuffer.isClosed)
       }
 
       newMocks()
@@ -477,7 +483,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     val numRows = 100000
     val tableMeta =
-      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransport, numRows)
+      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
 
     // error condition, so it doesn't matter much what we set here, only the first
     // receive will happen
@@ -503,7 +509,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       verify(mockConnection, times(1)).request(any(), any(), any())
 
       // ensure we closed the BufferReceiveState => releasing the bounce buffers
-      assertResult(true)(bounceBuffer.isClosed)
+      assert(bounceBuffer.isClosed)
     }
 
     newMocks()
@@ -526,8 +532,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       mockTable: TableMeta,
       consumed: ConsumedBatchFromBounceBuffer): Unit = {
     assertResult(mockTable.bufferMeta().size())(consumed.contigBuffer.getLength)
-    assertResult(true)(
-      areBuffersEqual(source, consumed.contigBuffer))
+    assert(areBuffersEqual(source, consumed.contigBuffer))
   }
 
   class MockBlock(val hmb: HostMemoryBuffer) extends BlockWithSize {
