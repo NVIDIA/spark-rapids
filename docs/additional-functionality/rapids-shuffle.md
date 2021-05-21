@@ -64,8 +64,7 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
 2. Fetch and install the UCX package for your OS and CUDA version 
    [UCX 1.10.1](https://github.com/openucx/ucx/releases/tag/v1.10.1).
    
-   UCX versions 1.10.1 requires the user to install `libnuma1`. RDMA packages have extra 
-   requirements that should be satisfied by MLNX_OFED.
+   RDMA packages have extra requirements that should be satisfied by MLNX_OFED.
   
    ---
    **NOTE:**
@@ -112,9 +111,9 @@ ARG CUDA_VER=11.0
 FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
 
 RUN apt update
-RUN apt-get install -y wget libnuma1
+RUN apt-get install -y wget 
 RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
+RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
 ```
 
 ##### With RDMA:
@@ -140,9 +139,9 @@ FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
 COPY --from=rdma_core /*.deb /tmp/
 
 RUN apt update
-RUN apt-get install -y cuda-compat-11-0 wget udev dh-make libnuma1 libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
+RUN apt-get install -y cuda-compat-11-0 wget udev dh-make libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
 RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
+RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
 ```
    
 ### Validating UCX Environment
