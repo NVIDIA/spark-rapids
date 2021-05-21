@@ -3553,7 +3553,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="4">ConcatWs</td>
 <td rowSpan="4">`concat_ws`</td>
-<td rowSpan="4">Concatenates multiple input strings or array of strings into a single string using a given separator </td>
+<td rowSpan="4">Concatenates multiple input strings or array of strings into a single string using a given separator</td>
 <td rowSpan="4">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
