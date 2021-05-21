@@ -246,7 +246,7 @@ def test_concat_ws_sql_arrays():
 
 def test_concat_ws_sql_arrays_col_sep():
     gen = ArrayGen(StringGen(nullable=True), nullable=True)
-    sep = StringGen('[-,*,+,!]', nullable=False)
+    sep = StringGen('[-,*,+,!]', nullable=True)
     assert_gpu_and_cpu_are_equal_sql(
             lambda spark: three_col_df(spark, gen, StringGen(nullable=True), sep),
             'concat_ws_table',

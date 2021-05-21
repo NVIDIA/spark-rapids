@@ -697,7 +697,7 @@ def debug_df(df, path = None, file_format = 'json', num_parts = 1):
         schema_file.close()
         print(f"SAVED df schema for debugging along in the output dir")
     else:
-        print('COLLECTED\n{}'.format(df.show(truncate=False)))
+        print('COLLECTED\n{}'.format(df.collect()))
 
     df.explain()
     df.printSchema()

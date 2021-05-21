@@ -22,8 +22,6 @@ import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -270,11 +268,10 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
 }
 
 case class GpuConcatWs(children: Seq[Expression])
-    extends GpuExpression with ImplicitCastInputTypes with Logging {
+    extends GpuExpression with ImplicitCastInputTypes {
   override def dataType: DataType = StringType
   override def nullable: Boolean = children.head.nullable
   override def foldable: Boolean = children.forall(_.foldable)
-  logWarning("in gpu concat ws")
 
   /** The 1st child (separator) is str, and rest are either str or array of str. */
   override def inputTypes: Seq[AbstractDataType] = {
@@ -282,8 +279,8 @@ case class GpuConcatWs(children: Seq[Expression])
     StringType +: Seq.fill(children.size - 1)(arrayOrStr)
   }
 
-  private def processSeparator(sepExpr: Expression, batch: ColumnarBatch, numRows: Int):
-      (Either[GpuScalar, GpuColumnVector], Option[GpuColumnVector]) = {
+  private def processSeparator(sepExpr: Expression, batch: ColumnarBatch,
+      numRows: Int): (Either[GpuScalar, GpuColumnVector], Option[GpuColumnVector]) = {
     sepExpr.columnarEval(batch) match {
       case sepScalar: GpuScalar =>
         val cvOption = if (sepScalar.getBase.isValid() == false) {
@@ -298,11 +295,13 @@ case class GpuConcatWs(children: Seq[Expression])
     }
   }
 
-  private def concatArrayCol(sep: Either[GpuScalar, GpuColumnVector], cv: ColumnView): GpuColumnVector = {
+  private def concatArrayCol( sep: Either[GpuScalar, GpuColumnVector],
+      cv: ColumnView): GpuColumnVector = {
     sep match {
       case Left(sepScalar) =>
         withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
-          GpuColumnVector.from(cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar, false, false), dataType)
+          GpuColumnVector.from(cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar,
+            false, false), dataType)
         }
       case Right(sepVec) =>
         GpuColumnVector.from(cv.stringConcatenateListElements(sepVec.getBase), dataType)
@@ -328,7 +327,6 @@ case class GpuConcatWs(children: Seq[Expression])
       sep: GpuColumnVector): GpuColumnVector = {
     // GpuOverrides doesn't allow only specifying a separator, you have to specify at
     // least one value column
-    logWarning("stirng concat sep vec")
     GpuColumnVector.from(ColumnVector.stringConcatenate(columns.toArray[ColumnView],
       sep.getBase), dataType)
   }
@@ -360,7 +358,6 @@ case class GpuConcatWs(children: Seq[Expression])
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    logWarning("in columnar eval")
     val numRows = batch.numRows()
     var sep: Either[GpuScalar, GpuColumnVector] = null
     try {
@@ -371,7 +368,6 @@ case class GpuConcatWs(children: Seq[Expression])
         case Some(col) => col
         case None =>
           withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
-            logWarning("processing childrent")
             children.tail.foreach {
               columns += resolveColumnVectorAndConcatArrayCols(_, numRows, sep, batch).getBase
             }
