@@ -254,8 +254,12 @@ object RapidsExecutorPlugin {
    * version 7.1.1.
    */
   def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
-    val (expMajorMinor, expPatch) = expected.split('.').splitAt(2)
-    val (actMajorMinor, actPatch) = actual.split('.').splitAt(2)
+    val expHyphen = if (expected.indexOf('-') >= 0) expected.indexOf('-') else expected.length
+    val actHyphen = if (actual.indexOf('-') >= 0) actual.indexOf('-') else actual.length
+    if (actual.substring(actHyphen) != expected.substring(expHyphen)) return false
+
+    val (expMajorMinor, expPatch) = expected.substring(0, expHyphen).split('.').splitAt(2)
+    val (actMajorMinor, actPatch) = actual.substring(0, actHyphen).split('.').splitAt(2)
     actMajorMinor.startsWith(expMajorMinor) && {
       val expPatchInts = expPatch.map(_.toInt)
       val actPatchInts = actPatch.map(v => Try(v.toInt).getOrElse(Int.MinValue))
