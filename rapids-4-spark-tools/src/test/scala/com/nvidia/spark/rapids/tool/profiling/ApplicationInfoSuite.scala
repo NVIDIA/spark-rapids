@@ -50,7 +50,9 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(apps.size == 1)
       assert(apps.head.sparkVersion.equals("3.1.1"))
       assert(apps.head.gpuMode.equals(true))
-
+      assert(apps.head.jobStart(apps.head.index).jobID.equals(1))
+      assert(apps.head.stageSubmitted(apps.head.index).numTasks.equals(1))
+      assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
     } finally {
       fileWriter.close()
       tempFile.deleteOnExit()

@@ -21,7 +21,7 @@ import java.io.FileWriter
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.tool.profiling.{_}
+import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * A profiling tool to parse Spark Event Log
@@ -67,6 +67,17 @@ object ProfileMain extends Logging {
       compare.compareAppInfo()
       compare.compareExecutorInfo()
       compare.compareRapidsProperties()
+    }
+    logInfo(s"### B. Analysis ###")
+    val analysis = new Analysis(apps)
+    analysis.jobAndStageMetricsAggregation()
+    val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
+
+    if (!sqlAggMetricsDF.isEmpty) {
+      fileWriter.write(s"### C. Qualification ###\n")
+      new Qualification(apps, sqlAggMetricsDF)
+    } else {
+      logInfo(s"Skip qualification part because no sqlAggMetrics DataFrame is detected.")
     }
 
     for (app <- apps) {

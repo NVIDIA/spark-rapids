@@ -30,9 +30,9 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Print Application Information
   def printAppInfo(): Unit = {
-    fileWriter.write("Application Information:\n")
+    val messageHeader = "Application Information:\n"
     for (app <- apps) {
-      app.runQuery(app.generateAppInfo)
+      app.runQuery(query = app.generateAppInfo, writeToFile = true, messageHeader = messageHeader)
     }
   }
 
@@ -57,17 +57,19 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
 
   // Print executor related information
   def printExecutorInfo(): Unit = {
-    fileWriter.write("\n\nExecutor Information:\n")
+    val messageHeader = "\n\nExecutor Information:\n"
     for (app <- apps) {
-      app.runQuery(app.generateExecutorInfo + " order by cast(executorID as long)")
+      app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
+        writeToFile = true, messageHeader = messageHeader)
     }
   }
 
   // Print Rapids related Spark Properties
   def printRapidsProperties(): Unit = {
-    fileWriter.write("\n\nSpark Rapids parameters set explicitly:\n")
+    val messageHeader = "\n\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
-      app.runQuery(app.generateRapidsProperties + " order by key")
+      app.runQuery(query = app.generateRapidsProperties + " order by key", writeToFile = true,
+        messageHeader = messageHeader)
     }
   }
 }
