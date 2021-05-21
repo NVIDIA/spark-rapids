@@ -10,9 +10,14 @@ This is a getting started guide for the RAPIDS Accelerator for Apache Spark on A
 of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA
 GPUs on AWS EMR.
 
-The current EMR 6.3.0 release supports Spark version 3.1.1 and RAPIDS Accelerator version 0.4.1.
-EMR 6.2.0 release supports Spark version 3.0.1 and RAPIDS Accelerator version 0.2.0. For
-more details of supported applications, please see the [EMR release
+Different versions of EMR ship with different versions of Spark, Rapids accelerator jar , cuDF jar and xgboost4j-spark jar:
+
+| EMR | Spark | Rapids Accelerator jar | cuDF jar | xgboost4j-spark jar
+| --- | --- | --- | ---| --- |
+| 6.3 | 3.1.1 | rapids-4-spark_2.12-0.4.1.jar | cudf-0.18.1-cuda10-1.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
+| 6.2 | 3.0.1 | rapids-4-spark_2.12-0.2.0.jar | cudf-0.15-cuda10-1.jar | xgboost4j-spark_3.0-1.0.0-0.2.0.jar |
+
+For more details of supported applications, please see the [EMR release
 notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).
 
 For more information on AWS EMR, please see the [AWS
