@@ -39,7 +39,10 @@ in these scenarios:
 
 In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its dependencies must 
 be installed on the host and inside Docker containers (if not baremetal). A host has additional 
-requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module.
+requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module. 
+
+The minimum UCX requirement for the RAPIDS Shuffle Manager is 
+[UCX 1.10.1](https://github.com/openucx/ucx/releases/tag/v1.10.1)
 
 #### Baremetal
 
@@ -138,7 +141,7 @@ examples for Ubuntu 18.04:
    
    RUN apt update
    RUN apt-get install -y cuda-compat-11-0 wget udev dh-make libnuma1 libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
-   RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.9.0/ucx-v1.9.0-ubuntu18.04-mofed5.0-1.0.0.0-cuda11.0.deb
+   RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
    RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
    ```
    
