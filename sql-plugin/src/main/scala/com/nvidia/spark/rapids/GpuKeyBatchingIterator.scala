@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{ColumnVector, Table}
+import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
 import org.apache.spark.TaskContext
@@ -33,8 +33,16 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuKeyBatchingIterator private (
     iter: Iterator[ColumnarBatch],
     sorter: GpuSorter,
-    spillCallback: SpillCallback,
-    types: Array[DataType])
+    types: Array[DataType],
+    numInputRows: GpuMetric,
+    numInputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    numOutputBatches: GpuMetric,
+    collectTime: GpuMetric,
+    concatTime: GpuMetric,
+    totalTime: GpuMetric,
+    peakDevMemory: GpuMetric,
+    spillCallback: SpillCallback)
     extends Iterator[ColumnarBatch] with Arm {
   private val pending = mutable.Queue[SpillableColumnarBatch]()
 
@@ -65,59 +73,98 @@ class GpuKeyBatchingIterator private (
   }
 
   private def concatPending(last: Option[Table] = None): ColumnarBatch = {
-    withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
-      while (pending.nonEmpty) {
-        withResource(pending.dequeue()) { spillable =>
-          withResource(spillable.getColumnarBatch()) { cb =>
-            toConcat.append(GpuColumnVector.from(cb))
+    var peak = 0L
+    try {
+      withResource(new NvtxWithMetrics("concat pending", NvtxColor.CYAN, concatTime)) { _ =>
+        withResource(mutable.ArrayBuffer[Table]()) { toConcat =>
+          while (pending.nonEmpty) {
+            withResource(pending.dequeue()) { spillable =>
+              withResource(spillable.getColumnarBatch()) { cb =>
+                peak += GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+                toConcat.append(GpuColumnVector.from(cb))
+              }
+            }
+          }
+          last.foreach { lastTab =>
+            peak += GpuColumnVector.getTotalDeviceMemoryUsed(lastTab)
+            toConcat.append(lastTab)
+          }
+          if (toConcat.length > 1) {
+            withResource(Table.concatenate(toConcat: _*)) { concated =>
+              peak += GpuColumnVector.getTotalDeviceMemoryUsed(concated)
+              GpuColumnVector.from(concated, types)
+            }
+          } else {
+            GpuColumnVector.from(toConcat.head, types)
           }
         }
       }
-      last.foreach { lastTab =>
-        toConcat.append(lastTab)
-      }
-      if (toConcat.length > 1) {
-        withResource(Table.concatenate(toConcat: _*)) { concated =>
-          GpuColumnVector.from(concated, types)
-        }
-      } else {
-        GpuColumnVector.from(toConcat.head, types)
-      }
+    } finally {
+      peakDevMemory.set(Math.max(peakDevMemory.value, peak))
     }
   }
 
   override def next(): ColumnarBatch = {
+    var startHasNext = System.nanoTime()
     while (iter.hasNext) {
+      val hasNextTime = System.nanoTime() - startHasNext
+      totalTime += hasNextTime
+      collectTime += hasNextTime
+      val startNextTime = System.nanoTime()
       withResource(iter.next()) { cb =>
-        if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
-          // No need to do a split on the final row and create extra work this is the last batch
-          withResource(GpuColumnVector.from(cb)) { table =>
-            return concatPending(Some(table))
-          }
-        }
-        // else not the last batch split so the final key group is not in this batch...
-        val cutoff = getKeyCutoff(cb)
-        if (cutoff <= 0) {
-          // Everything is for a single key, so save it away and try the next batch...
-          pending +=
-              SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
-                SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
-        } else {
-          withResource(GpuColumnVector.from(cb)) { table =>
-            withResource(table.contiguousSplit(cutoff)) { tables =>
-              assert(tables.length == 2)
-              val ret = concatPending(Some(tables(0).getTable))
-              pending +=
-                  SpillableColumnarBatch(tables(1), types,
-                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+        val nextTime = System.nanoTime() - startNextTime
+        totalTime += nextTime
+        collectTime += nextTime
+        numInputRows += cb.numRows()
+        numInputBatches += 1
+        withResource(new MetricRange(totalTime)) { _ =>
+          if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
+            // No need to do a split on the final row and create extra work this is the last batch
+            withResource(GpuColumnVector.from(cb)) { table =>
+              val ret = concatPending(Some(table))
+              numOutputRows += ret.numRows()
+              numOutputBatches += 1
               return ret
+            }
+          }
+          // else not the last batch split so the final key group is not in this batch...
+          val cutoff = getKeyCutoff(cb)
+          if (cutoff <= 0) {
+            peakDevMemory.set(
+              Math.max(peakDevMemory.value, GpuColumnVector.getTotalDeviceMemoryUsed(cb)))
+            // Everything is for a single key, so save it away and try the next batch...
+            pending +=
+                SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
+                  SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+          } else {
+            var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+            withResource(GpuColumnVector.from(cb)) { table =>
+              withResource(table.contiguousSplit(cutoff)) { tables =>
+                assert(tables.length == 2)
+                val ret = concatPending(Some(tables(0).getTable))
+                peak += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
+                peak += tables(1).getBuffer.getLength
+                pending +=
+                    SpillableColumnarBatch(tables(1), types,
+                      SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                numOutputRows += ret.numRows()
+                numOutputBatches += 1
+                peakDevMemory.set(Math.max(peakDevMemory.value, peak))
+                return ret
+              }
             }
           }
         }
       }
+      startHasNext = System.nanoTime()
     }
-    // At the end of the iterator, nothing more to process
-    concatPending()
+    val ret = withResource(new MetricRange(totalTime)) { _ =>
+      // At the end of the iterator, nothing more to process
+      concatPending()
+    }
+    numOutputRows += ret.numRows()
+    numOutputBatches += 1
+    ret
   }
 }
 
@@ -125,11 +172,21 @@ object GpuKeyBatchingIterator {
   def makeFunc(
       unboundOrderSpec: Seq[SortOrder],
       schema: Array[Attribute],
+      numInputRows: GpuMetric,
+      numInputBatches: GpuMetric,
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      collectTime: GpuMetric,
+      concatTime: GpuMetric,
+      totalTime: GpuMetric,
+      peakDevMemory: GpuMetric,
       spillCallback: SpillCallback): Iterator[ColumnarBatch] => GpuKeyBatchingIterator = {
     val sorter = new GpuSorter(unboundOrderSpec, schema)
     val types = schema.map(_.dataType)
     def makeIter(iter: Iterator[ColumnarBatch]): GpuKeyBatchingIterator = {
-      new GpuKeyBatchingIterator(iter, sorter, spillCallback, types)
+      new GpuKeyBatchingIterator(iter, sorter, types,
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+        collectTime, concatTime, totalTime, peakDevMemory, spillCallback)
     }
     makeIter
   }
