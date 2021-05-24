@@ -100,16 +100,9 @@ class RapidsGdsStore(
       dst match {
         case dmOriginal: DeviceMemoryBuffer =>
           val dm = dmOriginal.slice(dstOffset, length)
-          val alignedSize = if (RapidsGdsStore.isAligned(srcOffset)) {
-            RapidsGdsStore.alignBufferSize(dm)
-          } else {
-            logDebug(
-              s"Source offset $srcOffset is not 4 KiB aligned, falling back to unaligned read")
-            dm.getLength
-          }
           // TODO: switch to async API when it's released, using the passed in CUDA stream.
           stream.sync()
-          CuFile.readFileToDeviceMemory(dm.getAddress, alignedSize, path, fileOffset + srcOffset)
+          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
           logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
         case _ => throw new IllegalStateException(
           s"GDS can only copy to device buffer, not ${dst.getClass}")
@@ -248,17 +241,9 @@ class RapidsGdsStore(
               stream.sync()
               logDebug(s"Created device buffer $size from batch write buffer")
             } else {
-              val alignedSize = if (RapidsGdsStore.isAligned(srcOffset)) {
-                RapidsGdsStore.alignBufferSize(dm)
-              } else {
-                logDebug(
-                  s"Source offset $srcOffset is not 4 KiB aligned, falling back to unaligned read")
-                dm.getLength
-              }
               // TODO: switch to async API when it's released, using the passed in CUDA stream.
               stream.sync()
-              CuFile.readFileToDeviceMemory(
-                dm.getAddress, alignedSize, path, fileOffset + srcOffset)
+              CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
               logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
             }
           case _ => throw new IllegalStateException(
