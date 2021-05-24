@@ -262,8 +262,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
-    if (MemoryCostHelper.isWindowExpr(expr)) {
-      // Window expressions are Unevaluable and accessing dataType causes an exception
+    if (MemoryCostHelper.isExcludedFromCost(expr)) {
       return 0
     }
 
@@ -312,8 +311,7 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
-    if (MemoryCostHelper.isWindowExpr(expr)) {
-      // Window expressions are Unevaluable and accessing dataType causes an exception
+    if (MemoryCostHelper.isExcludedFromCost(expr)) {
       return 0
     }
 
@@ -360,9 +358,11 @@ object MemoryCostHelper {
     (dataSize / GIGABYTE) / memorySpeed
   }
 
-  def isWindowExpr[INPUT <: Expression](expr: BaseExprMeta[INPUT]) = {
+  def isExcludedFromCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]) = {
     expr.wrapped match {
-      case _: WindowSpecDefinition | _: WindowFrame => true
+      case _: WindowSpecDefinition | _: WindowFrame =>
+        // Window expressions are Unevaluable and accessing dataType causes an exception
+        true
       case _ => false
     }
   }
