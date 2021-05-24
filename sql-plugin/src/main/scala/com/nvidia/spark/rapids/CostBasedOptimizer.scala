@@ -263,7 +263,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
     if (MemoryCostHelper.isExcludedFromCost(expr)) {
-      return 0
+      return 0d
     }
 
     val memoryReadCost = expr.wrapped match {
@@ -312,7 +312,7 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
     if (MemoryCostHelper.isExcludedFromCost(expr)) {
-      return 0
+      return 0d
     }
 
     var memoryReadCost = 0d
