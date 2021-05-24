@@ -44,4 +44,115 @@ case class ExecutorCase(
   executorID: String, host: String, totalCores: Int, resourceProfileId: Int)
 
 case class ExecutorRemovedCase(
-  executorID: String, reason: String, time: Long)
+    executorID: String,
+    reason: String,
+    time: Long)
+
+case class SQLExecutionCase(
+    sqlID: Long,
+    description: String,
+    details: String,
+    startTime: Long,
+    endTime: Option[Long],
+    duration: Option[Long],
+    durationStr: String)
+
+case class SQLPlanMetricsCase(
+    sqlID: Long,
+    name: String,
+    accumulatorId: Long,
+    metricType: String)
+
+case class PlanNodeAccumCase(
+    sqlID: Long,
+    nodeID: Long,
+    nodeName:String,
+    nodeDesc: String,
+    accumulatorId: Long)
+
+case class DriverAccumCase(
+    sqlID: Long,
+    accumulatorId: Long,
+    value: Long)
+
+case class TaskStageAccumCase(
+    stageId: Int,
+    attemptId: Int,
+    taskId: Option[Long],
+    accumulatorId: Long,
+    name: Option[String],
+    value: Option[Long],
+    isInternal: Boolean)
+
+case class JobCase(
+    jobID: Int,
+    stageIds: Seq[Int],
+    sqlID: Option[Long],
+    properties: scala.collection.Map[String, String],
+    startTime: Long,
+    endTime: Option[Long],
+    jobResult: Option[String],
+    failedReason: String,
+    duration: Option[Long],
+    durationStr: String,
+    gpuMode: Boolean)
+
+case class StageCase(
+    stageId: Int,
+    attemptId: Int,
+    name: String,
+    numTasks: Int,
+    numRDD: Int,
+    parentIds: Seq[Int],
+    details: String,
+    properties: scala.collection.Map[String, String],
+    submissionTime: Option[Long],
+    completionTime: Option[Long],
+    failureReason: Option[String],
+    duration: Option[Long],
+    durationStr: String, gpuMode: Boolean)
+
+// Note: sr = Shuffle Read; sw = Shuffle Write
+// Totally 39 columns
+case class TaskCase(
+    stageId: Int,
+    stageAttemptId: Int,
+    taskType: String,
+    endReason: String,
+    taskId: Long,
+    attempt: Int,
+    launchTime: Long,
+    finishTime: Long,
+    duration: Long,
+    successful: Boolean,
+    executorId: String,
+    host: String,
+    taskLocality: String,
+    speculative: Boolean,
+    gettingResultTime: Long,
+    executorDeserializeTime: Long,
+    executorDeserializeCPUTime: Long,
+    executorRunTime: Long,
+    executorCPUTime: Long,
+    peakExecutionMemory: Long,
+    resultSize: Long,
+    jvmGCTime: Long,
+    resultSerializationTime: Long,
+    memoryBytesSpilled: Long,
+    diskBytesSpilled: Long,
+    sr_remoteBlocksFetched: Long,
+    sr_localBlocksFetched: Long,
+    sr_fetchWaitTime: Long,
+    sr_remoteBytesRead: Long,
+    sr_remoteBytesReadToDisk: Long,
+    sr_localBytesRead: Long,
+    sr_totalBytesRead: Long,
+    sw_bytesWritten: Long,
+    sw_writeTime: Long,
+    sw_recordsWritten: Long,
+    input_bytesRead: Long,
+    input_recordsRead: Long,
+    output_bytesWritten: Long,
+    output_recordsWritten: Long)
+
+case class ProblematicSQLCase(sqlID: Long)

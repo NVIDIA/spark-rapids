@@ -44,13 +44,18 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
-        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
+        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter,
+          ProfileUtils.stringToPath(path)(0), index)
         index += 1
       }
       assert(apps.size == 1)
       assert(apps.head.sparkVersion.equals("3.1.1"))
       assert(apps.head.gpuMode.equals(true))
-
+      assert(apps.head.jobStart(apps.head.index).jobID.equals(1))
+      assert(apps.head.stageSubmitted(apps.head.index).numTasks.equals(1))
+      assert(apps.head.stageSubmitted(2).stageId.equals(2))
+      assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
+      assert(apps.head.taskEnd(apps.head.index).endReason.equals("Success"))
     } finally {
       fileWriter.close()
       tempFile.deleteOnExit()

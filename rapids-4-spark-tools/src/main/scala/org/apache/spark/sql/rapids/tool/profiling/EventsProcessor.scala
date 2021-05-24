@@ -16,11 +16,14 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import scala.collection.JavaConverters._
+
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.scheduler._
+import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 
 /**
  * This object is to process all events and do validation in the end.
@@ -55,6 +58,42 @@ object EventsProcessor extends Logging {
       case _: SparkListenerExecutorRemoved =>
         doSparkListenerExecutorRemoved(app,
           event.asInstanceOf[SparkListenerExecutorRemoved])
+      case _: SparkListenerTaskStart =>
+        doSparkListenerTaskStart(app,
+          event.asInstanceOf[SparkListenerTaskStart])
+      case _: SparkListenerTaskEnd =>
+        doSparkListenerTaskEnd(app,
+          event.asInstanceOf[SparkListenerTaskEnd])
+      case _: SparkListenerSQLExecutionStart =>
+        doSparkListenerSQLExecutionStart(app,
+          event.asInstanceOf[SparkListenerSQLExecutionStart])
+      case _: SparkListenerSQLExecutionEnd =>
+        doSparkListenerSQLExecutionEnd(app,
+          event.asInstanceOf[SparkListenerSQLExecutionEnd])
+      case _: SparkListenerDriverAccumUpdates =>
+        doSparkListenerDriverAccumUpdates(app,
+          event.asInstanceOf[SparkListenerDriverAccumUpdates])
+      case _: SparkListenerJobStart =>
+        doSparkListenerJobStart(app,
+          event.asInstanceOf[SparkListenerJobStart])
+      case _: SparkListenerJobEnd =>
+        doSparkListenerJobEnd(app,
+          event.asInstanceOf[SparkListenerJobEnd])
+      case _: SparkListenerStageSubmitted =>
+        doSparkListenerStageSubmitted(app,
+          event.asInstanceOf[SparkListenerStageSubmitted])
+      case _: SparkListenerStageCompleted =>
+        doSparkListenerStageCompleted(app,
+          event.asInstanceOf[SparkListenerStageCompleted])
+      case _: SparkListenerTaskGettingResult =>
+        doSparkListenerTaskGettingResult(app,
+          event.asInstanceOf[SparkListenerTaskGettingResult])
+      case _: SparkListenerSQLAdaptiveExecutionUpdate =>
+        doSparkListenerSQLAdaptiveExecutionUpdate(app,
+          event.asInstanceOf[SparkListenerSQLAdaptiveExecutionUpdate])
+      case _: SparkListenerSQLAdaptiveSQLMetricUpdates =>
+        doSparkListenerSQLAdaptiveSQLMetricUpdates(app,
+          event.asInstanceOf[SparkListenerSQLAdaptiveSQLMetricUpdates])
       case _ => doOtherEvent(app, event)
     }
   }
@@ -178,6 +217,239 @@ object EventsProcessor extends Logging {
       event.time
     )
     app.executorsRemoved += thisExecutorRemoved
+  }
+
+  def doSparkListenerTaskStart(
+      app: ApplicationInfo,
+      event: SparkListenerTaskStart): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    app.taskStart += event
+  }
+
+  def doSparkListenerTaskEnd(
+      app: ApplicationInfo,
+      event: SparkListenerTaskEnd): Unit = {
+    logDebug("Processing event: " + event.getClass)
+
+    // Parse task accumulables
+    for (res <- event.taskInfo.accumulables) {
+      try {
+        val value = res.value.getOrElse("").toString.toLong
+        val thisMetric = TaskStageAccumCase(
+          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
+          res.id, res.name, Some(value), res.internal)
+        app.taskStageAccum += thisMetric
+      } catch {
+        case e: ClassCastException =>
+          logWarning("ClassCastException when parsing accumulables for task "
+              + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
+              + ": ")
+          logWarning(e.toString)
+          logWarning("The problematic accumulable is: name="
+              + res.name + ",value=" + res.value)
+      }
+    }
+
+    val thisTask = TaskCase(
+      event.stageId,
+      event.stageAttemptId,
+      event.taskType,
+      event.reason.toString,
+      event.taskInfo.taskId,
+      event.taskInfo.attemptNumber,
+      event.taskInfo.launchTime,
+      event.taskInfo.finishTime,
+      event.taskInfo.duration,
+      event.taskInfo.successful,
+      event.taskInfo.executorId,
+      event.taskInfo.host,
+      event.taskInfo.taskLocality.toString,
+      event.taskInfo.speculative,
+      event.taskInfo.gettingResultTime,
+      event.taskMetrics.executorDeserializeTime,
+      event.taskMetrics.executorDeserializeCpuTime / 1000000,
+      event.taskMetrics.executorRunTime,
+      event.taskMetrics.executorCpuTime / 1000000,
+      event.taskMetrics.peakExecutionMemory,
+      event.taskMetrics.resultSize,
+      event.taskMetrics.jvmGCTime,
+      event.taskMetrics.resultSerializationTime,
+      event.taskMetrics.memoryBytesSpilled,
+      event.taskMetrics.diskBytesSpilled,
+      event.taskMetrics.shuffleReadMetrics.remoteBlocksFetched,
+      event.taskMetrics.shuffleReadMetrics.localBlocksFetched,
+      event.taskMetrics.shuffleReadMetrics.fetchWaitTime,
+      event.taskMetrics.shuffleReadMetrics.remoteBytesRead,
+      event.taskMetrics.shuffleReadMetrics.remoteBytesReadToDisk,
+      event.taskMetrics.shuffleReadMetrics.localBytesRead,
+      event.taskMetrics.shuffleReadMetrics.totalBytesRead,
+      event.taskMetrics.shuffleWriteMetrics.bytesWritten,
+      event.taskMetrics.shuffleWriteMetrics.writeTime / 1000000,
+      event.taskMetrics.shuffleWriteMetrics.recordsWritten,
+      event.taskMetrics.inputMetrics.bytesRead,
+      event.taskMetrics.inputMetrics.recordsRead,
+      event.taskMetrics.outputMetrics.bytesWritten,
+      event.taskMetrics.outputMetrics.recordsWritten
+    )
+    app.taskEnd += thisTask
+  }
+
+  def doSparkListenerSQLExecutionStart(
+      app: ApplicationInfo,
+      event: SparkListenerSQLExecutionStart): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val sqlExecution = SQLExecutionCase(
+      event.executionId,
+      event.description,
+      event.details,
+      event.time,
+      None,
+      None,
+      ""
+    )
+    app.sqlStart += sqlExecution
+    app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
+    app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
+  }
+
+  def doSparkListenerSQLExecutionEnd(
+      app: ApplicationInfo,
+      event: SparkListenerSQLExecutionEnd): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    app.sqlEndTime += (event.executionId -> event.time)
+  }
+
+  def doSparkListenerDriverAccumUpdates(
+      app: ApplicationInfo,
+      event: SparkListenerDriverAccumUpdates): Unit = {
+    logDebug("Processing event: " + event.getClass)
+
+    val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
+    accumUpdates.foreach(accum =>
+      app.driverAccum += DriverAccumCase(sqlID, accum._1, accum._2)
+    )
+    logDebug("Current driverAccum has " + app.driverAccum.size + " accums.")
+  }
+
+  def doSparkListenerJobStart(
+      app: ApplicationInfo,
+      event: SparkListenerJobStart): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
+    val sqlID = ProfileUtils.stringToLong(sqlIDString)
+    val thisJob = JobCase(
+      event.jobId,
+      event.stageIds,
+      sqlID,
+      event.properties.asScala,
+      event.time,
+      None,
+      None,
+      "",
+      None,
+      "",
+      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode
+    )
+    app.jobStart += thisJob
+  }
+
+  def doSparkListenerJobEnd(
+      app: ApplicationInfo,
+      event: SparkListenerJobEnd): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    app.jobEndTime += (event.jobId -> event.time)
+
+    // Parse jobResult
+    val thisJobResult = event.jobResult match {
+      case JobSucceeded => "JobSucceeded"
+      case _: JobFailed => "JobFailed"
+      case _ => "Unknown"
+    }
+    app.jobEndResult += (event.jobId -> thisJobResult)
+
+    val thisFailedReason = event.jobResult match {
+      case JobSucceeded => ""
+      case jobFailed: JobFailed => jobFailed.exception.toString
+      case _ => ""
+    }
+    app.jobFailedReason += (event.jobId -> thisFailedReason)
+  }
+
+  def doSparkListenerStageSubmitted(
+      app: ApplicationInfo,
+      event: SparkListenerStageSubmitted): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val thisStage = StageCase(
+      event.stageInfo.stageId,
+      event.stageInfo.attemptNumber(),
+      event.stageInfo.name,
+      event.stageInfo.numTasks,
+      event.stageInfo.rddInfos.size,
+      event.stageInfo.parentIds,
+      event.stageInfo.details,
+      event.properties.asScala,
+      event.stageInfo.submissionTime,
+      None,
+      None,
+      None,
+      "",
+      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode
+    )
+    app.stageSubmitted += thisStage
+  }
+
+  def doSparkListenerStageCompleted(
+      app: ApplicationInfo,
+      event: SparkListenerStageCompleted): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    app.stageCompletionTime += (event.stageInfo.stageId -> event.stageInfo.completionTime)
+    app.stageFailureReason += (event.stageInfo.stageId -> event.stageInfo.failureReason)
+
+    // Parse stage accumulables
+    for (res <- event.stageInfo.accumulables) {
+      try {
+        val value = res._2.value.getOrElse("").toString.toLong
+        val thisMetric = TaskStageAccumCase(
+          event.stageInfo.stageId, event.stageInfo.attemptNumber(),
+          None, res._2.id, res._2.name, Some(value), res._2.internal)
+        app.taskStageAccum += thisMetric
+      } catch {
+        case e: ClassCastException =>
+          logWarning("ClassCastException when parsing accumulables for task " +
+              "stageID=" + event.stageInfo.stageId + ": ")
+          logWarning(e.toString)
+          logWarning("The problematic accumulable is: name="
+              + res._2.name + ",value=" + res._2.value)
+      }
+    }
+  }
+
+  def doSparkListenerTaskGettingResult(
+      app: ApplicationInfo,
+      event: SparkListenerTaskGettingResult): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    app.taskGettingResult += event
+  }
+
+  def doSparkListenerSQLAdaptiveExecutionUpdate(
+      app: ApplicationInfo,
+      event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    // AQE plan can override the ones got from SparkListenerSQLExecutionStart
+    app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
+    app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
+  }
+
+  def doSparkListenerSQLAdaptiveSQLMetricUpdates(
+      app: ApplicationInfo,
+      event: SparkListenerSQLAdaptiveSQLMetricUpdates): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val SparkListenerSQLAdaptiveSQLMetricUpdates(sqlID, sqlPlanMetrics) = event
+    val metrics = sqlPlanMetrics.map { metric =>
+      SQLPlanMetricsCase(sqlID, metric.name,
+        metric.accumulatorId, metric.metricType)
+    }
+    app.sqlPlanMetricsAdaptive ++= metrics
   }
 
   // To process all other unknown events

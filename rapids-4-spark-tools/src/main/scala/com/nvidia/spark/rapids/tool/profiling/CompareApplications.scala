@@ -30,7 +30,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
 
   // Compare the App Information.
   def compareAppInfo(): Unit = {
-    fileWriter.append("Compare Application Information:\n")
+    val messageHeader = "Compare Application Information:\n"
     var query = ""
     var i = 1
     for (app <- apps) {
@@ -42,12 +42,12 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
       }
       i += 1
     }
-    apps.head.runQuery(query)
+    apps.head.runQuery(query = query, writeToFile = true, messageHeader = messageHeader)
   }
 
   // Compare Executors information
   def compareExecutorInfo(): Unit = {
-    fileWriter.write("\n\nCompare Executor Information:\n")
+    val messageHeader = "\n\nCompare Executor Information:\n"
     var query = ""
     var i = 1
     for (app <- apps) {
@@ -59,12 +59,12 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
       }
       i += 1
     }
-    apps.head.runQuery(query)
+    apps.head.runQuery(query = query, writeToFile = true, messageHeader = messageHeader)
   }
 
   // Compare Rapids Properties which are set explicitly
   def compareRapidsProperties(): Unit ={
-    fileWriter.write("\n\nCompare Rapids Properties which are set explicitly:\n")
+    val messageHeader = "\n\nCompare Rapids Properties which are set explicitly:\n"
     var withClauseAllKeys = "with allKeys as \n ("
     val selectKeyPart = "select allKeys.key"
     var selectValuePart = ""
@@ -97,6 +97,6 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
     query = withClauseAllKeys + selectKeyPart + selectValuePart +
         " from (\n" + query + "\n) order by key"
     logDebug("Running query " + query)
-    apps.head.runQuery(query)
+    apps.head.runQuery(query = query, writeToFile = true, messageHeader = messageHeader)
   }
 }
