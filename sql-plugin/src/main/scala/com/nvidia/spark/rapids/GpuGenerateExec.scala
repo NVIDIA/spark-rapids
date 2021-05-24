@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
-import com.nvidia.spark.rapids.GpuMetric.{ESSENTIAL_LEVEL, MODERATE_LEVEL, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -382,6 +381,12 @@ case class GpuGenerateExec(
     outer: Boolean,
     generatorOutput: Seq[Attribute],
     child: SparkPlan) extends UnaryExecNode with GpuExec {
+
+  import GpuMetric._
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
+  )
 
   override def output: Seq[Attribute] = requiredChildOutput ++ generatorOutput
 
