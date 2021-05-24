@@ -85,7 +85,7 @@ object ProfileMain extends Logging {
         apps += app
         logApplicationInfo(app)
         processApps(apps)
-        app.dropAllTempViews()
+        // app.dropAllTempViews()
         index += 1
       }
     }

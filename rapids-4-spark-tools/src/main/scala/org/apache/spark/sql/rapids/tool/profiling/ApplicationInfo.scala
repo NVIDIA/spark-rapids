@@ -249,8 +249,17 @@ class ApplicationInfo(
       val allnodes = planGraph.allNodes
       for (node <- allnodes){
         // Firstly identify problematic SQLs if there is any
+        logWarning("adding node: " + node.name + " descr: " + node.desc)
         if (isProblematicPlan(node)){
-          problematicSQL += ProblematicSQLCase(sqlID)
+          logWarning("adding problematic plan node sql id: " + sqlID + " node: " + node.name)
+          problematicSQL += ProblematicSQLCase(sqlID, node.name + ":" + node.desc)
+        }
+        logWarning("plan description is: " + physicalPlanDescription(sqlID))
+
+        val planDesc = physicalPlanDescription(sqlID)
+        if (isProblematicPlanFromDesc(planDesc)) {
+          logWarning(" adding problematic from desc")
+          problematicSQL += ProblematicSQLCase(sqlID, planDesc)
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics){
@@ -461,7 +470,7 @@ class ApplicationInfo(
     }
   }
 
-  // Function to drop all temp views of this application.
+  // Function to dmrop all temp views of this application.
   def dropAllTempViews(): Unit ={
     for ((name,_) <- this.allDataFrames) {
       sparkSession.catalog.dropTempView(name+"_"+index)
@@ -664,9 +673,78 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
+  // generate history using datasets with lambad:
+/*
+case class DeviceIoTData (
+  battery_level: Long,
+  c02_level: Long,
+  cca2: String,
+  cca3: String,
+  cn: String,
+  device_id: Long,
+  device_name: String,
+  humidity: Long,
+  ip: String,
+  latitude: Double,
+  longitude: Double,
+  scale: String,
+  temp: Long,
+  timestamp: Long
+)
+val ds = spark.read.json("/home/tgraves/iot_devices.json").as[DeviceIoTData]
+val dsTemp = ds.filter(d => d.temp > 25).map(d => (d.temp, d.device_name, d.cca3))
+dsTemp.show()
+val dsAvgTmp = ds.filter(d => {d.temp > 25}).map(d => (d.temp, d.humidity, d.cca3)).groupBy($"_3").avg()
+
+UDF: not optimized
+val ds = spark.read.json("/home/tgraves/iot_devices.json").as[DeviceIoTData]
+ds.select("cn").createOrReplaceTempView("test1")
+spark.udf.register("strlen_nullsafe", (s: String) => if (s != null) s.length else -1)
+
+spark.sql("select cn from test1 where cn is not null and strlen_nullsafe(cn) > 1").show()
+*/
+  // ??? does udf show up:
+  //  @Expression <GreaterThan> (strlen_nullsafe(cn#185) > 1) could run on GPU
+  //          !Expression <ScalaUDF> strlen_nullsafe(cn#185) cannot run on GPU because strlen_nullsafe implemented by class $line33.$read$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$Lambda$4653/1428082501 does not provide a GPU implementation
+
+  // pla doesn't show it:
+  // (2) Filter [codegen id : 1]
+  // Input [1]: [cn#11780]
+  // Condition : (isnotnull(cn#11780) AND (strlen_nullsafe(cn#11780) > 1))
+  // 
+  // test other UDFS: https://github.com/NVIDIA/spark-rapids/blob/branch-21.06/docs/additional-functionality/rapids-udfs.md
+
+  // if register UDF like this then it shows up in plan with UDF:
+/*
+// https://medium.com/@achilleus/spark-udfs-we-can-use-them-but-should-we-use-them-2c5a561fde6d
+val cleanCountryUdf = udf(cleanCountry)
+userData.withColumn("normalisedCountry",cleanCountryUdf(col("country"))).show(false)
+*/
+
+
   // Function to determine if a SparkPlanGraphNode could be problematic.
+  // // todo what about scan for genreated data? -> SerializeFromObject?
+  // LocalTableScan?
+
+  
   def isProblematicPlan(node: SparkPlanGraphNode): Boolean = {
+    logWarning("node description is: " + node.desc)
     node.name == "GpuColumnarToRow" || node.name == "GpuRowToColumnar" ||
-        (node.desc matches ".*\\$Lambda\\$.*")
+      (node.desc matches ".*\\$Lambda\\$.*") ||
+      (node.desc matches ".*\\$UDF\\$.*") ||
+      (node.desc matches ".*\\$ExistingRDD\\$.*") ||
+      node.desc.endsWith(".apply")
+
+  }
+
+  // Function to determine if a SparkPlanGraphNode could be problematic.
+  // gpu columnartoro wand vise versa might not be bad, just means some operations gpu,
+  // but that really only applies for profiling section
+  def isProblematicPlanFromDesc(desc: String): Boolean = {
+    val descNoNulls = desc.replace("\n", " ")
+    (descNoNulls matches ".*\\$Lambda\\$.*") ||
+      (descNoNulls matches ".*UDF.*") ||
+      (descNoNulls matches ".*ExistingRDD.*") ||
+      descNoNulls .endsWith(".apply")
   }
 }

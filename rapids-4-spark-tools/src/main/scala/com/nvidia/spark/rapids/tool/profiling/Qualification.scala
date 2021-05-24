@@ -40,6 +40,23 @@ class Qualification(
     qualifyApp(app)
   }
 
+/*
+def definitely_unsupported_ops(plan_node):
+    """ 
+    Return the collection of operations from this plan that are definitely unsupported 
+    (e.g., UDFs, RDD scans, closures on Datasets, etc).  An empty return value does not imply that 
+    the entire plan is supported, just that it doesn't contain any of these.
+     """
+    def contains_unsupported_ops(desc):
+        return "UDF" in desc or \
+            "Lambda" in desc or \
+            desc.endswith(".apply") or \
+            "ExistingRDD" in desc
+    
+    return [node for node in plan_iterator(plan_node) if contains_unsupported_ops(node.simpleString)]
+
+*/
+
   // Function to qualify an application. Below criteria is used to decide if the application can
   // be qualified.
   // 1. If the application doesn't contain SQL, then it is disqualified.
