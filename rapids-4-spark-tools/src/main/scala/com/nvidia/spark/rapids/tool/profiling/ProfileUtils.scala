@@ -16,6 +16,11 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import scala.collection.mutable.ArrayBuffer
+
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, FileUtil, Path}
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
 
@@ -63,4 +68,13 @@ object ProfileUtils {
     try Some(a.get - b) catch {
       case _: NoSuchElementException => None
     }
+
+  // Return an Array(Path) based on input path string
+  def stringToPath(pathString: String): ArrayBuffer[Path] = {
+    val inputPath = new Path(pathString)
+    val uri = inputPath.toUri
+    val fs = FileSystem.get(uri, new Configuration())
+    val allStatus = fs.listStatus(inputPath).filter(s => s.isFile)
+    ArrayBuffer(FileUtil.stat2Paths(allStatus): _*)
+  }
 }
