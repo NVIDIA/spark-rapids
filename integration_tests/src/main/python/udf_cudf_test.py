@@ -14,7 +14,7 @@
 
 import pytest
 
-from conftest import is_at_least_precommit_run, is_databricks_runtime
+from conftest import is_at_least_precommit_run
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 try:
@@ -275,8 +275,6 @@ def test_sql_group(enable_cudf_udf):
 
 # ======= Test Window In Pandas =======
 @cudf_udf
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/2372')
 def test_window(enable_cudf_udf):
     @pandas_udf("int")
     def _sum_cpu_func(v: pd.Series) -> int:
