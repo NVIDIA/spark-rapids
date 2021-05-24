@@ -25,21 +25,13 @@ import org.apache.spark.sql.types.{BooleanType, DataType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression {
-  private def computePredicate(
-      batch: ColumnarBatch,
-      predicateExpr: Expression): GpuColumnVector = {
-    predicateExpr.columnarEval(batch) match {
-      case gcv: GpuColumnVector => gcv
-      case _ => throw new IllegalStateException("Predicate result is not a column")
-    }
-  }
 
   protected def computeIfElse(
       batch: ColumnarBatch,
       predicateExpr: Expression,
       trueExpr: Expression,
       falseValues: GpuColumnVector): GpuColumnVector = {
-    withResource(computePredicate(batch, predicateExpr)) { predicate =>
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { predicate =>
       val trueResult: Any = trueExpr.columnarEval(batch)
       try {
         val result = trueResult match {
@@ -63,7 +55,7 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
       predicateExpr: Expression,
       trueExpr: Expression,
       falseValue: Scalar): GpuColumnVector = {
-    withResource(computePredicate(batch, predicateExpr)) { predicate =>
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { predicate =>
       val trueResult: Any = trueExpr.columnarEval(batch)
       try {
         val result = trueResult match {
