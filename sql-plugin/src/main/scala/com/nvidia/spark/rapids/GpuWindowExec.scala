@@ -97,6 +97,12 @@ case class GpuWindowExec(
     resultColumnsOnly: Boolean
   ) extends UnaryExecNode with GpuExec {
 
+  import GpuMetric._
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, GPU_OP_TIME)
+  )
+
   override def output: Seq[Attribute] = if (resultColumnsOnly) {
     windowExpressionAliases.map(_.asInstanceOf[NamedExpression].toAttribute)
   } else {
@@ -132,7 +138,7 @@ case class GpuWindowExec(
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
-    val totalTime = gpuLongMetric(GpuMetric.TOTAL_TIME)
+    val gpuOpTime = gpuLongMetric(GpuMetric.GPU_OP_TIME)
 
     val projectList = if (resultColumnsOnly) {
       windowExpressionAliases
@@ -146,7 +152,7 @@ case class GpuWindowExec(
     child.executeColumnar().map { cb =>
       numOutputBatches += 1
       numOutputRows += cb.numRows
-      GpuProjectExec.projectAndClose(cb, boundProjectList, totalTime)
+      GpuProjectExec.projectAndClose(cb, boundProjectList, gpuOpTime)
     }
   }
 }
