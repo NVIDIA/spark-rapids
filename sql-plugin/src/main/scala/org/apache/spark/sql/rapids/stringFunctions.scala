@@ -346,9 +346,9 @@ case class GpuConcatWs(children: Seq[Expression])
     var sep: Either[GpuScalar, GpuColumnVector] = null
     try {
       // get the separator and check for null scalar separator
-      val sepScalarNullOpt = children.head.columnarEval(batch) match {
+      val sepScalarNullOpt = withResourceIfAllowed(children.head.columnarEval(batch)) {
         case sepScalar: GpuScalar =>
-          sep = Left(sepScalar)
+          sep = Left(sepScalar.incRefCount)
           if (sepScalar.getBase.isValid() == false) {
             // if null scalar separator just return a column of all nulls
             Some(GpuColumnVector.from(sepScalar, numRows, dataType))
@@ -356,7 +356,7 @@ case class GpuConcatWs(children: Seq[Expression])
             None
           }
         case sepVec: GpuColumnVector =>
-          sep = Right(sepVec)
+          sep = Right(sepVec.incRefCount())
           None
       }
       sepScalarNullOpt match {
@@ -381,7 +381,7 @@ case class GpuConcatWs(children: Seq[Expression])
       if (sep != null) {
         sep match {
           case Right(sepVec) => sepVec.close()
-          case Left(_) =>
+          case Left(sepScalar) => sepScalar.close()
         }
       }
     }
