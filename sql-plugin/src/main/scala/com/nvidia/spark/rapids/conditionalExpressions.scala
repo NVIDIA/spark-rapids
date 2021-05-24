@@ -28,23 +28,9 @@ abstract class GpuConditionalExpression extends ComplexTypeMergingExpression wit
   private def computePredicate(
       batch: ColumnarBatch,
       predicateExpr: Expression): GpuColumnVector = {
-    val predicate: Any = predicateExpr.columnarEval(batch)
-    try {
-      if (!predicate.isInstanceOf[GpuColumnVector]) {
-        throw new IllegalStateException("Predicate result is not a column")
-      }
-      val p = predicate.asInstanceOf[GpuColumnVector]
-
-      // TODO: This null replacement is no longer necessary when
-      // https://github.com/rapidsai/cudf/issues/3856 is fixed.
-      withResource(Scalar.fromBool(false)) { falseScalar =>
-        GpuColumnVector.from(p.getBase.replaceNulls(falseScalar), BooleanType)
-      }
-    } finally {
-      predicate match {
-        case c: AutoCloseable => c.close()
-        case _ =>
-      }
+    predicateExpr.columnarEval(batch) match {
+      case gcv: GpuColumnVector => gcv
+      case _ => throw new IllegalStateException("Predicate result is not a column")
     }
   }
 
