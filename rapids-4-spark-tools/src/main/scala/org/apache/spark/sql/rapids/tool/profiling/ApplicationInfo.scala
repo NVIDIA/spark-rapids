@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids.tool.profiling
 
 import java.io.FileWriter
-import java.net.URI
 
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
@@ -44,7 +43,7 @@ class ApplicationInfo(
     val args: ProfileArgs,
     val sparkSession: SparkSession,
     val fileWriter: FileWriter,
-    val eventlog: String,
+    val eventlog: Path,
     val index: Int) extends Logging {
 
   // From SparkListenerLogStart
@@ -172,7 +171,9 @@ class ApplicationInfo(
     "output_recordsWritten" -> "sum"
   )
 
-  // By looping through SQL Plan nodes to find out the problematic SQLs
+  // By looping through SQL Plan nodes to find out the problematic SQLs. Currently we define
+  // problematic SQL's as those which have RowToColumnar, ColumnarToRow transitions and Lambda's in
+  // the Spark plan.
   var problematicSQL: ArrayBuffer[ProblematicSQLCase] = ArrayBuffer[ProblematicSQLCase]()
 
   // Process all events
@@ -188,15 +189,12 @@ class ApplicationInfo(
    * Functions to process all the events
    */
   def processEvents(): Unit = {
-    logInfo("Parsing Event Log File: " + eventlog)
-    // Convert a String to org.apache.hadoop.fs.Path
-    val uri = URI.create(eventlog)
-    val config = new Configuration()
-    val fs = FileSystem.get(uri, config)
-    val path = new Path(eventlog)
+    logInfo("Parsing Event Log File: " + eventlog.toString)
+
+    val fs = FileSystem.get(eventlog.toUri,new Configuration())
     var totalNumEvents = 0
 
-    Utils.tryWithResource(EventLogFileReader.openEventLog(path, fs)) { in =>
+    Utils.tryWithResource(EventLogFileReader.openEventLog(eventlog, fs)) { in =>
       val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
       totalNumEvents = lines.size
       lines.foreach { line =>
@@ -250,12 +248,10 @@ class ApplicationInfo(
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes){
-
         // Firstly identify problematic SQLs if there is any
         if (isProblematicPlan(node)){
           problematicSQL += ProblematicSQLCase(sqlID)
         }
-
         // Then process SQL plan metric type
         for (metric <- node.metrics){
           val thisMetric = SQLPlanMetricsCase(sqlID,metric.name,
@@ -465,18 +461,29 @@ class ApplicationInfo(
     }
   }
 
-  // Function to run a query and print the result to the file -- limit 1000 rows.
+  // Function to drop all temp views of this application.
+  def dropAllTempViews(): Unit ={
+    for ((name,_) <- this.allDataFrames) {
+      sparkSession.catalog.dropTempView(name+"_"+index)
+    }
+    // Clear all cached tables as well.
+    sparkSession.catalog.clearCache()
+  }
+
+  // Function to run a query and print the result to the file.
+  // Limit to 1000 rows if the output number of rows is not mentioned in the command line.
   def runQuery(
       query: String,
       vertical: Boolean = false,
       writeToFile: Boolean = false,
       messageHeader: String = ""): DataFrame = {
     logDebug("Running:" + query)
+    val numRows = args.numOutputRows.getOrElse(1000)
     val df = sparkSession.sql(query)
-    logInfo("\n" + df.showString(1000, 0, vertical))
+    logInfo("\n" + df.showString(numRows, 0, vertical))
     if (writeToFile) {
       fileWriter.write(messageHeader)
-      fileWriter.write(df.showString(1000, 0, vertical))
+      fileWriter.write(df.showString(numRows, 0, vertical))
     }
     df
   }

@@ -22,8 +22,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
- * Qualification qualifies or disqualifies an application
- * for GPU acceleration.
+ * Qualifies or disqualifies an application for GPU acceleration.
  */
 class Qualification(
     apps: ArrayBuffer[ApplicationInfo],
@@ -41,7 +40,12 @@ class Qualification(
     qualifyApp(app)
   }
 
-  //function to qualify an application
+  // Function to qualify an application. Below criteria is used to decide if the application can
+  // be qualified.
+  // 1. If the application doesn't contain SQL, then it is disqualified.
+  // 2. If the application has SQL, below 2 conditions have to be met to mark it as qualified:
+  //    a. SQL duration is greater than 30 seconds.
+  //    b. executorCPUTime_sum/executorRunTime_sum > 30 ( atleast 30%)
   def qualifyApp(app: ApplicationInfo): Boolean = {
 
     // If this application does not have SQL
@@ -61,7 +65,7 @@ class Qualification(
     } else {
       fileWriter.write(s"${app.appId} (index=${app.index}) " +
           s"is qualified with below qualified SQL(s):\n")
-      fileWriter.write("\n" + ToolUtils.showString(df))
+      fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
       true
     }
   }

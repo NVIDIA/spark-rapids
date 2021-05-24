@@ -26,7 +26,7 @@ object ToolUtils {
         && properties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean)
   }
 
-  def showString(df: DataFrame) = {
-    df.showString(1000, 0)
+  def showString(df: DataFrame, numRows: Int) = {
+    df.showString(numRows, 0)
   }
 }

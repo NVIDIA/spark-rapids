@@ -23,9 +23,8 @@ import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
 
-
 /**
- * Analysis does analysis on the DataFrames
+ * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
 class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
@@ -38,18 +37,14 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
     if (apps.size == 1) {
       fileWriter.write("Job level aggregated task metrics:")
       apps.head.runQuery(apps.head.jobMetricsAggregationSQL + " order by Duration desc")
-    }
-    else {
+    } else {
       var query = ""
-      var i = 1
       for (app <- apps) {
-        if (i == 1) {
+        if (query.isEmpty) {
           query += app.jobMetricsAggregationSQL
-        }
-        else {
+        } else {
           query += " union " + app.jobMetricsAggregationSQL
         }
-        i += 1
       }
       fileWriter.write("Job level aggregated task metrics:")
       apps.head.runQuery(query + " order by appIndex, Duration desc")
@@ -61,18 +56,14 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
     if (apps.size == 1) {
       fileWriter.write("Stage level aggregated task metrics:")
       apps.head.runQuery(apps.head.stageMetricsAggregationSQL + " order by Duration desc")
-    }
-    else {
+    } else {
       var query = ""
-      var i = 1
       for (app <- apps) {
-        if (i == 1) {
+        if (query.isEmpty) {
           query += app.stageMetricsAggregationSQL
-        }
-        else {
+        } else {
           query += " union " + app.stageMetricsAggregationSQL
         }
-        i += 1
       }
       fileWriter.write("Stage level aggregated task metrics:")
       apps.head.runQuery(query + " order by appIndex, Duration desc")
@@ -84,18 +75,14 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
     if (apps.size == 1) {
       val messageHeader = "Job + Stage level aggregated task metrics:"
       apps.head.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc")
-    }
-    else {
+    } else {
       var query = ""
-      var i = 1
       for (app <- apps) {
-        if (i == 1) {
+        if (query.isEmpty) {
           query += app.jobAndStageMetricsAggregationSQL
-        }
-        else {
+        } else {
           query += " union " + app.jobAndStageMetricsAggregationSQL
         }
-        i += 1
       }
       fileWriter.write("Job + Stage level aggregated task metrics:")
       apps.head.runQuery(query + " order by appIndex, Duration desc")
@@ -108,23 +95,18 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
       if (apps.head.allDataFrames.contains(s"sqlDF_${apps.head.index}")) {
         val messageHeader = "SQL level aggregated task metrics:"
         apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc")
-      }
-      else {
+      } else {
         apps.head.sparkSession.emptyDataFrame
       }
-    }
-    else {
+    } else {
       var query = ""
-      var i = 1
       val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
       for (app <- appsWithSQL) {
-        if (i == 1) {
+        if (query.isEmpty) {
           query += app.sqlMetricsAggregationSQL
-        }
-        else {
+        } else {
           query += " union " + app.sqlMetricsAggregationSQL
         }
-        i += 1
       }
       val messageHeader = "SQL level aggregated task metrics:"
       apps.head.runQuery(query + " order by appIndex, Duration desc")

@@ -52,6 +52,12 @@ For usage see below:
     trailArg[List[String]](required = true,
       descr = "Event log filenames(space separated). " +
           "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
+  val compare: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Compare Applications (Recommended to compare less than 10 applications)." +
+          " Default is false")
+  val numOutputRows: ScallopOption[Int] =
+    opt[Int](required = false,
+      descr = "Number of output rows for each Application. Default is 1000")
   verify()
 }
-
