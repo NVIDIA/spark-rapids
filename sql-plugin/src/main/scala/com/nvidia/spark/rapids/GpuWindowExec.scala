@@ -97,8 +97,6 @@ case class GpuWindowExec(
     resultColumnsOnly: Boolean
   ) extends UnaryExecNode with GpuExec {
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = spillMetrics
-
   override def output: Seq[Attribute] = if (resultColumnsOnly) {
     windowExpressionAliases.map(_.asInstanceOf[NamedExpression].toAttribute)
   } else {
@@ -114,11 +112,7 @@ case class GpuWindowExec(
     } else ClusteredDistribution(partitionSpec) :: Nil
   }
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = if (partitionSpec.isEmpty) {
-    Seq(RequireSingleBatch)
-  } else {
-    Seq(null)
-  }
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
 
   private lazy val partitionOrdering = {
     val shims = ShimLoader.getSparkShims
@@ -136,7 +130,7 @@ case class GpuWindowExec(
   override def outputBatching: CoalesceGoal = if (partitionSpec.isEmpty) {
     RequireSingleBatch
   } else {
-    null
+    BatchedByKey(partitionOrdering)
   }
 
   override protected def doExecute(): RDD[InternalRow] =
@@ -156,16 +150,7 @@ case class GpuWindowExec(
     val boundProjectList =
       GpuBindReferences.bindGpuReferences(projectList, child.output)
 
-    val input = if (partitionSpec.isEmpty) {
-      child.executeColumnar()
-    } else {
-      val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
-      val makeIter = GpuKeyBatchingIterator
-          .makeFunc(partitionOrdering, child.output.toArray, spillCallback)
-      child.executeColumnar().mapPartitions(makeIter)
-    }
-
-    input.map { cb =>
+    child.executeColumnar().map { cb =>
       numOutputBatches += 1
       numOutputRows += cb.numRows
       GpuProjectExec.projectAndClose(cb, boundProjectList, totalTime)

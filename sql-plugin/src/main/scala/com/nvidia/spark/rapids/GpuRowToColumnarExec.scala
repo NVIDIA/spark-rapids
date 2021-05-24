@@ -549,7 +549,7 @@ private object GpuRowToColumnConverter {
 class RowToColumnarIterator(
     rowIter: Iterator[InternalRow],
     localSchema: StructType,
-    localGoal: CoalesceGoal,
+    localGoal: CoalesceSizeGoal,
     converters: GpuRowToColumnConverter,
     totalTime: GpuMetric = NoopMetric,
     numInputRows: GpuMetric = NoopMetric,
@@ -635,7 +635,7 @@ class RowToColumnarIterator(
 object GeneratedUnsafeRowToCudfRowIterator extends Logging {
   def apply(input: Iterator[UnsafeRow],
       schema: Array[Attribute],
-      goal: CoalesceGoal,
+      goal: CoalesceSizeGoal,
       totalTime: GpuMetric,
       numInputRows: GpuMetric,
       numOutputRows: GpuMetric,
@@ -644,7 +644,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 
     ctx.addReferenceObj("iter", input, classOf[Iterator[UnsafeRow]].getName)
     ctx.addReferenceObj("schema", schema, classOf[Array[Attribute]].getName)
-    ctx.addReferenceObj("goal", goal, classOf[CoalesceGoal].getName)
+    ctx.addReferenceObj("goal", goal, classOf[CoalesceSizeGoal].getName)
     ctx.addReferenceObj("totalTime", totalTime, classOf[GpuMetric].getName)
     ctx.addReferenceObj("numInputRows", numInputRows, classOf[GpuMetric].getName)
     ctx.addReferenceObj("numOutputRows", numOutputRows, classOf[GpuMetric].getName)
@@ -711,7 +711,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |  public SpecificUnsafeRowToColumnarBatchIterator(Object[] references) {
          |    super((scala.collection.Iterator<UnsafeRow>)references[0],
          |      (org.apache.spark.sql.catalyst.expressions.Attribute[])references[1],
-         |      (com.nvidia.spark.rapids.CoalesceGoal)references[2],
+         |      (com.nvidia.spark.rapids.CoalesceSizeGoal)references[2],
          |      (com.nvidia.spark.rapids.GpuMetric)references[3],
          |      (com.nvidia.spark.rapids.GpuMetric)references[4],
          |      (com.nvidia.spark.rapids.GpuMetric)references[5],
@@ -785,7 +785,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 /**
  * GPU version of row to columnar transition.
  */
-case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
+case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
   extends UnaryExecNode with GpuExec {
   import GpuMetric._
 
