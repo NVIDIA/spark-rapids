@@ -12,7 +12,7 @@ Works with both cpu and gpu generated event logs.
 ## How to compile and use with Spark
 1. `mvn clean package`
 2. Include rapids-4-spark-tools-<version>.jar in the '--jars' option to spark-shell or spark-submit
-3.  After starting spark-shell:
+3. After starting spark-shell:
 For a single event log analysis:
 ```
 com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))

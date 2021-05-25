@@ -59,7 +59,8 @@ object QualificationInfoUtils extends Logging {
   def generateFriendsDataset(spark: SparkSession): Dataset[RapidsFriends] = {
     import spark.implicits._
     val df = spark.sparkContext.parallelize(
-      Seq.fill(1000){(randomAlpha(10), randomAlpha(5), randomInt)}).toDF("name", "friend", "age")
+      Seq.fill(1000){(randomAlpha(10), randomAlpha(5), randomInt)})
+      .toDF("name", "friend", "age")
     df.as[RapidsFriends]
   }
 
@@ -136,9 +137,11 @@ object QualificationInfoUtils extends Logging {
   /*
    * Example command:
    * $SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g \
-   * --jars ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar \
+   * --jars ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,\
+   *  ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar \
    * --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoUtils \
-   * ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar udffunc /tmp/testeventlogDir 100001 
+   * ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar udffunc \
+   * /tmp/testeventlogDir 100001
    */
   def main(args: Array[String]): Unit = {
     if (args.length == 0) {

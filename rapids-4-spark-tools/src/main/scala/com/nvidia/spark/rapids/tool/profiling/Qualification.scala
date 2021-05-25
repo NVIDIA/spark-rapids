@@ -59,7 +59,8 @@ class Qualification(
     // ids that aren't problematic
     val dfProb = app.queryToDF(app.qualificationSQLDataSet)
     if (!dfProb.isEmpty) {
-      logInfo(s"${app.appId} (index=${app.index}) is disqualified because its problematic (UDF, Dataset, etc). ")
+      logInfo(s"${app.appId} (index=${app.index}) is disqualified because its problematic " +
+        "(UDF, Dataset, etc). ")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
         s"disqualified because problematic (UDF, Dataset, etc.)\n")
       fileWriter.write("Reason disqualified:\n")
