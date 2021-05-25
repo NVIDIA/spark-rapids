@@ -17,14 +17,19 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.{File, FilenameFilter}
 
-import com.google.common.io.Files
-import org.scalatest.FunSuite
 import scala.io.Source
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import com.google.common.io.Files
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
-class GenerateDotSuite extends FunSuite with Logging {
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+
+class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
+
+  override def beforeAll(): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+  }
 
   test("Generate DOT") {
     val eventLogDir = Files.createTempDir()
@@ -48,10 +53,10 @@ class GenerateDotSuite extends FunSuite with Logging {
     // close the event log
     spark.close()
 
-    val files = eventLogDir.listFiles(new FilenameFilter {
-      override def accept(file: File, s: String): Boolean = !s.startsWith(".")
-    })
+    // find the event log
+    val files = listFilesMatching(eventLogDir, !_.startsWith("."))
     assert(files.length === 1)
+    val eventLog = files.head.getAbsolutePath
 
     // create new session for tool to use
     val spark2 = SparkSession
@@ -67,14 +72,14 @@ class GenerateDotSuite extends FunSuite with Logging {
       "--output-directory",
       dotFileDir.getAbsolutePath,
       "--generate-dot",
-      files.head.getAbsolutePath
+      eventLog
     ))
     ProfileMain.mainInternal(spark2, appArgs)
 
     // assert that a file was generated
-    val dotDirs = listFilesEnding(dotFileDir, "-1")
-    assert(dotDirs.length === 1)
-    val dotFiles = listFilesEnding(dotDirs.head, ".dot")
+    val dotDirs = listFilesMatching(dotFileDir, _.startsWith("local"))
+    assert(dotDirs.length === 2)
+    val dotFiles = listFilesMatching(dotDirs.last, _.endsWith(".dot"))
     assert(dotFiles.length === 1)
 
     // assert that the generated file looks something like what we expect
@@ -89,9 +94,9 @@ class GenerateDotSuite extends FunSuite with Logging {
     }
   }
 
-  private def listFilesEnding(dir: File, pattern: String): Array[File] = {
+  private def listFilesMatching(dir: File, matcher: String => Boolean): Array[File] = {
     dir.listFiles(new FilenameFilter {
-      override def accept(file: File, s: String): Boolean = s.endsWith(pattern)
+      override def accept(file: File, s: String): Boolean = matcher(s)
     })
   }
 

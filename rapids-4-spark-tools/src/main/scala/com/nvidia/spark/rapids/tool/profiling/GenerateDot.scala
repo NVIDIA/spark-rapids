@@ -167,7 +167,6 @@ object GenerateDot {
 
     // write the dot graph to a file
     val file = new File(dir, filename)
-    println(s"Writing ${file.getAbsolutePath}")
     val w = new FileWriter(file)
     try {
       w.write("digraph G {\n")
