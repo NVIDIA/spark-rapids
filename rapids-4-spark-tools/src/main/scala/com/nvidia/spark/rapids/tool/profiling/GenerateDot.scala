@@ -46,7 +46,6 @@ object GenerateDot {
    * @param plan First query plan and metrics
    * @param comparisonPlan Optional second query plan and metrics
    * @param filename Filename to write dot graph to
-   * @param includeCodegen Include WholeStageCodegen and InputAdapter nodes, if true
    */
   def generateDotGraph(
       plan: QueryPlanWithMetrics,
