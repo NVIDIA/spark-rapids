@@ -623,13 +623,9 @@ trait GpuHashJoin extends GpuExec {
     // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
     val realTarget = Math.max(targetSize, 10 * 1024)
 
-    // Filtering nulls on the build side is a workaround.
-    // 1) For a performance issue in LeftSemi and LeftAnti joins
-    // https://github.com/rapidsai/cudf/issues/7300
-    // 2) As a work around to Struct joins with nullable children
+    // Filtering nulls on the build side is a workaround for Struct joins with nullable children
     // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
-    val builtAnyNullable = (compareNullsEqual || joinType == LeftSemi || joinType == LeftAnti) &&
-        buildKeys.exists(_.nullable)
+    val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
 
     val nullFiltered = if (builtAnyNullable) {
       GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
