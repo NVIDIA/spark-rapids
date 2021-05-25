@@ -73,17 +73,26 @@ def definitely_unsupported_ops(plan_node):
       return false
     }
 
-    val df = app.queryToDF(app.qualificationSQL)
-    if (df.isEmpty) {
-      logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is qualified.")
+    // ids that aren't problematic
+    val dfProb = app.queryToDF(app.qualificationSQLDataSet)
+    if (!dfProb.isEmpty) {
+      logInfo(s"${app.appId} (index=${app.index}) is disqualified because its problematic (UDF, Dataset, etc).")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-          s"disqualified because no SQL is qualified.\n")
-      false
-    } else {
-      fileWriter.write(s"${app.appId} (index=${app.index}) " +
-          s"is qualified with below qualified SQL(s):\n")
-      fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
-      true
+          s"disqualified because problematic (UDF, Dataset, etc.\n")
+      // TODO - figure out way to print out which ones were bad... eventually need ratio though.
+      // fileWriter.write("\n sqlIds: " + ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
     }
+      val df = app.queryToDF(app.qualificationSQL)
+      if (df.isEmpty) {
+        logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is qualified.")
+        fileWriter.write(s"${app.appId} (index=${app.index}) is " +
+            s"disqualified because no SQL is qualified.\n")
+        false
+      } else {
+        fileWriter.write(s"${app.appId} (index=${app.index}) " +
+            s"is qualified with below qualified SQL(s):\n")
+        fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
+        true
+      }
   }
 }

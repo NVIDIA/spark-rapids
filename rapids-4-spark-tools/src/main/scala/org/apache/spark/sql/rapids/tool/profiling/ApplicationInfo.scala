@@ -673,6 +673,12 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
+  // Function to generate a query for qualification
+  def qualificationSQLDataSet: String = {
+    s"""select distinct(sqlID), desc from problematicSQLDF_$index
+       |""".stripMargin
+  }
+
   // generate history using datasets with lambad:
 /*
 case class DeviceIoTData (
