@@ -38,45 +38,6 @@ class Spark311CDHShims extends Spark311Shims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     super.getExecs ++ Seq(
-      GpuOverrides.exec[FileSourceScanExec](
-        "Reading data from files, often from Hive tables",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
-        (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
-          // partition filters and data filters are not run on the GPU
-          override val childExprs: Seq[ExprMeta[_]] = Seq.empty
-
-          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
-
-          override def convertToGpu(): GpuExec = {
-            val sparkSession = wrapped.relation.sparkSession
-            val options = wrapped.relation.options
-
-            val location = replaceWithAlluxioPathIfNeeded(
-              conf,
-              wrapped.relation,
-              wrapped.partitionFilters,
-              wrapped.dataFilters)
-
-            val newRelation = HadoopFsRelation(
-              location,
-              wrapped.relation.partitionSchema,
-              wrapped.relation.dataSchema,
-              wrapped.relation.bucketSpec,
-              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-              options)(sparkSession)
-
-            GpuFileSourceScanExec(
-              newRelation,
-              wrapped.output,
-              wrapped.requiredSchema,
-              wrapped.partitionFilters,
-              wrapped.optionalBucketSet,
-              wrapped.optionalNumCoalescedBuckets,
-              wrapped.dataFilters,
-              wrapped.tableIdentifier)(conf)
-          }
-        }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested()
@@ -102,24 +63,6 @@ class Spark311CDHShims extends Spark311Shims {
             GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
           }
         }),
-      GpuOverrides.exec[SortMergeJoinExec](
-        "Sort merge join, replacing with shuffled hash join",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
-        (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[BroadcastHashJoinExec](
-        "Implementation of join using broadcast data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
-      GpuOverrides.exec[ShuffledHashJoinExec](
-        "Implementation of join using hashed shuffled data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
-        (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
