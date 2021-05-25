@@ -81,7 +81,7 @@ def test_repartition_df(data_gen, num_parts, length):
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @allow_non_gpu('ShuffleExchangeExec', 'RoundRobinPartitioning')
-@pytest.mark.parametrize('data_gen', [[('a', ArrayGen(string_gen))],
+@pytest.mark.parametrize('data_gen', [[('ag', ArrayGen(string_gen))],
     [('a', StructGen([
       ('a_1', StructGen([
         ('a_1_1', int_gen),
@@ -96,7 +96,7 @@ def test_round_robin_sort_fallback(data_gen):
     from pyspark.sql.functions import lit
     assert_gpu_fallback_collect(
             # Add a computed column to avoid shuffle being optimized back to a CPU shuffle like in test_repartition_df
-            lambda spark : gen_df(spark, data_gen).withColumn('x', lit(1)).repartition(13),
+            lambda spark : gen_df(spark, data_gen).withColumn('extra', lit(1)).repartition(13),
             'ShuffleExchangeExec')
 
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
