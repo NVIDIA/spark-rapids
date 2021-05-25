@@ -55,14 +55,14 @@ class Spark311CDHShims extends Spark311Shims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getScalaUDFAsExpression(
-                                        function: AnyRef,
-                                        dataType: DataType,
-                                        children: Seq[Expression],
-                                        inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
-                                        outputEncoder: Option[ExpressionEncoder[_]] = None,
-                                        udfName: Option[String] = None,
-                                        nullable: Boolean = true,
-                                        udfDeterministic: Boolean = true): Expression = {
+      function: AnyRef,
+      dataType: DataType,
+      children: Seq[Expression],
+      inputEncoders: Seq[Option[ExpressionEncoder[_]]] = Nil,
+      outputEncoder: Option[ExpressionEncoder[_]] = None,
+      udfName: Option[String] = None,
+      nullable: Boolean = true,
+      udfDeterministic: Boolean = true): Expression = {
     ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
       udfDeterministic)
   }
@@ -407,9 +407,9 @@ class Spark311CDHShims extends Spark311Shims {
   }
 
   override def checkColumnNameDuplication(
-                                           schema: StructType,
-                                           colType: String,
-                                           resolver: Resolver): Unit = {
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
     GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
