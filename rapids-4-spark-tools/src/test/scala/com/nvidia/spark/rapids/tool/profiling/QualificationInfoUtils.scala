@@ -54,9 +54,10 @@ object QualificationInfoUtils extends Logging {
     sb.toString
   }
 
-  val r = new scala.util.Random(11)
-  def randomInt(): Int = r.nextInt(100)
-
+  val randForInt = new scala.util.Random(11)
+  def randomInt(): Int = {
+    randForInt.nextInt(100)
+  }
 
   def generateFriendsDataset(spark: SparkSession): Dataset[RapidsFriends] = {
     import spark.implicits._
@@ -134,7 +135,6 @@ object QualificationInfoUtils extends Logging {
       }
     }
   }
-
 
   /*
    * Example command:
