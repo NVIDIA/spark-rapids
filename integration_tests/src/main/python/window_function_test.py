@@ -58,19 +58,19 @@ _grpkey_decimals_with_nulls = [
     ('c', DecimalGen(precision=8, scale=3, nullable=True))]
 
 _grpkey_byte_with_nulls = [
-    ('a', IntegerGen()),
+    ('a', RepeatSeqGen(int_gen, length=20)),
     ('b', ByteGen(nullable=True, min_val=-98, max_val=98, special_cases=[]))]
 
 _grpkey_short_with_nulls = [
-    ('a', IntegerGen()),
+    ('a', RepeatSeqGen(int_gen, length=20)),
     ('b', ShortGen(nullable=True, min_val=-32700, max_val=32700, special_cases=[]))]
 
 _grpkey_int_with_nulls = [
-    ('a', IntegerGen()),
+    ('a', RepeatSeqGen(int_gen, length=20)),
     ('b', IntegerGen(nullable=True, min_val=-2147483000, max_val=2147483000, special_cases=[]))]
 
 _grpkey_long_with_nulls = [
-    ('a', IntegerGen()),
+    ('a', RepeatSeqGen(int_gen, length=20)),
     ('b', LongGen(nullable=True, min_val=-9223372036854775000, max_val=9223372036854775000, special_cases=[]))]
 
 _grpkey_byte_with_nulls_with_overflow = [
