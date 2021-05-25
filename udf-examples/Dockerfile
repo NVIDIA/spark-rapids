@@ -51,12 +51,16 @@ CUDA_VERSION_MINOR=$(echo $CUDA_VERSION | tr -d '.' | cut -c 3); \
 && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
 && update-alternatives \
    --install /usr/bin/gcc gcc /usr/bin/gcc-${GCC_VERSION} 100 \
+&& update-alternatives \
+   --install /usr/bin/g++ g++ /usr/bin/g++-${GCC_VERSION} 100 \
 # Set gcc-${GCC_VERSION} as the default gcc
 && update-alternatives --set gcc /usr/bin/gcc-${GCC_VERSION}  \
+# Set gcc-${GCC_VERSION} as the default g++
+&& update-alternatives --set g++ /usr/bin/g++-${GCC_VERSION}  \
 # Set JDK8 as the default Java
 && update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-ARG CMAKE_VERSION=3.18.5
+ARG CMAKE_VERSION=3.19.0
 
 # Install CMake
 RUN cd /tmp \
