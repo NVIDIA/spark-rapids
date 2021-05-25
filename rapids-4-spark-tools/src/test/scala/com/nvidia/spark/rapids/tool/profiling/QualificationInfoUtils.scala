@@ -22,8 +22,12 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.functions.{col, udf}
 
+// class used for testing
 case class RapidsFriends(name: String, friend: String, age: Int)
 
+/**
+ * Utilities to generate event logs used for qualification testing.
+ */
 object QualificationInfoUtils extends Logging {
   def randomStringFromCharList(length: Int, chars: Seq[Char]): String = {
     val sb = new StringBuilder
@@ -130,20 +134,32 @@ object QualificationInfoUtils extends Logging {
 
 
   /*
-   * SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g --jars /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,/home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar /home/tgraves/testeventlogDir 1001
+   * Example command:
+   * $SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g \
+   * --jars ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar \
+   * --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoUtils \
+   * ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar udffunc /tmp/testeventlogDir 100001 
    */
   def main(args: Array[String]): Unit = {
-    val logType = if (args.length > 0) args(0) else "dataset"
+    if (args.length == 0) {
+      println(s"ERROR: must specify a logType dataset, udfds, or udffunc")
+      System.exit(1)
+    }
+    val logType = args(0)
+    if (logType != "dataset" && logType != "udfds" && logType != "udffunc") {
+      println(s"ERROR: logType must be one of: dataset, udfds, or udffunc")
+      System.exit(1)
+    }
     val eventDir = if (args.length > 1) args(1) else "/tmp/spark-eventLogTest"
     val size = if (args.length > 2) args(2).toInt else 1000
     val spark = {
-        SparkSession
-          .builder()
-          .master("local[*]")
-          .appName("Rapids Spark Profiling Tool Unit Tests")
-          .config("spark.eventLog.enabled", "true")
-          .config("spark.eventLog.dir", eventDir)
-          .getOrCreate()
+      SparkSession
+        .builder()
+        .master("local[*]")
+        .appName("Rapids Spark Profiling Tool Unit Tests")
+        .config("spark.eventLog.enabled", "true")
+        .config("spark.eventLog.dir", eventDir)
+        .getOrCreate()
     }
     import spark.implicits._
     if (logType.toLowerCase.equals("dataset")) {
@@ -158,5 +174,4 @@ object QualificationInfoUtils extends Logging {
     }
     spark.stop()
   }
-
 }

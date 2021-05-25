@@ -52,7 +52,7 @@ class Qualification(
     if (!app.allDataFrames.contains(s"sqlDF_${app.index}")) {
       logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is inside.")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-          s"disqualified because no SQL is inside.\n")
+        s"disqualified because no SQL is inside.\n")
       return false
     }
 
@@ -61,8 +61,7 @@ class Qualification(
     if (!dfProb.isEmpty) {
       logInfo(s"${app.appId} (index=${app.index}) is disqualified because its problematic (UDF, Dataset, etc). ")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-          s"disqualified because problematic (UDF, Dataset, etc.)\n")
-      // TODO - figure out way to print out which ones were bad... eventually need ratio though.
+        s"disqualified because problematic (UDF, Dataset, etc.)\n")
       fileWriter.write("Reason disqualified:\n")
       fileWriter.write(ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
     }

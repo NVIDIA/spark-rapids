@@ -254,15 +254,6 @@ class ApplicationInfo(
           logWarning("Adding problematic plan node: " + node.name)
           problematicSQL += ProblematicSQLCase(sqlID, probReason, node.desc)
         }
-        // check to see if anything found in the plan description in case not in the node
-        /*
-        val planDesc = physicalPlanDescription(sqlID)
-        val probDescReason  = isProblematicPlanFromDesc(planDesc)
-        if (probDescReason.nonEmpty) {
-          logWarning("Adding problematic from desc " + probDescReason)
-          problematicSQL += ProblematicSQLCase(sqlID, probDescReason, planDesc.substring(0, 15))
-        }
-        */
         // Then process SQL plan metric type
         for (metric <- node.metrics){
           val thisMetric = SQLPlanMetricsCase(sqlID,metric.name,
@@ -472,7 +463,7 @@ class ApplicationInfo(
     }
   }
 
-  // Function to dmrop all temp views of this application.
+  // Function to drop all temp views of this application.
   def dropAllTempViews(): Unit ={
     for ((name,_) <- this.allDataFrames) {
       sparkSession.catalog.dropTempView(name+"_"+index)
@@ -703,11 +694,5 @@ class ApplicationInfo(
       case a if a.endsWith(".apply") => "Dataset/Apply"
       case _ => ""
     }
-  }
-
-  // Function to determine if a Spark Plan description could be problematic.
-  def isProblematicPlanFromDesc(desc: String): String = {
-    val descNoNewLines = desc.replace("\n", " ")
-    isDescProblematic(descNoNewLines)
   }
 }
