@@ -40,23 +40,6 @@ class Qualification(
     qualifyApp(app)
   }
 
-/*
-def definitely_unsupported_ops(plan_node):
-    """ 
-    Return the collection of operations from this plan that are definitely unsupported 
-    (e.g., UDFs, RDD scans, closures on Datasets, etc).  An empty return value does not imply that 
-    the entire plan is supported, just that it doesn't contain any of these.
-     """
-    def contains_unsupported_ops(desc):
-        return "UDF" in desc or \
-            "Lambda" in desc or \
-            desc.endswith(".apply") or \
-            "ExistingRDD" in desc
-    
-    return [node for node in plan_iterator(plan_node) if contains_unsupported_ops(node.simpleString)]
-
-*/
-
   // Function to qualify an application. Below criteria is used to decide if the application can
   // be qualified.
   // 1. If the application doesn't contain SQL, then it is disqualified.
@@ -76,17 +59,18 @@ def definitely_unsupported_ops(plan_node):
     // ids that aren't problematic
     val dfProb = app.queryToDF(app.qualificationSQLDataSet)
     if (!dfProb.isEmpty) {
-      logInfo(s"${app.appId} (index=${app.index}) is disqualified because its problematic (UDF, Dataset, etc).")
+      logInfo(s"${app.appId} (index=${app.index}) is disqualified because its problematic (UDF, Dataset, etc). ")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-          s"disqualified because problematic (UDF, Dataset, etc.\n")
+          s"disqualified because problematic (UDF, Dataset, etc.)\n")
       // TODO - figure out way to print out which ones were bad... eventually need ratio though.
-      // fileWriter.write("\n sqlIds: " + ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
+      fileWriter.write("Reason disqualified:\n")
+      fileWriter.write(ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
     }
       val df = app.queryToDF(app.qualificationSQL)
       if (df.isEmpty) {
         logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is qualified.")
         fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-            s"disqualified because no SQL is qualified.\n")
+            s"disqualified because no SQL is qualified\n")
         false
       } else {
         fileWriter.write(s"${app.appId} (index=${app.index}) " +

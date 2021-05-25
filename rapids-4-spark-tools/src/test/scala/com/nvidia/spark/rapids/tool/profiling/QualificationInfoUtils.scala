@@ -59,6 +59,7 @@ object QualificationInfoUtils extends Logging {
     df.as[RapidsFriends]
   }
 
+  // dataset operations in plan show up as Lambda
   def genDatasetEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
     val tempFile = File.createTempFile("dataSetEventLog", null)
@@ -78,8 +79,8 @@ object QualificationInfoUtils extends Logging {
     }
   }
 
-  // if register UDF with udf function it shows up in plan with UDF
-  def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
+  // UDF with dataset, shows up with Lambda
+  def genUDFDSEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
     val tempFile = File.createTempFile("dataSetEventLog", null)
     tempFile.deleteOnExit()
@@ -90,10 +91,47 @@ object QualificationInfoUtils extends Logging {
     dsAge.write.json(tempFile.getName())
   }
 
+  def cleanCountry = (country: String) => {
+    val allUSA = Seq("US", "USa", "USA", "United states", "United states of America")
+    if (allUSA.contains(country)) {
+      "USA"
+    }
+    else {
+      "unknown"
+    }
+  }
+
+  // if register UDF with udf function it shows up in plan with UDF
+  // Registering udf like:
+  //   val normaliseCountry = spark.udf.register("normalisedCountry",cleanCountry)
+  // doesn't seem to put anything unique in the plan
+  def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
+    import spark.implicits._
+    val tempFile = File.createTempFile("udfResWrite", null)
+    val jsonTempFile = File.createTempFile("jsonTempFile", null)
+    tempFile.deleteOnExit()
+    jsonTempFile.deleteOnExit()
+    val userData = spark.createDataFrame(Seq(
+      (1, "Chandler", "Pasadena", "US"),
+      (2, "Monica", "New york", "USa"),
+      (3, "Phoebe", "Suny", "USA"),
+      (4, "Rachael", "St louis", "United states of America"),
+      (5, "Joey", "LA", "Ussaa"),
+      (6, "Ross", "Detroit", "United states")
+    )).toDF("id", "name", "city", "country")
+    userData.write.json(jsonTempFile.getName())
+    val userDataRead = spark.read.json(jsonTempFile.getName())
+    val allUSA = Seq("US", "USa", "USA", "United states", "United states of America") 
+    userDataRead.createOrReplaceTempView("user_data")
+    val cleanCountryUdf = udf(cleanCountry)
+    val resDf = userDataRead.withColumn("normalisedCountry",cleanCountryUdf(col("country")))
+    resDf.write.json(tempFile.getName())
+  }
+
 
   /*
-SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g --jars /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,/home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar,/home/tgraves/.m2/repository/ai/rapids/cudf/21.06-SNAPSHOT/cudf-21.06-SNAPSHOT-cuda11.jar,/home/tgraves/workspace/spark-rapids-another/dist/target/rapids-4-spark_2.12-21.06.0-SNAPSHOT.jar --conf spark.driver.extraJavaOptions=-Duser.timezone=GMT --conf spark.sql.session.timeZone=UTC --conf spark.executor.extraJavaOptions=-Duser.timezone=GMT   --conf spark.plugins=com.nvidia.spark.SQLPlugin --conf spark.rapids.sql.incompatibleOps.enabled=true  --conf spark.rapids.sql.explain="NOT_ON_GPU"   --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=/home/tgraves/spark-eventlogs --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar /home/tgraves/testeventlogDir 1001
-*/
+   * SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g --jars /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,/home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar /home/tgraves/testeventlogDir 1001
+   */
   def main(args: Array[String]): Unit = {
     val logType = if (args.length > 0) args(0) else "dataset"
     val eventDir = if (args.length > 1) args(1) else "/tmp/spark-eventLogTest"
@@ -110,8 +148,13 @@ SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g --jars /home/t
     import spark.implicits._
     if (logType.toLowerCase.equals("dataset")) {
       genDatasetEventLog(spark, size)
+    } else if (logType.toLowerCase.equals("udfds")) {
+      genUDFDSEventLog(spark, size)
+    } else if (logType.toLowerCase.equals("udffunc")) {
+      genUDFFuncEventLog(spark, size)
     } else {
-
+      println(s"ERROR: Invalid log type specified: $logType")
+      System.exit(1)
     }
     spark.stop()
   }
