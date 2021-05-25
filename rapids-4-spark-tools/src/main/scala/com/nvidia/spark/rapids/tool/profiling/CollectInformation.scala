@@ -15,9 +15,15 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.io.File
+import java.util.concurrent.TimeUnit
+
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
+
 
 /**
  * CollectInformation mainly print information based on this event log:
@@ -70,6 +76,41 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
     for (app <- apps) {
       app.runQuery(query = app.generateRapidsProperties + " order by key", writeToFile = true,
         messageHeader = messageHeader)
+    }
+  }
+
+  def generateDot(): Unit = {
+    for (app <- apps) {
+      val requiredDataFrames = Seq("sqlMetricsDF", "driverAccumDF",
+          "taskStageAccumDF", "taskStageAccumDF")
+        .map(name => s"${name}_${app.index}")
+      if (requiredDataFrames.forall(app.allDataFrames.contains)) {
+        val accums = app.runQuery(app.generateSQLAccums)
+        val start = System.nanoTime()
+        val accumSummary = accums
+          .select(col("sqlId"), col("accumulatorId"), col("max_value"))
+          .collect()
+        val map = new mutable.HashMap[Long, ArrayBuffer[(Long,Long)]]()
+        for (row <- accumSummary) {
+          val list = map.getOrElseUpdate(row.getLong(0), new ArrayBuffer[(Long, Long)]())
+          list += row.getLong(1) -> row.getLong(2)
+        }
+        val outDir = new File(app.args.outputDirectory())
+        for ((sqlID, planInfo) <- app.sqlPlan) {
+          val fileDir = new File(outDir, s"${app.appId}-query-$sqlID")
+          fileDir.mkdirs()
+          val metrics = map.getOrElse(sqlID, Seq.empty).toMap
+          GenerateDot.generateDotGraph(
+            QueryPlanWithMetrics(planInfo, metrics), None, fileDir, sqlID + ".dot")
+        }
+        val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
+        fileWriter.write(s"Generated DOT graphs for app ${app.appId} " +
+          s"to ${outDir.getAbsolutePath} in $duration second(s)\n")
+      } else {
+        val missingDataFrames = requiredDataFrames.filterNot(app.allDataFrames.contains)
+        fileWriter.write(s"Could not generate DOT graph for app ${app.appId} " +
+          s"because of missing data frames: ${missingDataFrames.mkString(", ")}\n")
+      }
     }
   }
 }
