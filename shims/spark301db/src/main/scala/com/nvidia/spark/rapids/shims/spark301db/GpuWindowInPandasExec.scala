@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +54,10 @@ case class GpuWindowInPandasExec(
     }
   }
 
+  // On Databricks, binding the references on driver side will get some invalid expressions
+  // (e.g. none#0L, none@1L) in the `projectList`, causing failures in `test_window` test.
+  // So need to do the binding for `projectList` lazily, and the binding will actually run
+  // on executors now.
   private lazy val outReferences = {
     val allExpressions = windowFramesWithExpressions.map(_._2).flatten
     val references = allExpressions.zipWithIndex.map { case (e, i) =>
