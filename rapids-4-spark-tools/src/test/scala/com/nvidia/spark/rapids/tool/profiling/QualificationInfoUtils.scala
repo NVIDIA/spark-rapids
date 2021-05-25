@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.io.File
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.TestUtils
 import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.functions.{col, udf}
 
@@ -29,6 +30,7 @@ case class RapidsFriends(name: String, friend: String, age: Int)
  * Utilities to generate event logs used for qualification testing.
  */
 object QualificationInfoUtils extends Logging {
+
   def randomStringFromCharList(length: Int, chars: Seq[Char]): String = {
     val sb = new StringBuilder
     for (i <- 1 to length) {
@@ -67,11 +69,11 @@ object QualificationInfoUtils extends Logging {
   // dataset operations in plan show up as Lambda
   def genDatasetEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    val tempFile = File.createTempFile("dataSetEventLog", null)
-    tempFile.deleteOnExit()
-    val ds = generateFriendsDataset(spark)
-    val dsAge = ds.filter(d => d.age > 25).map(d => (d.friend, d.age))
-    dsAge.write.json(tempFile.getName())
+    TestUtils.withTempPath { jsonOutFile =>
+      val ds = generateFriendsDataset(spark)
+      val dsAge = ds.filter(d => d.age > 25).map(d => (d.friend, d.age))
+      dsAge.write.json(jsonOutFile.getCanonicalPath)
+    }
   }
 
   def parseAge = (age: Int) => {
@@ -87,13 +89,13 @@ object QualificationInfoUtils extends Logging {
   // UDF with dataset, shows up with Lambda
   def genUDFDSEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    val tempFile = File.createTempFile("dataSetEventLog", null)
-    tempFile.deleteOnExit()
-    val ageFunc = udf(parseAge)
-    val ds = generateFriendsDataset(spark)
-    ds.withColumn("ageCategory",ageFunc(col("age")))
-    val dsAge = ds.filter(d => d.age > 25).map(d => (d.friend, d.age))
-    dsAge.write.json(tempFile.getName())
+    TestUtils.withTempPath { jsonOutFile =>
+      val ageFunc = udf(parseAge)
+      val ds = generateFriendsDataset(spark)
+      ds.withColumn("ageCategory",ageFunc(col("age")))
+      val dsAge = ds.filter(d => d.age > 25).map(d => (d.friend, d.age))
+      dsAge.write.json(jsonOutFile.getCanonicalPath)
+    }
   }
 
   def cleanCountry = (country: String) => {
@@ -112,25 +114,25 @@ object QualificationInfoUtils extends Logging {
   // doesn't seem to put anything unique in the plan
   def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    val tempFile = File.createTempFile("udfResWrite", null)
-    val jsonTempFile = File.createTempFile("jsonTempFile", null)
-    tempFile.deleteOnExit()
-    jsonTempFile.deleteOnExit()
-    val userData = spark.createDataFrame(Seq(
-      (1, "Chandler", "Pasadena", "US"),
-      (2, "Monica", "New york", "USa"),
-      (3, "Phoebe", "Suny", "USA"),
-      (4, "Rachael", "St louis", "United states of America"),
-      (5, "Joey", "LA", "Ussaa"),
-      (6, "Ross", "Detroit", "United states")
-    )).toDF("id", "name", "city", "country")
-    userData.write.json(jsonTempFile.getName())
-    val userDataRead = spark.read.json(jsonTempFile.getName())
-    val allUSA = Seq("US", "USa", "USA", "United states", "United states of America") 
-    userDataRead.createOrReplaceTempView("user_data")
-    val cleanCountryUdf = udf(cleanCountry)
-    val resDf = userDataRead.withColumn("normalisedCountry",cleanCountryUdf(col("country")))
-    resDf.write.json(tempFile.getName())
+    TestUtils.withTempPath { jsonInputFile =>
+      TestUtils.withTempPath { jsonOutFile =>
+        val userData = spark.createDataFrame(Seq(
+          (1, "Chandler", "Pasadena", "US"),
+          (2, "Monica", "New york", "USa"),
+          (3, "Phoebe", "Suny", "USA"),
+          (4, "Rachael", "St louis", "United states of America"),
+          (5, "Joey", "LA", "Ussaa"),
+          (6, "Ross", "Detroit", "United states")
+        )).toDF("id", "name", "city", "country")
+        userData.write.json(jsonInputFile.getCanonicalPath)
+        val userDataRead = spark.read.json(jsonInputFile.getCanonicalPath)
+        val allUSA = Seq("US", "USa", "USA", "United states", "United states of America") 
+        userDataRead.createOrReplaceTempView("user_data")
+        val cleanCountryUdf = udf(cleanCountry)
+        val resDf = userDataRead.withColumn("normalisedCountry", cleanCountryUdf(col("country")))
+        resDf.write.json(jsonOutFile.getCanonicalPath)
+      }
+    }
   }
 
 
