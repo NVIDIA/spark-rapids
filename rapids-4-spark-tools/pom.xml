@@ -132,7 +132,7 @@
                             </filters>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>org.apache.spark.sql.rapids.tool.profiling.ProfileMain</mainClass>
+                                    <mainClass>com.nvidia.spark.rapids.tool.profiling.ProfileMain</mainClass>
                                 </transformer>
                             </transformers>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
