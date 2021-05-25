@@ -20,7 +20,7 @@ from functools import reduce
 from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_311
+from spark_session import is_before_spark_311, with_cpu_session
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -281,7 +281,6 @@ def test_hash_grpby_pivot(data_gen, conf):
             .agg(f.sum('c')),
         conf=conf)
 
-
 @approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
@@ -290,10 +289,19 @@ def test_hash_grpby_pivot(data_gen, conf):
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
 def test_hash_pivot_groupby_nan_fallback(data_gen):
+    # collect values to pivot in previous, to avoid this preparation job being captured
+    def fetch_pivot_values(spark):
+        max_values = spark._jsparkSession.sessionState().conf().dataFramePivotMaxValues()
+        df = gen_df(spark, data_gen, length=100)
+        df = df.select('b').distinct().limit(max_values + 1).sort('b')
+        return [row[0] for row in df.collect()]
+
+    pivot_values = with_cpu_session(fetch_pivot_values)
+
     assert_gpu_fallback_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
-            .pivot('b')
+            .pivot('b', pivot_values)
             .agg(f.sum('c')),
         "PivotFirst",
         conf=_nans_float_conf)
@@ -333,10 +341,19 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
 def test_hash_pivot_reduction_nan_fallback(data_gen):
+    # collect values to pivot in previous, to avoid this preparation job being captured
+    def fetch_pivot_values(spark):
+        max_values = spark._jsparkSession.sessionState().conf().dataFramePivotMaxValues()
+        df = gen_df(spark, data_gen, length=100)
+        df = df.select('b').distinct().limit(max_values + 1).sort('b')
+        return [row[0] for row in df.collect()]
+
+    pivot_values = with_cpu_session(fetch_pivot_values)
+
     assert_gpu_fallback_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby()
-            .pivot('b')
+            .pivot('b', pivot_values)
             .agg(f.sum('c')),
         "PivotFirst",
         conf=_nans_float_conf)

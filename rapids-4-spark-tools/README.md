@@ -25,30 +25,30 @@ org.apache.spark.sql.rapids.tool.profiling.ProfileMain.main(Array("/path/to/even
 
 ## How to compile and use from command-line
 1. `mvn clean package`
-2. `cd $SPARK_HOME (Download Apache Spark if reequired)`
-3. `./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1`
+2. `cd $SPARK_HOME (Download Apache Spark if required)`
+3. `./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1`
 
 ## Options
 ```
-$ ./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar --help
+$ ./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar --help
 
 Spark event log profiling tool
 
 Example:
 
 # Input 1 or more event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1 /path/to/eventlog2
 
 # If event log is from S3:
 export AWS_ACCESS_KEY_ID=xxx
 export AWS_SECRET_ACCESS_KEY=xxx
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
 # If event log is from hdfs:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar hdfs://<BUCKET>/eventlog1 /path/to/eventlog2
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar hdfs://<BUCKET>/eventlog1 /path/to/eventlog2
 
 # Change output directory to /tmp. It outputs as "rapids_4_spark_tools_output.log" in the local directory if the output directory is not specified.
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/workload_profiling/target/rapids-4-spark-tools-<version>.jar -o /tmp /path/to/eventlog1
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar -o /tmp /path/to/eventlog1
 
 For usage see below:
   -o, --output-directory  <arg>   Output directory. Default is current directory

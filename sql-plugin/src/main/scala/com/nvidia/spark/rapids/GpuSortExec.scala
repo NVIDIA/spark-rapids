@@ -88,6 +88,7 @@ case class GpuSortExec(
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = {
     val required = Map(
+      TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
       SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
       PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
     if (sortType == OutOfCoreSort) {

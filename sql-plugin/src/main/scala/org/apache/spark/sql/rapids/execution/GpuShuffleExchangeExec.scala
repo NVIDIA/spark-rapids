@@ -57,12 +57,17 @@ class GpuShuffleMeta(
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning if shuffle.sqlContext.conf.sortBeforeRepartition =>
         val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
+        System.err.println(s"Checking round-robin sort for ${shuffle.output.map(_.dataType)}")
         shuffle.output.map(_.dataType)
             .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
             .foreach { dataType =>
+              System.err.println(s"Disallowing $dataType for round-robin partitioning")
               willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType to run " +
                   s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")
             }
+      case _: RoundRobinPartitioning =>
+        System.err.println(s"Allowing ${shuffle.output.map(_.dataType)} for round-robin " +
+            s"sort-before=${shuffle.sqlContext.conf.sortBeforeRepartition}")
       case _ =>
     }
   }

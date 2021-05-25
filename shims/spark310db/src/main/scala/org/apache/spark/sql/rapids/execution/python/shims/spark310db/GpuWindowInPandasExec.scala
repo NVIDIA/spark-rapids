@@ -64,7 +64,11 @@ case class GpuWindowInPandasExec(
     }
   }
 
-  private val outReferences = {
+  // On Databricks, binding the references on driver side will get some invalid expressions
+  // (e.g. none#0L, none@1L) in the `projectList`, causing failures in `test_window` test.
+  // So need to do the binding for `projectList` lazily, and the binding will actually run
+  // on executors now.
+  private lazy val outReferences = {
     val allExpressions = windowFramesWithExpressions.map(_._2).flatten
     val references = allExpressions.zipWithIndex.map { case (e, i) =>
       // Results of window expressions will be on the right side of child's output

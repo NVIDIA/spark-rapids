@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
 import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
 import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec}
@@ -262,6 +262,9 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
+    if (MemoryCostHelper.isExcludedFromCost(expr)) {
+      return 0d
+    }
 
     val memoryReadCost = expr.wrapped match {
       case _: Alias =>
@@ -308,6 +311,9 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
   }
 
   private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
+    if (MemoryCostHelper.isExcludedFromCost(expr)) {
+      return 0d
+    }
 
     var memoryReadCost = 0d
     var memoryWriteCost = 0d
@@ -350,6 +356,15 @@ object MemoryCostHelper {
    */
   def calculateCost(dataSize: Long, memorySpeed: Double): Double = {
     (dataSize / GIGABYTE) / memorySpeed
+  }
+
+  def isExcludedFromCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]) = {
+    expr.wrapped match {
+      case _: WindowSpecDefinition | _: WindowFrame =>
+        // Window expressions are Unevaluable and accessing dataType causes an exception
+        true
+      case _ => false
+    }
   }
 }
 

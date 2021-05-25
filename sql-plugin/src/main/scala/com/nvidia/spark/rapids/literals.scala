@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat,
-  Long => JLong, Short => JShort}
+import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
 import java.util
 import java.util.{List => JList, Objects}
 import javax.xml.bind.DatatypeConverter
@@ -31,7 +30,7 @@ import org.json4s.JsonAST.{JField, JNull, JString}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, TimestampFormatter}
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, MapData, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -76,6 +75,11 @@ object GpuScalar extends Arm with Logging {
       new HostColumnVector.ListType(true, resolveElementType(elementType))
     case StructType(fields) =>
       new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
+    case MapType(keyType, valueType, _) =>
+      new HostColumnVector.ListType(true,
+        new HostColumnVector.StructType(true,
+          resolveElementType(keyType),
+          resolveElementType(valueType)))
     case other =>
       new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
   }
@@ -122,6 +126,15 @@ object GpuScalar extends Arm with Logging {
         convertElementTo(data.get(id, f.dataType), f.dataType)
       }
       new HostColumnVector.StructData(row.asInstanceOf[Array[Object]]: _*)
+    case MapType(keyType, valueType, _) =>
+      val data = element.asInstanceOf[MapData]
+      val keys = data.keyArray.array.map(convertElementTo(_, keyType)).toList
+      val values = data.valueArray.array.map(convertElementTo(_, valueType)).toList
+      keys.zip(values).map {
+        case (k, v) => new HostColumnVector.StructData(
+          k.asInstanceOf[Object],
+          v.asInstanceOf[Object])
+      }.asJava
     case _ => element
   }
 
@@ -176,6 +189,10 @@ object GpuScalar extends Arm with Logging {
         val colType = resolveElementType(elementType)
         val rows = seq.map(convertElementTo(_, elementType))
         ColumnVector.fromStructs(colType, rows.asInstanceOf[Seq[HostColumnVector.StructData]]: _*)
+      case MapType(_, _, _) =>
+        val colType = resolveElementType(elementType)
+        val rows = seq.map(convertElementTo(_, elementType))
+        ColumnVector.fromLists(colType, rows.asInstanceOf[Seq[JList[_]]]: _*)
       case NullType =>
         GpuColumnVector.columnVectorFromNull(seq.size, NullType)
       case u =>
@@ -198,6 +215,9 @@ object GpuScalar extends Arm with Logging {
   def from(v: Any, t: DataType): Scalar = t match {
     case nullType if v == null => nullType match {
       case ArrayType(elementType, _) => Scalar.listFromNull(resolveElementType(elementType))
+      case MapType(keyType, valueType, _) => Scalar.listFromNull(
+        resolveElementType(StructType(
+          Seq(StructField("key", keyType), StructField("value", valueType)))))
       case _ => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(nullType))
     }
     case decType: DecimalType =>
@@ -282,6 +302,19 @@ object GpuScalar extends Arm with Logging {
         }
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for ArrayType, expecting ArrayData")
+    }
+    case MapType(keyType, valueType, _) => v match {
+      case map: MapData =>
+        val struct = withResource(columnVectorFromLiterals(map.keyArray().array, keyType)) { keys =>
+          withResource(columnVectorFromLiterals(map.valueArray().array, valueType)) { values =>
+            ColumnVector.makeStruct(map.numElements(), keys, values)
+          }
+        }
+        withResource(struct) { struct =>
+          Scalar.listFromColumnView(struct)
+        }
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for MapType, expecting MapData")
     }
     case _ => throw new UnsupportedOperationException(s"${v.getClass} '$v' is not supported" +
         s" as a Scalar yet")
@@ -376,7 +409,7 @@ class GpuScalar private(
 
   private var refCount: Int = 0
 
-  if(scalar.isEmpty && value.isEmpty) {
+  if (scalar.isEmpty && value.isEmpty) {
     throw new IllegalArgumentException("GpuScalar requires at least a value or a Scalar")
   }
   if (value.isDefined && value.get.isInstanceOf[Scalar]) {
