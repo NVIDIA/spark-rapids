@@ -20,7 +20,7 @@ import java.io.File
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, SparkSession}
-import org.apache.spark.sql.rapids.tool.profiling._
+import org.apache.spark.sql.functions.{col, udf}
 
 case class RapidsFriends(name: String, friend: String, age: Int)
 
@@ -54,7 +54,8 @@ object QualificationInfoUtils extends Logging {
 
   def generateFriendsDataset(spark: SparkSession): Dataset[RapidsFriends] = {
     import spark.implicits._
-    val df = spark.sparkContext.parallelize(Seq.fill(1000){(randomAlpha(10), randomAlpha(5), randomInt)}).toDF("name", "friend", "age")
+    val df = spark.sparkContext.parallelize(
+      Seq.fill(1000){(randomAlpha(10), randomAlpha(5), randomInt)}).toDF("name", "friend", "age")
     df.as[RapidsFriends]
   }
 
@@ -67,12 +68,36 @@ object QualificationInfoUtils extends Logging {
     dsAge.write.json(tempFile.getName())
   }
 
-/*
+  def parseAge = (age: Int) => {
+    val majorAge = Seq("21", "25", "55", "18")
+    if (majorAge.contains(age)) {
+      "MILESTONE"
+    }
+    else {
+      "other"
+    }
+  }
+
+  // if register UDF with udf function it shows up in plan with UDF
+  def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
+    import spark.implicits._
+    val tempFile = File.createTempFile("dataSetEventLog", null)
+    tempFile.deleteOnExit()
+    val ageFunc = udf(parseAge)
+    val ds = generateFriendsDataset(spark)
+    ds.withColumn("ageCategory",ageFunc(col("age")))
+    val dsAge = ds.filter(d => d.age > 25).map(d => (d.friend, d.age))
+    dsAge.write.json(tempFile.getName())
+  }
+
+
+  /*
 SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g --jars /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,/home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar,/home/tgraves/.m2/repository/ai/rapids/cudf/21.06-SNAPSHOT/cudf-21.06-SNAPSHOT-cuda11.jar,/home/tgraves/workspace/spark-rapids-another/dist/target/rapids-4-spark_2.12-21.06.0-SNAPSHOT.jar --conf spark.driver.extraJavaOptions=-Duser.timezone=GMT --conf spark.sql.session.timeZone=UTC --conf spark.executor.extraJavaOptions=-Duser.timezone=GMT   --conf spark.plugins=com.nvidia.spark.SQLPlugin --conf spark.rapids.sql.incompatibleOps.enabled=true  --conf spark.rapids.sql.explain="NOT_ON_GPU"   --conf spark.eventLog.enabled=true --conf spark.eventLog.dir=/home/tgraves/spark-eventlogs --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite /home/tgraves/workspace/spark-rapids-another/rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar /home/tgraves/testeventlogDir 1001
 */
   def main(args: Array[String]): Unit = {
-    val eventDir = if (args.length > 0) args(0) else "/tmp/spark-eventLogTest"
-    val size = if (args.length > 1) args(1).toInt else 1000
+    val logType = if (args.length > 0) args(0) else "dataset"
+    val eventDir = if (args.length > 1) args(1) else "/tmp/spark-eventLogTest"
+    val size = if (args.length > 2) args(2).toInt else 1000
     val spark = {
         SparkSession
           .builder()
@@ -83,7 +108,11 @@ SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g --jars /home/t
           .getOrCreate()
     }
     import spark.implicits._
-    genDatasetEventLog(spark, size)
+    if (logType.toLowerCase.equals("dataset")) {
+      genDatasetEventLog(spark, size)
+    } else {
+
+    }
     spark.stop()
   }
 
