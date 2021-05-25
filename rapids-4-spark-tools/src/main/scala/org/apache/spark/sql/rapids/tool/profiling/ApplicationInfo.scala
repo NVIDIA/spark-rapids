@@ -251,7 +251,6 @@ class ApplicationInfo(
         // Firstly identify problematic SQLs if there is any
         val probReason = isProblematicPlan(node)
         if (probReason.nonEmpty) {
-          logWarning("Adding problematic plan node: " + node.name)
           problematicSQL += ProblematicSQLCase(sqlID, probReason, node.desc)
         }
         // Then process SQL plan metric type
