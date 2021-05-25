@@ -50,6 +50,7 @@ import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     batchWriteBufferSize: Long,
+    alignedIO: Boolean,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
     extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
   private[this] val batchSpiller = new BatchSpiller()
@@ -66,6 +67,14 @@ class RapidsGdsStore(
       } else {
         singleShotSpill(other, deviceBuffer)
       }
+    }
+  }
+
+  private def alignBufferSize(buffer: DeviceMemoryBuffer): Long = {
+    if (alignedIO) {
+      RapidsGdsStore.alignBufferSize(buffer)
+    } else {
+      buffer.getLength
     }
   }
 
@@ -88,8 +97,7 @@ class RapidsGdsStore(
 
     override def materializeMemoryBuffer: MemoryBuffer = {
       closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-        CuFile.readFileToDeviceMemory(
-          buffer.getAddress, RapidsGdsStore.alignBufferSize(buffer), path, fileOffset)
+        CuFile.readFileToDeviceMemory(buffer.getAddress, alignBufferSize(buffer), path, fileOffset)
         logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
         buffer
       }
@@ -102,6 +110,8 @@ class RapidsGdsStore(
           val dm = dmOriginal.slice(dstOffset, length)
           // TODO: switch to async API when it's released, using the passed in CUDA stream.
           stream.sync()
+          // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
+          //  resolved.
           CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
           logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
         case _ => throw new IllegalStateException(
@@ -124,7 +134,7 @@ class RapidsGdsStore(
   : RapidsBufferBase = {
     val id = other.id
     val path = id.getDiskPath(diskBlockManager)
-    val alignedSize = RapidsGdsStore.alignBufferSize(deviceBuffer)
+    val alignedSize = alignBufferSize(deviceBuffer)
     // When sharing files, append to the file; otherwise, write from the beginning.
     val fileOffset = if (id.canShareDiskPaths) {
       // only one writer at a time for now when using shared files
@@ -149,10 +159,11 @@ class RapidsGdsStore(
 
     def spill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase =
       this.synchronized {
-        if (deviceBuffer.getLength > batchWriteBufferSize - currentOffset) {
+        val alignedSize = alignBufferSize(deviceBuffer)
+        if (alignedSize > batchWriteBufferSize - currentOffset) {
           val path = currentFile.getAbsolutePath
           withResource(new CuFileWriteHandle(path)) { handle =>
-            handle.write(batchWriteBuffer, currentOffset, 0)
+            handle.write(batchWriteBuffer, batchWriteBufferSize, 0)
             logDebug(s"Spilled to $path 0:$currentOffset via GDS")
           }
           pendingBuffers.foreach(_.unsetPending())
@@ -168,7 +179,7 @@ class RapidsGdsStore(
         addBuffer(currentFile, id)
         val gdsBuffer = new RapidsGdsBatchedBuffer(id, currentFile, currentOffset,
           other.size, other.meta, other.getSpillPriority, other.spillCallback)
-        currentOffset += RapidsGdsStore.alignUp(deviceBuffer.getLength)
+        currentOffset += alignedSize
         pendingBuffers += gdsBuffer
         gdsBuffer
       }
@@ -224,7 +235,7 @@ class RapidsGdsStore(
             logDebug(s"Created device buffer $size from batch write buffer")
           } else {
             CuFile.readFileToDeviceMemory(
-              buffer.getAddress, RapidsGdsStore.alignBufferSize(buffer), path, fileOffset)
+              buffer.getAddress, alignBufferSize(buffer), path, fileOffset)
             logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
           }
           buffer
@@ -243,6 +254,8 @@ class RapidsGdsStore(
             } else {
               // TODO: switch to async API when it's released, using the passed in CUDA stream.
               stream.sync()
+              // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
+              //  resolved.
               CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
               logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
             }

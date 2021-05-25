@@ -265,13 +265,14 @@ object GpuDeviceManager extends Logging {
         logInfo("Using legacy default stream")
       }
 
-      val (allocationAlignment, alignmentThreshold) = if (conf.isGdsSpillEnabled) {
-        logInfo(s"Using allocation alignment = ${toKB(RapidsGdsStore.AllocationAlignment)} KB, " +
-            s"alignment threshold = ${toKB(RapidsGdsStore.AlignmentThreshold)} KB")
-        (RapidsGdsStore.AllocationAlignment, RapidsGdsStore.AlignmentThreshold)
-      } else {
-        (0L, 0L)
-      }
+      val (allocationAlignment, alignmentThreshold) =
+        if (conf.isGdsSpillEnabled && conf.isGdsSpillAlignedIO) {
+          logInfo(s"Using allocation alignment = ${toKB(RapidsGdsStore.AllocationAlignment)} KB, " +
+              s"alignment threshold = ${toKB(RapidsGdsStore.AlignmentThreshold)} KB")
+          (RapidsGdsStore.AllocationAlignment, RapidsGdsStore.AlignmentThreshold)
+        } else {
+          (0L, 0L)
+        }
 
       try {
         Cuda.setDevice(gpuId)
