@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any(), any())).thenReturn(client)
-      doNothing().when(client).doFetch(any(), ac.capture(), any())
+      doNothing().when(client).doFetch(any(), ac.capture())
       cl.start()
 
       val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
@@ -102,7 +102,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any(), any())).thenReturn(client)
-    doNothing().when(client).doFetch(any(), ac.capture(), any())
+    doNothing().when(client).doFetch(any(), ac.capture())
     cl.start()
 
     val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
@@ -144,7 +144,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any(), any())).thenReturn(client)
-    doNothing().when(client).doFetch(any(), ac.capture(), any())
+    doNothing().when(client).doFetch(any(), ac.capture())
 
     // signal a timeout to the iterator
     when(cl.pollForResult(any())).thenReturn(None)
@@ -177,7 +177,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
 
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any(), any())).thenReturn(client)
-    doNothing().when(client).doFetch(any(), ac.capture(), any())
+    doNothing().when(client).doFetch(any(), ac.capture())
     val bufferId = ShuffleReceivedBufferId(1)
     val mockBuffer = mock[RapidsBuffer]
 

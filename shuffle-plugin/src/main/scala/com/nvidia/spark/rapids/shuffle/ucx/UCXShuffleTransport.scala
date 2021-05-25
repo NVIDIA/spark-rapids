@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
   private[this] lazy val ucx = {
     logWarning("UCX Shuffle Transport Enabled")
-    val ucxImpl = new UCX(shuffleServerId, rapidsConf)
+    val ucxImpl = new UCX(this, shuffleServerId, rapidsConf)
     ucxImpl.init()
 
     initBounceBufferPools(bounceBufferSize,
@@ -88,7 +88,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     ucxImpl
   }
 
-  override def getMetaBuffer(size: Long): RefCountedDirectByteBuffer = {
+  override def getDirectByteBuffer(size: Long): RefCountedDirectByteBuffer = {
     if (size > rapidsConf.shuffleMaxMetadataSize) {
       logWarning(s"Large metadata message size $size B, larger " +
         s"than ${rapidsConf.shuffleMaxMetadataSize} B. " +
@@ -251,8 +251,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
         clientConnection,
         this,
         clientExecutor,
-        clientCopyExecutor,
-        rapidsConf.shuffleMaxMetadataSize)
+        clientCopyExecutor)
     })
   }
 

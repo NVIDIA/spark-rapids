@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat, approximate_float
+from marks import incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -138,9 +138,8 @@ def test_ifnull(data_gen):
                 'ifnull({}, b)'.format(null_lit),
                 'ifnull(a, {})'.format(null_lit)))
 
-# GpuLiteral does not support array type yet, so make the test separate from the above one.
-# Supporting GpuLiteral of array type is tracked by
-#     https://github.com/NVIDIA/spark-rapids/issues/1902
+# TODO Merge this with the test `test_case_when` above once https://github.com/NVIDIA/spark-rapids/issues/2445
+# is done
 @pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
 def test_case_when_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -148,3 +147,15 @@ def test_case_when_array(data_gen):
             int_gen,
             data_gen,
             data_gen).selectExpr('CASE WHEN a > 10 THEN b ELSE c END'))
+
+# TODO delete this test when https://github.com/NVIDIA/spark-rapids/issues/2445 is done
+@allow_non_gpu('ProjectExec', 'Alias', 'CaseWhen', 'Literal', 'Cast')
+@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
+def test_case_when_array_lit_fallback(data_gen):
+    l = gen_scalar(data_gen)
+    def do_it(spark):
+        return two_col_df(spark,
+                boolean_gen,
+                data_gen).select(f.when(f.col('a'), f.lit(l)).otherwise(f.col('b')))
+
+    assert_gpu_fallback_collect(do_it, 'CaseWhen')
