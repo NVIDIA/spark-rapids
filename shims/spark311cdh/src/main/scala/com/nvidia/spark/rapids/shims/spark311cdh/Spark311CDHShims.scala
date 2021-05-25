@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
+import com.nvidia.spark.rapids.shims.spark311.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec, GpuJoinUtils, GpuOrcScan, GpuParquetScan, GpuShuffledHashJoinExec, GpuShuffledHashJoinMeta, GpuShuffleExchangeExec, GpuSortMergeJoinMeta, OffsetWindowFunctionMeta, Spark311Shims}
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -212,7 +212,8 @@ class Spark311CDHShims extends Spark311Shims {
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
           ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
             TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
-      (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
+      (lead, conf, p, r) => new com.nvidia.spark.rapids.shims
+      .spark311.OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }),
@@ -314,7 +315,8 @@ class Spark311CDHShims extends Spark311Shims {
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
           TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
         ), TypeSig.all),
-        (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
+        (join, conf, p, r) => new com.nvidia.spark.rapids.shims
+        .spark311.GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
@@ -382,9 +384,10 @@ class Spark311CDHShims extends Spark311Shims {
   }
 
   override def copyParquetBatchScanExec(
-                                         batchScanExec: GpuBatchScanExec,
-                                         queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
+    batchScanExec: GpuBatchScanExec,
+    queryUsesInputFile: Boolean): GpuBatchScanExec = {
+    val scan = batchScanExec.scan.asInstanceOf[com
+    .nvidia.spark.rapids.shims.spark311.GpuParquetScan]
     val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
     batchScanExec.copy(scan=scanCopy)
   }
@@ -399,7 +402,8 @@ class Spark311CDHShims extends Spark311Shims {
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
-    if (serClass == classOf[ParquetCachedBatchSerializer]) {
+    if (serClass == classOf[com.nvidia.spark.rapids
+    .shims.spark311cdh.ParquetCachedBatchSerializer]) {
       org.apache.spark.sql.rapids.shims.spark311.GpuColumnarToRowTransitionExec(plan)
     } else {
       GpuColumnarToRowExec(plan)
@@ -458,10 +462,11 @@ class Spark311CDHShims extends Spark311Shims {
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
-  override def createTable(table: CatalogTable,
-                           sessionCatalog: SessionCatalog,
-                           tableLocation: Option[URI],
-                           result: BaseRelation) = {
+  override def createTable(
+    table: CatalogTable,
+    sessionCatalog: SessionCatalog,
+    tableLocation: Option[URI],
+    result: BaseRelation) = {
     val newTable = table.copy(
       storage = table.storage.copy(locationUri = tableLocation),
       // We will use the schema of resolved.relation as the schema of the table (instead of
