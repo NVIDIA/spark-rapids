@@ -45,8 +45,6 @@ CUDA_VERSION_MINOR=$(echo $CUDA_VERSION | tr -d '.' | cut -c 3); \
    openjdk-8-jdk maven tzdata \
    # CMake dependencies
    curl libssl-dev libcurl4-openssl-dev zlib1g-dev \
-   # cuDF dependencies
-   libboost-filesystem-dev \
 && apt autoremove -y \
 && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
 && update-alternatives \
