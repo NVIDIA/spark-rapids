@@ -59,5 +59,9 @@ For usage see below:
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000")
+  val generateDot: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Generate query visualizations in DOT format. Default is false")
+
   verify()
 }
