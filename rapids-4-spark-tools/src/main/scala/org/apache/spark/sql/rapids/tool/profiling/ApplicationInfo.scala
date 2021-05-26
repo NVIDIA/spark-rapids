@@ -684,7 +684,7 @@ class ApplicationInfo(
   }
 
   def qualificationDurationSumSQL: String = {
-    s"""select sum(duration) as dfDuration,
+    s"""select appIndex, appID, sum(duration) as dfDuration,
        |sum(duration) / first(appDuration) as dfRankTotal,
        |first(appDuration) from
        |($qualificationDurationSQL)

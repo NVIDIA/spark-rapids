@@ -37,7 +37,7 @@ class Qualification(
 
   // Qualify each App
   for (app <- apps) {
-    qualifyApp(app)
+    qualifyApps(apps)
   }
 
   // Function to qualify an application. Below criteria is used to decide if the application can
@@ -46,14 +46,24 @@ class Qualification(
   // 2. If the application has SQL, below 2 conditions have to be met to mark it as qualified:
   //    a. SQL duration is greater than 30 seconds.
   //    b. executorCPUTime_sum/executorRunTime_sum > 30 ( atleast 30%)
-  def qualifyApp(app: ApplicationInfo): Boolean = {
+  def qualifyApps(apps: ArrayBuffer[ApplicationInfo]): Boolean = {
 
-    if (app.appStart.size > 1) {
-      throw new UnsupportedOperationException("Multiple application start events!")
+    var query = ""
+    val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
+    for (app <- appsWithSQL) {
+      if (query.isEmpty) {
+        query += app.qualificationDurationSumSQL
+      } else {
+        query += " union " + app.qualificationDurationSumSQL
+      }
     }
+    val messageHeader = "SQL qualify app union:"
+    val df = apps.head.runQuery(query + " order by appIndex, dfRankTotal desc")
+    fileWriter.write("Qualification Ranking:")
+    fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
 
-    val appTotalDuration = app.appStart(0).duration
-
+    true
+    /*
     // If this application does not have SQL
     if (!app.allDataFrames.contains(s"sqlDF_${app.index}")) {
       logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is inside.")
@@ -76,6 +86,7 @@ class Qualification(
     fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
     true
 
+*/
     /*
     if (df.isEmpty) {
       // then all SQL operations are Dataset
