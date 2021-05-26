@@ -25,16 +25,11 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Qualifies or disqualifies an application for GPU acceleration.
  */
 class Qualification(
-    apps: ArrayBuffer[ApplicationInfo],
-    sqlAggMetricsDF: DataFrame) extends Logging {
+    apps: ArrayBuffer[ApplicationInfo]) extends Logging {
 
   require(apps.nonEmpty)
-  require(!sqlAggMetricsDF.isEmpty)
   private val fileWriter = apps.head.fileWriter
-
-  // Register sqlAggMetricsDF as a temp view
-  sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
-
+  
   // Qualify each App
   // for (app <- apps) {
     qualifyApps(apps)

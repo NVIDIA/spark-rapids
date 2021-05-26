@@ -55,44 +55,59 @@ object ProfileMain extends Logging {
       }
     }
 
-    // If compare mode is on, we need lots of memory to cache all applications then compare.
-    // Suggest only enable compare mode if there is no more than 10 applications as input.
-    if (appArgs.compare()) {
-      // Create an Array of Applications(with an index starting from 1)
-      val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-      var index: Int = 1
-      for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
-        index += 1
-      }
-
-      //Exit if there are no applications to process.
-      if (apps.isEmpty) {
-        logInfo("No application to process. Exiting")
-        System.exit(0)
-      }
-      val sqlAggMetricsDF = processApps(apps)
-      // Show the application Id <-> appIndex mapping.
-      for (app <- apps) {
-        logApplicationInfo(app)
-      }
-    } else {
+    if (appArgs.qualification()) {
       // This mode is to process one application at one time.
       var index: Int = 1
-      var sqlAggMetricsDF: DataFrame = null
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
         // This apps only contains 1 app in each loop.
         val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
         apps += app
         logApplicationInfo(app)
-        sqlAggMetricsDF = processApps(apps)
         // app.dropAllTempViews()
         index += 1
       }
       logWarning("going to run Qualification")
       fileWriter.write(s"### C. Qualification ###\n")
-      new Qualification(apps, sqlAggMetricsDF)
+      new Qualification(apps)
+    } else {
+      // If compare mode is on, we need lots of memory to cache all applications then compare.
+      // Suggest only enable compare mode if there is no more than 10 applications as input.
+      if (appArgs.compare()) {
+        // Create an Array of Applications(with an index starting from 1)
+        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+        var index: Int = 1
+        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
+          apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
+          index += 1
+        }
+
+        //Exit if there are no applications to process.
+        if (apps.isEmpty) {
+          logInfo("No application to process. Exiting")
+          System.exit(0)
+        }
+        val sqlAggMetricsDF = processApps(apps)
+        // Show the application Id <-> appIndex mapping.
+        for (app <- apps) {
+          logApplicationInfo(app)
+        }
+      } else {
+        // This mode is to process one application at one time.
+        var index: Int = 1
+        var sqlAggMetricsDF: DataFrame = null
+        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
+          // This apps only contains 1 app in each loop.
+          val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
+          apps += app
+          logApplicationInfo(app)
+          sqlAggMetricsDF = processApps(apps)
+          // app.dropAllTempViews()
+          index += 1
+        }
+
+      }
     }
 
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
