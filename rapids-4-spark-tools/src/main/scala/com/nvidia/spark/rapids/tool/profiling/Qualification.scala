@@ -72,8 +72,9 @@ class Qualification(
       fileWriter.write(ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
     }
     val df = app.queryToDF(app.qualificationDurationSumSQL)
-    logInfo(s"Qualification Ranking:")
+    fileWriter.write("Qualification Ranking:")
     fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
+    true
 
     /*
     if (df.isEmpty) {
