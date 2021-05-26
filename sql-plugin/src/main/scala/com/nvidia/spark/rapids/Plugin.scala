@@ -29,7 +29,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
-import org.apache.spark.sql.SparkSessionExtensions
+import org.apache.spark.sql.{DataFrame, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -320,6 +320,11 @@ object ExecutionPlanCaptureCallback {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
     assert(executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
         s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
+  }
+
+  def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit = {
+    val executedPlan = df.queryExecution.executedPlan
+    assertDidFallBack(executedPlan, fallbackCpuClass)
   }
 
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
