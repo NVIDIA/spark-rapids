@@ -259,7 +259,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
   override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
+    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME)
   )
 
   override def outputOrdering: Seq[SortOrder] = range.outputOrdering
@@ -287,7 +287,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val maxRowCountPerBatch = Math.min(targetSizeBytes/8, Int.MaxValue)
 
     if (isEmptyRange) {
@@ -328,7 +328,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                 } else false
 
               override def next(): ColumnarBatch =
-                withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, totalTime)) {
+                withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, gpuOpTime)) {
                   _ =>
                     GpuSemaphore.acquireIfNecessary(taskContext)
                     val start = number
