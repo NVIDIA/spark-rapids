@@ -36,9 +36,9 @@ class Qualification(
   sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
 
   // Qualify each App
-  for (app <- apps) {
+  // for (app <- apps) {
     qualifyApps(apps)
-  }
+  //}
 
   // Function to qualify an application. Below criteria is used to decide if the application can
   // be qualified.

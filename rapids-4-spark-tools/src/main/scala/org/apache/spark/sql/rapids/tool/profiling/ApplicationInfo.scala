@@ -688,7 +688,6 @@ class ApplicationInfo(
        |sum(duration) / first(appDuration) as dfRankTotal,
        |first(appDuration) from
        |($qualificationDurationSQL)
-       |order by dfRankTotal, dfDuration
        |""".stripMargin
   }
 
