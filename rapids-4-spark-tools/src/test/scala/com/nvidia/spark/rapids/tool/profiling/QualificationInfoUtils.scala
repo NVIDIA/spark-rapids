@@ -103,7 +103,7 @@ object QualificationInfoUtils extends Logging {
     val allUSA = Seq("US", "USa", "USA", "United states", "United states of America")
     if (allUSA.contains(country)) {
       "USA"
-    }
+    } else {
     else {
       "unknown"
     }
