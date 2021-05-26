@@ -71,8 +71,13 @@ class Qualification(
       fileWriter.write("Reason disqualified:\n")
       fileWriter.write(ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
     }
-    val df = app.queryToDF(app.qualificationSQL)
+    val df = app.queryToDF(app.qualificationDurationSumSQL)
+    logInfo(s"Qualification Ranking:")
+    fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
+
+    /*
     if (df.isEmpty) {
+      // then all SQL operations are Dataset
       logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is qualified.")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
         s"disqualified because no SQL is qualified\n")
@@ -83,5 +88,6 @@ class Qualification(
       fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
       true
     }
+    */
   }
 }

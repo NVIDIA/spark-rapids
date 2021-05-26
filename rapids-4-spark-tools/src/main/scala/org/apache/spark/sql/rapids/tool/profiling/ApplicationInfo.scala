@@ -676,10 +676,19 @@ class ApplicationInfo(
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
        |sq.duration, m.executorCPURatio,
-       |(select duration from appdf_$index) as appDuration,
+       |(select duration from appdf_$index) as appDuration
        |from sqlDF_$index sq, sqlAggMetricsDF m, appdf_$index app
        |where $index = m.appIndex and sq.sqlID = m.sqlID
        |and sq.sqlID not in (select sqlID from datasetSQLDF_$index)
+       |""".stripMargin
+  }
+
+  def qualificationDurationSumSQL: String = {
+    s"""select sum(duration) as dfDuration,
+       |sum(duration) / first(appDuration) as dfRankTotal,
+       |first(appDuration) from
+       |($qualificationDurationSQL)
+       |order by dfRankTotal, dfDuration
        |""".stripMargin
   }
 
