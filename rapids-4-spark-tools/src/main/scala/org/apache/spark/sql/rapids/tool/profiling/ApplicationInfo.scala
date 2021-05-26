@@ -176,6 +176,10 @@ class ApplicationInfo(
   // the Spark plan.
   var problematicSQL: ArrayBuffer[ProblematicSQLCase] = ArrayBuffer[ProblematicSQLCase]()
 
+  // SQL containing any Dataset operation
+  var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
+
+
   // Process all events
   processEvents()
   // Process all properties after all events are processed
@@ -249,9 +253,9 @@ class ApplicationInfo(
       val allnodes = planGraph.allNodes
       for (node <- allnodes){
         // Firstly identify problematic SQLs if there is any
-        val probReason = isProblematicPlan(node)
+        val probReason = isDataSetPlan(node)
         if (probReason.nonEmpty) {
-          problematicSQL += ProblematicSQLCase(sqlID, probReason, node.desc)
+          datasetSQL += DatasetSQLCase(sqlID, probReason, node.desc)
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics){
@@ -455,6 +459,9 @@ class ApplicationInfo(
 
     // For problematicSQLDF
     allDataFrames += (s"problematicSQLDF_$index" -> problematicSQL.toDF)
+    // For Dataset SQL operations
+    allDataFrames += (s"datasetSQLDF_$index" -> datasetSQL.toDF)
+
 
     for ((name, df) <- this.allDataFrames) {
       df.createOrReplaceTempView(name)
@@ -665,6 +672,17 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
+  def qualificationDurationSQL: String = {
+    s"""select $index as appIndex, '$appId' as appID,
+       |sq.sqlID, sq.description,
+       |sq.duration, m.executorCPURatio,
+       |(select duration from appdf_$index) as appDuration,
+       |from sqlDF_$index sq, sqlAggMetricsDF m, appdf_$index app
+       |where $index = m.appIndex and sq.sqlID = m.sqlID
+       |and sq.sqlID not in (select sqlID from datasetSQLDF_$index)
+       |""".stripMargin
+  }
+
   // Function to generate a query for qualification
   def qualificationSQLDataSet: String = {
     s"""select distinct(sqlID), reason, desc from problematicSQLDF_$index
@@ -679,17 +697,17 @@ class ApplicationInfo(
   // "GpuColumnarToRow"
   // } else if (node.name == "GpuRowToColumnar") {
   // "GpuRowToColumnar"
-  def isProblematicPlan(node: SparkPlanGraphNode): String = {
+  def isDataSetPlan(node: SparkPlanGraphNode): String = {
     logWarning("node description is: " + node.desc)
     isDescProblematic(node.desc)
   }
 
   // TODO - do we want to handle existing RDD
   // case e if e.matches(".*ExistingRDD.*") => "existingRDD"
+  // case u if u.matches(".*UDF.*") => "UDF"
   private def isDescProblematic(desc: String): String =  {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => "Dataset/Lambda"
-      case u if u.matches(".*UDF.*") => "UDF"
       case a if a.endsWith(".apply") => "Dataset/Apply"
       case _ => ""
     }

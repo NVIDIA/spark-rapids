@@ -48,6 +48,12 @@ class Qualification(
   //    b. executorCPUTime_sum/executorRunTime_sum > 30 ( atleast 30%)
   def qualifyApp(app: ApplicationInfo): Boolean = {
 
+    if (app.appStart.size > 1) {
+      throw new UnsupportedOperationException("Multiple application start events!")
+    }
+
+    val appTotalDuration = app.appStart(0).duration
+
     // If this application does not have SQL
     if (!app.allDataFrames.contains(s"sqlDF_${app.index}")) {
       logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is inside.")
