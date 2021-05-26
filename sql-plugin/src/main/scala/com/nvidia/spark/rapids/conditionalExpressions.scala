@@ -42,8 +42,9 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
               pred.getBase.ifElse(t.getBase, f.getBase)
             case (t: GpuScalar, f: GpuScalar) =>
               pred.getBase.ifElse(t.getBase, f.getBase)
-            case u =>
-              throw new IllegalStateException(s"Unexpected inputs $u")
+            case (t, f) =>
+              throw new IllegalStateException(s"Unexpected inputs" +
+                s" ($t: ${t.getClass}, $f: ${f.getClass})")
           }
           GpuColumnVector.from(finalRet, dataType)
         }
