@@ -82,7 +82,6 @@ object QualificationInfoUtils extends Logging {
     if (majorAge.contains(age)) {
       "MILESTONE"
     } else {
-    else {
       "other"
     }
   }
@@ -104,7 +103,6 @@ object QualificationInfoUtils extends Logging {
     if (allUSA.contains(country)) {
       "USA"
     } else {
-    else {
       "unknown"
     }
   }
