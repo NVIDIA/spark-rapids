@@ -537,7 +537,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (Only supported for Parquet; missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
