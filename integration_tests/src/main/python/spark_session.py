@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime
 from pyspark.sql import SparkSession, DataFrame
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
@@ -64,10 +65,19 @@ def _check_for_proper_return_values(something):
 def with_spark_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()
+    _add_job_description(conf)
     _set_all_confs(conf)
     ret = func(_spark)
     _check_for_proper_return_values(ret)
     return ret
+
+
+def _add_job_description(conf):
+    is_gpu_job = conf.get('spark.rapids.sql.enabled', False)
+    job_type = 'GPU' if str(is_gpu_job).lower() == str(True).lower() else 'CPU'
+    job_desc = '{}[{}]'.format(os.environ.get('PYTEST_CURRENT_TEST'), job_type)
+    _spark.sparkContext.setJobDescription(job_desc)
+
 
 def with_cpu_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set on the CPU."""

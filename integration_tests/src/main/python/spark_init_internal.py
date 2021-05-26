@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import os
 
 try:
     from pyspark.sql import SparkSession
@@ -26,7 +28,6 @@ def _spark__init():
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
     # due to bugs in pyspark/pytest it looks like any configs set here
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
-    import os
     _sb = SparkSession.builder
     _sb.config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
             .config("spark.sql.adaptive.enabled", "false") \
@@ -40,12 +41,11 @@ def _spark__init():
 
     if ('PYTEST_XDIST_WORKER' in os.environ):
         wid = os.environ['PYTEST_XDIST_WORKER']
-        d = "./derby_{}".format(wid)
-        if not os.path.exists(d):
-            os.makedirs(d)
-        _sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
+        _create_derby_dir(_sb, driver_opts, wid)
+        _create_event_log_dir(_sb, wid)
     else:
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
+        _create_event_log_dir(_sb, 'gw0')
  
     # enableHiveSupport() is needed for parquet bucket tests
     _s = _sb.enableHiveSupport() \
@@ -54,6 +54,20 @@ def _spark__init():
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
     return _s
+
+
+def _create_derby_dir(sb, driver_opts, wid):
+    d = "./derby_{}".format(wid)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
+
+def _create_event_log_dir(sb, wid):
+    d = "./eventlog_{}".format(wid)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    sb.config('spark.eventLog.dir', "file://{}".format(os.path.abspath(d)))
+
 
 _spark = _spark__init()
 

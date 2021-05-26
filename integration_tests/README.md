@@ -211,6 +211,23 @@ Basically, you need first to upload the test resources onto the cloud path `reso
 `root-dir` of each executor(e.g. via `spark-submit --files root-dir ...`). After that you must set both `LOCAL_ROOTDIR=root-dir` and `INPUT_PATH=resource-path`
 to run the shell-script, e.g. `LOCAL_ROOTDIR=root-dir INPUT_PATH=resource-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.
 
+### Reviewing integration tests in Spark History Server
+
+If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
+the [event log enabled](https://spark.apache.org/docs/3.1.1/monitoring.html) by default. You can opt
+out by setting the environment variable `SPARK_EVENTLOG_ENABLED` to `false`.
+
+Compressed event logs will appear under the run directories of the form
+`integration_tests/target/run_dir/eventlog_WORKERID`. If xdist is not used (e.g., `TEST_PARALLEL=1`)
+the event log directory will be `integration_tests/target/run_dir/eventlog_gw0` as if executed by
+worker 0 under xdist.
+
+To review all the tests run by a particular worker you can start the History Server as follows:
+```shell
+SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=integration_tests/target/run_dir/eventlog_gw0" \
+  ${SPARK_HOME}/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+```
+
 ### Enabling cudf_udf Tests
 
 The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default not only because of the complicated environment setup, but also because GPU resources scheduling for Pandas UDF is an experimental feature now, the performance may not always be better.
