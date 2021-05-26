@@ -465,7 +465,7 @@ class ApplicationInfo(
 
     for ((name, df) <- this.allDataFrames) {
       df.createOrReplaceTempView(name)
-      sparkSession.table(name).cache
+      // sparkSession.table(name).cache
     }
   }
 
@@ -475,7 +475,7 @@ class ApplicationInfo(
       sparkSession.catalog.dropTempView(name+"_"+index)
     }
     // Clear all cached tables as well.
-    sparkSession.catalog.clearCache()
+    // sparkSession.catalog.clearCache()
   }
 
   // Function to run a query and print the result to the file.
@@ -672,22 +672,22 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
+  //     |from sqlDF_$index sq, sqlAggMetricsDF m, appdf_$index app
   def qualificationDurationSQL: String = {
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
-       |sq.duration, m.executorCPURatio,
+       |sq.duration,
        |(select duration from appdf_$index) as appDuration
-       |from sqlDF_$index sq, sqlAggMetricsDF m, appdf_$index app
-       |where $index = m.appIndex and sq.sqlID = m.sqlID
-       |and sq.sqlID not in (select sqlID from datasetSQLDF_$index)
+       |from sqlDF_$index sq, appdf_$index app
+       |where sq.sqlID not in (select sqlID from datasetSQLDF_$index)
        |""".stripMargin
   }
 
   def qualificationDurationSumSQL: String = {
-    s"""select appIndex, appID, sum(duration) as dfDuration,
+    s"""select first(appIndex) as appIndex, first(appID) as appID, sum(duration) as dfDuration,
        |sum(duration) / first(appDuration) as dfRankTotal,
-       |first(appDuration) from
-       |($qualificationDurationSQL)
+       |first(appDuration) as appDuration from
+       |(${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }
 
@@ -706,7 +706,6 @@ class ApplicationInfo(
   // } else if (node.name == "GpuRowToColumnar") {
   // "GpuRowToColumnar"
   def isDataSetPlan(node: SparkPlanGraphNode): String = {
-    logWarning("node description is: " + node.desc)
     isDescProblematic(node.desc)
   }
 

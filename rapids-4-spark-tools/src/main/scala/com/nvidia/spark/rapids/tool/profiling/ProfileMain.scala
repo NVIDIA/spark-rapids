@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -70,7 +71,7 @@ object ProfileMain extends Logging {
         logInfo("No application to process. Exiting")
         System.exit(0)
       }
-      processApps(apps)
+      val sqlAggMetricsDF = processApps(apps)
       // Show the application Id <-> appIndex mapping.
       for (app <- apps) {
         logApplicationInfo(app)
@@ -78,16 +79,20 @@ object ProfileMain extends Logging {
     } else {
       // This mode is to process one application at one time.
       var index: Int = 1
+      var sqlAggMetricsDF: DataFrame = null
+      val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
         // This apps only contains 1 app in each loop.
-        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
         val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
         apps += app
         logApplicationInfo(app)
-        processApps(apps)
-        app.dropAllTempViews()
+        sqlAggMetricsDF = processApps(apps)
+        // app.dropAllTempViews()
         index += 1
       }
+      logWarning("going to run Qualification")
+      fileWriter.write(s"### C. Qualification ###\n")
+      new Qualification(apps, sqlAggMetricsDF)
     }
 
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
@@ -100,16 +105,16 @@ object ProfileMain extends Logging {
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: ArrayBuffer[ApplicationInfo]): Unit = {
+    def processApps(apps: ArrayBuffer[ApplicationInfo]): DataFrame = {
       if (appArgs.compare()) { // Compare Applications
-        logInfo(s"### A. Compare Information Collected ###")
+        logWarning(s"### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps)
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareRapidsProperties()
       } else {
         val collect = new CollectInformation(apps)
-        logInfo(s"### A. Information Collected ###")
+        logWarning(s"### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
         collect.printRapidsProperties()
@@ -121,11 +126,10 @@ object ProfileMain extends Logging {
       val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
 
       if (!sqlAggMetricsDF.isEmpty) {
-        fileWriter.write(s"### C. Qualification ###\n")
-        new Qualification(apps, sqlAggMetricsDF)
       } else {
         logInfo(s"Skip qualification part because no sqlAggMetrics DataFrame is detected.")
       }
+      sqlAggMetricsDF
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {
