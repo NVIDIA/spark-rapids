@@ -99,7 +99,7 @@ object ProfileMain extends Logging {
           logInfo("No application to process. Exiting")
           System.exit(0)
         }
-        val sqlAggMetricsDF = processApps(apps)
+        val sqlAggMetricsDF = processApps(apps, generateDot = false)
         // Show the application Id <-> appIndex mapping.
         for (app <- apps) {
           logApplicationInfo(app)
@@ -114,7 +114,7 @@ object ProfileMain extends Logging {
           val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
           apps += app
           logApplicationInfo(app)
-          sqlAggMetricsDF = processApps(apps)
+          sqlAggMetricsDF = processApps(apps, appArgs.generateDot())
           // app.dropAllTempViews()
           index += 1
         }
@@ -132,7 +132,7 @@ object ProfileMain extends Logging {
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
+    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): DataFrame = {
       if (appArgs.compare()) { // Compare Applications
         logWarning(s"### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps)
