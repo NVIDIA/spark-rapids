@@ -320,6 +320,18 @@ def assert_gpu_fallback_collect(func,
 
     assert_equal(from_cpu, from_gpu)
 
+def assert_gpu_sql_fallback_collect(df_fun, cpu_fallback_class_name, table_name, sql, conf=None, debug=False):
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        if debug:
+            return data_gen.debug_df(spark.sql(sql))
+        else:
+            return spark.sql(sql)
+    assert_gpu_fallback_collect(do_it_all, cpu_fallback_class_name, conf)
+
 def _assert_gpu_and_cpu_are_equal(func,
     mode,
     conf={},
