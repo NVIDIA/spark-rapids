@@ -155,4 +155,4 @@ case class TaskCase(
     output_bytesWritten: Long,
     output_recordsWritten: Long)
 
-case class ProblematicSQLCase(sqlID: Long)
+case class ProblematicSQLCase(sqlID: Long, reason: String, desc: String)

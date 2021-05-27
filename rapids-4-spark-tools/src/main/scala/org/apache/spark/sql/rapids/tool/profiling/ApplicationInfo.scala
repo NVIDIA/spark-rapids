@@ -249,8 +249,9 @@ class ApplicationInfo(
       val allnodes = planGraph.allNodes
       for (node <- allnodes){
         // Firstly identify problematic SQLs if there is any
-        if (isProblematicPlan(node)){
-          problematicSQL += ProblematicSQLCase(sqlID)
+        val probReason = isProblematicPlan(node)
+        if (probReason.nonEmpty) {
+          problematicSQL += ProblematicSQLCase(sqlID, probReason, node.desc)
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics){
@@ -664,9 +665,33 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
+  // Function to generate a query for qualification
+  def qualificationSQLDataSet: String = {
+    s"""select distinct(sqlID), reason, desc from problematicSQLDF_$index
+       |""".stripMargin
+  }
+
   // Function to determine if a SparkPlanGraphNode could be problematic.
-  def isProblematicPlan(node: SparkPlanGraphNode): Boolean = {
-    node.name == "GpuColumnarToRow" || node.name == "GpuRowToColumnar" ||
-        (node.desc matches ".*\\$Lambda\\$.*")
+  // // todo what about scan for genreated data? -> SerializeFromObject?
+  // LocalTableScan?
+  // these may only apply to profiling part so take out for now
+  // if (node.name == "GpuColumnarToRow") {
+  // "GpuColumnarToRow"
+  // } else if (node.name == "GpuRowToColumnar") {
+  // "GpuRowToColumnar"
+  def isProblematicPlan(node: SparkPlanGraphNode): String = {
+    logWarning("node description is: " + node.desc)
+    isDescProblematic(node.desc)
+  }
+
+  // TODO - do we want to handle existing RDD
+  // case e if e.matches(".*ExistingRDD.*") => "existingRDD"
+  private def isDescProblematic(desc: String): String =  {
+    desc match {
+      case l if l.matches(".*\\$Lambda\\$.*") => "Dataset/Lambda"
+      case u if u.matches(".*UDF.*") => "UDF"
+      case a if a.endsWith(".apply") => "Dataset/Apply"
+      case _ => ""
+    }
   }
 }

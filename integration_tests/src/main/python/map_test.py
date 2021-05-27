@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,6 +31,14 @@ def test_simple_get_map_value(data_gen):
                 'a["key_9"]',
                 'a["NOT_FOUND"]',
                 'a["key_5"]'))
+
+def test_map_scalar_project():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(2).selectExpr(
+                "map(1, 2, 3, 4) as i", 
+                "map('a', 'b', 'c', 'd') as s",
+                "map('a', named_struct('foo', 10, 'bar', 'bar')) as st"
+                "id"))
 
 @pytest.mark.skipif(is_before_spark_311(), reason="Only in Spark 3.1.1 + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)

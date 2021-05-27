@@ -773,9 +773,10 @@ object GpuOverrides {
     expr[Literal](
       "Holds a static value from the query",
       ExprChecks.projectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR
-          + TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-          + TypeSig.ARRAY + TypeSig.STRUCT),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR
+            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+                TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](

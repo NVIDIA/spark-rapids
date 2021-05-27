@@ -514,6 +514,38 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     assert(broadcastExchanges.forall(_._2.toLong > 0))
   }
 
+  // The purpose of this test is simply to make sure that we do not try and calculate the cost
+  // of expressions that cannot be evaluated. This can cause exceptions when estimating data
+  // sizes. For example, WindowFrame.dataType throws UnsupportedOperationException.
+  test("Window expression (unevaluable)") {
+    logError("Window expression (unevaluable)")
+
+    val conf = new SparkConf()
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "ProjectExec,WindowExec,ShuffleExchangeExec,WindowSpecDefinition," +
+          "SpecifiedWindowFrame,WindowExpression,Alias,Rank,HashPartitioning," +
+          "UnboundedPreceding$,CurrentRow$,SortExec")
+
+    withGpuSparkSession(spark => {
+      employeeDf(spark).createOrReplaceTempView("employees")
+      val df: DataFrame = spark.sql("SELECT name, dept, RANK() " +
+        "OVER (PARTITION BY dept ORDER BY salary) AS rank FROM employees")
+      df.collect()
+    }, conf)
+  }
+
+  private def employeeDf(session: SparkSession): DataFrame = {
+    import session.sqlContext.implicits._
+    Seq(
+      ("A", "IT", 1234),
+      ("B", "IT", 4321),
+      ("C", "Sales", 4321),
+      ("D", "Sales", 1234)
+    ).toDF("name", "dept", "salary")
+  }
+
   private def collectPlansWithRowCount(
       plan: SparkPlanMeta[_],
       accum: ListBuffer[SparkPlanMeta[_]]): Unit = {
