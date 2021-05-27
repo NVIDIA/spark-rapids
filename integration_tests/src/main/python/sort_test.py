@@ -37,7 +37,7 @@ def test_single_orderby(data_gen, order):
     pytest.param(1),
     pytest.param(200)
 ])
-@pytest.mark.parametrize('stable_sort', ['STABLE', 'UNSTABLE'])
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
     pytest.param(StructGen([['child0', all_basic_struct_gen]]),
@@ -121,7 +121,7 @@ def test_single_sort_in_part(data_gen, order):
                  marks=pytest.mark.xfail(reason='opposite null order not supported')),
     pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
-@pytest.mark.parametrize('stable_sort', ['STABLE', 'UNSTABLE'], ids=idfn)
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
 def test_single_nested_sort_in_part(data_gen, order, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}
     assert_gpu_and_cpu_are_equal_collect(
@@ -188,7 +188,7 @@ def test_single_orderby_with_skew(data_gen):
 
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
-@pytest.mark.parametrize('stable_sort', ['STABLE', 'UNSTABLE'], ids=idfn)
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
 def test_single_nested_orderby_with_skew(data_gen, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}
     # When doing range partitioning the upstream data is sampled to try and get the bounds for cutoffs.
@@ -207,34 +207,16 @@ def test_single_nested_orderby_with_skew(data_gen, stable_sort):
 # be relatively large (1 MiB across all tasks) and the target size to be small (16 KiB). This means we
 # should see around 64 batches of data. So this is the most valid if there are less than 64 tasks
 # in the cluster, but it should still work even then.
-@pytest.mark.parametrize('data_gen', [
-    pytest.param(long_gen),
-    pytest.param(StructGen([('child0', long_gen)]), marks=pytest.mark.xfail(
-        reason='https://github.com/NVIDIA/spark-rapids/issues/2368'
-    ))
-], ids=idfn)
-def test_large_orderby(data_gen):
+@pytest.mark.parametrize('data_gen', [long_gen, StructGen([('child0', long_gen)])], ids=idfn)
+@pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
+def test_large_orderby(data_gen, stable_sort):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen, length=1024*128)\
                     .orderBy(f.col('a')),
-            conf = {
+            conf={
                 'spark.rapids.sql.batchSizeBytes': '16384',
-                'spark.rapids.sql.stableSort.enabled': False
+                'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'
             })
-
-
-@pytest.mark.parametrize('data_gen', [
-    pytest.param(long_gen),
-    pytest.param(StructGen([('child0', long_gen)]))
-], ids=idfn)
-def test_large_orderby_stable(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, length=1024*128) \
-            .orderBy(f.col('a')),
-        conf = {
-            'spark.rapids.sql.batchSizeBytes': '16384',
-            'spark.rapids.sql.stableSort.enabled': True
-        })
 
 # This is similar to test_large_orderby, but here we want to test some types
 # that are not being sorted on, but are going along with it
