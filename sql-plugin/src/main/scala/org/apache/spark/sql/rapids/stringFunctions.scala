@@ -347,7 +347,7 @@ case class GpuConcatWs(children: Seq[Expression])
       case sepScalar: GpuScalar if (!sepScalar.getBase.isValid()) =>
         // if null scalar separator just return a column of all nulls
         Some(GpuColumnVector.from(sepScalar, numRows, dataType))
-      case sepVec: GpuColumnVector =>
+      case _ =>
         None
     }
   }
