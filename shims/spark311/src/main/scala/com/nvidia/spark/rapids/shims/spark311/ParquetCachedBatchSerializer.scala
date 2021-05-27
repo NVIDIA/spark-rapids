@@ -957,23 +957,20 @@ class ParquetCachedBatchSerializer extends SimpleMetricsCachedBatchSerializer wi
   }
 
   private def getStatsFromBlockMeta(blockmetas: List[BlockMetaData]): InternalRow = {
-    case class Holder(var count: Int = 0, var size: Long = 0)
-    // assuming all columns are in the same order within all blocks and have the same number of cols
+    case class CountAndSizeHolder(var count: Int = 0, var size: Long = 0)
+    // assuming all columns are in the same order within all blocks and all blocks have the same
+    // number of cols
     val stats = blockmetas(0).getColumns.asScala.map { c =>
-      (Statistics.createStats(c.getPrimitiveType), Holder())
+      (Statistics.createStats(c.getPrimitiveType), CountAndSizeHolder())
     }
     val cols = blockmetas(0).getColumns.size()
-    var j = 0
-    while (j < cols) {
-      var i = 0
-      while (i < blockmetas.size) {
+    for (j <- 0 until cols) {
+      for (i <- 0 until blockmetas.size) {
         val columnChunkMetaData = blockmetas(i).getColumns.get(j)
         stats(j)._1.mergeStatistics(columnChunkMetaData.getStatistics)
         stats(j)._2.count += columnChunkMetaData.getValueCount.toInt
         stats(j)._2.size += columnChunkMetaData.getTotalSize
-        i += 1
       }
-      j += 1
     }
     InternalRow.fromSeq(stats.flatMap { stat =>
       List(stat._1.genericGetMin(), stat._1.genericGetMax(), stat._1.getNumNulls.toInt,
