@@ -606,10 +606,18 @@ class GpuSpecifiedWindowFrameMeta(
               willNotWorkOnGpu("interval months isn't supported")
             }
             // return the total microseconds
-            ci.days * TimeUnit.DAYS.toMicros(1) + ci.microseconds
+            try {
+              Math.addExact(
+                Math.multiplyExact(ci.days.toLong, TimeUnit.DAYS.toMicros(1)),
+                ci.microseconds)
+            } catch {
+              case e: ArithmeticException =>
+                willNotWorkOnGpu("interval total microseconds has overflow")
+                if (isLower) -1 else 1 // not check again
+            }
           case _ =>
             willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
-            s" type (Boolean exclusive) or DAYS. Found ${bounds.dataType}")
+            s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
             if (isLower) -1 else 1 // not check again
         }
 
