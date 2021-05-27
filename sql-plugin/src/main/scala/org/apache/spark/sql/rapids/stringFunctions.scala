@@ -16,11 +16,15 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, PadSide, Scalar, Table}
+import scala.collection.mutable.ArrayBuffer
+
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
@@ -261,6 +265,115 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
 
   override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector =
     GpuColumnVector.from(column.getBase.rstrip(t), dataType)
+}
+
+case class GpuConcatWs(children: Seq[Expression])
+    extends GpuExpression with ImplicitCastInputTypes {
+  override def dataType: DataType = StringType
+  override def nullable: Boolean = children.head.nullable
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  /** The 1st child (separator) is str, and rest are either str or array of str. */
+  override def inputTypes: Seq[AbstractDataType] = {
+    val arrayOrStr = TypeCollection(ArrayType(StringType), StringType)
+    StringType +: Seq.fill(children.size - 1)(arrayOrStr)
+  }
+
+  private def concatArrayCol(colOrScalarSep: Any,
+      cv: ColumnView): GpuColumnVector = {
+    colOrScalarSep match {
+      case sepScalar: GpuScalar =>
+        withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
+          GpuColumnVector.from(cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar,
+            false, false), dataType)
+        }
+      case sepVec: GpuColumnVector =>
+        GpuColumnVector.from(cv.stringConcatenateListElements(sepVec.getBase), dataType)
+    }
+  }
+
+  private def processSingleColScalarSep(cv: ColumnVector): GpuColumnVector = {
+    // single column with scalar separator just replace any nulls with empty string
+    withResource(Scalar.fromString("")) { emptyStrScalar =>
+      GpuColumnVector.from(cv.replaceNulls(emptyStrScalar), dataType)
+    }
+  }
+
+  private def stringConcatSeparatorScalar(columns: ArrayBuffer[ColumnVector],
+      sep: GpuScalar): GpuColumnVector = {
+    withResource(Scalar.fromString("")) { emptyStrScalar =>
+      GpuColumnVector.from(ColumnVector.stringConcatenate(sep.getBase, emptyStrScalar,
+        columns.toArray[ColumnView], false), dataType)
+    }
+  }
+
+  private def stringConcatSeparatorVector(columns: ArrayBuffer[ColumnVector],
+      sep: GpuColumnVector): GpuColumnVector = {
+    // GpuOverrides doesn't allow only specifying a separator, you have to specify at
+    // least one value column
+    GpuColumnVector.from(ColumnVector.stringConcatenate(columns.toArray[ColumnView],
+      sep.getBase), dataType)
+  }
+
+  private def resolveColumnVectorAndConcatArrayCols(
+      expr: Expression,
+      numRows: Int,
+      colOrScalarSep: Any,
+      batch: ColumnarBatch): GpuColumnVector = {
+    withResourceIfAllowed(expr.columnarEval(batch)) {
+      case vector: GpuColumnVector =>
+        vector.dataType() match {
+          case ArrayType(st: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
+          case _ => vector.incRefCount()
+        }
+      case s: GpuScalar =>
+        s.dataType match {
+          case ArrayType(st: StringType, _) =>
+            // we have to first concatenate any array types
+            withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
+              concatArrayCol(colOrScalarSep, cv)
+            }
+          case _ => GpuColumnVector.from(s, numRows, s.dataType)
+        }
+      case other =>
+        throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
+          s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
+      }
+  }
+
+  private def checkScalarSeparatorNull(colOrScalarSep: Any,
+      numRows: Int): Option[GpuColumnVector] = {
+    colOrScalarSep match {
+      case sepScalar: GpuScalar if (!sepScalar.getBase.isValid()) =>
+        // if null scalar separator just return a column of all nulls
+        Some(GpuColumnVector.from(sepScalar, numRows, dataType))
+      case _ =>
+        None
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val numRows = batch.numRows()
+    withResourceIfAllowed(children.head.columnarEval(batch)) { colOrScalarSep =>
+      // check for null scalar separator
+      checkScalarSeparatorNull(colOrScalarSep, numRows).getOrElse {
+        withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+          columns ++= children.tail.map {
+            resolveColumnVectorAndConcatArrayCols(_, numRows, colOrScalarSep, batch).getBase
+          }
+          colOrScalarSep match {
+            case sepScalar: GpuScalar =>
+              if (columns.size == 1) {
+                processSingleColScalarSep(columns.head)
+              } else {
+                stringConcatSeparatorScalar(columns, sepScalar)
+              }
+            case sepVec: GpuColumnVector  => stringConcatSeparatorVector(columns, sepVec)
+          }
+        }
+      }
+    }
+  }
 }
 
 case class GpuContains(left: Expression, right: Expression) extends GpuBinaryExpression
