@@ -180,7 +180,6 @@ class ApplicationInfo(
   // SQL containing any Dataset operation
   var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
 
-
   // Process all events
   processEvents()
   if (forQualification) {
@@ -256,19 +255,14 @@ class ApplicationInfo(
       val allnodes = planGraph.allNodes
       for (node <- allnodes){
         // Firstly identify problematic SQLs if there is any
-        val probReason = isDataSetPlan(node)
-        if (probReason.nonEmpty) {
-          datasetSQL += DatasetSQLCase(sqlID, probReason, node.desc)
+        if (isDataSetPlan(node.desc)) {
+          datasetSQL += DatasetSQLCase(sqlID)
         }
-        val udf = isUDFInPlanDesc(node.desc)
+        val udf = findPotentialIssues(node.desc)
         if (udf.nonEmpty) {
           problematicSQL += ProblematicSQLCase(sqlID, udf, node.desc)
         }
       }
-    }
-    if (this.sqlPlanMetricsAdaptive.nonEmpty){
-      logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive) for appID=$appId")
-      sqlPlanMetrics = sqlPlanMetrics.union(sqlPlanMetricsAdaptive).distinct
     }
   }
 
@@ -282,10 +276,8 @@ class ApplicationInfo(
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes){
-        // Firstly identify problematic SQLs if there is any
-        val probReason = isDataSetPlan(node)
-        if (probReason.nonEmpty) {
-          datasetSQL += DatasetSQLCase(sqlID, probReason, node.desc)
+        if (isDataSetPlan(node.desc)) {
+          datasetSQL += DatasetSQLCase(sqlID)
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics){
@@ -310,39 +302,6 @@ class ApplicationInfo(
    */
   def arraybufferToDF(): Unit = {
     import sparkSession.implicits._
-
-    if (!forQualification) {
-
-      // For resourceProfilesDF
-      if (this.resourceProfiles.nonEmpty) {
-        this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
-      } else {
-        logWarning("resourceProfiles is empty!")
-      }
-
-      // For blockManagersDF
-      if (this.blockManagers.nonEmpty) {
-        this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
-      } else {
-        logWarning("blockManagers is empty!")
-      }
-
-      // For blockManagersRemovedDF
-      if (this.blockManagersRemoved.nonEmpty) {
-        this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
-        this.blockManagersRemoved.clear()
-      } else {
-        logDebug("blockManagersRemoved is empty!")
-      }
-
-      // For propertiesDF
-      if (this.allProperties.nonEmpty) {
-        this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-      } else {
-        logError("propertiesDF is empty! Existing...")
-        System.exit(1)
-      }
-    }
 
     // For appDF
     if (this.appStart.nonEmpty) {
@@ -385,8 +344,37 @@ class ApplicationInfo(
       logInfo("No SQL Execution Found. Skipping generating SQL Execution DataFrame.")
     }
 
-
     if (!forQualification) {
+
+      // For resourceProfilesDF
+      if (this.resourceProfiles.nonEmpty) {
+        this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
+      } else {
+        logWarning("resourceProfiles is empty!")
+      }
+
+      // For blockManagersDF
+      if (this.blockManagers.nonEmpty) {
+        this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
+      } else {
+        logWarning("blockManagers is empty!")
+      }
+
+      // For blockManagersRemovedDF
+      if (this.blockManagersRemoved.nonEmpty) {
+        this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
+        this.blockManagersRemoved.clear()
+      } else {
+        logDebug("blockManagersRemoved is empty!")
+      }
+
+      // For propertiesDF
+      if (this.allProperties.nonEmpty) {
+        this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
+      } else {
+        logError("propertiesDF is empty! Existing...")
+        System.exit(1)
+      }
 
       // For executorsDF
       if (this.executors.nonEmpty) {
@@ -742,32 +730,15 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  // Function to determine if a SparkPlanGraphNode could be problematic.
-  // // todo what about scan for genreated data? -> SerializeFromObject?
-  // LocalTableScan?
-  // these may only apply to profiling part so take out for now
-  // if (node.name == "GpuColumnarToRow") {
-  // "GpuColumnarToRow"
-  // } else if (node.name == "GpuRowToColumnar") {
-  // "GpuRowToColumnar"
-  def isDataSetPlan(node: SparkPlanGraphNode): String = {
-    isDatasetOpInPlanDesc(node.desc)
-  }
-
-  // TODO - do we want to handle existing RDD
-  // case e if e.matches(".*ExistingRDD.*") => "existingRDD"
-  // case u if u.matches(".*UDF.*") => "UDF"
-  private def isDatasetOpInPlanDesc(desc: String): String =  {
+  def isDataSetPlan(desc: String): Boolean = {
     desc match {
-      case l if l.matches(".*\\$Lambda\\$.*") => "Dataset/Lambda"
-      case a if a.endsWith(".apply") => "Dataset/Apply"
-      case _ => ""
+      case l if l.matches(".*\\$Lambda\\$.*") => true
+      case a if a.endsWith(".apply") => true
+      case _ => false
     }
   }
 
-  // TODO - do we want to handle existing RDD
-  // case e if e.matches(".*ExistingRDD.*") => "existingRDD"
-  def isUDFInPlanDesc(desc: String): String =  {
+  def findPotentialIssues(desc: String): String =  {
     desc match {
       case u if u.matches(".*UDF.*") => "UDF"
       case _ => ""

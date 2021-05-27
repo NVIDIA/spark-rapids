@@ -79,7 +79,7 @@ object ProfileMain extends Logging {
       //Exit if there are no applications to process.
       if (apps.isEmpty) {
         logInfo("No application to process. Exiting")
-        System.exit(0)
+        return 0
       }
       processApps(apps, generateDot = false)
       // Show the application Id <-> appIndex mapping.
@@ -92,6 +92,7 @@ object ProfileMain extends Logging {
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
         // This apps only contains 1 app in each loop.
+        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
         val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
         apps += app
         logApplicationInfo(app)
@@ -114,14 +115,14 @@ object ProfileMain extends Logging {
      */
     def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
-        logWarning(s"### A. Compare Information Collected ###")
+        logInfo(s"### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps)
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareRapidsProperties()
       } else {
         val collect = new CollectInformation(apps)
-        logWarning(s"### A. Information Collected ###")
+        logInfo(s"### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
         collect.printRapidsProperties()

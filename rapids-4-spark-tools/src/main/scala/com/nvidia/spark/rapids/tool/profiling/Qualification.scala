@@ -32,7 +32,6 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
   qualifyApps(apps)
 
   def qualifyApps(apps: ArrayBuffer[ApplicationInfo]): Unit = {
-
     var query = ""
     val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
     for (app <- appsWithSQL) {
@@ -46,24 +45,5 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
     fileWriter.write("Qualification Ranking:")
     fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
-
-    /*
-
-
-    val dfProb = app.queryToDF(app.qualificationSQLDataSet)
-    if (!dfProb.isEmpty) {
-      logInfo(s"${app.appId} (index=${app.index}) is disqualified because it is problematic " +
-        "(UDF, Dataset, etc).")
-      fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-        s"disqualified because problematic (UDF, Dataset, etc.)\n")
-      fileWriter.write("Reason disqualified:\n")
-      fileWriter.write(ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
-    }
-    val df = app.queryToDF(app.qualificationDurationSumSQL)
-    fileWriter.write("Qualification Ranking:")
-    fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
-    true
-
-*/
   }
 }
