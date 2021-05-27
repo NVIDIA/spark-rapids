@@ -57,7 +57,12 @@ object QualificationMain extends Logging {
     val eventlogPaths = appArgs.eventlog()
     val eventLogDir = appArgs.eventlogDir
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
-    val fileLocation = s"$outputDirectory/$logFileName"
+    val fileFormat = appArgs.outputFileFormat.getOrElse("text")
+    val fileLocation = if (fileFormat.equals("text")) {
+      s"$outputDirectory/$logFileName"
+    } else {
+      outputDirectory
+    }
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val fileWriter = new FileWriter(fileLocation)
@@ -95,7 +100,7 @@ object QualificationMain extends Logging {
       index += 1
     }
     fileWriter.write(s"### Qualification ###\n")
-    new Qualification(apps, appArgs.outputFileFormat.getOrElse("text"), fileLocation)
+    new Qualification(apps, fileFormat, fileLocation)
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
     // app.dropAllTempViews()
 
