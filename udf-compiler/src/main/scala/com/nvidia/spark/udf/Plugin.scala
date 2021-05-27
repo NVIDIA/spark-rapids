@@ -19,6 +19,7 @@ package com.nvidia.spark.udf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.RapidsConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression, ScalaUDF}
