@@ -19,16 +19,13 @@ package com.nvidia.spark.rapids.shims.spark311cdh
 import java.net.URI
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark311.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, Spark311Shims}
+import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
-import org.apache.spark.sql.execution.datasources.HadoopFsRelation
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.shims.spark311._
 import org.apache.spark.sql.sources.BaseRelation
 
@@ -62,7 +59,7 @@ class Spark311CDHShims extends Spark311Shims {
           override def convertToGpu(): GpuExec = {
             GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
           }
-        }),
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
@@ -85,7 +82,7 @@ class Spark311CDHShims extends Spark311Shims {
     table: CatalogTable,
     sessionCatalog: SessionCatalog,
     tableLocation: Option[URI],
-    result: BaseRelation) = {
+    result: BaseRelation): Unit = {
     val newTable = table.copy(
       storage = table.storage.copy(locationUri = tableLocation),
       // We will use the schema of resolved.relation as the schema of the table (instead of
