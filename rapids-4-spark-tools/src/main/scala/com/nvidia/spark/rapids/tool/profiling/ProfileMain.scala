@@ -65,9 +65,28 @@ object ProfileMain extends Logging {
       }
     }
 
-    if (appArgs.qualification()) {
-      logWarning("Doing Qualification")
+    // If compare mode is on, we need lots of memory to cache all applications then compare.
+    // Suggest only enable compare mode if there is no more than 10 applications as input.
+    if (appArgs.compare()) {
+      // Create an Array of Applications(with an index starting from 1)
+      val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      var index: Int = 1
+      for (path <- allPaths.filter(p => !p.getName.contains("."))) {
+        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
+        index += 1
+      }
 
+      //Exit if there are no applications to process.
+      if (apps.isEmpty) {
+        logInfo("No application to process. Exiting")
+        System.exit(0)
+      }
+      processApps(apps, generateDot = false)
+      // Show the application Id <-> appIndex mapping.
+      for (app <- apps) {
+        logApplicationInfo(app)
+      }
+    } else {
       // This mode is to process one application at one time.
       var index: Int = 1
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -76,50 +95,11 @@ object ProfileMain extends Logging {
         val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
         apps += app
         logApplicationInfo(app)
-        // app.dropAllTempViews()
+        processApps(apps, appArgs.generateDot())
+        app.dropAllTempViews()
         index += 1
       }
-      logWarning("going to run Qualification")
-      fileWriter.write(s"### C. Qualification ###\n")
-      new Qualification(apps)
-    } else {
-      // If compare mode is on, we need lots of memory to cache all applications then compare.
-      // Suggest only enable compare mode if there is no more than 10 applications as input.
-      if (appArgs.compare()) {
-        // Create an Array of Applications(with an index starting from 1)
-        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        var index: Int = 1
-        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-          apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
-          index += 1
-        }
 
-        //Exit if there are no applications to process.
-        if (apps.isEmpty) {
-          logInfo("No application to process. Exiting")
-          System.exit(0)
-        }
-        val sqlAggMetricsDF = processApps(apps, generateDot = false)
-        // Show the application Id <-> appIndex mapping.
-        for (app <- apps) {
-          logApplicationInfo(app)
-        }
-      } else {
-        // This mode is to process one application at one time.
-        var index: Int = 1
-        var sqlAggMetricsDF: DataFrame = null
-        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-          // This apps only contains 1 app in each loop.
-          val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
-          apps += app
-          logApplicationInfo(app)
-          sqlAggMetricsDF = processApps(apps, appArgs.generateDot())
-          // app.dropAllTempViews()
-          index += 1
-        }
-
-      }
     }
 
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
@@ -132,7 +112,7 @@ object ProfileMain extends Logging {
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): DataFrame = {
+    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
         logWarning(s"### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps)
@@ -153,13 +133,7 @@ object ProfileMain extends Logging {
       logInfo(s"### B. Analysis ###")
       val analysis = new Analysis(apps)
       analysis.jobAndStageMetricsAggregation()
-      val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
-
-      if (!sqlAggMetricsDF.isEmpty) {
-      } else {
-        logInfo(s"Skip qualification part because no sqlAggMetrics DataFrame is detected.")
-      }
-      sqlAggMetricsDF
+      // val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {
