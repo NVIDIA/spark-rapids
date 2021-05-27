@@ -24,7 +24,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -52,13 +52,15 @@ object QualificationMain extends Logging {
     // This tool's output log file name
     val logFileName = "rapids_4_spark_qualification.log"
 
+
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val eventLogDir = appArgs.eventlogDir
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
+    val fileLocation = s"$outputDirectory/$logFileName"
 
     // Create the FileWriter and sparkSession used for ALL Applications.
-    val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
+    val fileWriter = new FileWriter(fileLocation)
     logInfo(s"Output directory:  $outputDirectory")
 
     val allPaths = if (eventLogDir.isDefined) {
@@ -93,7 +95,7 @@ object QualificationMain extends Logging {
       index += 1
     }
     fileWriter.write(s"### Qualification ###\n")
-    new Qualification(apps)
+    new Qualification(apps, appArgs.outputFileFormat.getOrElse("text"), fileLocation)
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
     // app.dropAllTempViews()
 

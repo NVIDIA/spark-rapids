@@ -89,7 +89,6 @@ object ProfileMain extends Logging {
     } else {
       // This mode is to process one application at one time.
       var index: Int = 1
-      val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
         // This apps only contains 1 app in each loop.
         val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -100,7 +99,6 @@ object ProfileMain extends Logging {
         app.dropAllTempViews()
         index += 1
       }
-
     }
 
     logInfo(s"Output log location:  $outputDirectory/$logFileName")

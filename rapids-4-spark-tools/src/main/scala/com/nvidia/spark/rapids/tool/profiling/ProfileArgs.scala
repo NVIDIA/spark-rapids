@@ -48,8 +48,12 @@ For usage see below:
     opt[String](required = false,
       descr = "Output directory. Default is current directory",
       default = Some("."))
+  val outputFileFormat: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Output file format. Default is text, options include text or csv",
+      default = Some("text"))
   val eventlog: ScallopOption[List[String]] =
-    trailArg[List[String]](required = false,
+    trailArg[List[String]](required = true,
       descr = "Event log filenames(space separated). " +
           "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val eventlogDir: ScallopOption[String] =

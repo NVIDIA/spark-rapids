@@ -18,13 +18,13 @@ package com.nvidia.spark.rapids.tool.profiling
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * Ranks the applications for GPU acceleration.
  */
-class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
+class Qualification(apps: ArrayBuffer[ApplicationInfo],
+    fileFormat: String, fileLocation: String) extends Logging {
 
   require(apps.nonEmpty)
   private val fileWriter = apps.head.fileWriter
@@ -43,9 +43,11 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
     }
     val messageHeader = "SQL qualify app union:"
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
-    fileWriter.write("Qualification Ranking:")
-    fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
-    df.repartition(1).write.csv("/home/tgraves/testcsvqual.csv")
-    df.printSchema()
+    if (fileFormat.toLowerCase.equals("csv")) {
+      df.repartition(1).write.csv(fileLocation)
+    } else {
+      fileWriter.write("Qualification Ranking:")
+      fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
+    }
   }
 }
