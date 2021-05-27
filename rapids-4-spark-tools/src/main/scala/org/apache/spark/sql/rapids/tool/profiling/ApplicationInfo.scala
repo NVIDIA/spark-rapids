@@ -719,7 +719,7 @@ class ApplicationInfo(
        |first(appID) as appID, sum(duration) as dfDuration,
        |sum(duration) / first(appDuration) as dfRankTotal,
        |first(appDuration) as appDuration,
-       |collect_list(potentialProblems) as potentialProblems from
+       |concat_ws(",", collect_list(potentialProblems)) as potentialProblems from
        |(${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }

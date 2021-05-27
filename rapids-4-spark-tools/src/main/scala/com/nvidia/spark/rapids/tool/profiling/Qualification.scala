@@ -45,5 +45,7 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
     fileWriter.write("Qualification Ranking:")
     fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
+    df.repartition(1).write.csv("/home/tgraves/testcsvqual.csv")
+    df.printSchema()
   }
 }
