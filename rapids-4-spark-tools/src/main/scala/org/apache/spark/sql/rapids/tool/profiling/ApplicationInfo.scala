@@ -307,34 +307,37 @@ class ApplicationInfo(
   def arraybufferToDF(): Unit = {
     import sparkSession.implicits._
 
-    // For resourceProfilesDF
-    if (this.resourceProfiles.nonEmpty) {
-      this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
-    } else {
-      logWarning("resourceProfiles is empty!")
-    }
+    if (!forQualification) {
 
-    // For blockManagersDF
-    if (this.blockManagers.nonEmpty) {
-      this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
-    } else {
-      logWarning("blockManagers is empty!")
-    }
+      // For resourceProfilesDF
+      if (this.resourceProfiles.nonEmpty) {
+        this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
+      } else {
+        logWarning("resourceProfiles is empty!")
+      }
 
-    // For blockManagersRemovedDF
-    if (this.blockManagersRemoved.nonEmpty) {
-      this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
-      this.blockManagersRemoved.clear()
-    } else {
-      logDebug("blockManagersRemoved is empty!")
-    }
+      // For blockManagersDF
+      if (this.blockManagers.nonEmpty) {
+        this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
+      } else {
+        logWarning("blockManagers is empty!")
+      }
 
-    // For propertiesDF
-    if (this.allProperties.nonEmpty) {
-      this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-    } else {
-      logError("propertiesDF is empty! Existing...")
-      System.exit(1)
+      // For blockManagersRemovedDF
+      if (this.blockManagersRemoved.nonEmpty) {
+        this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
+        this.blockManagersRemoved.clear()
+      } else {
+        logDebug("blockManagersRemoved is empty!")
+      }
+
+      // For propertiesDF
+      if (this.allProperties.nonEmpty) {
+        this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
+      } else {
+        logError("propertiesDF is empty! Existing...")
+        System.exit(1)
+      }
     }
 
     // For appDF
@@ -358,21 +361,6 @@ class ApplicationInfo(
       System.exit(1)
     }
 
-    // For executorsDF
-    if (this.executors.nonEmpty) {
-      this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
-    } else {
-      logError("executors is empty! Exiting...")
-      System.exit(1)
-    }
-
-    // For executorsRemovedDF
-    if (this.executorsRemoved.nonEmpty) {
-      this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
-    } else {
-      logDebug("executorsRemoved is empty!")
-    }
-
     // For sqlDF
     if (sqlStart.nonEmpty) {
       val sqlStartNew: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
@@ -393,86 +381,106 @@ class ApplicationInfo(
       logInfo("No SQL Execution Found. Skipping generating SQL Execution DataFrame.")
     }
 
-    // For jobDF
-    if (jobStart.nonEmpty) {
-      val jobStartNew: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
-      for (res <- jobStart) {
-        val thisEndTime = jobEndTime.get(res.jobID)
-        val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
 
-        val jobNew = res.copy(endTime = thisEndTime,
-          duration = durationResult,
-          durationStr = durationString,
-          jobResult = Some(jobEndResult(res.jobID)),
-          failedReason = jobFailedReason(res.jobID)
-        )
-        jobStartNew += jobNew
+    if (!forQualification) {
+
+      // For executorsDF
+      if (this.executors.nonEmpty) {
+        this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
+      } else {
+        logError("executors is empty! Exiting...")
+        System.exit(1)
       }
-      allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
-    } else {
-      logError("No Job Found. Exiting.")
-      System.exit(1)
-    }
 
-    // For stageDF
-    if (stageSubmitted.nonEmpty) {
-      val stageSubmittedNew: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-      for (res <- stageSubmitted) {
-        val thisEndTime = stageCompletionTime(res.stageId)
-        val thisFailureReason = stageFailureReason(res.stageId)
-
-        val durationResult = ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
-
-        val stageNew = res.copy(completionTime = thisEndTime,
-          failureReason = thisFailureReason,
-          duration = durationResult,
-          durationStr = durationString)
-        stageSubmittedNew += stageNew
+      // For executorsRemovedDF
+      if (this.executorsRemoved.nonEmpty) {
+        this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
+      } else {
+        logDebug("executorsRemoved is empty!")
       }
-      allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
-    } else {
-      logError("No Stage Found. Exiting.")
-      System.exit(1)
-    }
 
-    // For taskDF
-    if (taskEnd.nonEmpty) {
-      allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-    } else {
-      logError("task is empty! Exiting...")
-      System.exit(1)
-    }
+      // For jobDF
+      if (jobStart.nonEmpty) {
+        val jobStartNew: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
+        for (res <- jobStart) {
+          val thisEndTime = jobEndTime.get(res.jobID)
+          val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
+          val durationString = durationResult match {
+            case Some(i) => UIUtils.formatDuration(i)
+            case None => ""
+          }
 
-    // For sqlMetricsDF
-    if (sqlPlanMetrics.nonEmpty) {
-      logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
-      allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
-    } else {
-      logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
-    }
+          val jobNew = res.copy(endTime = thisEndTime,
+            duration = durationResult,
+            durationStr = durationString,
+            jobResult = Some(jobEndResult(res.jobID)),
+            failedReason = jobFailedReason(res.jobID)
+          )
+          jobStartNew += jobNew
+        }
+        allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
+      } else {
+        logError("No Job Found. Exiting.")
+        System.exit(1)
+      }
 
-    // For driverAccumDF
-    allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
-    if (driverAccum.nonEmpty) {
-      logInfo(s"Total ${driverAccum.size} driver accums for appID=$appId")
-    } else {
-      logInfo("No Driver accum Found. Create an empty driver accum DataFrame.")
-    }
+      // For stageDF
+      if (stageSubmitted.nonEmpty) {
+        val stageSubmittedNew: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
+        for (res <- stageSubmitted) {
+          val thisEndTime = stageCompletionTime(res.stageId)
+          val thisFailureReason = stageFailureReason(res.stageId)
 
-    // For taskStageAccumDF
-    allDataFrames += (s"taskStageAccumDF_$index" -> taskStageAccum.toDF)
-    if (taskStageAccum.nonEmpty) {
-      logInfo(s"Total ${taskStageAccum.size} task&stage accums for appID=$appId")
-    } else {
-      logInfo("No task&stage accums Found.Create an empty task&stage accum DataFrame.")
+          val durationResult =
+            ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
+          val durationString = durationResult match {
+            case Some(i) => UIUtils.formatDuration(i)
+            case None => ""
+          }
+
+          val stageNew = res.copy(completionTime = thisEndTime,
+            failureReason = thisFailureReason,
+            duration = durationResult,
+            durationStr = durationString)
+          stageSubmittedNew += stageNew
+        }
+        allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
+      } else {
+        logError("No Stage Found. Exiting.")
+        System.exit(1)
+      }
+
+      // For taskDF
+      if (taskEnd.nonEmpty) {
+        allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
+      } else {
+        logError("task is empty! Exiting...")
+        System.exit(1)
+      }
+
+      // For sqlMetricsDF
+      if (sqlPlanMetrics.nonEmpty) {
+        logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
+        allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
+      } else {
+        logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
+      }
+
+      // For driverAccumDF
+      allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
+      if (driverAccum.nonEmpty) {
+        logInfo(s"Total ${driverAccum.size} driver accums for appID=$appId")
+      } else {
+        logInfo("No Driver accum Found. Create an empty driver accum DataFrame.")
+      }
+
+      // For taskStageAccumDF
+      allDataFrames += (s"taskStageAccumDF_$index" -> taskStageAccum.toDF)
+      if (taskStageAccum.nonEmpty) {
+        logInfo(s"Total ${taskStageAccum.size} task&stage accums for appID=$appId")
+      } else {
+        logInfo("No task&stage accums Found.Create an empty task&stage accum DataFrame.")
+      }
     }
 
     // For planNodeAccumDF
@@ -484,7 +492,7 @@ class ApplicationInfo(
     }
 
     // For problematicSQLDF
-    allDataFrames += (s"problematicSQLDF_$index" -> problematicSQL.toDF)
+    // allDataFrames += (s"problematicSQLDF_$index" -> problematicSQL.toDF)
     // For Dataset SQL operations
     allDataFrames += (s"datasetSQLDF_$index" -> datasetSQL.toDF)
 
