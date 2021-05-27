@@ -30,9 +30,9 @@ trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpr
       predExpr: Expression,
       trueExpr: Expression,
       falseValue: Any): GpuColumnVector = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
-      withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
-        withResourceIfAllowed(falseValue) { falseRet =>
+    withResourceIfAllowed(falseValue) { falseRet =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
+        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
           val finalRet = (trueRet, falseRet) match {
             case (t: GpuColumnVector, f: GpuColumnVector) =>
               pred.getBase.ifElse(t.getBase, f.getBase)
