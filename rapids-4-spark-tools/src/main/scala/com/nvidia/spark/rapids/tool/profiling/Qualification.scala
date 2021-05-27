@@ -48,13 +48,7 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
     fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
 
     /*
-    // If this application does not have SQL
-    if (!app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-      logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is inside.")
-      fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-        s"disqualified because no SQL is inside.\n")
-      return false
-    }
+
 
     val dfProb = app.queryToDF(app.qualificationSQLDataSet)
     if (!dfProb.isEmpty) {
@@ -71,19 +65,5 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
     true
 
 */
-    /*
-    if (df.isEmpty) {
-      // then all SQL operations are Dataset
-      logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is qualified.")
-      fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-        s"disqualified because no SQL is qualified\n")
-      false
-    } else {
-      fileWriter.write(s"${app.appId} (index=${app.index}) " +
-        s"is qualified with below qualified SQL(s):\n")
-      fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
-      true
-    }
-    */
   }
 }

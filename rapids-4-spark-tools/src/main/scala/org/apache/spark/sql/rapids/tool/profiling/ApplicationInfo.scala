@@ -184,11 +184,11 @@ class ApplicationInfo(
   // Process all events
   processEvents()
   if (forQualification) {
-    // Process all properties after all events are processed
-    processAllProperties()
     // Process the plan for qualification
     processSQLPlanForQualification
   } else {
+    // Process all properties after all events are processed
+    processAllProperties()
     // Process SQL Plan Metrics after all events are processed
     processSQLPlanMetrics()
   }
@@ -259,6 +259,10 @@ class ApplicationInfo(
         val probReason = isDataSetPlan(node)
         if (probReason.nonEmpty) {
           datasetSQL += DatasetSQLCase(sqlID, probReason, node.desc)
+        }
+        val udf = isUDFInPlanDesc(node.desc)
+        if (udf.nonEmpty) {
+          problematicSQL += ProblematicSQLCase(sqlID, udf, node.desc)
         }
       }
     }
@@ -492,7 +496,7 @@ class ApplicationInfo(
     }
 
     // For problematicSQLDF
-    // allDataFrames += (s"problematicSQLDF_$index" -> problematicSQL.toDF)
+    allDataFrames += (s"problematicSQLDF_$index" -> problematicSQL.toDF)
     // For Dataset SQL operations
     allDataFrames += (s"datasetSQLDF_$index" -> datasetSQL.toDF)
 
@@ -744,16 +748,25 @@ class ApplicationInfo(
   // } else if (node.name == "GpuRowToColumnar") {
   // "GpuRowToColumnar"
   def isDataSetPlan(node: SparkPlanGraphNode): String = {
-    isDescProblematic(node.desc)
+    isDatasetOpInPlanDesc(node.desc)
   }
 
   // TODO - do we want to handle existing RDD
   // case e if e.matches(".*ExistingRDD.*") => "existingRDD"
   // case u if u.matches(".*UDF.*") => "UDF"
-  private def isDescProblematic(desc: String): String =  {
+  private def isDatasetOpInPlanDesc(desc: String): String =  {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => "Dataset/Lambda"
       case a if a.endsWith(".apply") => "Dataset/Apply"
+      case _ => ""
+    }
+  }
+
+  // TODO - do we want to handle existing RDD
+  // case e if e.matches(".*ExistingRDD.*") => "existingRDD"
+  def isUDFInPlanDesc(desc: String): String =  {
+    desc match {
+      case u if u.matches(".*UDF.*") => "UDF"
       case _ => ""
     }
   }

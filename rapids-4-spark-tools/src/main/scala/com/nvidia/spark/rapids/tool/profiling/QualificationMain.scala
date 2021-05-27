@@ -18,10 +18,11 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.FileWriter
 
+import scala.collection.mutable.ArrayBuffer
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
-import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.rapids.tool.profiling._
@@ -102,8 +103,6 @@ object QualificationMain extends Logging {
   }
 
   def logApplicationInfo(app: ApplicationInfo) = {
-      logInfo("========================================================================")
       logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-      logInfo("========================================================================")
   }
 }
