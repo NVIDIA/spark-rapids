@@ -49,9 +49,12 @@ For usage see below:
       descr = "Output directory. Default is current directory",
       default = Some("."))
   val eventlog: ScallopOption[List[String]] =
-    trailArg[List[String]](required = true,
+    trailArg[List[String]](required = false,
       descr = "Event log filenames(space separated). " +
           "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
+  val eventlogDir: ScallopOption[String] =
+    trailArg[String](required = false,
+      descr = "Directory of event logs")
   val compare: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Compare Applications (Recommended to compare less than 10 applications)." +

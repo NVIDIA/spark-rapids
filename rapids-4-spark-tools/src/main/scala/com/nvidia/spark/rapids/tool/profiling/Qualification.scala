@@ -22,26 +22,16 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
- * Qualifies or disqualifies an application for GPU acceleration.
+ * Ranks the applications for GPU acceleration.
  */
-class Qualification(
-    apps: ArrayBuffer[ApplicationInfo]) extends Logging {
+class Qualification(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
 
   require(apps.nonEmpty)
   private val fileWriter = apps.head.fileWriter
-  
-  // Qualify each App
-  // for (app <- apps) {
-    qualifyApps(apps)
-  //}
 
-  // Function to qualify an application. Below criteria is used to decide if the application can
-  // be qualified.
-  // 1. If the application doesn't contain SQL, then it is disqualified.
-  // 2. If the application has SQL, below 2 conditions have to be met to mark it as qualified:
-  //    a. SQL duration is greater than 30 seconds.
-  //    b. executorCPUTime_sum/executorRunTime_sum > 30 ( atleast 30%)
-  def qualifyApps(apps: ArrayBuffer[ApplicationInfo]): Boolean = {
+  qualifyApps(apps)
+
+  def qualifyApps(apps: ArrayBuffer[ApplicationInfo]): Unit = {
 
     var query = ""
     val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
@@ -57,7 +47,6 @@ class Qualification(
     fileWriter.write("Qualification Ranking:")
     fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
 
-    true
     /*
     // If this application does not have SQL
     if (!app.allDataFrames.contains(s"sqlDF_${app.index}")) {

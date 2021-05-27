@@ -18,9 +18,10 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.FileWriter
 
-import org.apache.hadoop.fs.Path
-import scala.collection.mutable.ArrayBuffer
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
 
+import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.rapids.tool.profiling._
@@ -47,28 +48,39 @@ object QualificationMain extends Logging {
   def mainInternal(sparkSession: SparkSession, appArgs: ProfileArgs): Int = {
 
     // This tool's output log file name
-    val logFileName = "rapids_4_spark_tools_output.log"
+    val logFileName = "rapids_4_spark_qualification.log"
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
+    val eventLogDir = appArgs.eventlogDir
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
     logInfo(s"Output directory:  $outputDirectory")
 
-    // Convert the input path string to Path(s)
-    val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
-    for (pathString <- eventlogPaths) {
-      val paths = ProfileUtils.stringToPath(pathString)
-      if (paths.nonEmpty) {
-        allPaths ++= paths
+    val allPaths = if (eventLogDir.isDefined) {
+      val logDir = eventLogDir.get.get
+      // TODO - do we need s3 options?
+      val hadoopConf = new Configuration()
+      val fs: FileSystem = new Path(logDir).getFileSystem(hadoopConf)
+      // TODO - want to check permissions or other things?
+      val updated = Option(fs.listStatus(new Path(logDir))).map(_.toSeq).getOrElse(Nil)
+      updated.map(_.getPath)
+    } else {
+      // Convert the input path string to Path(s)
+      val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
+      for (pathString <- eventlogPaths) {
+        val paths = ProfileUtils.stringToPath(pathString)
+        if (paths.nonEmpty) {
+          allPaths ++= paths
+        }
       }
+      allPaths
     }
 
     logWarning("Doing Qualification")
 
-    // This mode is to process one application at one time.
     var index: Int = 1
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths.filter(p => !p.getName.contains("."))) {
@@ -76,12 +88,12 @@ object QualificationMain extends Logging {
       val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
       apps += app
       logApplicationInfo(app)
-      // app.dropAllTempViews()
       index += 1
     }
     fileWriter.write(s"### Qualification ###\n")
     new Qualification(apps)
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
+    // app.dropAllTempViews()
 
     fileWriter.flush()
     fileWriter.close()

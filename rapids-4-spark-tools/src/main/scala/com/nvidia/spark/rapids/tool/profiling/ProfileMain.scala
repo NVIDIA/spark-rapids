@@ -133,7 +133,6 @@ object ProfileMain extends Logging {
       logInfo(s"### B. Analysis ###")
       val analysis = new Analysis(apps)
       analysis.jobAndStageMetricsAggregation()
-      // val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {
