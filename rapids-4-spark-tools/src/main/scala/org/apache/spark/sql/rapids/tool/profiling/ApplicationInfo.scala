@@ -718,8 +718,10 @@ class ApplicationInfo(
        |app.appName,
        |sq.sqlID, sq.description,
        |sq.duration,
-       |app.duration as appDuration
+       |app.duration as appDuration,
+       |reason as potentialProblems
        |from sqlDF_$index sq, appdf_$index app
+       |left join problematicSQLDF_$index pb on pb.sqlID=sq.sqlID
        |where sq.sqlID not in (select sqlID from datasetSQLDF_$index)
        |""".stripMargin
   }
@@ -728,7 +730,8 @@ class ApplicationInfo(
     s"""select first(appName) as appName, first(appIndex) as appIndex,
        |first(appID) as appID, sum(duration) as dfDuration,
        |sum(duration) / first(appDuration) as dfRankTotal,
-       |first(appDuration) as appDuration from
+       |first(appDuration) as appDuration,
+       |collect_list(potentialProblems) as potentialProblems from
        |(${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }
