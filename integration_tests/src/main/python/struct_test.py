@@ -19,6 +19,14 @@ from conftest import is_dataproc_runtime
 from data_gen import *
 from pyspark.sql.types import *
 
+def test_struct_scalar_project():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(2).selectExpr(
+                "named_struct('1', 2, '3', 4) as i", 
+                "named_struct('a', 'b', 'c', 'd', 'e', named_struct()) as s",
+                "named_struct('a', map('foo', 10, 'bar', 11), 'arr', array(1.0, 2.0, 3.0)) as st"
+                "id"))
+
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
     StructGen([["first", short_gen], ["second", int_gen], ["third", long_gen]]),
     StructGen([["first", double_gen], ["second", date_gen], ["third", timestamp_gen]]),
@@ -32,14 +40,14 @@ def test_struct_get_item(data_gen):
                 'a.third'))
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + [null_gen, decimal_gen_default, decimal_gen_scale_precision, simple_string_to_string_map_gen] + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [null_gen, decimal_gen_default, decimal_gen_scale_precision] + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_make_struct(data_gen):
     # Spark has no good way to create a map literal without the map function
     # so we are inserting one.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'struct(a, b)',
-                'named_struct("foo", b, "m", map("a", "b"), "n", null, "bar", 5, "end", a)'),
+                'named_struct("foo", b, "m", map("a", "b"), "n", null, "bar", 5, "other", named_struct("z", "z"),"end", a)'),
             conf = allow_negative_scale_of_decimal_conf)
 
 

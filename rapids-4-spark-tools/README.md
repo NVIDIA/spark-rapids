@@ -6,31 +6,31 @@ Works with both cpu and gpu generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
+## Prerequisites
+1. Request Spark 3.1.1 or newer installed
+
 ## How to compile and use with Spark
 1. `mvn clean package`
-2. Copy rapids-4-spark-tools-<version>.jar to $SPARK_HOME/jars/
-
-`cp target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar $SPARK_HOME/jars/`
-
-3.  In spark-shell:
+2. Include rapids-4-spark-tools-<version>.jar in the '--jars' option to spark-shell or spark-submit
+3. After starting spark-shell:
 For a single event log analysis:
 ```
-org.apache.spark.sql.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))
+com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))
 ```
 
 For multiple event logs comparison and analysis:
 ```
-org.apache.spark.sql.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
+com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
 ```
 
 ## How to compile and use from command-line
 1. `mvn clean package`
 2. `cd $SPARK_HOME (Download Apache Spark if required)`
-3. `./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1`
+3. `./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar /path/to/eventlog1`
 
 ## Options
 ```
-$ ./bin/spark-submit --class org.apache.spark.sql.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar --help
+$ ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools-<version>.jar --help
 
 Spark event log profiling tool
 
