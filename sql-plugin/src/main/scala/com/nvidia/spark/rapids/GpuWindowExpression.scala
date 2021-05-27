@@ -422,7 +422,7 @@ object GpuWindowExpression extends Arm {
       case DType.INT16 => Scalar.fromShort(value.toShort)
       case DType.INT32 => Scalar.fromInt(value.toInt)
       case DType.INT64 => Scalar.fromLong(value)
-      case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value.toDays)
+      case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value)
       case DType.TIMESTAMP_MICROSECONDS =>
         Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value.toMicros)
       case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
