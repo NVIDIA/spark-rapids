@@ -17,8 +17,8 @@
 package com.nvidia.spark.udf
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.RapidsConf
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression, ScalaUDF}
@@ -50,7 +50,12 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
     // iterating over NamedExpression
     exp match {
       case f: ScalaUDF => // found a ScalaUDF
-        GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
+        // If it implements the RapidsUDF interface, no need to compile it.
+        if (f.function.isInstanceOf[RapidsUDF]) {
+          exp
+        } else {
+          GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
+        }
       case _ =>
         if (exp == null) {
           exp
