@@ -323,12 +323,12 @@ case class GpuConcatWs(children: Seq[Expression])
     withResourceIfAllowed(expr.columnarEval(batch)) {
       case vector: GpuColumnVector =>
         vector.dataType() match {
-          case ArrayType(st: StringType, nullable) => concatArrayCol(colOrScalarSep, vector.getBase)
+          case ArrayType(st: StringType, _) => concatArrayCol(colOrScalarSep, vector.getBase)
           case _ => vector.incRefCount()
         }
       case s: GpuScalar =>
         s.dataType match {
-          case ArrayType(st: StringType, nullable) =>
+          case ArrayType(st: StringType, _) =>
             // we have to first concatenate any array types
             withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
               concatArrayCol(colOrScalarSep, cv)
@@ -344,13 +344,9 @@ case class GpuConcatWs(children: Seq[Expression])
   private def checkScalarSeparatorNull(colOrScalarSep: Any,
       numRows: Int): Option[GpuColumnVector] = {
     colOrScalarSep match {
-      case sepScalar: GpuScalar =>
-        if (!sepScalar.getBase.isValid()) {
-          // if null scalar separator just return a column of all nulls
-          Some(GpuColumnVector.from(sepScalar, numRows, dataType))
-        } else {
-          None
-        }
+      case sepScalar: GpuScalar if (!sepScalar.getBase.isValid()) =>
+        // if null scalar separator just return a column of all nulls
+        Some(GpuColumnVector.from(sepScalar, numRows, dataType))
       case sepVec: GpuColumnVector =>
         None
     }
