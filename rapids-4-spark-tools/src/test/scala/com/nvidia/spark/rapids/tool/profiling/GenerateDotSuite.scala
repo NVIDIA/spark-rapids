@@ -79,19 +79,23 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
     // assert that a file was generated
     val dotDirs = listFilesMatching(dotFileDir, _.startsWith("local"))
     assert(dotDirs.length === 2)
-    val dotFiles = listFilesMatching(dotDirs.last, _.endsWith(".dot"))
-    assert(dotFiles.length === 1)
 
-    // assert that the generated file looks something like what we expect
-    val source = Source.fromFile(dotFiles.head)
-    try {
-      val lines = source.getLines().toArray
-      assert(lines.head === "digraph G {")
-      assert(lines.last === "}")
-      assert(lines.count(_.contains("HashAggregate")) === 2)
-    } finally {
-      source.close()
+    // assert that the generated files looks something like what we expect
+    var hashAggCount = 0
+    for (dir <- dotDirs) {
+      val dotFiles = listFilesMatching(dir, _.endsWith(".dot"))
+      assert(dotFiles.length === 1)
+      val source = Source.fromFile(dotFiles.head)
+      try {
+        val lines = source.getLines().toArray
+        assert(lines.head === "digraph G {")
+        assert(lines.last === "}")
+        hashAggCount += lines.count(_.contains("HashAggregate"))
+      } finally {
+        source.close()
+      }
     }
+    assert(hashAggCount === 2)
   }
 
   private def listFilesMatching(dir: File, matcher: String => Boolean): Array[File] = {
