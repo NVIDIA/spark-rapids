@@ -186,6 +186,12 @@ def _prep_func_for_compare(func, mode):
     elif mode == 'COUNT':
         bring_back = lambda spark: limit_func(spark).count()
         collect_type = 'COUNT'
+    elif mode == 'COLLECT_WITH_DATAFRAME':
+        def bring_back(spark):
+            df = limit_func(spark)
+            return (df.collect(), df)
+        collect_type = 'COLLECT'
+        return (bring_back, collect_type)
     else:
         bring_back = lambda spark: limit_func(spark).toLocalIterator()
         collect_type = 'ITERATOR'
@@ -292,21 +298,20 @@ def assert_gpu_fallback_write(write_func,
 def assert_gpu_fallback_collect(func,
         cpu_fallback_class_name,
         conf={}):
-    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT')
+    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT_WITH_DATAFRAME')
+
     conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
     cpu_start = time.time()
-    from_cpu = with_cpu_session(bring_back, conf=conf)
+    from_cpu, cpu_df = with_cpu_session(bring_back, conf=conf)
     cpu_end = time.time()
     print('### GPU RUN ###')
-    jvm = spark_jvm()
-    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.startCapture()
     gpu_start = time.time()
-    from_gpu = with_gpu_session(bring_back,
-            conf=conf)
+    from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
     gpu_end = time.time()
-    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
+    jvm = spark_jvm()
+    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertDidFallBack(gpu_df._jdf, cpu_fallback_class_name)
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
@@ -314,6 +319,18 @@ def assert_gpu_fallback_collect(func,
         from_gpu.sort(key=_RowCmp)
 
     assert_equal(from_cpu, from_gpu)
+
+def assert_gpu_sql_fallback_collect(df_fun, cpu_fallback_class_name, table_name, sql, conf=None, debug=False):
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        if debug:
+            return data_gen.debug_df(spark.sql(sql))
+        else:
+            return spark.sql(sql)
+    assert_gpu_fallback_collect(do_it_all, cpu_fallback_class_name, conf)
 
 def _assert_gpu_and_cpu_are_equal(func,
     mode,

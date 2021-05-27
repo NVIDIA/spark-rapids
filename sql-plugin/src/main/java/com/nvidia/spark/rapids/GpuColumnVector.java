@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.BaseDeviceMemoryBuffer;
 import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.ArrowColumnBuilder;
@@ -73,6 +74,25 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+  private static synchronized void debugGPUAddrs(String name, ai.rapids.cudf.ColumnView col) {
+    try (BaseDeviceMemoryBuffer data = col.getData();
+         BaseDeviceMemoryBuffer validity = col.getValid()) {
+      System.err.println("GPU COLUMN " + name + " - NC: " + col.getNullCount()
+          + " DATA: " + data + " VAL: " + validity);
+    }
+    if (col.getType() == DType.STRUCT) {
+      for (int i = 0; i < col.getNumChildren(); i++) {
+        try (ColumnView child = col.getChildColumnView(i)) {
+          debugGPUAddrs(name + ":CHILD_" + i, child);
+        }
+      }
+    } else if (col.getType() == DType.LIST) {
+      try (ColumnView child = col.getChildColumnView(0)) {
+        debugGPUAddrs(name + ":DATA", child);
+      }
+    }
+  }
+
   /**
    * Print to standard error the contents of a column. Note that this should never be
    * called from production code, as it is very slow.  Also note that this is not production
@@ -82,6 +102,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param col the column to print out.
    */
   public static synchronized void debug(String name, ai.rapids.cudf.ColumnView col) {
+    debugGPUAddrs(name, col);
     try (HostColumnVector hostCol = col.copyToHost()) {
       debug(name, hostCol);
     }

@@ -52,19 +52,28 @@ class Qualification(
     if (!app.allDataFrames.contains(s"sqlDF_${app.index}")) {
       logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is inside.")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-          s"disqualified because no SQL is inside.\n")
+        s"disqualified because no SQL is inside.\n")
       return false
     }
 
+    val dfProb = app.queryToDF(app.qualificationSQLDataSet)
+    if (!dfProb.isEmpty) {
+      logInfo(s"${app.appId} (index=${app.index}) is disqualified because it is problematic " +
+        "(UDF, Dataset, etc).")
+      fileWriter.write(s"${app.appId} (index=${app.index}) is " +
+        s"disqualified because problematic (UDF, Dataset, etc.)\n")
+      fileWriter.write("Reason disqualified:\n")
+      fileWriter.write(ToolUtils.showString(dfProb, app.args.numOutputRows.getOrElse(1000)))
+    }
     val df = app.queryToDF(app.qualificationSQL)
     if (df.isEmpty) {
       logInfo(s"${app.appId} (index=${app.index}) is disqualified because no SQL is qualified.")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
-          s"disqualified because no SQL is qualified.\n")
+        s"disqualified because no SQL is qualified\n")
       false
     } else {
       fileWriter.write(s"${app.appId} (index=${app.index}) " +
-          s"is qualified with below qualified SQL(s):\n")
+        s"is qualified with below qualified SQL(s):\n")
       fileWriter.write("\n" + ToolUtils.showString(df, app.args.numOutputRows.getOrElse(1000)))
       true
     }
