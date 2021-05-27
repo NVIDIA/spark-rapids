@@ -279,15 +279,15 @@ case class GpuConcatWs(children: Seq[Expression])
     StringType +: Seq.fill(children.size - 1)(arrayOrStr)
   }
 
-  private def concatArrayCol( sep: Either[GpuScalar, GpuColumnVector],
+  private def concatArrayCol(colOrScalarSep: Any,
       cv: ColumnView): GpuColumnVector = {
-    sep match {
-      case Left(sepScalar) =>
+    colOrScalarSep match {
+      case sepScalar: GpuScalar =>
         withResource(GpuScalar.from("", StringType)) { emptyStrScalar =>
           GpuColumnVector.from(cv.stringConcatenateListElements(sepScalar.getBase, emptyStrScalar,
             false, false), dataType)
         }
-      case Right(sepVec) =>
+      case sepVec: GpuColumnVector =>
         GpuColumnVector.from(cv.stringConcatenateListElements(sepVec.getBase), dataType)
     }
   }
@@ -318,12 +318,12 @@ case class GpuConcatWs(children: Seq[Expression])
   private def resolveColumnVectorAndConcatArrayCols(
       expr: Expression,
       numRows: Int,
-      sep: Either[GpuScalar, GpuColumnVector],
+      colOrScalarSep: Any,
       batch: ColumnarBatch): GpuColumnVector = {
     withResourceIfAllowed(expr.columnarEval(batch)) {
       case vector: GpuColumnVector =>
         vector.dataType() match {
-          case ArrayType(st: StringType, nullable) => concatArrayCol(sep, vector.getBase)
+          case ArrayType(st: StringType, nullable) => concatArrayCol(colOrScalarSep, vector.getBase)
           case _ => vector.incRefCount()
         }
       case s: GpuScalar =>
@@ -331,7 +331,7 @@ case class GpuConcatWs(children: Seq[Expression])
           case ArrayType(st: StringType, nullable) =>
             // we have to first concatenate any array types
             withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
-              concatArrayCol(sep, cv)
+              concatArrayCol(colOrScalarSep, cv)
             }
           case _ => GpuColumnVector.from(s, numRows, s.dataType)
         }
@@ -341,44 +341,40 @@ case class GpuConcatWs(children: Seq[Expression])
       }
   }
 
+  private def checkScalarSeparatorNull(colOrScalarSep: Any,
+      numRows: Int): Option[GpuColumnVector] = {
+    colOrScalarSep match {
+      case sepScalar: GpuScalar =>
+        if (!sepScalar.getBase.isValid()) {
+          // if null scalar separator just return a column of all nulls
+          Some(GpuColumnVector.from(sepScalar, numRows, dataType))
+        } else {
+          None
+        }
+      case sepVec: GpuColumnVector =>
+        None
+    }
+  }
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     val numRows = batch.numRows()
-    var sep: Either[GpuScalar, GpuColumnVector] = null
-    try {
-      // get the separator and check for null scalar separator
-      val sepScalarNullOpt = withResourceIfAllowed(children.head.columnarEval(batch)) {
-        case sepScalar: GpuScalar =>
-          sep = Left(sepScalar.incRefCount)
-          if (!sepScalar.getBase.isValid()) {
-            // if null scalar separator just return a column of all nulls
-            Some(GpuColumnVector.from(sepScalar, numRows, dataType))
-          } else {
-            None
-          }
-        case sepVec: GpuColumnVector =>
-          sep = Right(sepVec.incRefCount())
-          None
-      }
-      sepScalarNullOpt.getOrElse {
+    withResourceIfAllowed(children.head.columnarEval(batch)) { colOrScalarSep =>
+      // check for null scalar separator
+      checkScalarSeparatorNull(colOrScalarSep, numRows).getOrElse {
         withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
           columns ++= children.tail.map {
-            resolveColumnVectorAndConcatArrayCols(_, numRows, sep, batch).getBase
+            resolveColumnVectorAndConcatArrayCols(_, numRows, colOrScalarSep, batch).getBase
           }
-          sep match {
-            case Left(sepScalar) =>
+          colOrScalarSep match {
+            case sepScalar: GpuScalar =>
               if (columns.size == 1) {
                 processSingleColScalarSep(columns.head)
               } else {
                 stringConcatSeparatorScalar(columns, sepScalar)
               }
-            case Right(sepVec) => stringConcatSeparatorVector(columns, sepVec)
+            case sepVec: GpuColumnVector  => stringConcatSeparatorVector(columns, sepVec)
           }
         }
-      }
-    } finally {
-      Option(sep).foreach {
-        case Right(sepVec) => sepVec.close()
-        case Left(sepScalar) => sepScalar.close()
       }
     }
   }

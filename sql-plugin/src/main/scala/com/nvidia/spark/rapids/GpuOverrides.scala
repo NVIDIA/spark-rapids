@@ -2527,10 +2527,8 @@ object GpuOverrides {
             willNotWorkOnGpu("Only specifying separator column not supported on GPU")
           }
         }
-        override final def convertToGpu(): GpuExpression = {
-          convertToGpu(childExprs.map(_.convertToGpu()))
-        }
-        def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcatWs(child)
+        override final def convertToGpu(): GpuExpression =
+          GpuConcatWs(childExprs.map(_.convertToGpu()))
       }),
     expr[Murmur3Hash] (
       "Murmur3 hash operator",
