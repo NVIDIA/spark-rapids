@@ -674,10 +674,13 @@ class ApplicationInfo(
 
   //     |from sqlDF_$index sq, sqlAggMetricsDF m, appdf_$index app
   def qualificationDurationSQL: String = {
-    s"""select $index as appIndex, '$appId' as appID,
+    s"""select
+       |$index as appIndex,
+       |'$appId' as appID,
+       |app.appName,
        |sq.sqlID, sq.description,
        |sq.duration,
-       |(select duration from appdf_$index) as appDuration
+       |app.duration as appDuration
        |from sqlDF_$index sq, appdf_$index app
        |where sq.sqlID not in (select sqlID from datasetSQLDF_$index)
        |""".stripMargin
