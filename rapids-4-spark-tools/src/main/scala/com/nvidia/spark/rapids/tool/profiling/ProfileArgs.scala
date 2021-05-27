@@ -53,7 +53,7 @@ For usage see below:
       descr = "Event log filenames(space separated). " +
           "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val eventlogDir: ScallopOption[String] =
-    trailArg[String](required = false,
+    opt[String](required = false,
       descr = "Directory of event logs")
   val compare: ScallopOption[Boolean] =
     opt[Boolean](required = false,
