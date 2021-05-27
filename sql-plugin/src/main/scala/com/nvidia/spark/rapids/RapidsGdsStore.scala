@@ -51,6 +51,7 @@ class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
     batchWriteBufferSize: Long,
     alignedIO: Boolean,
+    alignmentThreshold: Long,
     catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
     extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
   private[this] val batchSpiller = new BatchSpiller()
@@ -72,9 +73,18 @@ class RapidsGdsStore(
 
   private def alignBufferSize(buffer: DeviceMemoryBuffer): Long = {
     if (alignedIO) {
-      RapidsGdsStore.alignBufferSize(buffer)
+      RapidsGdsStore.alignUp(buffer.getLength)
     } else {
       buffer.getLength
+    }
+  }
+
+  private def alignLargeBufferSize(buffer: DeviceMemoryBuffer): Long = {
+    val length = buffer.getLength
+    if (alignedIO && length >= alignmentThreshold) {
+      RapidsGdsStore.alignUp(length)
+    } else {
+      length
     }
   }
 
@@ -97,7 +107,8 @@ class RapidsGdsStore(
 
     override def materializeMemoryBuffer: MemoryBuffer = {
       closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-        CuFile.readFileToDeviceMemory(buffer.getAddress, alignBufferSize(buffer), path, fileOffset)
+        CuFile.readFileToDeviceMemory(
+          buffer.getAddress, alignLargeBufferSize(buffer), path, fileOffset)
         logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
         buffer
       }
@@ -134,7 +145,7 @@ class RapidsGdsStore(
   : RapidsBufferBase = {
     val id = other.id
     val path = id.getDiskPath(diskBlockManager)
-    val alignedSize = alignBufferSize(deviceBuffer)
+    val alignedSize = alignLargeBufferSize(deviceBuffer)
     // When sharing files, append to the file; otherwise, write from the beginning.
     val fileOffset = if (id.canShareDiskPaths) {
       // only one writer at a time for now when using shared files
@@ -235,7 +246,7 @@ class RapidsGdsStore(
             logDebug(s"Created device buffer $size from batch write buffer")
           } else {
             CuFile.readFileToDeviceMemory(
-              buffer.getAddress, alignBufferSize(buffer), path, fileOffset)
+              buffer.getAddress, alignLargeBufferSize(buffer), path, fileOffset)
             logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
           }
           buffer
@@ -285,22 +296,8 @@ class RapidsGdsStore(
 
 object RapidsGdsStore {
   val AllocationAlignment = 4096L
-  val AlignmentThreshold = 65536L
-
-  def isAligned(length: Long): Boolean = {
-    length % AllocationAlignment == 0
-  }
 
   def alignUp(length: Long): Long = {
     (length + AllocationAlignment - 1) & ~(AllocationAlignment - 1)
-  }
-
-  def alignBufferSize(buffer: DeviceMemoryBuffer): Long = {
-    val length = buffer.getLength
-    if (length < AlignmentThreshold) {
-      length
-    } else {
-      alignUp(length)
-    }
   }
 }

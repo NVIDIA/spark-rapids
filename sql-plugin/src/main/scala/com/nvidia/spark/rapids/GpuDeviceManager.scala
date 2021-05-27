@@ -268,8 +268,8 @@ object GpuDeviceManager extends Logging {
       val (allocationAlignment, alignmentThreshold) =
         if (conf.isGdsSpillEnabled && conf.isGdsSpillAlignedIO) {
           logInfo(s"Using allocation alignment = ${toKB(RapidsGdsStore.AllocationAlignment)} KB, " +
-              s"alignment threshold = ${toKB(RapidsGdsStore.AlignmentThreshold)} KB")
-          (RapidsGdsStore.AllocationAlignment, RapidsGdsStore.AlignmentThreshold)
+              s"alignment threshold = ${toKB(conf.gdsSpillAlignmentThreshold)} KB")
+          (RapidsGdsStore.AllocationAlignment, conf.gdsSpillAlignmentThreshold)
         } else {
           (0L, 0L)
         }

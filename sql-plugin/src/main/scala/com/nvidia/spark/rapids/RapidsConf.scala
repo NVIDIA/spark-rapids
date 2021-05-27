@@ -387,6 +387,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val GDS_SPILL_ALIGNMENT_THRESHOLD =
+    conf("spark.rapids.memory.gpu.direct.storage.spill.alignmentThreshold")
+    .doc("GPU memory buffers with size above this threshold will be aligned to 4 KiB. Setting " +
+        "this value to 0 means every allocation will be 4 KiB aligned. A low threshold may " +
+        "cause more memory consumption because of padding.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(ByteUnit.KiB.toBytes(64))
+
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -1383,6 +1392,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
 
   lazy val isGdsSpillAlignedIO: Boolean = get(GDS_SPILL_ALIGNED_IO)
+
+  lazy val gdsSpillAlignmentThreshold: Long = get(GDS_SPILL_ALIGNMENT_THRESHOLD)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
