@@ -44,7 +44,8 @@ class ApplicationInfo(
     val sparkSession: SparkSession,
     val fileWriter: FileWriter,
     val eventlog: Path,
-    val index: Int) extends Logging {
+    val index: Int,
+    val forQualification: Boolean = false) extends Logging {
 
   // From SparkListenerLogStart
   var sparkVersion: String = ""
@@ -182,10 +183,15 @@ class ApplicationInfo(
 
   // Process all events
   processEvents()
-  // Process all properties after all events are processed
-  processAllProperties()
-  // Process SQL Plan Metrics after all events are processed
-  processSQLPlanMetrics()
+  if (forQualification) {
+    // Process all properties after all events are processed
+    processAllProperties()
+    // Process the plan for qualification
+    processSQLPlanForQualification
+  } else {
+    // Process SQL Plan Metrics after all events are processed
+    processSQLPlanMetrics()
+  }
   // Create Spark DataFrame(s) based on ArrayBuffer(s)
   arraybufferToDF()
 
@@ -239,6 +245,26 @@ class ApplicationInfo(
     for ((k, v) <- classpathEntries) {
       val thisProperty = PropertiesCase("classpath", k, v)
       allProperties += thisProperty
+    }
+  }
+
+  def processSQLPlanForQualification(): Unit ={
+    for ((sqlID, planInfo) <- sqlPlan){
+      val planGraph = SparkPlanGraph(planInfo)
+      // SQLPlanMetric is a case Class of
+      // (name: String,accumulatorId: Long,metricType: String)
+      val allnodes = planGraph.allNodes
+      for (node <- allnodes){
+        // Firstly identify problematic SQLs if there is any
+        val probReason = isDataSetPlan(node)
+        if (probReason.nonEmpty) {
+          datasetSQL += DatasetSQLCase(sqlID, probReason, node.desc)
+        }
+      }
+    }
+    if (this.sqlPlanMetricsAdaptive.nonEmpty){
+      logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive) for appID=$appId")
+      sqlPlanMetrics = sqlPlanMetrics.union(sqlPlanMetricsAdaptive).distinct
     }
   }
 
