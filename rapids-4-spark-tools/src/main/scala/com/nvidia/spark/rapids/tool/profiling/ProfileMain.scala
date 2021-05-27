@@ -56,6 +56,7 @@ object ProfileMain extends Logging {
     }
 
     if (appArgs.qualification()) {
+      logWarning("Doing Qualification")
       // This mode is to process one application at one time.
       var index: Int = 1
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()

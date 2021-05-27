@@ -59,7 +59,8 @@ For usage see below:
   val qualification: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Do qualification." +
-        " Default is false")
+        " Default is false",
+      default = Some(true))
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000")

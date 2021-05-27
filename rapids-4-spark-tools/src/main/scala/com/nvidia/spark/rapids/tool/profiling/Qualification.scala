@@ -53,7 +53,7 @@ class Qualification(
       }
     }
     val messageHeader = "SQL qualify app union:"
-    val df = apps.head.runQuery(query + " order by dfRankTotal, appDuration desc")
+    val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
     fileWriter.write("Qualification Ranking:")
     fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
 
