@@ -81,8 +81,7 @@ object QualificationInfoUtils extends Logging {
     val majorAge = Seq("21", "25", "55", "18")
     if (majorAge.contains(age)) {
       "MILESTONE"
-    }
-    else {
+    } else {
       "other"
     }
   }
@@ -110,8 +109,7 @@ object QualificationInfoUtils extends Logging {
     val allUSA = Seq("US", "USa", "USA", "United states", "United states of America")
     if (allUSA.contains(country)) {
       "USA"
-    }
-    else {
+    } else {
       "unknown"
     }
   }

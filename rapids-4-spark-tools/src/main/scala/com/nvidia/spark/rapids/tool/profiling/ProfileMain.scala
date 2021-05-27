@@ -18,32 +18,42 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.FileWriter
 
+import org.apache.hadoop.fs.Path
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.hadoop.fs.Path
-
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * A profiling tool to parse Spark Event Log
- * This is the Main function.
  */
 object ProfileMain extends Logging {
+  /**
+   * Entry point from spark-submit running this as the driver.
+   */
   def main(args: Array[String]) {
+    val sparkSession = ProfileUtils.createSparkSession
+    val exitCode = mainInternal(sparkSession, new ProfileArgs(args))
+    if (exitCode != 0) {
+      System.exit(exitCode)
+    }
+  }
+
+  /**
+   * Entry point for tests
+   */
+  def mainInternal(sparkSession: SparkSession, appArgs: ProfileArgs): Int = {
 
     // This tool's output log file name
     val logFileName = "rapids_4_spark_tools_output.log"
 
     // Parsing args
-    val appArgs = new ProfileArgs(args)
     val eventlogPaths = appArgs.eventlog()
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
-    val sparkSession = ProfileUtils.createSparkSession
     logInfo(s"Output directory:  $outputDirectory")
 
     // Convert the input path string to Path(s)
@@ -57,6 +67,7 @@ object ProfileMain extends Logging {
 
     if (appArgs.qualification()) {
       logWarning("Doing Qualification")
+
       // This mode is to process one application at one time.
       var index: Int = 1
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -121,7 +132,7 @@ object ProfileMain extends Logging {
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: ArrayBuffer[ApplicationInfo]): DataFrame = {
+    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
         logWarning(s"### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps)
@@ -134,6 +145,9 @@ object ProfileMain extends Logging {
         collect.printAppInfo()
         collect.printExecutorInfo()
         collect.printRapidsProperties()
+        if (generateDot) {
+          collect.generateDot()
+        }
       }
 
       logInfo(s"### B. Analysis ###")
@@ -153,5 +167,7 @@ object ProfileMain extends Logging {
       logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
       logInfo("========================================================================")
     }
+
+    0
   }
 }

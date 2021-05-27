@@ -453,14 +453,14 @@ class DateGen(DataGen):
     def __init__(self, start=None, end=None, nullable=True):
         super().__init__(DateType(), nullable=nullable)
         if start is None:
-            # spark supports times starting at
+            # Spark supports times starting at
             # "0001-01-01 00:00:00.000000"
             start = date(1, 1, 1)
         elif not isinstance(start, date):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
         if end is None:
-            # spark supports time through
+            # Spark supports time through
             # "9999-12-31 23:59:59.999999"
             end = date(9999, 12, 31)
         elif isinstance(end, timedelta):
@@ -513,14 +513,17 @@ class TimestampGen(DataGen):
     def __init__(self, start=None, end=None, nullable=True):
         super().__init__(TimestampType(), nullable=nullable)
         if start is None:
-            # spark supports times starting at
+            # Spark supports times starting at
             # "0001-01-01 00:00:00.000000"
-            start = datetime(1, 1, 1, tzinfo=timezone.utc)
+            # but it has issues if you get really close to that because it tries to do things
+            # in a different format which causes roundoff, so we have to add a few days,
+            # just to be sure
+            start = datetime(1, 1, 3, tzinfo=timezone.utc)
         elif not isinstance(start, datetime):
             raise RuntimeError('Unsupported type passed in for start {}'.format(start))
 
         if end is None:
-            # spark supports time through
+            # Spark supports time through
             # "9999-12-31 23:59:59.999999"
             end = datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
         elif isinstance(end, timedelta):
@@ -850,7 +853,8 @@ all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen i
 
 # Some struct gens, but not all because of nesting
 struct_gens_sample = [all_basic_struct_gen,
-        StructGen([['child0', byte_gen]]),
+        StructGen([]),
+        StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),

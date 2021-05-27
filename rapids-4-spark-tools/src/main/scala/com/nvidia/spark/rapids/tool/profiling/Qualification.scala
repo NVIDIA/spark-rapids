@@ -69,7 +69,7 @@ class Qualification(
 
     val dfProb = app.queryToDF(app.qualificationSQLDataSet)
     if (!dfProb.isEmpty) {
-      logInfo(s"${app.appId} (index=${app.index}) is disqualified because its problematic " +
+      logInfo(s"${app.appId} (index=${app.index}) is disqualified because it is problematic " +
         "(UDF, Dataset, etc).")
       fileWriter.write(s"${app.appId} (index=${app.index}) is " +
         s"disqualified because problematic (UDF, Dataset, etc.)\n")
