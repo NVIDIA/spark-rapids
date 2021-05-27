@@ -349,7 +349,7 @@ case class GpuConcatWs(children: Seq[Expression])
       val sepScalarNullOpt = withResourceIfAllowed(children.head.columnarEval(batch)) {
         case sepScalar: GpuScalar =>
           sep = Left(sepScalar.incRefCount)
-          if (sepScalar.getBase.isValid() == false) {
+          if (!sepScalar.getBase.isValid()) {
             // if null scalar separator just return a column of all nulls
             Some(GpuColumnVector.from(sepScalar, numRows, dataType))
           } else {
@@ -359,30 +359,26 @@ case class GpuConcatWs(children: Seq[Expression])
           sep = Right(sepVec.incRefCount())
           None
       }
-      sepScalarNullOpt match {
-        case Some(col) => col
-        case None =>
-          withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
-            children.tail.foreach {
-              columns += resolveColumnVectorAndConcatArrayCols(_, numRows, sep, batch).getBase
-            }
-            sep match {
-              case Left(sepScalar) =>
-                if (columns.size == 1) {
-                  processSingleColScalarSep(columns.head)
-                } else {
-                  stringConcatSeparatorScalar(columns, sepScalar)
-                }
-              case Right(sepVec) => stringConcatSeparatorVector(columns, sepVec)
-            }
+      sepScalarNullOpt.getOrElse {
+        withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+          columns ++= children.tail.map {
+            resolveColumnVectorAndConcatArrayCols(_, numRows, sep, batch).getBase
           }
+          sep match {
+            case Left(sepScalar) =>
+              if (columns.size == 1) {
+                processSingleColScalarSep(columns.head)
+              } else {
+                stringConcatSeparatorScalar(columns, sepScalar)
+              }
+            case Right(sepVec) => stringConcatSeparatorVector(columns, sepVec)
+          }
+        }
       }
     } finally {
-      if (sep != null) {
-        sep match {
-          case Right(sepVec) => sepVec.close()
-          case Left(sepScalar) => sepScalar.close()
-        }
+      Option(sep).foreach {
+        case Right(sepVec) => sepVec.close()
+        case Left(sepScalar) => sepScalar.close()
       }
     }
   }
