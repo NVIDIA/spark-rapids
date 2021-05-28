@@ -27,34 +27,33 @@ import org.apache.spark.sql.rapids.tool.profiling._
 
 class QualificationSuite extends FunSuite with Logging {
 
-  val sparkSession = {
+  val spark = {
     SparkSession
         .builder()
         .master("local[*]")
         .appName("Rapids Spark Profiling Tool Unit Tests")
         .getOrCreate()
   }
-  var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-  val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
 
   private val expRoot = ProfilingTestUtils.getTestResourceFile("QualificationExpectations")
   private val logDir = ProfilingTestUtils.getTestResourcePath("spark-events-qualification")
 
   test("test udf event logs") {
-
-    val resultExpectation = "eventlog_minimal_events_expectation.csv"
     TrampolineUtil.withTempPath { csvOutpath =>
-      val file = new File(expRoot, "qual_test_simple_expectation.csv")
+      val resultExpectation = new File(expRoot, "qual_test_simple_expectation.csv")
 
       val appArgs = new ProfileArgs(Array(
-        "--eventlog-dir",
-        logDir
+        s"$logDir/dataset_eventlog",
+        s"$logDir/dsAndDf_eventlog",
+        s"$logDir/udf_dataset_eventlog",
+        s"$logDir/udf_func_eventlog",
       ))
 
       val (exit, dfQualOpt) =
-        QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false)
+        QualificationMain.mainInternal(spark, appArgs, writeOutput=false)
 
-      val dfExpect = sparkSession.read.option("header", "true").csv(resultExpectation)
+      // make sure to change null value so empty strings don't show up as nulls
+      val dfExpect = spark.read.option("header", "true").option("nullValue", "\"-\"").csv(resultExpectation.getPath)
       val diffCount = dfQualOpt.map { dfQual =>
         dfQual.except(dfExpect).union(dfExpect.except(dfExpect)).count
       }.getOrElse(-1)
