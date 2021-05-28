@@ -725,9 +725,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    */
   private def convertDecimal64ToDecimal32Wrapper(cv: ColumnVector, precision: Int): ColumnVector = {
     /*
-      'convertDecimal64ToDecimal32' method returns a ColumnView that should be copied out to a
-      ColumnVector  before closing the `toClose` views otherwise it will close the returned view
-      and it's children as well.
+     * 'convertDecimal64ToDecimal32' method returns a ColumnView that should be copied out to a
+     * ColumnVector  before closing the `toClose` views otherwise it will close the returned view
+     * and it's children as well.
      */
     def convertDecimal64ToDecimal32(
        cv: ColumnView,
