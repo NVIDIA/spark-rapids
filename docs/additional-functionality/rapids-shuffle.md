@@ -139,16 +139,15 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-The following are examples of Docker containers with UCX 1.10.1 and cuda-11.0 support. We
-break down the examples by OS, and further on whether RDMA-capable hardware is available:
+The following are examples of Docker containers with UCX 1.10.1 and cuda-11.0 support. The 
+examples are divided by OS type and RDMA-capable hardware availability.
 
-##### Ubuntu
-- RDMA: [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma)
-- No RDMA: [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma)
-
-##### CentOS
-- RDMA: [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma)
-- No RDMA: [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma)
+| OS Type | RDMA | Dockerfile |
+| ------- | ---- | ---------- |
+| Ubuntu  | Yes  | [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma) |
+| Ubuntu  | No   | [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma) |
+| CentOS  | Yes  | [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma) |
+| CentOS  | No   | [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma) )
 
 ### Validating UCX Environment
 
