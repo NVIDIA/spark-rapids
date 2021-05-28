@@ -774,8 +774,9 @@ object GpuOverrides {
       "Holds a static value from the query",
       ExprChecks.projectNotLambda(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.CALENDAR
-            + TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL
-            + TypeSig.DECIMAL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+                TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
     expr[Signum](
@@ -2510,6 +2511,25 @@ object GpuOverrides {
           (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
+      }),
+    expr[ConcatWs](
+      "Concatenates multiple input strings or array of strings into a single " +
+        "string using a given separator",
+      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+        repeatingParamCheck = Some(RepeatingParamCheck("input",
+          (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING),
+          (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING)))),
+      (a, conf, p, r) => new ExprMeta[ConcatWs](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (a.children.size <= 1) {
+            // If only a separator specified and its a column, Spark returns an empty 
+            // string for all entries unless they are null, then it returns null.
+            // This seems like edge case so instead of handling on GPU just fallback.
+            willNotWorkOnGpu("Only specifying separator column not supported on GPU")
+          }
+        }
+        override final def convertToGpu(): GpuExpression =
+          GpuConcatWs(childExprs.map(_.convertToGpu()))
       }),
     expr[Murmur3Hash] (
       "Murmur3 hash operator",

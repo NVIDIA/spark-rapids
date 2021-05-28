@@ -25,6 +25,7 @@ import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.TypeTag
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.internal.Logging
@@ -209,10 +210,15 @@ object GpuScalar extends Arm with Logging {
    */
   def from(v: Any, t: DataType): Scalar = t match {
     case nullType if v == null => nullType match {
-      case ArrayType(elementType, _) => Scalar.listFromNull(resolveElementType(elementType))
-      case MapType(keyType, valueType, _) => Scalar.listFromNull(
-        resolveElementType(StructType(
-          Seq(StructField("key", keyType), StructField("value", valueType)))))
+      case ArrayType(elementType, _) =>
+        Scalar.listFromNull(resolveElementType(elementType))
+      case StructType(fields) =>
+        Scalar.structFromNull(
+          fields.map(f => resolveElementType(f.dataType)): _*)
+      case MapType(keyType, valueType, _) =>
+        Scalar.listFromNull(
+          resolveElementType(StructType(
+            Seq(StructField("key", keyType), StructField("value", valueType)))))
       case _ => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(nullType))
     }
     case decType: DecimalType =>
@@ -296,6 +302,19 @@ object GpuScalar extends Arm with Logging {
         }
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for ArrayType, expecting ArrayData")
+    }
+    case StructType(fields) => v match {
+      case row: InternalRow =>
+        val cvs = fields.zipWithIndex.safeMap {
+          case (f, i) =>
+            val dt = f.dataType
+            columnVectorFromLiterals(Seq(row.get(i, dt)), dt)
+        }
+        withResource(cvs) { cvs =>
+          Scalar.structFromColumnViews(cvs: _*)
+        }
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for StructType, expecting InternalRow")
     }
     case MapType(keyType, valueType, _) => v match {
       case map: MapData =>
@@ -409,6 +428,8 @@ class GpuScalar private(
   if (value.isDefined && value.get.isInstanceOf[Scalar]) {
     throw new IllegalArgumentException("Value should not be Scalar")
   }
+
+  override def toString: String = s"GPU_SCALAR $dataType $value $scalar"
 
   /**
    * Gets the internal cudf Scalar of this GpuScalar.
