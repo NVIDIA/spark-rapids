@@ -78,9 +78,10 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    ---
    
 ##### CentOS UCX RPM
-The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, for UCX 1.10.1, 
-fetched from https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-centos7-mofed5.x-cuda11.0.tar.bz2, 
-is a tarball that contains:
+The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.10.1 
+available at
+https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-centos7-mofed5.x-cuda11.0.tar.bz2
+contains:
 
 ```
 ucx-devel-1.10.1-1.el7.x86_64.rpm   
