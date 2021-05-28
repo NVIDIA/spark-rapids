@@ -39,7 +39,7 @@ def test_if_else(data_gen):
                 'IF(a, {}, c)'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
-def test_case_when_debug(data_gen):
+def test_case_when(data_gen):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of false
