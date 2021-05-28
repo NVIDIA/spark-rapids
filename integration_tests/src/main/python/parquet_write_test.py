@@ -43,7 +43,7 @@ parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_ge
 parquet_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)])
 
 parquet_write_gens_list = [parquet_basic_gen,
-                           pytest.param(parquet_basic_gen + [decimal_gen_default, parquet_basic_struct_gen,
+                           pytest.param([decimal_gen_default, parquet_basic_struct_gen,
                            StructGen([['child0', StructGen([['child1', byte_gen]])]]),
                            decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit],
                                         marks=pytest.mark.allow_non_gpu("CoalesceExec"))]
