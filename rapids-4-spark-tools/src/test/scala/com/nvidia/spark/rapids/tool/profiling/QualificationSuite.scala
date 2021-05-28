@@ -22,7 +22,7 @@ import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.profiling._
 
 class QualificationSuite extends FunSuite with Logging {
@@ -40,43 +40,25 @@ class QualificationSuite extends FunSuite with Logging {
   private val expRoot = ProfilingTestUtils.getTestResourceFile("QualificationExpectations")
   private val logDir = ProfilingTestUtils.getTestResourcePath("spark-events-qualification")
 
-  test("test single event log") {
+  test("test udf event logs") {
 
     val resultExpectation = "eventlog_minimal_events_expectation.csv"
-    TestUtils.withTempPath { jsonOutFile =>
+    TrampolineUtil.withTempPath { csvOutpath =>
+      val file = new File(expRoot, "qual_test_simple_expectation.csv")
 
-    }
+      val appArgs = new ProfileArgs(Array(
+        "--eventlog-dir",
+        logDir
+      ))
 
-    val appArgs = new ProfileArgs(Array(
-      "--save-csv",
-      dotFileDir.getAbsolutePath,
-      "--eventlog-dir",
-      logDir
-    ))
-    QualificationMain.mainInternal(spark2, appArgs)
+      val (exit, dfQualOpt) =
+        QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false)
 
-
-    val tempFile = File.createTempFile("tempOutputFile", null)
-    val fileWriter = new FileWriter(tempFile)
-    try {
-      var index: Int = 1
-      val eventlogPaths = appArgs.eventlog()
-      for (path <- eventlogPaths) {
-        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter,
-          ProfileUtils.stringToPath(path)(0), index)
-        index += 1
-      }
-      assert(apps.size == 1)
-      assert(apps.head.sparkVersion.equals("3.1.1"))
-      assert(apps.head.gpuMode.equals(true))
-      assert(apps.head.jobStart(apps.head.index).jobID.equals(1))
-      assert(apps.head.stageSubmitted(apps.head.index).numTasks.equals(1))
-      assert(apps.head.stageSubmitted(2).stageId.equals(2))
-      assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
-      assert(apps.head.taskEnd(apps.head.index).endReason.equals("Success"))
-    } finally {
-      fileWriter.close()
-      tempFile.deleteOnExit()
+      val dfExpect = sparkSession.read.option("header", "true").csv(resultExpectation)
+      val diffCount = dfQualOpt.map { dfQual =>
+        dfQual.except(dfExpect).union(dfExpect.except(dfExpect)).count
+      }.getOrElse(-1)
+      assert(diffCount == 0)
     }
   }
 }

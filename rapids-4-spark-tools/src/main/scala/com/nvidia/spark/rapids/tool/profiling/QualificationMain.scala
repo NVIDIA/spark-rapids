@@ -24,7 +24,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -37,7 +37,7 @@ object QualificationMain extends Logging {
    */
   def main(args: Array[String]) {
     val sparkSession = ProfileUtils.createSparkSession
-    val exitCode = mainInternal(sparkSession, new ProfileArgs(args))
+    val (exitCode, optDf) = mainInternal(sparkSession, new ProfileArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -46,7 +46,8 @@ object QualificationMain extends Logging {
   /**
    * Entry point for tests
    */
-  def mainInternal(sparkSession: SparkSession, appArgs: ProfileArgs): Int = {
+  def mainInternal(sparkSession: SparkSession, appArgs: ProfileArgs,
+      writeOutput: Boolean = true): (Int, Option[DataFrame]) = {
 
     // This tool's output log file name
     val logFileName = "rapids_4_spark_qualification.log"
@@ -55,7 +56,6 @@ object QualificationMain extends Logging {
     val eventlogPaths = appArgs.eventlog()
     val eventLogDir = appArgs.eventlogDir
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
-    val csvLocation = appArgs.saveCsv.toOption
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
@@ -92,13 +92,18 @@ object QualificationMain extends Logging {
       index += 1
     }
     fileWriter.write(s"### Qualification ###")
-    new Qualification(apps, csvLocation)
+    val df = Qualification.qualifyApps(apps)
+    if (writeOutput) {
+      val csvLocation = appArgs.saveCsv.toOption
+      Qualification.writeQualification(apps, df, csvLocation)
+    }
+
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
 
     apps.foreach( _.dropAllTempViews())
     fileWriter.flush()
     fileWriter.close()
-    0
+    (0, Some(df))
   }
 
   def logApplicationInfo(app: ApplicationInfo) = {

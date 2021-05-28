@@ -18,20 +18,15 @@ package com.nvidia.spark.rapids.tool.profiling
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * Ranks the applications for GPU acceleration.
  */
-class Qualification(apps: ArrayBuffer[ApplicationInfo],
-    csvLocationOpt: Option[String]) extends Logging {
+object Qualification extends Logging {
 
-  require(apps.nonEmpty)
-  private val fileWriter = apps.head.fileWriter
-
-  qualifyApps(apps)
-
-  def qualifyApps(apps: ArrayBuffer[ApplicationInfo]): Unit = {
+  def qualifyApps(apps: ArrayBuffer[ApplicationInfo]): DataFrame = {
     var query = ""
     val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
     for (app <- appsWithSQL) {
@@ -43,10 +38,18 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo],
     }
     val messageHeader = "SQL qualify app union:"
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
+
+    df
+  }
+
+  def writeQualification(apps: ArrayBuffer[ApplicationInfo],
+      df: DataFrame, csvLocationOpt: Option[String]): Unit = {
+    val fileWriter = apps.head.fileWriter
     val dfRenamed = apps.head.renameQualificationColumns(df)
-    fileWriter.write("\n" + ToolUtils.showString(dfRenamed, apps(0).args.numOutputRows.getOrElse(1000)))
+    fileWriter.write("\n" + ToolUtils.showString(dfRenamed,
+      apps(0).args.numOutputRows.getOrElse(1000)))
     csvLocationOpt.foreach {
-       df.repartition(1).write.option("header", "true").csv(_)
+      df.repartition(1).write.option("header", "true").csv(_)
     }
   }
 }
