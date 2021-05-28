@@ -39,7 +39,7 @@ def test_if_else(data_gen):
                 'IF(a, {}, c)'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
-def test_case_when(data_gen):
+def test_case_when_debug(data_gen):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of false
@@ -49,20 +49,22 @@ def test_case_when(data_gen):
     gen = StructGen(gen_cols, nullable=False)
     command = f.when(f.col('_b0'), f.col('_c0'))
     for x in range(1, num_cmps):
-        command = command.when(f.col('_b'+ str(x)), f.col('_c' + str(x)))\
-                         .when(f.lit(True), f.col('_c' + str(x)))
-    command = command.when(f.lit(True), s1).otherwise(s1)
+        command = command.when(f.col('_b'+ str(x)), f.col('_c' + str(x)))
+    command = command.otherwise(s1)
     data_type = data_gen.data_type
-    # `command` covers the case of (column, scalar) for values, so the followings are for
-    #   (column, column)
-    #   (scalar, scalar)  -> the default `otherwise` is a scalar.
-    #   (scalar, column)
-    #   (others) in sequence.
+    # `command` covers the case of (column, scalar) for values, so the following 3 ones
+    # are for
+    #    (scalar, scalar)  -> the default `otherwise` is a scalar.
+    #    (column, column)
+    #    (scalar, column)
+    # in sequence.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(command,
-                f.when(f.col('_b0'), f.col('_c0')).otherwise(f.col('_c1')),
                 f.when(f.col('_b0'), s1),
+                f.when(f.col('_b0'), f.col('_c0')).otherwise(f.col('_c1')),
                 f.when(f.col('_b0'), s1).otherwise(f.col('_c0')),
+                f.when(f.col('_b0'), s1).when(f.lit(False), f.col('_c0')),
+                f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
                 f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
                 f.when(f.lit(False), f.col('_c0'))))
 
