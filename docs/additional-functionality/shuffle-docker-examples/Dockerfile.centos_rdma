@@ -1,0 +1,70 @@
+#
+# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+# Sample Dockerfile to install UCX in a CentosOS 7 image with RDMA support.
+#
+# The parameters are: 
+#   - RDMA_CORE_VERSION: Set to 32.1 to match the rdma-core line in the latest 
+#                        released MLNX_OFED 5.x driver
+#   - CUDA_VER: 11.0.3 to pick up the latest 11.x CUDA base layer
+#   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matchin a specific UCX version and 
+#                               CUDA runtime from the UCX github repo.
+#                               See: https://github.com/openucx/ucx/releases/
+#
+# The Dockerfile first fetches and builds `rdma-core` to satisfy requirements for
+# the ucx-ib and ucx-rdma RPMs.
+
+ARG RDMA_CORE_VERSION=32.1
+ARG CUDA_VER=11.0.3
+ARG UCX_VER=v1.10.1
+ARG UCX_CUDA_VER=11.0
+
+# Throw away image to build rdma_core
+FROM centos:7 as rdma_core
+ARG RDMA_CORE_VERSION
+
+RUN yum update -y
+RUN yum install -y wget gcc cmake libnl3-devel libudev-devel make pkgconfig valgrind-devel epel-release
+RUN yum install -y cmake3 ninja-build pandoc rpm-build python-docutils
+
+RUN wget https://github.com/linux-rdma/rdma-core/releases/download/v${RDMA_CORE_VERSION}/rdma-core-${RDMA_CORE_VERSION}.tar.gz
+
+# Build RPM
+RUN mkdir -p rpmbuild/SOURCES tmp && \
+  tar --wildcards -xzf rdma-core*.tar.gz  */redhat/rdma-core.spec --strip-components=2 && \
+  RPM_SRC=$((rpmspec -P *.spec || grep ^Source: *.spec) | awk '/^Source:/{split($0,a,"[ \t]+");print(a[2])}') && \
+  (cd rpmbuild/SOURCES && ln -sf ../../rdma-core*.tar.gz "$RPM_SRC")
+RUN rpmbuild --define '_tmppath '$(pwd)'/tmp' --define '_topdir '$(pwd)'/rpmbuild' -bb *.spec
+RUN mv rpmbuild/RPMS/x86_64/*.rpm /tmp
+
+# Now start the main container
+FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
+ARG UCX_VER
+ARG UCX_CUDA_VER
+
+COPY --from=rdma_core /tmp/*.rpm /tmp/
+
+RUN yum update -y
+RUN yum install -y wget bzip2
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/$UCX_VER/ucx-$UCX_VER-centos7-mofed5.x-cuda$UCX_CUDA_VER.tar.bz2
+RUN cd /tmp && \
+  yum install -y *.rpm && \
+  tar -xvf *.bz2 && \
+  yum install -y ucx-1.10.1-1.el7.x86_64.rpm && \
+  yum install -y ucx-cuda-1.10.1-1.el7.x86_64.rpm && \
+  yum install -y ucx-ib-1.10.1-1.el7.x86_64.rpm && \
+  yum install -y ucx-rdmacm-1.10.1-1.el7.x86_64.rpm
+RUN rm -rf /tmp/*.rpm && rm /tmp/*.bz2
