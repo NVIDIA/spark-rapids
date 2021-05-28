@@ -739,20 +739,13 @@ class ApplicationInfo(
        |""".stripMargin
 
   }
-       // |(select case when count(*)>=0 then count(*) else 0 end from datasetSQLDF_$index ds where ds.sqlID == sq.sqlID) as datasetCount
-
-  // spark optimizer doesn't like doing all these at once, so create temp tables between
-  def createFirstQualStats(): Unit = {
-    val df = runQuery(distinctqualificationDurationSQL)
-    df.createOrReplaceTempView(s"qualStats_$index")
-  }
 
   def qualificationSetDurationSQL: String = {
     s"""select
        |appIndex, appID, appName, sqlID, duration,
        |appDuration, description, potentialProblems,
        |case when containsDataset > 0 then 0 else duration end as dfDuration
-       |from qualStats_$index
+       |from (${distinctqualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }
 
@@ -764,12 +757,6 @@ class ApplicationInfo(
        |first(appDuration) as appDuration,
        |concat_ws(",", collect_list(potentialProblems)) as potentialProblems from
        |(${qualificationSetDurationSQL.stripLineEnd})
-       |""".stripMargin
-  }
-
-  // Function to generate a query for qualification
-  def qualificationSQLDataSet: String = {
-    s"""select distinct(sqlID), reason, desc from problematicSQLDF_$index
        |""".stripMargin
   }
 
