@@ -112,7 +112,13 @@ ucx-ib-1.10.1-1.el7.x86_64.rpm
 ---
 **NOTE:**
 
-The CentOS RPM requires CUDA installed via RPMs to satisfy its dependencies.
+The CentOS RPM requires CUDA installed via RPMs to satisfy its dependencies. The CUDA runtime can be
+downloaded from [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) 
+(note the [Archive of Previous CUDA releases](https://developer.nvidia.com/cuda-toolkit-archive) 
+link to download prior versions of the runtime). 
+
+For example, in order to download the RPM instalation for CentOS running on an x86 machine: 
+`Linux` > `x86_64` > `CentOS` > `7` or `8` > `rpm (local)` or `rpm (network)`.
 
 ---
    
@@ -147,7 +153,7 @@ examples are divided by OS type and RDMA-capable hardware availability.
 | Ubuntu  | Yes  | [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma) |
 | Ubuntu  | No   | [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma) |
 | CentOS  | Yes  | [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma) |
-| CentOS  | No   | [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma) )
+| CentOS  | No   | [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma) |
 
 ### Validating UCX Environment
 
