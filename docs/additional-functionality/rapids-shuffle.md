@@ -77,6 +77,51 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    
    ---
    
+##### CentOS UCX RPM
+The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.10.1 
+available at
+https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-centos7-mofed5.x-cuda11.0.tar.bz2
+contains:
+
+```
+ucx-devel-1.10.1-1.el7.x86_64.rpm   
+ucx-debuginfo-1.10.1-1.el7.x86_64.rpm
+ucx-1.10.1-1.el7.x86_64.rpm         
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.10.1-1.el7.x86_64.rpm  
+ucx-cma-1.10.1-1.el7.x86_64.rpm
+ucx-ib-1.10.1-1.el7.x86_64.rpm
+```
+
+For a setup without RoCE or Infiniband networking, the only packages required are: 
+
+```
+ucx-1.10.1-1.el7.x86_64.rpm
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+```
+
+If accelerated networking is available, the package list is: 
+
+```
+ucx-1.10.1-1.el7.x86_64.rpm
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.10.1-1.el7.x86_64.rpm
+ucx-ib-1.10.1-1.el7.x86_64.rpm
+```
+
+---
+**NOTE:**
+
+The CentOS RPM requires CUDA installed via RPMs to satisfy its dependencies. The CUDA runtime can be
+downloaded from [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) 
+(note the [Archive of Previous CUDA releases](https://developer.nvidia.com/cuda-toolkit-archive) 
+link to download prior versions of the runtime). 
+
+For example, in order to download the CUDA RPM for CentOS 7 running on x86: 
+`Linux` > `x86_64` > `CentOS` > `7` or `8` > `rpm (local)` or `rpm (network)`.
+
+---
+   
 #### Docker containers
 
 Running with UCX in containers imposes certain requirements. In a multi-GPU system, all GPUs that 
@@ -100,50 +145,15 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-##### Without RDMA:   
-The following is an example of a Docker container with UCX 1.10.1 and cuda-11.0 support, built
-for a setup without RDMA capable hardware:
+The following are examples of Docker containers with UCX 1.10.1 and cuda-11.0 support.
 
-```
-ARG CUDA_VER=11.0
+| OS Type | RDMA | Dockerfile |
+| ------- | ---- | ---------- |
+| Ubuntu  | Yes  | [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma) |
+| Ubuntu  | No   | [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma) |
+| CentOS  | Yes  | [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma) |
+| CentOS  | No   | [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma) |
 
-# Now start the main container
-FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
-
-RUN apt update
-RUN apt-get install -y wget 
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
-```
-
-##### With RDMA:
-The following is an example of a Docker container that shows how to install `rdma-core` and 
-UCX 1.10.1 with `cuda-11.0` support. You can use this as a base layer for containers that your 
-executors will use.
-
-```
-ARG CUDA_VER=11.0
-
-# Throw away image to build rdma_core
-FROM ubuntu:18.04 as rdma_core
-
-RUN apt update
-RUN apt-get install -y dh-make git build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
-
-RUN git clone --depth 1 --branch v33.0 https://github.com/linux-rdma/rdma-core
-RUN cd rdma-core && debian/rules binary
-
-# Now start the main container
-FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
-
-COPY --from=rdma_core /*.deb /tmp/
-
-RUN apt update
-RUN apt-get install -y cuda-compat-11-0 wget udev dh-make libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
-```
-   
 ### Validating UCX Environment
 
 After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate the installation.
@@ -166,7 +176,7 @@ In this section, we are using a docker container built using the sample dockerfi
    
 2. Test to check whether UCX can link against CUDA:
     ```
-    root@test-machin:/# ucx_info -d|grep cuda     
+    root@test-machine:/# ucx_info -d|grep cuda     
     # Memory domain: cuda_cpy
     #     Component: cuda_cpy
     #      Transport: cuda_copy
