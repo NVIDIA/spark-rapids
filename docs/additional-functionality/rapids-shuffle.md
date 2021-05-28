@@ -117,7 +117,7 @@ downloaded from [https://developer.nvidia.com/cuda-downloads](https://developer.
 (note the [Archive of Previous CUDA releases](https://developer.nvidia.com/cuda-toolkit-archive) 
 link to download prior versions of the runtime). 
 
-For example, in order to download the RPM instalation for CentOS running on an x86 machine: 
+For example, in order to download the CUDA RPM for CentOS 7 running on x86: 
 `Linux` > `x86_64` > `CentOS` > `7` or `8` > `rpm (local)` or `rpm (network)`.
 
 ---
