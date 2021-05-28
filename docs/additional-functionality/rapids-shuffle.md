@@ -95,17 +95,17 @@ ucx-ib-1.10.1-1.el7.x86_64.rpm
 For a setup without RoCE or Infiniband networking, the only packages required are: 
 
 ```
-ucx-1.10.1-1.el7.x86_64.rpm, and 
-ucx-cuda-1.10.1-1.el7.x86_64.rpm. 
+ucx-1.10.1-1.el7.x86_64.rpm
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
 ```
 
 If the accelerated networking is available, the package list is: 
 
 ```
-ucx-1.10.1-1.el7.x86_64.rpm, 
-ucx-cuda-1.10.1-1.el7.x86_64.rpm,
-ucx-rdmacm-1.10.1-1.el7.x86_64.rpm, and
-ucx-ib-1.10.1-1.el7.x86_64.rpm.
+ucx-1.10.1-1.el7.x86_64.rpm
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.10.1-1.el7.x86_64.rpm
+ucx-ib-1.10.1-1.el7.x86_64.rpm
 ```
 
 ---
@@ -138,7 +138,7 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-The following are examples of a Docker containers with UCX 1.10.1 and cuda-11.0 support. We
+The following are examples of Docker containers with UCX 1.10.1 and cuda-11.0 support. We
 break down the examples by OS, and further on whether RDMA-capable hardware is available:
 
 ##### Ubuntu
