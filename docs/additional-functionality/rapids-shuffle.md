@@ -145,8 +145,7 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-The following are examples of Docker containers with UCX 1.10.1 and cuda-11.0 support. The 
-examples are divided by OS type and RDMA-capable hardware availability.
+The following are examples of Docker containers with UCX 1.10.1 and cuda-11.0 support.
 
 | OS Type | RDMA | Dockerfile |
 | ------- | ---- | ---------- |
