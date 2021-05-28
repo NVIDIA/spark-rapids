@@ -39,9 +39,9 @@
             </modules>
         </profile>
         <profile>
-            <id>databricks310</id>
+            <id>databricks311</id>
             <modules>
-                <module>spark310db</module>
+                <module>spark311db</module>
             </modules>
         </profile>
         <profile>

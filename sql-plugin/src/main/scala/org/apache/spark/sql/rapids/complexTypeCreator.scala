@@ -148,10 +148,7 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
     withResource(new Array[ColumnVector](valExprs.size)) { columns =>
       val numRows = batch.numRows()
       valExprs.indices.foreach { index =>
-        val dt = dataType.fields(index).dataType
-        val ret = valExprs(index).columnarEval(batch)
-        columns(index) =
-          GpuExpressionsUtils.resolveColumnVector(ret, numRows, dt).getBase
+        columns(index) = GpuExpressionsUtils.columnarEvalToColumn(valExprs(index), batch).getBase
       }
       GpuColumnVector.from(ColumnVector.makeStruct(numRows, columns: _*), dataType)
     }

@@ -37,7 +37,7 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 trait GpuBaseLimitExec extends LimitExec with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME)
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
   )
 
   override def output: Seq[Attribute] = child.output
@@ -57,7 +57,7 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
 
     val crdd = child.executeColumnar()
     crdd.mapPartitions { cbIter =>
@@ -68,7 +68,7 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec {
 
         override def next(): ColumnarBatch = {
           val batch = cbIter.next()
-          withResource(new NvtxWithMetrics("limit", NvtxColor.ORANGE, gpuOpTime)) { _ =>
+          withResource(new NvtxWithMetrics("limit", NvtxColor.ORANGE, opTime)) { _ =>
             val result = if (batch.numRows() > remainingLimit) {
               sliceBatch(batch)
             } else {

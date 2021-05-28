@@ -853,7 +853,8 @@ all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen i
 
 # Some struct gens, but not all because of nesting
 struct_gens_sample = [all_basic_struct_gen,
-        StructGen([['child0', byte_gen]]),
+        StructGen([]),
+        StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
