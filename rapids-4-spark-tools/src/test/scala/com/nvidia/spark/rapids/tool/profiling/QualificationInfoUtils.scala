@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.io.File
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.rapids.TestUtils
+import org.apache.spark.sql.TrampolineUtil
 import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.functions.{col, udf}
 
@@ -70,7 +70,7 @@ object QualificationInfoUtils extends Logging {
   // dataset operations in plan show up as Lambda
   def genDatasetEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    TestUtils.withTempPath { jsonOutFile =>
+    TrampolineUtil.withTempPath { jsonOutFile =>
       val ds = generateFriendsDataset(spark)
       val dsAge = ds.filter(d => d.age > 25).map(d => (d.friend, d.age))
       dsAge.write.json(jsonOutFile.getCanonicalPath)
@@ -96,7 +96,7 @@ object QualificationInfoUtils extends Logging {
   // UDF with dataset, shows up with Lambda
   def genUDFDSEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    TestUtils.withTempPath { jsonOutFile =>
+    TrampolineUtil.withTempPath { jsonOutFile =>
       val ageFunc = udf(parseAge)
       val ds = generateFriendsDataset(spark)
       ds.withColumn("ageCategory",ageFunc(col("age")))
@@ -120,8 +120,8 @@ object QualificationInfoUtils extends Logging {
   // doesn't seem to put anything unique in the plan
   def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    TestUtils.withTempPath { jsonInputFile =>
-      TestUtils.withTempPath { jsonOutFile =>
+    TrampolineUtil.withTempPath { jsonInputFile =>
+      TrampolineUtil.withTempPath { jsonOutFile =>
         val userData = spark.createDataFrame(Seq(
           (1, "Chandler", "Pasadena", "US"),
           (2, "Monica", "New york", "USa"),

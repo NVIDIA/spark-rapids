@@ -37,7 +37,6 @@ object QualificationMain extends Logging {
    */
   def main(args: Array[String]) {
     val sparkSession = ProfileUtils.createSparkSession
-    logWarning("args is: " + args.mkString(","))
     val exitCode = mainInternal(sparkSession, new ProfileArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
@@ -52,7 +51,6 @@ object QualificationMain extends Logging {
     // This tool's output log file name
     val logFileName = "rapids_4_spark_qualification.log"
 
-
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val eventLogDir = appArgs.eventlogDir
@@ -63,6 +61,7 @@ object QualificationMain extends Logging {
     val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
     logInfo(s"Output directory:  $outputDirectory")
 
+    // TODO - temporary parsing of event logs, this will be replaced
     val allPaths = if (eventLogDir.isDefined) {
       val logDir = eventLogDir.get.get
       // TODO - do we need s3 options?
@@ -83,8 +82,6 @@ object QualificationMain extends Logging {
       allPaths
     }
 
-    logWarning("Doing Qualification")
-
     var index: Int = 1
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths.filter(p => !p.getName.contains("."))) {
@@ -97,8 +94,8 @@ object QualificationMain extends Logging {
     fileWriter.write(s"### Qualification ###\n")
     new Qualification(apps, csvLocation)
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
-    // app.dropAllTempViews()
 
+    apps.foreach( _.dropAllTempViews())
     fileWriter.flush()
     fileWriter.close()
     0

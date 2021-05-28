@@ -698,24 +698,6 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  //     |from sqlDF_$index sq, sqlAggMetricsDF m, appdf_$index app
-/*
-  def qualificationDurationSQL: String = {
-    s"""select
-       |$index as appIndex,
-       |'$appId' as appID,
-       |app.appName,
-       |sq.sqlID, sq.description,
-       |sq.duration,
-       |app.duration as appDuration,
-       |reason as potentialProblems
-       |from sqlDF_$index sq, appdf_$index app
-       |left join problematicSQLDF_$index pb on pb.sqlID=sq.sqlID
-       |where sq.sqlID not in (select sqlID from datasetSQLDF_$index)
-       |""".stripMargin
-  }
-*/
-
   def qualificationDurationSQL: String = {
     s"""select
        |$index as appIndex,
