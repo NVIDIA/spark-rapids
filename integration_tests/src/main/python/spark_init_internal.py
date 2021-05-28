@@ -47,7 +47,6 @@ def _spark__init():
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
         _handle_event_log_dir(_sb, 'gw0')
 
- 
     # enableHiveSupport() is needed for parquet bucket tests
     _s = _sb.enableHiveSupport() \
             .appName('rapids spark plugin integration tests (python)').getOrCreate()
