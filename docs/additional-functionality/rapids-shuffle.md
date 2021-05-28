@@ -100,50 +100,17 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-##### Without RDMA:   
-The following is an example of a Docker container with UCX 1.10.1 and cuda-11.0 support, built
-for a setup without RDMA capable hardware:
+The following are examples of a Docker containers with UCX 1.10.1 and cuda-11.0 support. We
+break down the examples by OS, and further on whether RDMA-capable hardware is available:
 
-```
-ARG CUDA_VER=11.0
+Ubuntu
+- RDMA: [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma)
+- No RDMA: [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma)
 
-# Now start the main container
-FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
+CentOS
+- RDMA: [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma)
+- No RDMA: [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma)
 
-RUN apt update
-RUN apt-get install -y wget 
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
-```
-
-##### With RDMA:
-The following is an example of a Docker container that shows how to install `rdma-core` and 
-UCX 1.10.1 with `cuda-11.0` support. You can use this as a base layer for containers that your 
-executors will use.
-
-```
-ARG CUDA_VER=11.0
-
-# Throw away image to build rdma_core
-FROM ubuntu:18.04 as rdma_core
-
-RUN apt update
-RUN apt-get install -y dh-make git build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
-
-RUN git clone --depth 1 --branch v33.0 https://github.com/linux-rdma/rdma-core
-RUN cd rdma-core && debian/rules binary
-
-# Now start the main container
-FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
-
-COPY --from=rdma_core /*.deb /tmp/
-
-RUN apt update
-RUN apt-get install -y cuda-compat-11-0 wget udev dh-make libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-ubuntu18.04-mofed5.x-cuda11.0.deb
-RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
-```
-   
 ### Validating UCX Environment
 
 After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate the installation.
