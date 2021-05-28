@@ -24,7 +24,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Ranks the applications for GPU acceleration.
  */
 class Qualification(apps: ArrayBuffer[ApplicationInfo],
-    fileFormat: String, fileLocation: String) extends Logging {
+    csvLocationOpt: Option[String]) extends Logging {
 
   require(apps.nonEmpty)
   private val fileWriter = apps.head.fileWriter
@@ -43,11 +43,11 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo],
     }
     val messageHeader = "SQL qualify app union:"
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
-    if (fileFormat.toLowerCase.equals("csv")) {
-      df.repartition(1).write.csv(fileLocation)
-    } else {
-      fileWriter.write("Qualification Ranking:")
-      fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
+    csvLocationOpt.foreach {
+      df.repartition(1).write.csv(_)
     }
+
+    fileWriter.write("Qualification Ranking:")
+    fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
   }
 }
