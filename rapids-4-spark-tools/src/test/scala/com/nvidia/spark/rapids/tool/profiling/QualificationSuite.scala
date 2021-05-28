@@ -43,19 +43,18 @@ class QualificationSuite extends FunSuite with Logging {
   test("test single event log") {
 
     val resultExpectation = "eventlog_minimal_events_expectation.csv"
-    /*
+    TestUtils.withTempPath { jsonOutFile =>
 
-    val files = Seq()
-    val eventLogs = files.head.getAbsolutePath
+    }
+
     val appArgs = new ProfileArgs(Array(
       "--save-csv",
       dotFileDir.getAbsolutePath,
       "--eventlog-dir",
       logDir
     ))
-    ProfileMain.mainInternal(spark2, appArgs)
+    QualificationMain.mainInternal(spark2, appArgs)
 
-    */
 
     val tempFile = File.createTempFile("tempOutputFile", null)
     val fileWriter = new FileWriter(tempFile)

@@ -91,7 +91,7 @@ object QualificationMain extends Logging {
       logApplicationInfo(app)
       index += 1
     }
-    fileWriter.write(s"### Qualification ###\n")
+    fileWriter.write(s"### Qualification ###")
     new Qualification(apps, csvLocation)
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
 
