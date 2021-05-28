@@ -2827,7 +2827,8 @@ object GpuOverrides {
       }),
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
-      ExecChecks(_commonTypes + TypeSig.STRUCT.nested(_commonTypes + TypeSig.STRUCT) , TypeSig.all),
+      ExecChecks((_commonTypes + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
       (coalesce, conf, parent, r) => new SparkPlanMeta[CoalesceExec](coalesce, conf, parent, r) {
         override def convertToGpu(): GpuExec =
           GpuCoalesceExec(coalesce.numPartitions, childPlans.head.convertIfNeeded())
