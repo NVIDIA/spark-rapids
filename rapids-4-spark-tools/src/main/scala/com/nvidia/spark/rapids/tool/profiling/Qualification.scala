@@ -42,14 +42,10 @@ object Qualification extends Logging {
     df
   }
 
-  def writeQualification(apps: ArrayBuffer[ApplicationInfo],
-      df: DataFrame, csvLocationOpt: Option[String]): Unit = {
+  def writeQualification(apps: ArrayBuffer[ApplicationInfo], df: DataFrame): Unit = {
     val fileWriter = apps.head.fileWriter
     val dfRenamed = apps.head.renameQualificationColumns(df)
     fileWriter.write("\n" + ToolUtils.showString(dfRenamed,
       apps(0).args.numOutputRows.getOrElse(1000)))
-    csvLocationOpt.foreach {
-      df.repartition(1).write.option("header", "true").csv(_)
-    }
   }
 }

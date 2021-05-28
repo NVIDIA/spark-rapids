@@ -48,18 +48,10 @@ For usage see below:
     opt[String](required = false,
       descr = "Output directory. Default is current directory",
       default = Some("."))
-  val saveCsv: ScallopOption[String] =
-    opt[String](required = false,
-      descr = "Specify a path to save a copy of output as csv, " +
-        "default is ./rapids_4_spark_qualification_csv",
-      default = Some("./rapids_4_spark_qualification_csv"))
   val eventlog: ScallopOption[List[String]] =
     trailArg[List[String]](required = true,
       descr = "Event log filenames(space separated). " +
           "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
-  val eventlogDir: ScallopOption[String] =
-    opt[String](required = false,
-      descr = "Directory of event logs")
   val compare: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Compare Applications (Recommended to compare less than 10 applications)." +

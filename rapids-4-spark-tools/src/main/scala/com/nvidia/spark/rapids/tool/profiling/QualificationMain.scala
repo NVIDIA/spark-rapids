@@ -54,32 +54,18 @@ object QualificationMain extends Logging {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
-    val eventLogDir = appArgs.eventlogDir
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
-    logInfo(s"Output directory:  $outputDirectory")
 
-    // TODO - temporary parsing of event logs, this will be replaced
-    val allPaths = if (eventLogDir.isDefined) {
-      val logDir = eventLogDir.get.get
-      // TODO - do we need s3 options?
-      val hadoopConf = new Configuration()
-      val fs: FileSystem = new Path(logDir).getFileSystem(hadoopConf)
-      // TODO - want to check permissions or other things?
-      val updated = Option(fs.listStatus(new Path(logDir))).map(_.toSeq).getOrElse(Nil)
-      updated.map(_.getPath)
-    } else {
-      // Convert the input path string to Path(s)
-      val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
-      for (pathString <- eventlogPaths) {
-        val paths = ProfileUtils.stringToPath(pathString)
-        if (paths.nonEmpty) {
-          allPaths ++= paths
-        }
+    // Convert the input path string to Path(s)
+    val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
+    for (pathString <- eventlogPaths) {
+      val paths = ProfileUtils.stringToPath(pathString)
+      if (paths.nonEmpty) {
+        allPaths ++= paths
       }
-      allPaths
     }
 
     var index: Int = 1
@@ -94,8 +80,7 @@ object QualificationMain extends Logging {
     fileWriter.write(s"### Qualification ###")
     val df = Qualification.qualifyApps(apps)
     if (writeOutput) {
-      val csvLocation = appArgs.saveCsv.toOption
-      Qualification.writeQualification(apps, df, csvLocation)
+      Qualification.writeQualification(apps, df)
     }
 
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
