@@ -73,7 +73,7 @@ case class GpuExpandExec(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
@@ -118,7 +118,7 @@ class GpuExpandIterator(
   private val numOutputBatches = metrics(NUM_OUTPUT_BATCHES)
   private val numInputRows = metrics(NUM_INPUT_ROWS)
   private val numOutputRows = metrics(NUM_OUTPUT_ROWS)
-  private val totalTime = metrics(TOTAL_TIME)
+  private val opTime = metrics(OP_TIME)
   private val peakDeviceMemory = metrics(PEAK_DEVICE_MEMORY)
 
   Option(TaskContext.get())
@@ -137,7 +137,7 @@ class GpuExpandIterator(
     val uniqueDeviceColumns = mutable.ListBuffer[GpuColumnVector]()
 
     val projectedBatch = withResource(new NvtxWithMetrics(
-      "ExpandExec projections", NvtxColor.GREEN, totalTime)) { _ =>
+      "ExpandExec projections", NvtxColor.GREEN, opTime)) { _ =>
 
       // ExpandExec typically produces many null columns so we re-use them where possible
       val nullCVs = mutable.Map[DataType, GpuColumnVector]()
