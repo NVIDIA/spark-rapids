@@ -100,7 +100,7 @@ ucx-1.10.1-1.el7.x86_64.rpm
 ucx-cuda-1.10.1-1.el7.x86_64.rpm
 ```
 
-If the accelerated networking is available, the package list is: 
+If accelerated networking is available, the package list is: 
 
 ```
 ucx-1.10.1-1.el7.x86_64.rpm
