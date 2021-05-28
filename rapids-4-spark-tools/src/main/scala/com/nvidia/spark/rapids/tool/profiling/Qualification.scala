@@ -35,16 +35,21 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo],
     var query = ""
     val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
     for (app <- appsWithSQL) {
+      app.createFirstQualStats()
+    }
+    for (app <- appsWithSQL) {
       if (query.isEmpty) {
         query += app.qualificationDurationSumSQL
       } else {
-        query += " union " + app.qualificationDurationSumSQL
+        query += " union (" + app.qualificationDurationSumSQL + ")"
       }
     }
+    logWarning("query to run is: " + query)
     val messageHeader = "SQL qualify app union:"
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
+    logWarning("done with query")
     csvLocationOpt.foreach {
-      df.repartition(1).write.csv(_)
+       df.repartition(1).write.csv(_)
     }
 
     fileWriter.write("Qualification Ranking:")

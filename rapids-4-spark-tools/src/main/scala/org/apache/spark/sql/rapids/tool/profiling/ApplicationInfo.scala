@@ -699,6 +699,7 @@ class ApplicationInfo(
   }
 
   //     |from sqlDF_$index sq, sqlAggMetricsDF m, appdf_$index app
+/*
   def qualificationDurationSQL: String = {
     s"""select
        |$index as appIndex,
@@ -713,14 +714,56 @@ class ApplicationInfo(
        |where sq.sqlID not in (select sqlID from datasetSQLDF_$index)
        |""".stripMargin
   }
+*/
+
+  def qualificationDurationSQL: String = {
+    s"""select
+       |$index as appIndex,
+       |'$appId' as appID,
+       |app.appName,
+       |sq.sqlID, sq.description,
+       |sq.duration,
+       |app.duration as appDuration,
+       |reason as potentialProblems,
+       | CASE WHEN ds.sqlID IS NULL THEN 0 ELSE 1 END AS containsDataset
+       |from sqlDF_$index sq, appdf_$index app
+       |left join problematicSQLDF_$index pb on pb.sqlID==sq.sqlID
+       |left join datasetSQLDF_$index ds ON ds.sqlID == sq.sqlID
+       |""".stripMargin
+  }
+
+  def distinctqualificationDurationSQL: String = {
+    s"""select
+       |distinct(*)
+       |from ($qualificationDurationSQL)
+       |""".stripMargin
+
+  }
+       // |(select case when count(*)>=0 then count(*) else 0 end from datasetSQLDF_$index ds where ds.sqlID == sq.sqlID) as datasetCount
+
+  // spark optimizer doesn't like doing all these at once, so create temp tables between
+  def createFirstQualStats(): Unit = {
+    val df = runQuery(distinctqualificationDurationSQL)
+    df.createOrReplaceTempView(s"qualStats_$index")
+  }
+
+  def qualificationSetDurationSQL: String = {
+    s"""select
+       |appIndex, appID, appName, sqlID, duration,
+       |appDuration, description, potentialProblems,
+       |case when containsDataset > 0 then 0 else duration end as dfDuration
+       |from qualStats_$index
+       |""".stripMargin
+  }
 
   def qualificationDurationSumSQL: String = {
     s"""select first(appName) as appName, first(appIndex) as appIndex,
-       |first(appID) as appID, sum(duration) as dfDuration,
-       |sum(duration) / first(appDuration) as dfRankTotal,
+       |first(appID) as appID,
+       |sum(dfDuration) as dfDurationFinal,
+       |sum(dfDuration) / first(appDuration) as dfRankTotal,
        |first(appDuration) as appDuration,
        |concat_ws(",", collect_list(potentialProblems)) as potentialProblems from
-       |(${qualificationDurationSQL.stripLineEnd})
+       |(${qualificationSetDurationSQL.stripLineEnd})
        |""".stripMargin
   }
 
