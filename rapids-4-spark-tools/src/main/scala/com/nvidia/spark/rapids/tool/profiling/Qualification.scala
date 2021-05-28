@@ -41,14 +41,12 @@ class Qualification(apps: ArrayBuffer[ApplicationInfo],
         query += " union (" + app.qualificationDurationSumSQL + ")"
       }
     }
-    logWarning("query to run is: " + query)
     val messageHeader = "SQL qualify app union:"
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
-    logWarning("done with query")
-    fileWriter.write("Qualification Ranking:")
-    fileWriter.write("\n" + ToolUtils.showString(df, apps(0).args.numOutputRows.getOrElse(1000)))
+    val dfRenamed = apps.head.renameQualificationColumns(df)
+    fileWriter.write("\n" + ToolUtils.showString(dfRenamed, apps(0).args.numOutputRows.getOrElse(1000)))
     csvLocationOpt.foreach {
-       df.repartition(1).write.csv(_)
+       df.repartition(1).write.option("header", "true").csv(_)
     }
   }
 }

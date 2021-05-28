@@ -750,14 +750,23 @@ class ApplicationInfo(
   }
 
   def qualificationDurationSumSQL: String = {
-    s"""select first(appName) as appName, first(appIndex) as appIndex,
+    s"""select first(appName) as appName,
        |first(appID) as appID,
-       |sum(dfDuration) as dfDurationFinal,
        |sum(dfDuration) / first(appDuration) as dfRankTotal,
-       |first(appDuration) as appDuration,
-       |concat_ws(",", collect_list(potentialProblems)) as potentialProblems from
-       |(${qualificationSetDurationSQL.stripLineEnd})
+       |concat_ws(",", collect_list(potentialProblems)) as potentialProblems,
+       |sum(dfDuration) as dfDurationFinal,
+       |first(appDuration) as appDuration
+       |from (${qualificationSetDurationSQL.stripLineEnd})
        |""".stripMargin
+  }
+
+  def renameQualificationColumns(df: DataFrame): DataFrame = {
+    df.withColumnRenamed("appID", "App ID").
+      withColumnRenamed("appName", "App Name").
+      withColumnRenamed("dfDurationFinal", "SQL Dataframe Duration").
+      withColumnRenamed("dfRankTotal", "Rank").
+      withColumnRenamed("appDuration", "App Duration").
+      withColumnRenamed("potentialProblems", "Potential Problems")
   }
 
   def isDataSetPlan(desc: String): Boolean = {
