@@ -611,8 +611,9 @@ class GpuSpecifiedWindowFrameMeta(
                 Math.multiplyExact(ci.days.toLong, TimeUnit.DAYS.toMicros(1)),
                 ci.microseconds)
             } catch {
-              case e: ArithmeticException =>
-                willNotWorkOnGpu("interval total microseconds has overflow")
+              case _: ArithmeticException =>
+                willNotWorkOnGpu("windows over timestamps are converted to microseconds " +
+                  s"and $ci is too large to fit")
                 if (isLower) -1 else 1 // not check again
             }
           case _ =>
