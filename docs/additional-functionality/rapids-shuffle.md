@@ -77,6 +77,44 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    
    ---
    
+##### CentOS UCX RPM
+The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, for UCX 1.10.1, 
+fetched from https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-centos7-mofed5.x-cuda11.0.tar.bz2, 
+is a tarball that contains:
+
+```
+ucx-devel-1.10.1-1.el7.x86_64.rpm   
+ucx-debuginfo-1.10.1-1.el7.x86_64.rpm
+ucx-1.10.1-1.el7.x86_64.rpm         
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.10.1-1.el7.x86_64.rpm  
+ucx-cma-1.10.1-1.el7.x86_64.rpm
+ucx-ib-1.10.1-1.el7.x86_64.rpm
+```
+
+For a setup without RoCE or Infiniband networking, the only packages required are: 
+
+```
+ucx-1.10.1-1.el7.x86_64.rpm, and 
+ucx-cuda-1.10.1-1.el7.x86_64.rpm. 
+```
+
+If the accelerated networking is available, the package list is: 
+
+```
+ucx-1.10.1-1.el7.x86_64.rpm, 
+ucx-cuda-1.10.1-1.el7.x86_64.rpm,
+ucx-rdmacm-1.10.1-1.el7.x86_64.rpm, and
+ucx-ib-1.10.1-1.el7.x86_64.rpm.
+```
+
+---
+**NOTE:**
+
+The CentOS RPM requires CUDA installed via RPMs to satisfy its dependencies.
+
+---
+   
 #### Docker containers
 
 Running with UCX in containers imposes certain requirements. In a multi-GPU system, all GPUs that 
@@ -103,11 +141,11 @@ examples for Ubuntu 18.04:
 The following are examples of a Docker containers with UCX 1.10.1 and cuda-11.0 support. We
 break down the examples by OS, and further on whether RDMA-capable hardware is available:
 
-Ubuntu
+##### Ubuntu
 - RDMA: [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma)
 - No RDMA: [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma)
 
-CentOS
+##### CentOS
 - RDMA: [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma)
 - No RDMA: [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma)
 
@@ -133,7 +171,7 @@ In this section, we are using a docker container built using the sample dockerfi
    
 2. Test to check whether UCX can link against CUDA:
     ```
-    root@test-machin:/# ucx_info -d|grep cuda     
+    root@test-machine:/# ucx_info -d|grep cuda     
     # Memory domain: cuda_cpy
     #     Component: cuda_cpy
     #      Transport: cuda_copy
