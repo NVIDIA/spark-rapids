@@ -43,11 +43,11 @@
                         <configuration>
                             <target>
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/spark-${spark312.version}-info.properties">
+                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/spark-${spark313.version}-info.properties">
                                     <arg value="${user.dir}/build/dependency-info.sh"/>
                                     <arg value="${cudf.version}"/>
                                     <arg value="${cuda.version}"/>
-                                    <arg value="${spark312.version}"/>
+                                    <arg value="${spark313.version}"/>
                                 </exec>
                             </target>
                         </configuration>
@@ -78,6 +78,11 @@
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-shims-spark311_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-shims-spark312_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

@@ -30,6 +30,6 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   }
 
   def buildShim: SparkShims = {
-    new Spark312Shims()
+    new Spark313Shims()
   }
 }

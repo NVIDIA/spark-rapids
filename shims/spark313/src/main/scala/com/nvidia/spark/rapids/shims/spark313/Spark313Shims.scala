@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark312
+package com.nvidia.spark.rapids.shims.spark313
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
-import com.nvidia.spark.rapids.spark312.RapidsShuffleManager
+import com.nvidia.spark.rapids.shims.spark312.Spark312Shims
+import com.nvidia.spark.rapids.spark313.RapidsShuffleManager
 
 class Spark313Shims extends Spark312Shims {
 
