@@ -16,20 +16,15 @@
 
 package com.nvidia.spark.rapids.shims.spark312
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
+import com.nvidia.spark.rapids.spark312.RapidsShuffleManager
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 1, 2)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
+class Spark313Shims extends Spark312Shims {
 
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
-
-  def buildShim: SparkShims = {
-    new Spark312Shims()
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
   }
 }
