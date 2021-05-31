@@ -57,6 +57,7 @@
             </activation>
             <modules>
                 <module>spark303</module>
+                <module>spark312</module>
                 <module>spark313</module>
             </modules>
         </profile>
@@ -67,7 +68,6 @@
         <module>spark301</module>
         <module>spark302</module>
         <module>spark311</module>
-        <module>spark312</module>
         <module>aggregator</module>
     </modules>
     <dependencies>
