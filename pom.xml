@@ -202,6 +202,13 @@
                 <cuda.version>cuda11</cuda.version>
             </properties>
         </profile>
+
+        <profile>
+            <id>spark301emr</id>
+            <properties>
+                <emr.301.hadoop.version>3.2.0</emr.301.hadoop.version>
+            </properties>
+        </profile>
     </profiles>
 
     <properties>
@@ -246,6 +253,7 @@
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
+        <emr.301.hadoop.version>3.2.0</emr.301.hadoop.version>
     </properties>
 
     <dependencyManagement>
