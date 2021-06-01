@@ -28,4 +28,9 @@ object TrampolineUtil {
     path.delete()
     try f(path) finally Utils.deleteRecursively(path)
   }
+
+  def withTempDir(f: File => Unit): Unit = {
+    val path = Utils.createTempDir()
+    try f(path) finally Utils.deleteRecursively(path)
+  }
 }

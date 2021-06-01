@@ -37,24 +37,27 @@ class QualificationSuite extends FunSuite {
   private val logDir = ProfilingTestUtils.getTestResourcePath("spark-events-qualification")
 
   test("test udf event logs") {
-    val resultExpectation = new File(expRoot, "qual_test_simple_expectation.csv")
-    val appArgs = new ProfileArgs(Array(
-      s"$logDir/dataset_eventlog",
-      s"$logDir/dsAndDf_eventlog",
-      s"$logDir/udf_dataset_eventlog",
-      s"$logDir/udf_func_eventlog"
-    ))
+    TrampolineUtil.withTempDir { outpath =>
+      val resultExpectation = new File(expRoot, "qual_test_simple_expectation.csv")
+      val appArgs = new ProfileArgs(Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        s"$logDir/dataset_eventlog",
+        s"$logDir/dsAndDf_eventlog",
+        s"$logDir/udf_dataset_eventlog",
+        s"$logDir/udf_func_eventlog"
+      ))
 
-    val (exit, dfQualOpt) = QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false)
-    assert(exit == 0)
+      val (exit, dfQualOpt) = QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false)
+      assert(exit == 0)
+      // make sure to change null value so empty strings don't show up as nulls
+      val dfExpect = sparkSession.read.option("header", "true").
+        option("nullValue", "\"-\"").csv(resultExpectation.getPath)
+      val diffCount = dfQualOpt.map { dfQual =>
+        dfQual.except(dfExpect).union(dfExpect.except(dfExpect)).count
+      }.getOrElse(-1)
 
-    // make sure to change null value so empty strings don't show up as nulls
-    val dfExpect = sparkSession.read.option("header", "true").
-      option("nullValue", "\"-\"").csv(resultExpectation.getPath)
-    val diffCount = dfQualOpt.map { dfQual =>
-      dfQual.except(dfExpect).union(dfExpect.except(dfExpect)).count
-    }.getOrElse(-1)
-
-    assert(diffCount == 0)
+      assert(diffCount == 0)
+    }
   }
 }
