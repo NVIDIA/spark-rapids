@@ -28,7 +28,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Given a stream of data that is sorted by a set of keys, split the data so each batch output
- * contains all of the keys for a given key set.
+ * contains all of the keys for a given key set. This tries to get the batch sizes close to the
+ * target size. It assumes that the input batches will already be close to that size and does
+ * not try to split them too much further.
  */
 class GpuKeyBatchingIterator private (
     iter: Iterator[ColumnarBatch],
@@ -66,7 +68,7 @@ class GpuKeyBatchingIterator private (
         // last entry. From that we will see what cutoff works and is closest to the size we want.
         // The 16 is an arbitrary number. It was picked because hopefully it is small enough that
         // the indexes will all fit in the CPU cache at once so we can process the data in an
-        // effecient way.
+        // efficient way.
         val maxRow = cb.numRows() - 1
         val rowsPerBatch = Math.max(1, Math.ceil(cb.numRows()/16.0).toInt)
         val probePoints = (1 to 16).map(idx => Math.min(maxRow, idx * rowsPerBatch)).distinct
@@ -89,25 +91,21 @@ class GpuKeyBatchingIterator private (
     }
     // The goal is to find the candidate that is closest to the target size without going over,
     // excluding 0, which is a special case because we cannot slice there without more information.
-    // After that we would want to find the
-    System.err.println(s"CUTOFF CANDIDATES ${candidates.toSeq}")
+    // If we have to go over, then we want to find the smallest cutoff that is over the target.
     if (candidates.length == 1) {
-      // No point there is only one cutoff
-      System.err.println("JUST ONE CUTOFF...")
+      // No point checking more there is only one cutoff
       candidates.head
     } else {
-      // Now we need to pick which is the best candidate
+      // Just use an estimate for the row size.
       val averageRowSize = Math.max(1.0,
         GpuColumnVector.getTotalDeviceMemoryUsed(cb).toDouble / cb.numRows())
       val leftForTarget = targetSizeBytes - pendingSize
       val approximateRows = leftForTarget / averageRowSize
       val willFit = candidates.filter(f => f > 0 && f <= approximateRows)
-      System.err.println(s"CUTOFFS THAT FIT ${willFit.toSeq}")
       if (willFit.nonEmpty) {
         willFit.max
       } else {
         val overButValid = candidates.filter(f => f > 0)
-        System.err.println(s"SMALLEST CUTOFF EVEN IF IT DOES NOT FIT: ${overButValid.toSeq}")
         if (overButValid.nonEmpty) {
           overButValid.min
         } else {
