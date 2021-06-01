@@ -56,12 +56,6 @@ class QualificationSuite extends FunSuite with Logging {
         dfQual.except(dfExpect).union(dfExpect.except(dfExpect)).count
       }.getOrElse(-1)
 
-      if (diffCount.asInstanceOf[Long] > 0) {
-        dfQualOpt.get.except(dfExpect).show()
-        dfExpect.except(dfExpect).show()
-      }
-      dfExpect.write.option("header", "true").csv("expectcsv")
-      dfQualOpt.get.repartition(1).write.option("header", "true").csv("qualcsv")
       assert(diffCount == 0)
     }
   }

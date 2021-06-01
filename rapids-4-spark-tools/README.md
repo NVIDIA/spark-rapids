@@ -1,4 +1,4 @@
-# Spark profiling tool
+# Spark Qualification and Profiling tools
 
 This is a profiling tool to parse and analyze Spark event logs. 
 It generates information which can be used for debugging and profiling. Information such as Spark version, executor information, Properties and so on.

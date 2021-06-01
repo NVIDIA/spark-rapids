@@ -746,7 +746,7 @@ class ApplicationInfo(
       withColumnRenamed("dfRankTotal", "Rank").
       withColumnRenamed("appDuration", "App Duration").
       withColumnRenamed("potentialProblems", "Potential Problems").
-      withColumnRenamed("executorCPURatio", "Percent Executor Computation")
+      withColumnRenamed("executorCPURatio", "Executor CPU Time Percent")
   }
 
   def isDataSetPlan(desc: String): Boolean = {
