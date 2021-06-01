@@ -34,6 +34,7 @@ class GpuKeyBatchingIterator private (
     iter: Iterator[ColumnarBatch],
     sorter: GpuSorter,
     types: Array[DataType],
+    targetSizeBytes: Long,
     numInputRows: GpuMetric,
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
@@ -45,28 +46,74 @@ class GpuKeyBatchingIterator private (
     spillCallback: SpillCallback)
     extends Iterator[ColumnarBatch] with Arm {
   private val pending = mutable.Queue[SpillableColumnarBatch]()
+  private var pendingSize: Long = 0
 
   TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   def close(): Unit = {
     pending.foreach(_.close())
     pending.clear()
+    pendingSize = 0
   }
 
   override def hasNext: Boolean = pending.nonEmpty || iter.hasNext
 
   private def getKeyCutoff(cb: ColumnarBatch): Int = {
-    withResource(sorter.appendProjectedAndSort(cb, NoopMetric)) { table =>
-      val searchTab = withResource(ColumnVector.fromInts(cb.numRows() - 1)) { gatherMap =>
-        table.gather(gatherMap)
+    val candidates = withResource(sorter.appendProjectedColumns(cb)) { appended =>
+      withResource(GpuColumnVector.from(appended)) { table =>
+        // With data skew we don't want to include too much more in a batch than is necessary
+        // so we are going to search in up to 16 evenly spaced locations in the batch, including the
+        // last entry. From that we will see what cutoff works and is closest to the size we want.
+        // The 16 is an arbitrary number. It was picked because hopefully it is small enough that
+        // the indexes will all fit in the CPU cache at once so we can process the data in an
+        // effecient way.
+        val maxRow = cb.numRows() - 1
+        val rowsPerBatch = Math.max(1, Math.ceil(cb.numRows()/16.0).toInt)
+        val probePoints = (1 to 16).map(idx => Math.min(maxRow, idx * rowsPerBatch)).distinct
+        val searchTab = withResource(ColumnVector.fromInts(probePoints: _*)) { gatherMap =>
+          table.gather(gatherMap)
+        }
+        val cutoffVec = withResource(searchTab) { searchTab =>
+          sorter.lowerBound(table, searchTab)
+        }
+        val cutoffCandidates = new Array[Int](cutoffVec.getRowCount.toInt)
+        withResource(cutoffVec) { cutoffVec =>
+          withResource(cutoffVec.copyToHost()) { vecHost =>
+            cutoffCandidates.indices.foreach { idx =>
+              cutoffCandidates(idx) = vecHost.getInt(idx)
+            }
+          }
+        }
+        cutoffCandidates.distinct
       }
-      val cutoffVec = withResource(searchTab) { searchTab =>
-        sorter.lowerBound(table, searchTab)
-      }
-      withResource(cutoffVec) { cutoffVec =>
-        withResource(cutoffVec.copyToHost()) { vecHost =>
-          assert(vecHost.getRowCount == 1)
-          vecHost.getInt(0)
+    }
+    // The goal is to find the candidate that is closest to the target size without going over,
+    // excluding 0, which is a special case because we cannot slice there without more information.
+    // After that we would want to find the
+    System.err.println(s"CUTOFF CANDIDATES ${candidates.toSeq}")
+    if (candidates.length == 1) {
+      // No point there is only one cutoff
+      System.err.println("JUST ONE CUTOFF...")
+      candidates.head
+    } else {
+      // Now we need to pick which is the best candidate
+      val averageRowSize = Math.max(1.0,
+        GpuColumnVector.getTotalDeviceMemoryUsed(cb).toDouble / cb.numRows())
+      val leftForTarget = targetSizeBytes - pendingSize
+      val approximateRows = leftForTarget / averageRowSize
+      val willFit = candidates.filter(f => f > 0 && f <= approximateRows)
+      System.err.println(s"CUTOFFS THAT FIT ${willFit.toSeq}")
+      if (willFit.nonEmpty) {
+        willFit.max
+      } else {
+        val overButValid = candidates.filter(f => f > 0)
+        System.err.println(s"SMALLEST CUTOFF EVEN IF IT DOES NOT FIT: ${overButValid.toSeq}")
+        if (overButValid.nonEmpty) {
+          overButValid.min
+        } else {
+          // This should have been covered above with only a single candidate left, but
+          // just in case...
+          0
         }
       }
     }
@@ -85,6 +132,7 @@ class GpuKeyBatchingIterator private (
               }
             }
           }
+          pendingSize = 0
           last.foreach { lastTab =>
             peak += GpuColumnVector.getTotalDeviceMemoryUsed(lastTab)
             toConcat.append(lastTab)
@@ -130,12 +178,13 @@ class GpuKeyBatchingIterator private (
           // else not the last batch split so the final key group is not in this batch...
           val cutoff = getKeyCutoff(cb)
           if (cutoff <= 0) {
-            peakDevMemory.set(
-              Math.max(peakDevMemory.value, GpuColumnVector.getTotalDeviceMemoryUsed(cb)))
+            val cbSize = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+            peakDevMemory.set(Math.max(peakDevMemory.value, cbSize))
             // Everything is for a single key, so save it away and try the next batch...
             pending +=
                 SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
                   SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+            pendingSize += cbSize
           } else {
             var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
             withResource(GpuColumnVector.from(cb)) { table =>
@@ -143,10 +192,12 @@ class GpuKeyBatchingIterator private (
                 assert(tables.length == 2)
                 val ret = concatPending(Some(tables(0).getTable))
                 peak += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
-                peak += tables(1).getBuffer.getLength
+                val savedSize = tables(1).getBuffer.getLength
+                peak += savedSize
                 pending +=
                     SpillableColumnarBatch(tables(1), types,
                       SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                pendingSize += savedSize
                 numOutputRows += ret.numRows()
                 numOutputBatches += 1
                 peakDevMemory.set(Math.max(peakDevMemory.value, peak))
@@ -172,6 +223,7 @@ object GpuKeyBatchingIterator {
   def makeFunc(
       unboundOrderSpec: Seq[SortOrder],
       schema: Array[Attribute],
+      targetSizeBytes: Long,
       numInputRows: GpuMetric,
       numInputBatches: GpuMetric,
       numOutputRows: GpuMetric,
@@ -184,7 +236,7 @@ object GpuKeyBatchingIterator {
     val sorter = new GpuSorter(unboundOrderSpec, schema)
     val types = schema.map(_.dataType)
     def makeIter(iter: Iterator[ColumnarBatch]): GpuKeyBatchingIterator = {
-      new GpuKeyBatchingIterator(iter, sorter, types,
+      new GpuKeyBatchingIterator(iter, sorter, types, targetSizeBytes,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches,
         collectTime, concatTime, totalTime, peakDevMemory, spillCallback)
     }
