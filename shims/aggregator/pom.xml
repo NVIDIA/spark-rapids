@@ -109,7 +109,7 @@
                 </dependency>
                 <dependency>
                     <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark312_${scala.binary.version}</artifactId>
+                    <artifactId>rapids-4-spark-shims-spark313_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <scope>compile</scope>
                 </dependency>
@@ -139,6 +139,12 @@
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-shims-spark311_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-shims-spark312_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>compile</scope>
         </dependency>
