@@ -415,7 +415,27 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
         'from window_agg_table',
         conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
 
+<<<<<<< HEAD
 _gen_data_for_collect = [
+=======
+@pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over non-timestamp columns "
+                          "(https://github.com/NVIDIA/spark-rapids/issues/216)")
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_timestamps], ids=idfn)
+def test_window_aggs_for_ranges_of_dates(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'select '
+        ' sum(c) over '
+        '   (partition by a order by b asc  '
+        '       range between 1 preceding and 1 following) as sum_c_asc '
+        'from window_agg_table'
+    )
+
+
+_gen_data_for_collect_list = [
+>>>>>>> 8e9a7431... support collect_set in rolling window
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', IntegerGen()),
     ('c_int', IntegerGen()),
@@ -435,7 +455,7 @@ _gen_data_for_collect = [
 @ignore_order(local=True)
 def test_window_aggs_for_rows_collect_list():
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, _gen_data_for_collect),
+        lambda spark : gen_df(spark, _gen_data_for_collect_list),
         "window_collect_table",
         '''
         select
@@ -486,3 +506,51 @@ def test_running_window_function_exec_for_all_aggs():
         from window_collect_table
         ''')
 
+# Generates some repeated values to test the deduplication of GpuCollectSet.
+# And GpuCollectSet does not yet support struct type.
+_gen_data_for_collect_set = [
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', IntegerGen()),
+    ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
+    ('c_long', RepeatSeqGen(LongGen(), length=15)),
+    ('c_time', RepeatSeqGen(DateGen(), length=15)),
+    ('c_string', RepeatSeqGen(StringGen(), length=15)),
+    ('c_float', RepeatSeqGen(FloatGen(), length=15)),
+    ('c_decimal', RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15)),
+]
+
+
+# Uses sort_array function to reorder the outputs of collect_set, to make the result deterministic.
+@allow_non_gpu('ProjectExec', 'Alias', 'Literal', 'SortArray')
+# SortExec does not support array type, so sort the result locally.
+@ignore_order(local=True)
+def test_window_aggs_for_rows_collect_set():
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, _gen_data_for_collect_set),
+        "window_collect_table",
+        '''
+        select a, b,
+            sort_array(collect_int),
+            sort_array(collect_long),
+            sort_array(collect_long),
+            sort_array(collect_time),
+            sort_array(collect_string),
+            sort_array(collect_float),
+            sort_array(collect_decimal)
+        from (
+            select a, b,
+              collect_list(c_int) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_int,
+              collect_list(c_long) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_long,
+              collect_list(c_time) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_time,
+              collect_list(c_string) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_string,
+              collect_list(c_float) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_float,
+              collect_list(c_decimal) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal
+            from window_collect_table
+        ) t
+        ''')
