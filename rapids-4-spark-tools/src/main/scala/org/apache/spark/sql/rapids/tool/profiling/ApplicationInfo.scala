@@ -686,18 +686,6 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  def qualificationPercentIOSQL: String = {
-    s"""select $index as appIndex, '$appId' as appID,
-       |sq.sqlID, sq.description,
-       |sq.duration, m.executorCPURatio
-       |from sqlDF_$index sq , sqlAggMetricsDF m
-       |where $index = m.appIndex and sq.sqlID = m.sqlID
-       |and sq.sqlID not in (select sqlID from problematicSQLDF_$index)
-       |and sq.duration > 30000
-       |and m.executorCPURatio > 30
-       |""".stripMargin
-  }
-
   def qualificationDurationSQL: String = {
     s"""select
        |$index as appIndex,
@@ -732,13 +720,22 @@ class ApplicationInfo(
   }
 
   def qualificationDurationSumSQL: String = {
-    s"""select first(appName) as appName,
+    s"""select sqlID, first(appName) as appName,
        |first(appID) as appID,
        |sum(dfDuration) / first(appDuration) as dfRankTotal,
        |concat_ws(",", collect_list(potentialProblems)) as potentialProblems,
        |sum(dfDuration) as dfDurationFinal,
        |first(appDuration) as appDuration
        |from (${qualificationSetDurationSQL.stripLineEnd})
+       |""".stripMargin
+  }
+
+  def qualificationPercentIOSQL: String = {
+    s"""select appName, appID, dfRankTotal
+       |potentialProblems, dfDurationFinal, appDuration,
+       |m.executorCPURatio
+       |from (${qualificationDurationSumSQL} , sqlAggMetricsDF m
+       |where $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }
 
