@@ -41,12 +41,6 @@
             </properties>
         </profile>
         <profile>
-            <id>spark311cdh</id>
-            <properties>
-                <spark.version>${spark311cdh.version}</spark.version>
-            </properties>
-        </profile>
-        <profile>
             <id>spark320</id>
             <properties>
                 <spark.version>${spark320.version}</spark.version>
@@ -63,17 +57,6 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.curator</groupId>
-                    <artifactId>curator-recipes</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.curator</groupId>
-            <artifactId>curator-recipes</artifactId>
-            <version>4.3.0.7.2.7.0-184</version>
         </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>

@@ -98,4 +98,10 @@
             <version>4.3.0.7.2.7.0-184</version>
         </dependency>
     </dependencies>
+    <repositories>
+        <repository>
+            <id>cloudera-repo</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+        </repository>
+    </repositories>
 </project>
