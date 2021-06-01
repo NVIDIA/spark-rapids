@@ -745,7 +745,8 @@ class ApplicationInfo(
       withColumnRenamed("dfDurationFinal", "SQL Dataframe Duration").
       withColumnRenamed("dfRankTotal", "Rank").
       withColumnRenamed("appDuration", "App Duration").
-      withColumnRenamed("potentialProblems", "Potential Problems")
+      withColumnRenamed("potentialProblems", "Potential Problems").
+      withColumnRenamed("executorCPURatio", "Percent Executor Computation")
   }
 
   def isDataSetPlan(desc: String): Boolean = {
