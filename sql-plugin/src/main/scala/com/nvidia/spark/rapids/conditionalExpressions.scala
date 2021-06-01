@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -24,76 +23,35 @@ import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, 
 import org.apache.spark.sql.types.{BooleanType, DataType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression {
 
   protected def computeIfElse(
       batch: ColumnarBatch,
-      predicateExpr: Expression,
+      predExpr: Expression,
       trueExpr: Expression,
-      falseValues: GpuColumnVector): GpuColumnVector = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { predicate =>
-      val trueResult: Any = trueExpr.columnarEval(batch)
-      try {
-        val result = trueResult match {
-          case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValues.getBase)
-          case t: GpuScalar => predicate.getBase.ifElse(t.getBase, falseValues.getBase)
-          case u =>
-            throw new IllegalStateException(s"Unexpected inputs $u")
-        }
-        GpuColumnVector.from(result, dataType)
-      } finally {
-        trueResult match {
-          case a: AutoCloseable => a.close()
-          case _ =>
+      falseValue: Any): GpuColumnVector = {
+    withResourceIfAllowed(falseValue) { falseRet =>
+      withResource(GpuExpressionsUtils.columnarEvalToColumn(predExpr, batch)) { pred =>
+        withResourceIfAllowed(trueExpr.columnarEval(batch)) { trueRet =>
+          val finalRet = (trueRet, falseRet) match {
+            case (t: GpuColumnVector, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuColumnVector) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuColumnVector, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t: GpuScalar, f: GpuScalar) =>
+              pred.getBase.ifElse(t.getBase, f.getBase)
+            case (t, f) =>
+              throw new IllegalStateException(s"Unexpected inputs" +
+                s" ($t: ${t.getClass}, $f: ${f.getClass})")
+          }
+          GpuColumnVector.from(finalRet, dataType)
         }
       }
     }
   }
 
-  protected def computeIfElse(
-      batch: ColumnarBatch,
-      predicateExpr: Expression,
-      trueExpr: Expression,
-      falseValue: Scalar): GpuColumnVector = {
-    withResource(GpuExpressionsUtils.columnarEvalToColumn(predicateExpr, batch)) { predicate =>
-      val trueResult: Any = trueExpr.columnarEval(batch)
-      try {
-        val result = trueResult match {
-          case t: GpuColumnVector => predicate.getBase.ifElse(t.getBase, falseValue)
-          case t: GpuScalar => predicate.getBase.ifElse(t.getBase, falseValue)
-          case u =>
-            throw new IllegalStateException(s"Unexpected inputs $u")
-        }
-        GpuColumnVector.from(result, dataType)
-      } finally {
-        trueResult match {
-          case a: AutoCloseable => a.close()
-          case _ =>
-        }
-      }
-    }
-  }
-
-  protected def computeIfElse(
-      batch: ColumnarBatch,
-      predicateExpr: Expression,
-      trueExpr: Expression,
-      falseExpr: Expression): GpuColumnVector = {
-    val falseResult: Any = falseExpr.columnarEval(batch)
-    try {
-      falseResult match {
-        case f: GpuColumnVector => computeIfElse(batch, predicateExpr, trueExpr, f)
-        case f: GpuScalar => computeIfElse(batch, predicateExpr, trueExpr, f.getBase)
-        case u =>
-          throw new IllegalStateException(s"Unexpected inputs $u")
-      }
-    } finally {
-      falseResult match {
-        case a: AutoCloseable => a.close()
-        case _ =>
-      }
-    }
-  }
 }
 
 case class GpuIf(
@@ -123,7 +81,7 @@ case class GpuIf(
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = computeIfElse(batch, predicateExpr,
-    trueExpr, falseExpr)
+    trueExpr, falseExpr.columnarEval(batch))
 
   override def toString: String = s"if ($predicateExpr) $trueExpr else $falseExpr"
 
@@ -170,24 +128,12 @@ case class GpuCaseWhen(
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val elseExpr = elseValue.getOrElse(GpuLiteral(null, branches.last._2.dataType))
-    try {
-      branches.foldRight[Any](elseExpr) { case ((predicateExpr, trueExpr), falseObj) =>
-        falseObj match {
-          case v: GpuColumnVector =>
-            try {
-              computeIfElse(batch, predicateExpr, trueExpr, v)
-            } finally {
-              v.close()
-            }
-          case e: GpuExpression => computeIfElse(batch, predicateExpr, trueExpr, e)
-        }
-      }
-    } finally {
-      elseExpr match {
-        case a: AutoCloseable => a.close()
-        case _ =>
-      }
+    // `elseRet` will be closed in `computeIfElse`.
+    val elseRet = elseValue
+      .map(_.columnarEval(batch))
+      .getOrElse(GpuScalar(null, branches.last._2.dataType))
+    branches.foldRight[Any](elseRet) { case ((predicateExpr, trueExpr), falseRet) =>
+      computeIfElse(batch, predicateExpr, trueExpr, falseRet)
     }
   }
 

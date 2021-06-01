@@ -14,22 +14,9 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark312
+package com.nvidia.spark.rapids.shims.spark313
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.shims
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 1, 2)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
-
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
-
-  def buildShim: SparkShims = {
-    new Spark312Shims()
-  }
+class ParquetCachedBatchSerializer extends shims.spark312.ParquetCachedBatchSerializer {
 }

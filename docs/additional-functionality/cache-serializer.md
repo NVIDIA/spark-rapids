@@ -47,6 +47,7 @@ nav_order: 2
   | ------ | -----|
   | 3.1.1 | com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer |
   | 3.1.2 | com.nvidia.spark.rapids.shims.spark312.ParquetCachedBatchSerializer |
+  | 3.1.3 | com.nvidia.spark.rapids.shims.spark313.ParquetCachedBatchSerializer |
   | 3.2.0 | com.nvidia.spark.rapids.shims.spark320.ParquetCachedBatchSerializer | 
   
 ##          Supported Types                       
