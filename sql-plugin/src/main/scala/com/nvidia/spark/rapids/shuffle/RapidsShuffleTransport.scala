@@ -385,10 +385,9 @@ trait RapidsShuffleTransport extends AutoCloseable {
 
   /**
    * Cancel requests that are waiting in the queue (not in-flight) for a specific
-   * client/handler
+   * handler
    */
-  def cancelPending(client: RapidsShuffleClient,
-                    handler: RapidsShuffleFetchHandler): Unit
+  def cancelPending(handler: RapidsShuffleFetchHandler): Unit
 
   /**
    * (throttle) Signals that `bytesCompleted` are done, allowing more requests through the

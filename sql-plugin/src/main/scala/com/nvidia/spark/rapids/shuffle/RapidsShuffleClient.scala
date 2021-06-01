@@ -376,7 +376,7 @@ class RapidsShuffleClient(
    *       and not in flight.
    */
   def cancelPending(handler: RapidsShuffleFetchHandler): Unit = {
-    transport.cancelPending(this, handler)
+    transport.cancelPending(handler)
   }
 
   /**

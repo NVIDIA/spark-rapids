@@ -77,7 +77,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       assert(cl.hasNext)
       assertThrows[RapidsShuffleFetchFailedException](cl.next())
 
-      verify(mockTransport, times(1)).cancelPending(client, handler)
+      verify(mockTransport, times(1)).cancelPending(handler)
 
       verify(testMetricsUpdater, times(1))
           .update(any(), any(), any(), any())
@@ -123,7 +123,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       }
     }
 
-    verify(mockTransport, times(1)).cancelPending(client, handler)
+    verify(mockTransport, times(1)).cancelPending(handler)
 
     verify(testMetricsUpdater, times(1))
         .update(any(), any(), any(), any())
@@ -198,7 +198,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     handler.start(1)
     handler.batchReceived(bufferId)
 
-    verify(mockTransport, times(0)).cancelPending(client, handler)
+    verify(mockTransport, times(0)).cancelPending(handler)
 
     assert(cl.hasNext)
     assertResult(cb)(cl.next())
