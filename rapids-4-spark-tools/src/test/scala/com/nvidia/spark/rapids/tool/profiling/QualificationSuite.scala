@@ -48,7 +48,8 @@ class QualificationSuite extends FunSuite {
         s"$logDir/udf_func_eventlog"
       ))
 
-      val (exit, dfQualOpt) = QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false)
+      val (exit, dfQualOpt) =
+        QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false)
       assert(exit == 0)
       // make sure to change null value so empty strings don't show up as nulls
       val dfExpect = sparkSession.read.option("header", "true").
