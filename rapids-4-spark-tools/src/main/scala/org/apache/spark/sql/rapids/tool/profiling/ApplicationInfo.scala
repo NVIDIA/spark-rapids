@@ -492,17 +492,14 @@ class ApplicationInfo(
 
     for ((name, df) <- this.allDataFrames) {
       df.createOrReplaceTempView(name)
-      // sparkSession.table(name).cache
     }
   }
 
   // Function to drop all temp views of this application.
   def dropAllTempViews(): Unit ={
     for ((name,_) <- this.allDataFrames) {
-      sparkSession.catalog.dropTempView(name+"_"+index)
+      sparkSession.catalog.dropTempView(name)
     }
-    // Clear all cached tables as well.
-    // sparkSession.catalog.clearCache()
   }
 
   // Function to run a query and print the result to the file.
