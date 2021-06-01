@@ -88,6 +88,22 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     ucxImpl
   }
 
+  private val altList = new HashedPriorityQueue[PendingTransferRequest](
+    1000,
+    (t: PendingTransferRequest, t1: PendingTransferRequest) => {
+      if (t.getLength < t1.getLength) {
+        -1;
+      } else if (t.getLength > t1.getLength) {
+        1;
+      } else {
+        0
+      }
+    })
+
+  // access to this set must hold the `altList` lock
+  val validClientAndHandler =
+    new mutable.HashSet[(RapidsShuffleClient, RapidsShuffleFetchHandler)]()
+
   override def getDirectByteBuffer(size: Long): RefCountedDirectByteBuffer = {
     if (size > rapidsConf.shuffleMaxMetadataSize) {
       logWarning(s"Large metadata message size $size B, larger " +
@@ -333,18 +349,6 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     inflightMonitor.notifyAll()
   }
 
-  private val altList = new HashedPriorityQueue[PendingTransferRequest](
-      1000,
-      (t: PendingTransferRequest, t1: PendingTransferRequest) => {
-        if (t.getLength < t1.getLength) {
-          -1;
-        } else if (t.getLength > t1.getLength) {
-          1;
-        } else {
-          0
-        }
-      })
-
   private[this] val exec = Executors.newSingleThreadExecutor(
     GpuDeviceManager.wrapThreadFactory(
       new ThreadFactoryBuilder()
@@ -435,7 +439,13 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
           // A _much_ better way of doing this would be to have separate
           // lists, one per client. This should be cleaned up later.
           altList.synchronized {
-            putBack.foreach(altList.add)
+            putBack.foreach { pb =>
+              // if this client+handler hasn't been invalidated, we can add the pending request back
+              // like with NOTE above, when this is a queue per client, this gets refactored
+              if (validClientAndHandler.contains((pb.client, pb.handler))) {
+                altList.add(pb)
+              }
+            }
           }
 
           if (perClientReq.nonEmpty) {
@@ -469,10 +479,41 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   override def queuePending(reqs: Seq[PendingTransferRequest]): Unit =
     altList.synchronized {
       import collection.JavaConverters._
+      val clientAndHandler = (reqs.head.client, reqs.head.handler)
+      validClientAndHandler.add(clientAndHandler)
       altList.addAll(reqs.asJava)
       logDebug(s"THROTTLING ${altList.size} queued requests")
       altList.notifyAll()
     }
+
+  override def cancelPending(client: RapidsShuffleClient,
+                             handler: RapidsShuffleFetchHandler): Unit = {
+    altList.synchronized {
+      val clientAndHandler = (client, handler)
+      if (validClientAndHandler.contains(clientAndHandler)) {
+        // This is expensive, but will be refactored with a queue per client.
+        // As it stands, in the good case it should be invoked once per task/peer,
+        // on task completion, and `altList` should be empty
+        // will be skipped.
+        // When there are errors, we would get more invocations.
+        if (!altList.isEmpty) {
+          val it = altList.iterator()
+          val toRemove = new ArrayBuffer[PendingTransferRequest]()
+          while (it.hasNext) {
+            val pending = it.next()
+            if (pending.client == client && pending.handler == handler) {
+              toRemove.append(pending)
+            }
+          }
+          if (toRemove.nonEmpty) {
+            toRemove.foreach(altList.remove)
+          }
+        }
+        // invalidate the client+handler pair
+        validClientAndHandler.remove(clientAndHandler)
+      }
+    }
+  }
 
   override def close(): Unit = {
     logInfo("UCX transport closing")
