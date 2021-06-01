@@ -2850,16 +2850,23 @@ object GpuOverrides {
           override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
 
           override def convertToGpu(): GpuExec = {
-            // To avoid metrics confusion we split a single stage up into multiple parts
+            // To avoid metrics confusion we split a single stage up into multiple parts but only
+            // if there are multiple partitions to make it worth doing.
             val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
-            GpuTopN(takeExec.limit,
-              so,
-              projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-                GpuTopN(takeExec.limit,
-                  so,
-                  takeExec.child.output,
-                  childPlans.head.convertIfNeeded())))
+            if (takeExec.child.outputPartitioning.numPartitions == 1) {
+              GpuTopN(takeExec.limit, so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                childPlans.head.convertIfNeeded())
+            } else {
+              GpuTopN(takeExec.limit,
+                so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
+                  GpuTopN(takeExec.limit,
+                    so,
+                    takeExec.child.output,
+                    childPlans.head.convertIfNeeded())))
+            }
           }
         }),
     exec[LocalLimitExec](

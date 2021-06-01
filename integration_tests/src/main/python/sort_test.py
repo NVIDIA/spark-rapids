@@ -147,6 +147,13 @@ def test_multi_orderby_with_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()).limit(100))
 
+# We added in a partitioning optimization to take_ordered_and_project
+# This should trigger it.
+@pytest.mark.parametrize('data_gen', orderable_gens_sort_without_neg_decimal, ids=idfn)
+def test_multi_orderby_with_limit_single_part(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).coalesce(1).orderBy(f.col('a'), f.col('b').desc()).limit(100))
+
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [byte_gen, long_gen, float_gen], ids=idfn)
 def test_orderby_with_processing(data_gen):
