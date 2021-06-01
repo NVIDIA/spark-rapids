@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect
+from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -218,6 +219,9 @@ def test_concat_ws_sql_col_sep():
                 'concat_ws(c, b, \'\', \'bbb\', \'zzz\'), ' +
                 'concat_ws(c, b, a, cast(null as string)) from concat_ws_table')
 
+
+@pytest.mark.xfail(condition=is_databricks_runtime(),
+    reason='Databricks optimizes out concat_ws call in this case')
 @allow_non_gpu('ProjectExec', 'Alias', 'ConcatWs')
 def test_concat_ws_sql_col_sep_only_sep_specified():
     gen = StringGen(nullable=True)

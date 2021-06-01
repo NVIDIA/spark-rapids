@@ -385,7 +385,7 @@ case class GpuGenerateExec(
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
   )
 
   override def output: Seq[Attribute] = requiredChildOutput ++ generatorOutput
@@ -403,7 +403,7 @@ case class GpuGenerateExec(
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
 
     generator.fixedLenLazyExpressions match {
       // If lazy expressions can be extracted from generator,
@@ -423,7 +423,7 @@ case class GpuGenerateExec(
             outer,
             numOutputRows,
             numOutputBatches,
-            totalTime)
+            opTime)
         }
 
       // Otherwise, perform common generation via `generator.generate`
@@ -436,7 +436,7 @@ case class GpuGenerateExec(
         child.executeColumnar().flatMap { inputFromChild =>
           withResource(inputFromChild) { input =>
             doGenerate(input, genProjectList, othersProjectList,
-              numOutputRows, numOutputBatches, totalTime)
+              numOutputRows, numOutputBatches, opTime)
           }
         }
     }
@@ -447,8 +447,8 @@ case class GpuGenerateExec(
       othersProjectList: Seq[GpuExpression],
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)) { _ =>
+      opTime: GpuMetric): Iterator[ColumnarBatch] = {
+    withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, opTime)) { _ =>
       // Project input columns, setting other columns ahead of generator's input columns.
       // With the projected batches and an offset, generators can extract input columns or
       // other required columns separately.
