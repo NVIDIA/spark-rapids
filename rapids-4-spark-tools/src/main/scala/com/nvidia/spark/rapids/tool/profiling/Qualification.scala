@@ -31,20 +31,15 @@ object Qualification extends Logging {
     val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
     for (app <- appsWithSQL) {
       if (query.isEmpty) {
-        query += app.qualificationDurationSumSQL
+        query += app.qualificationDurationSumAndPercentIOSQL
       } else {
-        query += " union (" + app.qualificationDurationSumSQL + ")"
+        query += " union (" + app.qualificationDurationSumAndPercentIOSQL + ")"
       }
     }
     val messageHeader = "SQL qualify app union:"
     val df = apps.head.runQuery(query + " order by dfRankTotal desc, appDuration desc")
 
     df
-  }
-
-  def getPercentIO(): DataFrame = {
-    val df = app.queryToDF(app.qualificationSQL)
-
   }
 
   def writeQualification(apps: ArrayBuffer[ApplicationInfo], df: DataFrame): Unit = {

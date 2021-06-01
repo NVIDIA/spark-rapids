@@ -730,11 +730,11 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  def qualificationPercentIOSQL: String = {
-    s"""select appName, appID, dfRankTotal
-       |potentialProblems, dfDurationFinal, appDuration,
+  def qualificationDurationSumAndPercentIOSQL: String = {
+    s"""select sq.appName, sq.appID, sq.dfRankTotal,
+       |sq.potentialProblems, sq.dfDurationFinal, sq.appDuration,
        |m.executorCPURatio
-       |from (${qualificationDurationSumSQL}) , sqlAggMetricsDF m
+       |from (${qualificationDurationSumSQL}) sq , sqlAggMetricsDF m
        |where $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }
