@@ -77,6 +77,8 @@ object QualificationMain extends Logging {
       logApplicationInfo(app)
       index += 1
     }
+    val analysis = new Analysis(apps)
+    val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
     fileWriter.write(s"### Qualification ###")
     val df = Qualification.qualifyApps(apps)
     if (writeOutput) {

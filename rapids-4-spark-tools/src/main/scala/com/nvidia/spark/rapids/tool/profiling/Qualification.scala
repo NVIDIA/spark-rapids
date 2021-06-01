@@ -42,6 +42,11 @@ object Qualification extends Logging {
     df
   }
 
+  def getPercentIO(): DataFrame = {
+    val df = app.queryToDF(app.qualificationSQL)
+
+  }
+
   def writeQualification(apps: ArrayBuffer[ApplicationInfo], df: DataFrame): Unit = {
     val fileWriter = apps.head.fileWriter
     val dfRenamed = apps.head.renameQualificationColumns(df)

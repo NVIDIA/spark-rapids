@@ -344,6 +344,74 @@ class ApplicationInfo(
       logInfo("No SQL Execution Found. Skipping generating SQL Execution DataFrame.")
     }
 
+    // For jobDF
+    if (jobStart.nonEmpty) {
+      val jobStartNew: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
+      for (res <- jobStart) {
+        val thisEndTime = jobEndTime.get(res.jobID)
+        val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
+        val durationString = durationResult match {
+          case Some(i) => UIUtils.formatDuration(i)
+          case None => ""
+        }
+
+        val jobNew = res.copy(endTime = thisEndTime,
+          duration = durationResult,
+          durationStr = durationString,
+          jobResult = Some(jobEndResult(res.jobID)),
+          failedReason = jobFailedReason(res.jobID)
+        )
+        jobStartNew += jobNew
+      }
+      allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
+    } else {
+      logError("No Job Found. Exiting.")
+      System.exit(1)
+    }
+
+    // For stageDF
+    if (stageSubmitted.nonEmpty) {
+      val stageSubmittedNew: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
+      for (res <- stageSubmitted) {
+        val thisEndTime = stageCompletionTime(res.stageId)
+        val thisFailureReason = stageFailureReason(res.stageId)
+
+        val durationResult =
+          ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
+        val durationString = durationResult match {
+          case Some(i) => UIUtils.formatDuration(i)
+          case None => ""
+        }
+
+        val stageNew = res.copy(completionTime = thisEndTime,
+          failureReason = thisFailureReason,
+          duration = durationResult,
+          durationStr = durationString)
+        stageSubmittedNew += stageNew
+      }
+      allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
+    } else {
+      logError("No Stage Found. Exiting.")
+      System.exit(1)
+    }
+
+    // For taskDF
+    if (taskEnd.nonEmpty) {
+      allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
+    } else {
+      logError("task is empty! Exiting...")
+      System.exit(1)
+    }
+
+    // For sqlMetricsDF
+    if (sqlPlanMetrics.nonEmpty) {
+      logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
+      allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
+    } else {
+      logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
+    }
+
+
     if (!forQualification) {
 
       // For resourceProfilesDF
@@ -389,73 +457,6 @@ class ApplicationInfo(
         this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
       } else {
         logDebug("executorsRemoved is empty!")
-      }
-
-      // For jobDF
-      if (jobStart.nonEmpty) {
-        val jobStartNew: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
-        for (res <- jobStart) {
-          val thisEndTime = jobEndTime.get(res.jobID)
-          val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-          val durationString = durationResult match {
-            case Some(i) => UIUtils.formatDuration(i)
-            case None => ""
-          }
-
-          val jobNew = res.copy(endTime = thisEndTime,
-            duration = durationResult,
-            durationStr = durationString,
-            jobResult = Some(jobEndResult(res.jobID)),
-            failedReason = jobFailedReason(res.jobID)
-          )
-          jobStartNew += jobNew
-        }
-        allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
-      } else {
-        logError("No Job Found. Exiting.")
-        System.exit(1)
-      }
-
-      // For stageDF
-      if (stageSubmitted.nonEmpty) {
-        val stageSubmittedNew: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-        for (res <- stageSubmitted) {
-          val thisEndTime = stageCompletionTime(res.stageId)
-          val thisFailureReason = stageFailureReason(res.stageId)
-
-          val durationResult =
-            ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
-          val durationString = durationResult match {
-            case Some(i) => UIUtils.formatDuration(i)
-            case None => ""
-          }
-
-          val stageNew = res.copy(completionTime = thisEndTime,
-            failureReason = thisFailureReason,
-            duration = durationResult,
-            durationStr = durationString)
-          stageSubmittedNew += stageNew
-        }
-        allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
-      } else {
-        logError("No Stage Found. Exiting.")
-        System.exit(1)
-      }
-
-      // For taskDF
-      if (taskEnd.nonEmpty) {
-        allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-      } else {
-        logError("task is empty! Exiting...")
-        System.exit(1)
-      }
-
-      // For sqlMetricsDF
-      if (sqlPlanMetrics.nonEmpty) {
-        logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
-        allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
-      } else {
-        logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
       }
 
       // For driverAccumDF
@@ -685,8 +686,7 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  // Function to generate a query for qualification
-  def qualificationSQL: String = {
+  def qualificationPercentIOSQL: String = {
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
        |sq.duration, m.executorCPURatio
