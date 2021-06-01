@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import scala.concurrent.duration.{DAYS, Duration}
+import java.util.concurrent.TimeUnit
+
 import scala.language.{existentials, implicitConversions}
 
 import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
@@ -143,10 +144,10 @@ class GpuWindowExpressionMeta(
               Seq(spec.lower, spec.upper).foreach {
                 case l @ Literal(_, ByteType | ShortType | IntegerType | LongType) =>
                   checkRangeBoundaryConfig(l.dataType)
-                case Literal(value, CalendarIntervalType) =>
-                  val ci = value.asInstanceOf[CalendarInterval]
-                  if (ci.months != 0 || ci.microseconds != 0) {
-                    willNotWorkOnGpu("only days are supported for window range intervals")
+                case Literal(ci: CalendarInterval, CalendarIntervalType) =>
+                  // interval is only working for TimeStampType
+                  if (ci.months != 0) {
+                    willNotWorkOnGpu("interval months isn't supported")
                   }
                 case UnboundedFollowing | UnboundedPreceding | CurrentRow =>
                 case anythings =>
@@ -416,15 +417,15 @@ object GpuWindowExpression extends Arm {
    * @return Scalar holding boundary value
    */
   def createRangeWindowBoundary(orderByType: DType, value: Long): Scalar = {
-    implicit def daysToDuration(days: Long) = Duration(value, DAYS)
     orderByType match {
       case DType.INT8 => Scalar.fromByte(value.toByte)
       case DType.INT16 => Scalar.fromShort(value.toShort)
       case DType.INT32 => Scalar.fromInt(value.toInt)
       case DType.INT64 => Scalar.fromLong(value)
-      case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value.toDays)
+        // Interval is not working for DateType
+      case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value)
       case DType.TIMESTAMP_MICROSECONDS =>
-        Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value.toMicros)
+        Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value)
       case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
     }
   }
@@ -443,10 +444,10 @@ object GpuWindowExpression extends Arm {
       val isUnBounded = special.isUnBounded
       (isUnBounded, if (isUnBounded) None else orderByType.map(
         createRangeWindowBoundary(_, special.value)))
-    case GpuLiteral(value, CalendarIntervalType) =>
-      // TimeStampDays -> DurationDays
-      var x = value.asInstanceOf[CalendarInterval].days
-      if (x == Int.MinValue) x = Int.MaxValue
+    case GpuLiteral(ci: CalendarInterval, CalendarIntervalType) =>
+      // Get the total microseconds for TIMESTAMP_MICROSECONDS
+      var x = ci.days * TimeUnit.DAYS.toMicros(1) + ci.microseconds
+      if (x == Long.MinValue) x = Long.MaxValue
       (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
     case GpuLiteral(value, ByteType) =>
       var x = value.asInstanceOf[Byte]
@@ -600,16 +601,24 @@ class GpuSpecifiedWindowFrameMeta(
           case Literal(value, ShortType) => value.asInstanceOf[Short].toLong
           case Literal(value, IntegerType) => value.asInstanceOf[Int].toLong
           case Literal(value, LongType) => value.asInstanceOf[Long]
-          case Literal(value, CalendarIntervalType) =>
-            val interval = value.asInstanceOf[CalendarInterval]
-            if (interval.microseconds != 0 || interval.months != 0) { // DAYS == 0 is permitted.
-              willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified" +
-                s" only in DAYS. Found $interval")
+          case Literal(ci: CalendarInterval, CalendarIntervalType) =>
+            if (ci.months != 0) {
+              willNotWorkOnGpu("interval months isn't supported")
             }
-            interval.days.toLong
+            // return the total microseconds
+            try {
+              Math.addExact(
+                Math.multiplyExact(ci.days.toLong, TimeUnit.DAYS.toMicros(1)),
+                ci.microseconds)
+            } catch {
+              case _: ArithmeticException =>
+                willNotWorkOnGpu("windows over timestamps are converted to microseconds " +
+                  s"and $ci is too large to fit")
+                if (isLower) -1 else 1 // not check again
+            }
           case _ =>
             willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
-            s" type (Boolean exclusive) or DAYS. Found ${bounds.dataType}")
+            s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
             if (isLower) -1 else 1 // not check again
         }
 
