@@ -19,8 +19,7 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.io.File
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.TrampolineUtil
-import org.apache.spark.sql.{Dataset, SparkSession}
+import org.apache.spark.sql.{Dataset, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.{col, udf}
 
 // class used for testing
