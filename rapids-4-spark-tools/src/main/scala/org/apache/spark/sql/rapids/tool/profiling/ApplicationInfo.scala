@@ -720,7 +720,7 @@ class ApplicationInfo(
   }
 
   def qualificationDurationSumSQL: String = {
-    s"""select sqlID, first(appName) as appName,
+    s"""select first(sqlID) as sqlID, first(appName) as appName,
        |first(appID) as appID,
        |sum(dfDuration) / first(appDuration) as dfRankTotal,
        |concat_ws(",", collect_list(potentialProblems)) as potentialProblems,
@@ -734,7 +734,7 @@ class ApplicationInfo(
     s"""select appName, appID, dfRankTotal
        |potentialProblems, dfDurationFinal, appDuration,
        |m.executorCPURatio
-       |from (${qualificationDurationSumSQL} , sqlAggMetricsDF m
+       |from (${qualificationDurationSumSQL}) , sqlAggMetricsDF m
        |where $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }

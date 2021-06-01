@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.io.{File, FileWriter}
 
 import org.scalatest.FunSuite
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
@@ -49,8 +48,7 @@ class QualificationSuite extends FunSuite with Logging {
         s"$logDir/udf_func_eventlog",
       ))
 
-      val (exit, dfQualOpt) =
-        QualificationMain.mainInternal(spark, appArgs, writeOutput=false)
+      val (exit, dfQualOpt) = QualificationMain.mainInternal(spark, appArgs, writeOutput=false)
 
       // make sure to change null value so empty strings don't show up as nulls
       val dfExpect = spark.read.option("header", "true").option("nullValue", "\"-\"").csv(resultExpectation.getPath)
