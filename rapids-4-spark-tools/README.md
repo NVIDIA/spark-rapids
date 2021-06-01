@@ -1,6 +1,6 @@
 # Spark Qualification and Profiling tools
 
-The qualification tool is used to rank a set of applications to determine if the Rapids Plugin for Spark is a good fit for those applications.
+The qualification tool is used to rank a set of applications to determine if the RAPIDS Accelerator for Apache Spark is a good fit for those applications.
 
 The profiling tool generates information which can be used for ranking applications debugging and profiling.
 Information such as Spark version, executor information, Properties and so on.  Works with both cpu and gpu generated event logs.
