@@ -1698,10 +1698,6 @@ object GpuOverrides {
       CaseWhenCheck,
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val anyLit = a.branches.exists { case (predicate, _) => isLit(predicate) }
-          if (anyLit) {
-            willNotWorkOnGpu("literal predicates are not supported")
-          }
           if (dataType.isInstanceOf[ArrayType]) {
             // We don't support literal arrays yet
             if (a.elseValue.map(isLit).getOrElse(false)) {
@@ -1738,11 +1734,6 @@ object GpuOverrides {
           ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (isLit(a.predicate)) {
-            willNotWorkOnGpu(s"literal predicate ${a.predicate} is not supported")
-          }
-        }
         override def convertToGpu(): GpuExpression = {
           val boolExpr :: trueExpr :: falseExpr :: Nil = childExprs.map(_.convertToGpu())
           GpuIf(boolExpr, trueExpr, falseExpr)
