@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark311
 
+import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
@@ -27,6 +28,7 @@ import org.apache.arrow.vector.ValueVector
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -43,6 +45,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.{GpuElementAt, GpuFileSourceScanExec, GpuGetArrayItem, GpuGetArrayItemMeta, GpuGetMapValue, GpuGetMapValueMeta, GpuStringReplace, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark311._
+import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
@@ -521,6 +524,20 @@ class Spark311Shims extends Spark301Shims {
   override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
     val arrowBuf = vec.getValidityBuffer
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
+  }
+
+  override def createTable(table: CatalogTable,
+    sessionCatalog: SessionCatalog,
+    tableLocation: Option[URI],
+    result: BaseRelation) = {
+    val newTable = table.copy(
+      storage = table.storage.copy(locationUri = tableLocation),
+      // We will use the schema of resolved.relation as the schema of the table (instead of
+      // the schema of df). It is important since the nullability may be changed by the relation
+      // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
+      schema = result.schema)
+    // Table location is already validated. No need to check it again during table creation.
+    sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
   }
 
   override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
