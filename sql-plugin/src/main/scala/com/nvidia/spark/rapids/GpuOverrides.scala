@@ -761,7 +761,7 @@ object GpuOverrides {
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT + TypeSig.ARRAY +
           TypeSig.MAP).nested(),
-      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
@@ -1698,10 +1698,6 @@ object GpuOverrides {
       CaseWhenCheck,
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          val anyLit = a.branches.exists { case (predicate, _) => isLit(predicate) }
-          if (anyLit) {
-            willNotWorkOnGpu("literal predicates are not supported")
-          }
           if (dataType.isInstanceOf[ArrayType]) {
             // We don't support literal arrays yet
             if (a.elseValue.map(isLit).getOrElse(false)) {
@@ -1738,11 +1734,6 @@ object GpuOverrides {
           ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (isLit(a.predicate)) {
-            willNotWorkOnGpu(s"literal predicate ${a.predicate} is not supported")
-          }
-        }
         override def convertToGpu(): GpuExpression = {
           val boolExpr :: trueExpr :: falseExpr :: Nil = childExprs.map(_.convertToGpu())
           GpuIf(boolExpr, trueExpr, falseExpr)
@@ -2836,7 +2827,8 @@ object GpuOverrides {
     exec[DataWritingCommandExec](
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes +
-        TypeSig.DECIMAL.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet")).nested(),
+        TypeSig.DECIMAL.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
+        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet")).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -2858,16 +2850,23 @@ object GpuOverrides {
           override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
 
           override def convertToGpu(): GpuExec = {
-            // To avoid metrics confusion we split a single stage up into multiple parts
+            // To avoid metrics confusion we split a single stage up into multiple parts but only
+            // if there are multiple partitions to make it worth doing.
             val so = sortOrder.map(_.convertToGpu().asInstanceOf[SortOrder])
-            GpuTopN(takeExec.limit,
-              so,
-              projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-              ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-                GpuTopN(takeExec.limit,
-                  so,
-                  takeExec.child.output,
-                  childPlans.head.convertIfNeeded())))
+            if (takeExec.child.outputPartitioning.numPartitions == 1) {
+              GpuTopN(takeExec.limit, so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                childPlans.head.convertIfNeeded())
+            } else {
+              GpuTopN(takeExec.limit,
+                so,
+                projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
+                  GpuTopN(takeExec.limit,
+                    so,
+                    takeExec.child.output,
+                    childPlans.head.convertIfNeeded())))
+            }
           }
         }),
     exec[LocalLimitExec](

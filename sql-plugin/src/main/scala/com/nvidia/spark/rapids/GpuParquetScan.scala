@@ -724,14 +724,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * @return
    */
   private def convertDecimal64ToDecimal32Wrapper(cv: ColumnVector, precision: Int): ColumnVector = {
-    /**
-     * This method returns a ColumnView that should be copied out to a ColumnVector before closing
-     * the `toClose` views otherwise it will close the returned view and it's children as well.
-     *
-     * @param cv          ColumnView to be checked if it has Decimal32 values stored as Decimal64
-     * @param precision   precision list of all the Decimal columns in this ColumnVector
-     * @param toClose     The ColumnViews to be closed after this method is done. This will also
-     *                    contain the returned view
+    /*
+     * 'convertDecimal64ToDecimal32' method returns a ColumnView that should be copied out to a
+     * ColumnVector  before closing the `toClose` views otherwise it will close the returned view
+     * and it's children as well.
      */
     def convertDecimal64ToDecimal32(
        cv: ColumnView,
