@@ -380,6 +380,15 @@ def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
     """
     _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first)
 
+def assert_gpu_and_cpu_are_equal_collect_debug(df_fun, result_fun, conf={}, debug=False, is_cpu_first=True):
+    def do_it_all(spark):
+        df = df_fun(spark)
+        if debug:
+            data_gen.debug_df(df)
+        return result_fun(df)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
+
 def assert_gpu_and_cpu_are_equal_iterator(func, conf={}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
