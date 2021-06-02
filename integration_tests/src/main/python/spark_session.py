@@ -83,6 +83,7 @@ def with_gpu_session(func, conf={}):
     """
     copy = dict(conf)
     copy['spark.rapids.sql.enabled'] = 'true'
+    copy['spark.rapids.memory.gpu.minAllocFraction'] = '0'
     if is_allowing_any_non_gpu():
         copy['spark.rapids.sql.test.enabled'] = 'false'
     else:
