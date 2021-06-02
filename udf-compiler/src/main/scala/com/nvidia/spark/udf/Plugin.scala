@@ -25,6 +25,7 @@ import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression, ScalaUDF}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.rapids.GpuScalaUDF.getRapidsUDFInstance
 
 class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
@@ -52,7 +53,7 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
     exp match {
       case f: ScalaUDF => // found a ScalaUDF
         // If it implements the RapidsUDF interface, no need to compile it.
-        if (f.function.isInstanceOf[RapidsUDF]) {
+        if (!getRapidsUDFInstance(f.function).isEmpty) {
           exp
         } else {
           GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
