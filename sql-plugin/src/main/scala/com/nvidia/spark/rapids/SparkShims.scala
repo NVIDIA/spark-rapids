@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.net.URI
 import java.nio.ByteBuffer
 
 import org.apache.arrow.memory.ReferenceManager
@@ -26,6 +27,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -43,6 +45,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
@@ -60,6 +63,11 @@ sealed abstract class ShimVersion
 
 case class SparkShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
   override def toString(): String = s"$major.$minor.$patch"
+}
+
+case class ClouderaShimVersion(major: Int, minor: Int, patch: Int, clouderaVersion: String)
+  extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch.$clouderaVersion"
 }
 
 case class DatabricksShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
@@ -197,6 +205,11 @@ trait SparkShims {
     replaceFunc: Path => Path): Seq[Path]
 
   def shouldFailDivByZero(): Boolean
+
+  def createTable(table: CatalogTable,
+    sessionCatalog: SessionCatalog,
+    tableLocation: Option[URI],
+    result: BaseRelation): Unit
 
   def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec]
 
