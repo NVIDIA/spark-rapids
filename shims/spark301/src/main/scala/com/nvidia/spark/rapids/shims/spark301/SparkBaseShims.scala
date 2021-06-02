@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark301
 
+import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
@@ -28,6 +29,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
@@ -50,6 +52,7 @@ import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, Gpu
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExecMeta, GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuPythonUDF, GpuWindowInPandasExecMetaBase}
 import org.apache.spark.sql.rapids.shims.spark301.{GpuSchemaUtils, ShuffleManagerShim}
+import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -607,6 +610,20 @@ abstract class SparkBaseShims extends SparkShims {
     f: => A
   ): A = {
     attachTree(tree, msg)(f)
+  }
+
+  override def createTable(table: CatalogTable,
+    sessionCatalog: SessionCatalog,
+    tableLocation: Option[URI],
+    result: BaseRelation) = {
+    val newTable = table.copy(
+      storage = table.storage.copy(locationUri = tableLocation),
+      // We will use the schema of resolved.relation as the schema of the table (instead of
+      // the schema of df). It is important since the nullability may be changed by the relation
+      // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
+      schema = result.schema)
+    // Table location is already validated. No need to check it again during table creation.
+    sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
   }
 
   override def hasAliasQuoteFix: Boolean = false
