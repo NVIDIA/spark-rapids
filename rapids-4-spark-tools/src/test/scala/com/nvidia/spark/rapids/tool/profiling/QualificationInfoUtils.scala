@@ -137,10 +137,10 @@ object QualificationInfoUtils extends Logging {
   /*
    * Example command:
    * $SPARK_HOME/bin/spark-submit --master local[1] --driver-memory 30g \
-   * --jars ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar,\
-   *  ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT.jar \
+   * --jars ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-21.06.0-SNAPSHOT-tests.jar,\
+   *  ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-21.06.0-SNAPSHOT.jar \
    * --class com.nvidia.spark.rapids.tool.profiling.QualificationInfoUtils \
-   * ./rapids-4-spark-tools/target/rapids-4-spark-tools-21.06.0-SNAPSHOT-tests.jar udffunc \
+   * ./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-21.06.0-SNAPSHOT-tests.jar udffunc \
    * /tmp/testeventlogDir 100001
    */
   def main(args: Array[String]): Unit = {
