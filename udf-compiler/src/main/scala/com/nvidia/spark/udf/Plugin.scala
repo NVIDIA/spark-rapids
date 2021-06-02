@@ -17,7 +17,6 @@
 package com.nvidia.spark.udf
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.RapidsConf
 
 import org.apache.spark.internal.Logging
@@ -51,6 +50,9 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
     val conf = new RapidsConf(plan.conf)
     // iterating over NamedExpression
     exp match {
+      // Check if this UDF implements RapidsUDF interface. If so, the UDF has already provided a
+      // columnar execution that could run on GPU, then no need to translate it to Catalyst
+      // expressions. If not, compile it.
       case f: ScalaUDF if getRapidsUDFInstance(f.function).isEmpty =>
         GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
       case _ =>
