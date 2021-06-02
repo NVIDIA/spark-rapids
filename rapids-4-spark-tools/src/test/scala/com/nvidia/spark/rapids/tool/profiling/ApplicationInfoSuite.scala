@@ -34,10 +34,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         .appName("Rapids Spark Profiling Tool Unit Tests")
         .getOrCreate()
   }
-  var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-  val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
-
   test("test single event") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
+
     val tempFile = File.createTempFile("tempOutputFile", null)
     val fileWriter = new FileWriter(tempFile)
     try {
@@ -45,7 +45,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
         apps += new ApplicationInfo(appArgs, sparkSession, fileWriter,
-          ProfileUtils.stringToPath(path)(0), index)
+          ProfileUtils.stringToPath(path)._1(0), index)
         index += 1
       }
       assert(apps.size == 1)
@@ -60,5 +60,55 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       fileWriter.close()
       tempFile.deleteOnExit()
     }
+  }
+
+  test("test filename match") {
+    val matchFileName = "udf"
+    val appArgs = new ProfileArgs(Array(
+      "--match-event-logs",
+      matchFileName,
+      "src/test/resources/udf_func_eventlog",
+      "src/test/resources/udf_dataset_eventlog",
+      "src/test/resources/dataset_eventlog"
+    ))
+
+    val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
+      appArgs.matchEventLogs, appArgs.eventlog())
+    assert(result.length == 2)
+  }
+
+  test("test filter file newest") {
+    val filterNew = "2-newest"
+    val appArgs = new ProfileArgs(Array(
+      "--filter-criteria",
+      filterNew,
+      "src/test/resources/udf_func_eventlog",
+      "src/test/resources/udf_dataset_eventlog",
+      "src/test/resources/dataset_eventlog",
+      "src/test/resources/eventlog_minimal_events"
+    ))
+
+    val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
+      appArgs.matchEventLogs, appArgs.eventlog())
+    assert(result.length == 2)
+  }
+
+  test("test filter file oldest and file name match") {
+    val filterOld = "3-oldest"
+    val matchFileName = "event"
+    val appArgs = new ProfileArgs(Array(
+      "--filter-criteria",
+      filterOld,
+      "--match-event-logs",
+      matchFileName,
+      "src/test/resources/udf_func_eventlog",
+      "src/test/resources/udf_dataset_eventlog",
+      "src/test/resources/dataset_eventlog",
+      "src/test/resources/eventlog_minimal_events"
+    ))
+
+    val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
+      appArgs.matchEventLogs, appArgs.eventlog())
+    assert(result.length == 3)
   }
 }

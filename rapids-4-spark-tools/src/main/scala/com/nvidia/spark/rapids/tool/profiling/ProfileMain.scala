@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.io.FileWriter
 
 import org.apache.hadoop.fs.Path
-import scala.collection.mutable.ArrayBuffer
+import org.rogach.scallop.ScallopOption
+import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -50,20 +51,16 @@ object ProfileMain extends Logging {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
+    val filterN = appArgs.filterCriteria
+    val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
     logInfo(s"Output directory:  $outputDirectory")
 
-    // Convert the input path string to Path(s)
-    val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
-    for (pathString <- eventlogPaths) {
-      val paths = ProfileUtils.stringToPath(pathString)
-      if (paths.nonEmpty) {
-        allPaths ++= paths
-      }
-    }
+    // Get the event logs required to process
+    lazy val allPaths = processAllPaths(filterN, matchEventLogs, eventlogPaths)
 
     // If compare mode is on, we need lots of memory to cache all applications then compare.
     // Suggest only enable compare mode if there is no more than 10 applications as input.
@@ -149,5 +146,62 @@ object ProfileMain extends Logging {
     }
 
     0
+  }
+
+  /**
+   * Function to evaluate the event logs to be processed.
+   *
+   * @param eventDir       directory containing the event logs
+   * @param filterNLogs    number of event logs to be selected
+   * @param matchlogs      keyword to match file names in the directory
+   * @param eventLogsPaths Array of event log paths
+   * @return event logs to be processed
+   */
+  def processAllPaths(
+      filterNLogs: ScallopOption[String],
+      matchlogs: ScallopOption[String],
+      eventLogsPaths: List[String]): Seq[Path] = {
+
+    val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
+    val allPathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
+
+    for (pathString <- eventLogsPaths) {
+      val (paths, pathsWithTimestamp) = ProfileUtils.stringToPath(pathString)
+      if (paths.nonEmpty) {
+        allPaths ++= paths
+        allPathsWithTimestamp ++= pathsWithTimestamp
+      }
+    }
+
+    // Filter the eventlogs to be processed based on the criteria. If it is not provided in the
+    // command line, then return all the event logs processed above.
+    if (matchlogs.isDefined || filterNLogs.isDefined) {
+      var sortedResult: LinkedHashMap[Path, Long] = LinkedHashMap.empty[Path, Long]
+      if (filterNLogs.isDefined) {
+        val numberofEventLogs = filterNLogs.toOption.get.split("-")(0).toInt
+        val criteria = filterNLogs.toOption.get.split("-")(1)
+        if (criteria.equals("newest")) {
+          sortedResult = LinkedHashMap(allPathsWithTimestamp.toSeq.sortWith(_._2 > _._2): _*)
+        } else if (criteria.equals("oldest")) {
+          sortedResult = LinkedHashMap(allPathsWithTimestamp.toSeq.sortWith(_._2 < _._2): _*)
+        } else {
+          logError("Criteria should be either newest or oldest")
+          System.exit(1)
+        }
+
+        if (matchlogs.isDefined) {
+          val filteredPath =
+            sortedResult.map(_._1).toSeq.filter(a => a.toString.contains(matchlogs.toOption.get))
+          val finalResult = filteredPath.take(numberofEventLogs)
+          finalResult
+        } else {
+          sortedResult.map(_._1).toSeq.take(numberofEventLogs)
+        }
+      } else { // if only match criteria is provided.
+        allPaths.filter(a => a.toString.contains(matchlogs.toOption.get))
+      }
+    } else { // send all event logs for processing
+      allPaths
+    }
   }
 }
