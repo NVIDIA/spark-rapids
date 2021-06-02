@@ -69,6 +69,7 @@
         <module>spark311</module>
         <module>spark312</module>
         <module>aggregator</module>
+        <module>spark311cdh</module>
     </modules>
     <dependencies>
         <dependency>
