@@ -891,8 +891,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           for (i <- 0 until columns.size) {
             if (!missingColumns(i)) {
               columnReaders(i) =
-                  new VectorizedColumnReader(columns.get(i), types.get(i)
-                      .getOriginalType, pages.getPageReader(columns.get(i)), null /*convertTz*/ ,
+                  new VectorizedColumnReader(
+                    columns.get(i),
+                    types.get(i).getOriginalType,
+                    pages.getPageReader(columns.get(i)),
+                    null /*convertTz*/ ,
                     LegacyBehaviorPolicy.CORRECTED.toString,
                     LegacyBehaviorPolicy.EXCEPTION.toString)
             }
