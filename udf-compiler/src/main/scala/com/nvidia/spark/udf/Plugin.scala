@@ -51,13 +51,8 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
     val conf = new RapidsConf(plan.conf)
     // iterating over NamedExpression
     exp match {
-      case f: ScalaUDF => // found a ScalaUDF
-        // If it implements the RapidsUDF interface, no need to compile it.
-        if (!getRapidsUDFInstance(f.function).isEmpty) {
-          exp
-        } else {
-          GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
-        }
+      case f: ScalaUDF if getRapidsUDFInstance(f.function).isEmpty =>
+        GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
       case _ =>
         if (exp == null) {
           exp
