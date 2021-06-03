@@ -36,8 +36,12 @@ object Qualification extends Logging {
     logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
   }
 
-  def qualifyApps(allPaths: ArrayBuffer[Path], numRows: Int, sparkSession: SparkSession,
-      includeCpuPercent: Boolean, dropTempViews: Boolean): DataFrame = {
+  def qualifyApps(
+      allPaths: ArrayBuffer[Path],
+      numRows: Int,
+      sparkSession: SparkSession,
+      includeCpuPercent: Boolean,
+      dropTempViews: Boolean): DataFrame = {
     var index: Int = 1
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths.filterNot(_.getName.contains("."))) {
@@ -52,10 +56,8 @@ object Qualification extends Logging {
     if (includeCpuPercent) {
       val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
       sqlAggMetricsDF.cache().createOrReplaceTempView("sqlAggMetricsDF")
-      logWarning("before count sql agg")
       // materialize table to cache
       sqlAggMetricsDF.count()
-      logWarning("after count sql agg")
     }
 
     val df = constructQueryQualifyApps(apps, includeCpuPercent)

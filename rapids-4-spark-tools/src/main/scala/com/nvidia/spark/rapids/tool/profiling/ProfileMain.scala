@@ -64,6 +64,7 @@ object ProfileMain extends Logging {
         allPaths ++= paths
       }
     }
+    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     // If compare mode is on, we need lots of memory to cache all applications then compare.
     // Suggest only enable compare mode if there is no more than 10 applications as input.
@@ -72,7 +73,7 @@ object ProfileMain extends Logging {
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
       var index: Int = 1
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        apps += new ApplicationInfo(numOutputRows, sparkSession,
           path, index)
         index += 1
       }
@@ -93,7 +94,7 @@ object ProfileMain extends Logging {
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
         // This apps only contains 1 app in each loop.
         val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        val app = new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        val app = new ApplicationInfo(numOutputRows, sparkSession,
           path, index)
         apps += app
         logApplicationInfo(app)
