@@ -133,6 +133,9 @@ else
     then
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
         export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
+        # when running tests in parallel, we allocate less than the default minAllocFraction per test
+        # so we need to override this setting here
+        export PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0
         python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
