@@ -25,10 +25,10 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.{DataType, NullType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -90,16 +90,33 @@ object ConcatAndConsumeAll {
 }
 
 object CoalesceGoal {
-  def max(a: CoalesceGoal, b: CoalesceGoal): CoalesceGoal = (a, b) match {
+  def maxRequirement(a: CoalesceGoal, b: CoalesceGoal): CoalesceGoal = (a, b) match {
     case (RequireSingleBatch, _) => a
     case (_, RequireSingleBatch) => b
+    case (_: BatchedByKey, _: TargetSize) => a
+    case (_: TargetSize, _: BatchedByKey) => b
+    case (a: BatchedByKey, b: BatchedByKey) =>
+      if (satisfies(a, b)) {
+        a // They are equal so it does not matter
+      } else {
+        // Nothing is the same so there is no guarantee
+        BatchedByKey(Seq.empty)
+      }
     case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
     case _ => b
   }
 
-  def min(a: CoalesceGoal, b:CoalesceGoal): CoalesceGoal = (a, b) match {
+  def minProvided(a: CoalesceGoal, b:CoalesceGoal): CoalesceGoal = (a, b) match {
     case (RequireSingleBatch, _) => b
     case (_, RequireSingleBatch) => a
+    case (_: BatchedByKey, _: TargetSize) => b
+    case (_: TargetSize, _: BatchedByKey) => a
+    case (a: BatchedByKey, b: BatchedByKey) =>
+      if (satisfies(a, b)) {
+        a // They are equal so it does not matter
+      } else {
+        null
+      }
     case (TargetSize(aSize), TargetSize(bSize)) if aSize < bSize => a
     case _ => b
   }
@@ -107,17 +124,41 @@ object CoalesceGoal {
   def satisfies(found: CoalesceGoal, required: CoalesceGoal): Boolean = (found, required) match {
     case (RequireSingleBatch, _) => true
     case (_, RequireSingleBatch) => false
+    case (_: BatchedByKey, _: TargetSize) => true
+    case (_: TargetSize, _: BatchedByKey) => false
+    case (BatchedByKey(aOrder), BatchedByKey(bOrder)) =>
+      aOrder.length == bOrder.length &&
+          aOrder.zip(bOrder).forall {
+            case (a, b) => a.satisfies(b)
+          }
     case (TargetSize(foundSize), TargetSize(requiredSize)) => foundSize >= requiredSize
     case _ => false // found is null so it is not satisfied
   }
 }
 
-sealed abstract class CoalesceGoal extends Serializable {
+/**
+ * Provides a goal for batching of data.
+ */
+sealed abstract class CoalesceGoal extends GpuUnevaluable {
+  override def nullable: Boolean = false
+
+  override def dataType: DataType = NullType
+
+  override def children: Seq[Expression] = Seq.empty
+}
+
+sealed abstract class CoalesceSizeGoal extends CoalesceGoal {
 
   val targetSizeBytes: Long = Integer.MAX_VALUE
 }
 
-object RequireSingleBatch extends CoalesceGoal {
+/**
+ * A single batch is required as the input to a note in the SparkPlan. This means
+ * all of the data for a given task is in a single batch. This should be avoided
+ * as much as possible because it can result in running out of memory or run into
+ * limitations of the batch size by both Spark and cudf.
+ */
+case object RequireSingleBatch extends CoalesceSizeGoal {
 
   override val targetSizeBytes: Long = Long.MaxValue
 
@@ -125,14 +166,35 @@ object RequireSingleBatch extends CoalesceGoal {
   override def toString: String = "RequireSingleBatch"
 }
 
-case class TargetSize(override val targetSizeBytes: Long) extends CoalesceGoal {
+/**
+ * Produce a stream of batches that are at most the given size in bytes. The size
+ * is estimated in some cases so it may go over a little, but it should generally be
+ * very close to the target size. Generally you should not go over 2 GiB to avoid
+ * limitations in cudf for nested type columns.
+ * @param targetSizeBytes the size of each batch in bytes.
+ */
+case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGoal {
   require(targetSizeBytes <= Integer.MAX_VALUE,
     "Target cannot exceed 2GB without checks for cudf row count limit")
 }
 
+/**
+ * Split the data into batches where a set of keys are all within a single batch. This is
+ * generally used for things like a window operation or a sort based aggregation where you
+ * want all of the keys for a given operation to be available so the GPU can produce a
+ * correct answer. There is no limit on the target size so if there is a lot of data skew
+ * for a key, the batch may still run into limits on set by Spark or cudf. It should be noted
+ * that it is required that a node in the Spark plan that requires this should also require
+ * an input ordering that satisfies this ordering as well.
+ * @param order the keys that should be used for batching.
+ */
+case class BatchedByKey(order: Seq[SortOrder]) extends CoalesceGoal {
+  override def children: Seq[Expression] = order
+}
+
 abstract class AbstractGpuCoalesceIterator(
     iter: Iterator[ColumnarBatch],
-    goal: CoalesceGoal,
+    goal: CoalesceSizeGoal,
     numInputRows: GpuMetric,
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
@@ -339,7 +401,7 @@ abstract class AbstractGpuCoalesceIterator(
 
 class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     schema: StructType,
-    goal: CoalesceGoal,
+    goal: CoalesceSizeGoal,
     maxDecompressBatchMemory: Long,
     numInputRows: GpuMetric,
     numInputBatches: GpuMetric,
@@ -480,6 +542,20 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
   override def outputBatching: CoalesceGoal = goal
 
+  override def requiredChildOrdering: Seq[Seq[SortOrder]] = goal match {
+    case batchingGoal: BatchedByKey =>
+      Seq(batchingGoal.order)
+    case _ =>
+      super.requiredChildOrdering
+  }
+
+  override def outputOrdering: Seq[SortOrder] = goal match {
+    case batchingGoal: BatchedByKey =>
+      batchingGoal.order
+    case _ =>
+      super.outputOrdering
+  }
+
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
@@ -495,16 +571,29 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val decompressMemoryTarget = maxDecompressBatchMemory
 
     val batches = child.executeColumnar()
-    batches.mapPartitions { iter =>
-      if (outputSchema.isEmpty) {
+    if (outputSchema.isEmpty) {
+      batches.mapPartitions { iter =>
         val numRows = iter.map(_.numRows).sum
         val combinedCb = new ColumnarBatch(Array.empty, numRows)
         Iterator.single(combinedCb)
-      } else {
-        val callback = GpuMetric.makeSpillCallback(allMetrics)
-        new GpuCoalesceIterator(iter, outputSchema, goal, decompressMemoryTarget,
-          numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-          concatTime, totalTime, peakDevMemory, callback, "GpuCoalesceBatches")
+      }
+    } else {
+      val callback = GpuMetric.makeSpillCallback(allMetrics)
+      goal match {
+        case sizeGoal: CoalesceSizeGoal =>
+          batches.mapPartitions { iter =>
+            new GpuCoalesceIterator (iter, outputSchema, sizeGoal, decompressMemoryTarget,
+              numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
+              concatTime, totalTime, peakDevMemory, callback, "GpuCoalesceBatches")
+          }
+        case batchingGoal: BatchedByKey =>
+          val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+          val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.order, output.toArray, targetSize,
+            numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
+            concatTime, totalTime, peakDevMemory, callback)
+          batches.mapPartitions { iter =>
+            f(iter)
+          }
       }
     }
   }

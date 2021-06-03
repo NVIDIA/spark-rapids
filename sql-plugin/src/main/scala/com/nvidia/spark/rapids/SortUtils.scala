@@ -171,6 +171,31 @@ class GpuSorter(
   }
 
   /**
+   * Find the lower bounds on data that is the output of `appendProjectedColumns`. Be careful
+   * because a batch with no columns/only rows will cause errors and should be special cased.
+   * @param findIn the data to look in for lower bounds
+   * @param find the data to look for and get the lower bound for
+   * @return the rows where the insertions would happen.
+   */
+  def lowerBound(findIn: ColumnarBatch, find: ColumnarBatch): ColumnVector = {
+    withResource(GpuColumnVector.from(findIn)) { findInTbl =>
+      withResource(GpuColumnVector.from(find)) { findTbl =>
+        findInTbl.lowerBound(findTbl, cudfOrdering: _*)
+      }
+    }
+  }
+
+  /**
+   * Find the lower bounds on data that is the output of `appendProjectedColumns`. Be careful
+   * because a batch with no columns/only rows will cause errors and should be special cased.
+   * @param findIn the data to look in for lower bounds
+   * @param find the data to look for and get the lower bound for
+   * @return the rows where the insertions would happen.
+   */
+  def lowerBound(findIn: Table, find: Table): ColumnVector =
+    findIn.lowerBound(find, cudfOrdering: _*)
+
+  /**
    * Sort a batch of data that is the output of `appendProjectedColumns`. Be careful because
    * a batch with no columns/only rows will cause errors and should be special cased.
    * @param inputBatch the batch to sort

@@ -400,7 +400,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
 
   // The smallest of our children
   override def outputBatching: CoalesceGoal =
-    children.map(GpuExec.outputBatching).reduce(CoalesceGoal.min)
+    children.map(GpuExec.outputBatching).reduce(CoalesceGoal.minProvided)
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")

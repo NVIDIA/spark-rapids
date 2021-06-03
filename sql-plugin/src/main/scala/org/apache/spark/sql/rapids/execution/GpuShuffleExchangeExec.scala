@@ -195,7 +195,7 @@ object GpuShuffleExchangeExec {
       }.toArray.toSeq
       val sorter = new GpuSorter(boundReferences, outputAttributes)
       rdd.mapPartitions { cbIter =>
-        GpuSortEachBatchIterator(cbIter, sorter)
+        GpuSortEachBatchIterator(cbIter, sorter, false)
       }
     } else {
       rdd

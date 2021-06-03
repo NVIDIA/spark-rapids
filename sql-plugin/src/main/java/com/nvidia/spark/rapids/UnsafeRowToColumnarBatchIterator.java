@@ -57,7 +57,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected UnsafeRowToColumnarBatchIterator(
       Iterator<UnsafeRow> input,
       Attribute[] schema,
-      CoalesceGoal goal,
+      CoalesceSizeGoal goal,
       GpuMetric totalTime,
       GpuMetric numInputRows,
       GpuMetric numOutputRows,
