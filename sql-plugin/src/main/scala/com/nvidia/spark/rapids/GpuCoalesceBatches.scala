@@ -127,10 +127,10 @@ object CoalesceGoal {
     case (_: BatchedByKey, _: TargetSize) => true
     case (_: TargetSize, _: BatchedByKey) => false
     case (BatchedByKey(aOrder), BatchedByKey(bOrder)) =>
-      aOrder.length == bOrder.length
-      aOrder.zip(bOrder).forall {
-        case (a, b) => a.satisfies(b)
-      }
+      aOrder.length == bOrder.length &&
+          aOrder.zip(bOrder).forall {
+            case (a, b) => a.satisfies(b)
+          }
     case (TargetSize(foundSize), TargetSize(requiredSize)) => foundSize >= requiredSize
     case _ => false // found is null so it is not satisfied
   }
@@ -180,7 +180,7 @@ case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGo
 
 /**
  * Split the data into batches where a set of keys are all within a single batch. This is
- * generally used for things like a widow operation or a sort based aggregation where you
+ * generally used for things like a window operation or a sort based aggregation where you
  * want all of the keys for a given operation to be available so the GPU can produce a
  * correct answer. There is no limit on the target size so if there is a lot of data skew
  * for a key, the batch may still run into limits on set by Spark or cudf. It should be noted

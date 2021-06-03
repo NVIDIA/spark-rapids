@@ -520,6 +520,13 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return emptyBatch(structFromAttributes(format));
   }
 
+  /**
+   * Create an empty batch from the give data types
+   */
+  public static ColumnarBatch emptyBatchFromTypes(DataType[] format) {
+    return emptyBatch(structFromTypes(format));
+  }
+
 
   /**
    * Create empty host column vectors from the given format.  This should only be necessary
@@ -537,6 +544,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static HostColumnVector[] emptyHostColumns(List<Attribute> format) {
     return emptyHostColumns(structFromAttributes(format));
+  }
+
+  private static StructType structFromTypes(DataType[] format) {
+    StructField[] fields = new StructField[format.length];
+    int i = 0;
+    for (DataType t: format) {
+      fields[i++] = new StructField(
+          String.valueOf(i), // ignored
+          t,
+          true,
+          null);
+    }
+    return new StructType(fields);
   }
 
   private static StructType structFromAttributes(List<Attribute> format) {
@@ -894,11 +914,15 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static boolean isTaggedAsFinalBatch(ColumnarBatch batch) {
     int numCols = batch.numCols();
-    boolean ret = numCols > 0;
-    for (int col = 0; col < numCols; col++) {
-      ret &= ((GpuColumnVectorBase)batch.column(col)).isKnownFinalBatch();
+    if (numCols <= 0) {
+      return false;
     }
-    return ret;
+    for (int col = 0; col < numCols; col++) {
+      if (!((GpuColumnVectorBase)batch.column(col)).isKnownFinalBatch()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**

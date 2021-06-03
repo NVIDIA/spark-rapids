@@ -64,7 +64,7 @@ class GpuKeyBatchingIterator private (
     val candidates = withResource(sorter.appendProjectedColumns(cb)) { appended =>
       withResource(GpuColumnVector.from(appended)) { table =>
         // With data skew we don't want to include too much more in a batch than is necessary
-        // so we are going to search in up to 16 evenly spaced locations in the batch, including the
+        // so we are going to search up to 16 evenly spaced locations in the batch, including the
         // last entry. From that we will see what cutoff works and is closest to the size we want.
         // The 16 is an arbitrary number. It was picked because hopefully it is small enough that
         // the indexes will all fit in the CPU cache at once so we can process the data in an
@@ -140,8 +140,11 @@ class GpuKeyBatchingIterator private (
               peak += GpuColumnVector.getTotalDeviceMemoryUsed(concated)
               GpuColumnVector.from(concated, types)
             }
-          } else {
+          } else if (toConcat.nonEmpty) {
             GpuColumnVector.from(toConcat.head, types)
+          } else {
+            // We got nothing but have to do something
+            GpuColumnVector.emptyBatchFromTypes(types)
           }
         }
       }
@@ -161,45 +164,48 @@ class GpuKeyBatchingIterator private (
         val nextTime = System.nanoTime() - startNextTime
         totalTime += nextTime
         collectTime += nextTime
-        numInputRows += cb.numRows()
         numInputBatches += 1
-        withResource(new MetricRange(totalTime)) { _ =>
-          if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
-            // No need to do a split on the final row and create extra work this is the last batch
-            withResource(GpuColumnVector.from(cb)) { table =>
-              val ret = concatPending(Some(table))
-              numOutputRows += ret.numRows()
-              numOutputBatches += 1
-              return ret
-            }
-          }
-          // else not the last batch split so the final key group is not in this batch...
-          val cutoff = getKeyCutoff(cb)
-          if (cutoff <= 0) {
-            val cbSize = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-            peakDevMemory.set(Math.max(peakDevMemory.value, cbSize))
-            // Everything is for a single key, so save it away and try the next batch...
-            pending +=
-                SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
-                  SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
-            pendingSize += cbSize
-          } else {
-            var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
-            withResource(GpuColumnVector.from(cb)) { table =>
-              withResource(table.contiguousSplit(cutoff)) { tables =>
-                assert(tables.length == 2)
-                val ret = concatPending(Some(tables(0).getTable))
-                peak += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
-                val savedSize = tables(1).getBuffer.getLength
-                peak += savedSize
-                pending +=
-                    SpillableColumnarBatch(tables(1), types,
-                      SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
-                pendingSize += savedSize
+        val numRows = cb.numRows()
+        if (numRows > 0) { // else filter it out...
+          numInputRows += numRows
+          withResource(new MetricRange(totalTime)) { _ =>
+            if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
+              // No need to do a split on the final row and create extra work this is the last batch
+              withResource(GpuColumnVector.from(cb)) { table =>
+                val ret = concatPending(Some(table))
                 numOutputRows += ret.numRows()
                 numOutputBatches += 1
-                peakDevMemory.set(Math.max(peakDevMemory.value, peak))
                 return ret
+              }
+            }
+            // else not the last batch split so the final key group is not in this batch...
+            val cutoff = getKeyCutoff(cb)
+            if (cutoff <= 0) {
+              val cbSize = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+              peakDevMemory.set(Math.max(peakDevMemory.value, cbSize))
+              // Everything is for a single key, so save it away and try the next batch...
+              pending +=
+                  SpillableColumnarBatch(GpuColumnVector.incRefCounts(cb),
+                    SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+              pendingSize += cbSize
+            } else {
+              var peak = GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+              withResource(GpuColumnVector.from(cb)) { table =>
+                withResource(table.contiguousSplit(cutoff)) { tables =>
+                  assert(tables.length == 2)
+                  val ret = concatPending(Some(tables(0).getTable))
+                  peak += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
+                  val savedSize = tables(1).getBuffer.getLength
+                  peak += savedSize
+                  pending +=
+                      SpillableColumnarBatch(tables(1), types,
+                        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                  pendingSize += savedSize
+                  numOutputRows += ret.numRows()
+                  numOutputBatches += 1
+                  peakDevMemory.set(Math.max(peakDevMemory.value, peak))
+                  return ret
+                }
               }
             }
           }

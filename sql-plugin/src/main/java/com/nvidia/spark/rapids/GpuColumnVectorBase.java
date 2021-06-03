@@ -30,7 +30,7 @@ abstract class GpuColumnVectorBase extends ColumnVector {
 
   /**
    * Set if this is a part of the final batch for this partition or not.
-   * @param isFinal true this is part of the final batch false, it is unknown.
+   * @param isFinal true if this is part of the final batch or false if unknown.
    */
   public final void setFinalBatch(boolean isFinal) {
     isFinalBatch = isFinal;
