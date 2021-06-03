@@ -47,26 +47,29 @@ For usage see below:
 
   val outputDirectory: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Base output directory. Default is current directory",
+      descr = "Base output directory. Default is current directory for the default filesystem." +
+        " The final output will go into a subdirectory called" +
+        " rapids_4_spark_qualification_output. It will overwrite any existing directory" +
+        " with the same name.",
       default = Some("."))
   val outputFormat: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Output format, supports csv and text. Default is csv that creates a" +
-        " subdirectory rapids_4_spark_qualification in the outputDirectory. This" +
-        " option will overwrite any existing directory with the same name. text output format" +
-        " create a file named rapids_4_spark_qualification.log in the outputDirectory. ",
+      descr = "Output format, supports csv and text. Default is csv." +
+        " text output format creates a file named rapids_4_spark_qualification.log" +
+        " while csv will create a file using the standard Spark naming convention.",
       default = Some("csv"))
   val eventlog: ScallopOption[List[String]] =
     trailArg[List[String]](required = true,
-      descr = "Event log filenames(space separated). " +
-          "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
+      descr = "Event log filenames(space separated) or directories containing event logs." +
+          " eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
-      descr = "Number of output rows for each Application. Default is 1000")
+      descr = "Number of output rows for each Application. Default is 1000.")
   val includeExecCpuPercent: ScallopOption[Boolean] =
     opt[Boolean](
       required = false,
       default = Some(false),
-      descr = "Include the executor CPU time percent. It will take longer with this option.")
+      descr = "Include the executor CPU time percent. It will take longer with this option" +
+        " and you may want to limit the number of applications processed at once")
   verify()
 }
