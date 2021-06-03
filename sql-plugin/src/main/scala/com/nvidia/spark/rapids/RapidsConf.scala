@@ -357,7 +357,6 @@ object RapidsConf {
         "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
         "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
         "memory usage")
-      .internal()
       .booleanConf
       .createWithDefault(false)
 
