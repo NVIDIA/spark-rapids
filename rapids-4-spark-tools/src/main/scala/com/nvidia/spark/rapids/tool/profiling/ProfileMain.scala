@@ -114,14 +114,14 @@ object ProfileMain extends Logging {
      */
     def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
-        logInfo(s"### A. Compare Information Collected ###")
+        fileWriter.write(s"### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps, fileWriter)
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareRapidsProperties()
       } else {
         val collect = new CollectInformation(apps, fileWriter)
-        logInfo(s"### A. Information Collected ###")
+        fileWriter.write(s"### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
         collect.printRapidsProperties()
@@ -129,9 +129,11 @@ object ProfileMain extends Logging {
         collect.printSQLPlanMetrics(generateDot, appArgs.outputDirectory())
       }
 
-      logInfo(s"### B. Analysis ###")
+
+      fileWriter.write(s"### B. Analysis ###")
       val analysis = new Analysis(apps, Some(fileWriter))
       analysis.jobAndStageMetricsAggregation()
+      analysis.shuffleSkewCheck()
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {

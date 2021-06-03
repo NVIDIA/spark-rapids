@@ -514,7 +514,8 @@ class ApplicationInfo(
       query: String,
       vertical: Boolean = false,
       fileWriter: Option[FileWriter] = None,
-      messageHeader: String = ""): DataFrame = {
+      messageHeader: String = "",
+      skipWriteIfEmpty: Boolean = false): DataFrame = {
     logDebug("Running:" + query)
     val df = sparkSession.sql(query)
     fileWriter.foreach { writer =>
