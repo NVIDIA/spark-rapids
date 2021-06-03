@@ -105,6 +105,8 @@ def test_single_nested_orderby_with_limit(data_gen, order):
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_sort_in_part(data_gen, order):
+    # This outputs the source data frame each time to debug intermittent test
+    # failures as documented here: https://github.com/NVIDIA/spark-rapids/issues/2477
     def doit(spark):
         df = unary_op_df(spark, data_gen)
         debug_df(df)
