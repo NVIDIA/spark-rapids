@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
@@ -29,7 +31,8 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CollectInformation mainly print information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter) {
+class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
+    fileWriter: FileWriter) extends Logging {
 
   require(apps.nonEmpty)
 
@@ -79,7 +82,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWri
     }
   }
 
-  def generateDot(outputDirectory: String): Unit = {
+  def generateDot(outputDirectory: String, accumsOpt: Option[DataFrame]): Unit = {
     for (app <- apps) {
       val requiredDataFrames = Seq("sqlMetricsDF", "driverAccumDF",
           "taskStageAccumDF", "taskStageAccumDF")
@@ -110,6 +113,20 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWri
         val missingDataFrames = requiredDataFrames.filterNot(app.allDataFrames.contains)
         fileWriter.write(s"Could not generate DOT graph for app ${app.appId} " +
           s"because of missing data frames: ${missingDataFrames.mkString(", ")}\n")
+      }
+    }
+  }
+
+  // Print SQL Plan Metrics
+  def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String): Unit ={
+    for (app <- apps){
+      // TODO - test with missing tables
+      val messageHeader = "\n SQL Plan Metrics for Application:\n"
+      val accums = app.runQuery(app.generateSQLAccums, fileWriter = Some(fileWriter),
+        messageHeader=messageHeader)
+      if (shouldGenDot) {
+        logWarning("in app for print sql plan - gen dot ")
+        generateDot(outputDir, Some(accums))
       }
     }
   }

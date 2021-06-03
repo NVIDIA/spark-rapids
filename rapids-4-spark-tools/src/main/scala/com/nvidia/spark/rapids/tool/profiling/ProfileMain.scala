@@ -125,9 +125,8 @@ object ProfileMain extends Logging {
         collect.printAppInfo()
         collect.printExecutorInfo()
         collect.printRapidsProperties()
-        if (generateDot) {
-          collect.generateDot(appArgs.outputDirectory())
-        }
+        collect.printRapidsJAR()
+        collect.printSQLPlanMetrics(generateDot, appArgs.outputDirectory())
       }
 
       logInfo(s"### B. Analysis ###")
