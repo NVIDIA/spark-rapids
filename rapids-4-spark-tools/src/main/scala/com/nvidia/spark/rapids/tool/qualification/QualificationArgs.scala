@@ -70,6 +70,6 @@ For usage see below:
       required = false,
       default = Some(false),
       descr = "Include the executor CPU time percent. It will take longer with this option" +
-        " and you may want to limit the number of applications processed at once")
+        " and you may want to limit the number of applications processed at once.")
   verify()
 }

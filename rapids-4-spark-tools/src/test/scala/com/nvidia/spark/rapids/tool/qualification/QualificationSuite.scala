@@ -43,10 +43,9 @@ class QualificationSuite extends FunSuite with Logging {
         val outputArgs = Array(
           "--output-directory",
           outpath.getAbsolutePath())
-        val allArgs = if (hasExecCpu) {
-          outputArgs ++ Array("--include-exec-cpu-percent")
-        } else {
-          outputArgs
+        val allArgs = hasExecCpu match  {
+          case true => outputArgs ++ Array("--include-exec-cpu-percent")
+          case false => outputArgs
         }
         val appArgs = new QualificationArgs(allArgs ++ eventLogs)
 
@@ -62,14 +61,12 @@ class QualificationSuite extends FunSuite with Logging {
           dfQual.except(dfExpect).union(dfExpect.except(dfExpect)).count
         }.getOrElse(-1)
 
-
-        // print off for easier debugging
+        // print for easier debugging
         if (diffCount != 0) {
           logWarning("Diff:")
           dfExpect.show()
           dfQualOpt.foreach(_.show())
         }
-
         assert(diffCount == 0)
       }
     }
