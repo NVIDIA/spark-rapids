@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling.Analysis
-import com.nvidia.spark.rapids.tool.qualification.QualificationMain.{logApplicationInfo, logInfo}
+import com.nvidia.spark.rapids.tool.qualification.QualificationMain.logApplicationInfo
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
@@ -26,6 +26,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.rapids.tool.profiling._
+import org.apache.spark.sql.types.StringType
 
 /**
  * Ranks the applications for GPU acceleration.
@@ -103,8 +104,23 @@ object Qualification extends Logging {
     finalDf
   }
 
+  def castQualColsToStrings(df: DataFrame, includeCpuPercent: Boolean): DataFrame = {
+    val cols = Array(col("App Name"), col("App ID"),
+      col("Rank").cast(StringType),
+      col("Potential Problems"),
+      col("SQL Dataframe Duration").cast(StringType),
+      col("App Duration").cast(StringType))
+    val finalCols = includeCpuPercent match {
+      case true =>
+        cols ++ Array(col("Executor CPU Time Percent").cast(StringType))
+      case false =>
+        cols
+    }
+    df.select(finalCols:_*)
+  }
+
   def writeQualification(df: DataFrame,
-      outputDir: String, format: String): Unit = {
+      outputDir: String, format: String, includeCpuPercent:Boolean): Unit = {
     format match {
       case "csv" =>
         df.repartition(1).write.option("header", "true").
@@ -117,7 +133,7 @@ object Qualification extends Logging {
         val fs = FileSystem.get(outputFilePath.toUri, new Configuration())
         val outFile = fs.create(outputFilePath)
         // outFile.writeUTF(ToolUtils.showString(df, 1000))
-        df.repartition(1).write.option("header", "true").
+        castQualColsToStrings(df, includeCpuPercent).repartition(1).write.option("header", "true").
           mode("overwrite").text(s"$outputDir/rapids_4_spark_qualification_output_text")
         outFile.flush()
         outFile.close()

@@ -62,13 +62,15 @@ object QualificationMain extends Logging {
         allPaths ++= paths
       }
     }
+    val includeCpuPercent = appArgs.includeExecCpuPercent.getOrElse(false)
     val df = Qualification.qualifyApps(allPaths,
       appArgs.numOutputRows.getOrElse(1000), sparkSession,
-      appArgs.includeExecCpuPercent.getOrElse(false))
+      includeCpuPercent)
     logWarning("done qualify, before write")
 
     if (writeOutput) {
-      Qualification.writeQualification(df, outputDirectory, appArgs.outputFormat.getOrElse("csv"))
+      Qualification.writeQualification(df, outputDirectory,
+        appArgs.outputFormat.getOrElse("csv"), includeCpuPercent)
     }
 
     (0, Some(df))
