@@ -179,7 +179,7 @@ object QualificationInfoUtils extends Logging {
     } else if (logType.toLowerCase.equals("dsanddf")) {
       genDatasetEventLog(spark, size)
       genjoinDataFrameOpEventLog(spark)
-      enjoinDataFrameOpEventLog(spark)
+      genjoinDataFrameOpEventLog(spark)
       genjoinDataFrameOpEventLog(spark)
     } else {
       println(s"ERROR: Invalid log type specified: $logType")
