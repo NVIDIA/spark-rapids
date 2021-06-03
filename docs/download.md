@@ -18,6 +18,50 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
+## Release v21.06.0
+Starting with release 21.06.0, the project is moving to calendar versioning, with the first two
+digits representing the year, the second two digits representing the month, and the last digit
+representing the patch version of the release. 
+
+Hardware Requirements: 
+
+	GPU Architecture: NVIDIA V100, T4 and A30/A100 GPUs
+
+Software Requirements:
+
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS8
+	
+	CUDA & Nvidia Drivers: 11.0, 11.2 & v450.80.02+
+	
+	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0 
+	
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+	
+	Python 3.6+, Scala 2.12, Java 8 
+
+### Download v21.06.0
+* Download [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.0/rapids-4-spark_2.12-21.06.0.jar)
+* Download RAPIDS cuDF 21.06.0 for your system:
+  * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11.jar)
+  * [cuDF 11.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11-2.jar)
+
+### Release Notes
+New functionality for this release includes:
+* Support for running on Cloudera CDP 7.1.7 and Databricks 8.2 ML 
+* Window lead / lag for arrays, range windows supporting non-timestamp order by expressions
+* Concatenation of array columns, casting arrays of floats to arrays of doubles, creation of 2D array types, hash partitioning with
+  arrays
+* Explode takes expressions that generate arrays
+* Caching of structs, sorting on struct keys, structs with map values
+* Enabling large joins that can spill out of memory
+* Support for the `concat_ws` operator
+
+Performance improvements for this release include: 
+* Updates to UCX error handling
+* GPU Direct storage for spilling
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 
 ## Release v0.5.0
 
