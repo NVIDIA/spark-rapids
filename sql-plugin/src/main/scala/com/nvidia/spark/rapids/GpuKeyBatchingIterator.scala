@@ -70,6 +70,7 @@ class GpuKeyBatchingIterator private (
         // the indexes will all fit in the CPU cache at once so we can process the data in an
         // efficient way.
         val maxRow = cb.numRows() - 1
+        require(maxRow >= 0)
         val rowsPerBatch = Math.max(1, Math.ceil(cb.numRows()/16.0).toInt)
         val probePoints = (1 to 16).map(idx => Math.min(maxRow, idx * rowsPerBatch)).distinct
         val searchTab = withResource(ColumnVector.fromInts(probePoints: _*)) { gatherMap =>
