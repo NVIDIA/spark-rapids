@@ -66,7 +66,7 @@ class RapidsGdsStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with
     val batchWriteBufferSize = 16384 // Holds 2 buffers.
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
       withResource(new RapidsGdsStore(
-        diskBlockManager, batchWriteBufferSize, catalog)) { gdsStore =>
+        diskBlockManager, batchWriteBufferSize, false, 65536, catalog)) { gdsStore =>
 
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)
@@ -111,7 +111,8 @@ class RapidsGdsStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with
     val spillPriority = -7
     val catalog = spy(new RapidsBufferCatalog)
     withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsGdsStore(mock[RapidsDiskBlockManager], 4096, catalog)) { gdsStore =>
+      withResource(new RapidsGdsStore(mock[RapidsDiskBlockManager], 4096, false, 65536, catalog)) {
+        gdsStore =>
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)
         val bufferSize = addTableToStore(devStore, bufferId, spillPriority)
