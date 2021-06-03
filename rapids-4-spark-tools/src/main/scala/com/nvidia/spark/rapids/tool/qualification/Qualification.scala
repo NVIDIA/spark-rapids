@@ -105,25 +105,24 @@ object Qualification extends Logging {
 
   def writeQualification(df: DataFrame,
       outputDir: String, format: String): Unit = {
-    // val fileWriter = apps.head.fileWriter
-    // val dfRenamed = apps.head.renameQualificationColumns(df)
-    if (format.equals("csv")) {
-      df.repartition(1).write.option("header", "true").
-        mode("overwrite").csv(s"$outputDir/rapids_4_spark_qualification_output")
-      logInfo(s"Output log location:  $outputDir")
-    } else {
-      // This tool's output log file name
-      val logFileName = "rapids_4_spark_qualification_output.log"
-      val outputFilePath = new Path(s"$outputDir/$logFileName")
-      val fs = FileSystem.get(outputFilePath.toUri, new Configuration())
-      val outFile = fs.create(outputFilePath)
-      outFile.writeUTF(ToolUtils.showString(df, 1000))
-      outFile.flush()
-      outFile.close()
-      logInfo(s"Output log location: $outputFilePath")
+    format match {
+      case "csv" =>
+        df.repartition(1).write.option("header", "true").
+          mode("overwrite").csv(s"$outputDir/rapids_4_spark_qualification_output")
+        logInfo(s"Output log location:  $outputDir")
+      case "text" =>
+        // This tool's output log file name
+        val logFileName = "rapids_4_spark_qualification_output.log"
+        val outputFilePath = new Path(s"$outputDir/$logFileName")
+        val fs = FileSystem.get(outputFilePath.toUri, new Configuration())
+        val outFile = fs.create(outputFilePath)
+        // outFile.writeUTF(ToolUtils.showString(df, 1000))
+        df.repartition(1).write.option("header", "true").
+          mode("overwrite").text(s"$outputDir/rapids_4_spark_qualification_output_text")
+        outFile.flush()
+        outFile.close()
+        logInfo(s"Output log location: $outputFilePath")
+      case _ => logError("Invalid format")
     }
-
-    // fileWriter.write("\n" + ToolUtils.showString(dfRenamed,
-    //   apps(0).numOutputRows))
   }
 }
