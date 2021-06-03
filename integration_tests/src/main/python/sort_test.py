@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_collect_debug
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -105,12 +105,11 @@ def test_single_nested_orderby_with_limit(data_gen, order):
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_sort_in_part(data_gen, order):
-    assert_gpu_and_cpu_are_equal_collect_debug(
-        lambda spark: unary_op_df(spark, data_gen),
-        lambda df: df.sortWithinPartitions(order),
-        conf = allow_negative_scale_of_decimal_conf,
-        debug = True)
-
+    def doit(spark):
+        df = unary_op_df(spark, data_gen)
+        debug_df(df)
+        return df.sortWithinPartitions(order)
+    assert_gpu_and_cpu_are_equal_collect(doit, conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
 @pytest.mark.parametrize('order', [
