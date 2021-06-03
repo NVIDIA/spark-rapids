@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling.Analysis
-import com.nvidia.spark.rapids.tool.qualification.QualificationMain.logApplicationInfo
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
@@ -33,8 +32,12 @@ import org.apache.spark.sql.types.StringType
  */
 object Qualification extends Logging {
 
-  def qualifyApps(allPaths: ArrayBuffer[Path],
-      numRows: Int, sparkSession: SparkSession, includeCpuPercent: Boolean): DataFrame = {
+  def logApplicationInfo(app: ApplicationInfo) = {
+    logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
+  }
+
+  def qualifyApps(allPaths: ArrayBuffer[Path], numRows: Int, sparkSession: SparkSession,
+      includeCpuPercent: Boolean, dropTempViews: Boolean): DataFrame = {
     var index: Int = 1
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths.filterNot(_.getName.contains("."))) {
@@ -56,9 +59,10 @@ object Qualification extends Logging {
     }
 
     val df = constructQueryQualifyApps(apps, includeCpuPercent)
-    // sparkSession.catalog.dropTempView("sqlAggMetricsDF")
-    // apps.foreach( _.dropAllTempViews())
-    // apps.head.renameQualificationColumns(df)
+    if (dropTempViews) {
+      sparkSession.catalog.dropTempView("sqlAggMetricsDF")
+      apps.foreach( _.dropAllTempViews())
+    }
     df
   }
 
@@ -66,80 +70,36 @@ object Qualification extends Logging {
       includeCpuPercent: Boolean): DataFrame = {
     val query = apps
       .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map {
-        if (includeCpuPercent) {
-          "(" + _.qualificationDurationSumSQL + ")"
-        } else {
-          "(" + _.qualificationDurationNoMetricsSQL + ")"
+      .map { app =>
+        includeCpuPercent match {
+          case true => "(" + app.qualificationDurationSumSQL + ")"
+          case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
         }
       }.mkString(" union ")
     val df = apps.head.runQuery(query + " order by Rank desc, `App Duration` desc")
     df
   }
 
-  def qualifyApps2(apps: ArrayBuffer[ApplicationInfo]): DataFrame = {
-
-    // The query generated for a lot of apps is to big and Spark analyzer
-    // takes forever to handle. Break it up and do a few apps at a time and then
-    // cache and union at the end. The results of each query per app is tiny so
-    // caching should not use much memory.
-    val groupedApps = apps.
-      filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}")).grouped(4)
-    val queries = groupedApps.map { group =>
-      group.map("(" + _.qualificationDurationSumSQL + ")")
-        .mkString(" union ")
-    }
-    val subqueryResults = queries.map { query =>
-      apps.head.runQuery(query)
-    }
-    val cached = subqueryResults.toArray
-    //val cached = subqueryResults.map(_.cache()).toArray
-    // materialize the cached datasets
-    // cached.foreach(_.count())
-    val finalDf = if (cached.size > 1) {
-      cached.reduce(_ union _).orderBy(col("dfRankTotal").desc, col("appDuration").desc)
-    } else {
-      cached.head.orderBy(col("dfRankTotal").desc, col("appDuration").desc)
-    }
-    finalDf
-  }
-
-  def castQualColsToStrings(df: DataFrame, includeCpuPercent: Boolean): DataFrame = {
-    val cols = Array(col("App Name"), col("App ID"),
-      col("Rank").cast(StringType),
-      col("Potential Problems"),
-      col("SQL Dataframe Duration").cast(StringType),
-      col("App Duration").cast(StringType))
-    val finalCols = includeCpuPercent match {
-      case true =>
-        cols ++ Array(col("Executor CPU Time Percent").cast(StringType))
-      case false =>
-        cols
-    }
-    df.select(finalCols:_*)
-  }
-
-  def writeQualification(df: DataFrame,
-      outputDir: String, format: String, includeCpuPercent:Boolean): Unit = {
+  def writeQualification(df: DataFrame, outputDir: String,
+      format: String, includeCpuPercent:Boolean, numOutputRows: Int): Unit = {
+    val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
     format match {
       case "csv" =>
         df.repartition(1).write.option("header", "true").
-          mode("overwrite").csv(s"$outputDir/rapids_4_spark_qualification_output")
+          mode("overwrite").csv(finalOutputDir)
         logInfo(s"Output log location:  $outputDir")
       case "text" =>
         // This tool's output log file name
         val logFileName = "rapids_4_spark_qualification_output.log"
-        val outputFilePath = new Path(s"$outputDir/$logFileName")
+        val outputFilePath = new Path(s"$finalOutputDir/$logFileName")
         val fs = FileSystem.get(outputFilePath.toUri, new Configuration())
+        // this overwrites existing path
         val outFile = fs.create(outputFilePath)
-        outFile.writeUTF(ToolUtils.showString(df, 1000))
+        outFile.writeBytes(ToolUtils.showString(df, numOutputRows))
         outFile.flush()
         outFile.close()
         logInfo(s"Output log location: $outputFilePath")
       case _ => logError("Invalid format")
     }
-
-    // fileWriter.write("\n" + ToolUtils.showString(dfRenamed,
-    //   apps(0).numOutputRows))
   }
 }

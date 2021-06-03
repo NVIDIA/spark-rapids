@@ -48,7 +48,7 @@ object QualificationMain extends Logging {
    * Entry point for tests
    */
   def mainInternal(sparkSession: SparkSession, appArgs: QualificationArgs,
-      writeOutput: Boolean = true): (Int, Option[DataFrame]) = {
+      writeOutput: Boolean = true, dropTempViews: Boolean = false): (Int, Option[DataFrame]) = {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
@@ -63,20 +63,14 @@ object QualificationMain extends Logging {
       }
     }
     val includeCpuPercent = appArgs.includeExecCpuPercent.getOrElse(false)
+    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
     val df = Qualification.qualifyApps(allPaths,
-      appArgs.numOutputRows.getOrElse(1000), sparkSession,
-      includeCpuPercent)
-    logWarning("done qualify, before write")
-
+      numOutputRows, sparkSession, includeCpuPercent, dropTempViews)
     if (writeOutput) {
       Qualification.writeQualification(df, outputDirectory,
-        appArgs.outputFormat.getOrElse("csv"), includeCpuPercent)
+        appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)
     }
-
     (0, Some(df))
   }
 
-  def logApplicationInfo(app: ApplicationInfo) = {
-      logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-  }
 }

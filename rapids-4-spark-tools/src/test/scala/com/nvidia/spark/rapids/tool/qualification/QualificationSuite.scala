@@ -51,7 +51,8 @@ class QualificationSuite extends FunSuite with Logging {
         val appArgs = new QualificationArgs(allArgs ++ eventLogs)
 
         val (exit, dfQualOpt) =
-          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false)
+          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
+            dropTempViews=true)
         assert(exit == 0)
         // make sure to change null value so empty strings don't show up as nulls
         val dfExpectOrig = sparkSession.read.option("header", "true").
