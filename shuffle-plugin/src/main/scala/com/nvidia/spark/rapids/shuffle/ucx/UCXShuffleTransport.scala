@@ -91,13 +91,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   private val altList = new HashedPriorityQueue[PendingTransferRequest](
     1000,
     (t: PendingTransferRequest, t1: PendingTransferRequest) => {
-      if (t.getLength < t1.getLength) {
-        -1;
-      } else if (t.getLength > t1.getLength) {
-        1;
-      } else {
-        0
-      }
+      java.lang.Long.compare(t.getLength, t1.getLength)
     })
 
   // access to this set must hold the `altList` lock
@@ -489,10 +483,12 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     altList.synchronized {
       if (validHandlers.contains(handler)) {
         // This is expensive, but will be refactored with a queue per client.
-        // As it stands, in the good case it should be invoked once per task/peer,
-        // on task completion, and `altList` should be empty
-        // will be skipped.
-        // When there are errors, we would get more invocations.
+        // As it stands, in the good case, it should be invoked once per task/peer,
+        // on task completion, and `altList` should be empty, turning this into
+        // mostly a noop.
+        // When there are errors, we will get more invocations, specifically as `transferError`
+        // is handled by `RapidsShuffleFetchHandler` and then later when the task finally
+        // fails.
         if (!altList.isEmpty) {
           val it = altList.iterator()
           val toRemove = new ArrayBuffer[PendingTransferRequest]()
