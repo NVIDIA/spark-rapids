@@ -15,7 +15,22 @@
  */
 package org.apache.spark.sql
 
+import java.io.File
+
+import org.apache.spark.util.Utils
+
 object TrampolineUtil {
   /** Shuts down and cleans up any existing Spark session */
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+
+  def withTempPath(f: File => Unit): Unit = {
+    val path = Utils.createTempDir()
+    path.delete()
+    try f(path) finally Utils.deleteRecursively(path)
+  }
+
+  def withTempDir(f: File => Unit): Unit = {
+    val path = Utils.createTempDir()
+    try f(path) finally Utils.deleteRecursively(path)
+  }
 }

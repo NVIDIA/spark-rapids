@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.io.FileWriter
+
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
@@ -23,10 +25,10 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 /**
  * CompareApplications compares multiple ApplicationInfo objects
  */
-class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
+class CompareApplications(apps: ArrayBuffer[ApplicationInfo],
+    fileWriter: FileWriter) extends Logging {
 
   require(apps.size>1)
-  private val fileWriter = apps.head.fileWriter
 
   // Compare the App Information.
   def compareAppInfo(): Unit = {
@@ -42,7 +44,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
       }
       i += 1
     }
-    apps.head.runQuery(query = query, writeToFile = true, messageHeader = messageHeader)
+    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
   }
 
   // Compare Executors information
@@ -59,7 +61,7 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
       }
       i += 1
     }
-    apps.head.runQuery(query = query, writeToFile = true, messageHeader = messageHeader)
+    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
   }
 
   // Compare Rapids Properties which are set explicitly
@@ -97,6 +99,6 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo]) extends Logging {
     query = withClauseAllKeys + selectKeyPart + selectValuePart +
         " from (\n" + query + "\n) order by key"
     logDebug("Running query " + query)
-    apps.head.runQuery(query = query, writeToFile = true, messageHeader = messageHeader)
+    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
   }
 }

@@ -77,6 +77,11 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+              <directory>${project.basedir}/src/main/resources</directory>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.scala-tools</groupId>
@@ -121,6 +126,12 @@
                                 </includes>
                             </artifactSet>
                             <filters>
+                                <filter>
+                                    <artifact>org.rogach:scallop_${scala.binary.version}:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.MF</exclude>
+                                    </excludes>
+                                </filter>
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
