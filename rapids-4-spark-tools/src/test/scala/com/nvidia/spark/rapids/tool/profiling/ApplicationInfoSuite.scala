@@ -56,6 +56,9 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(apps.head.stageSubmitted(2).stageId.equals(2))
       assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
       assert(apps.head.taskEnd(apps.head.index).endReason.equals("Success"))
+      assert(apps.head.executors.head.totalCores.equals(8))
+      println(apps.head.resourceProfiles.head.exec_mem)
+      assert(apps.head.resourceProfiles.head.exec_mem.equals(1024L))
     } finally {
       fileWriter.close()
       tempFile.deleteOnExit()

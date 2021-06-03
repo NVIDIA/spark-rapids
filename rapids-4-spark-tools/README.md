@@ -50,7 +50,15 @@ export AWS_SECRET_ACCESS_KEY=xxx
 # Change output directory to /tmp. It outputs as "rapids_4_spark_tools_output.log" in the local directory if the output directory is not specified.
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -o /tmp /path/to/eventlog1
 
+# Filter eventlogs to be processed. 10 newest file with filenames containing "local"
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -m "local" -f "10-newest" /path/to/eventlog1
+
 For usage see below:
+  -c, --compare                   Compare Applications (Recommended to compare
+                                  less than 10 applications). Default is false
+  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for processing
+  -m, --match-event-logs  <arg>   Filter event logs which matches the input
+  -n, --num-output-rows  <arg>    Number of output rows for each Application. Default is 1000
   -o, --output-directory  <arg>   Output directory. Default is current directory
   -h, --help                      Show help message
 
