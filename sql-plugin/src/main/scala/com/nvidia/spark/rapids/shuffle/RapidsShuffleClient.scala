@@ -95,7 +95,7 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
  */
 class RapidsShuffleClient(
     localExecutorId: Long,
-    connection: ClientConnection,
+    val connection: ClientConnection,
     transport: RapidsShuffleTransport,
     exec: Executor,
     clientCopyExecutor: Executor,
@@ -262,6 +262,7 @@ class RapidsShuffleClient(
    *                           the transport's throttle logic.
    */
   private[shuffle] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
+
     try {
       if (!bufferReceiveState.hasIterated) {
         sendTransferRequest(bufferReceiveState)
@@ -366,6 +367,16 @@ class RapidsShuffleClient(
     if (ptrs.nonEmpty) {
       transport.queuePending(ptrs)
     }
+  }
+
+  /**
+   * Cancel pending requests for handler `handler` to the peer represented by this client.
+   * @param handler instance to use to find requests to cancel
+   * @note this currently only cancels pending requests that are queued in the transport,
+   *       and not in flight.
+   */
+  def cancelPending(handler: RapidsShuffleFetchHandler): Unit = {
+    transport.cancelPending(handler)
   }
 
   /**
