@@ -87,7 +87,7 @@ object Qualification extends Logging {
       case "csv" =>
         df.repartition(1).write.option("header", "true").
           mode("overwrite").csv(finalOutputDir)
-        logInfo(s"Output log location:  $outputDir")
+        logInfo(s"Output log location:  $finalOutputDir")
       case "text" =>
         // This tool's output log file name
         val logFileName = "rapids_4_spark_qualification_output.log"
