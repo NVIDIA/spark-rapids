@@ -28,8 +28,10 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
     TrampolineUtil.cleanupAnyExistingSession()
     val totalGpuSize = Cuda.memGetInfo().total
     val initPoolFraction = 0.1
-    val minPoolFraction = 0.01
     val maxPoolFraction = 0.2
+    // we need to reduce the minAllocFraction for this test since the
+    // initial allocation here is less than the default minimum
+    val minPoolFraction = 0.01
     val conf = new SparkConf()
         .set(RapidsConf.POOLED_MEM.key, "true")
         .set(RapidsConf.RMM_POOL.key, "ARENA")
