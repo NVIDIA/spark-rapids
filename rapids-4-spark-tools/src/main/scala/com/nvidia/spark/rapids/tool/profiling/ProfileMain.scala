@@ -73,8 +73,7 @@ object ProfileMain extends Logging {
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
       var index: Int = 1
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-        apps += new ApplicationInfo(numOutputRows, sparkSession,
-          path, index)
+        apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
         index += 1
       }
 
@@ -94,8 +93,7 @@ object ProfileMain extends Logging {
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
         // This apps only contains 1 app in each loop.
         val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        val app = new ApplicationInfo(numOutputRows, sparkSession,
-          path, index)
+        val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
         apps += app
         logApplicationInfo(app)
         processApps(apps, appArgs.generateDot())
