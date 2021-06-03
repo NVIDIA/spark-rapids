@@ -68,10 +68,5 @@ For usage see below:
       required = false,
       default = Some(false),
       descr = "Include the executor CPU time percent. It will take longer with this option.")
-
-  validateOpt(outputFormat) {
-    case Some("text") | Some("csv") => Right(Unit)
-    case _ => Left(s"Invalid format - must be 'csv' or 'text'.")
-  }
   verify()
 }

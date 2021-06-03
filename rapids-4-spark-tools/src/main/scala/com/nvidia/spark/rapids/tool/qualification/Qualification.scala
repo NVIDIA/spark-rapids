@@ -132,13 +132,14 @@ object Qualification extends Logging {
         val outputFilePath = new Path(s"$outputDir/$logFileName")
         val fs = FileSystem.get(outputFilePath.toUri, new Configuration())
         val outFile = fs.create(outputFilePath)
-        // outFile.writeUTF(ToolUtils.showString(df, 1000))
-        castQualColsToStrings(df, includeCpuPercent).repartition(1).write.option("header", "true").
-          mode("overwrite").text(s"$outputDir/rapids_4_spark_qualification_output_text")
+        outFile.writeUTF(ToolUtils.showString(df, 1000))
         outFile.flush()
         outFile.close()
         logInfo(s"Output log location: $outputFilePath")
       case _ => logError("Invalid format")
     }
+
+    // fileWriter.write("\n" + ToolUtils.showString(dfRenamed,
+    //   apps(0).numOutputRows))
   }
 }
