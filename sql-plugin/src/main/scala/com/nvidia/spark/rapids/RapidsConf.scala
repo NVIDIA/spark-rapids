@@ -320,10 +320,11 @@ object RapidsConf {
     .createOptional
 
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
+  private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
-    .doc("The fraction of total GPU memory that should be initially allocated " +
+    .doc("The fraction of available GPU memory that should be initially allocated " +
       "for pooled memory. Extra memory will be allocated as needed, but it may " +
       "result in more fragmentation. This must be less than or equal to the maximum limit " +
       s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
@@ -339,6 +340,13 @@ object RapidsConf {
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
+
+  val RMM_ALLOC_MIN_FRACTION = conf(RMM_ALLOC_MIN_FRACTION_KEY)
+    .doc("The fraction of total GPU memory that limits the minimum size of the RMM pool. " +
+      s"The value must be less than or equal to the setting for $RMM_ALLOC_FRACTION.")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(0.25)
 
   val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
@@ -1379,6 +1387,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmAllocFraction: Double = get(RMM_ALLOC_FRACTION)
 
   lazy val rmmAllocMaxFraction: Double = get(RMM_ALLOC_MAX_FRACTION)
+
+  lazy val rmmAllocMinFraction: Double = get(RMM_ALLOC_MIN_FRACTION)
 
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
