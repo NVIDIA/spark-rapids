@@ -88,7 +88,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
           "taskStageAccumDF", "taskStageAccumDF")
         .map(name => s"${name}_${app.index}")
       if (requiredDataFrames.forall(app.allDataFrames.contains)) {
-        val accums = app.runQuery(app.generateSQLAccums)
+        val accums = accumsOpt.getOrElse(app.runQuery(app.generateSQLAccums))
         val start = System.nanoTime()
         val accumSummary = accums
           .select(col("sqlId"), col("accumulatorId"), col("max_value"))
