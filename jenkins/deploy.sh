@@ -88,3 +88,13 @@ TESTS_DOC_JARS="-Dsources=${TESTS_FPATH}-sources.jar -Djavadoc=${TESTS_FPATH}-ja
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $TESTS_DOC_JARS \
             -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
+
+###### Deploy profiling tool jar(s) ######
+TOOL_PL=${TOOL_PL:-"rapids-4-spark-tools"}
+TOOL_ART_ID=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.artifactId -DforceStdout`
+TOOL_ART_VER=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.version -DforceStdout`
+TOOL_FPATH="$TOOL_PL/target/$TOOL_ART_ID-$TOOL_ART_VER"
+TOOL_DOC_JARS="-Dsources=${TOOL_FPATH}-sources.jar -Djavadoc=${TOOL_FPATH}-javadoc.jar"
+$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+            $TOOL_DOC_JARS \
+            -Dfile=$TOOL_FPATH.jar -DpomFile=${TOOL_PL}/pom.xml
