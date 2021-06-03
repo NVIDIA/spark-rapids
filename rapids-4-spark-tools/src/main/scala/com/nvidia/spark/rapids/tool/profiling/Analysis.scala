@@ -35,7 +35,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
 
   // Job Level TaskMetrics Aggregation
   def jobMetricsAggregation(): Unit = {
-    val messageHeader = "Job level aggregated task metrics:"
+    val messageHeader = "\nJob level aggregated task metrics:\n"
     if (apps.size == 1) {
       apps.head.runQuery(apps.head.jobMetricsAggregationSQL + " order by Duration desc",
         false, fileWriter, messageHeader)
@@ -55,7 +55,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
 
   // Stage Level TaskMetrics Aggregation
   def stageMetricsAggregation(): Unit = {
-    val messageHeader = "Stage level aggregated task metrics:"
+    val messageHeader = "\nStage level aggregated task metrics:\n"
     if (apps.size == 1) {
       apps.head.runQuery(apps.head.stageMetricsAggregationSQL + " order by Duration desc",
         false, fileWriter, messageHeader)
@@ -75,7 +75,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
 
   // Job + Stage Level TaskMetrics Aggregation
   def jobAndStageMetricsAggregation(): Unit = {
-    val messageHeader = "Job + Stage level aggregated task metrics:"
+    val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
     if (apps.size == 1) {
       apps.head.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc",
         false, fileWriter, messageHeader)
@@ -95,10 +95,11 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
   def sqlMetricsAggregation(): DataFrame = {
+    val messageHeader = "\nSQL level aggregated task metrics:\n"
     if (apps.size == 1) {
       if (apps.head.allDataFrames.contains(s"sqlDF_${apps.head.index}")) {
-        val messageHeader = "SQL level aggregated task metrics:"
-        apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc")
+        apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc",
+          false, fileWriter, messageHeader)
       } else {
         apps.head.sparkSession.emptyDataFrame
       }
@@ -112,8 +113,8 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
           query += " union " + app.sqlMetricsAggregationSQL
         }
       }
-      val messageHeader = "SQL level aggregated task metrics:"
-      apps.head.runQuery(query + " order by appIndex, Duration desc")
+      apps.head.runQuery(query + " order by appIndex, Duration desc", false,
+        fileWriter, messageHeader)
     }
   }
 

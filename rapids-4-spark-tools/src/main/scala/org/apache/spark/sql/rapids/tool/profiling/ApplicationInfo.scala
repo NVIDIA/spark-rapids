@@ -518,9 +518,11 @@ class ApplicationInfo(
       skipWriteIfEmpty: Boolean = false): DataFrame = {
     logDebug("Running:" + query)
     val df = sparkSession.sql(query)
-    fileWriter.foreach { writer =>
-      writer.write(messageHeader)
-      writer.write(df.showString(numOutputRows, 0, vertical))
+    if (!skipWriteIfEmpty) {
+      fileWriter.foreach { writer =>
+        writer.write(messageHeader)
+        writer.write(df.showString(numOutputRows, 0, vertical))
+      }
     }
     df
   }

@@ -121,7 +121,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String): Unit ={
     for (app <- apps){
       // TODO - test with missing tables
-      val messageHeader = "\n SQL Plan Metrics for Application:\n"
+      val messageHeader = "\nSQL Plan Metrics for Application:\n"
       val accums = app.runQuery(app.generateSQLAccums, fileWriter = Some(fileWriter),
         messageHeader=messageHeader)
       if (shouldGenDot) {
