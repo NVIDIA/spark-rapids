@@ -729,16 +729,6 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  def renameQualificationColumns(df: DataFrame): DataFrame = {
-    df.withColumnRenamed("appID", "App ID").
-      withColumnRenamed("appName", "App Name").
-      withColumnRenamed("dfDurationFinal", "SQL Dataframe Duration").
-      withColumnRenamed("dfRankTotal", "Rank").
-      withColumnRenamed("appDuration", "App Duration").
-      withColumnRenamed("potentialProblems", "Potential Problems").
-      withColumnRenamed("executorCPURatio", "Executor CPU Time Percent")
-  }
-
   def isDataSetPlan(desc: String): Boolean = {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => true
