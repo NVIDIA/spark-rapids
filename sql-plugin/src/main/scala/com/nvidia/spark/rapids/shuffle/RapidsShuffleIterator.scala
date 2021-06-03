@@ -152,13 +152,13 @@ class RapidsShuffleIterator(
   // `taskAttemptId`.
   case class BlockIdMapIndex(id: ShuffleBlockBatchId, mapIndex: Int)
 
+  private var clientAndHandlers = Seq[(RapidsShuffleClient, RapidsShuffleFetchHandler)]()
+
   def start(): Unit = {
     logInfo(s"Fetching ${blocksByAddress.length} blocks.")
 
     // issue local fetches first
     val (local, remote) = blocksByAddress.partition(ba => ba._1.host == localHost)
-
-    var clients = Seq[RapidsShuffleClient]()
 
     (local ++ remote).foreach {
       case (blockManagerId: BlockManagerId, blockIds: Seq[(BlockId, Long, Int)]) => {
@@ -248,7 +248,7 @@ class RapidsShuffleIterator(
               }
             }
 
-          override def transferError(errorMessage: String, throwable: Throwable): Unit =
+          override def transferError(errorMessage: String, throwable: Throwable): Unit = {
             resolvedBatches.synchronized {
               // If Spark detects a single fetch failure, the whole task has failed
               // as per `FetchFailedException`. In the future `mapIndex` will come from the
@@ -258,16 +258,20 @@ class RapidsShuffleIterator(
                   blockManagerId, id, mapIndex, errorMessage, throwable))
               }
             }
+
+            // tell the client to cancel pending requests
+            client.cancelPending(this)
+          }
         }
 
         logInfo(s"Client $blockManagerId triggered, for ${shuffleRequestsMapIndex.size} blocks")
         client.doFetch(shuffleRequestsMapIndex.map(_.id), handler)
-        clients = clients :+ client
+        clientAndHandlers = clientAndHandlers :+ ((client, handler))
       }
     }
 
     logInfo(s"RapidsShuffleIterator for ${Thread.currentThread()} started with " +
-      s"${clients.size} clients.")
+      s"${clientAndHandlers.size} clients.")
   }
 
   private[this] def receiveBufferCleaner(): Unit = resolvedBatches.synchronized {
@@ -280,6 +284,10 @@ class RapidsShuffleIterator(
           GpuShuffleEnv.getReceivedCatalog.removeBuffer(bufferId)
         case _ =>
       }
+      // tell the client to cancel pending requests
+      clientAndHandlers.foreach {
+        case (client, handler) => client.cancelPending(handler)
+      }
     }
   }
 
@@ -290,7 +298,6 @@ class RapidsShuffleIterator(
 
   private[this] val taskContext: Option[TaskContext] = Option(TaskContext.get())
 
-  //TODO: on task completion we currently don't ask clients to stop/clean resources
   taskContext.foreach(_.addTaskCompletionListener[Unit](_ => receiveBufferCleaner()))
 
   def pollForResult(timeoutSeconds: Long): Option[ShuffleClientResult] = {
