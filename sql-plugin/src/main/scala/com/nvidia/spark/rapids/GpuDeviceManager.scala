@@ -162,6 +162,8 @@ object GpuDeviceManager extends Logging {
     }
   }
 
+  private def toKB(x: Long): Double = x / 1024.0
+
   private def toMB(x: Long): Double = x / 1024 / 1024.0
 
   private def computeRmmInitSizes(conf: RapidsConf, info: CudaMemInfo): (Long, Long) = {
@@ -263,9 +265,19 @@ object GpuDeviceManager extends Logging {
         logInfo("Using legacy default stream")
       }
 
+      val (allocationAlignment, alignmentThreshold) =
+        if (conf.isGdsSpillEnabled && conf.isGdsSpillAlignedIO) {
+          logInfo(s"Using allocation alignment = ${toKB(RapidsGdsStore.AllocationAlignment)} KB, " +
+              s"alignment threshold = ${toKB(conf.gdsSpillAlignmentThreshold)} KB")
+          (RapidsGdsStore.AllocationAlignment, conf.gdsSpillAlignmentThreshold)
+        } else {
+          (0L, 0L)
+        }
+
       try {
         Cuda.setDevice(gpuId)
-        Rmm.initialize(init, logConf, initialAllocation, maxAllocation)
+        Rmm.initialize(
+          init, logConf, initialAllocation, maxAllocation, allocationAlignment, alignmentThreshold)
         RapidsBufferCatalog.init(conf)
         GpuShuffleEnv.init(conf)
       } catch {
