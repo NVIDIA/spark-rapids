@@ -29,10 +29,14 @@ class GpuDeviceManagerSuite extends FunSuite with Arm {
     val totalGpuSize = Cuda.memGetInfo().total
     val initPoolFraction = 0.1
     val maxPoolFraction = 0.2
+    // we need to reduce the minAllocFraction for this test since the
+    // initial allocation here is less than the default minimum
+    val minPoolFraction = 0.01
     val conf = new SparkConf()
         .set(RapidsConf.POOLED_MEM.key, "true")
         .set(RapidsConf.RMM_POOL.key, "ARENA")
         .set(RapidsConf.RMM_ALLOC_FRACTION.key, initPoolFraction.toString)
+        .set(RapidsConf.RMM_ALLOC_MIN_FRACTION.key, minPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_MAX_FRACTION.key, maxPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_RESERVE.key, "0")
     try {
