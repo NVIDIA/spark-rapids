@@ -170,16 +170,24 @@ object GpuDeviceManager extends Logging {
     // Align workaround for https://github.com/rapidsai/rmm/issues/527
     def truncateToAlignment(x: Long): Long = x & ~511L
 
-    var initialAllocation = truncateToAlignment((conf.rmmAllocFraction * info.total).toLong)
-    if (initialAllocation > info.free) {
-      logWarning(s"Initial RMM allocation (${toMB(initialAllocation)} MB) is " +
-          s"larger than free memory (${toMB(info.free)} MB)")
+    var initialAllocation = truncateToAlignment((conf.rmmAllocFraction * info.free).toLong)
+    val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
+    if (initialAllocation < minAllocation) {
+      throw new IllegalArgumentException(s"The initial allocation of " +
+        s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
+        s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was less than " +
+        s"the minimum allocation of ${toMB(minAllocation)} (calculated from " +
+        s"${RapidsConf.RMM_ALLOC_MIN_FRACTION} (=${conf.rmmAllocMinFraction}) " +
+        s"and ${toMB(info.total)} MB total memory)")
     }
     val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
     if (maxAllocation < initialAllocation) {
-      throw new IllegalArgumentException(s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} " +
-          s"configured as ${conf.rmmAllocMaxFraction} which is less than the " +
-          s"${RapidsConf.RMM_ALLOC_FRACTION} setting of ${conf.rmmAllocFraction}")
+      throw new IllegalArgumentException(s"The initial allocation of " +
+        s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
+        s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was more than " +
+        s"the maximum allocation of ${toMB(maxAllocation)} (calculated from " +
+        s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocMaxFraction}) " +
+        s"and ${toMB(info.total)} MB total memory)")
     }
     val reserveAmount = conf.rmmAllocReserve
     if (reserveAmount >= maxAllocation) {
