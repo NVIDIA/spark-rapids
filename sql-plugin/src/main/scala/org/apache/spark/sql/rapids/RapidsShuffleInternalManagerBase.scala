@@ -217,7 +217,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
           // opportunistically hide cost of initializing transport connections. The transport
           // will re-try if it must fetch from this executor at a later time, in that case
           // a connection failure causes the tasks to fail.
-          logError(s"Unable to connect to peer $peer, ignoring!", ex)
+          logWarning(s"Unable to connect to peer $peer, ignoring!", ex)
       }
     }
   }
