@@ -18,9 +18,14 @@ package com.nvidia.spark.rapids.tool
 
 import java.io.{File, FilenameFilter, FileNotFoundException}
 
-import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import com.nvidia.spark.rapids.tool.profiling.{ProfileArgs, ProfileUtils}
+import scala.collection.mutable.ArrayBuffer
 
-object ToolTestUtils {
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
+
+object ToolTestUtils extends Logging {
 
   def getTestResourceFile(file: String): File = {
     new File(getClass.getClassLoader.getResource(file).getFile)
@@ -65,4 +70,35 @@ object ToolTestUtils {
       override def accept(file: File, s: String): Boolean = matcher(s)
     })
   }
+
+  def compareDataFrames(df: DataFrame, expectedDf: DataFrame): Unit = {
+    val diffCount = df.except(expectedDf).union(expectedDf.except(df)).count
+    if (diffCount != 0) {
+      logWarning("Diff expected vs actual:")
+      expectedDf.show()
+      df.show()
+    }
+    assert(diffCount == 0)
+  }
+
+  def readExpectationCSV(sparkSession: SparkSession, path: String): DataFrame = {
+    // make sure to change null value so empty strings don't show up as nulls
+    sparkSession.read.option("header", "true").option("nullValue", "-").csv(path)
+  }
+
+  def processProfileApps(logs: Array[String],
+      sparkSession: SparkSession): ArrayBuffer[ApplicationInfo] = {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(logs)
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        ProfileUtils.stringToPath(path)(0), index)
+      index += 1
+    }
+    apps
+  }
 }
+

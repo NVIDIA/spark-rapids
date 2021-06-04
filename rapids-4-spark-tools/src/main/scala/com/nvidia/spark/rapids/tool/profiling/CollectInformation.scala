@@ -21,9 +21,9 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
-
 
 /**
  * CollectInformation mainly print information based on this event log:
@@ -46,16 +46,15 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWri
   def printRapidsJAR(): Unit = {
     for (app <- apps) {
       if (app.gpuMode) {
-        fileWriter.write(s"Application ${app.appId} (index=${app.index}) 's" +
-            " Rapids Accelerator Jar and cuDF Jar:")
+        fileWriter.write("\nRapids Accelerator Jar and cuDF Jar:\n")
         // Look for rapids-4-spark and cuDF jar
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
         if (rapidsJar.nonEmpty) {
-          rapidsJar.keys.foreach(k => fileWriter.write(k))
+          rapidsJar.keys.foreach(k => fileWriter.write(s"$k\n"))
         }
         if (cuDFJar.nonEmpty) {
-          cuDFJar.keys.foreach(k => fileWriter.write(k))
+          cuDFJar.keys.foreach(k => fileWriter.write(s"$k\n"))
         }
       }
     }
@@ -79,13 +78,13 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWri
     }
   }
 
-  def generateDot(outputDirectory: String): Unit = {
+  def generateDot(outputDirectory: String, accumsOpt: Option[DataFrame]): Unit = {
     for (app <- apps) {
       val requiredDataFrames = Seq("sqlMetricsDF", "driverAccumDF",
           "taskStageAccumDF", "taskStageAccumDF")
         .map(name => s"${name}_${app.index}")
       if (requiredDataFrames.forall(app.allDataFrames.contains)) {
-        val accums = app.runQuery(app.generateSQLAccums)
+        val accums = accumsOpt.getOrElse(app.runQuery(app.generateSQLAccums))
         val start = System.nanoTime()
         val accumSummary = accums
           .select(col("sqlId"), col("accumulatorId"), col("max_value"))
@@ -110,6 +109,19 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWri
         val missingDataFrames = requiredDataFrames.filterNot(app.allDataFrames.contains)
         fileWriter.write(s"Could not generate DOT graph for app ${app.appId} " +
           s"because of missing data frames: ${missingDataFrames.mkString(", ")}\n")
+      }
+    }
+  }
+
+  // Print SQL Plan Metrics
+  def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String,
+      writeOutput: Boolean = true): Unit ={
+    for (app <- apps){
+      val messageHeader = "\nSQL Plan Metrics for Application:\n"
+      val accums = app.runQuery(app.generateSQLAccums, fileWriter = Some(fileWriter),
+        messageHeader=messageHeader)
+      if (shouldGenDot) {
+        generateDot(outputDir, Some(accums))
       }
     }
   }

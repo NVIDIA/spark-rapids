@@ -35,9 +35,10 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
 
   // Job Level TaskMetrics Aggregation
   def jobMetricsAggregation(): Unit = {
+    val messageHeader = "\nJob level aggregated task metrics:\n"
     if (apps.size == 1) {
-      fileWriter.foreach(_.write("Job level aggregated task metrics:"))
-      apps.head.runQuery(apps.head.jobMetricsAggregationSQL + " order by Duration desc")
+      apps.head.runQuery(apps.head.jobMetricsAggregationSQL + " order by Duration desc",
+        false, fileWriter, messageHeader)
     } else {
       var query = ""
       for (app <- apps) {
@@ -47,16 +48,17 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
           query += " union " + app.jobMetricsAggregationSQL
         }
       }
-      fileWriter.foreach(_.write("Job level aggregated task metrics:"))
-      apps.head.runQuery(query + " order by appIndex, Duration desc")
+      apps.head.runQuery(query + " order by appIndex, Duration desc",
+        false, fileWriter, messageHeader)
     }
   }
 
   // Stage Level TaskMetrics Aggregation
   def stageMetricsAggregation(): Unit = {
+    val messageHeader = "\nStage level aggregated task metrics:\n"
     if (apps.size == 1) {
-      fileWriter.foreach(_.write("Stage level aggregated task metrics:"))
-      apps.head.runQuery(apps.head.stageMetricsAggregationSQL + " order by Duration desc")
+      apps.head.runQuery(apps.head.stageMetricsAggregationSQL + " order by Duration desc",
+        false, fileWriter, messageHeader)
     } else {
       var query = ""
       for (app <- apps) {
@@ -66,16 +68,17 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
           query += " union " + app.stageMetricsAggregationSQL
         }
       }
-      fileWriter.foreach(_.write("Stage level aggregated task metrics:"))
-      apps.head.runQuery(query + " order by appIndex, Duration desc")
+      apps.head.runQuery(query + " order by appIndex, Duration desc",
+        false, fileWriter, messageHeader)
     }
   }
 
   // Job + Stage Level TaskMetrics Aggregation
-  def jobAndStageMetricsAggregation(): Unit = {
+  def jobAndStageMetricsAggregation(): DataFrame = {
+    val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
     if (apps.size == 1) {
-      val messageHeader = "Job + Stage level aggregated task metrics:"
-      apps.head.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc")
+      apps.head.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc",
+        false, fileWriter, messageHeader)
     } else {
       var query = ""
       for (app <- apps) {
@@ -85,17 +88,18 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
           query += " union " + app.jobAndStageMetricsAggregationSQL
         }
       }
-      fileWriter.foreach(_.write("Job + Stage level aggregated task metrics:"))
-      apps.head.runQuery(query + " order by appIndex, Duration desc")
+      apps.head.runQuery(query + " order by appIndex, Duration desc",
+        false, fileWriter, messageHeader)
     }
   }
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
   def sqlMetricsAggregation(): DataFrame = {
+    val messageHeader = "\nSQL level aggregated task metrics:\n"
     if (apps.size == 1) {
       if (apps.head.allDataFrames.contains(s"sqlDF_${apps.head.index}")) {
-        val messageHeader = "SQL level aggregated task metrics:"
-        apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc")
+        apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc",
+          false, fileWriter, messageHeader)
       } else {
         apps.head.sparkSession.emptyDataFrame
       }
@@ -109,8 +113,8 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
           query += " union " + app.sqlMetricsAggregationSQL
         }
       }
-      val messageHeader = "SQL level aggregated task metrics:"
-      apps.head.runQuery(query + " order by appIndex, Duration desc")
+      apps.head.runQuery(query + " order by appIndex, Duration desc", false,
+        fileWriter, messageHeader)
     }
   }
 
@@ -121,5 +125,41 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
       s"""select stageId from stageDF_${app.index} limit 1
          |""".stripMargin
     app.runQuery(customQuery)
+  }
+
+  // Function to find out shuffle read skew(For Joins or Aggregation)
+  def shuffleSkewCheck(): Unit ={
+    for (app <- apps){
+      shuffleSkewCheckSingleApp(app)
+    }
+  }
+
+  def shuffleSkewCheckSingleApp(app: ApplicationInfo): DataFrame ={
+    val customQuery =
+      s"""with tmp as
+         |(select stageId, stageAttemptId,
+         |avg(sr_totalBytesRead) avgShuffleReadBytes,
+         |avg(duration) avgDuration
+         |from taskDF_${app.index}
+         |group by stageId,stageAttemptId)
+         |select ${app.index} as appIndex, t.stageId,t.stageAttemptId,
+         |t.taskId, t.attempt,
+         |round(t.duration/1000,2) as taskDurationSec,
+         |round(tmp.avgDuration/1000,2) as avgDurationSec,
+         |round(t.sr_totalBytesRead/1024/1024,2) as taskShuffleReadMB,
+         |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
+         |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
+         |t.successful,
+         |substr(t.endReason,0,100) endReason_first100char
+         |from tmp, taskDF_${app.index} t
+         |where tmp.stageId=t.StageId
+         |and tmp.stageAttemptId=t.stageAttemptId
+         |and t.sr_totalBytesRead > 3 * tmp.avgShuffleReadBytes
+         |and t.sr_totalBytesRead > 100*1024*1024
+         |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
+         |""".stripMargin
+    val messageHeader = s"\nShuffle Skew Check:" +
+      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
+    app.runQuery(customQuery, false, fileWriter, messageHeader)
   }
 }
