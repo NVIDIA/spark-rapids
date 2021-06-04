@@ -21,10 +21,9 @@ import java.io.File
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 
-class AnalysisSuite extends FunSuite with Logging {
+class AnalysisSuite extends FunSuite {
 
   lazy val sparkSession = {
     SparkSession
