@@ -54,7 +54,8 @@ class QualificationSuite extends FunSuite with Logging {
           QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
             dropTempViews=true)
         assert(exit == 0)
-        val dfExpectOrig = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
+        val dfExpectOrig =
+          ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
         val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
         assert(dfQualOpt.isDefined)
         ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)

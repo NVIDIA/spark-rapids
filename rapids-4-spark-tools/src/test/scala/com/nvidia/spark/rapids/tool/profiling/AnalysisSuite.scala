@@ -20,11 +20,9 @@ import java.io.File
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.rapids.tool.profiling._
 
 class AnalysisSuite extends FunSuite with Logging {
 
@@ -40,22 +38,40 @@ class AnalysisSuite extends FunSuite with Logging {
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
   test("test jobAndStageMetricsAggregation simple") {
-    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    val appArgs =
-      new ProfileArgs(Array(s"$logDir/rapids_join_eventlog"))
-    var index: Int = 1
-    val eventlogPaths = appArgs.eventlog()
-    for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path)(0), index)
-      index += 1
-    }
+    val apps =
+      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
     assert(apps.size == 1)
 
     val analysis = new Analysis(apps, None)
     val actualDf = analysis.jobAndStageMetricsAggregation()
     val resultExpectation =
       new File(expRoot, "rapids_join_eventlog_jobandstagemetrics_expectation.csv")
+    val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
+    ToolTestUtils.compareDataFrames(actualDf, dfExpect)
+  }
+
+  test("test sqlMetricsAggregation simple") {
+    val apps =
+      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
+    assert(apps.size == 1)
+
+    val analysis = new Analysis(apps, None)
+    val actualDf = analysis.sqlMetricsAggregation()
+    val resultExpectation =
+      new File(expRoot, "rapids_join_eventlog_sqlmetricsagg_expectation.csv")
+    val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
+    ToolTestUtils.compareDataFrames(actualDf, dfExpect)
+  }
+
+  test("test shuffleSkewCheck simple") {
+    val apps =
+      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
+    assert(apps.size == 1)
+
+    val analysis = new Analysis(apps, None)
+    val actualDf = analysis.sqlMetricsAggregation()
+    val resultExpectation =
+      new File(expRoot, "rapids_join_eventlog_shuffleskewcheck_expectation.csv")
     val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
     ToolTestUtils.compareDataFrames(actualDf, dfExpect)
   }
