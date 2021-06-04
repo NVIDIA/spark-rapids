@@ -74,7 +74,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
   }
 
   // Job + Stage Level TaskMetrics Aggregation
-  def jobAndStageMetricsAggregation(): Unit = {
+  def jobAndStageMetricsAggregation(): DataFrame = {
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
     if (apps.size == 1) {
       apps.head.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc",

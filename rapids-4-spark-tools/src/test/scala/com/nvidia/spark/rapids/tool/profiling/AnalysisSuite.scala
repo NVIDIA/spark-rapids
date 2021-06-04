@@ -23,7 +23,7 @@ import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
 
 class AnalysisSuite extends FunSuite with Logging {
@@ -39,7 +39,7 @@ class AnalysisSuite extends FunSuite with Logging {
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
-  test("test printSQLPlanMetrics") {
+  test("test jobAndStageMetricsAggregation simple") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
       new ProfileArgs(Array(s"$logDir/rapids_join_eventlog"))
@@ -52,13 +52,11 @@ class AnalysisSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
 
-    for (app <- apps){
-      val accums = app.runQuery(app.generateSQLAccums, fileWriter = None)
-      val resultExpectation =
-        new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
-      val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
-      ToolTestUtils.compareDataFrames(accums, dfExpect)
-    }
+    val analysis = new Analysis(apps, None)
+    val actualDf = analysis.jobAndStageMetricsAggregation()
+    val resultExpectation =
+      new File(expRoot, "rapids_join_eventlog_jobandstagemetrics_expectation.csv")
+    val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
+    ToolTestUtils.compareDataFrames(actualDf, dfExpect)
   }
-
 }
