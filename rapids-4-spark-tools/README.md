@@ -151,6 +151,9 @@ If a SQL's plan has Dataset API inside such as keyworkd `$Lambda` or `.apply`, t
 Note: duration is in milli-seconds.
 
 It can also print the potential problems such as UDF.
+  
+Note: The tool won't cache all UDFs, and some of the UDFs can be handled with additional steps. 
+Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
 
 Sample output:
 ```
