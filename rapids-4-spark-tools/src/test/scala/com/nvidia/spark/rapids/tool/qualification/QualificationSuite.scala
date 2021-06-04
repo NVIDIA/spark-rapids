@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.qualification
 
 import java.io.File
 
+import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
 
 import org.apache.spark.internal.Logging
@@ -33,8 +34,8 @@ class QualificationSuite extends FunSuite with Logging {
       .getOrCreate()
   }
 
-  private val expRoot = QualificationTestUtils.getTestResourceFile("QualificationExpectations")
-  private val logDir = QualificationTestUtils.getTestResourcePath("spark-events-qualification")
+  private val expRoot = ToolTestUtils.getTestResourceFile("QualificationExpectations")
+  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
 
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String) = {
     Seq(true, false).foreach { hasExecCpu =>
