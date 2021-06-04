@@ -92,47 +92,29 @@ object EventsProcessor extends Logging {
         doSparkListenerSQLAdaptiveSQLMetricUpdates(app,
           event.asInstanceOf[SparkListenerSQLAdaptiveSQLMetricUpdates])
       case _ => 
-        try {
-          // case _: SparkListenerResourceProfileAdded =>
-          val classObj =
-            Class.forName("org.apache.spark.scheduler.SparkListenerResourceProfileAdded")
-          val rpMethod = classObj.getMethod("resourceProfile")
-          rpMethod.invoke(_)
-          doSparkListenerResourceProfileAdded(app,
-            event.asInstanceOf[SparkListenerResourceProfileAdded])
-
-
-        } catch {
-          case _ =>
-        } 
-        doOtherEvent(app, event)
+        val wasResourceProfileAddedEvent = doSparkListenerResourceProfileAddedReflect(app, event)
+        if (!wasResourceProfileAddedEvent) doOtherEvent(app, event)
     }
   }
 
   def doSparkListenerResourceProfileAddedReflect(
       app: ApplicationInfo,
-      event: Any): Unit = {
-
-    logDebug("Processing event: SparkListenerResourceProfileAdded")
-    try {
-      val classObj =
-        Class.forName("org.apache.spark.scheduler.SparkListenerResourceProfileAdded")
-      val rpMethod = classObj.getMethod("resourceProfile")
-      val rp = rpMethod.invoke(_)
-
-      val thisResourceProfile = ResourceProfileCase(
-        res.id,
-        res.getExecutorCores.getOrElse(0),
-        res.executorResources.get(ResourceProfile.MEMORY).map(_.amount.toLong).getOrElse(0),
-        res.executorResources.get("gpu").map(_.amount.toInt).getOrElse(0),
-        res.executorResources.get(ResourceProfile.OVERHEAD_MEM).map(_.amount.toLong).getOrElse(0),
-        res.getTaskCpus.getOrElse(0),
-        res.taskResources.get("gpu").map(_.amount.toDouble).getOrElse(0)
-      )
-      app.resourceProfiles += thisResourceProfile
-    } catch {
-      case _ =>
-    } 
+      event: SparkListenerEvent): Boolean = {
+    if (event.getClass.getName.equals("org.apache.spark.scheduler.SparkListenerResourceProfileAdded")) {
+      try {
+        event match {
+          case _: SparkListenerResourceProfileAdded =>
+            doSparkListenerResourceProfileAdded(app,
+              event.asInstanceOf[SparkListenerResourceProfileAdded])
+            true
+          case _ => false
+        }
+      } catch {
+        case _ => false
+      }
+    } else {
+      false
+    }
   }
 
   def doSparkListenerLogStart(app: ApplicationInfo, event: SparkListenerLogStart): Unit = {
