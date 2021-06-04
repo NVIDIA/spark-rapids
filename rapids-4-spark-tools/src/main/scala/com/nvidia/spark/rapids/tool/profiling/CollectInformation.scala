@@ -55,10 +55,10 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
         if (rapidsJar.nonEmpty) {
-          rapidsJar.keys.foreach(k => fileWriter.write(k))
+          rapidsJar.keys.foreach(k => fileWriter.write(s"\n$k"))
         }
         if (cuDFJar.nonEmpty) {
-          cuDFJar.keys.foreach(k => fileWriter.write(k))
+          cuDFJar.keys.foreach(k => fileWriter.write(s"\n$k"))
         }
       }
     }
@@ -118,7 +118,8 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   }
 
   // Print SQL Plan Metrics
-  def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String): Unit ={
+  def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String,
+      writeOutput: Boolean = true): Unit ={
     for (app <- apps){
       // TODO - test with missing tables
       val messageHeader = "\nSQL Plan Metrics for Application:\n"

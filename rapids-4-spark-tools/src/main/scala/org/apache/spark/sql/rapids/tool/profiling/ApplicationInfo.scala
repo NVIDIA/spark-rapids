@@ -514,15 +514,12 @@ class ApplicationInfo(
       query: String,
       vertical: Boolean = false,
       fileWriter: Option[FileWriter] = None,
-      messageHeader: String = "",
-      skipWriteIfEmpty: Boolean = false): DataFrame = {
+      messageHeader: String = ""): DataFrame = {
     logDebug("Running:" + query)
     val df = sparkSession.sql(query)
-    if (!skipWriteIfEmpty) {
-      fileWriter.foreach { writer =>
-        writer.write(messageHeader)
-        writer.write(df.showString(numOutputRows, 0, vertical))
-      }
+    fileWriter.foreach { writer =>
+      writer.write(messageHeader)
+      writer.write(df.showString(numOutputRows, 0, vertical))
     }
     df
   }

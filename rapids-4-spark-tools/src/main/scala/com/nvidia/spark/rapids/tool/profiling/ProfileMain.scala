@@ -129,7 +129,6 @@ object ProfileMain extends Logging {
         collect.printSQLPlanMetrics(generateDot, appArgs.outputDirectory())
       }
 
-
       fileWriter.write("\n### B. Analysis ###\n")
       val analysis = new Analysis(apps, Some(fileWriter))
       analysis.jobAndStageMetricsAggregation()

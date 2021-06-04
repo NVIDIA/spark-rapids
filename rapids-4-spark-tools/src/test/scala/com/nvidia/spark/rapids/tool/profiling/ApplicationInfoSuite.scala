@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.{File, FileWriter}
+import java.io.File
 
+import com.nvidia.spark.rapids.tool.qualification.QualificationTestUtils
 import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
 
@@ -34,10 +35,14 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         .appName("Rapids Spark Profiling Tool Unit Tests")
         .getOrCreate()
   }
-  var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-  val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
+
+  // TODO - move test utils
+  private val expRoot = QualificationTestUtils.getTestResourceFile("QualificationExpectations")
+  private val logDir = QualificationTestUtils.getTestResourcePath("spark-events-profiling")
 
   test("test single event") {
+    var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs = new ProfileArgs(Array("src/test/resources/eventlog_minimal_events"))
     val tempFile = File.createTempFile("tempOutputFile", null)
     try {
       var index: Int = 1
@@ -59,4 +64,58 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile.deleteOnExit()
     }
   }
+
+  test("test rapids jar") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array("src/test/resources/spark-events-profiling/rapids_join_eventlog"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        ProfileUtils.stringToPath(path)(0), index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    assert(apps.head.sparkVersion.equals("3.0.1"))
+    assert(apps.head.gpuMode.equals(true))
+    val rapidsJar = apps.head.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
+    val cuDFJar = apps.head.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
+    assert(rapidsJar.equals("rapids-4-spark_2.12-0.5.0.jar"), "Rapids jar check")
+    assert(cuDFJar.equals("cudf-0.19.2-cuda11.jar"), "CUDF jar check")
+  }
+
+  test("test printSQLPlanMetrics") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array("src/test/resources/spark-events-profiling/rapids_join_eventlog"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        ProfileUtils.stringToPath(path)(0), index)
+      index += 1
+    }
+    assert(apps.size == 1)
+
+    for (app <- apps){
+      // TODO - test with missing tables
+      val accums = app.runQuery(app.generateSQLAccums, fileWriter = None)
+
+      val resultExpectation =
+        new File(expRoot, "ProfilingExpectations/rapids_join_eventlog_sqlmetrics_expectation.csv")
+      val dfExpect = sparkSession.read.option("header", "true").
+        option("nullValue", "-").csv(resultExpectation.getPath)
+      val diffCount = accums.except(dfExpect).union(dfExpect.except(dfExpect)).count
+      // print for easier debugging
+      if (diffCount != 0) {
+        logWarning("Diff:")
+        dfExpect.show()
+        accums.show()
+      }
+      assert(diffCount == 0)
+    }
+
+  }
+
 }
