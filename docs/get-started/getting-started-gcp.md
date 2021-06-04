@@ -176,7 +176,7 @@ can use example [pyspark notebooks](../demo/GCP/Mortgage-ETL-GPU.ipynb) to exper
 ## Build custom dataproc image to accelerate cluster init time
 In order to accelerate cluster init time to 3-4 minutes, we need to build a custom Dataproc image
 that already has NVIDIA drivers and CUDA toolkit installed, with RAPIDS deployed. The custom image 
-could also be used in a air gap environment. In this section, we will be using [these
+could also be used in an air gap environment. In this section, we will be using [these
 instructions from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a
 custom image. 
 
@@ -230,7 +230,7 @@ The image `sample-209-ubuntu18-gpu-t4` is now ready and can be viewed in the GCP
 `Compute Engine > Storage > Images`. The next step is to launch the cluster using this new image and
 new initialization actions (that do not install NVIDIA drivers since we are already past that step).
 
-Here is the new custom GPU initialization action that needed to be ran after cluster creation with custom images, save this as `addon.sh`
+Here is the new custom GPU initialization action that needs to be run after cluster creation with custom images, save this as `addon.sh`
 
 ```bash
 #!/bin/bash
