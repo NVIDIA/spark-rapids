@@ -14,13 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.tool.profiling
-
-import java.io.File
+package com.nvidia.spark.rapids.tool.qualification
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.rapids.TestUtils
-import org.apache.spark.sql.{Dataset, SparkSession}
+import org.apache.spark.sql.{Dataset, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.{col, udf}
 
 // class used for testing
@@ -70,7 +67,7 @@ object QualificationInfoUtils extends Logging {
   // dataset operations in plan show up as Lambda
   def genDatasetEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    TestUtils.withTempPath { jsonOutFile =>
+    TrampolineUtil.withTempPath { jsonOutFile =>
       val ds = generateFriendsDataset(spark)
       val dsAge = ds.filter(d => d.age > 25).map(d => (d.friend, d.age))
       dsAge.write.json(jsonOutFile.getCanonicalPath)
@@ -86,10 +83,17 @@ object QualificationInfoUtils extends Logging {
     }
   }
 
+  def genjoinDataFrameOpEventLog(spark: SparkSession) = {
+    import spark.implicits._
+    val df = spark.sparkContext.makeRDD(1 to 10000000, 6).toDF
+    val df2 = spark.sparkContext.makeRDD(1 to 10000000, 6).toDF
+    df.select( $"value" as "a").join(df2.select($"value" as "b"), $"a" === $"b").count
+  }
+
   // UDF with dataset, shows up with Lambda
   def genUDFDSEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    TestUtils.withTempPath { jsonOutFile =>
+    TrampolineUtil.withTempPath { jsonOutFile =>
       val ageFunc = udf(parseAge)
       val ds = generateFriendsDataset(spark)
       ds.withColumn("ageCategory",ageFunc(col("age")))
@@ -113,8 +117,8 @@ object QualificationInfoUtils extends Logging {
   // doesn't seem to put anything unique in the plan
   def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
     import spark.implicits._
-    TestUtils.withTempPath { jsonInputFile =>
-      TestUtils.withTempPath { jsonOutFile =>
+    TrampolineUtil.withTempPath { jsonInputFile =>
+      TrampolineUtil.withTempPath { jsonOutFile =>
         val userData = spark.createDataFrame(Seq(
           (1, "Chandler", "Pasadena", "US"),
           (2, "Monica", "New york", "USa"),
@@ -145,12 +149,13 @@ object QualificationInfoUtils extends Logging {
    */
   def main(args: Array[String]): Unit = {
     if (args.length == 0) {
-      println(s"ERROR: must specify a logType dataset, udfds, or udffunc")
+      println(s"ERROR: must specify a logType dataset, udfds, dsAndDf or udffunc")
       System.exit(1)
     }
     val logType = args(0)
-    if (logType != "dataset" && logType != "udfds" && logType != "udffunc") {
-      println(s"ERROR: logType must be one of: dataset, udfds, or udffunc")
+    if (logType != "dataset" && logType != "udfds" && logType != "udffunc"
+        && logType != "dsAndDf") {
+      println(s"ERROR: logType must be one of: dataset, udfds, dsAndDf or udffunc")
       System.exit(1)
     }
     val eventDir = if (args.length > 1) args(1) else "/tmp/spark-eventLogTest"
@@ -171,6 +176,11 @@ object QualificationInfoUtils extends Logging {
       genUDFDSEventLog(spark, size)
     } else if (logType.toLowerCase.equals("udffunc")) {
       genUDFFuncEventLog(spark, size)
+    } else if (logType.toLowerCase.equals("dsanddf")) {
+      genDatasetEventLog(spark, size)
+      genjoinDataFrameOpEventLog(spark)
+      genjoinDataFrameOpEventLog(spark)
+      genjoinDataFrameOpEventLog(spark)
     } else {
       println(s"ERROR: Invalid log type specified: $logType")
       System.exit(1)

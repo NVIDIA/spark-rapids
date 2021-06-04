@@ -1,18 +1,41 @@
-# Spark profiling tool
+# Spark Qualification and Profiling tools
 
-This is a profiling tool to parse and analyze Spark event logs. 
-It generates information which can be used for debugging and profiling. Information such as Spark version, executor information, Properties and so on.
-Works with both cpu and gpu generated event logs.
+The qualification tool is used to rank a set of applications to determine if the RAPIDS Accelerator for Apache Spark is a good fit for those applications.
+
+The profiling tool generates information which can be used for ranking applications debugging and profiling.
+Information such as Spark version, executor information, Properties and so on.  Works with both cpu and gpu generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## Prerequisites
-1. Request Spark 3.1.1 or newer installed
+1. Require Spark 3.1.1 or newer installed
 
-## How to compile and use with Spark
+## How to compile
 1. `mvn clean package`
-2. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
-3. After starting spark-shell:
+
+## Qualification Tool
+
+### Use from Spark
+1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
+2. After starting spark-shell:
+
+For multiple event logs comparison and analysis:
+```
+com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
+```
+
+### How to compile and use from command-line
+1. `./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2`
+
+### Output
+By default this outputs a file `./rapids_4_spark_qualification.log` that contains the rankings of the applications. The output
+location can be changed using the `--output-directory` option.  Run `--help` for more information.
+
+## Profiling Tool
+
+### Use from Spark
+1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
+2. After starting spark-shell:
 For a single event log analysis:
 ```
 com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))
@@ -23,12 +46,11 @@ For multiple event logs comparison and analysis:
 com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
 ```
 
-## How to compile and use from command-line
-1. `mvn clean package`
-2. `cd $SPARK_HOME (Download Apache Spark if required)`
-3. `./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1`
+### How to compile and use from command-line
+1. `cd $SPARK_HOME (Download Apache Spark if required)`
+2. `./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1`
 
-## Options
+### Options
 ```
 $ ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar --help
 
@@ -59,8 +81,8 @@ For usage see below:
                         s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 ```
 
-## Functions
-### A. Collect Information or Compare Information(if more than 1 eventlogs are as input)
+### Functions
+#### A. Collect Information or Compare Information(if more than 1 eventlogs are as input)
 - Print Application Information
 - Print Executors information
 - Print Rapids related parameters

@@ -40,11 +40,11 @@ import org.apache.spark.util._
  */
 
 class ApplicationInfo(
-    val args: ProfileArgs,
+    val numOutputRows: Int,
     val sparkSession: SparkSession,
-    val fileWriter: FileWriter,
     val eventlog: Path,
-    val index: Int) extends Logging {
+    val index: Int,
+    val forQualification: Boolean = false) extends Logging {
 
   // From SparkListenerLogStart
   var sparkVersion: String = ""
@@ -176,12 +176,20 @@ class ApplicationInfo(
   // the Spark plan.
   var problematicSQL: ArrayBuffer[ProblematicSQLCase] = ArrayBuffer[ProblematicSQLCase]()
 
+  // SQL containing any Dataset operation
+  var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
+
   // Process all events
   processEvents()
-  // Process all properties after all events are processed
-  processAllProperties()
-  // Process SQL Plan Metrics after all events are processed
-  processSQLPlanMetrics()
+  if (forQualification) {
+    // Process the plan for qualification
+    processSQLPlanForQualification
+  } else {
+    // Process all properties after all events are processed
+    processAllProperties()
+    // Process SQL Plan Metrics after all events are processed
+    processSQLPlanMetrics()
+  }
   // Create Spark DataFrame(s) based on ArrayBuffer(s)
   arraybufferToDF()
 
@@ -238,6 +246,25 @@ class ApplicationInfo(
     }
   }
 
+  def processSQLPlanForQualification(): Unit ={
+    for ((sqlID, planInfo) <- sqlPlan){
+      val planGraph = SparkPlanGraph(planInfo)
+      // SQLPlanMetric is a case Class of
+      // (name: String,accumulatorId: Long,metricType: String)
+      val allnodes = planGraph.allNodes
+      for (node <- allnodes){
+        // Firstly identify problematic SQLs if there is any
+        if (isDataSetPlan(node.desc)) {
+          datasetSQL += DatasetSQLCase(sqlID)
+        }
+        val issues = findPotentialIssues(node.desc)
+        if (issues.nonEmpty) {
+          problematicSQL += ProblematicSQLCase(sqlID, issues)
+        }
+      }
+    }
+  }
+
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
@@ -248,10 +275,8 @@ class ApplicationInfo(
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes){
-        // Firstly identify problematic SQLs if there is any
-        val probReason = isProblematicPlan(node)
-        if (probReason.nonEmpty) {
-          problematicSQL += ProblematicSQLCase(sqlID, probReason, node.desc)
+        if (isDataSetPlan(node.desc)) {
+          datasetSQL += DatasetSQLCase(sqlID)
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics){
@@ -277,36 +302,6 @@ class ApplicationInfo(
   def arraybufferToDF(): Unit = {
     import sparkSession.implicits._
 
-    // For resourceProfilesDF
-    if (this.resourceProfiles.nonEmpty) {
-      this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
-    } else {
-      logWarning("resourceProfiles is empty!")
-    }
-
-    // For blockManagersDF
-    if (this.blockManagers.nonEmpty) {
-      this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
-    } else {
-      logWarning("blockManagers is empty!")
-    }
-
-    // For blockManagersRemovedDF
-    if (this.blockManagersRemoved.nonEmpty) {
-      this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
-      this.blockManagersRemoved.clear()
-    } else {
-      logDebug("blockManagersRemoved is empty!")
-    }
-
-    // For propertiesDF
-    if (this.allProperties.nonEmpty) {
-      this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-    } else {
-      logError("propertiesDF is empty! Existing...")
-      System.exit(1)
-    }
-
     // For appDF
     if (this.appStart.nonEmpty) {
       val appStartNew: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
@@ -328,21 +323,6 @@ class ApplicationInfo(
       System.exit(1)
     }
 
-    // For executorsDF
-    if (this.executors.nonEmpty) {
-      this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
-    } else {
-      logError("executors is empty! Exiting...")
-      System.exit(1)
-    }
-
-    // For executorsRemovedDF
-    if (this.executorsRemoved.nonEmpty) {
-      this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
-    } else {
-      logDebug("executorsRemoved is empty!")
-    }
-
     // For sqlDF
     if (sqlStart.nonEmpty) {
       val sqlStartNew: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
@@ -353,9 +333,25 @@ class ApplicationInfo(
           case Some(i) => UIUtils.formatDuration(i)
           case None => ""
         }
+        val sqlQDuration = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
+          Some(0L)
+        } else {
+          durationResult
+        }
+        val potProbs = problematicSQL.filter { p =>
+          p.sqlID == res.sqlID && p.reason.nonEmpty
+        }.map(_.reason).mkString(",")
+        val finalPotProbs = if (potProbs.isEmpty) {
+          null
+        } else {
+          potProbs
+        }
         val sqlExecutionNew = res.copy(endTime = thisEndTime,
           duration = durationResult,
-          durationStr = durationString)
+          durationStr = durationString,
+          sqlQualDuration = sqlQDuration,
+          problematic = finalPotProbs
+        )
         sqlStartNew += sqlExecutionNew
       }
       allDataFrames += (s"sqlDF_$index" -> sqlStartNew.toDF)
@@ -377,8 +373,8 @@ class ApplicationInfo(
         val jobNew = res.copy(endTime = thisEndTime,
           duration = durationResult,
           durationStr = durationString,
-          jobResult = Some(jobEndResult(res.jobID)),
-          failedReason = jobFailedReason(res.jobID)
+          jobResult = jobEndResult.get(res.jobID),
+          failedReason = jobFailedReason.get(res.jobID)
         )
         jobStartNew += jobNew
       }
@@ -392,10 +388,11 @@ class ApplicationInfo(
     if (stageSubmitted.nonEmpty) {
       val stageSubmittedNew: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
       for (res <- stageSubmitted) {
-        val thisEndTime = stageCompletionTime(res.stageId)
-        val thisFailureReason = stageFailureReason(res.stageId)
+        val thisEndTime = stageCompletionTime.getOrElse(res.stageId, None)
+        val thisFailureReason = stageFailureReason.getOrElse(res.stageId, None)
 
-        val durationResult = ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
+        val durationResult =
+          ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
         val durationString = durationResult match {
           case Some(i) => UIUtils.formatDuration(i)
           case None => ""
@@ -429,62 +426,100 @@ class ApplicationInfo(
       logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
     }
 
-    // For driverAccumDF
-    allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
-    if (driverAccum.nonEmpty) {
-      logInfo(s"Total ${driverAccum.size} driver accums for appID=$appId")
-    } else {
-      logInfo("No Driver accum Found. Create an empty driver accum DataFrame.")
-    }
+    if (!forQualification) {
+      // For resourceProfilesDF
+      if (this.resourceProfiles.nonEmpty) {
+        this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
+      } else {
+        logWarning("resourceProfiles is empty!")
+      }
 
-    // For taskStageAccumDF
-    allDataFrames += (s"taskStageAccumDF_$index" -> taskStageAccum.toDF)
-    if (taskStageAccum.nonEmpty) {
-      logInfo(s"Total ${taskStageAccum.size} task&stage accums for appID=$appId")
-    } else {
-      logInfo("No task&stage accums Found.Create an empty task&stage accum DataFrame.")
-    }
+      // For blockManagersDF
+      if (this.blockManagers.nonEmpty) {
+        this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
+      } else {
+        logWarning("blockManagers is empty!")
+      }
 
-    // For planNodeAccumDF
-    allDataFrames += (s"planNodeAccumDF_$index" -> planNodeAccum.toDF)
-    if (planNodeAccum.nonEmpty) {
-      logInfo(s"Total ${planNodeAccum.size} Plan node accums for appID=$appId")
-    } else {
-      logInfo("No Plan node accums Found. Create an empty Plan node accums DataFrame.")
-    }
+      // For blockManagersRemovedDF
+      if (this.blockManagersRemoved.nonEmpty) {
+        this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
+        this.blockManagersRemoved.clear()
+      } else {
+        logDebug("blockManagersRemoved is empty!")
+      }
 
-    // For problematicSQLDF
-    allDataFrames += (s"problematicSQLDF_$index" -> problematicSQL.toDF)
+      // For propertiesDF
+      if (this.allProperties.nonEmpty) {
+        this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
+      } else {
+        logError("propertiesDF is empty! Existing...")
+        System.exit(1)
+      }
+
+      // For executorsDF
+      if (this.executors.nonEmpty) {
+        this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
+      } else {
+        logError("executors is empty! Exiting...")
+        System.exit(1)
+      }
+
+      // For executorsRemovedDF
+      if (this.executorsRemoved.nonEmpty) {
+        this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
+      } else {
+        logDebug("executorsRemoved is empty!")
+      }
+
+      // For driverAccumDF
+      allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
+      if (driverAccum.nonEmpty) {
+        logInfo(s"Total ${driverAccum.size} driver accums for appID=$appId")
+      } else {
+        logInfo("No Driver accum Found. Create an empty driver accum DataFrame.")
+      }
+
+      // For taskStageAccumDF
+      allDataFrames += (s"taskStageAccumDF_$index" -> taskStageAccum.toDF)
+      if (taskStageAccum.nonEmpty) {
+        logInfo(s"Total ${taskStageAccum.size} task&stage accums for appID=$appId")
+      } else {
+        logInfo("No task&stage accums Found.Create an empty task&stage accum DataFrame.")
+      }
+
+      // For planNodeAccumDF
+      allDataFrames += (s"planNodeAccumDF_$index" -> planNodeAccum.toDF)
+      if (planNodeAccum.nonEmpty) {
+        logInfo(s"Total ${planNodeAccum.size} Plan node accums for appID=$appId")
+      } else {
+        logInfo("No Plan node accums Found. Create an empty Plan node accums DataFrame.")
+      }
+    }
 
     for ((name, df) <- this.allDataFrames) {
       df.createOrReplaceTempView(name)
-      sparkSession.table(name).cache
     }
   }
 
   // Function to drop all temp views of this application.
   def dropAllTempViews(): Unit ={
     for ((name,_) <- this.allDataFrames) {
-      sparkSession.catalog.dropTempView(name+"_"+index)
+      sparkSession.catalog.dropTempView(name)
     }
-    // Clear all cached tables as well.
-    sparkSession.catalog.clearCache()
   }
 
-  // Function to run a query and print the result to the file.
-  // Limit to 1000 rows if the output number of rows is not mentioned in the command line.
+  // Function to run a query and optionally print the result to the file.
   def runQuery(
       query: String,
       vertical: Boolean = false,
-      writeToFile: Boolean = false,
+      fileWriter: Option[FileWriter] = None,
       messageHeader: String = ""): DataFrame = {
     logDebug("Running:" + query)
-    val numRows = args.numOutputRows.getOrElse(1000)
     val df = sparkSession.sql(query)
-    logInfo("\n" + df.showString(numRows, 0, vertical))
-    if (writeToFile) {
-      fileWriter.write(messageHeader)
-      fileWriter.write(df.showString(numRows, 0, vertical))
+    fileWriter.foreach { writer =>
+      writer.write(messageHeader)
+      writer.write(df.showString(numOutputRows, 0, vertical))
     }
     df
   }
@@ -611,6 +646,8 @@ class ApplicationInfo(
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
        |count(*) as numTasks, max(sq.duration) as Duration,
+       |sum(executorCPUTime) as executorCPUTime,
+       |sum(executorRunTime) as executorRunTime,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) executorCPURatio
        |$generateAggSQLString
        |from taskDF_$index t, stageDF_$index s,
@@ -652,45 +689,57 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  // Function to generate a query for qualification
-  def qualificationSQL: String = {
-    s"""select $index as appIndex, '$appId' as appID,
+  def qualificationDurationNoMetricsSQL: String = {
+    s"""select
+       |first(appName) as `App Name`,
+       |'$appId' as `App ID`,
+       |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Rank,
+       |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
+       |sum(sqlQualDuration) as `SQL Dataframe Duration`,
+       |first(app.duration) as `App Duration`
+       |from sqlDF_$index sq, appdf_$index app
+       |""".stripMargin
+  }
+
+  def qualificationDurationSQL: String = {
+    s"""select
+       |$index as appIndex,
+       |'$appId' as appID,
+       |app.appName,
        |sq.sqlID, sq.description,
-       |sq.duration, m.executorCPURatio
-       |from sqlDF_$index sq , sqlAggMetricsDF m
-       |where $index = m.appIndex and sq.sqlID = m.sqlID
-       |and sq.sqlID not in (select sqlID from problematicSQLDF_$index)
-       |and sq.duration > 30000
-       |and m.executorCPURatio > 30
+       |sq.sqlQualDuration as dfDuration,
+       |app.duration as appDuration,
+       |problematic as potentialProblems,
+       |m.executorCPUTime,
+       |m.executorRunTime
+       |from sqlDF_$index sq, appdf_$index app
+       |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }
 
-  // Function to generate a query for qualification
-  def qualificationSQLDataSet: String = {
-    s"""select distinct(sqlID), reason, desc from problematicSQLDF_$index
+  def qualificationDurationSumSQL: String = {
+    s"""select first(appName) as `App Name`,
+       |first(appID) as `App ID`,
+       |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Rank,
+       |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
+       |sum(dfDuration) as `SQL Dataframe Duration`,
+       |first(appDuration) as `App Duration`,
+       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`
+       |from (${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }
 
-  // Function to determine if a SparkPlanGraphNode could be problematic.
-  // // todo what about scan for genreated data? -> SerializeFromObject?
-  // LocalTableScan?
-  // these may only apply to profiling part so take out for now
-  // if (node.name == "GpuColumnarToRow") {
-  // "GpuColumnarToRow"
-  // } else if (node.name == "GpuRowToColumnar") {
-  // "GpuRowToColumnar"
-  def isProblematicPlan(node: SparkPlanGraphNode): String = {
-    logWarning("node description is: " + node.desc)
-    isDescProblematic(node.desc)
-  }
-
-  // TODO - do we want to handle existing RDD
-  // case e if e.matches(".*ExistingRDD.*") => "existingRDD"
-  private def isDescProblematic(desc: String): String =  {
+  def isDataSetPlan(desc: String): Boolean = {
     desc match {
-      case l if l.matches(".*\\$Lambda\\$.*") => "Dataset/Lambda"
+      case l if l.matches(".*\\$Lambda\\$.*") => true
+      case a if a.endsWith(".apply") => true
+      case _ => false
+    }
+  }
+
+  def findPotentialIssues(desc: String): String =  {
+    desc match {
       case u if u.matches(".*UDF.*") => "UDF"
-      case a if a.endsWith(".apply") => "Dataset/Apply"
       case _ => ""
     }
   }
