@@ -303,8 +303,8 @@ def test_window_running_no_part(b_gen, batch_size):
 # row number, but will expand to others in the future (rank and dense_rank).
 @ignore_order
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
-@pytest.mark.parametrize('b_gen', running_part_and_order_gens, ids=meta_idfn('partBy:'))
-@pytest.mark.parametrize('c_gen', all_basic_gens_no_nans + [decimal_gen_scale_precision], ids=meta_idfn('data:'))
+@pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
+        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_scale_precision]], ids=idfn)
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
