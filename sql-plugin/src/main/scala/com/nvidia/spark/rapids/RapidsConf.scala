@@ -999,6 +999,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault(null)
 
+  val SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT =
+    conf("spark.rapids.shuffle.ucx.managementConnectionTimeout")
+    .doc("The timeout for client connections to a remote peer")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
   val SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE = conf("spark.rapids.shuffle.ucx.bounceBuffers.size")
     .doc("The size of bounce buffer to use in bytes. Note that this size will be the same " +
       "for device and host memory")
@@ -1535,6 +1542,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
 
   lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
+
+  lazy val shuffleUcxMgmtConnTimeout: Int = get(SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT)
 
   lazy val shuffleUcxBounceBuffersSize: Long = get(SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE)
 
