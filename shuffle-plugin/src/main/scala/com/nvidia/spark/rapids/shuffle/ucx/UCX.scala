@@ -737,8 +737,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       peerMgmtPort: Int) = {
     logInfo(s"Connecting to $peerMgmtHost:$peerMgmtPort")
     withResource(new NvtxRange(s"UCX Connect to $peerMgmtHost:$peerMgmtPort", NvtxColor.RED)) { _ =>
-      withResource(new Socket(peerMgmtHost, peerMgmtPort)) { socket =>
+      withResource(new Socket()) { socket =>
         socket.setTcpNoDelay(true)
+        socket.connect(new InetSocketAddress(peerMgmtHost, peerMgmtPort),
+          rapidsConf.shuffleUcxMgmtConnTimeout)
         val os = socket.getOutputStream
         val is = socket.getInputStream
 
