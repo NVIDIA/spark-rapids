@@ -96,6 +96,9 @@ object ProfileMain extends Logging {
         val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
         apps += app
         logApplicationInfo(app)
+        // This is a bit odd that we process apps individual right now due to
+        // memory concerns. So the aggregation functions only aggregate single
+        // application not across applications.
         processApps(apps, appArgs.generateDot())
         app.dropAllTempViews()
         index += 1
