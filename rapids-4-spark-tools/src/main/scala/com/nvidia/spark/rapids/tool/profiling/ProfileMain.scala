@@ -96,6 +96,9 @@ object ProfileMain extends Logging {
         val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
         apps += app
         logApplicationInfo(app)
+        // This is a bit odd that we process apps individual right now due to
+        // memory concerns. So the aggregation functions only aggregate single
+        // application not across applications.
         processApps(apps, appArgs.generateDot())
         app.dropAllTempViews()
         index += 1
@@ -114,25 +117,26 @@ object ProfileMain extends Logging {
      */
     def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
-        logInfo(s"### A. Compare Information Collected ###")
+        fileWriter.write("### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps, fileWriter)
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareRapidsProperties()
       } else {
         val collect = new CollectInformation(apps, fileWriter)
-        logInfo(s"### A. Information Collected ###")
+        fileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
         collect.printRapidsProperties()
-        if (generateDot) {
-          collect.generateDot(appArgs.outputDirectory())
-        }
+        collect.printRapidsJAR()
+        collect.printSQLPlanMetrics(generateDot, appArgs.outputDirectory())
       }
 
-      logInfo(s"### B. Analysis ###")
+      fileWriter.write("\n### B. Analysis ###\n")
       val analysis = new Analysis(apps, Some(fileWriter))
       analysis.jobAndStageMetricsAggregation()
+      analysis.sqlMetricsAggregation()
+      analysis.shuffleSkewCheck()
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {
