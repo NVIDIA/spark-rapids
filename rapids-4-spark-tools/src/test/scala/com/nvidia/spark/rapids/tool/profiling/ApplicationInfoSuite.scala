@@ -85,15 +85,18 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val appArgs = new ProfileArgs(Array(
       "--filter-criteria",
       filterNew,
-      "src/test/resources/udf_func_eventlog",
-      "src/test/resources/udf_dataset_eventlog",
       "src/test/resources/dataset_eventlog",
-      "src/test/resources/eventlog_minimal_events"
+      "src/test/resources/eventlog_minimal_events",
+      "src/test/resources/udf_func_eventlog",
+      "src/test/resources/udf_dataset_eventlog"
     ))
 
     val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
       appArgs.matchEventLogs, appArgs.eventlog())
     assert(result.length == 2)
+    //Validate filenames
+    assert(result.toString.contains("udf_func_eventlog"))
+    assert(result.toString.contains("udf_dataset_eventlog"))
   }
 
   test("test filter file oldest and file name match") {
@@ -104,14 +107,19 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       filterOld,
       "--match-event-logs",
       matchFileName,
-      "src/test/resources/udf_func_eventlog",
-      "src/test/resources/udf_dataset_eventlog",
       "src/test/resources/dataset_eventlog",
-      "src/test/resources/eventlog_minimal_events"
+      "src/test/resources/eventlog_minimal_events",
+      "src/test/resources/udf_func_eventlog",
+      "src/test/resources/udf_dataset_eventlog"
     ))
 
     val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
       appArgs.matchEventLogs, appArgs.eventlog())
+
     assert(result.length == 3)
+    // Validate filenames
+    assert(result.toString.contains("eventlog_minimal_events"))
+    assert(result.toString.contains("udf_func_eventlog"))
+    assert(result.toString.contains("udf_dataset_eventlog"))
   }
 }

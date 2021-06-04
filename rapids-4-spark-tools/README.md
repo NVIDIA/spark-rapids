@@ -56,8 +56,11 @@ export AWS_SECRET_ACCESS_KEY=xxx
 For usage see below:
   -c, --compare                   Compare Applications (Recommended to compare
                                   less than 10 applications). Default is false
-  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for processing
-  -m, --match-event-logs  <arg>   Filter event logs which matches the input
+  -f, --filter-criteria  <arg>    Filter newest or oldest N event logs for processing.
+                                  Supported formats are:
+                                  To process 10 recent event logs: --filter-criteria "10-newest"
+                                  To process 10 oldest event logs: --filter-criteria "10-oldest"
+  -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
   -n, --num-output-rows  <arg>    Number of output rows for each Application. Default is 1000
   -o, --output-directory  <arg>   Output directory. Default is current directory
   -h, --help                      Show help message

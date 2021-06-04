@@ -59,7 +59,7 @@ For usage see below:
           "eg: 100-oldest (for processing oldest 100 event logs)")
   val matchEventLogs: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter event logs which matches the input")
+      descr = "Filter event logs whose filenames contain the input string")
   val compare: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Compare Applications (Recommended to compare less than 10 applications)." +

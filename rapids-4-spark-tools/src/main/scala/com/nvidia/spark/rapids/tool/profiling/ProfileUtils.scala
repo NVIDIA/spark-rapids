@@ -70,15 +70,19 @@ object ProfileUtils {
     }
 
   // Return an Array(Path) and Timestamp Map based on input path string
-  def stringToPath(pathString: String): (ArrayBuffer[Path], Map[Path, Long]) = {
+  def stringToPath(pathString: String): Map[Path, Long] = {
     val inputPath = new Path(pathString)
     val uri = inputPath.toUri
     val fs = FileSystem.get(uri, new Configuration())
     val allStatus = fs.listStatus(inputPath).filter(s => s.isFile)
     val pathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
-    allStatus.map(a => {
-      pathsWithTimestamp += (a.getPath -> a.getModificationTime)
-    })
-    (ArrayBuffer(FileUtil.stat2Paths(allStatus): _*), pathsWithTimestamp)
+    if (allStatus != null) {
+      allStatus.map(a => {
+        pathsWithTimestamp += (a.getPath -> a.getModificationTime)
+      })
+      pathsWithTimestamp
+    } else {
+      null
+    }
   }
 }
