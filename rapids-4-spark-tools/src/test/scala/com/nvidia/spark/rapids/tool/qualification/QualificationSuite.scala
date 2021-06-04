@@ -117,6 +117,12 @@ class QualificationSuite extends FunSuite with Logging {
 
       // parse results from listener
       val numTasks = listener.completedStages.map(_.stageInfo.numTasks).sum
+      val executorRunTime = listener.completedStages
+        .map(_.stageInfo.taskMetrics.executorRunTime).sum
+      val shuffleBytesRead = listener.completedStages
+        .map(_.stageInfo.taskMetrics.shuffleReadMetrics.localBytesRead).sum
+      val shuffleBytesWritten = listener.completedStages
+        .map(_.stageInfo.taskMetrics.shuffleWriteMetrics.bytesWritten).sum
 
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
@@ -132,14 +138,18 @@ class QualificationSuite extends FunSuite with Logging {
         assert(exit == 0)
 
         val df = sparkSession.table("sqlAggMetricsDF")
-
         val rows = df.collect()
         assert(rows.length === 1)
         val collect = rows.head
         assert(collect.getString(3).startsWith("collect"))
 
+        def fieldIndex(name: String) = df.schema.fieldIndex(name)
+
         // compare metrics from event log with metrics from listener
-        assert(collect.getLong(4) === numTasks)
+        assert(collect.getLong(fieldIndex("numTasks")) === numTasks)
+        assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
+        assert(collect.getLong(fieldIndex("sr_localBytesRead_sum")) === shuffleBytesRead)
+        assert(collect.getLong(fieldIndex("sw_bytesWritten_sum")) === shuffleBytesWritten)
       }
     }
   }
