@@ -27,16 +27,13 @@ nested_struct = StructGen([
     ['child0', StructGen([
         ['child0', StructGen([
             ['child0', StructGen([
-                ['child0', StructGen([
-                    ['child0', DecimalGen(7, 2)],
-                    ['child1', BooleanGen()],
-                    ['child2', BooleanGen()],
-                    ['child3', BooleanGen()]
-                ])],
+                ['child0', DecimalGen(7, 2)],
                 ['child1', BooleanGen()],
-                ['child2', BooleanGen()]
+                ['child2', BooleanGen()],
+                ['child3', BooleanGen()]
             ])],
-            ['child1', BooleanGen()]
+            ['child1', BooleanGen()],
+            ['child2', BooleanGen()]
         ])],
         ['child1', BooleanGen()]
     ])]])
