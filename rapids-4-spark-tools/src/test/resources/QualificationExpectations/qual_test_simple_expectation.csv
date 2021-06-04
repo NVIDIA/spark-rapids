@@ -1,0 +1,5 @@
+appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,68.19,"",11128,16319,37.7
+Rapids Spark Profiling Tool Unit Tests,local-1621969619749,14.34,UDF,1560,10880,46.3
+Rapids Spark Profiling Tool Unit Tests,local-1621966649543,0.0,"",0,10650,26.65
+Rapids Spark Profiling Tool Unit Tests,local-1621955976602,0.0,"",0,10419,25.8

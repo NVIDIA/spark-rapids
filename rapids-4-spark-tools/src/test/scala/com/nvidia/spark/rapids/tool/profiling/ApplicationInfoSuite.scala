@@ -27,7 +27,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
 
 class ApplicationInfoSuite extends FunSuite with Logging {
 
-  val sparkSession = {
+  lazy val sparkSession = {
     SparkSession
         .builder()
         .master("local[*]")
@@ -39,12 +39,11 @@ class ApplicationInfoSuite extends FunSuite with Logging {
 
   test("test single event") {
     val tempFile = File.createTempFile("tempOutputFile", null)
-    val fileWriter = new FileWriter(tempFile)
     try {
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
-        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter,
+        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
           ProfileUtils.stringToPath(path)(0), index)
         index += 1
       }
@@ -57,7 +56,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
       assert(apps.head.taskEnd(apps.head.index).endReason.equals("Success"))
     } finally {
-      fileWriter.close()
       tempFile.deleteOnExit()
     }
   }
