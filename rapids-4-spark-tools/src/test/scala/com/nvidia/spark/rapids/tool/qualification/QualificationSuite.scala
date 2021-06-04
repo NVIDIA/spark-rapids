@@ -19,25 +19,28 @@ package com.nvidia.spark.rapids.tool.qualification
 import java.io.File
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 
-class QualificationSuite extends FunSuite with Logging {
+class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
-  lazy val sparkSession = {
-    SparkSession
+  private var sparkSession: SparkSession = _
+
+  private val expRoot = ToolTestUtils.getTestResourceFile("QualificationExpectations")
+  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+
+  override protected def beforeEach(): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+    sparkSession = SparkSession
       .builder()
       .master("local[*]")
       .appName("Rapids Spark Profiling Tool Unit Tests")
       .getOrCreate()
   }
-
-  private val expRoot = ToolTestUtils.getTestResourceFile("QualificationExpectations")
-  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
 
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String) = {
     Seq(true, false).foreach { hasExecCpu =>
