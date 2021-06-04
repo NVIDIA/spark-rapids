@@ -20,8 +20,10 @@ import java.io.File
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
+import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted}
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 
 class QualificationSuite extends FunSuite with Logging {
@@ -97,4 +99,50 @@ class QualificationSuite extends FunSuite with Logging {
     val logFiles = Array(s"$logDir/nds_q86_test")
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
+
+  test("sql metric agg") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val listener = new ToolTestListener
+      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        spark.sparkContext.addSparkListener(listener)
+        import spark.implicits._
+        val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
+        t1.createOrReplaceTempView("t1")
+        spark.sql("SELECT a, MAX(b) FROM t1 GROUP BY a ORDER BY a")
+      }
+
+      TrampolineUtil.withTempDir { outpath =>
+        val appArgs = new QualificationArgs(Array(
+          "--include-exec-cpu-percent",
+          "--output-directory",
+          outpath.getAbsolutePath,
+          eventLog))
+
+        val (exit, _) =
+          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput = false,
+            dropTempViews = false)
+        assert(exit == 0)
+
+        val df = sparkSession.table("sqlAggMetricsDF")
+        df.show()
+
+        val stage = listener.completedStages.head
+
+        val rows = df.collect()
+        assert(rows.length === 1)
+        val collect = rows.head
+        assert(collect.getString(3).startsWith("collect"))
+
+        // compare metrics from event log with metrics from listener
+        assert(collect.getLong(6) === stage.stageInfo.taskMetrics.executorCpuTime)
+      }
+    }
+  }
+}
+
+class ToolTestListener extends SparkListener {
+  val completedStages = new ListBuffer[SparkListenerStageCompleted]()
+
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit =
+    completedStages.append(stageCompleted)
 }
