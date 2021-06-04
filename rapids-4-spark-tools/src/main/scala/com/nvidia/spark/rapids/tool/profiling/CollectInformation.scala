@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.File
+import java.io.{File, FileWriter}
 import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
@@ -29,16 +29,16 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CollectInformation mainly print information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
+class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter) {
 
   require(apps.nonEmpty)
-  private val fileWriter = apps.head.fileWriter
 
   // Print Application Information
   def printAppInfo(): Unit = {
     val messageHeader = "Application Information:\n"
     for (app <- apps) {
-      app.runQuery(query = app.generateAppInfo, writeToFile = true, messageHeader = messageHeader)
+      app.runQuery(query = app.generateAppInfo, fileWriter = Some(fileWriter),
+        messageHeader = messageHeader)
     }
   }
 
@@ -66,7 +66,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
     val messageHeader = "\n\nExecutor Information:\n"
     for (app <- apps) {
       app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
-        writeToFile = true, messageHeader = messageHeader)
+        fileWriter = Some(fileWriter), messageHeader = messageHeader)
     }
   }
 
@@ -74,12 +74,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
   def printRapidsProperties(): Unit = {
     val messageHeader = "\n\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
-      app.runQuery(query = app.generateRapidsProperties + " order by key", writeToFile = true,
-        messageHeader = messageHeader)
+      app.runQuery(query = app.generateRapidsProperties + " order by key",
+        fileWriter = Some(fileWriter), messageHeader = messageHeader)
     }
   }
 
-  def generateDot(): Unit = {
+  def generateDot(outputDirectory: String): Unit = {
     for (app <- apps) {
       val requiredDataFrames = Seq("sqlMetricsDF", "driverAccumDF",
           "taskStageAccumDF", "taskStageAccumDF")
@@ -95,7 +95,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo]) {
           val list = map.getOrElseUpdate(row.getLong(0), new ArrayBuffer[(Long, Long)]())
           list += row.getLong(1) -> row.getLong(2)
         }
-        val outDir = new File(app.args.outputDirectory())
+        val outDir = new File(outputDirectory)
         for ((sqlID, planInfo) <- app.sqlPlan) {
           val fileDir = new File(outDir, s"${app.appId}-query-$sqlID")
           fileDir.mkdirs()

@@ -320,10 +320,11 @@ object RapidsConf {
     .createOptional
 
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
+  private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
-    .doc("The fraction of total GPU memory that should be initially allocated " +
+    .doc("The fraction of available GPU memory that should be initially allocated " +
       "for pooled memory. Extra memory will be allocated as needed, but it may " +
       "result in more fragmentation. This must be less than or equal to the maximum limit " +
       s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
@@ -339,6 +340,13 @@ object RapidsConf {
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
+
+  val RMM_ALLOC_MIN_FRACTION = conf(RMM_ALLOC_MIN_FRACTION_KEY)
+    .doc("The fraction of total GPU memory that limits the minimum size of the RMM pool. " +
+      s"The value must be less than or equal to the setting for $RMM_ALLOC_FRACTION.")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(0.25)
 
   val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
@@ -357,7 +365,6 @@ object RapidsConf {
         "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
         "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
         "memory usage")
-      .internal()
       .booleanConf
       .createWithDefault(false)
 
@@ -377,6 +384,24 @@ object RapidsConf {
         "by UCX bounce buffers.")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.MiB.toBytes(8))
+
+  val GDS_SPILL_ALIGNED_IO =
+    conf("spark.rapids.memory.gpu.direct.storage.spill.alignedIO")
+    .doc("When GDS spill is enabled, should I/O be 4 KiB aligned. GDS is more efficient when " +
+        "reads and writes are 4 KiB aligned, but aligning has some additional memory overhead " +
+        "with the padding.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val GDS_SPILL_ALIGNMENT_THRESHOLD =
+    conf("spark.rapids.memory.gpu.direct.storage.spill.alignmentThreshold")
+    .doc("GPU memory buffers with size above this threshold will be aligned to 4 KiB. Setting " +
+        "this value to 0 means every allocation will be 4 KiB aligned. A low threshold may " +
+        "cause more memory consumption because of padding.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(ByteUnit.KiB.toBytes(64))
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
@@ -1209,7 +1234,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.06.0-SNAPSHOT.jar,cudf-21.06.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.06.0.jar,cudf-21.06.0-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1363,6 +1388,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmAllocMaxFraction: Double = get(RMM_ALLOC_MAX_FRACTION)
 
+  lazy val rmmAllocMinFraction: Double = get(RMM_ALLOC_MIN_FRACTION)
+
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
@@ -1372,6 +1399,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
+
+  lazy val isGdsSpillAlignedIO: Boolean = get(GDS_SPILL_ALIGNED_IO)
+
+  lazy val gdsSpillAlignmentThreshold: Long = get(GDS_SPILL_ALIGNMENT_THRESHOLD)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 

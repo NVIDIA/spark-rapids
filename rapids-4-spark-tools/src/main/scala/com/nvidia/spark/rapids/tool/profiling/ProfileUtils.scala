@@ -34,7 +34,7 @@ object ProfileUtils {
   def createSparkSession: SparkSession = {
     SparkSession
         .builder()
-        .appName("Rapids Spark Profiling Tool")
+        .appName("Rapids Spark Qualification/Profiling Tool")
         .getOrCreate()
   }
 

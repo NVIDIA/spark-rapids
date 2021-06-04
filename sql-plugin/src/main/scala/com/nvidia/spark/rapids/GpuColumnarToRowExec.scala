@@ -281,16 +281,16 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
-    FETCH_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FETCH_TIME),
+    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
-    val fetchTime = gpuLongMetric(FETCH_TIME)
+    val collectTime = gpuLongMetric(COLLECT_TIME)
 
-    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, opTime, fetchTime)
+    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, opTime, collectTime)
 
     val cdata = child.executeColumnar()
     if (exportColumnarRdd) {

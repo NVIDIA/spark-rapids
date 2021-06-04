@@ -305,6 +305,8 @@ object EventsProcessor extends Logging {
       event.time,
       None,
       None,
+      "",
+      None,
       ""
     )
     app.sqlStart += sqlExecution
@@ -345,7 +347,7 @@ object EventsProcessor extends Logging {
       event.time,
       None,
       None,
-      "",
+      None,
       None,
       "",
       ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode

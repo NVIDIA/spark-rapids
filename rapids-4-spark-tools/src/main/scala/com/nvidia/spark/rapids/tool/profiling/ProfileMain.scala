@@ -62,6 +62,8 @@ object ProfileMain extends Logging {
     // Get the event logs required to process
     lazy val allPaths = processAllPaths(filterN, matchEventLogs, eventlogPaths)
 
+    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
+
     // If compare mode is on, we need lots of memory to cache all applications then compare.
     // Suggest only enable compare mode if there is no more than 10 applications as input.
     if (appArgs.compare()) {
@@ -69,7 +71,7 @@ object ProfileMain extends Logging {
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
       var index: Int = 1
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-        apps += new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
+        apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
         index += 1
       }
 
@@ -89,7 +91,7 @@ object ProfileMain extends Logging {
       for (path <- allPaths.filter(p => !p.getName.contains("."))) {
         // This apps only contains 1 app in each loop.
         val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        val app = new ApplicationInfo(appArgs, sparkSession, fileWriter, path, index)
+        val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
         apps += app
         logApplicationInfo(app)
         processApps(apps, appArgs.generateDot())
@@ -111,32 +113,24 @@ object ProfileMain extends Logging {
     def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
         logInfo(s"### A. Compare Information Collected ###")
-        val compare = new CompareApplications(apps)
+        val compare = new CompareApplications(apps, fileWriter)
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareRapidsProperties()
       } else {
-        val collect = new CollectInformation(apps)
+        val collect = new CollectInformation(apps, fileWriter)
         logInfo(s"### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
         collect.printRapidsProperties()
         if (generateDot) {
-          collect.generateDot()
+          collect.generateDot(appArgs.outputDirectory())
         }
       }
 
       logInfo(s"### B. Analysis ###")
-      val analysis = new Analysis(apps)
+      val analysis = new Analysis(apps, Some(fileWriter))
       analysis.jobAndStageMetricsAggregation()
-      val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
-
-      if (!sqlAggMetricsDF.isEmpty) {
-        fileWriter.write(s"### C. Qualification ###\n")
-        new Qualification(apps, sqlAggMetricsDF)
-      } else {
-        logInfo(s"Skip qualification part because no sqlAggMetrics DataFrame is detected.")
-      }
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {

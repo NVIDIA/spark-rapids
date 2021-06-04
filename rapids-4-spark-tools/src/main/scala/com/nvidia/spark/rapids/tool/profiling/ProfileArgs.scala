@@ -20,26 +20,27 @@ import org.rogach.scallop.{ScallopConf, ScallopOption}
 class ProfileArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
 
   banner("""
-Spark profiling tool
+RAPIDS Accelerator for Apache Spark profiling tool
 
 Example:
 
 # Input 1 or more event logs from local path:
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
-<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar
- /path/to/eventlog1 /path/to/eventlog2
+rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
+
+# Specify a directory of event logs from local path:
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
+ rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
 
 # If any event log is from S3:
 export AWS_ACCESS_KEY_ID=xxx
 export AWS_SECRET_ACCESS_KEY=xxx
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
-<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar
-s3a://<BUCKET>/eventlog1 /path/to/eventlog2
+rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
 # Change output directory to /tmp
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
- <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar
- -o /tmp /path/to/eventlog1
+rapids-4-spark-tools_2.12-<version>.jar -o /tmp /path/to/eventlog1
 
 For usage see below:
     """)

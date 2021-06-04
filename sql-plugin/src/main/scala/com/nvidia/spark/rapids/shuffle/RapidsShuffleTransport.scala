@@ -336,6 +336,7 @@ trait Transaction extends AutoCloseable {
  * needed.
  */
 trait RapidsShuffleTransport extends AutoCloseable {
+
   /**
    * This function will connect (if not connected already) to a peer
    * described by `blockManagerId`. Connections are cached.
@@ -381,6 +382,12 @@ trait RapidsShuffleTransport extends AutoCloseable {
    * @param reqs requests to add to the throttle queue
    */
   def queuePending(reqs: Seq[PendingTransferRequest])
+
+  /**
+   * Cancel requests that are waiting in the queue (not in-flight) for a specific
+   * handler
+   */
+  def cancelPending(handler: RapidsShuffleFetchHandler): Unit
 
   /**
    * (throttle) Signals that `bytesCompleted` are done, allowing more requests through the
