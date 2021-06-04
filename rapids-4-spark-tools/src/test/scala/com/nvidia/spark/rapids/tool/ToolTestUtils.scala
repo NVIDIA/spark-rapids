@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.tool
 
 import java.io.File
 
-object TestUtils {
+object ToolTestUtils {
 
   def getTestResourceFile(file: String): File = {
     new File(getClass.getClassLoader.getResource(file).getFile)
