@@ -18,7 +18,10 @@ package com.nvidia.spark.rapids.tool
 
 import java.io.File
 
-object ToolTestUtils {
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.{DataFrame, SparkSession}
+
+object ToolTestUtils extends Logging {
 
   def getTestResourceFile(file: String): File = {
     new File(getClass.getClassLoader.getResource(file).getFile)
@@ -26,5 +29,20 @@ object ToolTestUtils {
 
   def getTestResourcePath(file: String): String = {
     getTestResourceFile(file).getCanonicalPath
+  }
+
+  def compareDataFrames(df: DataFrame, expectedDf: DataFrame): Unit = {
+    val diffCount = df.except(expectedDf).union(expectedDf.except(df)).count
+    if (diffCount != 0) {
+      logWarning("Diff expected vs actual:")
+      expectedDf.show()
+      df.show()
+    }
+    assert(diffCount == 0)
+  }
+
+  def readExpectationCSV(sparkSession: SparkSession, path: String): DataFrame = {
+    // make sure to change null value so empty strings don't show up as nulls
+    sparkSession.read.option("header", "true").option("nullValue", "-").csv(path)
   }
 }
