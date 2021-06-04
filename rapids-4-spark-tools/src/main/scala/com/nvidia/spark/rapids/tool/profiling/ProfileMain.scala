@@ -161,7 +161,7 @@ object ProfileMain extends Logging {
     for (pathString <- eventLogsPaths) {
       val paths = ProfileUtils.stringToPath(pathString)
       if (paths.nonEmpty) {
-        allPaths ++= paths.map(a=> a._1)
+        allPaths ++= paths.map(a => a._1)
         allPathsWithTimestamp ++= paths
       }
     }

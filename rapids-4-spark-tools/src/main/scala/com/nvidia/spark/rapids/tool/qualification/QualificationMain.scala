@@ -59,7 +59,7 @@ object QualificationMain extends Logging {
     for (pathString <- eventlogPaths) {
       val paths = ProfileUtils.stringToPath(pathString)
       if (paths.nonEmpty) {
-        allPaths ++= paths
+        allPaths ++= paths.map(a => a._1)
       }
     }
     val includeCpuPercent = appArgs.includeExecCpuPercent.getOrElse(false)
