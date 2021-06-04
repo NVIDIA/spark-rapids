@@ -4,8 +4,7 @@ The qualification tool is used to rank a set of applications to determine if the
 is a good fit for those applications. Works with CPU generated event logs.
 
 The profiling tool generates information which can be used for ranking applications debugging and profiling.
-Information such as Spark version, executor information, properties and so on.  
-Works with both CPU and GPU generated event logs.
+Information such as Spark version, executor information, properties and so on. Works with both CPU and GPU generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
@@ -27,7 +26,7 @@ You do not need to compile the jar yourself because you can download it from mav
 
 Here are 2 options:
 1. Download the jar file from maven repository
-
+  
 2. Compile the jar from github repo
 ```bash
 git clone https://github.com/NVIDIA/spark-rapids.git
@@ -41,8 +40,8 @@ The jar is generated in below directory :
 ## How to use this tool
 
 This tool parses the spark event log(s) and creates an output report.
-Acceptable input spark event log paths are local filesystem, hdfs , S3 or mixed.
-It can be file path , directory path or mixed.
+Acceptable input spark event log paths are local filesystem,hdfs,S3 or mixed.
+It can be file path,directory path or mixed.
 
 Below is an example input:
 ```
@@ -73,8 +72,6 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 </configuration>
 ```
 
-It has 2 functions -- qualification and profiling.
-
 ## Qualification Tool
 
 ### Use from spark-shell
@@ -89,7 +86,7 @@ com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/t
 ### Use from spark-submit
 ```bash
 $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
-<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2
 ```
 
@@ -97,7 +94,7 @@ $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.
 ```bash
 $SPARK_HOME/bin/spark-submit \
 --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
-<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+rapids-4-spark-tools_2.12-<version>.jar \
 --help
 
 For usage see below:
@@ -133,7 +130,11 @@ the rankings of the applications.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
 
-The output format can be changed using the `--output-format` option. Default is csv.
+The output format can be changed using the `--output-format` option. Default is csv. The other option is text.
+  
+The `--include-exec-cpu-percent` option can be used to include executor CPU time percent which is based on the aggregated task metrics:
+`sum(executorCPUTime)/sum(executorRunTime)`. It can show us roughly how much time is spent on CPU.
+Note: This option needs lot of memory for large amount of event logs as input. We suggest not enable it if the input has more than 10 event logs.
 
 Run `--help` for more information.
 
@@ -173,7 +174,7 @@ com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog
 ### Use from spark-submit
 ```bash
 $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
-<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2
 ```
 
@@ -181,7 +182,7 @@ $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.Prof
 ```bash
 $SPARK_HOME/bin/spark-submit \
 --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
-<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+rapids-4-spark-tools_2.12-<version>.jar \
 --help
 
 For usage see below:
