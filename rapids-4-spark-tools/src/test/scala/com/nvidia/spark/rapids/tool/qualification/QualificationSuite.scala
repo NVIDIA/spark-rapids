@@ -117,6 +117,14 @@ class QualificationSuite extends FunSuite with Logging {
 
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
+
+        // create new session for tool to use
+        val spark2 = SparkSession
+          .builder()
+          .master("local[*]")
+          .appName("Rapids Spark Profiling Tool Unit Tests")
+          .getOrCreate()
+
         val appArgs = new QualificationArgs(Array(
           "--include-exec-cpu-percent",
           "--output-directory",
@@ -124,17 +132,18 @@ class QualificationSuite extends FunSuite with Logging {
           eventLog))
 
         val (exit, _) =
-          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput = false,
+          QualificationMain.mainInternal(spark2, appArgs, writeOutput = false,
             dropTempViews = false)
         assert(exit == 0)
 
-        val df = sparkSession.table("sqlAggMetricsDF")
+        val df = spark2.table("sqlAggMetricsDF")
+
+        def fieldIndex(name: String) = df.schema.fieldIndex(name)
+
         val rows = df.collect()
         assert(rows.length === 1)
         val collect = rows.head
-        assert(collect.getString(3).startsWith("collect"))
-
-        def fieldIndex(name: String) = df.schema.fieldIndex(name)
+        assert(collect.getString(fieldIndex("description")).startsWith("collect"))
 
         // parse results from listener
         val numTasks = listener.completedStages.map(_.stageInfo.numTasks).sum

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.tool
 
 import java.io.{File, FilenameFilter, FileNotFoundException}
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 
 object ToolTestUtils {
 
@@ -32,7 +32,12 @@ object ToolTestUtils {
 
   def generateEventLog(eventLogDir: File, appName: String)
       (fun: SparkSession => DataFrame): String = {
-    val spark = SparkSession
+
+    // we need to close any existing sessions to ensure that we can
+    // create a session with a new event log dir
+    TrampolineUtil.cleanupAnyExistingSession()
+
+    lazy val spark = SparkSession
       .builder()
       .master("local[*]")
       .appName(appName)
