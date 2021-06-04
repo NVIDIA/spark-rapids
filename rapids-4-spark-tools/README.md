@@ -155,11 +155,21 @@ It can also print the potential problems such as UDF.
 Note: The tool won't cache all UDFs, and some of the UDFs can be handled with additional steps. 
 Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
 
-Sample output:
+Sample output in csv:
 ```
 App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration
 Spark shell,app-20210507105707-0001,78.03,"",810923,1039276
 Spark shell,app-20210507103057-0000,75.87,"",316622,417307
+```
+  
+Sample output in text:
+```
++-----------+-----------------------+-----+------------------+----------------------+------------+
+|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|
++-----------+-----------------------+-----+------------------+----------------------+------------+
+|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |
+|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |
++-----------+-----------------------+-----+------------------+----------------------+------------+
 ```
 
 ## Profiling Tool
