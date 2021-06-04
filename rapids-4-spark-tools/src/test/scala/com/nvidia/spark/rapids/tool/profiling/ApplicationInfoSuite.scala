@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.File
 
-import com.nvidia.spark.rapids.tool.qualification.QualificationTestUtils
+import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
 
@@ -37,8 +37,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   // TODO - move test utils
-  private val expRoot = QualificationTestUtils.getTestResourceFile("QualificationExpectations")
-  private val logDir = QualificationTestUtils.getTestResourcePath("spark-events-profiling")
+  private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
+  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
   test("test single event") {
     var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -79,10 +79,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
     assert(apps.head.sparkVersion.equals("3.0.1"))
     assert(apps.head.gpuMode.equals(true))
-    val rapidsJar = apps.head.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
-    val cuDFJar = apps.head.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
-    assert(rapidsJar.equals("rapids-4-spark_2.12-0.5.0.jar"), "Rapids jar check")
-    assert(cuDFJar.equals("cudf-0.19.2-cuda11.jar"), "CUDF jar check")
+    val rapidsJar = apps.head.classpathEntries.filterKeys(_ matches ".*rapids-4-spark_2.12-0.5.0.jar.*")
+    val cuDFJar = apps.head.classpathEntries.filterKeys(_ matches ".*cudf-0.19.2-cuda11.jar.*")
+    assert(rapidsJar.size == 1, "Rapids jar check")
+    assert(cuDFJar.size == 1, "CUDF jar check")
   }
 
   test("test printSQLPlanMetrics") {
@@ -103,7 +103,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val accums = app.runQuery(app.generateSQLAccums, fileWriter = None)
 
       val resultExpectation =
-        new File(expRoot, "ProfilingExpectations/rapids_join_eventlog_sqlmetrics_expectation.csv")
+        new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
       val dfExpect = sparkSession.read.option("header", "true").
         option("nullValue", "-").csv(resultExpectation.getPath)
       val diffCount = accums.except(dfExpect).union(dfExpect.except(dfExpect)).count
