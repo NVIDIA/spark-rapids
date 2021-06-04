@@ -141,8 +141,12 @@ Run `--help` for more information.
 ### Functions
 
 The qualification tool's algorithm is to calculate the dataframe SQL duration ratio = 
-sum(dataframe-SQL-duration) / application-duration
+sum(SQL Dataframe Duration) / (application-duration)
 and then rank all applications based on that ratio.
+
+Each application(event log) could have multiple SQLs.
+If a SQL's plan has Dataset API inside such as keyworkd `$Lambda` or `.apply`, this SQL is categorized as DataSet SQL, otherwise it is a Dataframe SQL.
+`sum(SQL Dataframe Duration)` means the total duration for all Dataframe SQLs.
 
 Note: duration is in milli-seconds.
 
