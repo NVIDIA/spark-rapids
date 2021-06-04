@@ -1,78 +1,197 @@
 # Spark Qualification and Profiling tools
 
-The qualification tool is used to rank a set of applications to determine if the RAPIDS Accelerator for Apache Spark is a good fit for those applications.
+The qualification tool is used to rank a set of applications to determine if the RAPIDS Accelerator for Apache Spark 
+is a good fit for those applications. Works with CPU generated event logs.
 
 The profiling tool generates information which can be used for ranking applications debugging and profiling.
-Information such as Spark version, executor information, Properties and so on.  Works with both cpu and gpu generated event logs.
+Information such as Spark version, executor information, properties and so on.  
+Works with both CPU and GPU generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## Prerequisites
-1. Require Spark 3.1.1 or newer installed
+- Spark 3.1.1 or newer installed
+- Java 8 or above
+- Complete Spark event log(s) from Spark 3.0 or above version.
 
-## How to compile
-1. `mvn clean package`
+Optional:
+- maven installed 
+  (only if you want to compile the jar yourself)
+- A running Spark cluster 
+  (only if you choose to run the job on a Spark cluster)
+- hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar 
+  (only if any input event log is from S3)
+  
+## Download the jar or compile it
+You do not need to compile the jar yourself because you can download it from maven repository directly.
+
+Here are 2 options:
+1. Download the jar file from maven repository
+
+2. Compile the jar from github repo
+```bash
+git clone https://github.com/NVIDIA/spark-rapids.git
+cd spark-rapids
+mvn -pl .,rapids-4-spark-tools clean verify -DskipTests
+```
+The jar is generated in below directory :
+
+`./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar`
+
+## How to use this tool
+
+This tool parses the spark event log(s) and creates an output report.
+Acceptable input spark event log paths are local filesystem, hdfs , S3 or mixed.
+It can be file path , directory path or mixed.
+
+Below is an example input:
+```
+/path/to/localfilesystem/eventlog1 hdfs://path/to/directory/ s3a://<BUCKET>/to/directory/
+```
+
+If any input is a S3 file path or directory path, here 2 extra steps to access S3 in Spark:
+1. Download the matched jars based on the Hadoop version:
+   - hadoop-aws-<version>.jar
+   - aws-java-sdk-<version>.jar 
+     
+Take Hadoop 2.7.4 for example, we can download and include below jars in the '--jars' option to spark-shell or spark-submit:
+[hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and 
+[aws-java-sdk-1.7.4.jar](https://repo.maven.apache.org/maven2/com/amazonaws/aws-java-sdk/1.7.4/aws-java-sdk-1.7.4.jar)
+
+2. In $SPARK_HOME/conf, create `hdfs-site.xml` with below AWS S3 keys inside:
+```xml
+<?xml version="1.0"?>
+<configuration>
+<property>
+  <name>fs.s3a.access.key</name>
+  <value>xxx</value>
+</property>
+<property>
+  <name>fs.s3a.secret.key</name>
+  <value>xxx</value>
+</property>
+</configuration>
+```
+
+It has 2 functions -- qualification and profiling.
 
 ## Qualification Tool
 
-### Use from Spark
+### Use from spark-shell
 1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
 2. After starting spark-shell:
 
 For multiple event logs comparison and analysis:
-```
+```bash
 com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
 ```
 
-### How to compile and use from command-line
-1. `./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2`
+### Use from spark-submit
+```bash
+$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
+<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+/path/to/eventlog1 /path/to/eventlog2
+```
+
+### Options
+```bash
+$SPARK_HOME/bin/spark-submit \
+--class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
+<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+--help
+
+For usage see below:
+
+  -i, --include-exec-cpu-percent   Include the executor CPU time percent. It
+                                   will take longer with this option and you may
+                                   want to limit the number of applications
+                                   processed at once.
+  -n, --num-output-rows  <arg>     Number of output rows for each Application.
+                                   Default is 1000.
+  -o, --output-directory  <arg>    Base output directory. Default is current
+                                   directory for the default filesystem. The
+                                   final output will go into a subdirectory
+                                   called rapids_4_spark_qualification_output.
+                                   It will overwrite any existing directory with
+                                   the same name.
+      --output-format  <arg>       Output format, supports csv and text. Default
+                                   is csv. text output format creates a file
+                                   named rapids_4_spark_qualification.log while
+                                   csv will create a file using the standard
+                                   Spark naming convention.
+  -h, --help                       Show help message
+
+ trailing arguments:
+  eventlog (required)   Event log filenames(space separated) or directories
+                        containing event logs. eg: s3a://<BUCKET>/eventlog1
+                        /path/to/eventlog2
+```
 
 ### Output
-By default this outputs a file `./rapids_4_spark_qualification.log` that contains the rankings of the applications. The output
-location can be changed using the `--output-directory` option.  Run `--help` for more information.
+By default this outputs a csv file under sub-directory `./rapids_4_spark_qualification_output/` that contains 
+the rankings of the applications.
+
+The output location can be changed using the `--output-directory` option. Default is current directory.
+
+The output format can be changed using the `--output-format` option. Default is csv.
+
+Run `--help` for more information.
+
+### Functions
+
+The qualification tool's algorithm is to calculate the dataframe SQL duration ratio = 
+sum(dataframe-SQL-duration) / application-duration
+and then rank all applications based on that ratio.
+
+Note: duration is in milli-seconds.
+
+It can also print the potential problems such as UDF.
+
+Sample output:
+```
+App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration
+Spark shell,app-20210507105707-0001,78.03,"",810923,1039276
+Spark shell,app-20210507103057-0000,75.87,"",316622,417307
+```
 
 ## Profiling Tool
 
-### Use from Spark
+### Use from spark-shell
 1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
 2. After starting spark-shell:
+
 For a single event log analysis:
-```
+```bash
 com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))
 ```
 
 For multiple event logs comparison and analysis:
-```
+```bash
 com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
 ```
 
-### How to compile and use from command-line
-1. `cd $SPARK_HOME (Download Apache Spark if required)`
-2. `./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1`
+### Use from spark-submit
+```bash
+$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
+<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+/path/to/eventlog1 /path/to/eventlog2
+```
 
 ### Options
-```
-$ ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar --help
-
-Spark event log profiling tool
-
-Example:
-
-# Input 1 or more event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
-
-# If event log is from S3:
-export AWS_ACCESS_KEY_ID=xxx
-export AWS_SECRET_ACCESS_KEY=xxx
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
-
-# If event log is from hdfs:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar hdfs://<BUCKET>/eventlog1 /path/to/eventlog2
-
-# Change output directory to /tmp. It outputs as "rapids_4_spark_tools_output.log" in the local directory if the output directory is not specified.
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -o /tmp /path/to/eventlog1
+```bash
+$SPARK_HOME/bin/spark-submit \
+--class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
+<Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar \
+--help
 
 For usage see below:
+
+  -c, --compare                   Compare Applications (Recommended to compare
+                                  less than 10 applications). Default is false
+  -g, --generate-dot              Generate query visualizations in DOT format.
+                                  Default is false
+  -n, --num-output-rows  <arg>    Number of output rows for each Application.
+                                  Default is 1000
   -o, --output-directory  <arg>   Output directory. Default is current directory
   -h, --help                      Show help message
 
@@ -81,15 +200,22 @@ For usage see below:
                         s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 ```
 
+### Output
+By default this outputs a log file named `rapids_4_spark_tools_output.log` that contains the rankings of the applications.
+
+The output location can be changed using the `--output-directory` option. Default is current directory.
+
+Run `--help` for more information.
+
 ### Functions
-#### A. Collect Information or Compare Information(if more than 1 eventlogs are as input)
+#### A. Collect Information or Compare Information(if more than 1 eventlogs are as input and option -c is specified)
 - Print Application Information
 - Print Executors information
 - Print Rapids related parameters
 
 **1. GPU run vs CPU run performance comparison or different runs with different parameters**
 
-We can input multiple Spark event logs and this tool can compare enviroments, executors, Rapids related Spark parameters,
+We can input multiple Spark event logs and this tool can compare environments, executors, Rapids related Spark parameters,
 
 - Compare the durations/versions/gpuMode on or off:
 ```
@@ -105,7 +231,7 @@ We can input multiple Spark event logs and this tool can compare enviroments, ex
 ```
 
 
-- Compare Executor informations:
+- Compare Executor information:
 ```
 [main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - Compare Executor Information:
 [main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  -
