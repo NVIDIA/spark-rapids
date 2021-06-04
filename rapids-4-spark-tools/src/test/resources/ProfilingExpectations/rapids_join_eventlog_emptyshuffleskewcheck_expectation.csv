@@ -1,1 +1,0 @@
-appIndex,stageId,stageAttemptId,taskId,attempt,taskDurationSec,avgDurationSec,taskShuffleReadMB,avgShuffleReadMB,taskPeakMemoryMB,successful,endReason_first100char
