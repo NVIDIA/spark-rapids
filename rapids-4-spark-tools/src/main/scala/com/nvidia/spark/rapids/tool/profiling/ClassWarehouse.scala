@@ -55,7 +55,9 @@ case class SQLExecutionCase(
     startTime: Long,
     endTime: Option[Long],
     duration: Option[Long],
-    durationStr: String)
+    durationStr: String,
+    sqlQualDuration: Option[Long],
+    problematic: String = "")
 
 case class SQLPlanMetricsCase(
     sqlID: Long,
@@ -92,7 +94,7 @@ case class JobCase(
     startTime: Long,
     endTime: Option[Long],
     jobResult: Option[String],
-    failedReason: String,
+    failedReason: Option[String],
     duration: Option[Long],
     durationStr: String,
     gpuMode: Boolean)
@@ -155,4 +157,6 @@ case class TaskCase(
     output_bytesWritten: Long,
     output_recordsWritten: Long)
 
-case class ProblematicSQLCase(sqlID: Long, reason: String, desc: String)
+case class DatasetSQLCase(sqlID: Long)
+
+case class ProblematicSQLCase(sqlID: Long, reason: String)

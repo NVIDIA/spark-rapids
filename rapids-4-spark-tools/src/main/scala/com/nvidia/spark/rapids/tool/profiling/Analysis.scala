@@ -18,6 +18,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.io.FileWriter
+
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.DataFrame
@@ -27,15 +29,14 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
-class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
+class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter]) {
 
   require(apps.nonEmpty)
-  private val fileWriter = apps.head.fileWriter
 
   // Job Level TaskMetrics Aggregation
   def jobMetricsAggregation(): Unit = {
     if (apps.size == 1) {
-      fileWriter.write("Job level aggregated task metrics:")
+      fileWriter.foreach(_.write("Job level aggregated task metrics:"))
       apps.head.runQuery(apps.head.jobMetricsAggregationSQL + " order by Duration desc")
     } else {
       var query = ""
@@ -46,7 +47,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
           query += " union " + app.jobMetricsAggregationSQL
         }
       }
-      fileWriter.write("Job level aggregated task metrics:")
+      fileWriter.foreach(_.write("Job level aggregated task metrics:"))
       apps.head.runQuery(query + " order by appIndex, Duration desc")
     }
   }
@@ -54,7 +55,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
   // Stage Level TaskMetrics Aggregation
   def stageMetricsAggregation(): Unit = {
     if (apps.size == 1) {
-      fileWriter.write("Stage level aggregated task metrics:")
+      fileWriter.foreach(_.write("Stage level aggregated task metrics:"))
       apps.head.runQuery(apps.head.stageMetricsAggregationSQL + " order by Duration desc")
     } else {
       var query = ""
@@ -65,7 +66,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
           query += " union " + app.stageMetricsAggregationSQL
         }
       }
-      fileWriter.write("Stage level aggregated task metrics:")
+      fileWriter.foreach(_.write("Stage level aggregated task metrics:"))
       apps.head.runQuery(query + " order by appIndex, Duration desc")
     }
   }
@@ -84,7 +85,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
           query += " union " + app.jobAndStageMetricsAggregationSQL
         }
       }
-      fileWriter.write("Job + Stage level aggregated task metrics:")
+      fileWriter.foreach(_.write("Job + Stage level aggregated task metrics:"))
       apps.head.runQuery(query + " order by appIndex, Duration desc")
     }
   }
@@ -115,7 +116,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo]) {
 
   // custom query execution. Normally for debugging use.
   def customQueryExecution(app: ApplicationInfo): Unit = {
-    fileWriter.write("Custom query execution:")
+    fileWriter.foreach(_.write("Custom query execution:"))
     val customQuery =
       s"""select stageId from stageDF_${app.index} limit 1
          |""".stripMargin
