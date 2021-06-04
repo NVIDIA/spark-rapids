@@ -49,16 +49,15 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printRapidsJAR(): Unit = {
     for (app <- apps) {
       if (app.gpuMode) {
-        fileWriter.write(s"Application ${app.appId} (index=${app.index}) 's" +
-            " Rapids Accelerator Jar and cuDF Jar:")
+        fileWriter.write("\nRapids Accelerator Jar and cuDF Jar:\n")
         // Look for rapids-4-spark and cuDF jar
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
         if (rapidsJar.nonEmpty) {
-          rapidsJar.keys.foreach(k => fileWriter.write(s"\n$k"))
+          rapidsJar.keys.foreach(k => fileWriter.write(s"$k\n"))
         }
         if (cuDFJar.nonEmpty) {
-          cuDFJar.keys.foreach(k => fileWriter.write(s"\n$k"))
+          cuDFJar.keys.foreach(k => fileWriter.write(s"$k\n"))
         }
       }
     }

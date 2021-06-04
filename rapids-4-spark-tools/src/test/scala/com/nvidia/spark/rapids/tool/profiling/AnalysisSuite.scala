@@ -37,30 +37,40 @@ class AnalysisSuite extends FunSuite with Logging {
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
-  test("test jobAndStageMetricsAggregation simple") {
-    val apps =
-      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
-    assert(apps.size == 1)
-
-    val analysis = new Analysis(apps, None)
-    val actualDf = analysis.jobAndStageMetricsAggregation()
-    val resultExpectation =
-      new File(expRoot, "rapids_join_eventlog_jobandstagemetrics_expectation.csv")
-    val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
-    ToolTestUtils.compareDataFrames(actualDf, dfExpect)
+  test("test sqlMetricsAggregation simple") {
+    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog"),
+      "rapids_join_eventlog_sqlmetricsagg_expectation.csv",
+      "rapids_join_eventlog_jobandstagemetrics_expectation.csv")
   }
 
-  test("test sqlMetricsAggregation simple") {
-    val apps =
-      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
-    assert(apps.size == 1)
+  test("test sqlMetricsAggregation second single app") {
+    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog2"),
+      "rapids_join_eventlog_sqlmetricsagg2_expectation.csv",
+      "rapids_join_eventlog_jobandstagemetrics2_expectation.csv")
+  }
 
+  test("test sqlMetricsAggregation 2 combined") {
+    testSqlMetricsAggregation(
+      Array(s"$logDir/rapids_join_eventlog", s"$logDir/rapids_join_eventlog2"),
+      "rapids_join_eventlog_sqlmetricsaggmulti_expectation.csv",
+      "rapids_join_eventlog_jobandstagemetricsmulti_expectation.csv")
+  }
+
+  private def testSqlMetricsAggregation(logs: Array[String], expectFile: String,
+      expectFileJS: String): Unit = {
+    val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
+    assert(apps.size == logs.size)
     val analysis = new Analysis(apps, None)
+
     val actualDf = analysis.sqlMetricsAggregation()
-    val resultExpectation =
-      new File(expRoot, "rapids_join_eventlog_sqlmetricsagg_expectation.csv")
+    val resultExpectation = new File(expRoot,expectFile)
     val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
     ToolTestUtils.compareDataFrames(actualDf, dfExpect)
+
+    val actualDfJS = analysis.jobAndStageMetricsAggregation()
+    val resultExpectationJS = new File(expRoot, expectFileJS)
+    val dfExpectJS = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectationJS.getPath())
+    ToolTestUtils.compareDataFrames(actualDfJS, dfExpectJS)
   }
 
   test("test shuffleSkewCheck empty") {

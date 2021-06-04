@@ -158,8 +158,8 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
          |and t.sr_totalBytesRead > 100*1024*1024
          |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
          |""".stripMargin
-    val messageHeader = s"Application ${app.appId} (index=${app.index}) Shuffle Skew Check:" +
-      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)"
+    val messageHeader = s"\nShuffle Skew Check:" +
+      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
     app.runQuery(customQuery, false, fileWriter, messageHeader)
   }
 }
