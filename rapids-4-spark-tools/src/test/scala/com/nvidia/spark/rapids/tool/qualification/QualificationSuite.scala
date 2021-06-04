@@ -115,15 +115,6 @@ class QualificationSuite extends FunSuite with Logging {
       }
       assert(listener.completedStages.length == 5)
 
-      // parse results from listener
-      val numTasks = listener.completedStages.map(_.stageInfo.numTasks).sum
-      val executorRunTime = listener.completedStages
-        .map(_.stageInfo.taskMetrics.executorRunTime).sum
-      val shuffleBytesRead = listener.completedStages
-        .map(_.stageInfo.taskMetrics.shuffleReadMetrics.localBytesRead).sum
-      val shuffleBytesWritten = listener.completedStages
-        .map(_.stageInfo.taskMetrics.shuffleWriteMetrics.bytesWritten).sum
-
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
         val appArgs = new QualificationArgs(Array(
@@ -145,8 +136,21 @@ class QualificationSuite extends FunSuite with Logging {
 
         def fieldIndex(name: String) = df.schema.fieldIndex(name)
 
+        // parse results from listener
+        val numTasks = listener.completedStages.map(_.stageInfo.numTasks).sum
+        val executorCpuTime = listener.completedStages
+          .map(_.stageInfo.taskMetrics.executorCpuTime/(1024*1024)).sum
+        val executorRunTime = listener.completedStages
+          .map(_.stageInfo.taskMetrics.executorRunTime).sum
+        val shuffleBytesRead = listener.completedStages
+          .map(_.stageInfo.taskMetrics.shuffleReadMetrics.localBytesRead).sum
+        val shuffleBytesWritten = listener.completedStages
+          .map(_.stageInfo.taskMetrics.shuffleWriteMetrics.bytesWritten).sum
+
         // compare metrics from event log with metrics from listener
         assert(collect.getLong(fieldIndex("numTasks")) === numTasks)
+        //TODO this is slightly off each time
+        //assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
         assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
         assert(collect.getLong(fieldIndex("sr_localBytesRead_sum")) === shuffleBytesRead)
         assert(collect.getLong(fieldIndex("sw_bytesWritten_sum")) === shuffleBytesWritten)
