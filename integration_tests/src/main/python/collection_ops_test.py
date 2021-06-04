@@ -95,3 +95,11 @@ def test_size_of_map(data_gen, size_of_null):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr('size(a)'),
             conf={'spark.sql.legacy.sizeOfNull': size_of_null})
+
+@pytest.mark.parametrize('data_gen', [g for g in non_nested_array_gens if g.nullable == False][:1], ids=idfn)
+@pytest.mark.parametrize('is_ascending', ['True', 'False'], ids=idfn)
+def test_sort_array(data_gen, is_ascending):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('sort_array(a, false) as b'),
+        conf={}
+    )
