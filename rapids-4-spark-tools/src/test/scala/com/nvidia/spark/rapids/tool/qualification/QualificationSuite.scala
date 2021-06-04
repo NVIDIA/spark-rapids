@@ -23,7 +23,7 @@ import org.scalatest.FunSuite
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted}
+import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 
 class QualificationSuite extends FunSuite with Logging {
@@ -138,8 +138,7 @@ class QualificationSuite extends FunSuite with Logging {
 
         // parse results from listener
         val numTasks = listener.completedStages.map(_.stageInfo.numTasks).sum
-        val executorCpuTime = listener.completedStages
-          .map(_.stageInfo.taskMetrics.executorCpuTime/(1024*1024)).sum
+        val executorCpuTime = listener.executorCpuTime
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
         val shuffleBytesRead = listener.completedStages
@@ -149,8 +148,7 @@ class QualificationSuite extends FunSuite with Logging {
 
         // compare metrics from event log with metrics from listener
         assert(collect.getLong(fieldIndex("numTasks")) === numTasks)
-        //TODO this is slightly off each time
-        //assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
+        assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
         assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
         assert(collect.getLong(fieldIndex("sr_localBytesRead_sum")) === shuffleBytesRead)
         assert(collect.getLong(fieldIndex("sw_bytesWritten_sum")) === shuffleBytesWritten)
@@ -161,6 +159,11 @@ class QualificationSuite extends FunSuite with Logging {
 
 class ToolTestListener extends SparkListener {
   val completedStages = new ListBuffer[SparkListenerStageCompleted]()
+  var executorCpuTime = 0L
+
+  override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+    executorCpuTime += taskEnd.taskMetrics.executorCpuTime / 1000000
+  }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
     completedStages.append(stageCompleted)
