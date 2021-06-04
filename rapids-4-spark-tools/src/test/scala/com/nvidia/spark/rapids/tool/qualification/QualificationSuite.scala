@@ -106,11 +106,19 @@ class QualificationSuite extends FunSuite with Logging {
       val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
-        val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
-        t1.createOrReplaceTempView("t1")
-        spark.sql("SELECT a, MAX(b) FROM t1 GROUP BY a ORDER BY a")
+        val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+        testData.createOrReplaceTempView("t1")
+        testData.createOrReplaceTempView("t2")
+        spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
+          "FROM t1 JOIN t2 ON t1.a = t2.a) AS t " +
+          "GROUP BY a ORDER BY a")
       }
+      assert(listener.completedStages.length == 5)
 
+      // parse results from listener
+      val numTasks = listener.completedStages.map(_.stageInfo.numTasks).sum
+
+      // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
         val appArgs = new QualificationArgs(Array(
           "--include-exec-cpu-percent",
@@ -124,9 +132,6 @@ class QualificationSuite extends FunSuite with Logging {
         assert(exit == 0)
 
         val df = sparkSession.table("sqlAggMetricsDF")
-        df.show()
-
-        val stage = listener.completedStages.head
 
         val rows = df.collect()
         assert(rows.length === 1)
@@ -134,7 +139,7 @@ class QualificationSuite extends FunSuite with Logging {
         assert(collect.getString(3).startsWith("collect"))
 
         // compare metrics from event log with metrics from listener
-        assert(collect.getLong(6) === stage.stageInfo.taskMetrics.executorCpuTime)
+        assert(collect.getLong(4) === numTasks)
       }
     }
   }
@@ -143,6 +148,7 @@ class QualificationSuite extends FunSuite with Logging {
 class ToolTestListener extends SparkListener {
   val completedStages = new ListBuffer[SparkListenerStageCompleted]()
 
-  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit =
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
     completedStages.append(stageCompleted)
+  }
 }
