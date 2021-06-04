@@ -215,6 +215,7 @@ python generate_custom_image.py \
     --image-name $IMAGE_NAME \
     --dataproc-version $DATAPROC_VERSION \
     --customization-script $CUSTOMIZATION_SCRIPT \
+    --no-smoke-test \
     --zone $ZONE \
     --gcs-bucket $GCS_BUCKET \
     --machine-type n1-standard-4 \
