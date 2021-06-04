@@ -99,6 +99,17 @@ class Spark311dbShims extends Spark311Shims {
             )
           }
         }).disabledByDefault("it only supports row based frame for now"),
+      GpuOverrides.exec[com.databricks.sql.execution.window.RunningWindowFunctionExec](
+        "Databricks-specific window function exec, for \"running\" windows, " +
+            "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
+        ExecChecks(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
+                TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
+                    + TypeSig.ARRAY),
+            TypeSig.all),
+          (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
+      ),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
