@@ -63,16 +63,13 @@ class AnalysisSuite extends FunSuite with Logging {
     ToolTestUtils.compareDataFrames(actualDf, dfExpect)
   }
 
-  test("test shuffleSkewCheck simple") {
+  test("test shuffleSkewCheck empty") {
     val apps =
       ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
     assert(apps.size == 1)
 
     val analysis = new Analysis(apps, None)
-    val actualDf = analysis.sqlMetricsAggregation()
-    val resultExpectation =
-      new File(expRoot, "rapids_join_eventlog_shuffleskewcheck_expectation.csv")
-    val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
-    ToolTestUtils.compareDataFrames(actualDf, dfExpect)
+    val actualDf = analysis.shuffleSkewCheckSingleApp(apps.head)
+    assert(actualDf.count() == 0)
   }
 }

@@ -130,33 +130,36 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
   // Function to find out shuffle read skew(For Joins or Aggregation)
   def shuffleSkewCheck(): Unit ={
     for (app <- apps){
-      val customQuery =
-        s"""with tmp as
-           |(select stageId, stageAttemptId,
-           |avg(sr_totalBytesRead) avgShuffleReadBytes,
-           |avg(duration) avgDuration
-           |from taskDF_${app.index}
-           |group by stageId,stageAttemptId)
-           |select ${app.index} as appIndex, t.stageId,t.stageAttemptId,
-           |t.taskId, t.attempt,
-           |round(t.duration/1000,2) as taskDurationSec,
-           |round(tmp.avgDuration/1000,2) as avgDurationSec,
-           |round(t.sr_totalBytesRead/1024/1024,2) as taskShuffleReadMB,
-           |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
-           |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
-           |t.successful,
-           |substr(t.endReason,0,100) endReason_first100char
-           |from tmp, taskDF_${app.index} t
-           |where tmp.stageId=t.StageId
-           |and tmp.stageAttemptId=t.stageAttemptId
-           |and t.sr_totalBytesRead > 3 * tmp.avgShuffleReadBytes
-           |and t.sr_totalBytesRead > 100*1024*1024
-           |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
-           |""".stripMargin
-      val messageHeader = s"Application ${app.appId} (index=${app.index}) Shuffle Skew Check:" +
-        " (When task's Shuffle Read Size > 3 * Avg Stage-level size)"
-      app.runQuery(customQuery, false, fileWriter, messageHeader)
+      shuffleSkewCheckSingleApp(app)
     }
+  }
 
+  def shuffleSkewCheckSingleApp(app: ApplicationInfo): DataFrame ={
+    val customQuery =
+      s"""with tmp as
+         |(select stageId, stageAttemptId,
+         |avg(sr_totalBytesRead) avgShuffleReadBytes,
+         |avg(duration) avgDuration
+         |from taskDF_${app.index}
+         |group by stageId,stageAttemptId)
+         |select ${app.index} as appIndex, t.stageId,t.stageAttemptId,
+         |t.taskId, t.attempt,
+         |round(t.duration/1000,2) as taskDurationSec,
+         |round(tmp.avgDuration/1000,2) as avgDurationSec,
+         |round(t.sr_totalBytesRead/1024/1024,2) as taskShuffleReadMB,
+         |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
+         |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
+         |t.successful,
+         |substr(t.endReason,0,100) endReason_first100char
+         |from tmp, taskDF_${app.index} t
+         |where tmp.stageId=t.StageId
+         |and tmp.stageAttemptId=t.stageAttemptId
+         |and t.sr_totalBytesRead > 3 * tmp.avgShuffleReadBytes
+         |and t.sr_totalBytesRead > 100*1024*1024
+         |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
+         |""".stripMargin
+    val messageHeader = s"Application ${app.appId} (index=${app.index}) Shuffle Skew Check:" +
+      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)"
+    app.runQuery(customQuery, false, fileWriter, messageHeader)
   }
 }
