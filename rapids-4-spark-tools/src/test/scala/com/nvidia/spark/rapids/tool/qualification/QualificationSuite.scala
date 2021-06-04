@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.qualification
 
 import java.io.File
 
+import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
 
 import org.apache.spark.internal.Logging
@@ -33,8 +34,8 @@ class QualificationSuite extends FunSuite with Logging {
       .getOrCreate()
   }
 
-  private val expRoot = QualificationTestUtils.getTestResourceFile("QualificationExpectations")
-  private val logDir = QualificationTestUtils.getTestResourcePath("spark-events-qualification")
+  private val expRoot = ToolTestUtils.getTestResourceFile("QualificationExpectations")
+  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
 
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String) = {
     Seq(true, false).foreach { hasExecCpu =>
@@ -53,21 +54,11 @@ class QualificationSuite extends FunSuite with Logging {
           QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
             dropTempViews=true)
         assert(exit == 0)
-        // make sure to change null value so empty strings don't show up as nulls
-        val dfExpectOrig = sparkSession.read.option("header", "true").
-          option("nullValue", "-").csv(resultExpectation.getPath)
+        val dfExpectOrig =
+          ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
         val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
-        val diffCount = dfQualOpt.map { dfQual =>
-          dfQual.except(dfExpect).union(dfExpect.except(dfExpect)).count
-        }.getOrElse(-1)
-
-        // print for easier debugging
-        if (diffCount != 0) {
-          logWarning("Diff:")
-          dfExpect.show()
-          dfQualOpt.foreach(_.show())
-        }
-        assert(diffCount == 0)
+        assert(dfQualOpt.isDefined)
+        ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)
       }
     }
   }

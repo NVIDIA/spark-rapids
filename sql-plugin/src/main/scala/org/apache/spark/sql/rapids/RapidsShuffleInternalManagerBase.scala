@@ -203,7 +203,23 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
 
   override def addPeer(peer: BlockManagerId): Unit = {
-    transport.foreach(_.connect(peer))
+    transport.foreach { t =>
+      try {
+        t.connect(peer)
+      } catch {
+        case ex: Exception =>
+          // We ignore the exception after logging in this instance because
+          // we may have a peer that doesn't exist anymore by the time `addPeer` is invoked
+          // due to a heartbeat response from the driver, or the peer may have a temporary network
+          // issue.
+          //
+          // This is safe because `addPeer` is only invoked due to a heartbeat that is used to
+          // opportunistically hide cost of initializing transport connections. The transport
+          // will re-try if it must fetch from this executor at a later time, in that case
+          // a connection failure causes the tasks to fail.
+          logWarning(s"Unable to connect to peer $peer, ignoring!", ex)
+      }
+    }
   }
 
   private val rapidsConf = new RapidsConf(conf)
