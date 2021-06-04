@@ -14,20 +14,17 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids
+package com.nvidia.spark.rapids.tool.qualification
 
 import java.io.File
 
-import org.apache.spark.util.Utils
+object QualificationTestUtils {
 
-/**
- * Trampoling to get to the Spark Utils class to use for testing.
- */
-object TestUtils {
+  def getTestResourceFile(file: String): File = {
+    new File(getClass.getClassLoader.getResource(file).getFile)
+  }
 
-  def withTempPath(f: File => Unit): Unit = {
-    val path = Utils.createTempDir()
-    path.delete()
-    try f(path) finally Utils.deleteRecursively(path)
+  def getTestResourcePath(file: String): String = {
+    getTestResourceFile(file).getCanonicalPath
   }
 }

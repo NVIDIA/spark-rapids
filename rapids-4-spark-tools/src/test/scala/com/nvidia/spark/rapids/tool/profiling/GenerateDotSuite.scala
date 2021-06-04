@@ -35,7 +35,7 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
     val eventLogDir = Files.createTempDir()
     eventLogDir.deleteOnExit()
 
-    val spark = SparkSession
+    lazy val spark = SparkSession
       .builder()
       .master("local[*]")
       .appName("Rapids Spark Profiling Tool Unit Tests")
