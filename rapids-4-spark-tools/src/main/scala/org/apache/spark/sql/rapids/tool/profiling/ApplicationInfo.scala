@@ -693,7 +693,7 @@ class ApplicationInfo(
     s"""select
        |first(appName) as `App Name`,
        |'$appId' as `App ID`,
-       |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Rank,
+       |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Score,
        |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
        |first(app.duration) as `App Duration`
@@ -720,7 +720,7 @@ class ApplicationInfo(
   def qualificationDurationSumSQL: String = {
     s"""select first(appName) as `App Name`,
        |first(appID) as `App ID`,
-       |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Rank,
+       |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
        |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
        |sum(dfDuration) as `SQL Dataframe Duration`,
        |first(appDuration) as `App Duration`,

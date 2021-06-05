@@ -78,8 +78,7 @@ object Qualification extends Logging {
           case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
         }
       }.mkString(" union ")
-    val df = apps.head.runQuery(query + " order by Rank desc, `App Duration` desc")
-    df
+    apps.head.runQuery(query + " order by Score desc, `App Duration` desc")
   }
 
   def writeQualification(df: DataFrame, outputDir: String,

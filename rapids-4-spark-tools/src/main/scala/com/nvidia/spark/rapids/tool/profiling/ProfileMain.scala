@@ -71,18 +71,24 @@ object ProfileMain extends Logging {
     if (appArgs.compare()) {
       // Create an Array of Applications(with an index starting from 1)
       val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-      var index: Int = 1
-      for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-        apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
-        index += 1
-      }
+      try {
+        var index: Int = 1
+        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
+          apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
+          index += 1
+        }
 
-      //Exit if there are no applications to process.
-      if (apps.isEmpty) {
-        logInfo("No application to process. Exiting")
-        return 0
+        //Exit if there are no applications to process.
+        if (apps.isEmpty) {
+          logInfo("No application to process. Exiting")
+          return 0
+        }
+        processApps(apps, generateDot = false)
+      } catch {
+        case e: com.fasterxml.jackson.core.JsonParseException =>
+          logError(s"Error parsing JSON", e)
+          return 1
       }
-      processApps(apps, generateDot = false)
       // Show the application Id <-> appIndex mapping.
       for (app <- apps) {
         logApplicationInfo(app)
@@ -90,18 +96,24 @@ object ProfileMain extends Logging {
     } else {
       // This mode is to process one application at one time.
       var index: Int = 1
-      for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-        // This apps only contains 1 app in each loop.
-        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
-        apps += app
-        logApplicationInfo(app)
-        // This is a bit odd that we process apps individual right now due to
-        // memory concerns. So the aggregation functions only aggregate single
-        // application not across applications.
-        processApps(apps, appArgs.generateDot())
-        app.dropAllTempViews()
-        index += 1
+      try {
+        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
+          // This apps only contains 1 app in each loop.
+          val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+          val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
+          apps += app
+          logApplicationInfo(app)
+          // This is a bit odd that we process apps individual right now due to
+          // memory concerns. So the aggregation functions only aggregate single
+          // application not across applications.
+          processApps(apps, appArgs.generateDot())
+          app.dropAllTempViews()
+          index += 1
+        }
+      } catch {
+        case e: com.fasterxml.jackson.core.JsonParseException =>
+          logError(s"Error parsing JSON", e)
+          return 1
       }
     }
 

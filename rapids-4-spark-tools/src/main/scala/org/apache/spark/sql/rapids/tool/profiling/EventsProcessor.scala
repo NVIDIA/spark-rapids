@@ -100,7 +100,8 @@ object EventsProcessor extends Logging {
   def doSparkListenerResourceProfileAddedReflect(
       app: ApplicationInfo,
       event: SparkListenerEvent): Boolean = {
-    if (event.getClass.getName.equals("org.apache.spark.scheduler.SparkListenerResourceProfileAdded")) {
+    val rpAddedClass = "org.apache.spark.scheduler.SparkListenerResourceProfileAdded"
+    if (event.getClass.getName.equals(rpAddedClass)) {
       try {
         event match {
           case _: SparkListenerResourceProfileAdded =>
@@ -110,7 +111,10 @@ object EventsProcessor extends Logging {
           case _ => false
         }
       } catch {
-        case _ => false
+        case _: ClassNotFoundException =>
+          logWarning("Error trying to parse SparkListenerResourceProfileAdded, Spark" +
+            " version likely older than 3.1.X, unable to parse it properly.")
+          false
       }
     } else {
       false
