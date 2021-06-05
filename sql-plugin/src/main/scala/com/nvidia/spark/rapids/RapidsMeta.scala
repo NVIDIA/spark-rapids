@@ -712,8 +712,8 @@ object ExpressionContext {
     val parent = findParentPlanMeta(meta)
     assert(parent.isDefined, "It is expected that an aggregate function is a child of a SparkPlan")
     parent.get.wrapped match {
-      case _: WindowExecBase => WindowAggExprContext
-      case agg if agg.getClass.getName.contains("RunningWindowFunctionExec") => WindowAggExprContext
+      case agg if ShimLoader.getSparkShims.isWindowFunctionExec(agg.asInstanceOf[SparkPlan]) =>
+        WindowAggExprContext
       case agg: BaseAggregateExec =>
         if (agg.groupingExpressions.isEmpty) {
           ReductionAggExprContext
