@@ -50,8 +50,8 @@ Below is an example input:
 
 If any input is a S3 file path or directory path, here 2 extra steps to access S3 in Spark:
 1. Download the matched jars based on the Hadoop version:
-   - hadoop-aws-<version>.jar
-   - aws-java-sdk-<version>.jar 
+   - `hadoop-aws-<version>.jar`
+   - `aws-java-sdk-<version>.jar`
      
 Take Hadoop 2.7.4 for example, we can download and include below jars in the '--jars' option to spark-shell or spark-submit:
 [hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and 
@@ -75,7 +75,7 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 ## Qualification Tool
 
 ### Use from spark-shell
-1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
+1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
 2. After starting spark-shell:
 
 For multiple event logs comparison and analysis:
@@ -231,6 +231,7 @@ Run `--help` for more information.
 - Print Rapids related parameters
 - Print Rapids Accelerator Jar and cuDF Jar
 - Print SQL Plan Metrics
+- Generate DOT graph for each SQL
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -303,6 +304,19 @@ SQL Plan Metrics for Application:
 |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
 |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
 ```
+
+
+- Generate DOT graph for each SQL (-g option)
+```
+Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
+```
+Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file 
+as a graph in pdf format using below command:
+```bash
+dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
+```
+The pdf file has the SQL plan graph with metrics.
+
 
 #### B. Analysis
 - Job + Stage level aggregated task metrics
