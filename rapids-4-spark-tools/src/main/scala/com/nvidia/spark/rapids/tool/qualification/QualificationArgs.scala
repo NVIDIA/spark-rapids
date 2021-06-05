@@ -62,6 +62,14 @@ For usage see below:
     trailArg[List[String]](required = true,
       descr = "Event log filenames(space separated) or directories containing event logs." +
           " eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
+  val filterCriteria: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Filter newest or oldest N eventlogs for processing." +
+          "eg: 100-newest (for processing newest 100 event logs). " +
+          "eg: 100-oldest (for processing oldest 100 event logs)")
+  val matchEventLogs: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Filter event logs whose filenames contain the input string")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000.")

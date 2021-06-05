@@ -114,22 +114,24 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       "src/test/resources/spark-events-qualification/dataset_eventlog"
     ))
 
-    val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
       appArgs.matchEventLogs, appArgs.eventlog())
     assert(result.length == 2)
   }
 
-  val tempFile1 = File.createTempFile("tempOutputFile1", null)
-  val tempFile2 = File.createTempFile("tempOutputFile2", null)
-  val tempFile3 = File.createTempFile("tempOutputFile3", null)
-  val tempFile4 = File.createTempFile("tempOutputFile3", null)
-
-  tempFile1.setLastModified(98765432)  // newest file
-  tempFile2.setLastModified(12324567)  // oldest file
-  tempFile3.setLastModified(34567891)  // second newest file
-  tempFile4.setLastModified(23456789)
-
   test("test filter file newest") {
+    val tempFile1 = File.createTempFile("tempOutputFile1", null)
+    val tempFile2 = File.createTempFile("tempOutputFile2", null)
+    val tempFile3 = File.createTempFile("tempOutputFile3", null)
+    val tempFile4 = File.createTempFile("tempOutputFile3", null)
+    tempFile1.deleteOnExit()
+    tempFile2.deleteOnExit()
+    tempFile3.deleteOnExit()
+
+    tempFile1.setLastModified(98765432)  // newest file
+    tempFile2.setLastModified(12324567)  // oldest file
+    tempFile3.setLastModified(34567891)  // second newest file
+    tempFile4.setLastModified(23456789)
     val filterNew = "2-newest"
     val appArgs = new ProfileArgs(Array(
       "--filter-criteria",
@@ -139,19 +141,30 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile3.toString
     ))
 
-    val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
       appArgs.matchEventLogs, appArgs.eventlog())
     assert(result.length == 2)
     // Validate 2 newest files
     assert(result(0).getName.equals(tempFile1.getName))
     assert(result(1).getName.equals(tempFile3.getName))
-
-    tempFile1.deleteOnExit()
-    tempFile2.deleteOnExit()
-    tempFile3.deleteOnExit()
   }
 
   test("test filter file oldest and file name match") {
+
+    val tempFile1 = File.createTempFile("tempOutputFile1", null)
+    val tempFile2 = File.createTempFile("tempOutputFile2", null)
+    val tempFile3 = File.createTempFile("tempOutputFile3", null)
+    val tempFile4 = File.createTempFile("tempOutputFile3", null)
+    tempFile1.deleteOnExit()
+    tempFile2.deleteOnExit()
+    tempFile3.deleteOnExit()
+    tempFile4.deleteOnExit()
+
+    tempFile1.setLastModified(98765432)  // newest file
+    tempFile2.setLastModified(12324567)  // oldest file
+    tempFile3.setLastModified(34567891)  // second newest file
+    tempFile4.setLastModified(23456789)
+
     val filterOld = "3-oldest"
     val matchFileName = "temp"
     val appArgs = new ProfileArgs(Array(
@@ -165,17 +178,12 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile4.toString
     ))
 
-    val result = ProfileMain.processAllPaths(appArgs.filterCriteria,
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
       appArgs.matchEventLogs, appArgs.eventlog())
     assert(result.length == 3)
     // Validate 3 oldest files
     assert(result(0).getName.equals(tempFile2.getName))
     assert(result(1).getName.equals(tempFile4.getName))
     assert(result(2).getName.equals(tempFile3.getName))
-
-    tempFile1.deleteOnExit()
-    tempFile2.deleteOnExit()
-    tempFile3.deleteOnExit()
-    tempFile4.deleteOnExit()
   }
 }

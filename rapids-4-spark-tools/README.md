@@ -103,6 +103,11 @@ For usage see below:
                                    will take longer with this option and you may
                                    want to limit the number of applications
                                    processed at once.
+  -f, --filter-criteria  <arg>     Filter newest or oldest N event logs for processing.
+                                   Supported formats are:
+                                   To process 10 recent event logs: --filter-criteria "10-newest"
+                                   To process 10 oldest event logs: --filter-criteria "10-oldest"
+  -m, --match-event-logs  <arg>    Filter event logs filenames which contains the input string.
   -n, --num-output-rows  <arg>     Number of output rows for each Application.
                                    Default is 1000.
   -o, --output-directory  <arg>    Base output directory. Default is current

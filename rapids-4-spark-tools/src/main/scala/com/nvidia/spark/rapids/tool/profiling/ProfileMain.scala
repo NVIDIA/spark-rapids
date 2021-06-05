@@ -60,7 +60,7 @@ object ProfileMain extends Logging {
     logInfo(s"Output directory:  $outputDirectory")
 
     // Get the event logs required to process
-    lazy val allPaths = processAllPaths(filterN, matchEventLogs, eventlogPaths)
+    lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
 
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
@@ -144,59 +144,5 @@ object ProfileMain extends Logging {
     }
 
     0
-  }
-
-  /**
-   * Function to evaluate the event logs to be processed.
-   *
-   * @param filterNLogs    number of event logs to be selected
-   * @param matchlogs      keyword to match file names in the directory
-   * @param eventLogsPaths Array of event log paths
-   * @return event logs to be processed
-   */
-  def processAllPaths(
-      filterNLogs: ScallopOption[String],
-      matchlogs: ScallopOption[String],
-      eventLogsPaths: List[String]): Seq[Path] = {
-
-    val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
-    var allPathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
-
-    for (pathString <- eventLogsPaths) {
-      val paths = ProfileUtils.stringToPath(pathString)
-      if (paths.nonEmpty) {
-        allPaths ++= paths.map(a => a._1)
-        allPathsWithTimestamp ++= paths
-      }
-    }
-
-    // Filter the eventlogs to be processed based on the criteria. If it is not provided in the
-    // command line, then return all the event logs processed above.
-    if (matchlogs.isDefined || filterNLogs.isDefined) {
-      if (matchlogs.isDefined) {
-        allPathsWithTimestamp =
-          allPathsWithTimestamp.filter(t => t._1.toString.contains(matchlogs.toOption.get))
-      }
-      if (filterNLogs.isDefined) {
-        val numberofEventLogs = filterNLogs.toOption.get.split("-")(0).toInt
-        val criteria = filterNLogs.toOption.get.split("-")(1)
-        if (criteria.equals("newest")) {
-          allPathsWithTimestamp = LinkedHashMap(
-            allPathsWithTimestamp.toSeq.sortWith(_._2 > _._2): _*)
-        } else if (criteria.equals("oldest")) {
-          allPathsWithTimestamp = LinkedHashMap(
-            allPathsWithTimestamp.toSeq.sortWith(_._2 < _._2): _*)
-        } else {
-          logError("Criteria should be either newest or oldest")
-          System.exit(1)
-        }
-        allPathsWithTimestamp.map(_._1).toSeq.take(numberofEventLogs)
-      } else {
-        // return event logs which contains the keyword.
-        allPathsWithTimestamp.map(_._1).toSeq
-      }
-    } else { // send all event logs for processing
-      allPaths
-    }
   }
 }
