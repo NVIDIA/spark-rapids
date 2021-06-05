@@ -231,7 +231,7 @@ Run `--help` for more information.
 - Print Rapids related parameters
 - Print Rapids Accelerator Jar and cuDF Jar
 - Print SQL Plan Metrics
-- Generate Dot graph for each SQL
+- Generate DOT graph for each SQL
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -306,11 +306,11 @@ SQL Plan Metrics for Application:
 ```
 
 
-- Generate Dot graph for each SQL (-g option)
+- Generate DOT graph for each SQL (-g option)
 ```
 Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
 ```
-Once the dot file is generated, you can install [graphviz](http://www.graphviz.org) to convert the dot file 
+Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file 
 as a graph in pdf format using below command:
 ```bash
 dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
