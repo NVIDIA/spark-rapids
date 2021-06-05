@@ -229,16 +229,18 @@ Run `--help` for more information.
 - Print Application Information
 - Print Executors information
 - Print Rapids related parameters
+- Print Rapids Accelerator Jar and cuDF Jar
+- Print SQL Plan Metrics
 
-**1. GPU run vs CPU run performance comparison or different runs with different parameters**
+For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
 We can input multiple Spark event logs and this tool can compare environments, executors, Rapids related Spark parameters,
 
 - Compare the durations/versions/gpuMode on or off:
 ```
-[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - ### A. Compare Information Collected ###
-[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - Compare Application Information:
-[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  -
+### A. Compare Information Collected ###
+Compare Application Information:
+
 +--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
 |appIndex|appId                  |startTime    |endTime      |duration|durationStr|sparkVersion|gpuMode|
 +--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
@@ -250,8 +252,7 @@ We can input multiple Spark event logs and this tool can compare environments, e
 
 - Compare Executor information:
 ```
-[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - Compare Executor Information:
-[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  -
+Compare Executor Information:
 +--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
 |appIndex|executorID|totalCores|maxMem     |maxOnHeapMem|maxOffHeapMem|exec_cpu|exec_mem|exec_gpu|exec_offheap|task_cpu|task_gpu|
 +--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
@@ -262,8 +263,7 @@ We can input multiple Spark event logs and this tool can compare environments, e
 
 - Compare Rapids related Spark properties side-by-side:
 ```
-[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  - Compare Rapids Properties which are set explicitly:
-[main] INFO  com.nvidia.spark.rapids.tool.profiling.ProfileMain$  -
+Compare Rapids Properties which are set explicitly:
 +-------------------------------------------+----------+----------+
 |key                                        |value_app1|value_app2|
 +-------------------------------------------+----------+----------+
@@ -277,4 +277,69 @@ We can input multiple Spark event logs and this tool can compare environments, e
 |spark.rapids.sql.incompatibleOps.enabled   |null      |true      |
 |spark.rapids.sql.variableFloatAgg.enabled  |null      |TRUE      |
 +-------------------------------------------+----------+----------+
+```
+
+ 
+- List rapids-4-spark and cuDF jars based on classpath 
+```
+Rapids Accelerator Jar and cuDF Jar:
+/path/rapids-4-spark_2.12-0.5.0.jar
+/path/cudf-0.19-cuda10-2.jar
+```
+
+
+- SQL Plan Metrics for Application for each SQL plan node in each SQL
+
+These are also called accumulables in Spark.
+```
+SQL Plan Metrics for Application:
++-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
+|sqlID|nodeID|nodeName                                                   |accumulatorId|name                   |max_value    |metricType|
++-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
+|0    |1     |GpuColumnarExchange                                        |111          |output rows            |1111111111   |sum       |
+|0    |1     |GpuColumnarExchange                                        |112          |output columnar batches|222222       |sum       |
+|0    |1     |GpuColumnarExchange                                        |113          |data size              |333333333333 |size      |
+|0    |1     |GpuColumnarExchange                                        |114          |shuffle bytes written  |444444444444 |size      |
+|0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
+|0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
+```
+
+#### B. Analysis
+- Job + Stage level aggregated task metrics
+- SQL level aggregated task metrics
+- Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
+
+Below we will aggregate the task level metrics at different levels to do some analysis such as detecting possible shuffle skew.
+
+- Job + Stage level aggregated task metrics
+```
+### B. Analysis ###
+
+Job + Stage level aggregated task metrics:
++--------+-------+--------+--------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
+|appIndex|ID     |numTasks|Duration|diskBytesSpilled_sum|duration_sum|duration_max|duration_min|duration_avg|executorCPUTime_sum|executorDeserializeCPUTime_sum|executorDeserializeTime_sum|executorRunTime_sum|gettingResultTime_sum|input_bytesRead_sum|input_recordsRead_sum|jvmGCTime_sum|memoryBytesSpilled_sum|output_bytesWritten_sum|output_recordsWritten_sum|peakExecutionMemory_max|resultSerializationTime_sum|resultSize_max|sr_fetchWaitTime_sum|sr_localBlocksFetched_sum|sr_localBytesRead_sum|sr_remoteBlocksFetched_sum|sr_remoteBytesRead_sum|sr_remoteBytesReadToDisk_sum|sr_totalBytesRead_sum|sw_bytesWritten_sum|sw_recordsWritten_sum|sw_writeTime_sum|
++--------+-------+--------+--------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
+|1       |job_0  |3333    |222222  |0                   |11111111    |111111      |111         |1111.1      |6666666            |55555                         |55555                      |55555555           |0                    |222222222222       |22222222222          |111111       |0                     |0                      |0                        |222222222              |1                          |11111         |11111               |99999                    |22222222222          |2222221                   |222222222222          |0                           |222222222222         |222222222222       |5555555              |444444          |
+```
+  
+
+- SQL level aggregated task metrics
+```
+SQL level aggregated task metrics:
++--------+------------------------------+-----+--------------------+--------+--------+---------------+---------------+----------------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
+|appIndex|appID                         |sqlID|description         |numTasks|Duration|executorCPUTime|executorRunTime|executorCPURatio|diskBytesSpilled_sum|duration_sum|duration_max|duration_min|duration_avg|executorCPUTime_sum|executorDeserializeCPUTime_sum|executorDeserializeTime_sum|executorRunTime_sum|gettingResultTime_sum|input_bytesRead_sum|input_recordsRead_sum|jvmGCTime_sum|memoryBytesSpilled_sum|output_bytesWritten_sum|output_recordsWritten_sum|peakExecutionMemory_max|resultSerializationTime_sum|resultSize_max|sr_fetchWaitTime_sum|sr_localBlocksFetched_sum|sr_localBytesRead_sum|sr_remoteBlocksFetched_sum|sr_remoteBytesRead_sum|sr_remoteBytesReadToDisk_sum|sr_totalBytesRead_sum|sw_bytesWritten_sum|sw_recordsWritten_sum|sw_writeTime_sum|
++--------+------------------------------+-----+--------------------+--------+--------+---------------+---------------+----------------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
+|1       |application_1111111111111_0001|0    |show at <console>:11|1111    |222222  |6666666        |55555555       |55.55           |0                   |13333333    |111111      |999         |3333.3      |6666666            |55555                         |66666                      |11111111           |0                    |111111111111       |11111111111          |111111       |0                     |0                      |0                        |888888888              |8                          |11111         |11111               |99999                    |11111111111          |2222222                   |222222222222          |0                           |222222222222         |444444444444       |5555555              |444444          |
+```
+
+
+- Shuffle Skew Check: 
+```
+Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
++--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
+|appIndex|stageId|stageAttemptId|taskId|attempt|taskDurationSec|avgDurationSec|taskShuffleReadMB|avgShuffleReadMB|taskPeakMemoryMB|successful|endReason_first100char                                                                              |
++--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
+|1       |2      |0             |2222  |0      |111.11         |7.7           |2222.22          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
+|1       |2      |0             |2224  |1      |222.22         |8.8           |3333.33          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
++--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 ```
