@@ -104,7 +104,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
-
   test("test no sql eventlog") {
     val eventLog = s"$logDir/rp_nosql_eventlog"
     TrampolineUtil.withTempDir { tempDir =>
