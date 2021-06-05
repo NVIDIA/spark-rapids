@@ -8,7 +8,7 @@ Information such as Spark version, executor information, Properties and so on.  
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## Prerequisites
-1. Require Spark 3.1.1 or newer installed
+1. Require Spark 3.0.1 or newer installed
 
 ## How to compile
 1. `mvn clean package`
