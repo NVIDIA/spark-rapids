@@ -369,7 +369,7 @@ private object GpuExternalRowToColumnConverter {
 private class ExternalRowToColumnarIterator(
     rowIter: Iterator[Row],
     localSchema: StructType,
-    localGoal: CoalesceGoal,
+    localGoal: CoalesceSizeGoal,
     converters: GpuExternalRowToColumnConverter) extends Iterator[ColumnarBatch] {
 
   private val dataTypes: Array[DataType] = localSchema.fields.map(_.dataType)
