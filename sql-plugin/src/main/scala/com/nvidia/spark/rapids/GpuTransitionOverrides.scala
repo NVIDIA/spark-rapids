@@ -185,9 +185,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // support growing the sizes dynamically....
 
       // Don't build batches and then coalesce, just build the right sized batch
-      GpuRowToColumnarExec(optimizeCoalesce(r2c.child), CoalesceGoal.max(goal, r2c.goal))
+      GpuRowToColumnarExec(optimizeCoalesce(r2c.child),
+        CoalesceGoal.maxRequirement(goal, r2c.goal).asInstanceOf[CoalesceSizeGoal])
     case GpuCoalesceBatches(co: GpuCoalesceBatches, goal) =>
-      GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.max(goal, co.goal))
+      GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.maxRequirement(goal, co.goal))
     case GpuCoalesceBatches(child: GpuExec, goal)
       if CoalesceGoal.satisfies(child.outputBatching, goal) =>
       // The goal is already satisfied so remove the batching

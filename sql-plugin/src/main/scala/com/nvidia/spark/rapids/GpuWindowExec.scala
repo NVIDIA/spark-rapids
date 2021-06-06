@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,19 +118,26 @@ case class GpuWindowExec(
     } else ClusteredDistribution(partitionSpec) :: Nil
   }
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(RequireSingleBatch)
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
 
-  override def requiredChildOrdering: Seq[Seq[SortOrder]] = {
+  private lazy val partitionOrdering = {
     val shims = ShimLoader.getSparkShims
-    Seq(partitionSpec.map(shims.sortOrder(_, Ascending)) ++ orderSpec)
+    partitionSpec.map(shims.sortOrder(_, Ascending))
   }
+
+  override def requiredChildOrdering: Seq[Seq[SortOrder]] =
+    Seq(partitionOrdering ++ orderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   // We require a single batch and that is what we produce
-  override def outputBatching: CoalesceGoal = RequireSingleBatch
+  override def outputBatching: CoalesceGoal = if (partitionSpec.isEmpty) {
+    RequireSingleBatch
+  } else {
+    BatchedByKey(partitionOrdering)
+  }
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not happen, in $this.")
