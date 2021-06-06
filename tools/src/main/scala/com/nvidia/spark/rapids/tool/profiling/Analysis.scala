@@ -124,7 +124,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
     val messageHeader = "Tom duration and percent cpu time"
     val query = apps
       .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map( app => "(" + app.qualificationDurationSQL + ")")
+      .map( app => "(" + app.profilingDurationSQL+ ")")
       .mkString(" union ")
     apps.head.runQuery(query, false, fileWriter, messageHeader)
   }

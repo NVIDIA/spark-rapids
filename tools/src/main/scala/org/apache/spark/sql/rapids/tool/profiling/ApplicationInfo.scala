@@ -728,6 +728,20 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
+  def profilingDurationSQL: String = {
+    s"""select
+       |$index as appIndex,
+       |'$appId' as `App ID`,
+       |sq.sqlID,
+       |sq.sqlQualDuration as `SQL Dataframe Duration`,
+       |app.duration as `App Duration`,
+       |problematic as `Potential Problems`,
+       |round(executorCPUTime/executorRunTime*100,2) as `Executor CPU Time Percent`
+       |from sqlDF_$index sq, appdf_$index app
+       |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
+       |""".stripMargin
+  }
+
   def isDataSetPlan(desc: String): Boolean = {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => true
