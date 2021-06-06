@@ -613,6 +613,14 @@ class ApplicationInfo(
   }
 
   // Function to generate a query for job level Task Metrics aggregation
+  def jobtoStagesSQL: String = {
+    s"""select $index as appIndex, concat('job_',j.jobID) as ID,
+       |j.stageIds, j.sqlID
+       |from jobDF_$index j
+       |""".stripMargin
+  }
+
+  // Function to generate a query for job level Task Metrics aggregation
   def jobMetricsAggregationSQL: String = {
     s"""select $index as appIndex, concat('job_',j.jobID) as ID,
        |count(*) as numTasks, max(j.duration) as Duration

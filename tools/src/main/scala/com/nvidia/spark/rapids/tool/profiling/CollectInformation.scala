@@ -71,6 +71,16 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
     }
   }
 
+  // Print executor related information
+  def printJobInfo(): Unit = {
+    val messageHeader = "\nJob Information:\n"
+    for (app <- apps) {
+      app.runQuery(query = app.jobtoStagesSQL,
+        fileWriter = Some(fileWriter), messageHeader = messageHeader)
+    }
+  }
+
+
   // Print Rapids related Spark Properties
   def printRapidsProperties(): Unit = {
     val messageHeader = "\n\nSpark Rapids parameters set explicitly:\n"

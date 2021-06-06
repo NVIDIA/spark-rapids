@@ -135,6 +135,7 @@ object ProfileMain extends Logging {
         textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
+        collect.printJobInfo()
         collect.printRapidsProperties()
         collect.printRapidsJAR()
         collect.printSQLPlanMetrics(generateDot, appArgs.outputDirectory())
