@@ -121,7 +121,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
   }
 
   def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
-    val messageHeader = "Tom duration and percent cpu time"
+    val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
     val query = apps
       .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
       .map( app => "(" + app.profilingDurationSQL+ ")")

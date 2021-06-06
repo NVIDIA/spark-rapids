@@ -64,7 +64,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
 
   // Print executor related information
   def printExecutorInfo(): Unit = {
-    val messageHeader = "\n\nExecutor Information:\n"
+    val messageHeader = "\nExecutor Information:\n"
     for (app <- apps) {
       app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
         fileWriter = Some(fileWriter), messageHeader = messageHeader)
@@ -83,7 +83,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
 
   // Print Rapids related Spark Properties
   def printRapidsProperties(): Unit = {
-    val messageHeader = "\n\nSpark Rapids parameters set explicitly:\n"
+    val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
       app.runQuery(query = app.generateRapidsProperties + " order by key",
         fileWriter = Some(fileWriter), messageHeader = messageHeader)

@@ -614,7 +614,7 @@ class ApplicationInfo(
 
   // Function to generate a query for job level Task Metrics aggregation
   def jobtoStagesSQL: String = {
-    s"""select $index as appIndex, concat('job_',j.jobID) as ID,
+    s"""select $index as appIndex, j.jobID,
        |j.stageIds, j.sqlID
        |from jobDF_$index j
        |""".stripMargin
@@ -741,7 +741,8 @@ class ApplicationInfo(
        |$index as appIndex,
        |'$appId' as `App ID`,
        |sq.sqlID,
-       |sq.sqlQualDuration as `SQL Dataframe Duration`,
+       |sq.duration as `SQL Duration`,
+       |case when sq.sqlQualDuration > 0 then false else true end as `Contains Dataset Op`,
        |app.duration as `App Duration`,
        |problematic as `Potential Problems`,
        |round(executorCPUTime/executorRunTime*100,2) as `Executor CPU Time Percent`
