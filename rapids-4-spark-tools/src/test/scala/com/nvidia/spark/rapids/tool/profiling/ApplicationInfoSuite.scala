@@ -94,14 +94,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
 
   test("malformed json eventlog") {
     val eventLog = s"$logDir/malformed_json_eventlog"
-    TrampolineUtil.withTempDir { tempDir =>
-      val appArgs = new ProfileArgs(Array(
-        "--output-directory",
-        tempDir.getAbsolutePath,
-        eventLog))
-      val exit = ProfileMain.mainInternal(sparkSession, appArgs)
-      assert(exit == 1)
-    }
+    val appArgs = new ProfileArgs(Array(
+      eventLog))
+    val exit = ProfileMain.mainInternal(sparkSession, appArgs)
+    assert(exit == 1)
   }
 
   test("test no sql eventlog") {
