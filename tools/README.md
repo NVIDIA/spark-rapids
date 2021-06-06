@@ -31,7 +31,7 @@ Here are 2 options:
 ```bash
 git clone https://github.com/NVIDIA/spark-rapids.git
 cd spark-rapids
-mvn -pl .,rapids-4-spark-tools clean verify -DskipTests
+mvn -pl .,tools clean verify -DskipTests
 ```
 The jar is generated in below directory :
 
