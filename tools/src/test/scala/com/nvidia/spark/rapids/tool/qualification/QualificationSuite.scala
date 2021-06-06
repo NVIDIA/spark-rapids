@@ -68,6 +68,13 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("skip malformed json eventlog") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val badEventLog = s"$profileLogDir/malformed_json_eventlog"
+    val logFiles = Array(s"$logDir/nds_q86_test", badEventLog)
+    runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
+  }
+
   test("test udf event logs") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",

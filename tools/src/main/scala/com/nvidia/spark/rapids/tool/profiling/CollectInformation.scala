@@ -117,11 +117,15 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWri
   def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String,
       writeOutput: Boolean = true): Unit ={
     for (app <- apps){
-      val messageHeader = "\nSQL Plan Metrics for Application:\n"
-      val accums = app.runQuery(app.generateSQLAccums, fileWriter = Some(fileWriter),
-        messageHeader=messageHeader)
-      if (shouldGenDot) {
-        generateDot(outputDir, Some(accums))
+      if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
+        app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
+        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}")) {
+        val messageHeader = "\nSQL Plan Metrics for Application:\n"
+        val accums = app.runQuery(app.generateSQLAccums, fileWriter = Some(fileWriter),
+          messageHeader=messageHeader)
+        if (shouldGenDot) {
+          generateDot(outputDir, Some(accums))
+        }
       }
     }
   }

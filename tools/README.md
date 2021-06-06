@@ -9,7 +9,7 @@ Information such as Spark version, executor information, properties and so on. W
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## Prerequisites
-- Spark 3.1.1 or newer installed
+- Spark 3.0.1 or newer installed
 - Java 8 or above
 - Complete Spark event log(s) from Spark 3.0 or above version.
 
