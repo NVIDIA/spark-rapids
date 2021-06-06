@@ -37,7 +37,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
 
   // Print Application Information
   def printAppInfo(): Unit = {
-    val messageHeader = "Application Information:\n"
+    val messageHeader = "\nApplication Information:\n"
     for (app <- apps) {
       app.runQuery(query = app.generateAppInfo, fileWriter = Some(fileWriter),
         messageHeader = messageHeader)
