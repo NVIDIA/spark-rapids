@@ -103,6 +103,11 @@ For usage see below:
                                    will take longer with this option and you may
                                    want to limit the number of applications
                                    processed at once.
+  -f, --filter-criteria  <arg>     Filter newest or oldest N event logs for processing.
+                                   Supported formats are:
+                                   To process 10 recent event logs: --filter-criteria "10-newest"
+                                   To process 10 oldest event logs: --filter-criteria "10-oldest"
+  -m, --match-event-logs  <arg>    Filter event logs filenames which contains the input string.
   -n, --num-output-rows  <arg>     Number of output rows for each Application.
                                    Default is 1000.
   -o, --output-directory  <arg>    Base output directory. Default is current
@@ -201,13 +206,20 @@ $SPARK_HOME/bin/spark-submit \
 rapids-4-spark-tools_2.12-<version>.jar \
 --help
 
-For usage see below:
+# Filter eventlogs to be processed. 10 newest file with filenames containing "local"
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -m "local" -f "10-newest" /path/to/eventlog1
 
+For usage see below:
   -c, --compare                   Compare Applications (Recommended to compare
                                   less than 10 applications). Default is false
+  -f, --filter-criteria  <arg>    Filter newest or oldest N event logs for processing.
+                                  Supported formats are:
+                                  To process 10 recent event logs: --filter-criteria "10-newest"
+                                  To process 10 oldest event logs: --filter-criteria "10-oldest"
   -g, --generate-dot              Generate query visualizations in DOT format.
                                   Default is false
-  -n, --num-output-rows  <arg>    Number of output rows for each Application.
+  -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
+  -n, --num-output-rows  <arg>    Number of output rows for each Application. 
                                   Default is 1000
   -o, --output-directory  <arg>   Output directory. Default is current directory
   -h, --help                      Show help message

@@ -16,13 +16,11 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.ArrayBuffer
-
 import com.nvidia.spark.rapids.tool.profiling._
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
 
 /**
  * A tool to analyze Spark event logs and determine if 
@@ -48,16 +46,13 @@ object QualificationMain extends Logging {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
+    val filterN = appArgs.filterCriteria
+    val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
-    // Convert the input path string to Path(s)
-    val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
-    for (pathString <- eventlogPaths) {
-      val paths = ProfileUtils.stringToPath(pathString)
-      if (paths.nonEmpty) {
-        allPaths ++= paths
-      }
-    }
+    // Get the event logs required to process
+    lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
+
     val includeCpuPercent = appArgs.includeExecCpuPercent.getOrElse(false)
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
     val df = Qualification.qualifyApps(allPaths,

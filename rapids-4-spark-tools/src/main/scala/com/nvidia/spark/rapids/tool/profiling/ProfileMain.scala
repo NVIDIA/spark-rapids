@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.io.FileWriter
 
 import org.apache.hadoop.fs.Path
-import scala.collection.mutable.ArrayBuffer
+import org.rogach.scallop.ScallopOption
+import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -50,20 +51,17 @@ object ProfileMain extends Logging {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
+    val filterN = appArgs.filterCriteria
+    val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
     logInfo(s"Output directory:  $outputDirectory")
 
-    // Convert the input path string to Path(s)
-    val allPaths: ArrayBuffer[Path] = ArrayBuffer[Path]()
-    for (pathString <- eventlogPaths) {
-      val paths = ProfileUtils.stringToPath(pathString)
-      if (paths.nonEmpty) {
-        allPaths ++= paths
-      }
-    }
+    // Get the event logs required to process
+    lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
+
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     // If compare mode is on, we need lots of memory to cache all applications then compare.
