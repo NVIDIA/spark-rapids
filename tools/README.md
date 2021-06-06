@@ -31,7 +31,7 @@ Here are 2 options:
 ```bash
 git clone https://github.com/NVIDIA/spark-rapids.git
 cd spark-rapids
-mvn -pl .,rapids-4-spark-tools clean verify -DskipTests
+mvn -pl .,tools clean verify -DskipTests
 ```
 The jar is generated in below directory :
 
@@ -50,8 +50,8 @@ Below is an example input:
 
 If any input is a S3 file path or directory path, here 2 extra steps to access S3 in Spark:
 1. Download the matched jars based on the Hadoop version:
-   - hadoop-aws-<version>.jar
-   - aws-java-sdk-<version>.jar 
+   - `hadoop-aws-<version>.jar`
+   - `aws-java-sdk-<version>.jar`
      
 Take Hadoop 2.7.4 for example, we can download and include below jars in the '--jars' option to spark-shell or spark-submit:
 [hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and 
@@ -75,7 +75,7 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 ## Qualification Tool
 
 ### Use from spark-shell
-1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
+1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
 2. After starting spark-shell:
 
 For multiple event logs comparison and analysis:
@@ -103,6 +103,11 @@ For usage see below:
                                    will take longer with this option and you may
                                    want to limit the number of applications
                                    processed at once.
+  -f, --filter-criteria  <arg>     Filter newest or oldest N event logs for processing.
+                                   Supported formats are:
+                                   To process 10 recent event logs: --filter-criteria "10-newest"
+                                   To process 10 oldest event logs: --filter-criteria "10-oldest"
+  -m, --match-event-logs  <arg>    Filter event logs filenames which contains the input string.
   -n, --num-output-rows  <arg>     Number of output rows for each Application.
                                    Default is 1000.
   -o, --output-directory  <arg>    Base output directory. Default is current
@@ -201,13 +206,20 @@ $SPARK_HOME/bin/spark-submit \
 rapids-4-spark-tools_2.12-<version>.jar \
 --help
 
-For usage see below:
+# Filter eventlogs to be processed. 10 newest file with filenames containing "local"
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -m "local" -f "10-newest" /path/to/eventlog1
 
+For usage see below:
   -c, --compare                   Compare Applications (Recommended to compare
                                   less than 10 applications). Default is false
+  -f, --filter-criteria  <arg>    Filter newest or oldest N event logs for processing.
+                                  Supported formats are:
+                                  To process 10 recent event logs: --filter-criteria "10-newest"
+                                  To process 10 oldest event logs: --filter-criteria "10-oldest"
   -g, --generate-dot              Generate query visualizations in DOT format.
                                   Default is false
-  -n, --num-output-rows  <arg>    Number of output rows for each Application.
+  -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
+  -n, --num-output-rows  <arg>    Number of output rows for each Application. 
                                   Default is 1000
   -o, --output-directory  <arg>   Output directory. Default is current directory
   -h, --help                      Show help message
@@ -231,6 +243,7 @@ Run `--help` for more information.
 - Print Rapids related parameters
 - Print Rapids Accelerator Jar and cuDF Jar
 - Print SQL Plan Metrics
+- Generate DOT graph for each SQL
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -303,6 +316,19 @@ SQL Plan Metrics for Application:
 |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
 |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
 ```
+
+
+- Generate DOT graph for each SQL (-g option)
+```
+Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
+```
+Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file 
+as a graph in pdf format using below command:
+```bash
+dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
+```
+The pdf file has the SQL plan graph with metrics.
+
 
 #### B. Analysis
 - Job + Stage level aggregated task metrics
