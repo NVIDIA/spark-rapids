@@ -95,7 +95,7 @@ object ToolTestUtils extends Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path)(0), index)
+        ProfileUtils.stringToPath(path).head._1, index)
       index += 1
     }
     apps

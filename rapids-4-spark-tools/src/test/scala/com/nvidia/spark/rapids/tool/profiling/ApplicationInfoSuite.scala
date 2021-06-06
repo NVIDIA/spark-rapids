@@ -46,7 +46,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path)(0), index)
+        ProfileUtils.stringToPath(path).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -57,6 +57,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.head.stageSubmitted(2).stageId.equals(2))
     assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
     assert(apps.head.taskEnd(apps.head.index).endReason.equals("Success"))
+    assert(apps.head.executors.head.totalCores.equals(8))
+    assert(apps.head.resourceProfiles.head.exec_mem.equals(1024L))
   }
 
   test("test rapids jar") {
@@ -67,7 +69,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path)(0), index)
+        ProfileUtils.stringToPath(path).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -88,12 +90,12 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path)(0), index)
+        ProfileUtils.stringToPath(path).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
 
-    for (app <- apps){
+    for (app <- apps) {
       val accums = app.runQuery(app.generateSQLAccums, fileWriter = None)
       val resultExpectation =
         new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
@@ -102,4 +104,86 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test filename match") {
+    val matchFileName = "udf"
+    val appArgs = new ProfileArgs(Array(
+      "--match-event-logs",
+      matchFileName,
+      "src/test/resources/spark-events-qualification/udf_func_eventlog",
+      "src/test/resources/spark-events-qualification/udf_dataset_eventlog",
+      "src/test/resources/spark-events-qualification/dataset_eventlog"
+    ))
+
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
+      appArgs.matchEventLogs, appArgs.eventlog())
+    assert(result.length == 2)
+  }
+
+  test("test filter file newest") {
+    val tempFile1 = File.createTempFile("tempOutputFile1", null)
+    val tempFile2 = File.createTempFile("tempOutputFile2", null)
+    val tempFile3 = File.createTempFile("tempOutputFile3", null)
+    val tempFile4 = File.createTempFile("tempOutputFile3", null)
+    tempFile1.deleteOnExit()
+    tempFile2.deleteOnExit()
+    tempFile3.deleteOnExit()
+
+    tempFile1.setLastModified(98765432)  // newest file
+    tempFile2.setLastModified(12324567)  // oldest file
+    tempFile3.setLastModified(34567891)  // second newest file
+    tempFile4.setLastModified(23456789)
+    val filterNew = "2-newest"
+    val appArgs = new ProfileArgs(Array(
+      "--filter-criteria",
+      filterNew,
+      tempFile1.toString,
+      tempFile2.toString,
+      tempFile3.toString
+    ))
+
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
+      appArgs.matchEventLogs, appArgs.eventlog())
+    assert(result.length == 2)
+    // Validate 2 newest files
+    assert(result(0).getName.equals(tempFile1.getName))
+    assert(result(1).getName.equals(tempFile3.getName))
+  }
+
+  test("test filter file oldest and file name match") {
+
+    val tempFile1 = File.createTempFile("tempOutputFile1", null)
+    val tempFile2 = File.createTempFile("tempOutputFile2", null)
+    val tempFile3 = File.createTempFile("tempOutputFile3", null)
+    val tempFile4 = File.createTempFile("tempOutputFile3", null)
+    tempFile1.deleteOnExit()
+    tempFile2.deleteOnExit()
+    tempFile3.deleteOnExit()
+    tempFile4.deleteOnExit()
+
+    tempFile1.setLastModified(98765432)  // newest file
+    tempFile2.setLastModified(12324567)  // oldest file
+    tempFile3.setLastModified(34567891)  // second newest file
+    tempFile4.setLastModified(23456789)
+
+    val filterOld = "3-oldest"
+    val matchFileName = "temp"
+    val appArgs = new ProfileArgs(Array(
+      "--filter-criteria",
+      filterOld,
+      "--match-event-logs",
+      matchFileName,
+      tempFile1.toString,
+      tempFile2.toString,
+      tempFile3.toString,
+      tempFile4.toString
+    ))
+
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
+      appArgs.matchEventLogs, appArgs.eventlog())
+    assert(result.length == 3)
+    // Validate 3 oldest files
+    assert(result(0).getName.equals(tempFile2.getName))
+    assert(result(1).getName.equals(tempFile4.getName))
+    assert(result(2).getName.equals(tempFile3.getName))
+  }
 }
