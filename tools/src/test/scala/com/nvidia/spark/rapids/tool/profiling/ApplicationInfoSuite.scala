@@ -23,7 +23,7 @@ import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.profiling._
 
 class ApplicationInfoSuite extends FunSuite with Logging {
@@ -80,6 +80,42 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val cuDFJar = apps.head.classpathEntries.filterKeys(_ matches ".*cudf-0.19.2-cuda11.jar.*")
     assert(rapidsJar.size == 1, "Rapids jar check")
     assert(cuDFJar.size == 1, "CUDF jar check")
+  }
+
+  test("test sql and resourceprofile eventlog") {
+    val eventLog = s"$logDir/rp_sql_eventlog"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog))
+      val exit = ProfileMain.mainInternal(sparkSession, appArgs)
+      assert(exit == 0)
+    }
+  }
+
+  test("malformed json eventlog") {
+    val eventLog = s"$logDir/malformed_json_eventlog"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog))
+      val exit = ProfileMain.mainInternal(sparkSession, appArgs)
+      assert(exit == 1)
+    }
+  }
+
+  test("test no sql eventlog") {
+    val eventLog = s"$logDir/rp_nosql_eventlog"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog))
+      val exit = ProfileMain.mainInternal(sparkSession, appArgs)
+      assert(exit == 0)
+    }
   }
 
   test("test printSQLPlanMetrics") {

@@ -32,7 +32,7 @@ object QualificationMain extends Logging {
    */
   def main(args: Array[String]) {
     val sparkSession = ProfileUtils.createSparkSession
-    val (exitCode, optDf) = mainInternal(sparkSession, new QualificationArgs(args))
+    val (exitCode, _) = mainInternal(sparkSession, new QualificationArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -55,13 +55,13 @@ object QualificationMain extends Logging {
 
     val includeCpuPercent = appArgs.includeExecCpuPercent.getOrElse(false)
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
-    val df = Qualification.qualifyApps(allPaths,
+    val dfOpt = Qualification.qualifyApps(allPaths,
       numOutputRows, sparkSession, includeCpuPercent, dropTempViews)
-    if (writeOutput) {
-      Qualification.writeQualification(df, outputDirectory,
+    if (writeOutput && dfOpt.isDefined) {
+      Qualification.writeQualification(dfOpt.get, outputDirectory,
         appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)
     }
-    (0, Some(df))
+    (0, dfOpt)
   }
 
 }

@@ -41,17 +41,22 @@ object Qualification extends Logging {
       numRows: Int,
       sparkSession: SparkSession,
       includeCpuPercent: Boolean,
-      dropTempViews: Boolean): DataFrame = {
+      dropTempViews: Boolean): Option[DataFrame] = {
     var index: Int = 1
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths.filterNot(_.getName.contains("."))) {
-      // This apps only contains 1 app in each loop.
-      val app = new ApplicationInfo(numRows, sparkSession,
-        path, index, true)
-      apps += app
-      logApplicationInfo(app)
-      index += 1
+      try {
+        // This apps only contains 1 app in each loop.
+        val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
+        apps += app
+        logApplicationInfo(app)
+        index += 1
+      } catch {
+        case e: com.fasterxml.jackson.core.JsonParseException =>
+          logWarning(s"Error parsing JSON, skipping $path")
+      }
     }
+    if (apps.isEmpty) return None
     val analysis = new Analysis(apps, None)
     if (includeCpuPercent) {
       val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
@@ -65,7 +70,7 @@ object Qualification extends Logging {
       sparkSession.catalog.dropTempView("sqlAggMetricsDF")
       apps.foreach( _.dropAllTempViews())
     }
-    df
+    Some(df)
   }
 
   def constructQueryQualifyApps(apps: ArrayBuffer[ApplicationInfo],
@@ -78,8 +83,7 @@ object Qualification extends Logging {
           case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
         }
       }.mkString(" union ")
-    val df = apps.head.runQuery(query + " order by Rank desc, `App Duration` desc")
-    df
+    apps.head.runQuery(query + " order by Score desc, `App Duration` desc")
   }
 
   def writeQualification(df: DataFrame, outputDir: String,

@@ -34,9 +34,6 @@ object EventsProcessor extends Logging {
     event match {
       case _: SparkListenerLogStart =>
         doSparkListenerLogStart(app, event.asInstanceOf[SparkListenerLogStart])
-      case _: SparkListenerResourceProfileAdded =>
-        doSparkListenerResourceProfileAdded(app,
-          event.asInstanceOf[SparkListenerResourceProfileAdded])
       case _: SparkListenerBlockManagerAdded =>
         doSparkListenerBlockManagerAdded(app,
           event.asInstanceOf[SparkListenerBlockManagerAdded])
@@ -94,7 +91,33 @@ object EventsProcessor extends Logging {
       case _: SparkListenerSQLAdaptiveSQLMetricUpdates =>
         doSparkListenerSQLAdaptiveSQLMetricUpdates(app,
           event.asInstanceOf[SparkListenerSQLAdaptiveSQLMetricUpdates])
-      case _ => doOtherEvent(app, event)
+      case _ => 
+        val wasResourceProfileAddedEvent = doSparkListenerResourceProfileAddedReflect(app, event)
+        if (!wasResourceProfileAddedEvent) doOtherEvent(app, event)
+    }
+  }
+
+  def doSparkListenerResourceProfileAddedReflect(
+      app: ApplicationInfo,
+      event: SparkListenerEvent): Boolean = {
+    val rpAddedClass = "org.apache.spark.scheduler.SparkListenerResourceProfileAdded"
+    if (event.getClass.getName.equals(rpAddedClass)) {
+      try {
+        event match {
+          case _: SparkListenerResourceProfileAdded =>
+            doSparkListenerResourceProfileAdded(app,
+              event.asInstanceOf[SparkListenerResourceProfileAdded])
+            true
+          case _ => false
+        }
+      } catch {
+        case _: ClassNotFoundException =>
+          logWarning("Error trying to parse SparkListenerResourceProfileAdded, Spark" +
+            " version likely older than 3.1.X, unable to parse it properly.")
+          false
+      }
+    } else {
+      false
     }
   }
 
