@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids.tool.qualification
 
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling.Analysis
@@ -23,9 +25,7 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.rapids.tool.profiling._
-import org.apache.spark.sql.types.StringType
 
 /**
  * Ranks the applications for GPU acceleration.
@@ -95,16 +95,10 @@ object Qualification extends Logging {
           mode("overwrite").csv(finalOutputDir)
         logInfo(s"Output log location:  $finalOutputDir")
       case "text" =>
-        // This tool's output log file name
         val logFileName = "rapids_4_spark_qualification_output.log"
-        val outputFilePath = new Path(s"$finalOutputDir/$logFileName")
-        val fs = FileSystem.get(outputFilePath.toUri, new Configuration())
-        // this overwrites existing path
-        val outFile = fs.create(outputFilePath)
-        outFile.writeBytes(ToolUtils.showString(df, numOutputRows))
-        outFile.flush()
-        outFile.close()
-        logInfo(s"Output log location: $outputFilePath")
+        val textFileWriter = new ToolTextFileWriter(finalOutputDir, logFileName)
+        textFileWriter.write(df, numOutputRows)
+        textFileWriter.close()
       case _ => logError("Invalid format")
     }
   }

@@ -15,11 +15,13 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.{File, FileWriter}
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.col
@@ -29,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CollectInformation mainly print information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter) {
+class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTextFileWriter) {
 
   require(apps.nonEmpty)
 

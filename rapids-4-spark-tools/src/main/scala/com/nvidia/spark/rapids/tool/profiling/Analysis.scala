@@ -22,6 +22,8 @@ import java.io.FileWriter
 
 import scala.collection.mutable.ArrayBuffer
 
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
 
@@ -29,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
-class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter]) {
+class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFileWriter]) {
 
   require(apps.nonEmpty)
 

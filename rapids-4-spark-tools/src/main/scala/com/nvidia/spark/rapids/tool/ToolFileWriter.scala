@@ -15,42 +15,38 @@
  */
 package com.nvidia.spark.rapids.tool
 
-import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.tool.profiling.Analysis
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
-import org.apache.spark.sql.types.StringType
 
 /**
- * Class for writing local files.
+ * Class for writing local files, allows writing to distributed file systems.
  */
-class ToolFileWriter(userOutputDir: String, format: String) extends Logging {
+class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Logging {
+
+  private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
+  private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
+  // this overwrites existing path
+  private val outFile = fs.create(textOutputPath)
+  logInfo(s"Output directory:  $textOutputPath")
+
 
   def write(stringToWrite: String): Unit = {
-    val finalOutputDir = s"$userOutputDir/rapids_4_spark_qualification_output"
-    format match {
-      case "csv" =>
-        df.repartition(1).write.option("header", "true").
-          mode("overwrite").csv(finalOutputDir)
-        logInfo(s"Output log location:  $finalOutputDir")
-      case "text" =>
-        // This tool's output log file name
-        val logFileName = "rapids_4_spark_qualification_output.log"
-        val outputFilePath = new Path(s"$finalOutputDir/$logFileName")
-        val fs = FileSystem.get(outputFilePath.toUri, new Configuration())
-        // this overwrites existing path
-        val outFile = fs.create(outputFilePath)
-        outFile.writeBytes(ToolUtils.showString(df, numOutputRows))
-        outFile.flush()
-        outFile.close()
-        logInfo(s"Output log location: $outputFilePath")
-      case _ => logError("Invalid format")
-    }
+    outFile.writeBytes(stringToWrite)
+    logInfo(s"Output log location: $textOutputPath")
+  }
+
+  def write(df: DataFrame, numOutputRows: Int): Unit = {
+    // This tool's output log file name
+    outFile.writeBytes(ToolUtils.showString(df, numOutputRows))
+  }
+
+  def close(): Unit = {
+    logInfo(s"Output location: $textOutputPath")
+    outFile.flush()
+    outFile.close()
   }
 }

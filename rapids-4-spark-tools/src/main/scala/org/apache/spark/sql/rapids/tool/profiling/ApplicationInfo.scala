@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.io.FileWriter
-
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -513,7 +512,7 @@ class ApplicationInfo(
   def runQuery(
       query: String,
       vertical: Boolean = false,
-      fileWriter: Option[FileWriter] = None,
+      fileWriter: Option[ToolTextFileWriter] = None,
       messageHeader: String = ""): DataFrame = {
     logDebug("Running:" + query)
     val df = sparkSession.sql(query)
