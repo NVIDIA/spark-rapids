@@ -120,6 +120,15 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
     }
   }
 
+  def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
+    val messageHeader = "Tom duration and percent cpu time"
+    val query = apps
+      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
+      .map( app => "(" + app.qualificationDurationSQL + ")")
+      .mkString(" union ")
+    apps.head.runQuery(query, false, fileWriter, messageHeader)
+  }
+
   // custom query execution. Normally for debugging use.
   def customQueryExecution(app: ApplicationInfo): Unit = {
     fileWriter.foreach(_.write("Custom query execution:"))

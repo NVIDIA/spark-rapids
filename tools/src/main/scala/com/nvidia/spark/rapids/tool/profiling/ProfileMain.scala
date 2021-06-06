@@ -144,7 +144,10 @@ object ProfileMain extends Logging {
       val analysis = new Analysis(apps, Some(textFileWriter))
       analysis.jobAndStageMetricsAggregation()
       analysis.sqlMetricsAggregation()
+      analysis.sqlMetricsAggregationDurationAndCpuTime()
       analysis.shuffleSkewCheck()
+
+
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {
