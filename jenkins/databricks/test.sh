@@ -35,6 +35,7 @@ sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
 
 CUDF_UDF_TEST_ARGS="--conf spark.python.daemon.module=rapids.daemon_databricks \
+    --conf spark.rapids.memory.gpu.minAllocFraction=0 \
     --conf spark.rapids.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.concurrentPythonWorkers=2"
