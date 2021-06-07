@@ -140,6 +140,29 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test printJobInfo") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/rapids_join_eventlog"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        ProfileUtils.stringToPath(path).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+
+    for (app <- apps) {
+      val resDf = app.runQuery(query = app.jobtoStagesSQL, fileWriter = None).collect().head
+      def fieldIndex(name: String) = resDf.schema.fieldIndex(name)
+
+      assert(resDf.getLong(fieldIndex("jobID")) === 0)
+      assert(resDf.getList(fieldIndex("stageID")).size == 1)
+      assert(resDf.getLong(fieldIndex("sqlID")) == null)
+    }
+  }
+
   test("test filename match") {
     val matchFileName = "udf"
     val appArgs = new ProfileArgs(Array(
