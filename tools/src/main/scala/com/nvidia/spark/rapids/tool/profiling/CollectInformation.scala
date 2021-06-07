@@ -80,7 +80,6 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
     }
   }
 
-
   // Print Rapids related Spark Properties
   def printRapidsProperties(): Unit = {
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
