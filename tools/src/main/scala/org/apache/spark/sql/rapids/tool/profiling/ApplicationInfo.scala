@@ -415,8 +415,8 @@ class ApplicationInfo(
           failureReason = thisFailureReason,
           duration = durationResult,
           durationStr = durationString,
-          executorRunTime = runTime,
-          executorCPUTime = cpuTime)
+          executorRunTimeSum = runTime,
+          executorCPUTimeSum = cpuTime)
         stageSubmittedNew += stageNew
       }
       allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
@@ -680,8 +680,8 @@ class ApplicationInfo(
   def sqlMetricsAggregationSQLQual: String = {
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
-       |sum(executorCPUTime) as executorCPUTime,
-       |sum(executorRunTime) as executorRunTime,
+       |sum(executorCPUTimeSum) as executorCPUTime,
+       |sum(executorRunTimeSum) as executorRunTime,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) executorCPURatio
        |from stageDF_$index s,
        |jobDF_$index j, sqlDF_$index sq

@@ -114,8 +114,8 @@ case class StageCase(
     duration: Option[Long],
     durationStr: String,
     gpuMode: Boolean,
-    executorRunTime: Long,
-    executorCPUTime: Long)
+    executorRunTimeSum: Long,
+    executorCPUTimeSum: Long)
 
 class StageTaskQualificationSummary(
     val stageId: Int,
