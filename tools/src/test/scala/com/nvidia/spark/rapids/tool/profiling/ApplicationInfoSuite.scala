@@ -143,7 +143,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test printJobInfo") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir/rapids_join_eventlog"))
+      new ProfileArgs(Array(s"$logDir/rp_sql_eventlog"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
@@ -158,13 +158,13 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(rows.size == 2)
       val firstRow = rows.head
       assert(firstRow.getInt(firstRow.schema.fieldIndex("jobID")) === 0)
-      assert(firstRow.getList(firstRow.schema.fieldIndex("stageID")).size == 1)
-      assert(firstRow.getInt(firstRow.schema.fieldIndex("sqlID")) == null)
+      assert(firstRow.getList(firstRow.schema.fieldIndex("stageIds")).size == 1)
+      assert(firstRow.isNullAt(firstRow.schema.fieldIndex("sqlID")))
 
       val secondRow = rows(1)
       assert(secondRow.getInt(secondRow.schema.fieldIndex("jobID")) === 1)
-      assert(secondRow.getList(secondRow.schema.fieldIndex("stageID")).size == 4)
-      assert(secondRow.getInt(secondRow.schema.fieldIndex("sqlID")) == 0)
+      assert(secondRow.getList(secondRow.schema.fieldIndex("stageIds")).size == 4)
+      assert(secondRow.getLong(secondRow.schema.fieldIndex("sqlID")) == 0)
     }
   }
 
