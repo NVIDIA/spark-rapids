@@ -34,7 +34,7 @@ mvn -pl .,tools clean verify -DskipTests
 ```
 The jar is generated in below directory :
 
-`./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar`
+`./tools/target/rapids-4-spark-tools_2.12-<version>.jar`
 
 ## Accessing files from S3
 
@@ -61,6 +61,8 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 </property>
 </configuration>
 ```
+Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
+more options about integrating hadoop-aws module with S3.
 
 ## Qualification Tool
 
