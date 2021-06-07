@@ -73,6 +73,7 @@ BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
     --conf spark.sql.session.timeZone=UTC"
 
 CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
+    --conf spark.rapids.memory.gpu.minAllocFraction=0 \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.concurrentPythonWorkers=2 \
     --conf spark.executorEnv.PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
@@ -92,10 +93,7 @@ echo "----------------------------START TEST------------------------------------
 pushd $RAPIDS_INT_TESTS_HOME
 TEST_TYPE="nightly"
 spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/" --test_type=$TEST_TYPE
-
-#disable cudf_udf tests for now until we resolve https://github.com/NVIDIA/spark-rapids/issues/2521
-#spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf --test_type=$TEST_TYPE
-
+spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf --test_type=$TEST_TYPE
 #only run cache tests with our serializer in nightly test for Spark version >= 3.1.1
 if [ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]; then
   SHIM_PACKAGE=$(echo ${SPARK_VER} | sed 's/\.//g' | sed 's/-SNAPSHOT//')
