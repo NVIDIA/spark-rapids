@@ -90,7 +90,7 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
 
 ###### Deploy profiling tool jar(s) ######
-TOOL_PL=${TOOL_PL:-"rapids-4-spark-tools"}
+TOOL_PL=${TOOL_PL:-"tools"}
 TOOL_ART_ID=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.artifactId -DforceStdout`
 TOOL_ART_VER=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.version -DforceStdout`
 TOOL_FPATH="$TOOL_PL/target/$TOOL_ART_ID-$TOOL_ART_VER"
