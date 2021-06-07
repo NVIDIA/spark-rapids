@@ -126,7 +126,11 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
       .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
       .map( app => "(" + app.profilingDurationSQL+ ")")
       .mkString(" union ")
-    apps.head.runQuery(query, false, fileWriter, messageHeader)
+    if (query.nonEmpty) {
+      apps.head.runQuery(query, false, fileWriter, messageHeader)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
+    }
   }
 
   // custom query execution. Normally for debugging use.

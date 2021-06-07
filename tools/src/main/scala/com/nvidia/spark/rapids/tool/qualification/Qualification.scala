@@ -83,7 +83,11 @@ object Qualification extends Logging {
           case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
         }
       }.mkString(" union ")
-    apps.head.runQuery(query + " order by Score desc, `App Duration` desc")
+    if (query.nonEmpty) {
+      apps.head.runQuery(query + " order by Score desc, `App Duration` desc")
+    } else {
+      apps.head.sparkSession.emptyDataFrame
+    }
   }
 
   def writeQualification(df: DataFrame, outputDir: String,
