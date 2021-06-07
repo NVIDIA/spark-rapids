@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types._
 
 class AnalysisSuite extends FunSuite {
 
@@ -70,6 +71,32 @@ class AnalysisSuite extends FunSuite {
     val resultExpectationJS = new File(expRoot, expectFileJS)
     val dfExpectJS = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectationJS.getPath())
     ToolTestUtils.compareDataFrames(actualDfJS, dfExpectJS)
+  }
+
+  test("test sqlMetrics duration and execute cpu time") {
+    val logs = Array(s"$logDir/rp_sql_eventlog")
+    val expectFile = "rapids_duration_and_cpu_expectation.csv"
+
+    val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
+    val analysis = new Analysis(apps, None)
+    val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
+    sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
+    val actualDf = analysis.sqlMetricsAggregationDurationAndCpuTime()
+    val resultExpectation = new File(expRoot, expectFile)
+    val schema = new StructType()
+      .add("appIndex",IntegerType,true)
+      .add("appID",StringType,true)
+      .add("sqlID",LongType,true)
+      .add("sqlDuration",LongType,true)
+      .add("containsDataset",BooleanType,true)
+      .add("appDuration",LongType,true)
+      .add("problematic",StringType,true)
+      .add("executorCpuTime",DoubleType,true)
+
+    val dfExpect = sparkSession.read.option("header", "true").option("nullValue", "-")
+      .schema(schema).csv(resultExpectation.getPath())
+
+    ToolTestUtils.compareDataFrames(actualDf, dfExpect)
   }
 
   test("test shuffleSkewCheck empty") {
