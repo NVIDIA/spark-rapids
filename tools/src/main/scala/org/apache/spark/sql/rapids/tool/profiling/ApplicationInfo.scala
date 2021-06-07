@@ -684,7 +684,8 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  // Function to generate a query for SQL level Task Metrics aggregation
+  // Function to generate a query for getting the executor CPU time and run time
+  // specifically for how we aggregate for qualification
   def sqlMetricsAggregationSQLQual: String = {
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
