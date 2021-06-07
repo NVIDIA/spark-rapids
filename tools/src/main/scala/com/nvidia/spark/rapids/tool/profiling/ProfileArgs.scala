@@ -33,8 +33,7 @@ rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
  rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
 
 # If any event log is from S3:
-# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly,
-# and then put fs.s3a.access.key and fs.s3a.secret.key in $SPARK_HOME/conf/hdfs-site.xml.
+# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly.
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
 rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
