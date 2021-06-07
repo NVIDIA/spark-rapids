@@ -126,8 +126,9 @@ class ApplicationInfo(
   val stageFailureReason: HashMap[Int, Option[String]] = HashMap.empty[Int, Option[String]]
 
   // From SparkListenerTaskStart & SparkListenerTaskEnd
-  // taskEnd contains task level metrics - only used for profiling
+  // taskStart was not used so comment out for now
   // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
+  // taskEnd contains task level metrics - only used for profiling
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
 
   // this is used to aggregate metrics for qualification to speed up processing and

@@ -135,7 +135,7 @@ rapids-4-spark-tools_2.12-<version>.jar \
 
 For usage see below:
 
-  -i, --no-exec-cpu-percent        Do not include the executor CPU time percent.
+      --no-exec-cpu-percent        Do not include the executor CPU time percent.
   -f, --filter-criteria  <arg>     Filter newest or oldest N event logs for processing.
                                    Supported formats are:
                                    To process 10 recent event logs: --filter-criteria "10-newest"
@@ -172,9 +172,6 @@ The output location can be changed using the `--output-directory` option. Defaul
 
 The output format can be changed using the `--output-format` option. Default is csv. The other option is text.
   
-The `--no-exec-cpu-percent` option can be used to include executor CPU time percent which is based on the aggregated task metrics:
-`sum(executorCPUTime)/sum(executorRunTime)`. It can show us roughly how much time is spent on CPU.
-
 Run `--help` for more information.
 
 
