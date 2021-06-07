@@ -82,7 +82,7 @@ object ProfileMain extends Logging {
         processApps(apps, generateDot = false)
       } catch {
         case e: com.fasterxml.jackson.core.JsonParseException =>
-          fileWriter.close()
+          textFileWriter.close()
           logError(s"Error parsing JSON", e)
           return 1
       }
@@ -109,7 +109,7 @@ object ProfileMain extends Logging {
         }
       } catch {
         case e: com.fasterxml.jackson.core.JsonParseException =>
-          fileWriter.close()
+          textFileWriter.close()
           logError(s"Error parsing JSON", e)
           return 1
       }
