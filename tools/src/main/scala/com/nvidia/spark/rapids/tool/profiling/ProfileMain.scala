@@ -16,11 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.FileWriter
-
-import org.apache.hadoop.fs.Path
-import org.rogach.scallop.ScallopOption
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -56,8 +53,7 @@ object ProfileMain extends Logging {
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
     // Create the FileWriter and sparkSession used for ALL Applications.
-    val fileWriter = new FileWriter(s"$outputDirectory/$logFileName")
-    logInfo(s"Output directory:  $outputDirectory")
+    val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)
 
     // Get the event logs required to process
     lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
@@ -84,7 +80,7 @@ object ProfileMain extends Logging {
         processApps(apps, generateDot = false)
       } catch {
         case e: com.fasterxml.jackson.core.JsonParseException =>
-          fileWriter.close()
+          textFileWriter.close()
           logError(s"Error parsing JSON", e)
           return 1
       }
@@ -111,7 +107,7 @@ object ProfileMain extends Logging {
         }
       } catch {
         case e: com.fasterxml.jackson.core.JsonParseException =>
-          fileWriter.close()
+          textFileWriter.close()
           logError(s"Error parsing JSON", e)
           return 1
       }
@@ -119,8 +115,7 @@ object ProfileMain extends Logging {
 
     logInfo(s"Output log location:  $outputDirectory/$logFileName")
 
-    fileWriter.flush()
-    fileWriter.close()
+    textFileWriter.close()
 
     /**
      * Function to process ApplicationInfo. If it is in compare mode, then all the eventlogs are
@@ -129,25 +124,29 @@ object ProfileMain extends Logging {
      */
     def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
-        fileWriter.write("### A. Compare Information Collected ###")
-        val compare = new CompareApplications(apps, fileWriter)
+
+        textFileWriter.write("### A. Compare Information Collected ###")
+        val compare = new CompareApplications(apps, textFileWriter)
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareRapidsProperties()
       } else {
-        val collect = new CollectInformation(apps, fileWriter)
-        fileWriter.write("### A. Information Collected ###")
+        val collect = new CollectInformation(apps, textFileWriter)
+        textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
+        collect.printJobInfo()
         collect.printRapidsProperties()
         collect.printRapidsJAR()
         collect.printSQLPlanMetrics(generateDot, appArgs.outputDirectory())
       }
 
-      fileWriter.write("\n### B. Analysis ###\n")
-      val analysis = new Analysis(apps, Some(fileWriter))
+      textFileWriter.write("\n### B. Analysis ###\n")
+      val analysis = new Analysis(apps, Some(textFileWriter))
       analysis.jobAndStageMetricsAggregation()
-      analysis.sqlMetricsAggregation()
+      val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
+      sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
+      analysis.sqlMetricsAggregationDurationAndCpuTime()
       analysis.shuffleSkewCheck()
     }
 

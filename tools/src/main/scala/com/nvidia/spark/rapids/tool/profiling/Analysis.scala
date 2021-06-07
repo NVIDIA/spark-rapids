@@ -1,5 +1,3 @@
-
-
 /*
  * Copyright (c) 2021, NVIDIA CORPORATION.
  *
@@ -18,9 +16,9 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.FileWriter
-
 import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.rapids.tool.profiling._
@@ -29,7 +27,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
-class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter]) {
+class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFileWriter]) {
 
   require(apps.nonEmpty)
 
@@ -115,6 +113,19 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
       }
       apps.head.runQuery(query + " order by appIndex, Duration desc", false,
         fileWriter, messageHeader)
+    }
+  }
+
+  def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
+    val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
+    val query = apps
+      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
+      .map( app => "(" + app.profilingDurationSQL+ ")")
+      .mkString(" union ")
+    if (query.nonEmpty) {
+      apps.head.runQuery(query, false, fileWriter, messageHeader)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
     }
   }
 

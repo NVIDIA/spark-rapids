@@ -1,10 +1,11 @@
 # Spark Qualification and Profiling tools
 
-The qualification tool is used to rank a set of applications to determine if the RAPIDS Accelerator for Apache Spark 
-is a good fit for those applications. Works with CPU generated event logs.
+The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark 
+might be a good fit for those applications.
 
-The profiling tool generates information which can be used for ranking applications debugging and profiling.
-Information such as Spark version, executor information, properties and so on. Works with both CPU and GPU generated event logs.
+The profiling tool generates information which can be used for debugging and profiling applications.
+Information such as Spark version, executor information, properties and so on. This runs on either CPU or
+GPU generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
@@ -16,8 +17,6 @@ Information such as Spark version, executor information, properties and so on. W
 Optional:
 - maven installed 
   (only if you want to compile the jar yourself)
-- A running Spark cluster 
-  (only if you choose to run the job on a Spark cluster)
 - hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar 
   (only if any input event log is from S3)
   
@@ -37,16 +36,7 @@ The jar is generated in below directory :
 
 `./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar`
 
-## How to use this tool
-
-This tool parses the spark event log(s) and creates an output report.
-Acceptable input spark event log paths are local filesystem,hdfs,S3 or mixed.
-It can be file path,directory path or mixed.
-
-Below is an example input:
-```
-/path/to/localfilesystem/eventlog1 hdfs://path/to/directory/ s3a://<BUCKET>/to/directory/
-```
+## Accessing files from S3
 
 If any input is a S3 file path or directory path, here 2 extra steps to access S3 in Spark:
 1. Download the matched jars based on the Hadoop version:
@@ -74,11 +64,57 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 
 ## Qualification Tool
 
+### Functions
+
+The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
+might be a good fit for those applications. The tool works by processing the CPU generated event logs from Spark.
+
+Currently it does this by looking at the amount of time spent doing SQL DataFrame
+operations vs the entire application time: `(sum(SQL Dataframe Duration) / (application-duration))`.
+The more time spent doing SQL Dataframe operations the higher the score is
+and the more likely the plugin will be able to help accelerate that application.
+
+Each application(event log) could have multiple SQL queries. If a SQL's plan has Dataset API inside such as keyword
+ `$Lambda` or `.apply`, that SQL query is categorized as a DataSet SQL query, otherwise it is a Dataframe SQL query.
+
+Note: the duration(s) reported are in milli-seconds.
+
+It can also print out any potential problems it finds in a separate column, which is not included in the score. This
+currently only includes some UDFs. The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps. 
+Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
+
+There is also an optional column `Executor CPU Time Percent`
+that can be reported that is not included in the score. This is an estimate at how much time the tasks spent doing
+processing on the CPU vs waiting on IO. This is not always a good indicator because sometimes you may be doing IO that
+is encrypted and the CPU has to do work to decrypt it, so the environment you are running on needs to be taken into account.
+
+Sample output in csv:
+```
+App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration
+Spark shell,app-20210507105707-0001,78.03,"",810923,1039276
+Spark shell,app-20210507103057-0000,75.87,"",316622,417307
+```
+
+Sample output in text:
+```
++-----------+-----------------------+-----+------------------+----------------------+------------+
+|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|
++-----------+-----------------------+-----+------------------+----------------------+------------+
+|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |
+|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |
++-----------+-----------------------+-----+------------------+----------------------+------------+
+```
+
+### How to use this tool
+This tool parses the Spark CPU event log(s) and creates an output report.
+Acceptable input event log paths are files or directories containing spark events logs
+in the local filesystem, HDFS, S3 or mixed.
+
 ### Use from spark-shell
 1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
 2. After starting spark-shell:
 
-For multiple event logs comparison and analysis:
+For multiple event logs:
 ```bash
 com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
 ```
@@ -87,7 +123,7 @@ com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/t
 ```bash
 $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
 rapids-4-spark-tools_2.12-<version>.jar \
-/path/to/eventlog1 /path/to/eventlog2
+/path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
 
 ### Options
@@ -131,7 +167,9 @@ For usage see below:
 
 ### Output
 By default this outputs a csv file under sub-directory `./rapids_4_spark_qualification_output/` that contains 
-the rankings of the applications.
+the processed applications. The output will go into your default filesystem, it supports local filesystem
+or HDFS. The csv output can be used later to read back into Spark and do further processing or combined with other reports
+as needed.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
 
@@ -139,107 +177,22 @@ The output format can be changed using the `--output-format` option. Default is 
   
 The `--include-exec-cpu-percent` option can be used to include executor CPU time percent which is based on the aggregated task metrics:
 `sum(executorCPUTime)/sum(executorRunTime)`. It can show us roughly how much time is spent on CPU.
-Note: This option needs lot of memory for large amount of event logs as input. We suggest not enable it if the input has more than 10 event logs.
+Note: This option needs lot of memory for large amount of event logs as input and will take longer to process.
+We suggest you use around 30GB of driver memory if using this option and to only process around 50 apps at a time.
+Note you could run it multiple times over 50 each and output to csv and combined afterwards.
 
 Run `--help` for more information.
 
-### Functions
-
-The qualification tool's algorithm is to calculate the dataframe SQL duration ratio = 
-sum(SQL Dataframe Duration) / (application-duration)
-and then rank all applications based on that ratio.
-
-Each application(event log) could have multiple SQLs.
-If a SQL's plan has Dataset API inside such as keyworkd `$Lambda` or `.apply`, this SQL is categorized as DataSet SQL, otherwise it is a Dataframe SQL.
-`sum(SQL Dataframe Duration)` means the total duration for all Dataframe SQLs.
-
-Note: duration is in milli-seconds.
-
-It can also print the potential problems such as UDF.
-Note: The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps. 
-Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
-
-Sample output in csv:
-```
-App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration
-Spark shell,app-20210507105707-0001,78.03,"",810923,1039276
-Spark shell,app-20210507103057-0000,75.87,"",316622,417307
-```
-  
-Sample output in text:
-```
-+-----------+-----------------------+-----+------------------+----------------------+------------+
-|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|
-+-----------+-----------------------+-----+------------------+----------------------+------------+
-|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |
-|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |
-+-----------+-----------------------+-----+------------------+----------------------+------------+
-```
 
 ## Profiling Tool
 
-### Use from spark-shell
-1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
-2. After starting spark-shell:
-
-For a single event log analysis:
-```bash
-com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))
-```
-
-For multiple event logs comparison and analysis:
-```bash
-com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
-```
-
-### Use from spark-submit
-```bash
-$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
-rapids-4-spark-tools_2.12-<version>.jar \
-/path/to/eventlog1 /path/to/eventlog2
-```
-
-### Options
-```bash
-$SPARK_HOME/bin/spark-submit \
---class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
-rapids-4-spark-tools_2.12-<version>.jar \
---help
-
-# Filter eventlogs to be processed. 10 newest file with filenames containing "local"
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -m "local" -f "10-newest" /path/to/eventlog1
-
-For usage see below:
-  -c, --compare                   Compare Applications (Recommended to compare
-                                  less than 10 applications). Default is false
-  -f, --filter-criteria  <arg>    Filter newest or oldest N event logs for processing.
-                                  Supported formats are:
-                                  To process 10 recent event logs: --filter-criteria "10-newest"
-                                  To process 10 oldest event logs: --filter-criteria "10-oldest"
-  -g, --generate-dot              Generate query visualizations in DOT format.
-                                  Default is false
-  -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
-  -n, --num-output-rows  <arg>    Number of output rows for each Application. 
-                                  Default is 1000
-  -o, --output-directory  <arg>   Output directory. Default is current directory
-  -h, --help                      Show help message
-
- trailing arguments:
-  eventlog (required)   Event log filenames(space separated). eg:
-                        s3a://<BUCKET>/eventlog1 /path/to/eventlog2
-```
-
-### Output
-By default this outputs a log file named `rapids_4_spark_tools_output.log` that contains the rankings of the applications.
-
-The output location can be changed using the `--output-directory` option. Default is current directory.
-
-Run `--help` for more information.
+The profiling tool generates information which can be used for debugging and profiling applications.
 
 ### Functions
 #### A. Collect Information or Compare Information(if more than 1 eventlogs are as input and option -c is specified)
-- Print Application Information
+- Print Application information
 - Print Executors information
+- Print Job, stage and SQL ID information
 - Print Rapids related parameters
 - Print Rapids Accelerator Jar and cuDF Jar
 - Print SQL Plan Metrics
@@ -261,7 +214,6 @@ Compare Application Information:
 |2       |app-20210329170243-0018|1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true   |
 +--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
 ```
-
 
 - Compare Executor information:
 ```
@@ -291,7 +243,6 @@ Compare Rapids Properties which are set explicitly:
 |spark.rapids.sql.variableFloatAgg.enabled  |null      |TRUE      |
 +-------------------------------------------+----------+----------+
 ```
-
  
 - List rapids-4-spark and cuDF jars based on classpath 
 ```
@@ -300,6 +251,15 @@ Rapids Accelerator Jar and cuDF Jar:
 /path/cudf-0.19-cuda10-2.jar
 ```
 
+- Job, stage and SQL ID information
+```
++--------+-----+------------+-----+
+|appIndex|jobID|stageIds    |sqlID|
++--------+-----+------------+-----+
+|1       |0    |[0]         |null |
+|1       |1    |[1, 2, 3, 4]|0    |
++--------+-----+------------+-----+
+```
 
 - SQL Plan Metrics for Application for each SQL plan node in each SQL
 
@@ -317,7 +277,6 @@ SQL Plan Metrics for Application:
 |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
 ```
 
-
 - Generate DOT graph for each SQL (-g option)
 ```
 Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
@@ -333,6 +292,7 @@ The pdf file has the SQL plan graph with metrics.
 #### B. Analysis
 - Job + Stage level aggregated task metrics
 - SQL level aggregated task metrics
+- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent
 - Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
 Below we will aggregate the task level metrics at different levels to do some analysis such as detecting possible shuffle skew.
@@ -358,6 +318,15 @@ SQL level aggregated task metrics:
 |1       |application_1111111111111_0001|0    |show at <console>:11|1111    |222222  |6666666        |55555555       |55.55           |0                   |13333333    |111111      |999         |3333.3      |6666666            |55555                         |66666                      |11111111           |0                    |111111111111       |11111111111          |111111       |0                     |0                      |0                        |888888888              |8                          |11111         |11111               |99999                    |11111111111          |2222222                   |222222222222          |0                           |222222222222         |444444444444       |5555555              |444444          |
 ```
 
+- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent 
+```
+SQL Duration and Executor CPU Time Percent
++--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
+|appIndex|App ID                        |sqlID|SQL Duration|Contains Dataset Op|App Duration|Potential Problems|Executor CPU Time Percent|
++--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
+|1       |application_1603128018386_7759|0    |11042       |false              |119990      |null              |68.48                    |
++--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
+```
 
 - Shuffle Skew Check: 
 ```
@@ -369,3 +338,70 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 |1       |2      |0             |2224  |1      |222.22         |8.8           |3333.33          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 ```
+
+### How to use this tool
+This tool parses the Spark CPU or GPU event log(s) and creates an output report.
+Acceptable input event log paths are files or directories containing spark events logs
+in the local filesystem, HDFS, S3 or mixed.
+
+### Use from spark-shell
+1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
+2. After starting spark-shell:
+
+For a single event log analysis:
+```bash
+com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1"))
+```
+
+For multiple event logs comparison and analysis:
+```bash
+com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
+```
+
+### Use from spark-submit
+```bash
+$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
+rapids-4-spark-tools_2.12-<version>.jar \
+/path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
+```
+
+### Options
+```bash
+$SPARK_HOME/bin/spark-submit \
+--class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
+rapids-4-spark-tools_2.12-<version>.jar \
+--help
+
+# Filter eventlogs to be processed. 10 newest file with filenames containing "local"
+./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -m "local" -f "10-newest" /path/to/eventlog1
+
+For usage see below:
+  -c, --compare                   Compare Applications (Recommended to compare
+                                  less than 10 applications). Default is false
+  -f, --filter-criteria  <arg>    Filter newest or oldest N event logs for processing.
+                                  Supported formats are:
+                                  To process 10 recent event logs: --filter-criteria "10-newest"
+                                  To process 10 oldest event logs: --filter-criteria "10-oldest"
+  -g, --generate-dot              Generate query visualizations in DOT format.
+                                  Default is false
+  -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
+  -n, --num-output-rows  <arg>    Number of output rows for each Application.
+                                  Default is 1000
+  -o, --output-directory  <arg>   Output directory. Default is current directory
+  -h, --help                      Show help message
+
+ trailing arguments:
+  eventlog (required)   Event log filenames(space separated) or directories
+                        containing event logs. eg: s3a://<BUCKET>/eventlog1
+                        /path/to/eventlog2
+```
+
+### Output
+By default this outputs a log file named `rapids_4_spark_tools_output.log` in the current directory that
+contains the rankings of the applications. The output will go into your default filesystem, it supports
+local filesystem or HDFS.
+
+The output location can be changed using the `--output-directory` option. Default is current directory.
+
+Run `--help` for more information.
+
