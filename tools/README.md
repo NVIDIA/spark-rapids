@@ -71,6 +71,8 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 </property>
 </configuration>
 ```
+Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
+more options about integrating hadoop-aws module with S3.
 
 ## Qualification Tool
 
