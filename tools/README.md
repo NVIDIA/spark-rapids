@@ -35,7 +35,7 @@ mvn -pl .,tools clean verify -DskipTests
 ```
 The jar is generated in below directory :
 
-`./rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar`
+`./tools/target/rapids-4-spark-tools_2.12-<version>.jar`
 
 ## How to use this tool
 
