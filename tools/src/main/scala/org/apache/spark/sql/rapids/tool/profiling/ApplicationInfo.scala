@@ -30,7 +30,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.ui.UIUtils
 import org.apache.spark.util._
 

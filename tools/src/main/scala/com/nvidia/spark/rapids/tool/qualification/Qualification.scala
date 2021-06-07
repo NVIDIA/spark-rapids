@@ -15,13 +15,11 @@
  */
 package com.nvidia.spark.rapids.tool.qualification
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-
 import scala.collection.mutable.ArrayBuffer
 
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling.Analysis
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}

@@ -1,5 +1,3 @@
-
-
 /*
  * Copyright (c) 2021, NVIDIA CORPORATION.
  *
@@ -17,8 +15,6 @@
  */
 
 package com.nvidia.spark.rapids.tool.profiling
-
-import java.io.FileWriter
 
 import scala.collection.mutable.ArrayBuffer
 

@@ -17,9 +17,7 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-import org.apache.hadoop.fs.Path
-import org.rogach.scallop.ScallopOption
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
+import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
