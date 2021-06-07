@@ -43,12 +43,14 @@ This tool parses the spark event log(s) and creates an output report.
 Acceptable input spark event log paths are local filesystem,hdfs,S3 or mixed.
 It can be file path,directory path or mixed.
 
-Below is an example input:
+Below are examples of possible inputs:
 ```
-/path/to/localfilesystem/eventlog1 hdfs://path/to/directory/ s3a://<BUCKET>/to/directory/
+1. /path/to/localfilesystem/eventlog1 
+2. hdfs://path/to/directory/ 
+3. s3a://<BUCKET>/to/directory/
 ```
 
-If any input is a S3 file path or directory path, here 2 extra steps to access S3 in Spark:
+If any input is a S3 file path or directory path, 2 extra steps are needed to access S3 in Spark:
 1. Download the matched jars based on the Hadoop version:
    - `hadoop-aws-<version>.jar`
    - `aws-java-sdk-<version>.jar`
