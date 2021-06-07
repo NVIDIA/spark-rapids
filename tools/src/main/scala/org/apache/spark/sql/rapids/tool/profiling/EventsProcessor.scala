@@ -262,8 +262,8 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       val taskSum = app.stageTaskQualificationEnd.getOrElseUpdate(stageAndAttempt, {
         new StageTaskQualificationSummary(event.stageId,
           event.stageAttemptId,
-          event.taskMetrics.executorRunTime,
-          NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime))
+          0,
+          0)
       })
       taskSum.executorRunTime += event.taskMetrics.executorRunTime
       taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
