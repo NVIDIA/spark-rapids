@@ -126,9 +126,14 @@ class ApplicationInfo(
   val stageFailureReason: HashMap[Int, Option[String]] = HashMap.empty[Int, Option[String]]
 
   // From SparkListenerTaskStart & SparkListenerTaskEnd
-  // taskEnd contains task level metrics
-  var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
+  // taskEnd contains task level metrics - only used for profiling
+  // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
+
+  // this is used to aggregate metrics for qualification to speed up processing and
+  // minimize memory usage
+  var taskQualificationEnd: HashMap[String, TaskQualificationSummary] =
+    HashMap.empty[String, TaskQualificationSummary]
 
   // From SparkListenerTaskGettingResult
   var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
@@ -202,13 +207,14 @@ class ApplicationInfo(
     val fs = FileSystem.get(eventlog.toUri,new Configuration())
     var totalNumEvents = 0
 
+    val eventsProcessor = new EventsProcessor(forQualification)
     Utils.tryWithResource(EventLogFileReader.openEventLog(eventlog, fs)) { in =>
       val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
       totalNumEvents = lines.size
       lines.foreach { line =>
         try {
           val event = JsonProtocol.sparkEventFromJson(parse(line))
-          EventsProcessor.processAnyEvent(this, event)
+          eventsProcessor.processAnyEvent(this, event)
           logDebug(line)
         }
         catch {
@@ -653,6 +659,23 @@ class ApplicationInfo(
        |from taskDF_$index t, stageDF_$index s,
        |jobDF_$index j, sqlDF_$index sq
        |where t.stageId=s.stageId
+       |and array_contains(j.stageIds, s.stageId)
+       |and sq.sqlID=j.sqlID
+       |group by sq.sqlID,sq.description
+       |""".stripMargin
+  }
+
+  // Function to generate a query for SQL level Task Metrics aggregation
+  def sqlMetricsAggregationSQLQual: String = {
+    s"""select $index as appIndex, '$appId' as appID,
+       |sq.sqlID, sq.description,
+       |count(*) as numTasks, max(sq.duration) as Duration,
+       |sum(executorCPUTime) as executorCPUTime,
+       |sum(executorRunTime) as executorRunTime,
+       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) executorCPURatio
+       |$generateAggSQLString
+       |from stageDF_$index s,
+       |jobDF_$index j, sqlDF_$index sq
        |and array_contains(j.stageIds, s.stageId)
        |and sq.sqlID=j.sqlID
        |group by sq.sqlID,sq.description

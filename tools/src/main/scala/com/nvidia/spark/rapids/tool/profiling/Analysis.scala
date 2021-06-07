@@ -118,6 +118,18 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[FileWriter
     }
   }
 
+  def sqlMetricsAggregationQual(): DataFrame = {
+    val query = apps
+      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
+      .map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
+      .mkString(" union ")
+    if (query.nonEmpty) {
+      apps.head.runQuery(query)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
+    }
+  }
+
   // custom query execution. Normally for debugging use.
   def customQueryExecution(app: ApplicationInfo): Unit = {
     fileWriter.foreach(_.write("Custom query execution:"))

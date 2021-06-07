@@ -114,6 +114,12 @@ case class StageCase(
     duration: Option[Long],
     durationStr: String, gpuMode: Boolean)
 
+class TaskQualificationSummary(
+    stageId: Int,
+    stageAttemptId: Int,
+    var executorRunTime: Long,
+    var executorCPUTime: Long)
+
 // Note: sr = Shuffle Read; sw = Shuffle Write
 // Totally 39 columns
 case class TaskCase(
