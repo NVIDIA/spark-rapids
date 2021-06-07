@@ -39,7 +39,6 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Lo
   }
 
   def write(df: DataFrame, numOutputRows: Int): Unit = {
-    // This tool's output log file name
     outFile.foreach(_.writeBytes(ToolUtils.showString(df, numOutputRows)))
   }
 
