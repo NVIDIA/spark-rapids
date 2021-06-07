@@ -132,8 +132,8 @@ class ApplicationInfo(
 
   // this is used to aggregate metrics for qualification to speed up processing and
   // minimize memory usage
-  var taskQualificationEnd: HashMap[String, TaskQualificationSummary] =
-    HashMap.empty[String, TaskQualificationSummary]
+  var stageTaskQualificationEnd: HashMap[String, StageTaskQualificationSummary] =
+    HashMap.empty[String, StageTaskQualificationSummary]
 
   // From SparkListenerTaskGettingResult
   var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
@@ -404,10 +404,19 @@ class ApplicationInfo(
           case None => ""
         }
 
+        // only for qualification set the runtime and cputime
+        // could expand later for profiling
+        val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
+        val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
+        val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0)
+        val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0)
+
         val stageNew = res.copy(completionTime = thisEndTime,
           failureReason = thisFailureReason,
           duration = durationResult,
-          durationStr = durationString)
+          durationStr = durationString,
+          executorRunTime = runTime,
+          executorCPUTime = cpuTime)
         stageSubmittedNew += stageNew
       }
       allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
@@ -417,11 +426,13 @@ class ApplicationInfo(
     }
 
     // For taskDF
-    if (taskEnd.nonEmpty) {
-      allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-    } else {
-      logError("task is empty! Exiting...")
-      System.exit(1)
+    if (!forQualification) {
+      if (taskEnd.nonEmpty) {
+        allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
+      } else {
+        logError("task is empty! Exiting...")
+        System.exit(1)
+      }
     }
 
     // For sqlMetricsDF

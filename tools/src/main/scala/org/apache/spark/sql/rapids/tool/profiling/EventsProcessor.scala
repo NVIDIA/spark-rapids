@@ -259,8 +259,8 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
 
     if (forQualification) {
       val stageAndAttempt = s"${event.stageId}:${event.stageAttemptId}"
-      val taskSum = app.taskQualificationEnd.getOrElseUpdate(stageAndAttempt, {
-        new TaskQualificationSummary(event.stageId,
+      val taskSum = app.stageTaskQualificationEnd.getOrElseUpdate(stageAndAttempt, {
+        new StageTaskQualificationSummary(event.stageId,
           event.stageAttemptId,
           event.taskMetrics.executorRunTime,
           NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime))

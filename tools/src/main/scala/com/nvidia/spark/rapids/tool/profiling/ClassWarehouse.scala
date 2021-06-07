@@ -112,11 +112,14 @@ case class StageCase(
     completionTime: Option[Long],
     failureReason: Option[String],
     duration: Option[Long],
-    durationStr: String, gpuMode: Boolean)
+    durationStr: String,
+    gpuMode: Boolean,
+    executorRunTime: Long,
+    executorCPUTime: Long)
 
-class TaskQualificationSummary(
-    stageId: Int,
-    stageAttemptId: Int,
+class StageTaskQualificationSummary(
+    val stageId: Int,
+    val stageAttemptId: Int,
     var executorRunTime: Long,
     var executorCPUTime: Long)
 
