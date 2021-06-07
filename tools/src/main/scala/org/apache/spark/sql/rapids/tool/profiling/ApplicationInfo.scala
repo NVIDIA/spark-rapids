@@ -691,7 +691,6 @@ class ApplicationInfo(
        |sq.sqlID, sq.description,
        |sum(executorCPUTimeSum) as executorCPUTime,
        |sum(executorRunTimeSum) as executorRunTime,
-       |round(sum(executorCPUTimeSum)/sum(executorRunTimeSum)*100,2) executorCPURatio
        |from stageDF_$index s,
        |jobDF_$index j, sqlDF_$index sq
        |where array_contains(j.stageIds, s.stageId)
