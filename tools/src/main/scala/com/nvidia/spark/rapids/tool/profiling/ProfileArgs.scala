@@ -51,8 +51,8 @@ For usage see below:
       default = Some("."))
   val eventlog: ScallopOption[List[String]] =
     trailArg[List[String]](required = true,
-      descr = "Event log filenames(space separated). " +
-          "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
+      descr = "Event log filenames(space separated) or directories containing event logs." +
+          " eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val filterCriteria: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter newest or oldest N eventlogs for processing." +
