@@ -150,8 +150,6 @@ object ProfileMain extends Logging {
       sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
       analysis.sqlMetricsAggregationDurationAndCpuTime()
       analysis.shuffleSkewCheck()
-
-
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {
