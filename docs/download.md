@@ -25,11 +25,13 @@ representing the patch version of the release.
 
 Hardware Requirements: 
 
+The plugin is tested on the following architectures: 
+
 	GPU Architecture: NVIDIA V100, T4 and A30/A100 GPUs
 
 Software Requirements:
 
-	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS8
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 	
 	CUDA & Nvidia Drivers: 11.0, 11.2 & v450.80.02+
 	
@@ -43,11 +45,13 @@ Software Requirements:
 * Download [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.0/rapids-4-spark_2.12-21.06.0.jar)
 * Download RAPIDS cuDF 21.06.0 for your system:
   * [cuDF 11.0
-    Package](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11.jar) (Works
-    with CUDA 11.0 and 11.2)
+    Package](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11.jar) 
 
-Users will need to ensure the minimum driver (450.80.02) is installed, and at least one of the
-supported CUDA toolkits (11.0, 11.2) is installed on each Spark node. 
+This package is built against CUDA 11.2 and has [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+on V100, T4, A30 and A100 GPUs with CUDA 11.0 and 11.2.  For those using other types of GPUs which
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
+need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Release Notes
 New functionality for this release includes:

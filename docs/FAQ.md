@@ -35,9 +35,11 @@ the latest release.
 
 ### What hardware is supported? 
 
-The plugin is tested and supported on V100, T4, A30 and A100 Datacenter GPUs.  It is possible to run
-the plugin on GeForce desktop hardware.  GeForce hardware does not support CUDA enhanced
-compatibility, and will need CUDA 11.2 installed. If not, the following error will be displayed: 
+The plugin is tested and supported on V100, T4, A30 and A100 Datacenter (Tesla) GPUs.  It is
+possible to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce
+hardware does not support [CUDA enhanced
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases),
+and will need CUDA 11.2 installed. If not, the following error will be displayed:
 
 ```
 ai.rapids.cudf.CudaException: forward compatibility was attempted on non supported HW
