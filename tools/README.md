@@ -86,7 +86,7 @@ Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on
 There is also an optional column `Executor CPU Time Percent`
 that can be reported that is not included in the score. This is an estimate at how much time the tasks spent doing
 processing on the CPU vs waiting on IO. This is not always a good indicator because sometimes you may be doing IO that
-is encrypted and the CPU has to do work to decrypt it, so the envrionment you are running on needs to be taken into account.
+is encrypted and the CPU has to do work to decrypt it, so the environment you are running on needs to be taken into account.
 
 Sample output in csv:
 ```

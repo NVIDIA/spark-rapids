@@ -71,7 +71,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
     }
   }
 
-  // Print executor related information
+  // Print job related information
   def printJobInfo(): Unit = {
     val messageHeader = "\nJob Information:\n"
     for (app <- apps) {
