@@ -112,7 +112,10 @@ in the local filesystem, HDFS, S3 or mixed.
 
 ### Use from spark-shell
 1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
-2. After starting spark-shell:
+2. Starting spark-shell:
+```bash
+$SPARK_HOME/bin/spark-shell --driver-memory 5g --jars ~/rapids-4-spark-tools_2.12-<version>.jar
+```
 
 For multiple event logs:
 ```bash
@@ -121,7 +124,7 @@ com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/t
 
 ### Use from spark-submit
 ```bash
-$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
+$SPARK_HOME/bin/spark-submit --driver-memory 5g --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
 rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
