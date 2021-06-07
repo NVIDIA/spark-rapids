@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuExpressionsUtils, GpuLiteral, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -227,12 +227,11 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
 
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, BooleanType)
 
-  override def prettyName: String = "sort_array"
-
   override def checkInputDataTypes(): TypeCheckResult = base.dataType match {
     case ArrayType(dt, _) if RowOrdering.isOrderable(dt) =>
       ascendingOrder match {
-        case Literal(_: Boolean, BooleanType) =>
+        // replace Literal with GpuLiteral here
+        case GpuLiteral(_: Boolean, BooleanType) =>
           TypeCheckResult.TypeCheckSuccess
         case _ =>
           TypeCheckResult.TypeCheckFailure(
@@ -247,25 +246,25 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    throw new IllegalStateException("This is not supported")
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported yet")
+    throw new IllegalStateException("This is not supported")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val isAscending = isAscendingOrder(rhs)
-    lhs.getBase.listSortRows(isAscending, false)
+    val isDescending = isDescendingOrder(rhs)
+    lhs.getBase.listSortRows(isDescending, true)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    val isAscending = isAscendingOrder(rhs)
+    val isDescending = isDescendingOrder(rhs)
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { cv =>
-      cv.getBase.listSortRows(isAscending, false)
+      cv.getBase.listSortRows(isDescending, true)
     }
   }
 
-  private def isAscendingOrder(scalar: GpuScalar): Boolean = scalar.getValue match {
-    case ascending: Boolean => ascending
+  private def isDescendingOrder(scalar: GpuScalar): Boolean = scalar.getValue match {
+    case ascending: Boolean => !ascending
     case invalidValue => throw new IllegalArgumentException(s"invalid value $invalidValue")
   }
 }
