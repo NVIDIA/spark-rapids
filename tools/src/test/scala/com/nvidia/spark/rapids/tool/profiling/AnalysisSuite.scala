@@ -87,11 +87,11 @@ class AnalysisSuite extends FunSuite {
       .add("appIndex",IntegerType,true)
       .add("appID",StringType,true)
       .add("sqlID",LongType,true)
-      .add("sqlDuration",IntegerType,true)
+      .add("sqlDuration",LongType,true)
       .add("containsDataset",BooleanType,true)
       .add("appDuration",LongType,true)
       .add("problematic",StringType,true)
-      .add("executorCpuTime",FloatType,true)
+      .add("executorCpuTime",DoubleType,true)
 
     val dfExpect = sparkSession.read.option("header", "true").option("nullValue", "-")
       .schema(schema).csv(resultExpectation.getPath())
