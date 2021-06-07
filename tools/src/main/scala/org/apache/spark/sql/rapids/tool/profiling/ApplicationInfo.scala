@@ -730,6 +730,15 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
+  // select the non-null sql ids from only successful jobs
+  def sqlIdsForSuccessfulJobs: String = {
+    s"""select
+       |distinct sqlID
+       |from jobDF_$index j
+       |where j.jobResult = "JobSucceeded" and sqlID is not null
+       |""".stripMargin
+  }
+
   def qualificationDurationNoMetricsSQL: String = {
     s"""select
        |first(appName) as `App Name`,
@@ -738,10 +747,12 @@ class ApplicationInfo(
        |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
        |first(app.duration) as `App Duration`
-       |from sqlDF_$index sq, appdf_$index app
+       |from sqlDF_$index sq, appdf_$index app, ($sqlIdsForSuccessfulJobs) j
+       |where sq.sqlID = j.sqlID
        |""".stripMargin
   }
 
+  // only include jobs that are marked as succeeded
   def qualificationDurationSQL: String = {
     s"""select
        |$index as appIndex,
@@ -753,8 +764,9 @@ class ApplicationInfo(
        |problematic as potentialProblems,
        |m.executorCPUTime,
        |m.executorRunTime
-       |from sqlDF_$index sq, appdf_$index app
+       |from sqlDF_$index sq, appdf_$index app, ($sqlIdsForSuccessfulJobs) j
        |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
+       |where sq.sqlID = j.sqlID
        |""".stripMargin
   }
 
