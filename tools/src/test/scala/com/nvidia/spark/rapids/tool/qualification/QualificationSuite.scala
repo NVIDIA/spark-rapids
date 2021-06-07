@@ -51,8 +51,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "--output-directory",
           outpath.getAbsolutePath())
         val allArgs = hasExecCpu match  {
-          case true => outputArgs ++ Array("--include-exec-cpu-percent")
-          case false => outputArgs
+          case true => outputArgs
+          case false => outputArgs ++ Array("--no-exec-cpu-percent")
         }
         val appArgs = new QualificationArgs(allArgs ++ eventLogs)
 
@@ -127,7 +127,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           .getOrCreate()
 
         val appArgs = new QualificationArgs(Array(
-          "--include-exec-cpu-percent",
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))

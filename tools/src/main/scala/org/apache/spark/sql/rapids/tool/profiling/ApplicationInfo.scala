@@ -690,7 +690,7 @@ class ApplicationInfo(
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
        |sum(executorCPUTimeSum) as executorCPUTime,
-       |sum(executorRunTimeSum) as executorRunTime,
+       |sum(executorRunTimeSum) as executorRunTime
        |from stageDF_$index s,
        |jobDF_$index j, sqlDF_$index sq
        |where array_contains(j.stageIds, s.stageId)
