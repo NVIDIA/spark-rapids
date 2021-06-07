@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.io.FileWriter
-
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -31,7 +30,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.ui.UIUtils
 import org.apache.spark.util._
 
@@ -513,7 +512,7 @@ class ApplicationInfo(
   def runQuery(
       query: String,
       vertical: Boolean = false,
-      fileWriter: Option[FileWriter] = None,
+      fileWriter: Option[ToolTextFileWriter] = None,
       messageHeader: String = ""): DataFrame = {
     logDebug("Running:" + query)
     val df = sparkSession.sql(query)
@@ -611,6 +610,14 @@ class ApplicationInfo(
       }
     }
     resultString
+  }
+
+  // Function to generate a query for job level Task Metrics aggregation
+  def jobtoStagesSQL: String = {
+    s"""select $index as appIndex, j.jobID,
+       |j.stageIds, j.sqlID
+       |from jobDF_$index j
+       |""".stripMargin
   }
 
   // Function to generate a query for job level Task Metrics aggregation
@@ -726,6 +733,21 @@ class ApplicationInfo(
        |first(appDuration) as `App Duration`,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`
        |from (${qualificationDurationSQL.stripLineEnd})
+       |""".stripMargin
+  }
+
+  def profilingDurationSQL: String = {
+    s"""select
+       |$index as appIndex,
+       |'$appId' as `App ID`,
+       |sq.sqlID,
+       |sq.duration as `SQL Duration`,
+       |case when sq.sqlQualDuration > 0 then false else true end as `Contains Dataset Op`,
+       |app.duration as `App Duration`,
+       |problematic as `Potential Problems`,
+       |round(executorCPUTime/executorRunTime*100,2) as `Executor CPU Time Percent`
+       |from sqlDF_$index sq, appdf_$index app
+       |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }
 

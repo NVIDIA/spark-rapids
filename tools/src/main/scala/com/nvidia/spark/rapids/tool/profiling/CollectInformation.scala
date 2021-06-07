@@ -15,11 +15,13 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.{File, FileWriter}
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.col
@@ -29,13 +31,13 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CollectInformation mainly print information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter) {
+class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTextFileWriter) {
 
   require(apps.nonEmpty)
 
   // Print Application Information
   def printAppInfo(): Unit = {
-    val messageHeader = "Application Information:\n"
+    val messageHeader = "\nApplication Information:\n"
     for (app <- apps) {
       app.runQuery(query = app.generateAppInfo, fileWriter = Some(fileWriter),
         messageHeader = messageHeader)
@@ -62,16 +64,25 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWri
 
   // Print executor related information
   def printExecutorInfo(): Unit = {
-    val messageHeader = "\n\nExecutor Information:\n"
+    val messageHeader = "\nExecutor Information:\n"
     for (app <- apps) {
       app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
         fileWriter = Some(fileWriter), messageHeader = messageHeader)
     }
   }
 
+  // Print job related information
+  def printJobInfo(): Unit = {
+    val messageHeader = "\nJob Information:\n"
+    for (app <- apps) {
+      app.runQuery(query = app.jobtoStagesSQL,
+        fileWriter = Some(fileWriter), messageHeader = messageHeader)
+    }
+  }
+
   // Print Rapids related Spark Properties
   def printRapidsProperties(): Unit = {
-    val messageHeader = "\n\nSpark Rapids parameters set explicitly:\n"
+    val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
       app.runQuery(query = app.generateRapidsProperties + " order by key",
         fileWriter = Some(fileWriter), messageHeader = messageHeader)
