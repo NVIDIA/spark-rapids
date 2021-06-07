@@ -434,7 +434,9 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       None,
       None,
       "",
-      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode
+      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode,
+      0,
+      0
     )
     app.stageSubmitted += thisStage
   }

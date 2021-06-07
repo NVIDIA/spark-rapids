@@ -408,8 +408,8 @@ class ApplicationInfo(
         // could expand later for profiling
         val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
         val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
-        val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0)
-        val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0)
+        val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
+        val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
 
         val stageNew = res.copy(completionTime = thisEndTime,
           failureReason = thisFailureReason,
@@ -680,14 +680,12 @@ class ApplicationInfo(
   def sqlMetricsAggregationSQLQual: String = {
     s"""select $index as appIndex, '$appId' as appID,
        |sq.sqlID, sq.description,
-       |count(*) as numTasks, max(sq.duration) as Duration,
        |sum(executorCPUTime) as executorCPUTime,
        |sum(executorRunTime) as executorRunTime,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) executorCPURatio
-       |$generateAggSQLString
        |from stageDF_$index s,
        |jobDF_$index j, sqlDF_$index sq
-       |and array_contains(j.stageIds, s.stageId)
+       |where array_contains(j.stageIds, s.stageId)
        |and sq.sqlID=j.sqlID
        |group by sq.sqlID,sq.description
        |""".stripMargin
