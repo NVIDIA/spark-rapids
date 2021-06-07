@@ -154,13 +154,17 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
 
     for (app <- apps) {
-      val firstRow = app.runQuery(query = app.jobtoStagesSQL, fileWriter = None).collect().head
-      def fieldIndex(name: String) = firstRow.schema.fieldIndex(name)
+      val rows = app.runQuery(query = app.jobtoStagesSQL, fileWriter = None).collect()
+      assert(rows.size == 2)
+      val firstRow = rows.head
+      assert(firstRow.getInt(firstRow.schema.fieldIndex("jobID")) === 0)
+      assert(firstRow.getList(firstRow.schema.fieldIndex("stageID")).size == 1)
+      assert(firstRow.getInt(firstRow.schema.fieldIndex("sqlID")) == null)
 
-      assert(firstRow.size == 2)
-      assert(firstRow.getInt(fieldIndex("jobID")) === 0)
-      assert(firstRow.getList(fieldIndex("stageID")).size == 1)
-      assert(firstRow.getInt(fieldIndex("sqlID")) == null)
+      val secondRow = rows(1)
+      assert(secondRow.getInt(secondRow.schema.fieldIndex("jobID")) === 1)
+      assert(secondRow.getList(secondRow.schema.fieldIndex("stageID")).size == 4)
+      assert(secondRow.getInt(secondRow.schema.fieldIndex("sqlID")) == 0)
     }
   }
 
