@@ -2365,9 +2365,9 @@ object GpuOverrides {
     expr[SortArray](
       "Returns a sorted array with the input array and the ascending / descending order",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL),
+        TypeSig.ARRAY.nested(_commonTypes),
         TypeSig.ARRAY.nested(TypeSig.all),
-        ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL),
+        ("array", TypeSig.ARRAY.nested(_commonTypes),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ascendingOrder", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (in, conf, p, r) => new BinaryExprMeta[SortArray](in, conf, p, r) {
