@@ -10,7 +10,7 @@ nav_order: 11
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2 or 3.1.1 of Apache
+The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.1.1 or 3.1.2 of Apache
 Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to be
 internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
@@ -19,9 +19,9 @@ process, we try to stay on top of these changes and release updates as quickly a
 
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
-- [AWS EMR 6.2.0](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 7.3](get-started/getting-started-databricks.md)
-- [Google Cloud Dataproc](get-started/getting-started-gcp.md)
+- [AWS EMR 6.2.0, 6.3.0](get-started/getting-started-aws-emr.md)
+- [Databricks Runtime 7.3, 8.2](get-started/getting-started-databricks.md)
+- [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 
 Most distributions based on a supported Apache Spark version should work, but because the plugin
 replaces parts of the physical plan that Apache Spark considers to be internal the code for those
@@ -30,16 +30,29 @@ to set up testing and validation on their distributions.
 
 ### What CUDA versions are supported?
 
-CUDA 10.1, 10.2 and 11.0 are currently supported, but you need to download the cudf jar that 
-corresponds to the version you are using. Please look [here](download.md) for download 
-links for the latest release.
+CUDA 11.0 and 11.2 are currently supported.  Please look [here](download.md) for download links for
+the latest release.
+
+### What hardware is supported? 
+
+The plugin is tested and supported on V100, T4, A30 and A100 datacenter GPUs.  It is possible to run
+the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware does
+not support [CUDA enhanced
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases),
+and will need CUDA 11.2 installed. If not, the following error will be displayed:
+
+```
+ai.rapids.cudf.CudaException: forward compatibility was attempted on non supported HW
+        at ai.rapids.cudf.Cuda.getDeviceCount(Native Method)
+        at com.nvidia.spark.rapids.GpuDeviceManager$.findGpuAndAcquire(GpuDeviceManager.scala:78)
+```
 
 ### How can I check if the RAPIDS Accelerator is installed and which version is running?
 
 On startup the RAPIDS Accelerator will log a warning message on the Spark driver showing the
 version with a message that looks something like this:
 ```
-21/04/14 22:14:55 WARN SQLExecPlugin: RAPIDS Accelerator 0.5.0 using cudf 0.19. To disable GPU support set `spark.rapids.sql.enabled` to false
+21/04/14 22:14:55 WARN SQLExecPlugin: RAPIDS Accelerator 21.06.0 using cudf 21.06.0. To disable GPU support set `spark.rapids.sql.enabled` to false
 ```
 
 The full RAPIDS Accelerator and cudf build properties are logged at `INFO` level in the
