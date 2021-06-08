@@ -94,7 +94,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
       val planFileWriter = new ToolTextFileWriter(outputDirectory,
         s"planDescriptions-${app.appId}")
       try {
-        for ((sqlID, planDesc) <- app.physicalPlanDescription) {
+        for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
           planFileWriter.write("\n=============================\n")
           planFileWriter.write(s"Plan for SQL ID : $sqlID")
           planFileWriter.write("\n=============================\n")
