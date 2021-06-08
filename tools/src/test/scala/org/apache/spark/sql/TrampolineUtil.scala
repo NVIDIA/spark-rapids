@@ -17,6 +17,8 @@ package org.apache.spark.sql
 
 import java.io.File
 
+import org.apache.spark.SparkConf
+import org.apache.spark.io.CompressionCodec
 import org.apache.spark.util.Utils
 
 object TrampolineUtil {
@@ -33,4 +35,7 @@ object TrampolineUtil {
     val path = Utils.createTempDir()
     try f(path) finally Utils.deleteRecursively(path)
   }
+
+  def createCodec(conf: SparkConf, codecName: String) =
+    CompressionCodec.createCodec(conf, codecName)
 }

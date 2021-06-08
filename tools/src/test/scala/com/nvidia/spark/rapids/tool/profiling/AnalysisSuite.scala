@@ -17,11 +17,13 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.File
+import java.nio.file.{Files, Paths, StandardOpenOption}
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
+import org.apache.hadoop.io.IOUtils
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.types._
 
 class AnalysisSuite extends FunSuite {
@@ -74,7 +76,46 @@ class AnalysisSuite extends FunSuite {
   }
 
   test("test sqlMetrics duration and execute cpu time") {
-    val logs = Array(s"$logDir/rp_sql_eventlog")
+    testSqlMetricsDurationAndCpuTime()
+  }
+
+  test("zstd: test sqlMetrics duration and execute cpu time") {
+    testSqlMetricsDurationAndCpuTime(Option("zstd"))
+  }
+
+  test("snappy: test sqlMetrics duration and execute cpu time") {
+    testSqlMetricsDurationAndCpuTime(Option("snappy"))
+  }
+
+  test("lzf: test sqlMetrics duration and execute cpu time") {
+    testSqlMetricsDurationAndCpuTime(Option("lz4"))
+  }
+
+  test("lz4: test sqlMetrics duration and execute cpu time") {
+    testSqlMetricsDurationAndCpuTime(Option("lzf"))
+  }
+
+  private def testSqlMetricsDurationAndCpuTime(compressionNameOpt: Option[String] = None) = {
+    val rawLog = s"$logDir/rp_sql_eventlog"
+    compressionNameOpt.foreach { compressionName =>
+      val codec = TrampolineUtil.createCodec(sparkSession.sparkContext.getConf,
+        compressionName)
+      TrampolineUtil.withTempDir { tempDir =>
+        // copy and close streams
+        IOUtils.copyBytes(Files.newInputStream(Paths.get(rawLog)),
+          codec.compressedOutputStream(Files.newOutputStream(new File(tempDir,
+            "rp_sql_eventlog." + compressionName).toPath, StandardOpenOption.CREATE)),
+          4096, true)
+        runTestSqlMetricsDurationAndCpuTime(Array(tempDir.toString))
+      }
+    }
+
+    if (compressionNameOpt.isEmpty) {
+      runTestSqlMetricsDurationAndCpuTime(Array(rawLog))
+    }
+  }
+
+  private def runTestSqlMetricsDurationAndCpuTime(logs: Array[String]) = {
     val expectFile = "rapids_duration_and_cpu_expectation.csv"
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
