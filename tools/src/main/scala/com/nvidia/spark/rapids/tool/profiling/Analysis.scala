@@ -116,6 +116,20 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
     }
   }
 
+  // sql metrics aggregation specific for qualification because
+  // it aggregates executor time metrics differently
+  def sqlMetricsAggregationQual(): DataFrame = {
+    val query = apps
+      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
+      .map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
+      .mkString(" union ")
+    if (query.nonEmpty) {
+      apps.head.runQuery(query)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
+    }
+  }
+
   def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
     val query = apps
