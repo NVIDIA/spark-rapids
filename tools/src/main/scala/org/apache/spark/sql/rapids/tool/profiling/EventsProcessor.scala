@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import java.util.concurrent.TimeUnit.NANOSECONDS
+
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.tool.profiling._
@@ -26,9 +28,9 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 
 /**
- * This object is to process all events and do validation in the end.
+ * This class is to process all events and do validation in the end.
  */
-object EventsProcessor extends Logging {
+class EventsProcessor(forQualification: Boolean = false) extends Logging {
 
   def processAnyEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
     event match {
@@ -246,7 +248,8 @@ object EventsProcessor extends Logging {
       app: ApplicationInfo,
       event: SparkListenerTaskStart): Unit = {
     logDebug("Processing event: " + event.getClass)
-    app.taskStart += event
+    // currently not used
+    // app.taskStart += event
   }
 
   def doSparkListenerTaskEnd(
@@ -254,67 +257,77 @@ object EventsProcessor extends Logging {
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
 
-    // Parse task accumulables
-    for (res <- event.taskInfo.accumulables) {
-      try {
-        val value = res.value.getOrElse("").toString.toLong
-        val thisMetric = TaskStageAccumCase(
-          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
-          res.id, res.name, Some(value), res.internal)
-        app.taskStageAccum += thisMetric
-      } catch {
-        case e: ClassCastException =>
-          logWarning("ClassCastException when parsing accumulables for task "
+    if (forQualification) {
+      val stageAndAttempt = s"${event.stageId}:${event.stageAttemptId}"
+      val taskSum = app.stageTaskQualificationEnd.getOrElseUpdate(stageAndAttempt, {
+        new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0)
+      })
+      taskSum.executorRunTime += event.taskMetrics.executorRunTime
+      taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
+    } else {
+
+      // Parse task accumulables
+      for (res <- event.taskInfo.accumulables) {
+        try {
+          val value = res.value.getOrElse("").toString.toLong
+          val thisMetric = TaskStageAccumCase(
+            event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
+            res.id, res.name, Some(value), res.internal)
+          app.taskStageAccum += thisMetric
+        } catch {
+          case e: ClassCastException =>
+            logWarning("ClassCastException when parsing accumulables for task "
               + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
               + ": ")
-          logWarning(e.toString)
-          logWarning("The problematic accumulable is: name="
+            logWarning(e.toString)
+            logWarning("The problematic accumulable is: name="
               + res.name + ",value=" + res.value)
+        }
       }
-    }
 
-    val thisTask = TaskCase(
-      event.stageId,
-      event.stageAttemptId,
-      event.taskType,
-      event.reason.toString,
-      event.taskInfo.taskId,
-      event.taskInfo.attemptNumber,
-      event.taskInfo.launchTime,
-      event.taskInfo.finishTime,
-      event.taskInfo.duration,
-      event.taskInfo.successful,
-      event.taskInfo.executorId,
-      event.taskInfo.host,
-      event.taskInfo.taskLocality.toString,
-      event.taskInfo.speculative,
-      event.taskInfo.gettingResultTime,
-      event.taskMetrics.executorDeserializeTime,
-      event.taskMetrics.executorDeserializeCpuTime / 1000000,
-      event.taskMetrics.executorRunTime,
-      event.taskMetrics.executorCpuTime / 1000000,
-      event.taskMetrics.peakExecutionMemory,
-      event.taskMetrics.resultSize,
-      event.taskMetrics.jvmGCTime,
-      event.taskMetrics.resultSerializationTime,
-      event.taskMetrics.memoryBytesSpilled,
-      event.taskMetrics.diskBytesSpilled,
-      event.taskMetrics.shuffleReadMetrics.remoteBlocksFetched,
-      event.taskMetrics.shuffleReadMetrics.localBlocksFetched,
-      event.taskMetrics.shuffleReadMetrics.fetchWaitTime,
-      event.taskMetrics.shuffleReadMetrics.remoteBytesRead,
-      event.taskMetrics.shuffleReadMetrics.remoteBytesReadToDisk,
-      event.taskMetrics.shuffleReadMetrics.localBytesRead,
-      event.taskMetrics.shuffleReadMetrics.totalBytesRead,
-      event.taskMetrics.shuffleWriteMetrics.bytesWritten,
-      event.taskMetrics.shuffleWriteMetrics.writeTime / 1000000,
-      event.taskMetrics.shuffleWriteMetrics.recordsWritten,
-      event.taskMetrics.inputMetrics.bytesRead,
-      event.taskMetrics.inputMetrics.recordsRead,
-      event.taskMetrics.outputMetrics.bytesWritten,
-      event.taskMetrics.outputMetrics.recordsWritten
-    )
-    app.taskEnd += thisTask
+      val thisTask = TaskCase(
+        event.stageId,
+        event.stageAttemptId,
+        event.taskType,
+        event.reason.toString,
+        event.taskInfo.taskId,
+        event.taskInfo.attemptNumber,
+        event.taskInfo.launchTime,
+        event.taskInfo.finishTime,
+        event.taskInfo.duration,
+        event.taskInfo.successful,
+        event.taskInfo.executorId,
+        event.taskInfo.host,
+        event.taskInfo.taskLocality.toString,
+        event.taskInfo.speculative,
+        event.taskInfo.gettingResultTime,
+        event.taskMetrics.executorDeserializeTime,
+        NANOSECONDS.toMillis(event.taskMetrics.executorDeserializeCpuTime),
+        event.taskMetrics.executorRunTime,
+        NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime),
+        event.taskMetrics.peakExecutionMemory,
+        event.taskMetrics.resultSize,
+        event.taskMetrics.jvmGCTime,
+        event.taskMetrics.resultSerializationTime,
+        event.taskMetrics.memoryBytesSpilled,
+        event.taskMetrics.diskBytesSpilled,
+        event.taskMetrics.shuffleReadMetrics.remoteBlocksFetched,
+        event.taskMetrics.shuffleReadMetrics.localBlocksFetched,
+        event.taskMetrics.shuffleReadMetrics.fetchWaitTime,
+        event.taskMetrics.shuffleReadMetrics.remoteBytesRead,
+        event.taskMetrics.shuffleReadMetrics.remoteBytesReadToDisk,
+        event.taskMetrics.shuffleReadMetrics.localBytesRead,
+        event.taskMetrics.shuffleReadMetrics.totalBytesRead,
+        event.taskMetrics.shuffleWriteMetrics.bytesWritten,
+        NANOSECONDS.toMillis(event.taskMetrics.shuffleWriteMetrics.writeTime),
+        event.taskMetrics.shuffleWriteMetrics.recordsWritten,
+        event.taskMetrics.inputMetrics.bytesRead,
+        event.taskMetrics.inputMetrics.recordsRead,
+        event.taskMetrics.outputMetrics.bytesWritten,
+        event.taskMetrics.outputMetrics.recordsWritten
+      )
+      app.taskEnd += thisTask
+    }
   }
 
   def doSparkListenerSQLExecutionStart(
@@ -418,7 +431,9 @@ object EventsProcessor extends Logging {
       None,
       None,
       "",
-      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode
+      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode,
+      0,
+      0
     )
     app.stageSubmitted += thisStage
   }

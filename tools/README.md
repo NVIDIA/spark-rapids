@@ -85,10 +85,10 @@ It can also print out any potential problems it finds in a separate column, whic
 currently only includes some UDFs. The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps. 
 Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
 
-There is also an optional column `Executor CPU Time Percent`
-that can be reported that is not included in the score. This is an estimate at how much time the tasks spent doing
-processing on the CPU vs waiting on IO. This is not always a good indicator because sometimes you may be doing IO that
-is encrypted and the CPU has to do work to decrypt it, so the environment you are running on needs to be taken into account.
+The output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
+at how much time the tasks spent doing processing on the CPU vs waiting on IO. This is not always a good indicator
+because sometimes you may be doing IO that is encrypted and the CPU has to do work to decrypt it, so the environment
+you are running on needs to be taken into account.
 
 Sample output in csv:
 ```
@@ -114,7 +114,10 @@ in the local filesystem, HDFS, S3 or mixed.
 
 ### Use from spark-shell
 1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
-2. After starting spark-shell:
+2. Starting spark-shell:
+```bash
+$SPARK_HOME/bin/spark-shell --driver-memory 5g --jars ~/rapids-4-spark-tools_2.12-<version>.jar
+```
 
 For multiple event logs:
 ```bash
@@ -123,7 +126,7 @@ com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/t
 
 ### Use from spark-submit
 ```bash
-$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
+$SPARK_HOME/bin/spark-submit --driver-memory 5g --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
 rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
@@ -137,10 +140,7 @@ rapids-4-spark-tools_2.12-<version>.jar \
 
 For usage see below:
 
-  -i, --include-exec-cpu-percent   Include the executor CPU time percent. It
-                                   will take longer with this option and you may
-                                   want to limit the number of applications
-                                   processed at once.
+      --no-exec-cpu-percent        Do not include the executor CPU time percent.
   -f, --filter-criteria  <arg>     Filter newest or oldest N event logs for processing.
                                    Supported formats are:
                                    To process 10 recent event logs: --filter-criteria "10-newest"
@@ -177,12 +177,6 @@ The output location can be changed using the `--output-directory` option. Defaul
 
 The output format can be changed using the `--output-format` option. Default is csv. The other option is text.
   
-The `--include-exec-cpu-percent` option can be used to include executor CPU time percent which is based on the aggregated task metrics:
-`sum(executorCPUTime)/sum(executorRunTime)`. It can show us roughly how much time is spent on CPU.
-Note: This option needs lot of memory for large amount of event logs as input and will take longer to process.
-We suggest you use around 30GB of driver memory if using this option and to only process around 50 apps at a time.
-Note you could run it multiple times over 50 each and output to csv and combined afterwards.
-
 Run `--help` for more information.
 
 
