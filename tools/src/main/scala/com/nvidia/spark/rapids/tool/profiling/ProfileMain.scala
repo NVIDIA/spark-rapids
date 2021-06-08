@@ -135,7 +135,7 @@ object ProfileMain extends Logging {
         compare.compareExecutorInfo()
         compare.compareRapidsProperties()
       } else {
-        val collect = new CollectInformation(apps, textFileWriter)
+        val collect = new CollectInformation(apps, Some(textFileWriter))
         textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
         collect.printExecutorInfo()
