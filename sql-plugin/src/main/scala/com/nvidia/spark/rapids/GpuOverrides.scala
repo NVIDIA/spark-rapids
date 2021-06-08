@@ -2369,8 +2369,8 @@ object GpuOverrides {
         TypeSig.ARRAY.nested(TypeSig.all),
         ("array", TypeSig.ARRAY.nested(_commonTypes),
             TypeSig.ARRAY.nested(TypeSig.all)),
-        ("ascendingOrder", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
-      (in, conf, p, r) => new BinaryExprMeta[SortArray](in, conf, p, r) {
+        ("ascendingOrder", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.lit(TypeEnum.BOOLEAN))),
+      (sortExpression, conf, p, r) => new BinaryExprMeta[SortArray](sortExpression, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuSortArray(lhs, rhs)
         }

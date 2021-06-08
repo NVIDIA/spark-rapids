@@ -233,23 +233,25 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
         // replace Literal with GpuLiteral here
         case GpuLiteral(_: Boolean, BooleanType) =>
           TypeCheckResult.TypeCheckSuccess
-        case _ =>
+        case order =>
           TypeCheckResult.TypeCheckFailure(
-            "Sort order in second argument requires a boolean literal.")
+            s"Sort order in second argument requires a boolean literal, but found $order")
       }
     case ArrayType(dt, _) =>
       val dtSimple = dt.catalogString
       TypeCheckResult.TypeCheckFailure(
         s"$prettyName does not support sorting array of type $dtSimple which is not orderable")
-    case _ =>
-      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input.")
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported")
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
+        "the sort_array operator to work")
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    throw new IllegalStateException("This is not supported")
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
+        "the sort_array operator to work")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
