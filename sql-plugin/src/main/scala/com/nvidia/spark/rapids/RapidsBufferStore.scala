@@ -102,6 +102,9 @@ abstract class RapidsBufferStore(
   /** A store that can be used for spilling. */
   private[this] var spillStore: RapidsBufferStore = _
 
+  /** A secondary store that can be used for spilling when the primary spill store is full. */
+  private[this] var secondarySpillStore: RapidsBufferStore = _
+
   private[this] val nvtxSyncSpillName: String = name + " sync spill"
 
   /** Return the current byte total of buffers in this store. */
@@ -116,6 +119,24 @@ abstract class RapidsBufferStore(
     require(spillStore == null, "spill store already registered")
     spillStore = store
   }
+
+  /**
+   * Specify a secondary spill store that can be used when the primary spill store is full.
+   * @note Only one secondary spill store can be registered. This will throw if a
+   * secondary spill store has already been registered.
+   */
+  def setSecondarySpillStore(store: RapidsBufferStore): Unit = {
+    require(secondarySpillStore == null, "secondary spill store already registered")
+    secondarySpillStore = store
+  }
+
+  /**
+   * Can this store fit the specified buffer size without causing additional spilling?
+   *
+   * @param size The buffer size to fit
+   * @return true if the given buffer can fit in this store without additional spilling
+   */
+  def canFit(size: Long): Boolean = true
 
   /**
    * Adds an existing buffer from another store to this store. The buffer must already
@@ -241,6 +262,11 @@ abstract class RapidsBufferStore(
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
               s"already stored in multiple tiers total mem=${buffers.getTotalBytes}")
           catalog.removeBufferTier(buffer.id, buffer.storageTier)
+        } else if (secondarySpillStore != null && !spillStore.canFit(buffer.size)) {
+          logDebug(s"Spilling $buffer ${buffer.id} to ${secondarySpillStore.name} " +
+              s"total mem=${buffers.getTotalBytes}")
+          buffer.spillCallback(buffer.storageTier, secondarySpillStore.tier, buffer.size)
+          secondarySpillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
         } else {
           logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
               s"total mem=${buffers.getTotalBytes}")

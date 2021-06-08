@@ -72,6 +72,8 @@ class RapidsHostMemoryStore(
     (buffer, true)
   }
 
+  override def canFit(size: Long): Boolean = currentSize + size <= maxSize
+
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     withResource(otherBuffer) { _ =>

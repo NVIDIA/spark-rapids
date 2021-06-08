@@ -181,9 +181,12 @@ object RapidsBufferCatalog extends Logging with Arm {
     deviceStorage = new RapidsDeviceMemoryStore()
     val diskBlockManager = new RapidsDiskBlockManager(conf)
     if (rapidsConf.isGdsSpillEnabled) {
+      hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
+      diskStorage = new RapidsDiskStore(diskBlockManager)
       gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize,
         rapidsConf.isGdsSpillAlignedIO, rapidsConf.gdsSpillAlignmentThreshold)
-      deviceStorage.setSpillStore(gdsStorage)
+      deviceStorage.setSpillStore(hostStorage)
+      deviceStorage.setSecondarySpillStore(gdsStorage)
     } else {
       hostStorage = new RapidsHostMemoryStore(rapidsConf.hostSpillStorageSize)
       diskStorage = new RapidsDiskStore(diskBlockManager)
