@@ -22,8 +22,12 @@ version to match.  Users wishing to try 21.06 on Databricks 7.3 LTS ML will need
 11.0 toolkit on the cluster. 
 
 [Databricks 8.2 ML](https://docs.databricks.com/release-notes/runtime/8.2ml.html#system-environment)
-runs CUDA 11.0, wand initialization scripts for version 21.06 will install the matching cudf
+runs CUDA 11.0, and initialization scripts for version 21.06 will install the matching cudf
 version. 
+
+Databricks will do [maintenance
+releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) through the
+availability of their runtimes, which may impact the behavior of the plugin. 
 
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
