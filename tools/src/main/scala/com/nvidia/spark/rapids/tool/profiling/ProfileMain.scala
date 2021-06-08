@@ -149,6 +149,13 @@ object ProfileMain extends Logging {
       analysis.jobAndStageMetricsAggregation()
       analysis.sqlMetricsAggregation()
       analysis.shuffleSkewCheck()
+
+      fileWriter.write("\n### C. Health Check###\n")
+      val healthCheck=new HealthCheck(apps, fileWriter)
+      healthCheck.listFailedJobsStagesTasks()
+      healthCheck.listRemovedBlockManager()
+      healthCheck.listRemovedExecutors()
+      healthCheck.listPossibleUnsupportedSQLPlan()
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {

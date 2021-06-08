@@ -134,6 +134,9 @@ class ApplicationInfo(
   var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
     ArrayBuffer[SparkListenerTaskGettingResult]()
 
+  //Unsupported SQL plan
+  var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
+
   // From all other events
   var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
 
@@ -274,9 +277,13 @@ class ApplicationInfo(
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
-      for (node <- allnodes){
+      for (node <- allnodes) {
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
+          if (gpuMode) {
+            val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc)
+            unsupportedSQLplan += thisPlan
+          }
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics){
@@ -495,6 +502,15 @@ class ApplicationInfo(
       } else {
         logInfo("No Plan node accums Found. Create an empty Plan node accums DataFrame.")
       }
+
+      // For unsupportedSQLPlanDF
+      allDataFrames += (s"unsupportedSQLplan_$index" -> unsupportedSQLplan.toDF)
+      if (unsupportedSQLplan.nonEmpty) {
+        logInfo(s"Total ${unsupportedSQLplan.size} Plan node accums for appID=$appId")
+      } else {
+        logInfo("No unSupportedSQLPlan node accums Found. " +
+            "Create an empty node accums DataFrame.")
+      }
     }
 
     for ((name, df) <- this.allDataFrames) {
@@ -687,6 +703,53 @@ class ApplicationInfo(
        |group by sqlID, nodeID, nodeName, accumulatorId, name, metricType
        |order by sqlID, nodeID, nodeName, accumulatorId, name, metricType
        |""".stripMargin
+  }
+
+  def getFailedTasks: String = {
+    s"""select stageId, stageAttemptId, taskId, attempt,
+       |substr(endReason, 1, 100) as endReason_first100char
+       |from taskDF_$index
+       |where successful = false
+       |order by stageId, stageAttemptId, taskId, attempt
+       |""".stripMargin
+  }
+
+  def getFailedStages: String = {
+    s"""select stageId, attemptId, name, numTasks,
+       |substr(failureReason, 1, 100) as failureReason_first100char
+       |from stageDF_$index
+       |where failureReason is not null
+       |order by stageId, attemptId
+       |""".stripMargin
+  }
+
+  def getFailedJobs: String = {
+    s"""select jobID, jobResult,
+       |substr(failedReason, 1, 100) as failedReason_first100char
+       |from jobDF_$index
+       |where jobResult <> 'JobSucceeded'
+       |order by jobID
+       |""".stripMargin
+  }
+
+  def getblockManagersRemoved: String = {
+    s"""select executorID, time
+       |from blockManagersRemovedDF_$index
+       |order by cast(executorID as long)
+       |""".stripMargin
+  }
+
+  def getExecutorsRemoved: String = {
+    s"""select executorID, time,
+       |substr(reason, 1, 100) reason_first100char
+       |from executorsRemovedDF_$index
+       |order by cast(executorID as long)
+       |""".stripMargin
+  }
+
+  def unsupportedSQLPlan: String = {
+    s"""select sqlID, nodeID, nodeName, nodeDesc
+       |from unsupportedSQLplan_$index""".stripMargin
   }
 
   def qualificationDurationNoMetricsSQL: String = {
