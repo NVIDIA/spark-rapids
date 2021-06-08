@@ -71,7 +71,7 @@ more options about integrating hadoop-aws module with S3.
 The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications. The tool works by processing the CPU generated event logs from Spark.
 
-Currently it does this by looking at the amount of time spent doing SQL DataFrame
+Currently it does this by looking at the amount of time spent doing SQL Dataframe
 operations vs the entire application time: `(sum(SQL Dataframe Duration) / (application-duration))`.
 The more time spent doing SQL Dataframe operations the higher the score is
 and the more likely the plugin will be able to help accelerate that application.
@@ -90,21 +90,23 @@ at how much time the tasks spent doing processing on the CPU vs waiting on IO. T
 because sometimes you may be doing IO that is encrypted and the CPU has to do work to decrypt it, so the environment
 you are running on needs to be taken into account.
 
+Note that SQL queries that contain failed jobs are not included.
+
 Sample output in csv:
 ```
-App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration
-Spark shell,app-20210507105707-0001,78.03,"",810923,1039276
-Spark shell,app-20210507103057-0000,75.87,"",316622,417307
+App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent
+Spark shell,app-20210507105707-0001,78.03,"",810923,1039276,32.03
+Spark shell,app-20210507103057-0000,75.87,"",316622,417307,64.07
 ```
 
 Sample output in text:
 ```
-+-----------+-----------------------+-----+------------------+----------------------+------------+
-|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|
-+-----------+-----------------------+-----+------------------+----------------------+------------+
-|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |
-|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |
-+-----------+-----------------------+-----+------------------+----------------------+------------+
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
+|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|Executor CPU Time Percent|
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
+|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |32.03                    |
+|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |64.07                    |
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
 ```
 
 ### How to use this tool
