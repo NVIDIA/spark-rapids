@@ -154,7 +154,9 @@ object ProfileMain extends Logging {
         collect.printRapidsProperties()
         collect.printRapidsJAR()
         collect.printSQLPlanMetrics(generateDot, outputDirectory)
-        collect.printSQLPlans(outputDirectory)
+        if (printPlans) {
+          collect.printSQLPlans(outputDirectory)
+        }
       }
 
       textFileWriter.write("\n### B. Analysis ###\n")
