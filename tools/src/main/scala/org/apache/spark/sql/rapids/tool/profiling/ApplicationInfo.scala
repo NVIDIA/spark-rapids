@@ -711,7 +711,7 @@ class ApplicationInfo(
        |from stageDF_$index s,
        |jobDF_$index j, sqlDF_$index sq
        |where array_contains(j.stageIds, s.stageId)
-       |and sq.sqlID=j.sqlID
+       |and sq.sqlID=j.sqlID and sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |group by sq.sqlID,sq.description
        |""".stripMargin
   }
@@ -794,6 +794,14 @@ class ApplicationInfo(
        |from unsupportedSQLplan_$index""".stripMargin
   }
 
+  def sqlIdsForUnsuccessfulJobs: String = {
+    s"""select
+       |sqlID
+       |from jobDF_$index j
+       |where j.jobResult != "JobSucceeded" or j.jobResult is null
+       |""".stripMargin
+  }
+
   def qualificationDurationNoMetricsSQL: String = {
     s"""select
        |first(appName) as `App Name`,
@@ -803,9 +811,11 @@ class ApplicationInfo(
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
        |first(app.duration) as `App Duration`
        |from sqlDF_$index sq, appdf_$index app
+       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |""".stripMargin
   }
 
+  // only include jobs that are marked as succeeded
   def qualificationDurationSQL: String = {
     s"""select
        |$index as appIndex,
@@ -819,12 +829,13 @@ class ApplicationInfo(
        |m.executorRunTime
        |from sqlDF_$index sq, appdf_$index app
        |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
+       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |""".stripMargin
   }
 
   def qualificationDurationSumSQL: String = {
     s"""select first(appName) as `App Name`,
-       |first(appID) as `App ID`,
+       |'$appId' as `App ID`,
        |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
        |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
        |sum(dfDuration) as `SQL Dataframe Duration`,
