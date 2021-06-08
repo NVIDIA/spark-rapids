@@ -1,0 +1,3 @@
+sqlID,nodeID,nodeName,nodeDesc
+0,3,MapElements,MapElements com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite$$$Lambda$1571/993650587@7b
+0,4,Filter,Filter com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite$$$Lambda$1569/1828787392@2eb6d3
