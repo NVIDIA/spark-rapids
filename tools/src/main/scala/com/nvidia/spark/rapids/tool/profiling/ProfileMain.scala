@@ -50,7 +50,8 @@ object ProfileMain extends Logging {
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
-    val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
+    val outputDirectory = appArgs.outputDirectory().stripSuffix("/") +
+      "/rapids_4_spark_qualification_profile"
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)

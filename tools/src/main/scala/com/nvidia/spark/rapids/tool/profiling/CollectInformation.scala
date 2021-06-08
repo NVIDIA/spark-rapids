@@ -89,6 +89,21 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
     }
   }
 
+  def printPlans(outputDirectory: String): Unit = {
+    for (app <- apps) {
+      val planFileWriter = new ToolTextFileWriter(outputDirectory,
+        s"${app.appId}-planDesc")
+      try {
+        for ((sqlID, planDesc) <- app.physicalPlanDescription) {
+          planFileWriter.write(s"Plan for SQL ID : $sqlID")
+          planFileWriter.write(planDesc)
+        }
+      } finally {
+        planFileWriter.close()
+      }
+    }
+  }
+
   def generateDot(outputDirectory: String, accumsOpt: Option[DataFrame]): Unit = {
     for (app <- apps) {
       val requiredDataFrames = Seq("sqlMetricsDF", "driverAccumDF",
@@ -105,17 +120,22 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
           val list = map.getOrElseUpdate(row.getLong(0), new ArrayBuffer[(Long, Long)]())
           list += row.getLong(1) -> row.getLong(2)
         }
-        val outDir = new File(outputDirectory)
+
         for ((sqlID, planInfo) <- app.sqlPlan) {
-          val fileDir = new File(outDir, s"${app.appId}-query-$sqlID")
-          fileDir.mkdirs()
-          val metrics = map.getOrElse(sqlID, Seq.empty).toMap
-          GenerateDot.generateDotGraph(
-            QueryPlanWithMetrics(planInfo, metrics), None, fileDir, sqlID + ".dot")
+          val dotFileWriter = new ToolTextFileWriter(outputDirectory,
+            s"${app.appId}-query-$sqlID")
+          try {
+            val metrics = map.getOrElse(sqlID, Seq.empty).toMap
+            GenerateDot.generateDotGraph(
+              QueryPlanWithMetrics(planInfo, metrics), None, dotFileWriter, sqlID + ".dot")
+          } finally {
+            dotFileWriter.close()
+          }
         }
+
         val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
         fileWriter.write(s"Generated DOT graphs for app ${app.appId} " +
-          s"to ${outDir.getAbsolutePath} in $duration second(s)\n")
+          s"to ${outputDirectory} in $duration second(s)\n")
       } else {
         val missingDataFrames = requiredDataFrames.filterNot(app.allDataFrames.contains)
         fileWriter.write(s"Could not generate DOT graph for app ${app.appId} " +
@@ -136,6 +156,10 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
           messageHeader=messageHeader)
         if (shouldGenDot) {
           generateDot(outputDir, Some(accums))
+        }
+        val shouldPrintPlans = true
+        if (shouldPrintPlans) {
+          printPlans(outputDir)
         }
       }
     }
