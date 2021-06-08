@@ -92,19 +92,19 @@ Note that SQL queries that contain failed jobs are not included.
 
 Sample output in csv:
 ```
-App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration
-Spark shell,app-20210507105707-0001,78.03,"",810923,1039276
-Spark shell,app-20210507103057-0000,75.87,"",316622,417307
+App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent
+Spark shell,app-20210507105707-0001,78.03,"",810923,1039276,32.03
+Spark shell,app-20210507103057-0000,75.87,"",316622,417307,64.07
 ```
 
 Sample output in text:
 ```
-+-----------+-----------------------+-----+------------------+----------------------+------------+
-|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|
-+-----------+-----------------------+-----+------------------+----------------------+------------+
-|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |
-|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |
-+-----------+-----------------------+-----+------------------+----------------------+------------+
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
+|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|Executor CPU Time Percent|
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
+|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |32.03                    |
+|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |64.07                    |
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
 ```
 
 ### How to use this tool
