@@ -33,7 +33,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 	
-	CUDA & Nvidia Drivers: 11.0, 11.2 & v450.80.02+
+	CUDA & Nvidia Drivers: 11.0 or 11.2 & v450.80.02+
 	
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0 
 	
@@ -43,8 +43,8 @@ Software Requirements:
 
 ### Download v21.06.0
 * Download the [RAPIDS
-  Spark jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.0/rapids-4-spark_2.12-21.06.0.jar)
-* Download the RAPIDS [cuDF 21.06.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11.jar) 
+  Accelerator for Apache Spark 21.06.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.0/rapids-4-spark_2.12-21.06.0.jar)
+* Download the [RAPIDS cuDF 21.06.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11.jar) 
 
 This package is built against CUDA 11.2 and has [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
@@ -100,11 +100,11 @@ Software Requirements:
 	Python 3.6+, Scala 2.12, Java 8 
 
 ### Download v0.5.0
-* Download [RAPIDS Spark Package](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.5.0/rapids-4-spark_2.12-0.5.0.jar)
-* Download RAPIDS cuDF 0.19.2 for your system:
-  * [cuDF 11.0 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda11.jar)
-  * [cuDF 10.2 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda10-2.jar)
-  * [cuDF 10.1 Package](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda10-1.jar)
+* Download the [RAPIDS Accelerator for Apache Spark jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.5.0/rapids-4-spark_2.12-0.5.0.jar)
+* Download the RAPIDS cuDF 0.19.2 jar for your system:
+  * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda11.jar)
+  * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda10-2.jar)
+  * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.19.2/cudf-0.19.2-cuda10-1.jar)
 
 ### Release Notes
 New functionality for this release includes:
@@ -124,8 +124,8 @@ Performance improvements for this release include:
 
 ## Release v0.4.1
 ### Download v0.4.1
-* Download [RAPIDS Accelerator For Apache Spark v0.4.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.1/rapids-4-spark_2.12-0.4.1.jar)
-* Download RAPIDS cuDF 0.18.1 for your system:
+* Download the [RAPIDS Accelerator For Apache Spark v0.4.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/0.4.1/rapids-4-spark_2.12-0.4.1.jar)
+* Download the RAPIDS cuDF 0.18.1 jar for your system:
   * [For CUDA 11.0 & NVIDIA driver 450.36+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda11.jar)
   * [For CUDA 10.2 & NVIDIA driver 440.33+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-2.jar)
   * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
