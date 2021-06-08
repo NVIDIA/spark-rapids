@@ -33,8 +33,7 @@ rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
 rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
 
 # If any event log is from S3:
-export AWS_ACCESS_KEY_ID=xxx
-export AWS_SECRET_ACCESS_KEY=xxx
+# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly.
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
 rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
