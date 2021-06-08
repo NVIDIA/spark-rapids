@@ -340,15 +340,16 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
 ```
 Failed tasks:
-+-------+--------------+------+-------+----------------------+
-|stageId|stageAttemptId|taskId|attempt|endReason_first100char|
-+-------+--------------+------+-------+----------------------+
-|      4|             0|  2842|      0|  ExceptionFailure(...|
-|      4|             0|  2858|      0|  TaskKilled(anothe...|
-|      4|             0|  2884|      0|  TaskKilled(anothe...|
-|      4|             0|  2908|      0|  TaskKilled(anothe...|
-|      4|             0|  3410|      1|  ExceptionFailure(...|
-+-------+--------------+------+-------+----------------------+
++-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+|stageId|stageAttemptId|taskId|attempt|endReason_first100char                                                                              |
++-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+|4      |0             |2842  |0      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
+|4      |0             |2858  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(22000),None,false,true,None)|
+|4      |0             |2884  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(21148),None,false,true,None)|
+|4      |0             |2908  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(20420),None,false,true,None)|
+|4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
++-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+
 
 Failed stages:
 +-------+---------+-------------------------------------+--------+---------------------------------------------------+
