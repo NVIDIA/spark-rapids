@@ -53,7 +53,7 @@ object QualificationMain extends Logging {
     // Get the event logs required to process
     lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
 
-    val includeCpuPercent = appArgs.includeExecCpuPercent.getOrElse(false)
+    val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
     val dfOpt = Qualification.qualifyApps(allPaths,
       numOutputRows, sparkSession, includeCpuPercent, dropTempViews)

@@ -72,11 +72,10 @@ For usage see below:
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000.")
-  val includeExecCpuPercent: ScallopOption[Boolean] =
+  val noExecCpuPercent: ScallopOption[Boolean] =
     opt[Boolean](
       required = false,
       default = Some(false),
-      descr = "Include the executor CPU time percent. It will take longer with this option" +
-        " and you may want to limit the number of applications processed at once.")
+      descr = "Do not include the executor CPU time percent.")
   verify()
 }

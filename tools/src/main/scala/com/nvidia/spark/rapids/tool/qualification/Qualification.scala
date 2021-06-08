@@ -57,7 +57,7 @@ object Qualification extends Logging {
     if (apps.isEmpty) return None
     val analysis = new Analysis(apps, None)
     if (includeCpuPercent) {
-      val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
+      val sqlAggMetricsDF = analysis.sqlMetricsAggregationQual()
       sqlAggMetricsDF.cache().createOrReplaceTempView("sqlAggMetricsDF")
       // materialize table to cache
       sqlAggMetricsDF.count()
