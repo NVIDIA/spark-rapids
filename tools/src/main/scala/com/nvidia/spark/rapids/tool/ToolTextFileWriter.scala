@@ -25,8 +25,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
 /**
  * Class for writing local files, allows writing to distributed file systems.
  */
-class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Logging {
-
+case class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Logging {
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
   private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
   // this overwrites existing path

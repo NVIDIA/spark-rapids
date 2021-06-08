@@ -51,6 +51,7 @@ object GenerateDot {
    */
   def generateDotGraph(
       plan: QueryPlanWithMetrics,
+      physicalPlanString: String,
       comparisonPlan: Option[QueryPlanWithMetrics],
       fileWriter: ToolTextFileWriter,
       filename: String): Unit = {
@@ -166,8 +167,17 @@ object GenerateDot {
       }
     }
 
+    val leftAlignedPlanStr = physicalPlanString.replace("\n", "\\l")
     // write the dot graph to a file
-    fileWriter.write("digraph G {\n")
+    fileWriter.write(
+      s"""digraph G {
+         |
+         |label="\\l\\l${fileWriter.logFileName}\\l\\l${leftAlignedPlanStr}"
+         |labelloc=b
+         |fontname=Courier
+         |
+         |""".stripMargin)
+
     writeGraph(fileWriter, plan, comparisonPlan.getOrElse(plan), 0)
     fileWriter.write("}\n")
   }
