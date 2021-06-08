@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.io.{File, FileWriter}
 import java.util.concurrent.TimeUnit
 
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
 
@@ -50,7 +52,7 @@ object GenerateDot {
   def generateDotGraph(
       plan: QueryPlanWithMetrics,
       comparisonPlan: Option[QueryPlanWithMetrics],
-      dir: File,
+      fileWriter: ToolTextFileWriter,
       filename: String): Unit = {
 
     var nextId = 1
@@ -82,7 +84,7 @@ object GenerateDot {
 
     /** Recursively graph the operator nodes in the spark plan */
     def writeGraph(
-        w: FileWriter,
+        w: ToolTextFileWriter,
         node: QueryPlanWithMetrics,
         comparisonNode: QueryPlanWithMetrics,
         id: Int = 0): Unit = {
@@ -165,15 +167,9 @@ object GenerateDot {
     }
 
     // write the dot graph to a file
-    val file = new File(dir, filename)
-    val w = new FileWriter(file)
-    try {
-      w.write("digraph G {\n")
-      writeGraph(w, plan, comparisonPlan.getOrElse(plan), 0)
-      w.write("}\n")
-    } finally {
-      w.close()
-    }
+    fileWriter.write("digraph G {\n")
+    writeGraph(fileWriter, plan, comparisonPlan.getOrElse(plan), 0)
+    fileWriter.write("}\n")
   }
 
   private def createPercentDiffString(n1: Long, n2: Long) = {

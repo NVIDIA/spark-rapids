@@ -194,7 +194,8 @@ The profiling tool generates information which can be used for debugging and pro
 - Print Rapids related parameters
 - Print Rapids Accelerator Jar and cuDF Jar
 - Print SQL Plan Metrics
-- Generate DOT graph for each SQL
+- Optionally Prints the SQL Plan for each SQL query
+- Optionally Generates DOT graphs for each SQL query
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -274,6 +275,11 @@ SQL Plan Metrics for Application:
 |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
 |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
 ```
+
+- Print SQL Plans (-p option)
+Prints the SQL plan as a text string to a file prefixed with `planDescriptions-`.
+For example if your application id is app-20210507103057-0000, then the
+filename will be `planDescriptions-app-20210507103057-0000`
 
 - Generate DOT graph for each SQL (-g option)
 ```
@@ -414,7 +420,14 @@ For usage see below:
   -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
   -n, --num-output-rows  <arg>    Number of output rows for each Application.
                                   Default is 1000
-  -o, --output-directory  <arg>   Output directory. Default is current directory
+  -o, --output-directory  <arg>   Base output directory. Default is current
+                                  directory for the default filesystem. The
+                                  final output will go into a subdirectory
+                                  called rapids_4_spark_qualification_profile.
+                                  It will overwrite any existing files with
+                                  the same name.
+  -p, --print-plans               Print the SQL plans to a file starting with
+                                  'planDescriptions-'. Default is false
   -h, --help                      Show help message
 
  trailing arguments:
@@ -424,9 +437,10 @@ For usage see below:
 ```
 
 ### Output
-By default this outputs a log file named `rapids_4_spark_tools_output.log` in the current directory that
-contains the rankings of the applications. The output will go into your default filesystem, it supports
-local filesystem or HDFS.
+By default this outputs a log file under sub-directory `./rapids_4_spark_qualification_profile` named
+`rapids_4_spark_tools_output.log` that contains the processed applications. The output will go into your
+default filesystem, it supports local filesystem or HDFS. There are separate files that are generated
+under the same sub-directory when using the options to generate query visualizations or printing the SQL plans.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
 

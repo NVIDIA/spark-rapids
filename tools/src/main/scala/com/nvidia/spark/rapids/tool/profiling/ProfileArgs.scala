@@ -46,7 +46,10 @@ For usage see below:
 
   val outputDirectory: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Output directory. Default is current directory",
+      descr = "Base output directory. Default is current directory for the default filesystem." +
+        " The final output will go into a subdirectory called" +
+        " rapids_4_spark_qualification_profile. It will overwrite any existing files" +
+        " with the same name.",
       default = Some("."))
   val eventlog: ScallopOption[List[String]] =
     trailArg[List[String]](required = true,
@@ -70,6 +73,9 @@ For usage see below:
   val generateDot: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Generate query visualizations in DOT format. Default is false")
+  val printPlans: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
 
   verify()
 }
