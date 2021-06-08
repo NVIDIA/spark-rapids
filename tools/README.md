@@ -339,25 +339,25 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 #### C. Health Check
 
 ```
-Application application_1616746343401_0025 (index=1) failed tasks:
-+-------+--------------+------+-------+------------------------------------+
-|stageId|stageAttemptId|taskId|attempt|endReason_first36char               |
-+-------+--------------+------+-------+------------------------------------+
-|4      |0             |2842  |0      |ExceptionFailure(ai.rapids.cudf.Cudf|
-|4      |0             |2858  |0      |TaskKilled(another attempt succeeded|
-|4      |0             |2884  |0      |TaskKilled(another attempt succeeded|
-|4      |0             |2908  |0      |TaskKilled(another attempt succeeded|
-|4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.Cudf|
-+-------+--------------+------+-------+------------------------------------+
+Failed tasks:
++-------+--------------+------+-------+----------------------+
+|stageId|stageAttemptId|taskId|attempt|endReason_first100char|
++-------+--------------+------+-------+----------------------+
+|      4|             0|  2842|      0|  ExceptionFailure(...|
+|      4|             0|  2858|      0|  TaskKilled(anothe...|
+|      4|             0|  2884|      0|  TaskKilled(anothe...|
+|      4|             0|  2908|      0|  TaskKilled(anothe...|
+|      4|             0|  3410|      1|  ExceptionFailure(...|
++-------+--------------+------+-------+----------------------+
 
-Application application_1616746343401_0025 (index=1) failed stages:
+Failed stages:
 +-------+---------+-------------------------------------+--------+---------------------------------------------------+
 |stageId|attemptId|name                                 |numTasks|failureReason_first100char                         |
 +-------+---------+-------------------------------------+--------+---------------------------------------------------+
 |4      |0        |attachTree at Spark300Shims.scala:624|1000    |Job 0 cancelled as part of cancellation of all jobs|
 +-------+---------+-------------------------------------+--------+---------------------------------------------------+
 
-Application application_1616746343401_0025 (index=1) failed jobs:
+Failed jobs:
 +-----+---------+------------------------------------------------------------------------+
 |jobID|jobResult|failedReason_first100char                                               |
 +-----+---------+------------------------------------------------------------------------+
