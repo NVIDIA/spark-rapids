@@ -95,7 +95,9 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
         s"${app.appId}-planDesc")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription) {
-          planFileWriter.write(s"Plan for SQL ID : $sqlID")
+          planFileWriter.write("\n=============================\n")
+          planFileWriter.write(s"\nPlan for SQL ID : $sqlID\n")
+          planFileWriter.write("\n=============================\n")
           planFileWriter.write(planDesc)
         }
       } finally {

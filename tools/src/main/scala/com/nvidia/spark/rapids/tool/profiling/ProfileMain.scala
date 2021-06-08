@@ -141,7 +141,7 @@ object ProfileMain extends Logging {
         collect.printJobInfo()
         collect.printRapidsProperties()
         collect.printRapidsJAR()
-        collect.printSQLPlanMetrics(generateDot, appArgs.outputDirectory())
+        collect.printSQLPlanMetrics(generateDot, outputDirectory)
       }
 
       textFileWriter.write("\n### B. Analysis ###\n")
