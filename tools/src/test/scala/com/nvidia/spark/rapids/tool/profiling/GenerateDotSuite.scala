@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.io.File
+
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
@@ -53,8 +55,10 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           eventLog))
         ProfileMain.mainInternal(spark2, appArgs)
 
+        val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
+
         // assert that a file was generated
-        val dotDirs = ToolTestUtils.listFilesMatching(dotFileDir, _.startsWith("local"))
+        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
         assert(dotDirs.length === 2)
 
         // assert that the generated files looks something like what we expect

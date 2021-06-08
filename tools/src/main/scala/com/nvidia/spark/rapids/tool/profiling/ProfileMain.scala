@@ -38,6 +38,8 @@ object ProfileMain extends Logging {
     }
   }
 
+  val SUBDIR = "rapids_4_spark_qualification_profile"
+
   /**
    * Entry point for tests
    */
@@ -51,7 +53,7 @@ object ProfileMain extends Logging {
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/") +
-      "/rapids_4_spark_qualification_profile"
+      s"/$SUBDIR"
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)
