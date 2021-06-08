@@ -334,6 +334,35 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 |1       |2      |0             |2224  |1      |222.22         |8.8           |3333.33          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 ```
+#### C. Health Check
+
+```
+Application application_1616746343401_0025 (index=1) failed tasks:
++-------+--------------+------+-------+------------------------------------+
+|stageId|stageAttemptId|taskId|attempt|endReason_first36char               |
++-------+--------------+------+-------+------------------------------------+
+|4      |0             |2842  |0      |ExceptionFailure(ai.rapids.cudf.Cudf|
+|4      |0             |2858  |0      |TaskKilled(another attempt succeeded|
+|4      |0             |2884  |0      |TaskKilled(another attempt succeeded|
+|4      |0             |2908  |0      |TaskKilled(another attempt succeeded|
+|4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.Cudf|
++-------+--------------+------+-------+------------------------------------+
+
+Application application_1616746343401_0025 (index=1) failed stages:
++-------+---------+-------------------------------------+--------+---------------------------------------------------+
+|stageId|attemptId|name                                 |numTasks|failureReason_first100char                         |
++-------+---------+-------------------------------------+--------+---------------------------------------------------+
+|4      |0        |attachTree at Spark300Shims.scala:624|1000    |Job 0 cancelled as part of cancellation of all jobs|
++-------+---------+-------------------------------------+--------+---------------------------------------------------+
+
+Application application_1616746343401_0025 (index=1) failed jobs:
++-----+---------+------------------------------------------------------------------------+
+|jobID|jobResult|failedReason_first100char                                               |
++-----+---------+------------------------------------------------------------------------+
+|0    |JobFailed|java.lang.Exception: Job 0 cancelled as part of cancellation of all jobs|
++-----+---------+------------------------------------------------------------------------+
+```
+
 
 ### How to use this tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
