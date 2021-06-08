@@ -27,7 +27,8 @@ case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)
-    extends GpuShuffleExchangeExecBaseWithMetrics(outputPartitioning, child) with ShuffleExchangeLike {
+    extends GpuShuffleExchangeExecBaseWithMetrics(outputPartitioning, child)
+        with ShuffleExchangeLike {
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 
