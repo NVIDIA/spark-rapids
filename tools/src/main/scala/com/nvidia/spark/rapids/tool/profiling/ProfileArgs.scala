@@ -33,8 +33,7 @@ rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
  rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
 
 # If any event log is from S3:
-export AWS_ACCESS_KEY_ID=xxx
-export AWS_SECRET_ACCESS_KEY=xxx
+# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly.
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
 rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
@@ -51,8 +50,8 @@ For usage see below:
       default = Some("."))
   val eventlog: ScallopOption[List[String]] =
     trailArg[List[String]](required = true,
-      descr = "Event log filenames(space separated). " +
-          "eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
+      descr = "Event log filenames(space separated) or directories containing event logs." +
+          " eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val filterCriteria: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter newest or oldest N eventlogs for processing." +

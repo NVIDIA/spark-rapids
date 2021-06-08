@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import java.io.File
+import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
@@ -50,8 +51,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "--output-directory",
           outpath.getAbsolutePath())
         val allArgs = hasExecCpu match  {
-          case true => outputArgs ++ Array("--include-exec-cpu-percent")
-          case false => outputArgs
+          case true => outputArgs
+          case false => outputArgs ++ Array("--no-exec-cpu-percent")
         }
         val appArgs = new QualificationArgs(allArgs ++ eventLogs)
 
@@ -126,7 +127,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           .getOrCreate()
 
         val appArgs = new QualificationArgs(Array(
-          "--include-exec-cpu-percent",
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))
@@ -146,21 +146,13 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(collect.getString(fieldIndex("description")).startsWith("collect"))
 
         // parse results from listener
-        val numTasks = listener.completedStages.map(_.stageInfo.numTasks).sum
         val executorCpuTime = listener.executorCpuTime
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
-        val shuffleBytesRead = listener.completedStages
-          .map(_.stageInfo.taskMetrics.shuffleReadMetrics.localBytesRead).sum
-        val shuffleBytesWritten = listener.completedStages
-          .map(_.stageInfo.taskMetrics.shuffleWriteMetrics.bytesWritten).sum
 
         // compare metrics from event log with metrics from listener
-        assert(collect.getLong(fieldIndex("numTasks")) === numTasks)
         assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
         assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
-        assert(collect.getLong(fieldIndex("sr_localBytesRead_sum")) === shuffleBytesRead)
-        assert(collect.getLong(fieldIndex("sw_bytesWritten_sum")) === shuffleBytesWritten)
       }
     }
   }
@@ -171,7 +163,7 @@ class ToolTestListener extends SparkListener {
   var executorCpuTime = 0L
 
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
-    executorCpuTime += taskEnd.taskMetrics.executorCpuTime / 1000000
+    executorCpuTime += NANOSECONDS.toMillis(taskEnd.taskMetrics.executorCpuTime)
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {

@@ -15,9 +15,9 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.FileWriter
-
 import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
@@ -26,7 +26,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CompareApplications compares multiple ApplicationInfo objects
  */
 class CompareApplications(apps: ArrayBuffer[ApplicationInfo],
-    fileWriter: FileWriter) extends Logging {
+    fileWriter: ToolTextFileWriter) extends Logging {
 
   require(apps.size>1)
 

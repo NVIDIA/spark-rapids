@@ -33,8 +33,7 @@ rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
 rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
 
 # If any event log is from S3:
-export AWS_ACCESS_KEY_ID=xxx
-export AWS_SECRET_ACCESS_KEY=xxx
+# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly.
 ./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
 rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
 
@@ -73,11 +72,10 @@ For usage see below:
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000.")
-  val includeExecCpuPercent: ScallopOption[Boolean] =
+  val noExecCpuPercent: ScallopOption[Boolean] =
     opt[Boolean](
       required = false,
       default = Some(false),
-      descr = "Include the executor CPU time percent. It will take longer with this option" +
-        " and you may want to limit the number of applications processed at once.")
+      descr = "Do not include the executor CPU time percent.")
   verify()
 }

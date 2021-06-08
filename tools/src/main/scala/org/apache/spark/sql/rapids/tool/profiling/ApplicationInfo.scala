@@ -16,22 +16,22 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.io.FileWriter
+import scala.collection.Map
+import scala.collection.mutable.{ArrayBuffer, HashMap}
+import scala.io.{Codec, Source}
 
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
-import scala.collection.Map
-import scala.collection.mutable.{ArrayBuffer, HashMap}
-import scala.io.{Codec, Source}
 
 import org.apache.spark.deploy.history.EventLogFileReader
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.ui.UIUtils
 import org.apache.spark.util._
 
@@ -126,9 +126,15 @@ class ApplicationInfo(
   val stageFailureReason: HashMap[Int, Option[String]] = HashMap.empty[Int, Option[String]]
 
   // From SparkListenerTaskStart & SparkListenerTaskEnd
-  // taskEnd contains task level metrics
-  var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
+  // taskStart was not used so comment out for now
+  // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
+  // taskEnd contains task level metrics - only used for profiling
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
+
+  // this is used to aggregate metrics for qualification to speed up processing and
+  // minimize memory usage
+  var stageTaskQualificationEnd: HashMap[String, StageTaskQualificationSummary] =
+    HashMap.empty[String, StageTaskQualificationSummary]
 
   // From SparkListenerTaskGettingResult
   var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
@@ -205,13 +211,14 @@ class ApplicationInfo(
     val fs = FileSystem.get(eventlog.toUri,new Configuration())
     var totalNumEvents = 0
 
+    val eventsProcessor = new EventsProcessor(forQualification)
     Utils.tryWithResource(EventLogFileReader.openEventLog(eventlog, fs)) { in =>
       val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
       totalNumEvents = lines.size
       lines.foreach { line =>
         try {
           val event = JsonProtocol.sparkEventFromJson(parse(line))
-          EventsProcessor.processAnyEvent(this, event)
+          eventsProcessor.processAnyEvent(this, event)
           logDebug(line)
         }
         catch {
@@ -405,10 +412,19 @@ class ApplicationInfo(
           case None => ""
         }
 
+        // only for qualification set the runtime and cputime
+        // could expand later for profiling
+        val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
+        val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
+        val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
+        val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
+
         val stageNew = res.copy(completionTime = thisEndTime,
           failureReason = thisFailureReason,
           duration = durationResult,
-          durationStr = durationString)
+          durationStr = durationString,
+          executorRunTimeSum = runTime,
+          executorCPUTimeSum = cpuTime)
         stageSubmittedNew += stageNew
       }
       allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
@@ -418,11 +434,13 @@ class ApplicationInfo(
     }
 
     // For taskDF
-    if (taskEnd.nonEmpty) {
-      allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-    } else {
-      logError("task is empty! Exiting...")
-      System.exit(1)
+    if (!forQualification) {
+      if (taskEnd.nonEmpty) {
+        allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
+      } else {
+        logError("task is empty! Exiting...")
+        System.exit(1)
+      }
     }
 
     // For sqlMetricsDF
@@ -529,7 +547,7 @@ class ApplicationInfo(
   def runQuery(
       query: String,
       vertical: Boolean = false,
-      fileWriter: Option[FileWriter] = None,
+      fileWriter: Option[ToolTextFileWriter] = None,
       messageHeader: String = ""): DataFrame = {
     logDebug("Running:" + query)
     val df = sparkSession.sql(query)
@@ -630,6 +648,14 @@ class ApplicationInfo(
   }
 
   // Function to generate a query for job level Task Metrics aggregation
+  def jobtoStagesSQL: String = {
+    s"""select $index as appIndex, j.jobID,
+       |j.stageIds, j.sqlID
+       |from jobDF_$index j
+       |""".stripMargin
+  }
+
+  // Function to generate a query for job level Task Metrics aggregation
   def jobMetricsAggregationSQL: String = {
     s"""select $index as appIndex, concat('job_',j.jobID) as ID,
        |count(*) as numTasks, max(j.duration) as Duration
@@ -670,6 +696,21 @@ class ApplicationInfo(
        |jobDF_$index j, sqlDF_$index sq
        |where t.stageId=s.stageId
        |and array_contains(j.stageIds, s.stageId)
+       |and sq.sqlID=j.sqlID
+       |group by sq.sqlID,sq.description
+       |""".stripMargin
+  }
+
+  // Function to generate a query for getting the executor CPU time and run time
+  // specifically for how we aggregate for qualification
+  def sqlMetricsAggregationSQLQual: String = {
+    s"""select $index as appIndex, '$appId' as appID,
+       |sq.sqlID, sq.description,
+       |sum(executorCPUTimeSum) as executorCPUTime,
+       |sum(executorRunTimeSum) as executorRunTime
+       |from stageDF_$index s,
+       |jobDF_$index j, sqlDF_$index sq
+       |where array_contains(j.stageIds, s.stageId)
        |and sq.sqlID=j.sqlID
        |group by sq.sqlID,sq.description
        |""".stripMargin
@@ -789,6 +830,21 @@ class ApplicationInfo(
        |first(appDuration) as `App Duration`,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`
        |from (${qualificationDurationSQL.stripLineEnd})
+       |""".stripMargin
+  }
+
+  def profilingDurationSQL: String = {
+    s"""select
+       |$index as appIndex,
+       |'$appId' as `App ID`,
+       |sq.sqlID,
+       |sq.duration as `SQL Duration`,
+       |case when sq.sqlQualDuration > 0 then false else true end as `Contains Dataset Op`,
+       |app.duration as `App Duration`,
+       |problematic as `Potential Problems`,
+       |round(executorCPUTime/executorRunTime*100,2) as `Executor CPU Time Percent`
+       |from sqlDF_$index sq, appdf_$index app
+       |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }
 
