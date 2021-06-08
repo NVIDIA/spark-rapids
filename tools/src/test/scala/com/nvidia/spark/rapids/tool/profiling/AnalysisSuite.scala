@@ -97,19 +97,25 @@ class AnalysisSuite extends FunSuite {
 
   private def testSqlMetricsDurationAndCpuTime(compressionNameOpt: Option[String] = None) = {
     val rawLog = s"$logDir/rp_sql_eventlog"
-    val rawLogPath = Paths.get(rawLog)
-    val logs = compressionNameOpt.map { compressionName =>
-      val tempDir = Files.createTempDirectory(Paths.get("target"),
-        "compressed-" + compressionName)
+    compressionNameOpt.foreach { compressionName =>
       val codec = TrampolineUtil.createCodec(sparkSession.sparkContext.getConf,
         compressionName)
-      val compressedEventFileName = tempDir.resolve("rp_sql_eventlog." + compressionName)
-      // copy and close streams
-      IOUtils.copyBytes(Files.newInputStream(rawLogPath), codec.compressedOutputStream(
-        Files.newOutputStream(compressedEventFileName, StandardOpenOption.CREATE)), 4096, true)
-      Array(tempDir.toString)
-    }.getOrElse(Array(rawLog))
+      TrampolineUtil.withTempDir { tempDir =>
+        // copy and close streams
+        IOUtils.copyBytes(Files.newInputStream(Paths.get(rawLog)),
+          codec.compressedOutputStream(Files.newOutputStream(new File(tempDir,
+            "rp_sql_eventlog." + compressionName).toPath, StandardOpenOption.CREATE)),
+          4096, true)
+        runTestSqlMetricsDurationAndCpuTime(Array(tempDir.toString))
+      }
+    }
 
+    if (compressionNameOpt.isEmpty) {
+      runTestSqlMetricsDurationAndCpuTime(Array(rawLog))
+    }
+  }
+
+  private def runTestSqlMetricsDurationAndCpuTime(logs: Array[String]) = {
     val expectFile = "rapids_duration_and_cpu_expectation.csv"
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
@@ -119,17 +125,17 @@ class AnalysisSuite extends FunSuite {
     val actualDf = analysis.sqlMetricsAggregationDurationAndCpuTime()
     val resultExpectation = new File(expRoot, expectFile)
     val schema = new StructType()
-      .add("appIndex",IntegerType,true)
-      .add("appID",StringType,true)
-      .add("sqlID",LongType,true)
-      .add("sqlDuration",LongType,true)
-      .add("containsDataset",BooleanType,true)
-      .add("appDuration",LongType,true)
-      .add("problematic",StringType,true)
-      .add("executorCpuTime",DoubleType,true)
+        .add("appIndex", IntegerType, true)
+        .add("appID", StringType, true)
+        .add("sqlID", LongType, true)
+        .add("sqlDuration", LongType, true)
+        .add("containsDataset", BooleanType, true)
+        .add("appDuration", LongType, true)
+        .add("problematic", StringType, true)
+        .add("executorCpuTime", DoubleType, true)
 
     val dfExpect = sparkSession.read.option("header", "true").option("nullValue", "-")
-      .schema(schema).csv(resultExpectation.getPath())
+        .schema(schema).csv(resultExpectation.getPath())
 
     ToolTestUtils.compareDataFrames(actualDf, dfExpect)
   }
