@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.FileWriter
-
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
@@ -25,7 +24,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 /**
  * HealthCheck defined health check rules
  */
-class HealthCheck(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter){
+class HealthCheck(apps: ArrayBuffer[ApplicationInfo], textFileWriter:ToolTextFileWriter){
 
   require(apps.nonEmpty)
 
@@ -34,17 +33,17 @@ class HealthCheck(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter){
     for (app <- apps) {
       // Look for failed tasks.
       val tasksMessageHeader = s"Application ${app.appId} (index=${app.index}) failed tasks:\n"
-      app.runQuery(query = app.getFailedTasks, fileWriter = Some(fileWriter),
+      app.runQuery(query = app.getFailedTasks, fileWriter = Some(textFileWriter),
         messageHeader = tasksMessageHeader)
 
       // Look for failed stages.
       val stagesMessageHeader = s"Application ${app.appId} (index=${app.index}) failed stages:\n"
-      app.runQuery(query = app.getFailedStages, fileWriter = Some(fileWriter),
+      app.runQuery(query = app.getFailedStages, fileWriter = Some(textFileWriter),
         messageHeader = stagesMessageHeader)
 
       // Look for failed jobs.
       val jobsMessageHeader = s"Application ${app.appId} (index=${app.index}) failed jobs:\n"
-      app.runQuery(query = app.getFailedJobs, fileWriter = Some(fileWriter),
+      app.runQuery(query = app.getFailedJobs, fileWriter = Some(textFileWriter),
         messageHeader = jobsMessageHeader)
     }
   }
@@ -55,7 +54,7 @@ class HealthCheck(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter){
       if (app.allDataFrames.contains(s"blockManagersRemovedDF_${app.index}")) {
         val blockManagersMessageHeader =
           s"Application ${app.appId} (index=${app.index}) removed BlockManager(s):\n"
-        app.runQuery(query = app.getblockManagersRemoved, fileWriter = Some(fileWriter),
+        app.runQuery(query = app.getblockManagersRemoved, fileWriter = Some(textFileWriter),
           messageHeader = blockManagersMessageHeader)
       }
     }
@@ -67,7 +66,7 @@ class HealthCheck(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter){
       if (app.allDataFrames.contains(s"executorsRemovedDF_${app.index}")) {
         val executorsRemovedMessageHeader =
           s"Application ${app.appId} (index=${app.index}) removed Executors(s):\n"
-        app.runQuery(query = app.getExecutorsRemoved, fileWriter = Some(fileWriter),
+        app.runQuery(query = app.getExecutorsRemoved, fileWriter = Some(textFileWriter),
           messageHeader = executorsRemovedMessageHeader)
       }
     }
@@ -75,10 +74,10 @@ class HealthCheck(apps: ArrayBuffer[ApplicationInfo], fileWriter: FileWriter){
 
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
   def listPossibleUnsupportedSQLPlan(): Unit = {
-    fileWriter.write("\nSQL Plan HealthCheck: Not supported SQL Plan\n")
+    textFileWriter.write("\nSQL Plan HealthCheck: Not supported SQL Plan\n")
     for (app <- apps) {
       if (app.allDataFrames.contains(s"sqlDF_${app.index}") && app.sqlPlan.nonEmpty) {
-        app.runQuery(query = app.unsupportedSQLPlan, fileWriter = Some(fileWriter),
+        app.runQuery(query = app.unsupportedSQLPlan, fileWriter = Some(textFileWriter),
           messageHeader = s"Application ${app.appId} (index=${app.index})\n")
       }
     }

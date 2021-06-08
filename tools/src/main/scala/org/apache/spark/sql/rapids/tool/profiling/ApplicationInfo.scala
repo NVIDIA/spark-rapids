@@ -748,7 +748,7 @@ class ApplicationInfo(
 
   def getFailedTasks: String = {
     s"""select stageId, stageAttemptId, taskId, attempt,
-       |substr(endReason, 1, 100) as endReason_first100char
+       |substr(endReason, 1, 36) as endReason_first36char
        |from taskDF_$index
        |where successful = false
        |order by stageId, stageAttemptId, taskId, attempt
@@ -782,14 +782,15 @@ class ApplicationInfo(
 
   def getExecutorsRemoved: String = {
     s"""select executorID, time,
-       |substr(reason, 1, 100) reason_first100char
+       |substr(reason, 1, 32) reason_first32char
        |from executorsRemovedDF_$index
        |order by cast(executorID as long)
        |""".stripMargin
   }
 
   def unsupportedSQLPlan: String = {
-    s"""select sqlID, nodeID, nodeName, nodeDesc
+    s"""select sqlID, nodeID, nodeName,
+       |substr(nodeDesc, 1, 100) nodeDesc_first100char
        |from unsupportedSQLplan_$index""".stripMargin
   }
 
