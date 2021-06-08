@@ -459,7 +459,7 @@ def test_window_aggs_for_rows_collect_list():
 
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
-def test_running_window_aggs_for_rows_collect_list():
+def test_running_window_function_exec_for_all_aggs():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, _gen_data_for_collect),
         "window_collect_table",
