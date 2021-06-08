@@ -234,6 +234,21 @@ class GpuBroadcastMeta(
 
 }
 
+abstract class GpuBroadcastExchangeExecBaseWithFuture(
+    mode: BroadcastMode,
+    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
+
+  /**
+   * For registering callbacks on `relationFuture`.
+   * Note that calling this field will not start the execution of broadcast job.
+   */
+  @transient
+  lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
+}
+
+/**
+ * In some versions of databricks we need to return the completionFuture in a different way.
+ */
 abstract class GpuBroadcastExchangeExecBase(
     val mode: BroadcastMode,
     child: SparkPlan) extends Exchange with GpuExec {
@@ -254,13 +269,6 @@ abstract class GpuBroadcastExchangeExecBase(
 
   @transient
   protected lazy val promise = Promise[Broadcast[Any]]()
-
-  /**
-   * For registering callbacks on `relationFuture`.
-   * Note that calling this field will not start the execution of broadcast job.
-   */
-  @transient
-  lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
 
   @transient
   protected val timeout: Long = SQLConf.get.broadcastTimeout

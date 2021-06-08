@@ -17,6 +17,7 @@ package com.nvidia.spark.rapids.shims.spark311db
 
 import java.util.UUID
 
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
@@ -28,6 +29,12 @@ case class GpuBroadcastExchangeExec(
     child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) with BroadcastExchangeLike {
 
   override def runId: UUID = _runId
+
+  /**
+   * For registering callbacks on `relationFuture`.
+   * Note that calling this field will not start the execution of broadcast job.
+   */
+  override def doCompletionFuture: concurrent.Future[Broadcast[Any]] = promise.future
 
   override def runtimeStatistics: Statistics = {
     val dataSize = metrics("dataSize").value

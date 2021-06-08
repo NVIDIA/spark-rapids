@@ -13,7 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims.spark311db
+package org.apache.spark.sql.rapids.shims.spark311db
+
+import scala.concurrent.Future
+
+import org.apache.spark.MapOutputStatistics
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
@@ -27,6 +31,15 @@ case class GpuShuffleExchangeExec(
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)
   extends GpuShuffleExchangeExecBase(outputPartitioning, child) with ShuffleExchangeLike {
+
+  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
+  override def doMapOutputStatisticsFuture: Future[MapOutputStatistics] = {
+    if (inputBatchRDD.getNumPartitions == 0) {
+      Future.successful(null)
+    } else {
+      sparkContext.submitMapStage(shuffleDependencyColumnar)
+    }
+  }
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 

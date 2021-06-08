@@ -74,6 +74,24 @@ class GpuShuffleMeta(
       Some(shuffle))
 }
 
+
+/**
+ * Performs a shuffle that will result in the desired partitioning.
+ */
+abstract class GpuShuffleExchangeExecBaseWithMetrics(
+    outputPartitioning: Partitioning,
+    child: SparkPlan) extends GpuShuffleExchangeExecBase(outputPartitioning, child) {
+
+  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
+  @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
+    if (inputBatchRDD.getNumPartitions == 0) {
+      Future.successful(null)
+    } else {
+      sparkContext.submitMapStage(shuffleDependencyColumnar)
+    }
+  }
+}
+
 /**
  * Performs a shuffle that will result in the desired partitioning.
  */
@@ -104,15 +122,6 @@ abstract class GpuShuffleExchangeExecBase(
   ) ++ additionalMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
-
-  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
-  @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
-    if (inputBatchRDD.getNumPartitions == 0) {
-      Future.successful(null)
-    } else {
-      sparkContext.submitMapStage(shuffleDependencyColumnar)
-    }
-  }
 
   def shuffleDependency : ShuffleDependency[Int, InternalRow, InternalRow] = {
     throw new IllegalStateException()
