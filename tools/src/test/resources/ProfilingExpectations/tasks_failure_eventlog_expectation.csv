@@ -1,0 +1,6 @@
+stageId,stageAttemptId,taskId,attempt,endReason_first36char
+4,0,2842,0,ExceptionFailure(ai.rapids.cudf.Cudf
+4,0,2858,0,TaskKilled(another attempt succeeded
+4,0,2884,0,TaskKilled(another attempt succeeded
+4,0,2908,0,TaskKilled(another attempt succeeded
+4,0,3410,1,ExceptionFailure(ai.rapids.cudf.Cudf
