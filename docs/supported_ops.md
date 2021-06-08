@@ -535,9 +535,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (Only supported for Parquet; missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (Only supported for Parquet; missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (Only supported for Parquet; missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -20627,9 +20627,9 @@ dates or timestamps, or for a lack of type coercion support.
 <td> </td>
 <td><b>NS</b></td>
 <td> </td>
+<td><em>PS* (missing nested BINARY, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested BINARY, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 </table>
