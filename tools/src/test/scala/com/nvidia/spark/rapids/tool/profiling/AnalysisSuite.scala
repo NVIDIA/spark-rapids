@@ -100,14 +100,14 @@ class AnalysisSuite extends FunSuite {
     val rawLogPath = Paths.get(rawLog)
     val logs = compressionNameOpt.map { compressionName =>
       val tempDir = Files.createTempDirectory(Paths.get("target"),
-        "compressed-" +compressionName)
+        "compressed-" + compressionName)
       val codec = TrampolineUtil.createCodec(sparkSession.sparkContext.getConf,
         compressionName)
       val compressedEventFileName = tempDir.resolve("rp_sql_eventlog." + compressionName)
       // copy and close streams
       IOUtils.copyBytes(Files.newInputStream(rawLogPath), codec.compressedOutputStream(
         Files.newOutputStream(compressedEventFileName, StandardOpenOption.CREATE)), 4096, true)
-      Array(compressedEventFileName.toString)
+      Array(tempDir.toString)
     }.getOrElse(Array(rawLog))
 
     val expectFile = "rapids_duration_and_cpu_expectation.csv"
