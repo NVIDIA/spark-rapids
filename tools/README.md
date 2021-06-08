@@ -69,7 +69,7 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications. The tool works by processing the CPU generated event logs from Spark.
 
-Currently it does this by looking at the amount of time spent doing SQL DataFrame
+Currently it does this by looking at the amount of time spent doing SQL Dataframe
 operations vs the entire application time: `(sum(SQL Dataframe Duration) / (application-duration))`.
 The more time spent doing SQL Dataframe operations the higher the score is
 and the more likely the plugin will be able to help accelerate that application.
@@ -87,6 +87,8 @@ The output also contains a `Executor CPU Time Percent` column that is not includ
 at how much time the tasks spent doing processing on the CPU vs waiting on IO. This is not always a good indicator
 because sometimes you may be doing IO that is encrypted and the CPU has to do work to decrypt it, so the environment
 you are running on needs to be taken into account.
+
+Note that SQL queries that contain failed jobs are not included.
 
 Sample output in csv:
 ```

@@ -695,7 +695,7 @@ class ApplicationInfo(
        |from stageDF_$index s,
        |jobDF_$index j, sqlDF_$index sq
        |where array_contains(j.stageIds, s.stageId)
-       |and sq.sqlID=j.sqlID
+       |and sq.sqlID=j.sqlID and sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |group by sq.sqlID,sq.description
        |""".stripMargin
   }
@@ -730,12 +730,11 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  // select the non-null sql ids from only successful jobs
-  def sqlIdsForSuccessfulJobs: String = {
+  def sqlIdsForUnsuccessfulJobs: String = {
     s"""select
-       |distinct sqlID
+       |sqlID
        |from jobDF_$index j
-       |where j.jobResult = "JobSucceeded" and sqlID is not null
+       |where j.jobResult != "JobSucceeded" or j.jobResult is null
        |""".stripMargin
   }
 
@@ -747,8 +746,8 @@ class ApplicationInfo(
        |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
        |first(app.duration) as `App Duration`
-       |from sqlDF_$index sq, appdf_$index app, ($sqlIdsForSuccessfulJobs) j
-       |where sq.sqlID = j.sqlID
+       |from sqlDF_$index sq, appdf_$index app
+       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |""".stripMargin
   }
 
@@ -764,15 +763,15 @@ class ApplicationInfo(
        |problematic as potentialProblems,
        |m.executorCPUTime,
        |m.executorRunTime
-       |from sqlDF_$index sq, appdf_$index app, ($sqlIdsForSuccessfulJobs) j
+       |from sqlDF_$index sq, appdf_$index app
        |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
-       |where sq.sqlID = j.sqlID
+       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |""".stripMargin
   }
 
   def qualificationDurationSumSQL: String = {
     s"""select first(appName) as `App Name`,
-       |first(appID) as `App ID`,
+       |'$appId' as `App ID`,
        |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
        |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
        |sum(dfDuration) as `SQL Dataframe Duration`,
