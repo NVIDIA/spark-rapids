@@ -73,6 +73,9 @@ For usage see below:
   val generateDot: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Generate query visualizations in DOT format. Default is false")
+  val printPlans: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
 
   verify()
 }

@@ -58,74 +58,75 @@ object ProfileMain extends Logging {
     // Create the FileWriter and sparkSession used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)
 
-    // Get the event logs required to process
-    lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
+    try {
+      // Get the event logs required to process
+      lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
 
-    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
+      val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
-    // If compare mode is on, we need lots of memory to cache all applications then compare.
-    // Suggest only enable compare mode if there is no more than 10 applications as input.
-    if (appArgs.compare()) {
-      // Create an Array of Applications(with an index starting from 1)
-      val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-      try {
-        var index: Int = 1
-        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-          apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
-          index += 1
+      // If compare mode is on, we need lots of memory to cache all applications then compare.
+      // Suggest only enable compare mode if there is no more than 10 applications as input.
+      if (appArgs.compare()) {
+        // Create an Array of Applications(with an index starting from 1)
+        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+        try {
+          var index: Int = 1
+          for (path <- allPaths.filter(p => !p.getName.contains("."))) {
+            apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
+            index += 1
+          }
+
+          //Exit if there are no applications to process.
+          if (apps.isEmpty) {
+            logInfo("No application to process. Exiting")
+            return 0
+          }
+          processApps(apps, generateDot = false, printPlans = false)
+        } catch {
+          case e: com.fasterxml.jackson.core.JsonParseException =>
+            textFileWriter.close()
+            logError(s"Error parsing JSON", e)
+            return 1
         }
-
-        //Exit if there are no applications to process.
-        if (apps.isEmpty) {
-          logInfo("No application to process. Exiting")
-          return 0
-        }
-        processApps(apps, generateDot = false)
-      } catch {
-        case e: com.fasterxml.jackson.core.JsonParseException =>
-          textFileWriter.close()
-          logError(s"Error parsing JSON", e)
-          return 1
-      }
-      // Show the application Id <-> appIndex mapping.
-      for (app <- apps) {
-        logApplicationInfo(app)
-      }
-    } else {
-      // This mode is to process one application at one time.
-      var index: Int = 1
-      try {
-        for (path <- allPaths.filter(p => !p.getName.contains("."))) {
-          // This apps only contains 1 app in each loop.
-          val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-          val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
-          apps += app
+        // Show the application Id <-> appIndex mapping.
+        for (app <- apps) {
           logApplicationInfo(app)
-          // This is a bit odd that we process apps individual right now due to
-          // memory concerns. So the aggregation functions only aggregate single
-          // application not across applications.
-          processApps(apps, appArgs.generateDot())
-          app.dropAllTempViews()
-          index += 1
         }
-      } catch {
-        case e: com.fasterxml.jackson.core.JsonParseException =>
-          textFileWriter.close()
-          logError(s"Error parsing JSON", e)
-          return 1
+      } else {
+        // This mode is to process one application at one time.
+        var index: Int = 1
+        try {
+          for (path <- allPaths.filter(p => !p.getName.contains("."))) {
+            // This apps only contains 1 app in each loop.
+            val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+            val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
+            apps += app
+            logApplicationInfo(app)
+            // This is a bit odd that we process apps individual right now due to
+            // memory concerns. So the aggregation functions only aggregate single
+            // application not across applications.
+            processApps(apps, appArgs.generateDot(), appArgs.printPlans())
+            app.dropAllTempViews()
+            index += 1
+          }
+        } catch {
+          case e: com.fasterxml.jackson.core.JsonParseException =>
+            textFileWriter.close()
+            logError(s"Error parsing JSON", e)
+            return 1
+        }
       }
+    } finally {
+      textFileWriter.close()
     }
-
-    logInfo(s"Output log location:  $outputDirectory/$logFileName")
-
-    textFileWriter.close()
 
     /**
      * Function to process ApplicationInfo. If it is in compare mode, then all the eventlogs are
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean): Unit = {
+    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean,
+        printPlans: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
 
         textFileWriter.write("### A. Compare Information Collected ###")
@@ -142,6 +143,7 @@ object ProfileMain extends Logging {
         collect.printRapidsProperties()
         collect.printRapidsJAR()
         collect.printSQLPlanMetrics(generateDot, outputDirectory)
+        collect.printSQLPlans(outputDirectory)
       }
 
       textFileWriter.write("\n### B. Analysis ###\n")
