@@ -140,6 +140,26 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test printSQLPlans") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/rapids_join_eventlog"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+          ProfileUtils.stringToPath(path).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps, None)
+      collect.printSQLPlans(tempOutputDir.getAbsolutePath)
+      val dotDirs = ToolTestUtils.listFilesMatching(tempOutputDir,
+        _.startsWith("planDescriptions-"))
+      assert(dotDirs.length === 1)
+    }
+  }
+
   test("test printJobInfo") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
