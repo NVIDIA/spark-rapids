@@ -63,10 +63,9 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
 
         // assert that the generated files looks something like what we expect
         var hashAggCount = 0
-        for (dir <- dotDirs) {
-          val dotFiles = ToolTestUtils.listFilesMatching(dir, _.endsWith(".dot"))
-          assert(dotFiles.length === 1)
-          val source = Source.fromFile(dotFiles.head)
+        for (file <- dotDirs) {
+          assert(file.getAbsolutePath.endsWith(".dot"))
+          val source = Source.fromFile(file)
           try {
             val lines = source.getLines().toArray
             assert(lines.head === "digraph G {")

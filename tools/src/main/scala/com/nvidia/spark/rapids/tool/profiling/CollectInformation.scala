@@ -92,11 +92,11 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
   def printPlans(outputDirectory: String): Unit = {
     for (app <- apps) {
       val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"${app.appId}-planDesc")
+        s"planDescriptions-${app.appId}")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription) {
           planFileWriter.write("\n=============================\n")
-          planFileWriter.write(s"\nPlan for SQL ID : $sqlID\n")
+          planFileWriter.write(s"Plan for SQL ID : $sqlID")
           planFileWriter.write("\n=============================\n")
           planFileWriter.write(planDesc)
         }
@@ -125,7 +125,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo], fileWriter: ToolTex
 
         for ((sqlID, planInfo) <- app.sqlPlan) {
           val dotFileWriter = new ToolTextFileWriter(outputDirectory,
-            s"${app.appId}-query-$sqlID")
+            s"${app.appId}-query-$sqlID.dot")
           try {
             val metrics = map.getOrElse(sqlID, Seq.empty).toMap
             GenerateDot.generateDotGraph(
