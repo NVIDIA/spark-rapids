@@ -241,6 +241,7 @@ def test_group_apply_udf_more_types(data_gen):
 
 
 # ======= Test map in Pandas =======
+@ignore_order
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_map_apply_udf(data_gen):
     def pandas_filter(iterator):
@@ -253,6 +254,7 @@ def test_map_apply_udf(data_gen):
             conf=arrow_udf_conf)
 
 
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
 def test_pandas_map_udf_nested_type(data_gen):
     # Supported UDF output types by plugin: (commonCudfTypes + ARRAY).nested() + STRUCT
