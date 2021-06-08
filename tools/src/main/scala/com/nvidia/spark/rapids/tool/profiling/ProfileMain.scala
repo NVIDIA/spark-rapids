@@ -148,6 +148,13 @@ object ProfileMain extends Logging {
       sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
       analysis.sqlMetricsAggregationDurationAndCpuTime()
       analysis.shuffleSkewCheck()
+
+      textFileWriter.write("\n### C. Health Check###\n")
+      val healthCheck=new HealthCheck(apps, textFileWriter)
+      healthCheck.listFailedJobsStagesTasks()
+      healthCheck.listRemovedBlockManager()
+      healthCheck.listRemovedExecutors()
+      healthCheck.listPossibleUnsupportedSQLPlan()
     }
 
     def logApplicationInfo(app: ApplicationInfo) = {
