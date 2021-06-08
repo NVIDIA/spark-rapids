@@ -11,13 +11,19 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.0 running in DataBricks Runtime 7.3 ML with GPU
-    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
-    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
+    * Apache Spark 3.x running in Databricks Runtime 7.3 ML or 8.2 ML with GPU
+    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
+    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
 
 [Databricks 7.3 LTS
 ML](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environment) runs CUDA 10.1
-Update 2, and the initialization scripts will install the appropriate cudf version to match.
+Update 2, and initialization scripts for version 0.5 and earlier will install the appropriate cudf
+version to match.  Users wishing to try 21.06 on Databricks 7.3 LTS ML will need to install the CUDA
+11.0 toolkit on the cluster. 
+
+[Databricks 8.2 ML](https://docs.databricks.com/release-notes/runtime/8.2ml.html#system-environment)
+runs CUDA 11.0, wand initialization scripts for version 21.06 will install the matching cudf
+version. 
 
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
