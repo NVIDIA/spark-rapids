@@ -1,0 +1,2 @@
+stageId,attemptId,name,numTasks,failureReason_first100char
+4,0,attachTree at Spark300Shims.scala:624,1000,Job 0 cancelled as part of cancellation of all jobs

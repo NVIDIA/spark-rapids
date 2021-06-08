@@ -1,0 +1,3 @@
+jobID,jobResult,failedReason_first100char
+0,JobFailed,java.lang.Exception: Job 0 cancelled as part of cancellation of all jobs
+
