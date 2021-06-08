@@ -77,6 +77,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       assert(cl.hasNext)
       assertThrows[RapidsShuffleFetchFailedException](cl.next())
 
+      verify(mockTransport, times(1)).cancelPending(handler)
+
       verify(testMetricsUpdater, times(1))
           .update(any(), any(), any(), any())
       assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
@@ -120,6 +122,9 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
           throw rsffe
       }
     }
+
+    verify(mockTransport, times(1)).cancelPending(handler)
+
     verify(testMetricsUpdater, times(1))
         .update(any(), any(), any(), any())
     assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
@@ -145,6 +150,9 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any(), any())).thenReturn(client)
     doNothing().when(client).doFetch(any(), ac.capture())
+    cl.start()
+
+    val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
 
     // signal a timeout to the iterator
     when(cl.pollForResult(any())).thenReturn(None)
@@ -173,8 +181,6 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockCatalog,
       123)
 
-    when(mockTransaction.getStatus).thenReturn(TransactionStatus.Error)
-
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any(), any())).thenReturn(client)
     doNothing().when(client).doFetch(any(), ac.capture())
@@ -191,6 +197,8 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
     handler.start(1)
     handler.batchReceived(bufferId)
+
+    verify(mockTransport, times(0)).cancelPending(handler)
 
     assert(cl.hasNext)
     assertResult(cb)(cl.next())
