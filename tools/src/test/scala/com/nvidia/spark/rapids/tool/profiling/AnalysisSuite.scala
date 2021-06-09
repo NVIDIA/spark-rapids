@@ -149,4 +149,22 @@ class AnalysisSuite extends FunSuite {
     val actualDf = analysis.shuffleSkewCheckSingleApp(apps.head)
     assert(actualDf.count() == 0)
   }
+
+  test("test contains dataset false") {
+    val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+    val logs = Array(s"$qualLogDir/nds_q86_test")
+
+    val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
+    val analysis = new Analysis(apps, None)
+    val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
+    sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
+    val actualDf = analysis.sqlMetricsAggregationDurationAndCpuTime()
+
+    val rows = actualDf.collect()
+    assert(rows.length === 25)
+    def fieldIndex(name: String) = actualDf.schema.fieldIndex(name)
+    rows.foreach { row =>
+      assert(row.getBoolean(fieldIndex("Contains Dataset Op")) == false)
+    }
+  }
 }

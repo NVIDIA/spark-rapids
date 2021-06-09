@@ -343,6 +343,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       None,
       "",
       None,
+      false,
       ""
     )
     app.sqlStart += sqlExecution

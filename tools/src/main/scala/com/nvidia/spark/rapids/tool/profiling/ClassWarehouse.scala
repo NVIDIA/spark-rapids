@@ -57,6 +57,7 @@ case class SQLExecutionCase(
     duration: Option[Long],
     durationStr: String,
     sqlQualDuration: Option[Long],
+    hasDataset: Boolean,
     problematic: String = "")
 
 case class SQLPlanMetricsCase(
