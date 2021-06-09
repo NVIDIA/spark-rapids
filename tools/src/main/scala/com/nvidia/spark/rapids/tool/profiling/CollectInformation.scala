@@ -40,8 +40,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
     for (app <- apps) {
-      app.runQuery(query = app.generateAppInfo, fileWriter = fileWriter,
-        messageHeader = messageHeader)
+      if (app.allDataFrames.contains(s"appDF_${app.index}")) {
+        app.runQuery(query = app.generateAppInfo, fileWriter = fileWriter,
+          messageHeader = messageHeader)
+      } else {
+        fileWriter.foreach(_.write("No Application Information Found!"))
+      }
     }
   }
 
@@ -67,8 +71,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printExecutorInfo(): Unit = {
     val messageHeader = "\nExecutor Information:\n"
     for (app <- apps) {
-      app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
-        fileWriter = fileWriter, messageHeader = messageHeader)
+      if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
+        app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
+          fileWriter = fileWriter, messageHeader = messageHeader)
+      } else {
+        fileWriter.foreach(_.write("No Executor Information Found!"))
+      }
     }
   }
 
@@ -76,8 +84,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printJobInfo(): Unit = {
     val messageHeader = "\nJob Information:\n"
     for (app <- apps) {
-      app.runQuery(query = app.jobtoStagesSQL,
+      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
+        app.runQuery(query = app.jobtoStagesSQL,
         fileWriter = fileWriter, messageHeader = messageHeader)
+      } else {
+        fileWriter.foreach(_.write("No Job Information Found!"))
+      }
     }
   }
 
