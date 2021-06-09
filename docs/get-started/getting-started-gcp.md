@@ -180,7 +180,8 @@ could also be used in an air gap environment. In this section, we will be using 
 instructions from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a
 custom image. 
 
-Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) initialization actions:
+Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) 
+initialization actions:
 1. Configure YARN, the YARN node manager, GPU isolation and GPU exclusive mode.
 2. Install GPU drivers.
 
