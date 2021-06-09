@@ -14,9 +14,10 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from pyspark.sql.types import *
+from spark_session import with_cpu_session
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
 
@@ -95,3 +96,18 @@ def test_size_of_map(data_gen, size_of_null):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr('size(a)'),
             conf={'spark.sql.legacy.sizeOfNull': size_of_null})
+
+@pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
+@pytest.mark.parametrize('is_ascending', [True, False], ids=idfn)
+def test_sort_array(data_gen, is_ascending):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(
+            f.sort_array(f.col('a'), is_ascending)))
+
+@pytest.mark.parametrize('data_gen', non_nested_array_gens, ids=idfn)
+@pytest.mark.parametrize('is_ascending', [True, False], ids=idfn)
+def test_sort_array_lit(data_gen, is_ascending):
+    array_lit = gen_scalar(data_gen)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=10).select(
+            f.sort_array(f.lit(array_lit), is_ascending)))
