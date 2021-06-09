@@ -821,7 +821,8 @@ class ApplicationInfo(
        |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Score,
        |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
-       |first(app.duration) as `App Duration`
+       |first(app.duration) as `App Duration`,
+       |first(app.endDurationEstimated) as `App Duration Estimated`
        |from sqlDF_$index sq, appdf_$index app
        |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |""".stripMargin

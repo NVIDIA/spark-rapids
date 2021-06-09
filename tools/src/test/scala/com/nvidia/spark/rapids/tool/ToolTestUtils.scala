@@ -1,5 +1,4 @@
-/*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+/* Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
+import org.apache.spark.sql.types._
 
 object ToolTestUtils extends Logging {
 
@@ -81,9 +81,15 @@ object ToolTestUtils extends Logging {
     assert(diffCount == 0)
   }
 
-  def readExpectationCSV(sparkSession: SparkSession, path: String): DataFrame = {
+  def readExpectationCSV(sparkSession: SparkSession, path: String,
+      schema: Option[StructType] = None): DataFrame = {
     // make sure to change null value so empty strings don't show up as nulls
-    sparkSession.read.option("header", "true").option("nullValue", "-").csv(path)
+    if (schema.isDefined) {
+      sparkSession.read.option("header", "true").option("nullValue", "-")
+        .schema(schema.get).csv(path)
+    } else {
+      sparkSession.read.option("header", "true").option("nullValue", "-").csv(path)
+    }
   }
 
   def processProfileApps(logs: Array[String],
