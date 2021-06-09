@@ -351,9 +351,6 @@ class ApplicationInfo(
         appStartNew += newApp
       }
       this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
-    } else {
-      logError("Application is empty! Exiting...")
-      System.exit(1)
     }
 
     // For sqlDF
@@ -413,9 +410,6 @@ class ApplicationInfo(
         jobStartNew += jobNew
       }
       allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
-    } else {
-      logError("No Job Found. Exiting.")
-      System.exit(1)
     }
 
     // For stageDF
@@ -448,18 +442,12 @@ class ApplicationInfo(
         stageSubmittedNew += stageNew
       }
       allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
-    } else {
-      logError("No Stage Found. Exiting.")
-      System.exit(1)
     }
 
     // For taskDF
     if (!forQualification) {
       if (taskEnd.nonEmpty) {
         allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-      } else {
-        logError("task is empty! Exiting...")
-        System.exit(1)
       }
     }
 
@@ -497,17 +485,11 @@ class ApplicationInfo(
       // For propertiesDF
       if (this.allProperties.nonEmpty) {
         this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-      } else {
-        logError("propertiesDF is empty! Existing...")
-        System.exit(1)
       }
 
       // For executorsDF
       if (this.executors.nonEmpty) {
         this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
-      } else {
-        logError("executors is empty! Exiting...")
-        System.exit(1)
       }
 
       // For executorsRemovedDF
