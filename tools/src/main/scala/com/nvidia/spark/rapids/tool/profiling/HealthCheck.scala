@@ -31,20 +31,24 @@ class HealthCheck(apps: ArrayBuffer[ApplicationInfo], textFileWriter: ToolTextFi
   // Function to list all failed tasks , stages and jobs.
   def listFailedJobsStagesTasks(): Unit = {
     for (app <- apps) {
-      // Look for failed tasks.
-      val tasksMessageHeader = s"Failed tasks:\n"
-      app.runQuery(query = app.getFailedTasks, fileWriter = Some(textFileWriter),
-        messageHeader = tasksMessageHeader)
-
-      // Look for failed stages.
-      val stagesMessageHeader = s"Failed stages:\n"
-      app.runQuery(query = app.getFailedStages, fileWriter = Some(textFileWriter),
-        messageHeader = stagesMessageHeader)
-
-      // Look for failed jobs.
-      val jobsMessageHeader = s"Failed jobs:\n"
-      app.runQuery(query = app.getFailedJobs, fileWriter = Some(textFileWriter),
-        messageHeader = jobsMessageHeader)
+      if (app.allDataFrames.contains(s"taskDF_${app.index}")) {
+        // Look for failed tasks.
+        val tasksMessageHeader = s"Failed tasks:\n"
+        app.runQuery(query = app.getFailedTasks, fileWriter = Some(textFileWriter),
+          messageHeader = tasksMessageHeader)
+      }
+      if (app.allDataFrames.contains(s"stageDF_${app.index}")) {
+        // Look for failed stages.
+        val stagesMessageHeader = s"Failed stages:\n"
+        app.runQuery(query = app.getFailedStages, fileWriter = Some(textFileWriter),
+          messageHeader = stagesMessageHeader)
+      }
+      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
+        // Look for failed jobs.
+        val jobsMessageHeader = s"Failed jobs:\n"
+        app.runQuery(query = app.getFailedJobs, fileWriter = Some(textFileWriter),
+          messageHeader = jobsMessageHeader)
+      }
     }
   }
 

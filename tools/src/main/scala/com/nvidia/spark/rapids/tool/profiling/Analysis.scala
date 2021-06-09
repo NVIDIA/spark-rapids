@@ -150,8 +150,11 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
   // it aggregates executor time metrics differently
   def sqlMetricsAggregationQual(): DataFrame = {
     val query = apps
-      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
+      .filter { p =>
+        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
+          p.allDataFrames.contains(s"stageDF_${p.index}") &&
+          p.allDataFrames.contains(s"jobDF_${p.index}")
+      }.map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
       .mkString(" union ")
     if (query.nonEmpty) {
       apps.head.runQuery(query)
@@ -163,8 +166,10 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
   def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
     val query = apps
-      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map( app => "(" + app.profilingDurationSQL+ ")")
+      .filter { p =>
+        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
+        p.allDataFrames.contains(s"appDF_${p.index}")
+      }.map( app => "(" + app.profilingDurationSQL + ")")
       .mkString(" union ")
     if (query.nonEmpty) {
       apps.head.runQuery(query, false, fileWriter, messageHeader)
