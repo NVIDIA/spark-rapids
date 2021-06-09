@@ -41,7 +41,7 @@ class HealthCheckSuite extends FunSuite {
   test("test task-stage-job-failures") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir/task_job_failure_eventlog"))
+      new ProfileArgs(Array(s"$logDir/task_job_failure_eventlog_compressed.zstd"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
@@ -78,7 +78,7 @@ class HealthCheckSuite extends FunSuite {
   test("test blockManager_executors_failures") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir/executors_removed_eventlog"))
+      new ProfileArgs(Array(s"$logDir/executors_removed_eventlog_compressed.zstd"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
@@ -94,7 +94,6 @@ class HealthCheckSuite extends FunSuite {
       val blockManagersDfExpect =
         ToolTestUtils.readExpectationCSV(sparkSession, blockManagersResultExpectation.getPath())
       ToolTestUtils.compareDataFrames(blockManagersAccums, blockManagersDfExpect)
-
 
       val executorRemovedAccums = app.runQuery(app.getExecutorsRemoved, fileWriter = None)
       val executorRemovedResultExpectation =
