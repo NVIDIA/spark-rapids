@@ -1,6 +1,6 @@
-stageId,stageAttemptId,taskId,attempt,endReason_first36char
-4,0,2842,0,ExceptionFailure(ai.rapids.cudf.Cudf
-4,0,2858,0,TaskKilled(another attempt succeeded
-4,0,2884,0,TaskKilled(another attempt succeeded
-4,0,2908,0,TaskKilled(another attempt succeeded
-4,0,3410,1,ExceptionFailure(ai.rapids.cudf.Cudf
+stageId,stageAttemptId,taskId,attempt,endReason_first100char
+4,0,2842,0,"ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins"
+4,0,2858,0,"TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(22000),None,false,true,None)"
+4,0,2884,0,"TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(21148),None,false,true,None)"
+4,0,2908,0,"TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(20420),None,false,true,None)"
+4,0,3410,1,"ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins"
