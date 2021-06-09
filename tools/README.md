@@ -73,6 +73,8 @@ Currently it does this by looking at the amount of time spent doing SQL Datafram
 operations vs the entire application time: `(sum(SQL Dataframe Duration) / (application-duration))`.
 The more time spent doing SQL Dataframe operations the higher the score is
 and the more likely the plugin will be able to help accelerate that application.
+Note that the application time is from application start to application end so if you are using an interactive
+shell where there is nothing running from a while, this time will include that which might skew the score.
 
 Each application(event log) could have multiple SQL queries. If a SQL's plan has Dataset API inside such as keyword
  `$Lambda` or `.apply`, that SQL query is categorized as a DataSet SQL query, otherwise it is a Dataframe SQL query.
@@ -88,23 +90,27 @@ at how much time the tasks spent doing processing on the CPU vs waiting on IO. T
 because sometimes you may be doing IO that is encrypted and the CPU has to do work to decrypt it, so the environment
 you are running on needs to be taken into account.
 
+The last column `App Duration Estimated` is used to indicate if we had to estimate the application duration. If we
+had to estimate it, it means the event log was missing the application finished event so we will use the last job
+or sql execution time we find as the end time used to calculate the duration.
+
 Note that SQL queries that contain failed jobs are not included.
 
 Sample output in csv:
 ```
-App Name,App ID,Rank,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent
-Spark shell,app-20210507105707-0001,78.03,"",810923,1039276,32.03
-Spark shell,app-20210507103057-0000,75.87,"",316622,417307,64.07
+App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent,App Duration Estimated
+Spark shell,app-20210507105707-0001,78.03,"",810923,1039276,32.03,false
+Spark shell,app-20210507103057-0000,75.87,"",316622,417307,64.07,false
 ```
 
 Sample output in text:
 ```
-+-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
-|App Name   |App ID                 |Rank |Potential Problems|SQL Dataframe Duration|App Duration|Executor CPU Time Percent|
-+-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
-|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |32.03                    |
-|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |64.07                    |
-+-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+----------------------+
+|App Name   |App ID                 |Score|Potential Problems|SQL Dataframe Duration|App Duration|Executor CPU Time Percent|App Duration Estimated|
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+----------------------+
+|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |32.03                    |false                 |
+|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |64.07                    |false                 |
++-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+----------------------+
 ```
 
 ### How to use this tool
