@@ -219,7 +219,7 @@ python generate_custom_image.py \
     --gcs-bucket $GCS_BUCKET \
     --machine-type n1-standard-4 \
     --accelerator type=$GPU_NAME,count=$GPU_COUNT \
-    --disk-size 100
+    --disk-size 200
 ```
 
 See [here](https://cloud.google.com/dataproc/docs/guides/dataproc-images#running_the_code) for more
