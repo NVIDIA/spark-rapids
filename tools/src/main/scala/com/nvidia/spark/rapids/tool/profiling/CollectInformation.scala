@@ -167,7 +167,9 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
     for (app <- apps){
       if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
         app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}")) {
+        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
+        app.allDataFrames.contains(s"jobDF_${app.index}") &&
+        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
         val messageHeader = "\nSQL Plan Metrics for Application:\n"
         val accums = app.runQuery(app.generateSQLAccums, fileWriter = fileWriter,
           messageHeader=messageHeader)
