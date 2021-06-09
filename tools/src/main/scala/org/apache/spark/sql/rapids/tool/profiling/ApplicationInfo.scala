@@ -321,14 +321,8 @@ class ApplicationInfo(
     if (this.appStart.nonEmpty) {
       val appStartNew: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
       for (res <- this.appStart) {
-        val durationResult = ProfileUtils.OptionLongMinusLong(this.appEndTime, res.startTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i.toLong)
-          case None =>
-            ""
-        }
 
-        val estimatedResult = Option(durationResult.getOrElse {
+        val estimatedResult = Option(this.appEndTime.getOrElse {
           logWarning("Application End Time is unknown, estimating based on job and sql end times!")
           // estimate the app end with job or sql end times
           val sqlEndTime = this.sqlEndTime.values.toSeq.sorted(Ordering[Long].reverse).head
@@ -336,9 +330,16 @@ class ApplicationInfo(
           math.max(sqlEndTime, jobEndTime)
         })
 
-        val newApp = res.copy(endTime = this.appEndTime, duration = estimatedResult,
+        val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
+        val durationString = durationResult match {
+          case Some(i) => UIUtils.formatDuration(i.toLong)
+          case None =>
+            ""
+        }
+
+        val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
           durationStr = durationString, sparkVersion = this.sparkVersion,
-          gpuMode = this.gpuMode, endTimeEstimated = durationResult.isEmpty)
+          gpuMode = this.gpuMode, endTimeEstimated = this.appEndTime.isEmpty)
         appStartNew += newApp
       }
       this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
