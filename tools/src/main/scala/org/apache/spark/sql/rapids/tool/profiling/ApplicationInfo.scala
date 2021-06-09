@@ -347,10 +347,10 @@ class ApplicationInfo(
           case Some(i) => UIUtils.formatDuration(i)
           case None => ""
         }
-        val sqlQDuration = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
-          Some(0L)
+        val (containsDataset, sqlQDuration) = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
+          (true, Some(0L))
         } else {
-          durationResult
+          (false, durationResult)
         }
         val potProbs = problematicSQL.filter { p =>
           p.sqlID == res.sqlID && p.reason.nonEmpty
@@ -364,6 +364,7 @@ class ApplicationInfo(
           duration = durationResult,
           durationStr = durationString,
           sqlQualDuration = sqlQDuration,
+          hasDataset = containsDataset,
           problematic = finalPotProbs
         )
         sqlStartNew += sqlExecutionNew
@@ -851,7 +852,7 @@ class ApplicationInfo(
        |'$appId' as `App ID`,
        |sq.sqlID,
        |sq.duration as `SQL Duration`,
-       |case when sq.sqlQualDuration > 0 then false else true end as `Contains Dataset Op`,
+       |sq.hasDataset as `Contains Dataset Op`,
        |app.duration as `App Duration`,
        |problematic as `Potential Problems`,
        |round(executorCPUTime/executorRunTime*100,2) as `Executor CPU Time Percent`
