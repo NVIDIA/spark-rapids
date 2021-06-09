@@ -90,6 +90,11 @@ object GpuDeviceManager extends Logging {
     throw new IllegalStateException("Could not find a single GPU to use")
   }
 
+  def setGpuDevice(addr: Int): Unit = {
+    setGpuDeviceAndAcquire(addr)
+    deviceId = Some(addr)
+  }
+
   def setGpuDeviceAndAcquire(addr: Int): Int = {
     logDebug(s"Initializing GPU device ID to $addr")
     Cuda.setDevice(addr.toInt)
