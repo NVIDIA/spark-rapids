@@ -124,13 +124,16 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
           list += row.getLong(1) -> row.getLong(2)
         }
 
-        for ((sqlID, planInfo) <- app.sqlPlan) {
+        val sqlPlansMap = app.sqlPlan.map { case (sqlId, sparkPlanInfo) =>
+          sqlId -> ((sparkPlanInfo, app.physicalPlanDescription(sqlId)))
+        }
+        for ((sqlID,  (planInfo, physicalPlan)) <- sqlPlansMap) {
           val dotFileWriter = new ToolTextFileWriter(outputDirectory,
             s"${app.appId}-query-$sqlID.dot")
           try {
             val metrics = map.getOrElse(sqlID, Seq.empty).toMap
-            GenerateDot.generateDotGraph(
-              QueryPlanWithMetrics(planInfo, metrics), None, dotFileWriter, sqlID + ".dot")
+            GenerateDot.generateDotGraph(QueryPlanWithMetrics(planInfo, metrics),
+              physicalPlan, None, dotFileWriter, sqlID, app.appId)
           } finally {
             dotFileWriter.close()
           }
