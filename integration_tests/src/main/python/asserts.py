@@ -90,7 +90,11 @@ def _assert_equal(cpu, gpu, float_check, path):
 
 def assert_equal(cpu, gpu):
     """Verify that the result from the CPU and the GPU are equal"""
-    _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
+    try:
+      _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
+    except Exception as ex:
+      print("CPU OUTPUT: %s \n\n GPU OUTPUT: %s" % (cpu, gpu))
+      raise ex
 
 def _has_incompat_conf(conf):
     return ('spark.rapids.sql.incompatibleOps.enabled' in conf and
