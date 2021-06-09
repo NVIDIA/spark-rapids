@@ -1340,6 +1340,15 @@ object GpuOverrides {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
       }),
+    expr[KnownNotNull](
+      "Tag an expression as known to not be null",
+      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+      (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuKnownNotNull(child)
+      }),
     expr[DateDiff](
       "Returns the number of days from startDate to endDate",
       ExprChecks.binaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
