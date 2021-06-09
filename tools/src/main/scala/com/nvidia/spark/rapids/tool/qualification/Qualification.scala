@@ -73,17 +73,22 @@ object Qualification extends Logging {
 
   def constructQueryQualifyApps(apps: ArrayBuffer[ApplicationInfo],
       includeCpuPercent: Boolean): DataFrame = {
-    val query = apps
-      .filter { p =>
+    val (qualApps, nonQualApps) = apps
+      .partition { p =>
         p.allDataFrames.contains(s"sqlDF_${p.index}") &&
           p.allDataFrames.contains(s"appDF_${p.index}") &&
           p.allDataFrames.contains(s"jobDF_${p.index}")
-      }.map { app =>
+      }
+    val query = qualApps.map { app =>
         includeCpuPercent match {
           case true => "(" + app.qualificationDurationSumSQL + ")"
           case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
         }
       }.mkString(" union ")
+    if (qualApps.nonEmpty) {
+      logWarning("The following event logs were skipped: " +
+        s"${nonQualApps.map(_.eventlog).mkString(",")}")
+    }
     if (query.nonEmpty) {
       apps.head.runQuery(query + " order by Score desc, `App Duration` desc")
     } else {
@@ -95,7 +100,7 @@ object Qualification extends Logging {
       format: String, includeCpuPercent:Boolean, numOutputRows: Int): Unit = {
     val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
     if (df.isEmpty) {
-      logWarning("No applications found!")
+      logWarning("No Applications found!")
     } else {
       format match {
         case "csv" =>
