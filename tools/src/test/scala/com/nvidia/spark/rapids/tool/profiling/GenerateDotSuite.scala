@@ -75,7 +75,8 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
             source.close()
           }
         }
-        assert(hashAggCount === 2)
+        // 2 node labels + 1 graph label
+        assert(hashAggCount === 3)
       }
     }
   }
