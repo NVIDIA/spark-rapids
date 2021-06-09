@@ -54,7 +54,10 @@ object Qualification extends Logging {
           logWarning(s"Error parsing JSON, skipping $path")
       }
     }
-    if (apps.isEmpty) return None
+    if (apps.isEmpty) {
+      logWarning("No Applications found that contain SQL!")
+      return None
+    }
     val analysis = new Analysis(apps, None)
     if (includeCpuPercent) {
       val sqlAggMetricsDF = analysis.sqlMetricsAggregationQual()
@@ -97,23 +100,19 @@ object Qualification extends Logging {
   }
 
   def writeQualification(df: DataFrame, outputDir: String,
-      format: String, includeCpuPercent:Boolean, numOutputRows: Int): Unit = {
+      format: String, includeCpuPercent: Boolean, numOutputRows: Int): Unit = {
     val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
-    if (df.isEmpty) {
-      logWarning("No Applications found!")
-    } else {
-      format match {
-        case "csv" =>
-          df.repartition(1).write.option("header", "true").
-            mode("overwrite").csv(finalOutputDir)
-          logInfo(s"Output log location:  $finalOutputDir")
-        case "text" =>
-          val logFileName = "rapids_4_spark_qualification_output.log"
-          val textFileWriter = new ToolTextFileWriter(finalOutputDir, logFileName)
-          textFileWriter.write(df, numOutputRows)
-          textFileWriter.close()
-        case _ => logError("Invalid format")
-      }
+    format match {
+      case "csv" =>
+        df.repartition(1).write.option("header", "true").
+          mode("overwrite").csv(finalOutputDir)
+        logInfo(s"Output log location:  $finalOutputDir")
+      case "text" =>
+        val logFileName = "rapids_4_spark_qualification_output.log"
+        val textFileWriter = new ToolTextFileWriter(finalOutputDir, logFileName)
+        textFileWriter.write(df, numOutputRows)
+        textFileWriter.close()
+      case _ => logError("Invalid format")
     }
   }
 }
