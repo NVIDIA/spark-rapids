@@ -94,17 +94,21 @@ object Qualification extends Logging {
   def writeQualification(df: DataFrame, outputDir: String,
       format: String, includeCpuPercent:Boolean, numOutputRows: Int): Unit = {
     val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
-    format match {
-      case "csv" =>
-        df.repartition(1).write.option("header", "true").
-          mode("overwrite").csv(finalOutputDir)
-        logInfo(s"Output log location:  $finalOutputDir")
-      case "text" =>
-        val logFileName = "rapids_4_spark_qualification_output.log"
-        val textFileWriter = new ToolTextFileWriter(finalOutputDir, logFileName)
-        textFileWriter.write(df, numOutputRows)
-        textFileWriter.close()
-      case _ => logError("Invalid format")
+    if (df.isEmpty) {
+      logWarning("No applications found!")
+    } else {
+      format match {
+        case "csv" =>
+          df.repartition(1).write.option("header", "true").
+            mode("overwrite").csv(finalOutputDir)
+          logInfo(s"Output log location:  $finalOutputDir")
+        case "text" =>
+          val logFileName = "rapids_4_spark_qualification_output.log"
+          val textFileWriter = new ToolTextFileWriter(finalOutputDir, logFileName)
+          textFileWriter.write(df, numOutputRows)
+          textFileWriter.close()
+        case _ => logError("Invalid format")
+      }
     }
   }
 }
