@@ -74,8 +74,11 @@ object Qualification extends Logging {
   def constructQueryQualifyApps(apps: ArrayBuffer[ApplicationInfo],
       includeCpuPercent: Boolean): DataFrame = {
     val query = apps
-      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map { app =>
+      .filter { p =>
+        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
+          p.allDataFrames.contains(s"appDF_${p.index}") &&
+          p.allDataFrames.contains(s"jobDF_${p.index}")
+      }.map { app =>
         includeCpuPercent match {
           case true => "(" + app.qualificationDurationSumSQL + ")"
           case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
