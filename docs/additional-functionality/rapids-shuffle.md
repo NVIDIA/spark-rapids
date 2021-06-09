@@ -5,12 +5,6 @@ parent: Additional Functionality
 nav_order: 5
 ---
 # RAPIDS Shuffle Manager
----
-**NOTE**
-
-The _RAPIDS Shuffle Manager_ is a beta feature!
-
----
 
 The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interface in Apache Spark
 that allows custom mechanisms to exchange shuffle data. It has two components: a spillable cache, 
