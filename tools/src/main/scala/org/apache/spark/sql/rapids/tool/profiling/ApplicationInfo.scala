@@ -339,7 +339,7 @@ class ApplicationInfo(
 
         val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
           durationStr = durationString, sparkVersion = this.sparkVersion,
-          gpuMode = this.gpuMode, endTimeEstimated = this.appEndTime.isEmpty)
+          gpuMode = this.gpuMode, endDurationEstimated = this.appEndTime.isEmpty)
         appStartNew += newApp
       }
       this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
@@ -836,7 +836,7 @@ class ApplicationInfo(
        |sq.sqlID, sq.description,
        |sq.sqlQualDuration as dfDuration,
        |app.duration as appDuration,
-       |app.endTimeEstimated as appEndTimeEstimated,
+       |app.endDurationEstimated as appEndDurationEstimated,
        |problematic as potentialProblems,
        |m.executorCPUTime,
        |m.executorRunTime
@@ -854,7 +854,7 @@ class ApplicationInfo(
        |sum(dfDuration) as `SQL Dataframe Duration`,
        |first(appDuration) as `App Duration`,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`,
-       |first(appEndTimeEstimated) as `App End Time Estimated`
+       |first(appEndDurationEstimated) as `App Duration Estimated`
        |from (${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }
