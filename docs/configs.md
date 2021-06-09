@@ -252,6 +252,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Sin"></a>spark.rapids.sql.expression.Sin|`sin`|Sine|true|None|
 <a name="sql.expression.Sinh"></a>spark.rapids.sql.expression.Sinh|`sinh`|Hyperbolic sine|true|None|
 <a name="sql.expression.Size"></a>spark.rapids.sql.expression.Size|`size`, `cardinality`|The size of an array or a map|true|None|
+<a name="sql.expression.SortArray"></a>spark.rapids.sql.expression.SortArray|`sort_array`|Returns a sorted array with the input array and the ascending / descending order|true|None|
 <a name="sql.expression.SortOrder"></a>spark.rapids.sql.expression.SortOrder| |Sort order|true|None|
 <a name="sql.expression.SparkPartitionID"></a>spark.rapids.sql.expression.SparkPartitionID|`spark_partition_id`|Returns the current partition id|true|None|
 <a name="sql.expression.SpecifiedWindowFrame"></a>spark.rapids.sql.expression.SpecifiedWindowFrame| |Specification of the width of the group (or "frame") of input rows around which a window function is evaluated|true|None|

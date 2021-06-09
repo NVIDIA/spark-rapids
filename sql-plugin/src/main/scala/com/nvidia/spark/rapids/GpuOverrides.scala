@@ -2363,6 +2363,20 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
+    expr[SortArray](
+      "Returns a sorted array with the input array and the ascending / descending order",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.ARRAY.nested(_commonTypes),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array", TypeSig.ARRAY.nested(_commonTypes),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("ascendingOrder", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.lit(TypeEnum.BOOLEAN))),
+      (sortExpression, conf, p, r) => new BinaryExprMeta[SortArray](sortExpression, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuSortArray(lhs, rhs)
+        }
+      }
+    ),
     expr[CreateArray](
       " Returns an array with the given elements",
       ExprChecks.projectNotLambda(
