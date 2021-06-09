@@ -47,14 +47,19 @@ object GenerateDot {
    *
    * @param plan First query plan and metrics
    * @param comparisonPlan Optional second query plan and metrics
-   * @param filename Filename to write dot graph to
+   * @param sqlId id of the SQL query for the dot graph
+   * @param appId Spark application Id
    */
   def generateDotGraph(
-      plan: QueryPlanWithMetrics,
-      comparisonPlan: Option[QueryPlanWithMetrics],
-      fileWriter: ToolTextFileWriter,
-      filename: String): Unit = {
+    plan: QueryPlanWithMetrics,
+    physicalPlanString: String,
+    comparisonPlan: Option[QueryPlanWithMetrics],
+    fileWriter: ToolTextFileWriter,
+    sqlId: Long,
+    appId: String
+  ): Unit = {
 
+    val fileName  = s"$sqlId.dot"
     var nextId = 1
 
     def isGpuPlan(plan: SparkPlanInfo): Boolean = {
@@ -166,8 +171,25 @@ object GenerateDot {
       }
     }
 
+    val leftAlignedLabel =
+      s"""
+         |Application: $appId
+         |Query: $sqlId
+         |
+         |$physicalPlanString"""
+          .stripMargin
+          .replace("\n", "\\l")
+
     // write the dot graph to a file
-    fileWriter.write("digraph G {\n")
+    fileWriter.write(
+      s"""digraph G {
+         |
+         |label="$leftAlignedLabel"
+         |labelloc=b
+         |fontname=Courier
+         |
+         |""".stripMargin)
+
     writeGraph(fileWriter, plan, comparisonPlan.getOrElse(plan), 0)
     fileWriter.write("}\n")
   }
