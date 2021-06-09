@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.tool.profiling
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
+import scala.math.Ordering
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling._
@@ -323,12 +324,21 @@ class ApplicationInfo(
         val durationResult = ProfileUtils.OptionLongMinusLong(this.appEndTime, res.startTime)
         val durationString = durationResult match {
           case Some(i) => UIUtils.formatDuration(i.toLong)
-          case None => ""
+          case None =>
+            ""
         }
 
-        val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
+        val estimatedResult = Option(durationResult.getOrElse {
+          logWarning("Application End Time is unknown, estimating based on job and sql end times!")
+          // estimate the app end with job or sql end times
+          val sqlEndTime = this.sqlEndTime.values.toSeq.sorted(Ordering[Long].reverse).head
+          val jobEndTime = this.jobEndTime.values.toSeq.sorted(Ordering[Long].reverse).head
+          math.max(sqlEndTime, jobEndTime)
+        })
+
+        val newApp = res.copy(endTime = this.appEndTime, duration = estimatedResult,
           durationStr = durationString, sparkVersion = this.sparkVersion,
-          gpuMode = this.gpuMode)
+          gpuMode = this.gpuMode, endTimeEstimated = durationResult.isEmpty)
         appStartNew += newApp
       }
       this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
@@ -825,6 +835,7 @@ class ApplicationInfo(
        |sq.sqlID, sq.description,
        |sq.sqlQualDuration as dfDuration,
        |app.duration as appDuration,
+       |app.endTimeEstimated as appEndTimeEstimated,
        |problematic as potentialProblems,
        |m.executorCPUTime,
        |m.executorRunTime
@@ -841,7 +852,8 @@ class ApplicationInfo(
        |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
        |sum(dfDuration) as `SQL Dataframe Duration`,
        |first(appDuration) as `App Duration`,
-       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`
+       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`,
+       |first(appEndTimeEstimated) as `App End Time Estimated`
        |from (${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }
