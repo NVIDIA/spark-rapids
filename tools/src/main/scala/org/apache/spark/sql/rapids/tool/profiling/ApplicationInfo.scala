@@ -809,7 +809,7 @@ class ApplicationInfo(
        |first(appName) as `App Name`,
        |'$appId' as `App ID`,
        |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Score,
-       |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
+       |concat_ws(",", collect_set(problematic)) as `Potential Problems`,
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
        |first(app.duration) as `App Duration`,
        |first(app.endDurationEstimated) as `App Duration Estimated`
@@ -841,7 +841,7 @@ class ApplicationInfo(
     s"""select first(appName) as `App Name`,
        |'$appId' as `App ID`,
        |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
-       |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
+       |concat_ws(",", collect_set(potentialProblems)) as `Potential Problems`,
        |sum(dfDuration) as `SQL Dataframe Duration`,
        |first(appDuration) as `App Duration`,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`,
