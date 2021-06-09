@@ -455,3 +455,34 @@ def test_window_aggs_for_rows_collect_list():
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct
         from window_collect_table
         ''')
+
+
+# SortExec does not support array type, so sort the result locally.
+@ignore_order(local=True)
+def test_running_window_function_exec_for_all_aggs():
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, _gen_data_for_collect),
+        "window_collect_table",
+        '''
+        select
+          sum(c_int) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_int,
+          min(c_long) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_long,
+          max(c_time) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_time,
+          count(1) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_1,
+          count(*) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_star,
+          row_number() over
+            (partition by a order by b,c_int) as row_num,
+          collect_list(c_float) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_float,
+          collect_list(c_decimal) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal,
+          collect_list(c_struct) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_struct
+        from window_collect_table
+        ''')
+

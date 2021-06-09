@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark311db
 
+import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import org.apache.hadoop.fs.Path
@@ -37,6 +38,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, SortMergeJoinExec}
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPythonExec, FlatMapGroupsInPandasExec, MapInPandasExec, WindowInPandasExec}
+import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python.{GpuPythonUDF, GpuWindowInPandasExecMetaBase}
@@ -77,6 +79,9 @@ class Spark311dbShims extends Spark311Shims {
     }
   }
 
+  override def isWindowFunctionExec(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
+
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[WindowInPandasExec](
@@ -99,6 +104,17 @@ class Spark311dbShims extends Spark311Shims {
             )
           }
         }).disabledByDefault("it only supports row based frame for now"),
+      GpuOverrides.exec[RunningWindowFunctionExec](
+        "Databricks-specific window function exec, for \"running\" windows, " +
+            "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
+        ExecChecks(
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
+                TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
+                    + TypeSig.ARRAY),
+            TypeSig.all),
+          (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
+      ),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
