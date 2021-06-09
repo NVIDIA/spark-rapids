@@ -20,10 +20,11 @@ import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order
-from parquet_write_test import parquet_decimal_struct_gen
 
 enableVectorizedConf = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "true"},
                         {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader" : "false"}]
+allowNegativeDecimalConf = {"spark.sql.legacy.allowNegativeScaleOfDecimal" : "true"}
+decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
 
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
@@ -51,8 +52,7 @@ double_special_cases = [
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
            pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
-           BooleanGen(), DateGen(), TimestampGen(), decimal_gen_default, decimal_gen_scale_precision,
-           decimal_gen_same_scale_precision, decimal_gen_64bit]
+           BooleanGen(), DateGen(), TimestampGen()] + decimal_gens
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -64,7 +64,7 @@ def test_cache_join(data_gen, join_type, enableVectorizedConf):
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count() # populates cache
         return cached
-
+    enableVectorizedConf.update(allowNegativeDecimalConf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -140,10 +140,11 @@ def test_cache_expand_exec(data_gen, enableVectorizedConf):
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
-                                      parquet_decimal_struct_gen] + all_gen, ids=idfn)
+                                      decimal_struct_gen] + all_gen, ids=idfn)
 @pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConf, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(data_gen, enableVectorizedConf):
+    enableVectorizedConf.update(allowNegativeDecimalConf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, data_gen, string_gen)
             .select(f.col("a"), f.col("b"))
@@ -172,7 +173,13 @@ def test_cache_diff_req_order(spark_tmp_path):
 
     with_cpu_session(n_fold)
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+# This test doesn't allow negative scale for Decimals as ` df.write.mode('overwrite').parquet(data_path)`
+# writes parquet which doesn't allow negative decimals
+@pytest.mark.parametrize('data_gen', [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+                                     pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
+                                     pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
+                                     BooleanGen(), DateGen(), TimestampGen(), decimal_gen_default, decimal_gen_scale_precision,
+                                     decimal_gen_same_scale_precision, decimal_gen_64bit], ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enableVectorized', ['true', 'false'], ids=idfn)
 @ignore_order
