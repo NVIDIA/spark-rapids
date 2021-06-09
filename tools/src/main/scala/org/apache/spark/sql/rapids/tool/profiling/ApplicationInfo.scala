@@ -140,7 +140,7 @@ class ApplicationInfo(
   var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
     ArrayBuffer[SparkListenerTaskGettingResult]()
 
-  //Unsupported SQL plan
+  // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
   // From all other events
@@ -524,7 +524,7 @@ class ApplicationInfo(
       // For unsupportedSQLPlanDF
       allDataFrames += (s"unsupportedSQLplan_$index" -> unsupportedSQLplan.toDF)
       if (unsupportedSQLplan.nonEmpty) {
-        logInfo(s"Total ${unsupportedSQLplan.size} Plan node accums for appID=$appId")
+        logInfo(s"Total ${unsupportedSQLplan.size} Unsupported ops for appID=$appId")
       } else {
         logInfo("No unSupportedSQLPlan node accums Found. " +
             "Create an empty node accums DataFrame.")
@@ -748,7 +748,7 @@ class ApplicationInfo(
 
   def getFailedTasks: String = {
     s"""select stageId, stageAttemptId, taskId, attempt,
-       |substr(endReason, 1, 36) as endReason_first36char
+       |substr(endReason, 1, 100) as endReason_first100char
        |from taskDF_$index
        |where successful = false
        |order by stageId, stageAttemptId, taskId, attempt
@@ -782,7 +782,7 @@ class ApplicationInfo(
 
   def getExecutorsRemoved: String = {
     s"""select executorID, time,
-       |substr(reason, 1, 32) reason_first32char
+       |substr(reason, 1, 100) reason_first100char
        |from executorsRemovedDF_$index
        |order by cast(executorID as long)
        |""".stripMargin
