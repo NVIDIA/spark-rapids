@@ -333,8 +333,7 @@ class ApplicationInfo(
         val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
         val durationString = durationResult match {
           case Some(i) => UIUtils.formatDuration(i.toLong)
-          case None =>
-            ""
+          case None => ""
         }
 
         val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,

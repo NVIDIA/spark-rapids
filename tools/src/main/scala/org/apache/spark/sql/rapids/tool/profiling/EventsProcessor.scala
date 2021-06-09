@@ -207,7 +207,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       "",
       "",
       gpuMode = false,
-      false
+      endDurationEstimated = false
     )
     app.appStart += thisAppStart
     app.appId = event.appId.getOrElse("")
