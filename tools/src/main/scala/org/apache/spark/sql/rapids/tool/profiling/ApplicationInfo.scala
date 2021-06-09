@@ -322,13 +322,22 @@ class ApplicationInfo(
       val appStartNew: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
       for (res <- this.appStart) {
 
-        val estimatedResult = Option(this.appEndTime.getOrElse {
-          logWarning("Application End Time is unknown, estimating based on job and sql end times!")
-          // estimate the app end with job or sql end times
-          val sqlEndTime = this.sqlEndTime.values.toSeq.sorted(Ordering[Long].reverse).head
-          val jobEndTime = this.jobEndTime.values.toSeq.sorted(Ordering[Long].reverse).head
-          math.max(sqlEndTime, jobEndTime)
-        })
+        val estimatedResult =
+          this.appEndTime match {
+            case Some(t) => this.appEndTime
+            case None =>
+              if (this.sqlEndTime.isEmpty && this.jobEndTime.isEmpty) {
+                None
+              } else {
+                logWarning("Application End Time is unknown, estimating based on" +
+                  " job and sql end times!")
+                // estimate the app end with job or sql end times
+                val sqlEndTime = if (this.sqlEndTime.isEmpty) 0L else this.sqlEndTime.values.max
+                val jobEndTime = if (this.jobEndTime.isEmpty) 0L else this.jobEndTime.values.max
+                val maxEndTime = math.max(sqlEndTime, jobEndTime)
+                if (maxEndTime == 0) None else Some(maxEndTime)
+              }
+          }
 
         val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
         val durationString = durationResult match {
