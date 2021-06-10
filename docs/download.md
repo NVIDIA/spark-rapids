@@ -72,6 +72,7 @@ New functionality for this release includes:
 * Support for the `concat_ws` operator
 
 Performance improvements for this release include: 
+* Moving RAPIDS Shuffle out of beta
 * Updates to UCX error handling
 * GPU Direct storage for spilling
 
