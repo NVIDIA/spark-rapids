@@ -43,6 +43,8 @@ Generated on 2021-06-10
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#2652](https://github.com/NVIDIA/spark-rapids/issues/2652)|[BUG] No Job Found. Exiting.|
+|[#2659](https://github.com/NVIDIA/spark-rapids/issues/2659)|[FEA] Group profiling tool "Potential Problems"|
 |[#2680](https://github.com/NVIDIA/spark-rapids/issues/2680)|[BUG] cast can throw NPE|
 |[#2628](https://github.com/NVIDIA/spark-rapids/issues/2628)|[BUG] failed to build plugin in databricks runtime 8.2|
 |[#2605](https://github.com/NVIDIA/spark-rapids/issues/2605)|[BUG] test_pandas_map_udf_nested_type failed in Yarn integration|
@@ -83,6 +85,10 @@ Generated on 2021-06-10
 ### PRs
 |||
 |:---|:---|
+|[#2691](https://github.com/NVIDIA/spark-rapids/pull/2691)|Update properties to check if table there|
+|[#2687](https://github.com/NVIDIA/spark-rapids/pull/2687)|Remove CUDA 10.x from getting started guide (#2668)|
+|[#2686](https://github.com/NVIDIA/spark-rapids/pull/2686)|Profiling tool: Print Job Information in compare mode|
+|[#2657](https://github.com/NVIDIA/spark-rapids/pull/2657)|Print CPU and GPU output when _assert_equal fails to help debug given…|
 |[#2681](https://github.com/NVIDIA/spark-rapids/pull/2681)|Avoid NPE when casting empty strings to ints|
 |[#2669](https://github.com/NVIDIA/spark-rapids/pull/2669)|Fix multiple problems reported and improve error handling|
 |[#2666](https://github.com/NVIDIA/spark-rapids/pull/2666)|[DOC]Update custom image guide in GCP dataproc to reduce cluster startup time|
