@@ -1,11 +1,12 @@
 # Change log
-Generated on 2021-06-09
+Generated on 2021-06-10
 
 ## Release 21.06
 
 ### Features
 |||
 |:---|:---|
+|[#2483](https://github.com/NVIDIA/spark-rapids/issues/2483)|[FEA] Profiling and qualification tool|
 |[#951](https://github.com/NVIDIA/spark-rapids/issues/951)|[FEA] Create Cloudera shim layer|
 |[#2481](https://github.com/NVIDIA/spark-rapids/issues/2481)|[FEA] Support Spark 3.1.2|
 |[#2530](https://github.com/NVIDIA/spark-rapids/issues/2530)|[FEA] Add support for Struct columns in CoalesceExec|
@@ -35,7 +36,6 @@ Generated on 2021-06-09
 |||
 |:---|:---|
 |[#1445](https://github.com/NVIDIA/spark-rapids/issues/1445)|[FEA] GDS Integration|
-|[#2480](https://github.com/NVIDIA/spark-rapids/issues/2480)|[DOC] Split UCX docker examples into dockerfiles and add CentOS example|
 |[#1588](https://github.com/NVIDIA/spark-rapids/issues/1588)|Rapids shuffle - UCX active messages|
 |[#2367](https://github.com/NVIDIA/spark-rapids/issues/2367)|[FEA] CBO: Implement costs for memory access and launching kernels|
 |[#2431](https://github.com/NVIDIA/spark-rapids/issues/2431)|[FEA] CBO should show benefits with q24b with decimals enabled|
@@ -43,6 +43,7 @@ Generated on 2021-06-09
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#2680](https://github.com/NVIDIA/spark-rapids/issues/2680)|[BUG] cast can throw NPE|
 |[#2628](https://github.com/NVIDIA/spark-rapids/issues/2628)|[BUG] failed to build plugin in databricks runtime 8.2|
 |[#2605](https://github.com/NVIDIA/spark-rapids/issues/2605)|[BUG] test_pandas_map_udf_nested_type failed in Yarn integration|
 |[#2622](https://github.com/NVIDIA/spark-rapids/issues/2622)|[BUG] compressed event logs are not processed|
@@ -82,6 +83,14 @@ Generated on 2021-06-09
 ### PRs
 |||
 |:---|:---|
+|[#2681](https://github.com/NVIDIA/spark-rapids/pull/2681)|Avoid NPE when casting empty strings to ints|
+|[#2669](https://github.com/NVIDIA/spark-rapids/pull/2669)|Fix multiple problems reported and improve error handling|
+|[#2666](https://github.com/NVIDIA/spark-rapids/pull/2666)|[DOC]Update custom image guide in GCP dataproc to reduce cluster startup time|
+|[#2665](https://github.com/NVIDIA/spark-rapids/pull/2665)|Update docs to move RAPIDS Shuffle out of beta [skip ci]|
+|[#2671](https://github.com/NVIDIA/spark-rapids/pull/2671)|Clean profiling&qualification tool README|
+|[#2673](https://github.com/NVIDIA/spark-rapids/pull/2673)|Profiling tool: Enable tests and update compressed event log|
+|[#2672](https://github.com/NVIDIA/spark-rapids/pull/2672)|Update cudfjni dependency version to 21.06.0|
+|[#2663](https://github.com/NVIDIA/spark-rapids/pull/2663)|Qualification tool - add in estimating the App end time when the event log missing application end event|
 |[#2600](https://github.com/NVIDIA/spark-rapids/pull/2600)|Accelerate `RunningWindow` queries on GPU|
 |[#2651](https://github.com/NVIDIA/spark-rapids/pull/2651)|Profiling tool - fix reporting contains dataset when sql time 0|
 |[#2623](https://github.com/NVIDIA/spark-rapids/pull/2623)|Fixed minor mistakes in documentation|
