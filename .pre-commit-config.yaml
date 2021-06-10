@@ -25,5 +25,6 @@ repos:
     rev: v4.0.1
     hooks:
       - id: check-added-large-files
+        name: Reject files over 50M
         args: ['--maxkb=51200', '--enforce-all']
 
