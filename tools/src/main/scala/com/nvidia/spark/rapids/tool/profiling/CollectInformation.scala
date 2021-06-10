@@ -44,7 +44,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
         app.runQuery(query = app.generateAppInfo, fileWriter = fileWriter,
           messageHeader = messageHeader)
       } else {
-        fileWriter.foreach(_.write("No Application Information Found!"))
+        fileWriter.foreach(_.write("No Application Information Found!\n"))
       }
     }
   }
@@ -75,7 +75,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
         app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
-        fileWriter.foreach(_.write("No Executor Information Found!"))
+        fileWriter.foreach(_.write("No Executor Information Found!\n"))
       }
     }
   }
@@ -88,7 +88,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
         app.runQuery(query = app.jobtoStagesSQL,
         fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
-        fileWriter.foreach(_.write("No Job Information Found!"))
+        fileWriter.foreach(_.write("No Job Information Found!\n"))
       }
     }
   }

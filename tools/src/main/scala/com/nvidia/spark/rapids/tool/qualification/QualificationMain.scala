@@ -59,7 +59,7 @@ object QualificationMain extends Logging {
       numOutputRows, sparkSession, includeCpuPercent, dropTempViews)
     if (writeOutput && dfOpt.isDefined) {
       if (dfOpt.get.isEmpty) {
-        logWarning(s"No Applications with SQL found in events logs: ${allPaths.mkString(",")}")
+        logWarning(s"No Applications with SQL found in events logs: ${allPaths.mkString(", ")}")
       } else {
         Qualification.writeQualification(dfOpt.get, outputDirectory,
           appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)

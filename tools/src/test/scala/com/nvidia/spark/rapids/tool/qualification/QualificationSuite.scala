@@ -75,7 +75,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
             .add("executorCPURatio",DoubleType,true)
             .add("appEndDurationEstimated",BooleanType,true)
           val dfExpectOrig =
-            ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(), Some(schema))
+            ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(),
+              Some(schema))
           val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
           assert(dfQualOpt.isDefined)
           ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)

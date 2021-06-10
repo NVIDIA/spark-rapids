@@ -90,7 +90,7 @@ object Qualification extends Logging {
       }.mkString(" union ")
     if (qualApps.nonEmpty) {
       logWarning("The following event logs were skipped: " +
-        s"${nonQualApps.map(_.eventlog).mkString(",")}")
+        s"${nonQualApps.map(_.eventlog).mkString(", ")}")
     }
     if (query.nonEmpty) {
       apps.head.runQuery(query + " order by Score desc, `App Duration` desc")

@@ -101,7 +101,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
         apps.head.runQuery(query + " order by appIndex, Duration desc",
           false, fileWriter, messageHeader)
       } else {
-        fileWriter.foreach(_.write("Unable to calculate Job and Stage Metrics"))
+        fileWriter.foreach(_.write("Unable to calculate Job and Stage Metrics\n"))
         apps.head.sparkSession.emptyDataFrame
       }
     }
@@ -140,7 +140,7 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
         apps.head.runQuery(query + " order by appIndex, Duration desc", false,
           fileWriter, messageHeader)
       } else {
-        fileWriter.foreach(_.write("Unable to aggregate SQL task Metrics"))
+        fileWriter.foreach(_.write("Unable to aggregate SQL task Metrics\n"))
         apps.head.sparkSession.emptyDataFrame
       }
     }
