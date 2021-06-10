@@ -88,7 +88,7 @@ object Qualification extends Logging {
           case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
         }
       }.mkString(" union ")
-    if (qualApps.nonEmpty) {
+    if (nonQualApps.nonEmpty) {
       logWarning("The following event logs were skipped: " +
         s"${nonQualApps.map(_.eventlog).mkString(", ")}")
     }
