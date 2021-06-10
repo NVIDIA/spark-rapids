@@ -23,6 +23,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -54,7 +55,10 @@ object Qualification extends Logging {
           logWarning(s"Error parsing JSON, skipping $path")
       }
     }
-    if (apps.isEmpty) return None
+    if (apps.isEmpty) {
+      logWarning("No Applications found that contain SQL!")
+      return None
+    }
     val analysis = new Analysis(apps, None)
     if (includeCpuPercent) {
       val sqlAggMetricsDF = analysis.sqlMetricsAggregationQual()
@@ -63,37 +67,45 @@ object Qualification extends Logging {
       sqlAggMetricsDF.count()
     }
 
-    val df = constructQueryQualifyApps(apps, includeCpuPercent)
+    val dfOpt = constructQueryQualifyApps(apps, includeCpuPercent)
     if (dropTempViews) {
       sparkSession.catalog.dropTempView("sqlAggMetricsDF")
       apps.foreach( _.dropAllTempViews())
     }
-    Some(df)
+    dfOpt
   }
 
   def constructQueryQualifyApps(apps: ArrayBuffer[ApplicationInfo],
-      includeCpuPercent: Boolean): DataFrame = {
-    val query = apps
-      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map { app =>
+      includeCpuPercent: Boolean): Option[DataFrame] = {
+    val (qualApps, nonQualApps) = apps
+      .partition { p =>
+        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
+          p.allDataFrames.contains(s"appDF_${p.index}") &&
+          p.allDataFrames.contains(s"jobDF_${p.index}")
+      }
+    val query = qualApps.map { app =>
         includeCpuPercent match {
           case true => "(" + app.qualificationDurationSumSQL + ")"
           case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
         }
       }.mkString(" union ")
+    if (nonQualApps.nonEmpty) {
+      logWarning("The following event logs were skipped: " +
+        s"${nonQualApps.map(_.eventlog).mkString(", ")}")
+    }
     if (query.nonEmpty) {
-      apps.head.runQuery(query + " order by Score desc, `App Duration` desc")
+      Some(apps.head.runQuery(query + " order by Score desc, `App Duration` desc"))
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      None
     }
   }
 
   def writeQualification(df: DataFrame, outputDir: String,
-      format: String, includeCpuPercent:Boolean, numOutputRows: Int): Unit = {
+      format: String, includeCpuPercent: Boolean, numOutputRows: Int): Unit = {
     val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
     format match {
       case "csv" =>
-        df.repartition(1).write.option("header", "true").
+        df.repartition(1).sortWithinPartitions(desc("Score")).write.option("header", "true").
           mode("overwrite").csv(finalOutputDir)
         logInfo(s"Output log location:  $finalOutputDir")
       case "text" =>

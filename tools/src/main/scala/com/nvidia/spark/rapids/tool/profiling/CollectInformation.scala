@@ -40,8 +40,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
     for (app <- apps) {
-      app.runQuery(query = app.generateAppInfo, fileWriter = fileWriter,
-        messageHeader = messageHeader)
+      if (app.allDataFrames.contains(s"appDF_${app.index}")) {
+        app.runQuery(query = app.generateAppInfo, fileWriter = fileWriter,
+          messageHeader = messageHeader)
+      } else {
+        fileWriter.foreach(_.write("No Application Information Found!\n"))
+      }
     }
   }
 
@@ -67,8 +71,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printExecutorInfo(): Unit = {
     val messageHeader = "\nExecutor Information:\n"
     for (app <- apps) {
-      app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
-        fileWriter = fileWriter, messageHeader = messageHeader)
+      if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
+        app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
+          fileWriter = fileWriter, messageHeader = messageHeader)
+      } else {
+        fileWriter.foreach(_.write("No Executor Information Found!\n"))
+      }
     }
   }
 
@@ -76,8 +84,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printJobInfo(): Unit = {
     val messageHeader = "\nJob Information:\n"
     for (app <- apps) {
-      app.runQuery(query = app.jobtoStagesSQL,
+      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
+        app.runQuery(query = app.jobtoStagesSQL,
         fileWriter = fileWriter, messageHeader = messageHeader)
+      } else {
+        fileWriter.foreach(_.write("No Job Information Found!\n"))
+      }
     }
   }
 
@@ -155,7 +167,9 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
     for (app <- apps){
       if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
         app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}")) {
+        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
+        app.allDataFrames.contains(s"jobDF_${app.index}") &&
+        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
         val messageHeader = "\nSQL Plan Metrics for Application:\n"
         val accums = app.runQuery(app.generateSQLAccums, fileWriter = fileWriter,
           messageHeader=messageHeader)
