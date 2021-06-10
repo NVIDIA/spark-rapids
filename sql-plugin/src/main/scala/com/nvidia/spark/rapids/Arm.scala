@@ -31,6 +31,15 @@ trait Arm {
     }
   }
 
+  /** Executes the provided code block and then closes the Option[resource] */
+  def withResource[T <: AutoCloseable, V](r: Option[T])(block: Option[T] => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.foreach(_.close())
+    }
+  }
+
   /** Executes the provided code block and then closes the sequence of resources */
   def withResource[T <: AutoCloseable, V](r: Seq[T])(block: Seq[T] => V): V = {
     try {
@@ -110,6 +119,23 @@ trait Arm {
     } catch {
       case t: Throwable =>
         r.safeClose(t)
+        throw t
+    }
+  }
+
+
+  /** Executes the provided code block, freeing the RapidsBuffer only if an exception occurs */
+  def freeOnExcept[T <: RapidsBuffer, V](r: T)(block: T => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        try {
+          r.free()
+        } catch {
+          case e: Throwable =>
+            t.addSuppressed(e)
+        }
         throw t
     }
   }

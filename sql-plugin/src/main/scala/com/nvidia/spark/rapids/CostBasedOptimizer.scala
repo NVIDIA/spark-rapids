@@ -19,31 +19,51 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
-import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, ProjectExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
+import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
 import org.apache.spark.sql.execution.adaptive.{CustomShuffleReaderExec, QueryStageExec}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
-import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 
-class CostBasedOptimizer(conf: RapidsConf) extends Logging {
+/**
+ * Optimizer that can operate on a physical query plan.
+ */
+trait Optimizer {
 
-  // the intention is to make the cost model pluggable since we are probably going to need to
-  // experiment a fair bit with this part
-  private val costModel = new DefaultCostModel(conf)
+  /**
+   * Apply optimizations to a query plan.
+   *
+   * @param conf Rapids configuration
+   * @param plan The plan to optimize
+   * @return A list of optimizations that were applied
+   */
+  def optimize(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Seq[Optimization]
+}
+
+/**
+ * Experimental cost-based optimizer that aims to avoid moving sections of the plan to the GPU when
+ * it would be better to keep that part of the plan on the CPU. For example, we don't want to move
+ * data to the GPU just for a trivial projection and then have to move data back to the CPU on the
+ * next step.
+ */
+class CostBasedOptimizer extends Optimizer with Logging {
 
   /**
    * Walk the plan and determine CPU and GPU costs for each operator and then make decisions
    * about whether operators should run on CPU or GPU.
    *
+   * @param conf Rapids configuration
    * @param plan The plan to optimize
    * @return A list of optimizations that were applied
    */
-  def optimize(plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
+  def optimize(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
+    val cpuCostModel = new CpuCostModel(conf)
+    val gpuCostModel = new GpuCostModel(conf)
     val optimizations = new ListBuffer[Optimization]()
-    recursivelyOptimize(plan, optimizations, finalOperator = true)
+    recursivelyOptimize(conf, cpuCostModel, gpuCostModel, plan, optimizations, finalOperator = true)
     optimizations
   }
 
@@ -60,6 +80,9 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
    *         tree beneath it that is a candidate for optimization.
    */
   private def recursivelyOptimize(
+      conf: RapidsConf,
+      cpuCostModel: CostModel,
+      gpuCostModel: CostModel,
       plan: SparkPlanMeta[SparkPlan],
       optimizations: ListBuffer[Optimization],
       finalOperator: Boolean): (Double, Double) = {
@@ -67,14 +90,18 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     // get the CPU and GPU cost of the child plan(s)
     val childCosts = plan.childPlans
         .map(child => recursivelyOptimize(
-          child.asInstanceOf[SparkPlanMeta[SparkPlan]],
+          conf,
+          cpuCostModel,
+          gpuCostModel,
+          child,
           optimizations,
           finalOperator = false))
 
     val (childCpuCosts, childGpuCosts) = childCosts.unzip
 
     // get the CPU and GPU cost of this operator (excluding cost of children)
-    val (operatorCpuCost, operatorGpuCost) = costModel.applyCost(plan)
+    val operatorCpuCost = cpuCostModel.getCost(plan)
+    val operatorGpuCost = gpuCostModel.getCost(plan)
 
     // calculate total (this operator + children)
     val totalCpuCost = operatorCpuCost + childCpuCosts.sum
@@ -97,16 +124,16 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
         // at least one child is transitioning from CPU to GPU so we calculate the
         // transition costs
         val transitionCost = plan.childPlans.filter(!_.canThisBeReplaced)
-            .map(costModel.transitionToGpuCost).sum
+            .map(transitionToGpuCost(conf, _)).sum
 
         // if the GPU cost including transition is more than the CPU cost then avoid this
         // transition and reset the GPU cost
-        if (operatorGpuCost + transitionCost > operatorCpuCost && !consumesQueryStage(plan)) {
+        if (operatorGpuCost + transitionCost > operatorCpuCost && !isExchangeOp(plan)) {
           // avoid transition and keep this operator on CPU
           optimizations.append(AvoidTransition(plan))
           plan.costPreventsRunningOnGpu()
           // reset GPU cost
-          totalGpuCost = totalCpuCost;
+          totalGpuCost = totalCpuCost
         } else {
           // add transition cost to total GPU cost
           totalGpuCost += transitionCost
@@ -118,13 +145,13 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
         plan.childPlans.zip(childCosts).foreach {
           case (child, childCosts) =>
             val (childCpuCost, childGpuCost) = childCosts
-            val transitionCost = costModel.transitionToCpuCost(child)
+            val transitionCost = transitionToCpuCost(conf, child)
             val childGpuTotal = childGpuCost + transitionCost
-            if (child.canThisBeReplaced && !consumesQueryStage(child)
+            if (child.canThisBeReplaced && !isExchangeOp(child)
                 && childGpuTotal > childCpuCost) {
               // force this child plan back onto CPU
               optimizations.append(ReplaceSection(
-                child.asInstanceOf[SparkPlanMeta[SparkPlan]], totalCpuCost, totalGpuCost))
+                child, totalCpuCost, totalGpuCost))
               child.recursiveCostPreventsRunningOnGpu()
             }
         }
@@ -132,7 +159,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
         // recalculate the transition costs because child plans may have changed
         val transitionCost = plan.childPlans
             .filter(_.canThisBeReplaced)
-            .map(costModel.transitionToCpuCost).sum
+            .map(transitionToCpuCost(conf, _)).sum
         totalGpuCost += transitionCost
       }
     }
@@ -140,13 +167,13 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     // special behavior if this is the final operator in the plan because we always have the
     // cost of going back to CPU at the end
     if (finalOperator && plan.canThisBeReplaced) {
-      totalGpuCost += costModel.transitionToCpuCost(plan)
+      totalGpuCost += transitionToCpuCost(conf, plan)
     }
 
     if (totalGpuCost > totalCpuCost) {
       // we have reached a point where we have transitioned onto GPU for part of this
       // plan but with no benefit from doing so, so we want to undo this and go back to CPU
-      if (plan.canThisBeReplaced && !consumesQueryStage(plan)) {
+      if (plan.canThisBeReplaced && !isExchangeOp(plan)) {
         // this plan would have been on GPU so we move it and onto CPU and recurse down
         // until we reach a part of the plan that is already on CPU and then stop
         optimizations.append(ReplaceSection(plan, totalCpuCost, totalGpuCost))
@@ -156,7 +183,7 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
       }
     }
 
-    if (!plan.canThisBeReplaced || consumesQueryStage(plan)) {
+    if (!plan.canThisBeReplaced || isExchangeOp(plan)) {
       // reset the costs because this section of the plan was not moved to GPU
       totalGpuCost = totalCpuCost
     }
@@ -164,16 +191,37 @@ class CostBasedOptimizer(conf: RapidsConf) extends Logging {
     (totalCpuCost, totalGpuCost)
   }
 
+  private def transitionToGpuCost(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Double = {
+    val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
+      .getOrElse(conf.defaultRowCount.toDouble)
+    val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
+    conf.getGpuOperatorCost("GpuRowToColumnarExec").getOrElse(0d) * rowCount +
+      MemoryCostHelper.calculateCost(dataSize, conf.cpuReadMemorySpeed) +
+      MemoryCostHelper.calculateCost(dataSize, conf.gpuWriteMemorySpeed)
+  }
+
+  private def transitionToCpuCost(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Double = {
+    val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
+      .getOrElse(conf.defaultRowCount.toDouble)
+    val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
+    conf.getGpuOperatorCost("GpuColumnarToRowExec").getOrElse(0d) * rowCount +
+      MemoryCostHelper.calculateCost(dataSize, conf.gpuReadMemorySpeed) +
+      MemoryCostHelper.calculateCost(dataSize, conf.cpuWriteMemorySpeed)
+  }
+
   /**
-   * Determines whether the specified operator will read from a query stage.
+   * Determines whether the specified operator is an exchange, or will read from an
+   * exchange / query stage. CBO needs to avoid moving these operators back onto
+   * CPU because it could result in an invalid plan.
    */
-  private def consumesQueryStage(plan: SparkPlanMeta[_]): Boolean = {
+  private def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the
     // next operator on GPU in these cases
     SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
         case _: CustomShuffleReaderExec
              | _: ShuffledHashJoinExec
              | _: BroadcastHashJoinExec
+             | _: BroadcastExchangeExec
              | _: BroadcastNestedLoopJoinExec => true
         case _ => false
       })
@@ -191,87 +239,133 @@ trait CostModel {
    * @param plan Operator
    * @return (cpuCost, gpuCost)
    */
-  def applyCost(plan: SparkPlanMeta[_]): (Double, Double)
+  def getCost(plan: SparkPlanMeta[_]): Double
 
-  /**
-   * Determine the cost of transitioning data from CPU to GPU for a specific operator
-   * @param plan Operator
-   * @return Cost
-   */
-  def transitionToGpuCost(plan: SparkPlanMeta[_]): Double
-
-  /**
-   * Determine the cost of transitioning data from GPU to CPU for a specific operator
-   */
-  def transitionToCpuCost(plan: SparkPlanMeta[_]): Double
 }
 
-class DefaultCostModel(conf: RapidsConf) extends CostModel {
+class CpuCostModel(conf: RapidsConf) extends CostModel {
 
-  def transitionToGpuCost(plan: SparkPlanMeta[_]) = {
-    // this is a placeholder for now - we would want to try and calculate the transition cost
-    // based on the data types and size (if known)
-    conf.defaultTransitionToGpuCost
+  def getCost(plan: SparkPlanMeta[_]): Double = {
+
+    val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
+      .getOrElse(conf.defaultRowCount.toDouble)
+
+    val operatorCost = plan.conf
+      .getCpuOperatorCost(plan.wrapped.getClass.getSimpleName)
+      .getOrElse(conf.defaultCpuOperatorCost) * rowCount
+
+    val exprEvalCost = plan.childExprs
+      .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
+      .sum
+
+    operatorCost + exprEvalCost
   }
 
-  def transitionToCpuCost(plan: SparkPlanMeta[_]) = {
-    // this is a placeholder for now - we would want to try and calculate the transition cost
-    // based on the data types and size (if known)
-    conf.defaultTransitionToCpuCost
-  }
-
-  override def applyCost(plan: SparkPlanMeta[_]): (Double, Double) = {
-
-    // for now we have a constant cost for CPU operations and we make the GPU cost relative
-    // to this but later we may want to calculate actual CPU costs
-    val cpuCost = 1.0
-
-    // always check for user overrides first
-    val gpuCost = plan.conf.getOperatorCost(plan.wrapped.getClass.getSimpleName).getOrElse {
-      plan.wrapped match {
-        case _: ProjectExec =>
-          // the cost of a projection is the average cost of its expressions
-          plan.childExprs
-              .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]]))
-              .sum / plan.childExprs.length
-
-        case _: ShuffleExchangeExec =>
-          // setting the GPU cost of ShuffleExchangeExec to 1.0 avoids moving from CPU to GPU for
-          // a shuffle. This must happen before the join consistency or we risk running into issues
-          // with disabling one exchange that would make a join inconsistent
-          1.0
-
-        case _ => conf.defaultOperatorCost
-      }
+  private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
+    if (MemoryCostHelper.isExcludedFromCost(expr)) {
+      return 0d
     }
 
-    plan.cpuCost = cpuCost
-    plan.gpuCost = gpuCost
+    val memoryReadCost = expr.wrapped match {
+      case _: Alias =>
+        // alias has no cost, we just evaluate the cost of the aliased expression
+        exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
 
-    (cpuCost, gpuCost)
+      case _: AttributeReference | _: GetStructField =>
+        MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount.toLong), conf.cpuReadMemorySpeed)
+
+      case _ =>
+        expr.childExprs
+          .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
+    }
+
+    // the output of evaluating the expression needs to be written out to rows
+    val memoryWriteCost = MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
+      expr.dataType, nullable = false, rowCount.toLong), conf.cpuWriteMemorySpeed)
+
+    // optional additional per-row overhead of evaluating the expression
+    val exprEvalCost = rowCount *
+      expr.conf.getCpuExpressionCost(expr.getClass.getSimpleName)
+        .getOrElse(conf.defaultCpuExpressionCost)
+
+    exprEvalCost + memoryReadCost + memoryWriteCost
+  }
+}
+
+class GpuCostModel(conf: RapidsConf) extends CostModel {
+
+  def getCost(plan: SparkPlanMeta[_]): Double = {
+    val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
+      .getOrElse(conf.defaultRowCount.toDouble)
+
+    val operatorCost = plan.conf
+      .getGpuOperatorCost(plan.wrapped.getClass.getSimpleName)
+      .getOrElse(conf.defaultGpuOperatorCost) * rowCount
+
+    val exprEvalCost = plan.childExprs
+      .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
+      .sum
+
+    operatorCost + exprEvalCost
   }
 
-  private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]): Double = {
-    // always check for user overrides first
-    expr.conf.getExpressionCost(expr.getClass.getSimpleName).getOrElse {
-      expr match {
-        case cast: CastExprMeta[_] =>
-          // different CAST operations have different costs, so we allow these to be configured
-          // based on the data types involved
-          expr.conf.getExpressionCost(s"Cast${cast.fromType}To${cast.toType}")
-              .getOrElse(conf.defaultExpressionCost)
-        case _ =>
-          // many of our BaseExprMeta implementations are anonymous classes so we look directly at
-          // the wrapped expressions in some cases
-          expr.wrapped match {
-            case _: AttributeReference => 1.0 // no benefit on GPU
-            case Alias(_: AttributeReference, _) => 1.0 // no benefit on GPU
-            case _ => conf.defaultExpressionCost
-          }
-      }
+  private def exprCost[INPUT <: Expression](expr: BaseExprMeta[INPUT], rowCount: Double): Double = {
+    if (MemoryCostHelper.isExcludedFromCost(expr)) {
+      return 0d
+    }
+
+    var memoryReadCost = 0d
+    var memoryWriteCost = 0d
+
+    expr.wrapped match {
+      case _: Alias =>
+        // alias has no cost, we just evaluate the cost of the aliased expression
+        exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
+
+      case _: AttributeReference =>
+        // referencing an existing column on GPU is almost free since we're
+        // just increasing a reference count and not actually copying any data
+
+      case _ =>
+        memoryReadCost = expr.childExprs
+          .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
+
+        memoryWriteCost += MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount.toLong), conf.gpuWriteMemorySpeed)
+    }
+
+    // optional additional per-row overhead of evaluating the expression
+    val exprEvalCost = rowCount *
+      expr.conf.getGpuExpressionCost(expr.getClass.getSimpleName)
+        .getOrElse(conf.defaultGpuExpressionCost)
+
+    exprEvalCost + memoryReadCost + memoryWriteCost
+  }
+}
+
+object MemoryCostHelper {
+  private val GIGABYTE = 1024d * 1024d * 1024d
+
+  /**
+   * Calculate the cost (time) of transferring data at a given memory speed.
+   *
+   * @param dataSize Size of data to transfer, in bytes.
+   * @param memorySpeed Memory speed, in GB/s.
+   * @return Time in seconds.
+   */
+  def calculateCost(dataSize: Long, memorySpeed: Double): Double = {
+    (dataSize / GIGABYTE) / memorySpeed
+  }
+
+  def isExcludedFromCost[INPUT <: Expression](expr: BaseExprMeta[INPUT]) = {
+    expr.wrapped match {
+      case _: WindowSpecDefinition | _: WindowFrame =>
+        // Window expressions are Unevaluable and accessing dataType causes an exception
+        true
+      case _ => false
     }
   }
-
 }
 
 /**
@@ -285,7 +379,7 @@ object RowCountPlanVisitor {
 
   def visit(plan: SparkPlanMeta[_]): Option[BigInt] = plan.wrapped match {
     case p: QueryStageExec =>
-      ShimLoader.getSparkShims.getQueryStageRuntimeStatistics(p).rowCount
+      p.getRuntimeStatistics.rowCount
     case GlobalLimitExec(limit, _) =>
       visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
     case LocalLimitExec(limit, _) =>

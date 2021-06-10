@@ -27,13 +27,13 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
-import org.apache.spark.sql.catalyst.plans.physical.{HashPartitioning, Partitioning, RoundRobinPartitioning}
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RoundRobinPartitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StringType, StructType}
+import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
@@ -60,21 +60,9 @@ class GpuShuffleMeta(
         shuffle.output.map(_.dataType)
             .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
             .foreach { dataType =>
-              willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType")
+              willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType to run " +
+                  s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")
             }
-      case _: HashPartitioning =>
-        val hasArraysOfNested = TrampolineUtil.dataTypeExistsRecursively(shuffle.schema,
-          {
-            case ArrayType(et, _) => et match {
-              case _: ArrayType | _: MapType | _: StringType | _: StructType => true
-              case _ => false
-            }
-            case _ => false
-          })
-        if (hasArraysOfNested) {
-          willNotWorkOnGpu("hash partitioning does not support array of arrays, " +
-              "maps, strings, or structs")
-        }
       case _ =>
     }
   }
@@ -84,6 +72,24 @@ class GpuShuffleMeta(
       childParts.head.convertToGpu(),
       childPlans.head.convertIfNeeded(),
       Some(shuffle))
+}
+
+
+/**
+ * Performs a shuffle that will result in the desired partitioning.
+ */
+abstract class GpuShuffleExchangeExecBaseWithMetrics(
+    outputPartitioning: Partitioning,
+    child: SparkPlan) extends GpuShuffleExchangeExecBase(outputPartitioning, child) {
+
+  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
+  @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
+    if (inputBatchRDD.getNumPartitions == 0) {
+      Future.successful(null)
+    } else {
+      sparkContext.submitMapStage(shuffleDependencyColumnar)
+    }
+  }
 }
 
 /**
@@ -116,15 +122,6 @@ abstract class GpuShuffleExchangeExecBase(
   ) ++ additionalMetrics
 
   override def nodeName: String = "GpuColumnarExchange"
-
-  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
-  @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
-    if (inputBatchRDD.getNumPartitions == 0) {
-      Future.successful(null)
-    } else {
-      sparkContext.submitMapStage(shuffleDependencyColumnar)
-    }
-  }
 
   def shuffleDependency : ShuffleDependency[Int, InternalRow, InternalRow] = {
     throw new IllegalStateException()

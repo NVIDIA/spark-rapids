@@ -1,0 +1,2 @@
+appIndex,App ID,sqlID,SQL Duration,Contains Dataset Op,App Duration,Potential Problems,Executor CPU Time Percent
+1,application_1603128018386_7759,0,11042,false,119990,"-",68.48

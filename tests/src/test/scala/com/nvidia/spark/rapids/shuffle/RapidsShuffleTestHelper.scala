@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle
 
+import java.nio.ByteBuffer
 import java.util.concurrent.Executor
 
 import scala.collection.mutable.ArrayBuffer
@@ -148,7 +149,6 @@ class RapidsShuffleTestHelper extends FunSuite
       mockTransport,
       mockExecutor,
       mockCopyExecutor,
-      1024,
       mockStorage,
       mockCatalog))
   }
@@ -179,27 +179,25 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
   }
 
   def mockMetaResponse(
-      mockTransport: RapidsShuffleTransport,
+      mockTransaction: Transaction,
       numRows: Long,
-      numBatches: Int,
-      maximumResponseSize: Long = 10000): Seq[TableMeta] =
+      numBatches: Int): (Seq[TableMeta], RefCountedDirectByteBuffer) =
     withMockContiguousTable(numRows) { ct =>
       val tableMetas = (0 until numBatches).map(b => buildMockTableMeta(b, ct))
-      val res = ShuffleMetadata.buildMetaResponse(tableMetas, maximumResponseSize)
+      val res = ShuffleMetadata.buildMetaResponse(tableMetas)
       val refCountedRes = new RefCountedDirectByteBuffer(res)
-      when(mockTransport.getMetaBuffer(any())).thenReturn(refCountedRes)
-      tableMetas
+      when(mockTransaction.releaseMessage()).thenReturn(refCountedRes)
+      (tableMetas, refCountedRes)
     }
 
   def mockDegenerateMetaResponse(
-      mockTransport: RapidsShuffleTransport,
-      numBatches: Int,
-      maximumResponseSize: Long = 10000): Seq[TableMeta] = {
-    val tableMetas = (0 until numBatches).map(_ => buildDegenerateMockTableMeta())
-    val res = ShuffleMetadata.buildMetaResponse(tableMetas, maximumResponseSize)
+      mockTransaction: Transaction,
+      numBatches: Int): (Seq[TableMeta], RefCountedDirectByteBuffer) = {
+    val tableMetas = (0 until numBatches).map(b => buildDegenerateMockTableMeta())
+    val res = ShuffleMetadata.buildMetaResponse(tableMetas)
     val refCountedRes = new RefCountedDirectByteBuffer(res)
-    when(mockTransport.getMetaBuffer(any())).thenReturn(refCountedRes)
-    tableMetas
+    when(mockTransaction.releaseMessage()).thenReturn(refCountedRes)
+    (tableMetas, refCountedRes)
   }
 
   def prepareMetaTransferRequest(numTables: Int, numRows: Long): RefCountedDirectByteBuffer =
@@ -207,7 +205,7 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
       val tableMetaTags = (0 until numTables).map { t =>
         (buildMockTableMeta(t, ct), t.toLong)
       }
-      val trBuffer = ShuffleMetadata.buildTransferRequest(1, 123, tableMetaTags)
+      val trBuffer = ShuffleMetadata.buildTransferRequest(tableMetaTags)
       val refCountedRes = new RefCountedDirectByteBuffer(trBuffer)
       refCountedRes
     }
@@ -218,14 +216,14 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
     }
 
   def prepareMetaTransferResponse(
-      mockTransport: RapidsShuffleTransport,
+      mockTransaction: Transaction,
       numRows: Long): TableMeta =
     withMockContiguousTable(numRows) { ct =>
       val tableMeta = buildMockTableMeta(1, ct)
       val bufferMeta = tableMeta.bufferMeta()
       val res = ShuffleMetadata.buildBufferTransferResponse(Seq(bufferMeta))
       val refCountedRes = new RefCountedDirectByteBuffer(res)
-      when(mockTransport.getMetaBuffer(any())).thenReturn(refCountedRes)
+      when(mockTransaction.releaseMessage()).thenReturn(refCountedRes)
       tableMeta
     }
 
@@ -259,16 +257,8 @@ class ImmediateExecutor extends Executor {
 }
 
 class MockConnection(mockTransaction: Transaction) extends ClientConnection {
-  val requests = new ArrayBuffer[AddressLengthTag]
+  var requests: Int = 0
   val receiveLengths = new ArrayBuffer[Long]
-  override def request(
-      request: AddressLengthTag,
-      response: AddressLengthTag,
-      cb: TransactionCallback): Transaction = {
-    requests.append(request)
-    cb(mockTransaction)
-    mockTransaction
-  }
 
   override def receive(alt: AddressLengthTag, cb: TransactionCallback): Transaction = {
     receiveLengths.append(alt.length)
@@ -278,8 +268,13 @@ class MockConnection(mockTransaction: Transaction) extends ClientConnection {
 
   override def getPeerExecutorId: Long = 0
 
-  override def assignResponseTag: Long = 1L
   override def assignBufferTag(msgId: Int): Long = 2L
-  override def composeRequestTag(requestType:  RequestType.Value): Long = 3L
+
+  override def request(requestType: RequestType.Value,
+                       request: ByteBuffer, cb: TransactionCallback): Transaction = {
+    requests += 1
+    cb(mockTransaction)
+    mockTransaction
+  }
 }
 

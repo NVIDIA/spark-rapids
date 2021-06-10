@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids;
 
+import ai.rapids.cudf.BaseDeviceMemoryBuffer;
 import ai.rapids.cudf.ColumnView;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.ArrowColumnBuilder;
@@ -73,6 +74,25 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+  private static synchronized void debugGPUAddrs(String name, ai.rapids.cudf.ColumnView col) {
+    try (BaseDeviceMemoryBuffer data = col.getData();
+         BaseDeviceMemoryBuffer validity = col.getValid()) {
+      System.err.println("GPU COLUMN " + name + " - NC: " + col.getNullCount()
+          + " DATA: " + data + " VAL: " + validity);
+    }
+    if (col.getType() == DType.STRUCT) {
+      for (int i = 0; i < col.getNumChildren(); i++) {
+        try (ColumnView child = col.getChildColumnView(i)) {
+          debugGPUAddrs(name + ":CHILD_" + i, child);
+        }
+      }
+    } else if (col.getType() == DType.LIST) {
+      try (ColumnView child = col.getChildColumnView(0)) {
+        debugGPUAddrs(name + ":DATA", child);
+      }
+    }
+  }
+
   /**
    * Print to standard error the contents of a column. Note that this should never be
    * called from production code, as it is very slow.  Also note that this is not production
@@ -81,7 +101,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param name the name of the column to print out.
    * @param col the column to print out.
    */
-  public static synchronized void debug(String name, ai.rapids.cudf.ColumnVector col) {
+  public static synchronized void debug(String name, ai.rapids.cudf.ColumnView col) {
+    debugGPUAddrs(name, col);
     try (HostColumnVector hostCol = col.copyToHost()) {
       debug(name, hostCol);
     }
@@ -586,7 +607,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   /**
    * Returns true if the cudf column can be used for the specified Spark type.
    */
-  private static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
+  static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
     if (!dt.isNestedType()) {
       return getNonNestedRapidsType(colType).equals(dt);
@@ -671,7 +692,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   static boolean typeConversionAllowed(Table table, DataType[] colTypes) {
     final int numColumns = table.getNumberOfColumns();
-    assert numColumns == colTypes.length: "The number of columns and the number of types don't match";
+    assert numColumns == colTypes.length: "The number of columns and the number of types don't " +
+        "match " + table + " " + Arrays.toString(colTypes);
     boolean ret = true;
     for (int colIndex = 0; colIndex < numColumns; colIndex++) {
       ret = ret && typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex]);
@@ -730,9 +752,56 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * but not both.
    */
   public static GpuColumnVector from(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
-    assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " + cudfCv +
-        " to " + type;
+    assert typeConversionAllowed(cudfCv, type) : "Type conversion is not allowed from " +
+        buildColumnTypeString(cudfCv) + " to " + type + " expected " + buildColumnTypeString(type);
     return new GpuColumnVector(type, cudfCv);
+  }
+
+  private static String buildColumnTypeString(ai.rapids.cudf.ColumnView view) {
+    DType type = view.getType();
+    if (type.isNestedType()) {
+      StringBuilder sb = new StringBuilder(type.toString());
+      sb.append("(");
+      for (int i = 0; i < view.getNumChildren(); i++) {
+        if (i != 0) {
+          sb.append(",");
+        }
+        try (ColumnView childView = view.getChildColumnView(i)) {
+          sb.append(buildColumnTypeString(childView));
+        }
+      }
+      sb.append(")");
+      return sb.toString();
+    }
+    return type.toString();
+  }
+
+  private static String buildColumnTypeString(DataType sparkType) {
+    DType dtype = toRapidsOrNull(sparkType);
+    if (dtype != null) {
+      return dtype.toString();
+    }
+    StringBuilder sb = new StringBuilder();
+    if (sparkType instanceof ArrayType) {
+      ArrayType arrayType = (ArrayType) sparkType;
+      sb.append("LIST(");
+      sb.append(buildColumnTypeString(arrayType.elementType()));
+      sb.append(")");
+    } else if (sparkType instanceof MapType) {
+      MapType mapType = (MapType) sparkType;
+      sb.append("LIST(STRUCT(");
+      sb.append(buildColumnTypeString(mapType.keyType()));
+      sb.append(",");
+      sb.append(buildColumnTypeString(mapType.valueType()));
+      sb.append("))");
+    } else if (sparkType instanceof StructType) {
+      StructType structType = (StructType) sparkType;
+      sb.append(structType.iterator().map(f -> buildColumnTypeString(f.dataType()))
+          .mkString("STRUCT(", ",", ")"));
+    } else {
+      throw new IllegalArgumentException("Unexpected data type: " + sparkType);
+    }
+    return sb.toString();
   }
 
   /**
@@ -744,14 +813,55 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static GpuColumnVector fromChecked(ai.rapids.cudf.ColumnVector cudfCv, DataType type) {
     if (!typeConversionAllowed(cudfCv, type)) {
-      throw new IllegalArgumentException("Type conversion is not allowed from " + cudfCv +
-          " to " + type);
+      throw new IllegalArgumentException("Type conversion error to " + type +
+          ": expected cudf type " + buildColumnTypeString(type) +
+          " found cudf type " + buildColumnTypeString(cudfCv));
     }
     return new GpuColumnVector(type, cudfCv);
   }
 
   public static GpuColumnVector from(Scalar scalar, int count, DataType sparkType) {
     return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar, count), sparkType);
+  }
+
+  /**
+   * Creates a GpuColumnVector from a GpuScalar
+   *
+   * @param scalar the input GpuScalar
+   * @param count the row number of the output column
+   * @param sparkType the type of the output column
+   * @return a GpuColumnVector. It should be closed to avoid memory leak.
+   */
+  public static GpuColumnVector from(GpuScalar scalar, int count, DataType sparkType) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count), sparkType);
+  }
+
+  /**
+   * Creates a cudf ColumnVector where the elements are filled with nulls.
+   *
+   * NOTE: Besides the non-nested types, the array type is supported.
+   *
+   * @param count the row number of the output column
+   * @param sparkType the expected data type of the output column
+   * @return a ColumnVector filled with nulls. It should be closed to avoid memory leak.
+   */
+  public static ai.rapids.cudf.ColumnVector columnVectorFromNull(int count, DataType sparkType) {
+    try (Scalar s = GpuScalar.from(null, sparkType)) {
+      return ai.rapids.cudf.ColumnVector.fromScalar(s, count);
+    }
+  }
+
+  /**
+   * Creates a GpuColumnVector where the elements are filled with nulls.
+   *
+   * NOTE: Besides the non-nested types, the array type is supported.
+   *
+   * @param count the row number of the output column
+   * @param sparkType the data type of the output column
+   * @return a GpuColumnVector filled with nulls. It should be closed to avoid memory leak.
+   */
+  public static GpuColumnVector fromNull(int count, DataType sparkType) {
+    return GpuColumnVector.from(columnVectorFromNull(count, sparkType), sparkType);
   }
 
   /**

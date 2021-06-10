@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat, approximate_float
+from marks import incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -28,7 +28,9 @@ def test_if_else(data_gen):
     null_lit = get_null_lit_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
-                # A literal predicate is not supported yet
+                'IF(TRUE, b, c)',
+                'IF(TRUE, {}, {})'.format(s1, null_lit),
+                'IF(FALSE, {}, {})'.format(s1, null_lit),
                 'IF(a, b, c)',
                 'IF(a, {}, c)'.format(s1),
                 'IF(a, b, {})'.format(s2),
@@ -50,10 +52,19 @@ def test_case_when(data_gen):
         command = command.when(f.col('_b'+ str(x)), f.col('_c' + str(x)))
     command = command.otherwise(s1)
     data_type = data_gen.data_type
+    # `command` covers the case of (column, scalar) for values, so the following 3 ones
+    # are for
+    #    (scalar, scalar)  -> the default `otherwise` is a scalar.
+    #    (column, column)
+    #    (scalar, column)
+    # in sequence.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(command,
                 f.when(f.col('_b0'), s1),
-                f.when(f.col('_b0'), f.col('_c0')).otherwise(s1),
+                f.when(f.col('_b0'), f.col('_c0')).otherwise(f.col('_c1')),
+                f.when(f.col('_b0'), s1).otherwise(f.col('_c0')),
+                f.when(f.col('_b0'), s1).when(f.lit(False), f.col('_c0')),
+                f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
                 f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
                 f.when(f.lit(False), f.col('_c0'))))
 
@@ -137,3 +148,25 @@ def test_ifnull(data_gen):
                 'ifnull({}, b)'.format(s1),
                 'ifnull({}, b)'.format(null_lit),
                 'ifnull(a, {})'.format(null_lit)))
+
+# TODO Merge this with the test `test_case_when` above once https://github.com/NVIDIA/spark-rapids/issues/2445
+# is done
+@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
+def test_case_when_array(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : three_col_df(spark,
+            int_gen,
+            data_gen,
+            data_gen).selectExpr('CASE WHEN a > 10 THEN b ELSE c END'))
+
+# TODO delete this test when https://github.com/NVIDIA/spark-rapids/issues/2445 is done
+@allow_non_gpu('ProjectExec', 'Alias', 'CaseWhen', 'Literal', 'Cast')
+@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
+def test_case_when_array_lit_fallback(data_gen):
+    l = gen_scalar(data_gen)
+    def do_it(spark):
+        return two_col_df(spark,
+                boolean_gen,
+                data_gen).select(f.when(f.col('a'), f.lit(l)).otherwise(f.col('b')))
+
+    assert_gpu_fallback_collect(do_it, 'CaseWhen')

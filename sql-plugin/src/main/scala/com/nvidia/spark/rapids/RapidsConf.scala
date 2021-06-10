@@ -320,10 +320,11 @@ object RapidsConf {
     .createOptional
 
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
+  private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
-    .doc("The fraction of total GPU memory that should be initially allocated " +
+    .doc("The fraction of available GPU memory that should be initially allocated " +
       "for pooled memory. Extra memory will be allocated as needed, but it may " +
       "result in more fragmentation. This must be less than or equal to the maximum limit " +
       s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
@@ -339,6 +340,13 @@ object RapidsConf {
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
+
+  val RMM_ALLOC_MIN_FRACTION = conf(RMM_ALLOC_MIN_FRACTION_KEY)
+    .doc("The fraction of total GPU memory that limits the minimum size of the RMM pool. " +
+      s"The value must be less than or equal to the setting for $RMM_ALLOC_FRACTION.")
+    .doubleConf
+    .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
+    .createWithDefault(0.25)
 
   val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
@@ -357,7 +365,6 @@ object RapidsConf {
         "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
         "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
         "memory usage")
-      .internal()
       .booleanConf
       .createWithDefault(false)
 
@@ -368,6 +375,33 @@ object RapidsConf {
       "https://docs.nvidia.com/gpudirect-storage/.")
     .booleanConf
     .createWithDefault(false)
+
+  val GDS_SPILL_BATCH_WRITE_BUFFER_SIZE =
+    conf("spark.rapids.memory.gpu.direct.storage.spill.batchWriteBuffer.size")
+    .doc("The size of the GPU memory buffer used to batch small buffers when spilling to GDS. " +
+        "Note that this buffer is mapped to the PCI Base Address Register (BAR) space, which may " +
+        "be very limited on some GPUs (e.g. the NVIDIA T4 only has 256 MiB), and it is also used " +
+        "by UCX bounce buffers.")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(ByteUnit.MiB.toBytes(8))
+
+  val GDS_SPILL_ALIGNED_IO =
+    conf("spark.rapids.memory.gpu.direct.storage.spill.alignedIO")
+    .doc("When GDS spill is enabled, should I/O be 4 KiB aligned. GDS is more efficient when " +
+        "reads and writes are 4 KiB aligned, but aligning has some additional memory overhead " +
+        "with the padding.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val GDS_SPILL_ALIGNMENT_THRESHOLD =
+    conf("spark.rapids.memory.gpu.direct.storage.spill.alignmentThreshold")
+    .doc("GPU memory buffers with size above this threshold will be aligned to 4 KiB. Setting " +
+        "this value to 0 means every allocation will be 4 KiB aligned. A low threshold may " +
+        "cause more memory consumption because of padding.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(ByteUnit.KiB.toBytes(64))
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
@@ -652,6 +686,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_PARQUET_INT96_WRITE = conf("spark.rapids.sql.format.parquet.writer.int96.enabled")
+    .doc("When set to false, disables accelerated parquet write if the " +
+      "spark.sql.parquet.outputTimestampType is set to INT96")
+    .booleanConf
+    .createWithDefault(true)
+
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
@@ -802,6 +842,38 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
+    .doc("When the order-by column of a range based window is byte type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "byte type order-by column")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_RANGE_WINDOW_SHORT = conf("spark.rapids.sql.window.range.short.enabled")
+    .doc("When the order-by column of a range based window is short type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "short type order-by column")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ENABLE_RANGE_WINDOW_INT = conf("spark.rapids.sql.window.range.int.enabled")
+    .doc("When the order-by column of a range based window is int type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "int type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_RANGE_WINDOW_LONG = conf("spark.rapids.sql.window.range.long.enabled")
+    .doc("When the order-by column of a range based window is long type and " +
+      "the range boundary calculated for a value has overflow, CPU and GPU will get " +
+      "the different results. When set to false disables the range window acceleration for the " +
+      "long type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -888,16 +960,51 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
+  val SHUFFLE_UCX_ACTIVE_MESSAGES_MODE = conf("spark.rapids.shuffle.ucx.activeMessages.mode")
+    .doc("Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to " +
+      "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
+      "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
+    .stringConf
+    .checkValues(Set("rndv", "eager", "auto"))
+    .createWithDefault("rndv")
+
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
     .booleanConf
     .createWithDefault(true)
 
+  val SHUFFLE_UCX_LISTENER_ENABLED = conf("spark.rapids.shuffle.ucx.listener.enabled")
+    .doc("When set to true, start listener and exchange socket address." +
+      " This improves detection of remote peer failures.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_USE_PEER_ERR_HDNL = conf("spark.rapids.shuffle.ucx.peerErrorHandling.enabled")
+    .doc("When set to true, enable peer error handling for UCX endpoints. " +
+      "This can impact transports and protocols selected in UCX.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
+  val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
+    .doc("Starting port to try to bind the UCX listener.")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
+
   val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
     .doc("The host to be used to start the management server")
     .stringConf
     .createWithDefault(null)
+
+  val SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT =
+    conf("spark.rapids.shuffle.ucx.managementConnectionTimeout")
+    .doc("The timeout for client connections to a remote peer")
+    .internal()
+    .integerConf
+    .createWithDefault(0)
 
   val SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE = conf("spark.rapids.shuffle.ucx.bounceBuffers.size")
     .doc("The size of bounce buffer to use in bytes. Note that this size will be the same " +
@@ -947,10 +1054,11 @@ object RapidsConf {
     .createWithDefault(1000)
 
   val SHUFFLE_MAX_METADATA_SIZE = conf("spark.rapids.shuffle.maxMetadataSize")
-    .doc("The maximum size of a metadata message used in the shuffle.")
+    .doc("The maximum size of a metadata message that the shuffle plugin will keep in its " +
+      "direct message pool. ")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(50 * 1024)
+    .createWithDefault(500 * 1024)
 
   val SHUFFLE_COMPRESSION_CODEC = conf("spark.rapids.shuffle.compression.codec")
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
@@ -990,9 +1098,9 @@ object RapidsConf {
     .internal()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
-      "If you are using a custom Spark version such as Spark 3.0.0.0 then this can be used to " +
-      "specify the shims provider that matches the base Spark version of Spark 3.0.0, i.e.: " +
-      "com.nvidia.spark.rapids.shims.spark300.SparkShimServiceProvider. If you modified Spark " +
+      "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
+      "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
+      "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
       "then there is no guarantee the RAPIDS Accelerator will function properly.")
     .stringConf
     .createOptional
@@ -1029,42 +1137,76 @@ object RapidsConf {
       .stringConf
       .createWithDefault("NONE")
 
-  val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.defaultExecGpuCost")
-      .internal()
-      .doc("Default relative GPU cost of running an operator on the GPU")
-      .doubleConf
-      .createWithDefault(0.8)
+  val OPTIMIZER_DEFAULT_ROW_COUNT = conf("spark.rapids.sql.optimizer.defaultRowCount")
+    .internal()
+    .doc("The cost-based optimizer uses estimated row counts to calculate costs and sometimes " +
+      "there is no row count available so we need a default assumption to use in this case")
+    .longConf
+    .createWithDefault(1000000)
 
-  val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.defaultExprGpuCost")
-      .internal()
-      .doc("Default relative GPU cost of running an expression on the GPU")
-      .doubleConf
-      .createWithDefault(0.8)
+  val OPTIMIZER_CLASS_NAME = conf("spark.rapids.sql.optimizer.className")
+    .internal()
+    .doc("Optimizer implementation class name. The class must implement the " +
+      "com.nvidia.spark.rapids.Optimizer trait")
+    .stringConf
+    .createWithDefault("com.nvidia.spark.rapids.CostBasedOptimizer")
 
-  val OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST = conf(
-    "spark.rapids.sql.optimizer.defaultTransitionToCpuCost")
-      .internal()
-      .doc("Default cost of transitioning from GPU to CPU")
-      .doubleConf
-      .createWithDefault(0.1)
+  val OPTIMIZER_DEFAULT_CPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.cpu.exec.default")
+    .internal()
+    .doc("Default per-row CPU cost of executing an operator")
+    .doubleConf
+    .createWithDefault(0.0)
 
-  val OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST = conf(
-    "spark.rapids.sql.optimizer.defaultTransitionToGpuCost")
+  val OPTIMIZER_DEFAULT_CPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.cpu.expr.default")
+    .internal()
+    .doc("Default per-row CPU cost of evaluating an expression")
+    .doubleConf
+    .createWithDefault(0.0)
+
+  val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.gpu.exec.default")
       .internal()
-      .doc("Default cost of transitioning from CPU to GPU")
+      .doc("Default per-row GPU cost of executing an operator")
       .doubleConf
-      .createWithDefault(0.1)
+      .createWithDefault(0.0)
+
+  val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.gpu.expr.default")
+      .internal()
+      .doc("Default per-row GPU cost of evaluating an expression")
+      .doubleConf
+      .createWithDefault(0.0)
+
+  val OPTIMIZER_CPU_READ_SPEED = conf(
+    "spark.rapids.sql.optimizer.cpuReadSpeed")
+      .internal()
+      .doc("Speed of reading data from CPU memory in GB/s")
+      .doubleConf
+      .createWithDefault(30.0)
+
+  val OPTIMIZER_CPU_WRITE_SPEED = conf(
+    "spark.rapids.sql.optimizer.cpuWriteSpeed")
+    .internal()
+    .doc("Speed of writing data to CPU memory in GB/s")
+    .doubleConf
+    .createWithDefault(30.0)
+
+  val OPTIMIZER_GPU_READ_SPEED = conf(
+    "spark.rapids.sql.optimizer.gpuReadSpeed")
+    .internal()
+    .doc("Speed of reading data from GPU memory in GB/s")
+    .doubleConf
+    .createWithDefault(320.0)
+
+  val OPTIMIZER_GPU_WRITE_SPEED = conf(
+    "spark.rapids.sql.optimizer.gpuWriteSpeed")
+    .internal()
+    .doc("Speed of writing data to GPU memory in GB/s")
+    .doubleConf
+    .createWithDefault(320.0)
 
   val USE_ARROW_OPT = conf("spark.rapids.arrowCopyOptimizationEnabled")
     .doc("Option to turn off using the optimized Arrow copy code when reading from " +
       "ArrowColumnVector in HostColumnarToGpu. Left as internal as user shouldn't " +
       "have to turn it off, but its convenient for testing.")
-    .internal()
-    .booleanConf
-    .createWithDefault(true)
-
-  val CPU_RANGE_PARTITIONING_ALLOWED = conf("spark.rapids.allowCpuRangePartitioning")
-    .doc("Option to control enforcement of range partitioning on GPU.")
     .internal()
     .booleanConf
     .createWithDefault(true)
@@ -1099,7 +1241,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-0.5.0.jar,cudf-0.19.2-cuda10-1.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.06.0.jar,cudf-21.06.0-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1253,6 +1395,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val rmmAllocMaxFraction: Double = get(RMM_ALLOC_MAX_FRACTION)
 
+  lazy val rmmAllocMinFraction: Double = get(RMM_ALLOC_MIN_FRACTION)
+
   lazy val rmmAllocReserve: Long = get(RMM_ALLOC_RESERVE)
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
@@ -1260,6 +1404,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
 
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
+
+  lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
+
+  lazy val isGdsSpillAlignedIO: Boolean = get(GDS_SPILL_ALIGNED_IO)
+
+  lazy val gdsSpillAlignmentThreshold: Long = get(GDS_SPILL_ALIGNMENT_THRESHOLD)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
@@ -1337,6 +1487,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
+  lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
+
   lazy val isParquetPerFileReadEnabled: Boolean =
     ParquetReaderType.withName(get(PARQUET_READER_TYPE)) == ParquetReaderType.PERFILE
 
@@ -1379,9 +1531,19 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
+  lazy val shuffleUcxActiveMessagesMode: String = get(SHUFFLE_UCX_ACTIVE_MESSAGES_MODE)
+
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
+  lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_LISTENER_ENABLED)
+
+  lazy val shuffleUcxUsePeerErrorHandler: Boolean = get(SHUFFLE_UCX_USE_PEER_ERR_HDNL)
+
+  lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
+
   lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
+
+  lazy val shuffleUcxMgmtConnTimeout: Int = get(SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT)
 
   lazy val shuffleUcxBounceBuffersSize: Long = get(SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE)
 
@@ -1417,17 +1579,35 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
 
-  lazy val defaultOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
+  lazy val optimizerClassName: String = get(OPTIMIZER_CLASS_NAME)
 
-  lazy val defaultExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
+  lazy val defaultRowCount: Long = get(OPTIMIZER_DEFAULT_ROW_COUNT)
 
-  lazy val defaultTransitionToCpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_CPU_COST)
+  lazy val defaultCpuOperatorCost: Double = get(OPTIMIZER_DEFAULT_CPU_OPERATOR_COST)
 
-  lazy val defaultTransitionToGpuCost: Double = get(OPTIMIZER_DEFAULT_TRANSITION_TO_GPU_COST)
+  lazy val defaultCpuExpressionCost: Double = get(OPTIMIZER_DEFAULT_CPU_EXPRESSION_COST)
+
+  lazy val defaultGpuOperatorCost: Double = get(OPTIMIZER_DEFAULT_GPU_OPERATOR_COST)
+
+  lazy val defaultGpuExpressionCost: Double = get(OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST)
+
+  lazy val cpuReadMemorySpeed: Double = get(OPTIMIZER_CPU_READ_SPEED)
+
+  lazy val cpuWriteMemorySpeed: Double = get(OPTIMIZER_CPU_WRITE_SPEED)
+
+  lazy val gpuReadMemorySpeed: Double = get(OPTIMIZER_GPU_READ_SPEED)
+
+  lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
-  lazy val cpuRangePartitioningPermitted = get(CPU_RANGE_PARTITIONING_ALLOWED)
+  lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
+
+  lazy val isRangeWindowShortEnabled: Boolean = get(ENABLE_RANGE_WINDOW_SHORT)
+
+  lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
+
+  lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
@@ -1437,17 +1617,36 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   /**
    * Get the GPU cost of an expression, for use in the cost-based optimizer.
    */
-  def getExpressionCost(operatorName: String): Option[Double] = {
-    val key = s"spark.rapids.sql.optimizer.expr.$operatorName"
-    conf.get(key).map(toDouble(_, key))
+  def getGpuExpressionCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.gpu.expr.$operatorName"
+    getOptionalCost(key)
   }
 
   /**
    * Get the GPU cost of an operator, for use in the cost-based optimizer.
    */
-  def getOperatorCost(operatorName: String): Option[Double] = {
-    val key = s"spark.rapids.sql.optimizer.exec.$operatorName"
-    conf.get(key).map(toDouble(_, key))
+  def getGpuOperatorCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.gpu.exec.$operatorName"
+    getOptionalCost(key)
   }
 
+  /**
+   * Get the CPU cost of an expression, for use in the cost-based optimizer.
+   */
+  def getCpuExpressionCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.cpu.expr.$operatorName"
+    getOptionalCost(key)
+  }
+
+  /**
+   * Get the CPU cost of an operator, for use in the cost-based optimizer.
+   */
+  def getCpuOperatorCost(operatorName: String): Option[Double] = {
+    val key = s"spark.rapids.sql.optimizer.cpu.exec.$operatorName"
+    getOptionalCost(key)
+  }
+
+  private def getOptionalCost(key: String) = {
+    conf.get(key).map(toDouble(_, key))
+  }
 }

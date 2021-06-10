@@ -22,22 +22,22 @@
   <parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
-    <version>0.5.0</version>
+    <version>21.06.0-SNAPSHOT</version>
   </parent>
   <artifactId>rapids-4-spark-udf-examples_2.12</artifactId>
   <name>RAPIDS Accelerator for Apache Spark UDF Examples</name>
   <description>Sample implementations of RAPIDS accelerated
     user defined functions for use with the RAPIDS Accelerator
     for Apache Spark</description>
-  <version>0.5.0</version>
+  <version>21.06.0-SNAPSHOT</version>
 
   <properties>
     <udf.native.build.path>${project.build.directory}/cpp-build</udf.native.build.path>
+    <BUILD_UDF_BENCHMARKS>OFF</BUILD_UDF_BENCHMARKS>
     <CMAKE_CXX_FLAGS/>
     <GPU_ARCHS>ALL</GPU_ARCHS>
-    <CUDA_STATIC_RUNTIME>ON</CUDA_STATIC_RUNTIME>
     <PER_THREAD_DEFAULT_STREAM>ON</PER_THREAD_DEFAULT_STREAM>
-    <CUDF_CMAKE_BUILD_DIR>/cudf/cpp/build</CUDF_CMAKE_BUILD_DIR>
+    <CPP_PARALLEL_LEVEL>10</CPP_PARALLEL_LEVEL>
   </properties>
 
   <dependencies>
@@ -113,16 +113,17 @@
                           failonerror="true"
                           executable="cmake">
                       <arg value="${basedir}/src/main/cpp"/>
+                      <arg value="-DBUILD_UDF_BENCHMARKS=${BUILD_UDF_BENCHMARKS}"/>
                       <arg value="-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}"/>
                       <arg value="-DGPU_ARCHS=${GPU_ARCHS}"/>
-                      <arg value="-DCUDA_STATIC_RUNTIME=${CUDA_STATIC_RUNTIME}"/>
                       <arg value="-DPER_THREAD_DEFAULT_STREAM=${PER_THREAD_DEFAULT_STREAM}"/>
-                      <arg value="-DCUDF_CMAKE_BUILD_DIR=${CUDF_CMAKE_BUILD_DIR}"/>
                     </exec>
-                    <exec dir="${udf.native.build.path}"
-                          failonerror="true"
-                          executable="make">
-                      <arg value="-j"/>
+                    <exec failonerror="true"
+                          executable="cmake">
+                      <arg value="--build"/>
+                      <arg value="${udf.native.build.path}"/>
+                      <arg value="-j${CPP_PARALLEL_LEVEL}"/>
+                      <arg value="-v"/>
                     </exec>
                   </tasks>
                 </configuration>

@@ -18,37 +18,21 @@ public final class TransferRequest extends Table {
   public TransferRequest __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   /**
-   * peer executor id to send response to
-   */
-  public long executorId() { int o = __offset(4); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public boolean mutateExecutorId(long executor_id) { int o = __offset(4); if (o != 0) { bb.putLong(o + bb_pos, executor_id); return true; } else { return false; } }
-  /**
-   * UCX message tag to use when sending the response
-   */
-  public long responseTag() { int o = __offset(6); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public boolean mutateResponseTag(long response_tag) { int o = __offset(6); if (o != 0) { bb.putLong(o + bb_pos, response_tag); return true; } else { return false; } }
-  /**
    * array of table requests to transfer
    */
   public BufferTransferRequest requests(int j) { return requests(new BufferTransferRequest(), j); }
-  public BufferTransferRequest requests(BufferTransferRequest obj, int j) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
-  public int requestsLength() { int o = __offset(8); return o != 0 ? __vector_len(o) : 0; }
+  public BufferTransferRequest requests(BufferTransferRequest obj, int j) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
+  public int requestsLength() { int o = __offset(4); return o != 0 ? __vector_len(o) : 0; }
 
   public static int createTransferRequest(FlatBufferBuilder builder,
-      long executor_id,
-      long response_tag,
       int requestsOffset) {
-    builder.startObject(3);
-    TransferRequest.addResponseTag(builder, response_tag);
-    TransferRequest.addExecutorId(builder, executor_id);
+    builder.startObject(1);
     TransferRequest.addRequests(builder, requestsOffset);
     return TransferRequest.endTransferRequest(builder);
   }
 
-  public static void startTransferRequest(FlatBufferBuilder builder) { builder.startObject(3); }
-  public static void addExecutorId(FlatBufferBuilder builder, long executorId) { builder.addLong(0, executorId, 0L); }
-  public static void addResponseTag(FlatBufferBuilder builder, long responseTag) { builder.addLong(1, responseTag, 0L); }
-  public static void addRequests(FlatBufferBuilder builder, int requestsOffset) { builder.addOffset(2, requestsOffset, 0); }
+  public static void startTransferRequest(FlatBufferBuilder builder) { builder.startObject(1); }
+  public static void addRequests(FlatBufferBuilder builder, int requestsOffset) { builder.addOffset(0, requestsOffset, 0); }
   public static int createRequestsVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startRequestsVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
   public static int endTransferRequest(FlatBufferBuilder builder) {

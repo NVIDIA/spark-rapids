@@ -48,6 +48,7 @@ object GpuMetric extends Logging {
   val PARTITION_SIZE = "partitionSize"
   val NUM_PARTITIONS = "numPartitions"
   val TOTAL_TIME = "totalTime"
+  val OP_TIME = "opTime"
   val PEAK_DEVICE_MEMORY = "peakDevMemory"
   val COLLECT_TIME = "collectTime"
   val CONCAT_TIME = "concatTime"
@@ -73,6 +74,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_PARTITION_SIZE = "partition data size"
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_TOTAL_TIME = "total time"
+  val DESCRIPTION_OP_TIME = "op time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
@@ -219,8 +221,7 @@ trait GpuExec extends SparkPlan with Arm {
 
   lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)) ++
+    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES)) ++
       additionalMetrics
 
   def gpuLongMetric(name: String): GpuMetric = allMetrics(name)
@@ -258,7 +259,7 @@ trait GpuExec extends SparkPlan with Arm {
         // normalize that for equality testing, by assigning expr id from 0 incrementally. The
         // alias name doesn't matter and should be erased.
         val normalizedChild = QueryPlan.normalizeExpressions(a.child, allAttributes)
-        Alias(normalizedChild, "")(ExprId(id), a.qualifier)
+        ShimLoader.getSparkShims.alias(normalizedChild, "")(ExprId(id), a.qualifier)
       case a: GpuAlias =>
         id += 1
         // As the root of the expression, Alias will always take an arbitrary exprId, we need to

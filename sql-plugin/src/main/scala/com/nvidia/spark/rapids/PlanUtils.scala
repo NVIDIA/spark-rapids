@@ -16,9 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ListBuffer
 import scala.util.Try
 
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 
 object PlanUtils {
   def getBaseNameFromClass(planClassStr: String): String = {
@@ -43,5 +45,28 @@ object PlanUtils {
       Try(java.lang.Class.forName(fallbackCpuClass))
         .map(_.isAssignableFrom(planClass))
         .getOrElse(false)
+  }
+
+  /**
+   * Return list of matching predicates present in the plan
+   * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
+   */
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      plan match {
+        case _ if predicate(plan) =>
+          accum += plan
+          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 }

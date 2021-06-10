@@ -29,7 +29,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
-import org.apache.spark.sql.SparkSessionExtensions
+import org.apache.spark.sql.{DataFrame, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -65,7 +65,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
       s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
     extensions.injectColumnar(_ => ColumnarOverrideRules())
-    ShimLoader.getSparkShims.injectQueryStagePrepRule(extensions, _ => GpuQueryStagePrepOverrides())
+    extensions.injectQueryStagePrepRule(_ => GpuQueryStagePrepOverrides())
   }
 }
 
@@ -254,8 +254,12 @@ object RapidsExecutorPlugin {
    * version 7.1.1.
    */
   def cudfVersionSatisfied(expected: String, actual: String): Boolean = {
-    val (expMajorMinor, expPatch) = expected.split('.').splitAt(2)
-    val (actMajorMinor, actPatch) = actual.split('.').splitAt(2)
+    val expHyphen = if (expected.indexOf('-') >= 0) expected.indexOf('-') else expected.length
+    val actHyphen = if (actual.indexOf('-') >= 0) actual.indexOf('-') else actual.length
+    if (actual.substring(actHyphen) != expected.substring(expHyphen)) return false
+
+    val (expMajorMinor, expPatch) = expected.substring(0, expHyphen).split('.').splitAt(2)
+    val (actMajorMinor, actPatch) = actual.substring(0, actHyphen).split('.').splitAt(2)
     actMajorMinor.startsWith(expMajorMinor) && {
       val expPatchInts = expPatch.map(_.toInt)
       val actPatchInts = actPatch.map(v => Try(v.toInt).getOrElse(Int.MinValue))
@@ -316,6 +320,11 @@ object ExecutionPlanCaptureCallback {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
     assert(executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
         s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
+  }
+
+  def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit = {
+    val executedPlan = df.queryExecution.executedPlan
+    assertDidFallBack(executedPlan, fallbackCpuClass)
   }
 
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
