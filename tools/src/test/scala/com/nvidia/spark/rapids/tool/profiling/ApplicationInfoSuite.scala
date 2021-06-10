@@ -64,7 +64,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test rapids jar") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir//rapids_join_eventlog"))
+      new ProfileArgs(Array(s"$logDir//rapids_join_eventlog.zstd"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
@@ -83,7 +83,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   test("test sql and resourceprofile eventlog") {
-    val eventLog = s"$logDir/rp_sql_eventlog"
+    val eventLog = s"$logDir/rp_sql_eventlog.zstd"
     TrampolineUtil.withTempDir { tempDir =>
       val appArgs = new ProfileArgs(Array(
         "--output-directory",
@@ -95,7 +95,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   test("malformed json eventlog") {
-    val eventLog = s"$logDir/malformed_json_eventlog"
+    val eventLog = s"$logDir/malformed_json_eventlog.zstd"
     TrampolineUtil.withTempDir { tempDir =>
       val appArgs = new ProfileArgs(Array(
         "--output-directory",
@@ -121,7 +121,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test printSQLPlanMetrics") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir/rapids_join_eventlog"))
+      new ProfileArgs(Array(s"$logDir/rapids_join_eventlog.zstd"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
@@ -143,7 +143,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test printSQLPlans") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-      val appArgs = new ProfileArgs(Array(s"$logDir/rapids_join_eventlog"))
+      val appArgs = new ProfileArgs(Array(s"$logDir/rapids_join_eventlog.zstd"))
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
@@ -163,7 +163,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test printJobInfo") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
-      new ProfileArgs(Array(s"$logDir/rp_sql_eventlog"))
+      new ProfileArgs(Array(s"$logDir/rp_sql_eventlog.zstd"))
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {

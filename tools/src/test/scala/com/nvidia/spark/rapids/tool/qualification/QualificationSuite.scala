@@ -87,15 +87,15 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("skip malformed json eventlog") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val badEventLog = s"$profileLogDir/malformed_json_eventlog"
-    val logFiles = Array(s"$logDir/nds_q86_test", badEventLog)
+    val badEventLog = s"$profileLogDir/malformed_json_eventlog.zstd"
+    val logFiles = Array(s"$logDir/nds_q86_test.zstd", badEventLog)
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
 
   test("test udf event logs") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
-      s"$logDir/dsAndDf_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
@@ -123,12 +123,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("test nds q86 test") {
-    val logFiles = Array(s"$logDir/nds_q86_test")
+    val logFiles = Array(s"$logDir/nds_q86_test.zstd")
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
 
   test("test nds q86 with failure test") {
-    val logFiles = Array(s"$logDir/nds_q86_fail_test")
+    val logFiles = Array(s"$logDir/nds_q86_fail_test.zstd")
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
   }
 

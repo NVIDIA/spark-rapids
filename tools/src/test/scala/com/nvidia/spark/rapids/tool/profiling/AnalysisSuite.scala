@@ -40,20 +40,20 @@ class AnalysisSuite extends FunSuite {
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
   test("test sqlMetricsAggregation simple") {
-    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog"),
+    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog.zstd"),
       "rapids_join_eventlog_sqlmetricsagg_expectation.csv",
       "rapids_join_eventlog_jobandstagemetrics_expectation.csv")
   }
 
   test("test sqlMetricsAggregation second single app") {
-    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog2"),
+    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog2.zstd"),
       "rapids_join_eventlog_sqlmetricsagg2_expectation.csv",
       "rapids_join_eventlog_jobandstagemetrics2_expectation.csv")
   }
 
   test("test sqlMetricsAggregation 2 combined") {
     testSqlMetricsAggregation(
-      Array(s"$logDir/rapids_join_eventlog", s"$logDir/rapids_join_eventlog2"),
+      Array(s"$logDir/rapids_join_eventlog", s"$logDir/rapids_join_eventlog2.zstd"),
       "rapids_join_eventlog_sqlmetricsaggmulti_expectation.csv",
       "rapids_join_eventlog_jobandstagemetricsmulti_expectation.csv")
   }
@@ -76,27 +76,27 @@ class AnalysisSuite extends FunSuite {
   }
 
   test("test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime()
+    runTestSqlMetricsDurationAndCpuTime()
   }
 
   test("zstd: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("zstd"))
+    testSqlCompression(Option("zstd"))
   }
 
   test("snappy: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("snappy"))
+    testSqlCompression(Option("snappy"))
   }
 
   test("lzf: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("lz4"))
+    testSqlCompression(Option("lz4"))
   }
 
   test("lz4: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("lzf"))
+    testSqlCompression(Option("lzf"))
   }
 
-  private def testSqlMetricsDurationAndCpuTime(compressionNameOpt: Option[String] = None) = {
-    val rawLog = s"$logDir/rp_sql_eventlog"
+  private def testSqlCompression(compressionNameOpt: Option[String] = None) = {
+    val rawLog = s"$logDir/eventlog_minimal_events"
     compressionNameOpt.foreach { compressionName =>
       val codec = TrampolineUtil.createCodec(sparkSession.sparkContext.getConf,
         compressionName)
@@ -104,18 +104,15 @@ class AnalysisSuite extends FunSuite {
         // copy and close streams
         IOUtils.copyBytes(Files.newInputStream(Paths.get(rawLog)),
           codec.compressedOutputStream(Files.newOutputStream(new File(tempDir,
-            "rp_sql_eventlog." + compressionName).toPath, StandardOpenOption.CREATE)),
+            "eventlog_minimal_events." + compressionName).toPath, StandardOpenOption.CREATE)),
           4096, true)
         runTestSqlMetricsDurationAndCpuTime(Array(tempDir.toString))
       }
     }
-
-    if (compressionNameOpt.isEmpty) {
-      runTestSqlMetricsDurationAndCpuTime(Array(rawLog))
-    }
   }
 
-  private def runTestSqlMetricsDurationAndCpuTime(logs: Array[String]) = {
+  private def runTestSqlMetricsDurationAndCpuTime() = {
+    val logs = Array(s"$logDir/rp_sql_eventlog.zstd")
     val expectFile = "rapids_duration_and_cpu_expectation.csv"
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
@@ -142,7 +139,7 @@ class AnalysisSuite extends FunSuite {
 
   test("test shuffleSkewCheck empty") {
     val apps =
-      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
+      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog.zstd"), sparkSession)
     assert(apps.size == 1)
 
     val analysis = new Analysis(apps, None)
@@ -152,7 +149,7 @@ class AnalysisSuite extends FunSuite {
 
   test("test contains dataset false") {
     val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
-    val logs = Array(s"$qualLogDir/nds_q86_test")
+    val logs = Array(s"$qualLogDir/nds_q86_test.zstd")
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     val analysis = new Analysis(apps, None)
