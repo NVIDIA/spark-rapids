@@ -43,7 +43,7 @@ object Qualification extends Logging {
       dropTempViews: Boolean): Option[DataFrame] = {
     var index: Int = 1
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    for (path <- allPaths.filterNot(_.getName.contains("."))) {
+    for (path <- allPaths) {
       try {
         // This apps only contains 1 app in each loop.
         val app = new ApplicationInfo(numRows, sparkSession, path, index, true)

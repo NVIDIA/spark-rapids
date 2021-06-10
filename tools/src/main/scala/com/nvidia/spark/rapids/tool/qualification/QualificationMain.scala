@@ -50,8 +50,10 @@ object QualificationMain extends Logging {
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
 
+    logWarning("eventlog paths: " + eventlogPaths)
     // Get the event logs required to process
     lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
+    logWarning("all paths is : " + allPaths.mkString(", "))
 
     val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)

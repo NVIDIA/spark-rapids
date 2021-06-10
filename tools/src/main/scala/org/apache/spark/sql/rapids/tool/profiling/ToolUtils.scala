@@ -96,6 +96,9 @@ object ToolUtils extends Logging {
     } else { // send all event logs for processing
       ArrayBuffer(allPathsWithTimestamp.keys.toSeq: _*)
     }
-    paths.filter(eventLogNameFilter)
+    logWarning("paths is; " + paths)
+    val resPaths = paths.filter(eventLogNameFilter)
+    logWarning("paths is; " + resPaths)
+    resPaths
   }
 }
