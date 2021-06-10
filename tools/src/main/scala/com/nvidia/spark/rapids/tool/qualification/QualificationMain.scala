@@ -57,13 +57,12 @@ object QualificationMain extends Logging {
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
     val dfOpt = Qualification.qualifyApps(allPaths,
       numOutputRows, sparkSession, includeCpuPercent, dropTempViews)
+    if (dfOpt.isEmpty) {
+      logWarning(s"No Applications with SQL found in events logs: ${allPaths.mkString(",")}")
+    }
     if (writeOutput && dfOpt.isDefined) {
-      if (dfOpt.get.isEmpty) {
-        logWarning(s"No Applications with SQL found in events logs: ${allPaths.mkString(", ")}")
-      } else {
-        Qualification.writeQualification(dfOpt.get, outputDirectory,
-          appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)
-      }
+      Qualification.writeQualification(dfOpt.get, outputDirectory,
+        appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)
     }
     (0, dfOpt)
   }

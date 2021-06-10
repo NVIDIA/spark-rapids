@@ -63,7 +63,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
             dropTempViews=true)
         assert(exit == 0)
         if (shouldReturnEmpty) {
-          assert(dfQualOpt.isDefined && dfQualOpt.get.isEmpty)
+          assert(dfQualOpt.isEmpty)
         } else {
           val schema = new StructType()
             .add("appName",StringType,true)
