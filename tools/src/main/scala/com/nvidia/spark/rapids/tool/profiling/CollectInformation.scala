@@ -97,8 +97,12 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printRapidsProperties(): Unit = {
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
-      app.runQuery(query = app.generateRapidsProperties + " order by key",
-        fileWriter = fileWriter, messageHeader = messageHeader)
+      if (app.allDataFrames.contains(s"propertiesDFF_${app.index}")) {
+        app.runQuery(query = app.generateRapidsProperties + " order by key",
+          fileWriter = fileWriter, messageHeader = messageHeader)
+      } else {
+        fileWriter.foreach(_.write("No Properties Information Found!\n"))
+      }
     }
   }
 
