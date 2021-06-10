@@ -161,9 +161,9 @@ rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
 
-Note: We suggest you also save the output of the `spark-submit` to a log file for troubleshooting.
+### Options (`--help` output)
 
-### Options (How to run `--help`)
+  Note: `--help` should be before the trailing event logs.
 ```bash
 $SPARK_HOME/bin/spark-submit \
 --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
@@ -209,6 +209,8 @@ as needed.
 The output location can be changed using the `--output-directory` option. Default is current directory.
 
 The output format can be changed using the `--output-format` option. Default is csv. The other option is text.
+  
+Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
   
 Run `--help` for more information.
 
@@ -447,9 +449,10 @@ $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.Prof
 rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
-Note: We suggest you also save the output of the `spark-submit` to a log file for troubleshooting.
 
-### Options (How to run `--help`)
+### Options (`--help` output)
+  
+  Note: `--help` should be before the trailing event logs.
 ```bash
 $SPARK_HOME/bin/spark-submit \
 --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
@@ -492,6 +495,8 @@ default filesystem, it supports local filesystem or HDFS. There are separate fil
 under the same sub-directory when using the options to generate query visualizations or printing the SQL plans.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
+  
+Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
 
 Run `--help` for more information.
 
