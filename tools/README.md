@@ -373,8 +373,10 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 ```
 #### C. Health Check
-List failed tasks, stages and jobs.
+- List failed tasks, stages and jobs
+- SQL Plan HealthCheck
 
+Below are examples.
 - Print failed tasks:
 ```
 Failed tasks:
@@ -409,6 +411,16 @@ Failed jobs:
 +-----+---------+------------------------------------------------------------------------+
 ```
 
+- SQL Plan HealthCheck:
+
+  Prints possibly unsupported query plan nodes such as `$Lambda` key word means dataset API.
+```
++-----+------+--------+---------------------------------------------------------------------------------------------------+
+|sqlID|nodeID|nodeName|nodeDesc_first100char                                                                              |
++-----+------+--------+---------------------------------------------------------------------------------------------------+
+|1    |8     |Filter  |Filter $line21.$read$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$Lambda$4578/0x00000008019f1840@4b63e04c.apply|
++-----+------+--------+---------------------------------------------------------------------------------------------------+
+```
 
 ### How to use this tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
