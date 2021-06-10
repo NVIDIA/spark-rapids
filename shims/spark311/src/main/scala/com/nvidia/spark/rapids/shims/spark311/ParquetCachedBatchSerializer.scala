@@ -375,44 +375,44 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val field = schema.fields(index)
       StructField(s"_col$index", field.dataType, field.nullable, field.metadata)
     }))
-      val rowsAllowedInBatch = (BYTES_ALLOWED_PER_BATCH / estimatedRowSize).toInt
-      val splitIndices = scala.Range(rowsAllowedInBatch, gpuCB.numRows(), rowsAllowedInBatch)
-      val buffers = new ListBuffer[ParquetCachedBatch]
-      if (splitIndices.nonEmpty) {
-        val splitVectors = new ListBuffer[Array[ColumnVector]]
-        try {
-          for (index <- 0 until gpuCB.numCols()) {
-            splitVectors +=
-                gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
-          }
-
-          // Splitting the table
-          // e.g. T0 = {col1, col2,...,coln} => split columns into 'm' cols =>
-          // T00= {splitCol1(0), splitCol2(0),...,splitColn(0)}
-          // T01= {splitCol1(1), splitCol2(1),...,splitColn(1)}
-          // ...
-          // T0m= {splitCol1(m), splitCol2(m),...,splitColn(m)}
-          def makeTableForIndex(i: Int): Table = {
-            val columns = splitVectors.indices.map(j => splitVectors(j)(i))
-            new Table(columns: _*)
-          }
-
-          for (i <- splitVectors.head.indices) {
-            withResource(makeTableForIndex(i)) { table =>
-              val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
-              buffers += ParquetCachedBatch(buffer)
-            }
-          }
-        } finally {
-          splitVectors.foreach(array => array.safeClose())
+    val rowsAllowedInBatch = (BYTES_ALLOWED_PER_BATCH / estimatedRowSize).toInt
+    val splitIndices = scala.Range(rowsAllowedInBatch, gpuCB.numRows(), rowsAllowedInBatch)
+    val buffers = new ListBuffer[ParquetCachedBatch]
+    if (splitIndices.nonEmpty) {
+      val splitVectors = new ListBuffer[Array[ColumnVector]]
+      try {
+        for (index <- 0 until gpuCB.numCols()) {
+          splitVectors +=
+              gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
         }
-      } else {
-        withResource(GpuColumnVector.from(gpuCB)) { table =>
-          val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
-          buffers += ParquetCachedBatch(buffer)
+
+        // Splitting the table
+        // e.g. T0 = {col1, col2,...,coln} => split columns into 'm' cols =>
+        // T00= {splitCol1(0), splitCol2(0),...,splitColn(0)}
+        // T01= {splitCol1(1), splitCol2(1),...,splitColn(1)}
+        // ...
+        // T0m= {splitCol1(m), splitCol2(m),...,splitColn(m)}
+        def makeTableForIndex(i: Int): Table = {
+          val columns = splitVectors.indices.map(j => splitVectors(j)(i))
+          new Table(columns: _*)
         }
+
+        for (i <- splitVectors.head.indices) {
+          withResource(makeTableForIndex(i)) { table =>
+            val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
+            buffers += ParquetCachedBatch(buffer)
+          }
+        }
+      } finally {
+        splitVectors.foreach(array => array.safeClose())
       }
-      buffers.toList
+    } else {
+      withResource(GpuColumnVector.from(gpuCB)) { table =>
+        val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
+        buffers += ParquetCachedBatch(buffer)
+      }
+    }
+    buffers.toList
   }
 
   private def writeTableToCachedBatch(
