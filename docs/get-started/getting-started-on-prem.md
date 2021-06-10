@@ -17,20 +17,22 @@ the RAPIDS Accelerator for Apache Spark. The primary methods of deploy Spark are
 ## Apache Spark Setup for GPU
 Each GPU node where you are running Spark needs to have the following installed. If you are running
 with Docker on Kubernetes then skip these as you will do this as part of the docker build.
-- Install Java 8 - note jdk11 is supported by Spark, but we have been building and testing with
-  jdk8, so we suggest using that for now.
+- Install Java 8 
   - Ubuntu: `sudo apt install openjdk-8-jdk-headless`
-- Install the GPU driver and CUDA toolkit. Instructions for Ubuntu 18.04 with CUDA 10.1 are below.
-  - [Download](https://developer.nvidia.com/cuda-10.1-download-archive-base) and install
-    GPU drivers and the CUDA Toolkit. Installing these packages will require a node reboot after
-    installation.
-  - `wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin`
-  - `sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600`
-  - `wget http://developer.download.nvidia.com/compute/cuda/10.1/Prod/local_installers/cuda-repo-ubuntu1804-10-1-local-10.1.243-418.87.00_1.0-1_amd64.deb`
-  - `sudo dpkg -i cuda-repo-ubuntu1804-10-1-local-10.1.243-418.87.00_1.0-1_amd64.deb`
-  - `sudo apt-key add /var/cuda-repo-10-1-local-10.1.243-418.87.00/7fa2af80.pub`
-  - `sudo apt-get update`
-  - `sudo apt-get -y install cuda`
+  - While JDK11 is supported by Spark, RAPIDS Spark is built and tested with JDK8, so JDK8 is
+  recommended. 
+- Install the GPU driver and CUDA toolkit
+  - [Download](https://developer.nvidia.com/cuda-11.0-update1-download-archive) and install
+    GPU drivers and the CUDA Toolkit. A reboot will be required after installation. 
+```bash
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
+sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget https://developer.download.nvidia.com/compute/cuda/11.0.3/local_installers/cuda-repo-ubuntu1804-11-0-local_11.0.3-450.51.06-1_amd64.deb
+sudo dpkg -i cuda-repo-ubuntu1804-11-0-local_11.0.3-450.51.06-1_amd64.deb
+sudo apt-key add /var/cuda-repo-ubuntu1804-11-0-local/7fa2af80.pub
+sudo apt-get update
+sudo apt-get -y install cuda	
+```	
 
 Below are sections on installing Spark and the RAPIDS Accelerator on a single node.  You may want
 to read the deployment method sections before doing any installations.
@@ -347,10 +349,10 @@ and `GpuColumnarExchange`.  Those correspond to operations that run on the GPU.
 
 ## Enabling RAPIDS Shuffle Manager
 
-The _RAPIDS Shuffle Manager_ is an implementation of the `ShuffleManager` interface in Apache Spark
-that allows custom mechanisms to exchange shuffle data, enabling _Remote Direct Memory 
-Access (RDMA)_ and peer-to-peer communication between GPUs (NVLink/PCIe), by 
-leveraging [Unified Communication X (UCX)](https://www.openucx.org/).
+The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interface in Apache Spark
+that allows custom mechanisms to exchange shuffle data, enabling Remote Direct Memory Access (RDMA)
+and peer-to-peer communication between GPUs (NVLink/PCIe), by leveraging [Unified Communication X
+(UCX)](https://www.openucx.org/).
 
 You can find out how to enable the accelerated shuffle in the 
 [RAPIDS Shuffle Manager documentation](../additional-functionality/rapids-shuffle.md).
