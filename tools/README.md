@@ -12,7 +12,8 @@ GPU generated event logs.
 ## Prerequisites
 - Spark 3.0.1 or newer installed
 - Java 8 or above
-- Complete Spark event log(s) from Spark 3.0 or above version.
+- Complete Spark event log(s) from Spark 3.0 or above version
+  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.)
 
 Optional:
 - maven installed 
@@ -24,8 +25,8 @@ Optional:
 You do not need to compile the jar yourself because you can download it from maven repository directly.
 
 Here are 2 options:
-1. Download the jar file from maven repository
-  
+1. Download the jar file from [maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.06.0/)
+
 2. Compile the jar from github repo
 ```bash
 git clone https://github.com/NVIDIA/spark-rapids.git
@@ -61,6 +62,29 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 ```
 Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
 more options about integrating hadoop-aws module with S3.
+
+
+## Filter input event logs
+Both of the qualification tool and profiling tool have this function which is to filter event logs.
+Here are 2 filter options:
+1. N newest or oldest event logs. (-f option)
+
+This is based on timestamp of the event log files.
+
+2. Event log file names match the string. (-m option)
+
+This is based on the event log file name.
+
+Below is an example of profiling tool:
+
+Filter event logs to be processed. 10 newest file with filenames containing "local":
+```bash
+$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
+rapids-4-spark-tools_2.12-<version>.jar \
+-m "local" -f "10-newest" \
+/directory/with/eventlogs/
+```
+
 
 ## Qualification Tool
 
@@ -137,7 +161,9 @@ rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
 
-### Options
+Note: We suggest you also save the output of the `spark-submit` to a log file for troubleshooting.
+
+### Options (How to run `--help`)
 ```bash
 $SPARK_HOME/bin/spark-submit \
 --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
@@ -146,12 +172,13 @@ rapids-4-spark-tools_2.12-<version>.jar \
 
 For usage see below:
 
-      --no-exec-cpu-percent        Do not include the executor CPU time percent.
   -f, --filter-criteria  <arg>     Filter newest or oldest N event logs for processing.
                                    Supported formats are:
                                    To process 10 recent event logs: --filter-criteria "10-newest"
                                    To process 10 oldest event logs: --filter-criteria "10-oldest"
   -m, --match-event-logs  <arg>    Filter event logs filenames which contains the input string.
+       
+      --no-exec-cpu-percent        Do not include the executor CPU time percent.
   -n, --num-output-rows  <arg>     Number of output rows for each Application.
                                    Default is 1000.
   -o, --output-directory  <arg>    Base output directory. Default is current
@@ -191,15 +218,15 @@ Run `--help` for more information.
 The profiling tool generates information which can be used for debugging and profiling applications.
 
 ### Functions
-#### A. Collect Information or Compare Information(if more than 1 eventlogs are as input and option -c is specified)
-- Print Application information
-- Print Executors information
-- Print Job, stage and SQL ID information
-- Print Rapids related parameters
-- Print Rapids Accelerator Jar and cuDF Jar
-- Print SQL Plan Metrics
-- Optionally Prints the SQL Plan for each SQL query
-- Optionally Generates DOT graphs for each SQL query
+#### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
+- Application information
+- Executors information
+- Rapids related parameters
+- Rapids Accelerator Jar and cuDF Jar
+- Job, stage and SQL ID information (not in `compare` mode yet)
+- SQL Plan Metrics
+- Optionally : SQL Plan for each SQL query
+- Optionally : Generates DOT graphs for each SQL query
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -228,7 +255,6 @@ Compare Executor Information:
 |1       |1         |4         |13984648396|13984648396 |0            |null    |null    |null    |null        |null    |null    |
 ```
 
-
 - Compare Rapids related Spark properties side-by-side:
 ```
 Compare Rapids Properties which are set explicitly:
@@ -247,14 +273,14 @@ Compare Rapids Properties which are set explicitly:
 +-------------------------------------------+----------+----------+
 ```
  
-- List rapids-4-spark and cuDF jars based on classpath 
+- List rapids-4-spark and cuDF jars based on classpath: 
 ```
 Rapids Accelerator Jar and cuDF Jar:
 /path/rapids-4-spark_2.12-0.5.0.jar
 /path/cudf-0.19-cuda10-2.jar
 ```
 
-- Job, stage and SQL ID information
+- Job, stage and SQL ID information(not in `compare` mode yet):
 ```
 +--------+-----+------------+-----+
 |appIndex|jobID|stageIds    |sqlID|
@@ -264,7 +290,7 @@ Rapids Accelerator Jar and cuDF Jar:
 +--------+-----+------------+-----+
 ```
 
-- SQL Plan Metrics for Application for each SQL plan node in each SQL
+- SQL Plan Metrics for Application for each SQL plan node in each SQL:
 
 These are also called accumulables in Spark.
 ```
@@ -280,12 +306,12 @@ SQL Plan Metrics for Application:
 |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
 ```
 
-- Print SQL Plans (-p option)
+- Print SQL Plans (-p option):
 Prints the SQL plan as a text string to a file prefixed with `planDescriptions-`.
 For example if your application id is app-20210507103057-0000, then the
 filename will be `planDescriptions-app-20210507103057-0000`
 
-- Generate DOT graph for each SQL (-g option)
+- Generate DOT graph for each SQL (-g option):
 ```
 Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
 ```
@@ -305,7 +331,7 @@ The pdf file has the SQL plan graph with metrics.
 
 Below we will aggregate the task level metrics at different levels to do some analysis such as detecting possible shuffle skew.
 
-- Job + Stage level aggregated task metrics
+- Job + Stage level aggregated task metrics:
 ```
 ### B. Analysis ###
 
@@ -317,7 +343,7 @@ Job + Stage level aggregated task metrics:
 ```
   
 
-- SQL level aggregated task metrics
+- SQL level aggregated task metrics:
 ```
 SQL level aggregated task metrics:
 +--------+------------------------------+-----+--------------------+--------+--------+---------------+---------------+----------------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
@@ -326,7 +352,7 @@ SQL level aggregated task metrics:
 |1       |application_1111111111111_0001|0    |show at <console>:11|1111    |222222  |6666666        |55555555       |55.55           |0                   |13333333    |111111      |999         |3333.3      |6666666            |55555                         |66666                      |11111111           |0                    |111111111111       |11111111111          |111111       |0                     |0                      |0                        |888888888              |8                          |11111         |11111               |99999                    |11111111111          |2222222                   |222222222222          |0                           |222222222222         |444444444444       |5555555              |444444          |
 ```
 
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent 
+- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent: 
 ```
 SQL Duration and Executor CPU Time Percent
 +--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
@@ -347,7 +373,9 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 ```
 #### C. Health Check
+List failed tasks, stages and jobs.
 
+- Print failed tasks:
 ```
 Failed tasks:
 +-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
@@ -359,15 +387,20 @@ Failed tasks:
 |4      |0             |2908  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(20420),None,false,true,None)|
 |4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
 +-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+```
 
-
+- Print failed stages:
+```
 Failed stages:
 +-------+---------+-------------------------------------+--------+---------------------------------------------------+
 |stageId|attemptId|name                                 |numTasks|failureReason_first100char                         |
 +-------+---------+-------------------------------------+--------+---------------------------------------------------+
 |4      |0        |attachTree at Spark300Shims.scala:624|1000    |Job 0 cancelled as part of cancellation of all jobs|
 +-------+---------+-------------------------------------+--------+---------------------------------------------------+
+```
 
+- Print failed jobs:
+```
 Failed jobs:
 +-----+---------+------------------------------------------------------------------------+
 |jobID|jobResult|failedReason_first100char                                               |
@@ -383,7 +416,7 @@ Acceptable input event log paths are files or directories containing spark event
 in the local filesystem, HDFS, S3 or mixed.
 
 ### Use from spark-shell
-1. Include rapids-4-spark-tools_2.12-<version>.jar in the '--jars' option to spark-shell or spark-submit
+1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
 2. After starting spark-shell:
 
 For a single event log analysis:
@@ -402,16 +435,15 @@ $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.Prof
 rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
+Note: We suggest you also save the output of the `spark-submit` to a log file for troubleshooting.
 
-### Options
+### Options (How to run `--help`)
 ```bash
 $SPARK_HOME/bin/spark-submit \
 --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
 rapids-4-spark-tools_2.12-<version>.jar \
 --help
 
-# Filter eventlogs to be processed. 10 newest file with filenames containing "local"
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain  <Spark-Rapids-Repo>/rapids-4-spark-tools/target/rapids-4-spark-tools_2.12-<version>.jar -m "local" -f "10-newest" /path/to/eventlog1
 
 For usage see below:
   -c, --compare                   Compare Applications (Recommended to compare
