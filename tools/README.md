@@ -13,7 +13,8 @@ GPU generated event logs.
 - Spark 3.0.1 or newer installed
 - Java 8 or above
 - Complete Spark event log(s) from Spark 3.0 or above version
-  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.)
+  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes. 
+  Spark event logs can be downloaded from Spark UI using a "Download" button on the right side.)
 
 Optional:
 - maven installed 
