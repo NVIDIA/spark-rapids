@@ -24,7 +24,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, CurrentRow, Expression, NamedExpression, SortOrder, UnboundedPreceding}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, CurrentRow, Expression, NamedExpression, SortOrder, UnboundedPreceding}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.window.WindowExec
@@ -87,22 +87,20 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
   }
 
-  def isRunningWindow(spec: GpuWindowSpecDefinition): Boolean =
-    spec.frameSpecification match {
-      case sf: GpuSpecifiedWindowFrame =>
-        (sf.lower, sf.upper) match {
-          case (GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow)) =>
-            true
-          case _ => false
-        }
-      case _ => false
-    }
+  def isRunningWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(_,
+      GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow))) => true
+    case _ => false
+  }
 
   override def convertToGpu(): GpuExec = {
+    val resultColumnsOnly = getResultColumnsOnly
     val gpuWindowExpressions = windowExpressions.map(_.convertToGpu())
-    // TODO I really should be doing something smarter and splitting this up
-    //  into multiple WindowExecs to avoid too much memory being used...
-    val allBatchedRunning = !getResultColumnsOnly && gpuWindowExpressions.forall {
+    // When we support multiple ways to avoid batching the input data like with
+    // https://github.com/NVIDIA/spark-rapids/issues/1860 we should check if all of
+    // the operations fit into one of the supported groups and then split them up into
+    // multiple execs if they do, so that we can avoid batching on all of them.
+    val allBatchedRunning = gpuWindowExpressions.forall {
       case GpuAlias(GpuWindowExpression(func, spec), _) =>
         val isRunningFunc = func match {
           case _: GpuBatchedRunningWindowFunction[_] => true
@@ -110,24 +108,30 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
           case _ => false
         }
         isRunningFunc && isRunningWindow(spec)
-      case exp =>
-        logWarning(s"FOUND UNEXPECTED WINDOW EXPRESSION $exp")
-        false
+      case GpuAlias(_ :AttributeReference, _) =>
+        // If there are result columns only, then we are going to allow a few things through
+        // but in practice this could be anything and we need to walk through the expression
+        // tree and split it into expressions before the window operation, the window operation,
+        // and things after the window operation.
+        // https://github.com/NVIDIA/spark-rapids/issues/2688
+        resultColumnsOnly
+      case _ => false
     }
+
     if (allBatchedRunning) {
       GpuRunningWindowExec(
         gpuWindowExpressions,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
         childPlans.head.convertIfNeeded(),
-        getResultColumnsOnly)
+        resultColumnsOnly)
     } else {
       GpuWindowExec(
         gpuWindowExpressions,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
         childPlans.head.convertIfNeeded(),
-        getResultColumnsOnly
+        resultColumnsOnly
       )
     }
   }

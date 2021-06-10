@@ -857,6 +857,46 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
   def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[T]
 }
 
+/**
+ * Provides a way to process running window operations without needing to buffer and split the
+ * batches on partition by boundaries. When this happens part of a partition by key set may
+ * have been processed in the last batch, and the rest of it will need to be updated. For example
+ * if we are doing a running max operation. We may first get in something like
+ * <code>
+ * PARTS:  1, 1,  2, 2
+ * VALUES: 2, 3, 10, 9
+ * </code>
+ *
+ * The output of processing this would result in a new column that would look like
+ * <code>
+ *   MINS: 2, 2, 10, 9
+ * </code>
+ *
+ * But we don't know if the group with 2 in PARTS is done or not. So the framework will call
+ * updateState to have this save the last value in MINS, which is a 9. When the next batch
+ * shows up
+ *
+ * <code>
+ *  PARTS:  2,  2,  3,  3
+ * VALUES: 11,  5, 13, 14
+ * </code>
+ *
+ * We generate the window result again and get
+ *
+ * <code>
+ *    MINS: 11, 5, 13, 13
+ * </code>
+ * But we cannot output this yet because there may have been overlap with the previous batch.
+ * The framework will figure that out and pass data into `fixUp` to do the fixing. It will
+ * pass in MINS, and also a column of boolean values true, true, false, false to indicate
+ * whcih rows overlapped with the previous batch.  In our min example fixUp will do a min
+ * between the last value in for the previous batch and the values that could overlap with it.
+ *
+ * <code>
+ * RESULT: 9, 5, 13, 13
+ * </code>
+ * which can be output.
+ */
 trait BatchedRunningWindowFixer extends AutoCloseable {
   /**
    * Save any state needed from the previous output that will be needed to fix up the next batch.
@@ -867,10 +907,17 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
 
   /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
-   * @param samePartitionMask a boolean mask with no nulls in it. `true` indicates the row
+   * Like all window operations the input data will have been sorted by the partition
+   * by columns and the order by columns.
+   *
+   * @param samePartitionMask a mask that uses `true` to indicate the row
    *                          is for the same partition by keys that was the last row in the
-   *                          previous batch. `false` indicates it is not. Only values that are for
-   *                          the same partition by keys should be modified.
+   *                          previous batch or `false` to indicate it is not. If this is known
+   *                          to be all true or all false values a single boolean is used. If
+   *                          it can change for different rows than a column vector is provided.
+   *                          Only values that are for the same partition by keys should be
+   *                          modified. Because the input data is sorted by the partition by
+   *                          columns the boolean values will be grouped together.
    * @param windowedColumnOutput the output of the windowAggregation without anything
    *                             fixed/modified.
    * @return a fixed ColumnVector that was with outputs updated for items that were in the same
