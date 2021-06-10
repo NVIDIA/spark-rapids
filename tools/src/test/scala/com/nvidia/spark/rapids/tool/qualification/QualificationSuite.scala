@@ -26,6 +26,7 @@ import scala.collection.mutable.ListBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
@@ -60,8 +61,17 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
             dropTempViews=true)
         assert(exit == 0)
+        val schema = new StructType()
+          .add("appName",StringType,true)
+          .add("appID",StringType,true)
+          .add("dfRankTotal",DoubleType,true)
+          .add("potentialProblems",StringType,true)
+          .add("dfDurationFinal",LongType,true)
+          .add("appDuration",LongType,true)
+          .add("executorCPURatio",DoubleType,true)
+          .add("appEndDurationEstimated",BooleanType,true)
         val dfExpectOrig =
-          ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
+          ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(), Some(schema))
         val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
         assert(dfQualOpt.isDefined)
         ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)

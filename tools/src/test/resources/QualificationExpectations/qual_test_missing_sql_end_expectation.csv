@@ -1,2 +1,2 @@
-appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio
-"-","local-1622561780883","-","","-","-","-"
+appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio,appEndDurationEstimated
+"-","local-1622561780883","-","","-","-","-","-"
