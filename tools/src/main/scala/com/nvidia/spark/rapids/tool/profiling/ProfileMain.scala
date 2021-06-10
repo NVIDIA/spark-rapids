@@ -144,6 +144,7 @@ object ProfileMain extends Logging {
         val compare = new CompareApplications(apps, textFileWriter)
         compare.compareAppInfo()
         compare.compareExecutorInfo()
+        compare.compareJobInfo()
         compare.compareRapidsProperties()
       } else {
         val collect = new CollectInformation(apps, Some(textFileWriter))
