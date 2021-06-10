@@ -21,8 +21,35 @@ from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
 
 nested_scalar_mark=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1459")
+# 4 level nested struct
+# each level has a different number of children to avoid a bug in spark < 3.1
+nested_struct = StructGen([
+    ['child0', StructGen([
+        ['child0', StructGen([
+            ['child0', StructGen([
+                ['child0', DecimalGen(7, 2)],
+                ['child1', BooleanGen()],
+                ['child2', BooleanGen()],
+                ['child3', BooleanGen()]
+            ])],
+            ['child1', BooleanGen()],
+            ['child2', BooleanGen()]
+        ])],
+        ['child1', BooleanGen()]
+    ])]])
 @pytest.mark.parametrize('data_gen', [pytest.param((StructGen([['child0', DecimalGen(7, 2)]]),
                                                     StructGen([['child1', IntegerGen()]])), marks=nested_scalar_mark),
+                                      # left_struct(child0 = 4 level nested struct, child1 = Int)
+                                      # right_struct(child0 = 4 level nested struct, child1 = missing)
+                                      (StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
+                                                             StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]], nullable=False),
+                                       StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
+                                                            StructGen([['child0', DecimalGen(7, 2)]])]])]])]])]], nullable=False)),
+                                      # left_struct(child0 = 4 level nested struct, child1=missing)
+                                      # right_struct(child0 = missing struct, child1 = Int)
+                                      (StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
+                                                             StructGen([['child0', DecimalGen(7, 2)]])]])]])]])]], nullable=False),
+                                       StructGen([['child1', IntegerGen()]], nullable=False)),
                                       (StructGen([['child0', DecimalGen(7, 2)]], nullable=False),
                                        StructGen([['child1', IntegerGen()]], nullable=False))], ids=idfn)
 @pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
@@ -34,14 +61,18 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]]),
+                                                nested_struct], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
 
 @pytest.mark.parametrize('data_gen', all_gen + [pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
-                                                pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]], nullable=False), marks=nested_scalar_mark)])
+                                                pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]]), marks=nested_scalar_mark),
+                                                nested_struct,
+                                                StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
+                                                                      StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]])], ids=idfn)
 @pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 # This tests the union of two DFs of structs with missing child column names. The missing child
 # column will be replaced by nulls in the output DF. This is a feature added in 3.1+
@@ -50,7 +81,8 @@ def test_union_by_missing_col_name(data_gen):
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
                                 .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]]),
+                                                nested_struct], ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))

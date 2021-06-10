@@ -761,7 +761,8 @@ object GpuOverrides {
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT + TypeSig.ARRAY +
           TypeSig.MAP).nested(),
-      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
+          TypeSig.ARRAY).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
@@ -2362,6 +2363,20 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
+    expr[SortArray](
+      "Returns a sorted array with the input array and the ascending / descending order",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.ARRAY.nested(_commonTypes),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array", TypeSig.ARRAY.nested(_commonTypes),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("ascendingOrder", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.lit(TypeEnum.BOOLEAN))),
+      (sortExpression, conf, p, r) => new BinaryExprMeta[SortArray](sortExpression, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuSortArray(lhs, rhs)
+        }
+      }
+    ),
     expr[CreateArray](
       " Returns an array with the given elements",
       ExprChecks.projectNotLambda(
@@ -2828,7 +2843,8 @@ object GpuOverrides {
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes +
         TypeSig.DECIMAL.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
-        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet")).nested(),
+        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
+        TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -2916,7 +2932,8 @@ object GpuOverrides {
     exec[UnionExec](
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+            + TypeSig.STRUCT)
         .withPsNote(TypeEnum.STRUCT,
           "unionByName will not optionally impute nulls for missing struct fields  " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
