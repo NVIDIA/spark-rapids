@@ -17,10 +17,8 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-import org.apache.hadoop.fs.Path
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.deploy.history.EventLogFileWriter
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
@@ -42,9 +40,6 @@ object ProfileMain extends Logging {
 
   val SUBDIR = "rapids_4_spark_qualification_profile"
 
-  // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
-  // core/src/main/scala/org/apache/spark/io/CompressionCodec.scala#L67
-  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd")
 
   /**
    * Entry point for tests
@@ -70,10 +65,6 @@ object ProfileMain extends Logging {
 
       val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
-      def eventLogNameFilter(logFile: Path): Boolean = {
-        EventLogFileWriter.codecName(logFile)
-          .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES.contains(suffix))
-       }
 
       // If compare mode is on, we need lots of memory to cache all applications then compare.
       // Suggest only enable compare mode if there is no more than 10 applications as input.
@@ -82,7 +73,7 @@ object ProfileMain extends Logging {
         val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
         try {
           var index: Int = 1
-          for (path <- allPaths.filter(eventLogNameFilter)) {
+          for (path <- allPaths) {
             apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
             index += 1
           }
@@ -107,7 +98,7 @@ object ProfileMain extends Logging {
         // This mode is to process one application at one time.
         var index: Int = 1
         try {
-          for (path <- allPaths.filter(eventLogNameFilter)) {
+          for (path <- allPaths) {
             // This apps only contains 1 app in each loop.
             val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
             val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
