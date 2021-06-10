@@ -307,8 +307,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       case ArrayType(elementType, _) => isTypeSupportedByParquet(elementType)
       case MapType(keyType, valueType, _) => isTypeSupportedByParquet(keyType) &&
           isTypeSupportedByParquet(valueType)
-      // Decimal is supported by parquet but we write them as Ints to support negative scaled values
-      case DecimalType() => false
+      case d: DecimalType if d.scale < 0 => false
       case _ => true
     }
   }
@@ -366,38 +365,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   val BYTES_ALLOWED_PER_BATCH: Long = _2GB - APPROX_PAR_META_DATA
 
   private[rapids] def compressColumnarBatchWithParquet(
-      oldGpuCB: ColumnarBatch,
+      gpuCB: ColumnarBatch,
       schema: StructType): List[ParquetCachedBatch] = {
-    val estimatedRowSize = scala.Range(0, oldGpuCB.numCols()).map { idx =>
-      oldGpuCB.column(idx).asInstanceOf[GpuColumnVector]
-          .getBase.getDeviceMemorySize / oldGpuCB.numRows()
+    val estimatedRowSize = scala.Range(0, gpuCB.numCols()).map { idx =>
+      gpuCB.column(idx).asInstanceOf[GpuColumnVector]
+          .getBase.getDeviceMemorySize / gpuCB.numRows()
     }.sum
     val schemaWithUnambiguousNames = StructType(schema.fields.indices.map(index => {
       val field = schema.fields(index)
       StructField(s"_col$index", field.dataType, field.nullable, field.metadata)
     }))
-    // We want to map the name of the cols we are casting so we can cast them back when reading
-    // back the cache
-    val castMap = new scala.collection.mutable.HashMap[String, DType]()
-    val columns = for (i <- 0 until oldGpuCB.numCols()) yield {
-      val gpuVector = oldGpuCB.column(i).asInstanceOf[GpuColumnVector]
-      gpuVector.dataType() match {
-        case d: DecimalType =>
-          castMap(schemaWithUnambiguousNames(i).name) = GpuColumnVector.getNonNestedRapidsType(d)
-          if (d.precision <= Decimal.MAX_INT_DIGITS) {
-            // TODO: We need a GpuColumnVector that wraps a ColumnView so we don't have to copy
-            val v = withResource(gpuVector.getBase.bitCastTo(DType.INT32))(_.copyToColumnVector())
-            GpuColumnVector.from(v, IntegerType)
-          } else {
-            // TODO: We need a GpuColumnVector that wraps a ColumnView so we don't have to copy
-            val v = withResource(gpuVector.getBase.bitCastTo(DType.INT64))(_.copyToColumnVector())
-            GpuColumnVector.from(v, LongType)
-          }
-        case _ =>
-          gpuVector.incRefCount()
-      }
-    }
-    withResource(new ColumnarBatch(columns.toArray, oldGpuCB.numRows())) { gpuCB =>
       val rowsAllowedInBatch = (BYTES_ALLOWED_PER_BATCH / estimatedRowSize).toInt
       val splitIndices = scala.Range(rowsAllowedInBatch, gpuCB.numRows(), rowsAllowedInBatch)
       val buffers = new ListBuffer[ParquetCachedBatch]
@@ -423,7 +400,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           for (i <- splitVectors.head.indices) {
             withResource(makeTableForIndex(i)) { table =>
               val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
-              buffers += ParquetCachedBatch(buffer, castMap)
+              buffers += ParquetCachedBatch(buffer)
             }
           }
         } finally {
@@ -432,11 +409,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       } else {
         withResource(GpuColumnVector.from(gpuCB)) { table =>
           val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
-          buffers += ParquetCachedBatch(buffer, castMap)
+          buffers += ParquetCachedBatch(buffer)
         }
       }
       buffers.toList
-    }
   }
 
   private def writeTableToCachedBatch(
@@ -1288,7 +1264,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           val mapType = MapType(newKeyType, newValueType, nullable)
           mapping.put(m, mapType)
           mapType
-        case d: DecimalType =>
+        case d: DecimalType if d.scale < 0 =>
           val newType = if (d.precision <= Decimal.MAX_INT_DIGITS) {
             IntegerType
           } else {
