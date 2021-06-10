@@ -15,10 +15,10 @@
 # limitations under the License.
 #
 
-# The initscript to set up environment for the cudf_udf tests on Databrcks
+# The initscript to set up environment for the cudf_udf tests on Databricks
 # Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
 
-CUDF_VER=${CUDF_VER:-0.19.2}
+CUDF_VER=${CUDF_VER:-21.06}
 
 # Use mamba to install cudf-udf packages to speed up conda resolve time
 base=$(conda info --base)
@@ -26,5 +26,5 @@ conda create -y -n mamba -c conda-forge mamba
 pip uninstall -y pyarrow
 ${base}/envs/mamba/bin/mamba remove -y c-ares zstd libprotobuf pandas
 ${base}/envs/mamba/bin/mamba install -y pyarrow=1.0.1 -c conda-forge
-${base}/envs/mamba/bin/mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=$CUDF_VER cudatoolkit=10.1
+${base}/envs/mamba/bin/mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=$CUDF_VER cudatoolkit=11.0
 conda env remove -n mamba

@@ -18,31 +18,21 @@ public final class MetadataResponse extends Table {
   public MetadataResponse __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   /**
-   * Buffer size in bytes required to hold the full response. If this value is larger than the
-   * maximum response size sent in the corresponding request then the metadata contents in this
-   * response are incomplete and must be re-requested with a larger response buffer allocated.
-   */
-  public long fullResponseSize() { int o = __offset(4); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public boolean mutateFullResponseSize(long full_response_size) { int o = __offset(4); if (o != 0) { bb.putLong(o + bb_pos, full_response_size); return true; } else { return false; } }
-  /**
    * metadata for each table
    */
   public TableMeta tableMetas(int j) { return tableMetas(new TableMeta(), j); }
-  public TableMeta tableMetas(TableMeta obj, int j) { int o = __offset(6); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
-  public int tableMetasLength() { int o = __offset(6); return o != 0 ? __vector_len(o) : 0; }
+  public TableMeta tableMetas(TableMeta obj, int j) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
+  public int tableMetasLength() { int o = __offset(4); return o != 0 ? __vector_len(o) : 0; }
 
   public static int createMetadataResponse(FlatBufferBuilder builder,
-      long full_response_size,
       int table_metasOffset) {
-    builder.startObject(2);
-    MetadataResponse.addFullResponseSize(builder, full_response_size);
+    builder.startObject(1);
     MetadataResponse.addTableMetas(builder, table_metasOffset);
     return MetadataResponse.endMetadataResponse(builder);
   }
 
-  public static void startMetadataResponse(FlatBufferBuilder builder) { builder.startObject(2); }
-  public static void addFullResponseSize(FlatBufferBuilder builder, long fullResponseSize) { builder.addLong(0, fullResponseSize, 0L); }
-  public static void addTableMetas(FlatBufferBuilder builder, int tableMetasOffset) { builder.addOffset(1, tableMetasOffset, 0); }
+  public static void startMetadataResponse(FlatBufferBuilder builder) { builder.startObject(1); }
+  public static void addTableMetas(FlatBufferBuilder builder, int tableMetasOffset) { builder.addOffset(0, tableMetasOffset, 0); }
   public static int createTableMetasVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startTableMetasVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
   public static int endMetadataResponse(FlatBufferBuilder builder) {

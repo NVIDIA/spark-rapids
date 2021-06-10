@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark311
 
+import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
@@ -27,6 +28,7 @@ import org.apache.arrow.vector.ValueVector
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -40,9 +42,10 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.{GpuElementAt, GpuFileSourceScanExec, GpuGetArrayItem, GpuGetArrayItemMeta, GpuGetMapValue, GpuGetMapValueMeta, GpuStringReplace, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark311._
+import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
@@ -201,13 +204,14 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
+            TypeSig.all))),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -215,22 +219,90 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly(TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all,
-        Seq(ParamCheck("input", TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP, TypeSig.all),
+      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
+        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
+        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
+          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL, TypeSig.all))),
+          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
+            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
+            TypeSig.all))),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
         }
+      }),
+  GpuOverrides.expr[GetArrayItem](
+    "Gets the field at `ordinal` in the Array",
+    ExprChecks.binaryProjectNotLambda(
+      (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+        TypeSig.DECIMAL + TypeSig.MAP).nested(),
+      TypeSig.all,
+      ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+    (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
+      override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
+        GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
+    }),
+    GpuOverrides.expr[GetMapValue](
+      "Gets Value from a Map based on a key",
+      ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
+        ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
+        ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
+      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r){
+        override def convertToGpu(map: Expression, key: Expression): GpuExpression =
+          GpuGetMapValue(map, key, SQLConf.get.ansiEnabled)
+      }),
+    GpuOverrides.expr[ElementAt](
+      "Returns element of array at given(1-based) index in value if column is array. " +
+        "Returns value for the given key in value if column is map.",
+      ExprChecks.binaryProjectNotLambda(
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+          TypeSig.DECIMAL + TypeSig.MAP).nested(), TypeSig.all,
+        ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP) +
+          TypeSig.MAP.nested(TypeSig.STRING)
+            .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
+          TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
+        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+          .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
+            "not as maps keys")
+          .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
+            "not array indexes"),
+          TypeSig.all)),
+      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // To distinguish the supported nested type between Array and Map
+          val checks = in.left.dataType match {
+            case _: MapType =>
+              // Match exactly with the checks for GetMapValue
+              ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
+                ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
+                ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all))
+            case _: ArrayType =>
+              // Match exactly with the checks for GetArrayItem
+              ExprChecks.binaryProjectNotLambda(
+                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+                  TypeSig.DECIMAL + TypeSig.MAP).nested(),
+                TypeSig.all,
+                ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
+                  TypeSig.ARRAY.nested(TypeSig.all)),
+                ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
+            case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
+          }
+          checks.tag(this)
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
+        }
       })
- ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    super.exprs301 ++ exprs311
+    getExprsSansTimeSub ++ exprs311
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -276,11 +348,19 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks(TypeSig.commonCudfTypes + TypeSig.DECIMAL, TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested()
+          .withPsNote(TypeEnum.DECIMAL,
+            "Negative scales aren't supported at the moment even with " +
+              "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. This is because Parquet " +
+              "doesn't support negative scale for decimal values"),
+          TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+            }
+            if (SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
+              willNotWorkOnGpu("Parquet doesn't support negative scales for Decimal values")
             }
           }
 
@@ -294,17 +374,20 @@ class Spark311Shims extends Spark301Shims {
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
+            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+        ), TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
+            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+        ), TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL), TypeSig.all),
+            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+        ), TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
@@ -441,6 +524,20 @@ class Spark311Shims extends Spark301Shims {
   override def getArrowValidityBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
     val arrowBuf = vec.getValidityBuffer
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
+  }
+
+  override def createTable(table: CatalogTable,
+    sessionCatalog: SessionCatalog,
+    tableLocation: Option[URI],
+    result: BaseRelation) = {
+    val newTable = table.copy(
+      storage = table.storage.copy(locationUri = tableLocation),
+      // We will use the schema of resolved.relation as the schema of the table (instead of
+      // the schema of df). It is important since the nullability may be changed by the relation
+      // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
+      schema = result.schema)
+    // Table location is already validated. No need to check it again during table creation.
+    sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
   }
 
   override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {

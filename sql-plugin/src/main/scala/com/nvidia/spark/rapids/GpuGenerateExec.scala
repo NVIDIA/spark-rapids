@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
-import com.nvidia.spark.rapids.GpuMetric.{ESSENTIAL_LEVEL, MODERATE_LEVEL, NUM_OUTPUT_BATCHES, NUM_OUTPUT_ROWS, TOTAL_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -342,8 +341,10 @@ case class GpuExplode(child: Expression) extends GpuExplodeBase {
     require(inputBatch.numCols() - 1 == generatorOffset,
       "Internal Error GpuExplode supports one and only one input attribute.")
     val schema = resultSchema(GpuColumnVector.extractTypes(inputBatch), generatorOffset)
+    val explodeFun = (t: Table) =>
+      if (outer) t.explodeOuter(generatorOffset) else t.explode(generatorOffset)
     withResource(GpuColumnVector.from(inputBatch)) { table =>
-      withResource(table.explode(generatorOffset)) { exploded =>
+      withResource(explodeFun(table)) { exploded =>
         GpuColumnVector.from(exploded, schema)
       }
     }
@@ -362,8 +363,10 @@ case class GpuPosExplode(child: Expression) extends GpuExplodeBase {
       "Internal Error GpuPosExplode supports one and only one input attribute.")
     val schema = resultSchema(
       GpuColumnVector.extractTypes(inputBatch), generatorOffset, includePos = true)
+    val explodePosFun = (t: Table) =>
+      if (outer) t.explodeOuterPosition(generatorOffset) else t.explodePosition(generatorOffset)
     withResource(GpuColumnVector.from(inputBatch)) { table =>
-      withResource(table.explodePosition(generatorOffset)) { exploded =>
+      withResource(explodePosFun(table)) { exploded =>
         GpuColumnVector.from(exploded, schema)
       }
     }
@@ -378,6 +381,12 @@ case class GpuGenerateExec(
     outer: Boolean,
     generatorOutput: Seq[Attribute],
     child: SparkPlan) extends UnaryExecNode with GpuExec {
+
+  import GpuMetric._
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
+  )
 
   override def output: Seq[Attribute] = requiredChildOutput ++ generatorOutput
 
@@ -394,7 +403,7 @@ case class GpuGenerateExec(
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
 
     generator.fixedLenLazyExpressions match {
       // If lazy expressions can be extracted from generator,
@@ -414,7 +423,7 @@ case class GpuGenerateExec(
             outer,
             numOutputRows,
             numOutputBatches,
-            totalTime)
+            opTime)
         }
 
       // Otherwise, perform common generation via `generator.generate`
@@ -427,7 +436,7 @@ case class GpuGenerateExec(
         child.executeColumnar().flatMap { inputFromChild =>
           withResource(inputFromChild) { input =>
             doGenerate(input, genProjectList, othersProjectList,
-              numOutputRows, numOutputBatches, totalTime)
+              numOutputRows, numOutputBatches, opTime)
           }
         }
     }
@@ -438,8 +447,8 @@ case class GpuGenerateExec(
       othersProjectList: Seq[GpuExpression],
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)) { _ =>
+      opTime: GpuMetric): Iterator[ColumnarBatch] = {
+    withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, opTime)) { _ =>
       // Project input columns, setting other columns ahead of generator's input columns.
       // With the projected batches and an offset, generators can extract input columns or
       // other required columns separately.

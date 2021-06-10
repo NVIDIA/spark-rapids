@@ -10,8 +10,14 @@ This is a getting started guide for the RAPIDS Accelerator for Apache Spark on A
 of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA
 GPUs on AWS EMR.
 
-The current EMR 6.2.0 release supports Spark version 3.0.1 and RAPIDS Accelerator version 0.2.0. For
-more details of supported applications, please see the [EMR release
+Different versions of EMR ship with different versions of Spark, RAPIDS Accelerator, cuDF and xgboost4j-spark:
+
+| EMR | Spark | RAPIDS Accelerator jar | cuDF jar | xgboost4j-spark jar
+| --- | --- | --- | ---| --- |
+| 6.3 | 3.1.1 | rapids-4-spark_2.12-0.4.1.jar | cudf-0.18.1-cuda10-1.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
+| 6.2 | 3.0.1 | rapids-4-spark_2.12-0.2.0.jar | cudf-0.15-cuda10-1.jar | xgboost4j-spark_3.0-1.0.0-0.2.0.jar |
+
+For more details of supported applications, please see the [EMR release
 notes](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-release-6x.html).
 
 For more information on AWS EMR, please see the [AWS
@@ -29,7 +35,7 @@ g4dn.2xlarge nodes:
 
 ```
 aws emr create-cluster \
---release-label emr-6.2.0 \
+--release-label emr-6.3.0 \
 --applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
 --service-role EMR_DefaultRole \
 --ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
@@ -69,8 +75,8 @@ detailed cluster configuration page.
 
 #### Step 1:  Software Configuration and Steps
 
-Select **emr-6.2.0** for the release, uncheck all the software options, and then check **Hadoop
-3.2.1**, **Spark 3.0.1**, **Livy 0.7.0** and **JupyterEnterpriseGateway 2.1.0**.
+Select **emr-6.3.0** for the release, uncheck all the software options, and then check **Hadoop
+3.2.1**, **Spark 3.1.1**, **Livy 0.7.0** and **JupyterEnterpriseGateway 2.1.0**.
 
 In the "Edit software settings" field, copy and paste the configuration from the [EMR
 document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also
@@ -126,7 +132,7 @@ default settings:
         "spark.plugins":"com.nvidia.spark.SQLPlugin",
         "spark.sql.sources.useV1SourceList":"",
         "spark.executor.resource.gpu.discoveryScript":"/usr/lib/spark/scripts/gpu/getGpusResources.sh",
-        "spark.submit.pyFiles":"/usr/lib/spark/jars/xgboost4j-spark_3.0-1.0.0-0.2.0.jar",
+        "spark.submit.pyFiles":"/usr/lib/spark/jars/xgboost4j-spark_3.0-1.2.0-0.1.0.jar",
         "spark.executor.extraLibraryPath":"/usr/local/cuda/targets/x86_64-linux/lib:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/cuda/compat/lib:/usr/local/cuda/lib:/usr/local/cuda/lib64:/usr/lib/hadoop/lib/native:/usr/lib/hadoop-lzo/lib/native:/docker/usr/lib/hadoop/lib/native:/docker/usr/lib/hadoop-lzo/lib/native",
         "spark.rapids.sql.concurrentGpuTasks":"2",
         "spark.executor.resource.gpu.amount":"1",

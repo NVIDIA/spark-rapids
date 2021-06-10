@@ -73,6 +73,7 @@ BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
     --conf spark.sql.session.timeZone=UTC"
 
 CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
+    --conf spark.rapids.memory.gpu.minAllocFraction=0 \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.concurrentPythonWorkers=2 \
     --conf spark.executorEnv.PYTHONPATH=${RAPIDS_PLUGIN_JAR} \

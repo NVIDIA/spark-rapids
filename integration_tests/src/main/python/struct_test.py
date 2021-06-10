@@ -19,6 +19,14 @@ from conftest import is_dataproc_runtime
 from data_gen import *
 from pyspark.sql.types import *
 
+def test_struct_scalar_project():
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.range(2).selectExpr(
+                "named_struct('1', 2, '3', 4) as i", 
+                "named_struct('a', 'b', 'c', 'd', 'e', named_struct()) as s",
+                "named_struct('a', map('foo', 10, 'bar', 11), 'arr', array(1.0, 2.0, 3.0)) as st"
+                "id"))
+
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
     StructGen([["first", short_gen], ["second", int_gen], ["third", long_gen]]),
     StructGen([["first", double_gen], ["second", date_gen], ["third", timestamp_gen]]),
@@ -32,12 +40,15 @@ def test_struct_get_item(data_gen):
                 'a.third'))
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_default, decimal_gen_scale_precision], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [null_gen, decimal_gen_default, decimal_gen_scale_precision] + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_make_struct(data_gen):
+    # Spark has no good way to create a map literal without the map function
+    # so we are inserting one.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
                 'struct(a, b)',
-                'named_struct("foo", b, "bar", 5, "end", a)'))
+                'named_struct("foo", b, "m", map("a", "b"), "n", null, "bar", 5, "other", named_struct("z", "z"),"end", a)'),
+            conf = allow_negative_scale_of_decimal_conf)
 
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", boolean_gen], ["second", byte_gen], ["third", float_gen]]),
@@ -66,6 +77,39 @@ def test_legacy_cast_struct_to_string(data_gen):
         lambda spark : unary_op_df(spark, data_gen).select(
             f.col('a').cast("STRING")),
             conf = legacy_complex_types_to_string)
+
+# https://github.com/NVIDIA/spark-rapids/issues/2309
+@pytest.mark.parametrize('cast_conf', ['LEGACY', 'SPARK311+'])
+def test_one_nested_null_field_legacy_cast(cast_conf):
+    def was_broken_for_nested_null(spark):
+        data = [
+            (('foo',),),
+            ((None,),),
+            (None,)
+        ]
+        df = spark.createDataFrame(data)
+        return df.select(df._1.cast(StringType()))
+
+    assert_gpu_and_cpu_are_equal_collect(was_broken_for_nested_null, {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_conf == 'LEGACY'
+    })
+
+
+# https://github.com/NVIDIA/spark-rapids/issues/2315
+@pytest.mark.parametrize('cast_conf', ['LEGACY', 'SPARK311+'])
+def test_two_col_struct_legacy_cast(cast_conf):
+    def broken_df(spark):
+        key_data_gen = StructGen([
+            ('a', IntegerGen(min_val=0, max_val=4)),
+            ('b', IntegerGen(min_val=5, max_val=9)),
+        ], nullable=False)
+        val_data_gen = IntegerGen()
+        df = two_col_df(spark, key_data_gen, val_data_gen)
+        return df.select(df.a.cast(StringType())).filter(df.b > 1)
+
+    assert_gpu_and_cpu_are_equal_collect(broken_df, {
+        'spark.sql.legacy.castComplexTypesToString.enabled': cast_conf == 'LEGACY'
+    })
 
 @pytest.mark.parametrize('data_gen', [StructGen([["first", float_gen]])], ids=idfn)
 @pytest.mark.xfail(reason='casting float to string is not an exact match')

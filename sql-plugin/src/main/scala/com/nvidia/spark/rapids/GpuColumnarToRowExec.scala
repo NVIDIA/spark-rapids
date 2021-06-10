@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
@@ -39,7 +40,8 @@ class AcceleratedColumnarToRowIterator(
     batches: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    totalTime: GpuMetric) extends Iterator[InternalRow] with Arm with Serializable {
+    opTime: GpuMetric,
+    fetchTime: GpuMetric) extends Iterator[InternalRow] with Arm with Serializable {
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
@@ -103,7 +105,7 @@ class AcceleratedColumnarToRowIterator(
     // but it is more efficient.
     numOutputRows += cb.numRows()
     if (cb.numRows() > 0) {
-      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)) { _ =>
+      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
         withResource(rearrangeRows(cb)) { table =>
           withResource(table.convertToRows()) { rowsCvList =>
             rowsCvList.foreach { rowsCv =>
@@ -123,16 +125,30 @@ class AcceleratedColumnarToRowIterator(
     if (pendingCvs.nonEmpty) {
       setCurrentBatch(pendingCvs.dequeue())
     } else {
-      while (batches.hasNext) {
-        withResource(batches.next()) { cb =>
-          if (setupBatch(cb)) {
-            GpuSemaphore.releaseIfNecessary(TaskContext.get())
-            return
-          }
-        }
-      }
+      populateBatch()
     }
     GpuSemaphore.releaseIfNecessary(TaskContext.get())
+  }
+
+  @tailrec
+  private def populateBatch(): Unit = {
+    // keep fetching input batches until we have a non-empty batch ready
+    val nextBatch = fetchNextBatch()
+    if (nextBatch.isDefined) {
+      if (!withResource(nextBatch.get)(setupBatch)) {
+        populateBatch()
+      }
+    }
+  }
+
+  private def fetchNextBatch(): Option[ColumnarBatch] = {
+    withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, fetchTime)) { _ =>
+      if (batches.hasNext) {
+        Some(batches.next())
+      } else {
+        None
+      }
+    }
   }
 
   override def hasNext: Boolean = {
@@ -161,7 +177,8 @@ class AcceleratedColumnarToRowIterator(
 class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    totalTime: GpuMetric) extends Iterator[InternalRow] with Arm {
+    opTime: GpuMetric,
+    fetchTime: GpuMetric) extends Iterator[InternalRow] with Arm {
   // GPU batches read in must be closed by the receiver (us)
   @transient var cb: ColumnarBatch = null
   var it: java.util.Iterator[InternalRow] = null
@@ -178,28 +195,11 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   def loadNextBatch(): Unit = {
     closeCurrentBatch()
     it = null
-    while (batches.hasNext) {
-      try {
-        withResource(batches.next()) { devCb =>
-          numInputBatches += 1
-          if (setupBatchIterator(devCb)) {
-            return
-          }
-        }
-      } finally {
-        // Leaving the GPU for a while
-        GpuSemaphore.releaseIfNecessary(TaskContext.get())
-      }
-    }
-  }
-
-  /**
-   * Setup the columnar to row batch iterator for the specified device batch.
-   * Returns true if the batch iterator was succesfully initialized or false otherwise.
-   */
-  private def setupBatchIterator(devCb: ColumnarBatch): Boolean = {
-    if (devCb.numRows > 0) {
-      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, totalTime)) { _ =>
+    val devCb = fetchNextBatch()
+    // perform conversion
+    devCb.foreach { devCb =>
+      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
+        try {
           cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
             devCb.numRows())
           it = cb.rowIterator()
@@ -208,10 +208,28 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
           // because it will over count the number of rows output in the case of a limit,
           // but it is more efficient.
           numOutputRows += cb.numRows()
+        } finally {
+          devCb.close()
+          // Leaving the GPU for a while
+          GpuSemaphore.releaseIfNecessary(TaskContext.get())
+        }
       }
-      return true
     }
-    false
+  }
+
+  private def fetchNextBatch(): Option[ColumnarBatch] = {
+    withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, fetchTime)) { _ =>
+      while (batches.hasNext) {
+        numInputBatches += 1
+        val devCb = batches.next()
+        if (devCb.numRows() > 0) {
+          return Some(devCb)
+        } else {
+          devCb.close()
+        }
+      }
+      None
+    }
   }
 
   override def hasNext: Boolean = {
@@ -262,15 +280,17 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
+    val collectTime = gpuLongMetric(COLLECT_TIME)
 
-    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, totalTime)
+    val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, opTime, collectTime)
 
     val cdata = child.executeColumnar()
     if (exportColumnarRdd) {
@@ -292,7 +312,8 @@ object GpuColumnarToRowExecParent {
       output: Seq[Attribute],
       numOutputRows: GpuMetric,
       numInputBatches: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] => Iterator[InternalRow] = {
+      opTime: GpuMetric,
+      fetchTime: GpuMetric): Iterator[ColumnarBatch] => Iterator[InternalRow] = {
     if (CudfRowTransitions.areAllSupported(output) &&
         // For a small number of columns it is still best to do it the original way
         output.length > 4 &&
@@ -304,14 +325,14 @@ object GpuColumnarToRowExecParent {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
         new AcceleratedColumnarToRowIterator(output,
-          batches, numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+          batches, numInputBatches, numOutputRows, opTime, fetchTime).map(toUnsafe)
       }
     } else {
       (batches: Iterator[ColumnarBatch]) => {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
         new ColumnarToRowIterator(batches,
-          numInputBatches, numOutputRows, totalTime).map(toUnsafe)
+          numInputBatches, numOutputRows, opTime, fetchTime).map(toUnsafe)
       }
     }
   }

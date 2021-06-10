@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
+import ai.rapids.cudf.ColumnVector
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{DataType, StringType}
@@ -34,15 +34,15 @@ case class GpuGetJsonObject(json: Expression, path: Expression) extends GpuBinar
     throw new UnsupportedOperationException("JSON path must be a scalar value")
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector = {
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
     throw new UnsupportedOperationException("JSON path must be a scalar value")
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector = {
-    lhs.getBase().getJSONObject(rhs)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    lhs.getBase().getJSONObject(rhs.getBase)
   }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }

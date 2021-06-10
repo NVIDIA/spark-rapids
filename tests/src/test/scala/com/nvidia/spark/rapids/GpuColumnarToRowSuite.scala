@@ -40,7 +40,8 @@ class GpuColumnarToRowSuite extends FunSuite with Arm {
       }
     }
 
-    val ctriter = new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric)
+    val ctriter = new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
+      NoopMetric)
     assertResult(Seq("1", "3", "5", "7", "9"))(ctriter.map(_.getString(0)).toSeq)
   }
 }

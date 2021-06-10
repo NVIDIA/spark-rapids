@@ -21,14 +21,13 @@ import java.lang.reflect.Method
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.RangePartitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
@@ -159,6 +158,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
+  private def isGpuShuffleLike(execNode: SparkPlan): Boolean =
+    execNode.isInstanceOf[GpuShuffleExchangeExecBase] ||
+      execNode.isInstanceOf[GpuCustomShuffleReaderExec]
+
   /**
    * This optimizes the plan to remove [[GpuCoalesceBatches]] nodes that are unnecessary
    * or undesired in some situations.
@@ -171,10 +174,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    *       not unusual.
    */
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
-    case c2r: GpuColumnarToRowExecParent if c2r.child.isInstanceOf[GpuCoalesceBatches] =>
-      // Don't build a batch if we are just going to go back to ROWS
-      val co = c2r.child.asInstanceOf[GpuCoalesceBatches]
-      c2r.withNewChildren(co.children.map(optimizeCoalesce))
+    case c2r @ GpuColumnarToRowExecParent(gpuCoalesce: GpuCoalesceBatches, _)
+      if !isGpuShuffleLike(gpuCoalesce.child) =>
+        // Don't build a batch if we are just going to go back to ROWS
+        // and there isn't a GPU shuffle involved
+        c2r.withNewChildren(gpuCoalesce.children.map(optimizeCoalesce))
     case GpuCoalesceBatches(r2c: GpuRowToColumnarExec, goal: TargetSize) =>
       // TODO in the future we should support this for all goals, but
       // GpuRowToColumnarExec preallocates all of the memory, and the builder does not
@@ -185,7 +189,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case GpuCoalesceBatches(co: GpuCoalesceBatches, goal) =>
       GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.max(goal, co.goal))
     case GpuCoalesceBatches(child: GpuExec, goal)
-      if (CoalesceGoal.satisfies(child.outputBatching, goal)) =>
+      if CoalesceGoal.satisfies(child.outputBatching, goal) =>
       // The goal is already satisfied so remove the batching
       child.withNewChildren(child.children.map(optimizeCoalesce))
     case p =>
@@ -406,8 +410,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def assertIsOnTheGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
     val isAdaptiveEnabled = plan.conf.adaptiveExecutionEnabled
     plan match {
-      case e: Exchange if isAdaptiveEnabled &&
-          ShimLoader.getSparkShims.isBroadcastExchangeLike(e) =>
+      case _: BroadcastExchangeLike if isAdaptiveEnabled =>
         // broadcasts are left on CPU for now when AQE is enabled
       case _: BroadcastHashJoinExec | _: BroadcastNestedLoopJoinExec
           if isAdaptiveEnabled =>
@@ -425,17 +428,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException("It looks like some operations were " +
             s"pushed down to InMemoryTableScanExec ${imts.expressions.mkString(",")}")
         }
-      case _: GpuColumnarToRowExecParent => () // Ignored
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case shuffleExchange: ShuffleExchangeExec if conf.cpuRangePartitioningPermitted
-        || !shuffleExchange.outputPartitioning.isInstanceOf[RangePartitioning] => {
-        // Ignored for now, we don't force it to the GPU if
-        // children are not on the gpu
-      }
       case _ =>
-        if (!plan.supportsColumnar && !conf.testingAllowedNonGpu.exists(nonGpuClass =>
-          PlanUtils.sameClass(plan, nonGpuClass))) {
+        if (!plan.supportsColumnar &&
+            // There are some python execs that are not columnar because of a little
+            // used feature. This prevents those from failing tests. This also allows
+            // the columnar to row transitions to not cause test issues because they too
+            // are not columnar (they output rows) but are instances of GpuExec.
+            !plan.isInstanceOf[GpuExec] && 
+            !conf.testingAllowedNonGpu.exists(nonGpuClass => 
+                PlanUtils.sameClass(plan, nonGpuClass))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n${plan}")
         }
@@ -463,7 +466,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         validateExecs.contains(plan.getClass.getSimpleName)
       }
       // to set to make uniq execs
-      val execsFound = ShimLoader.getSparkShims.findOperators(plan, planContainsInstanceOf).toSet
+      val execsFound = PlanUtils.findOperators(plan, planContainsInstanceOf).toSet
       val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
       require(execsNotFound.isEmpty,
         s"Plan ${plan.toString()} does not contain the following execs: " +
@@ -500,6 +503,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       if (conf.isTestEnabled) {
         assertIsOnTheGpu(updatedPlan, conf)
+        // Generate the canonicalized plan to ensure no incompatibilities.
+        // The plan itself is not currently checked.
+        updatedPlan.canonicalized
         validateExecsInGpuPlan(updatedPlan, conf)
       }
       updatedPlan

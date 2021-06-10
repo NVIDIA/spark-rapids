@@ -71,14 +71,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       }
       val result = saveDataIntoTable(
         sparkSession, table, tableLocation, child, SaveMode.Overwrite, tableExists = false)
-      val newTable = table.copy(
-        storage = table.storage.copy(locationUri = tableLocation),
-        // We will use the schema of resolved.relation as the schema of the table (instead of
-        // the schema of df). It is important since the nullability may be changed by the relation
-        // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
-        schema = result.schema)
-      // Table location is already validated. No need to check it again during table creation.
-      sessionState.catalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
+      ShimLoader.getSparkShims.createTable(table, sessionState.catalog, tableLocation, result)
 
       result match {
         case _: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&

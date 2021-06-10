@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{ColumnVector, Scalar}
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends UnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
@@ -51,7 +52,8 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
           withResource(cv.getBase.getChildColumnView(ordinal)) { view =>
             GpuColumnVector.from(view.copyToColumnVector(), dt)
           }
-        case null => null
+        case null =>
+          GpuColumnVector.fromNull(batch.numRows(), dt)
         case ir: InternalRow =>
           // Literal struct values are not currently supported, but just in case...
           val tmp = ir.get(ordinal, dt)
@@ -87,7 +89,8 @@ class GpuGetArrayItemMeta(
   override def convertToGpu(
       arr: Expression,
       ordinal: Expression): GpuExpression =
-    GpuGetArrayItem(arr, ordinal)
+    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
+    GpuGetArrayItem(arr, ordinal, failOnError = false)
 }
 
 /**
@@ -95,7 +98,7 @@ class GpuGetArrayItemMeta(
  *
  * We need to do type checking here as `ordinal` expression maybe unresolved.
  */
-case class GpuGetArrayItem(child: Expression, ordinal: Expression)
+case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: Boolean)
     extends GpuBinaryExpression with ExpectsInputTypes with ExtractValue {
 
   // We have done type checking for child in `ExtractValue`, so only need to check the `ordinal`.
@@ -114,22 +117,34 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, ordinal: Scalar): ColumnVector = {
-    // Need to handle negative indexes...
-    if (ordinal.isValid && ordinal.getInt >= 0) {
-      lhs.getBase.extractListElement(ordinal.getInt)
-    } else {
-      withResource(Scalar.fromNull(
-        GpuColumnVector.getNonNestedRapidsType(dataType))) { nullScalar =>
-        ColumnVector.fromScalar(nullScalar, lhs.getRowCount.toInt)
+  override def doColumnar(lhs: GpuColumnVector, ordinalS: GpuScalar): ColumnVector = {
+    val ordinal = ordinalS.getValue.asInstanceOf[Int]
+    if (ordinalS.isValid) {
+      withResource(lhs.getBase.countElements) { numElementsCV =>
+        withResource(numElementsCV.min) { minScalar =>
+          val minNumElements = minScalar.getInt
+          if (failOnError &&
+            (ordinal < 0 || minNumElements < ordinal + 1) &&
+            numElementsCV.getRowCount != numElementsCV.getNullCount) {
+            throw new ArrayIndexOutOfBoundsException(
+              s"Invalid index: ${ordinal}, minimum numElements in this ColumnVector: " +
+                s"$minNumElements")
+          } else if (!failOnError && ordinal < 0) {
+            GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
+          } else {
+            lhs.getBase.extractListElement(ordinal)
+          }
+        }
       }
+    } else {
+      GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
     }
   }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
@@ -143,11 +158,13 @@ class GpuGetMapValueMeta(
   rule: DataFromReplacementRule)
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
 
-  override def convertToGpu(child: Expression, key: Expression): GpuExpression =
-    GpuGetMapValue(child, key)
+  override def convertToGpu(child: Expression, key: Expression): GpuExpression = {
+    // this will be called under 3.0.x version, so set failOnError to false to match CPU behavior
+    GpuGetMapValue(child, key, failOnError = false)
+  }
 }
 
-case class GpuGetMapValue(child: Expression, key: Expression)
+case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boolean)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
   private def keyType = child.dataType.asInstanceOf[MapType].keyType
@@ -166,16 +183,28 @@ case class GpuGetMapValue(child: Expression, key: Expression)
 
   override def prettyName: String = "getMapValue"
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
-    lhs.getBase.getMapValue(rhs)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    if (failOnError){
+      withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)) { keyExistenceColumn =>
+        withResource(keyExistenceColumn.all) { exist =>
+          if (!exist.getBoolean) {
+            throw new NoSuchElementException(
+              s"Key: ${rhs.getValue.asInstanceOf[UTF8String].toString} " +
+                s"does not exist in any one of the rows in the map column")
+          }
+        }
+      }
+    }
+    lhs.getBase.getMapValue(rhs.getBase)
+  }
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector = {
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
@@ -197,13 +226,13 @@ case class GpuArrayContains(left: Expression, right: Expression)
     left.nullable || right.nullable || left.dataType.asInstanceOf[ArrayType].containsNull
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: Scalar): ColumnVector =
-    lhs.getBase.listContains(rhs)
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
+    lhs.getBase.listContains(rhs.getBase)
 
-  override def doColumnar(numRows: Int, lhs: Scalar, rhs: Scalar): ColumnVector =
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: Scalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =

@@ -16,8 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuScalar}
+import ai.rapids.cudf.{ColumnVector, DType}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -66,19 +66,18 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
     withResource(new Array[ColumnVector](children.size)) { columns =>
       val numRows = batch.numRows()
       children.indices.foreach { index =>
-        children(index).columnarEval(batch) match {
-          case cv: GpuColumnVector =>
-            columns(index) = cv.getBase
-          case other =>
-            val dt = dataType.elementType
-            withResource(GpuScalar.from(other, dt)) { scalar =>
-              columns(index) = ColumnVector.fromScalar(scalar, numRows)
-            }
-        }
+        columns(index) =
+          GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
       }
-      GpuColumnVector.from(ColumnVector.makeList(numRows,
-        GpuColumnVector.getNonNestedRapidsType(dataType.elementType),
-        columns: _*), dataType)
+
+      val elementDType = dataType.elementType match {
+        case _: ArrayType => DType.LIST
+        case _ => GpuColumnVector.getNonNestedRapidsType(dataType.elementType)
+      }
+      // calling makeList with a nested DType and no columns is an error, but we will never
+      // hit this case, because in Spark the type of `array()` is either `ArrayType(NullType)`
+      // or `ArrayType(StringType)`.
+      GpuColumnVector.from(ColumnVector.makeList(numRows, elementDType, columns: _*), dataType)
     }
   }
 }
@@ -88,8 +87,16 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
     case Seq(name, value) => (name, value)
   }.toList.unzip
 
+  // Names will be serialized before Spark scheduling, and the returned type GpuScalar
+  // from GpuLiteral.columnarEval(null) can't be serializable, which causes
+  // `org.apache.spark.SparkException: Task not serializable` issue.
+  //
+  // And on the other hand, the calling for columnarEval(null) in the driver side is
+  // dangerous for GpuExpressions, we'll have to pull it apart manually.
   private lazy val names = nameExprs.map {
-    case g: GpuExpression => g.columnarEval(null)
+    case ge: GpuExpression =>
+      GpuExpressionsUtils.extractGpuLit(ge).map(_.value)
+        .getOrElse(throw new IllegalStateException(s"Unexpected GPU expression $ge"))
     case e => e.eval(EmptyRow)
   }
 
@@ -141,17 +148,10 @@ case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
     withResource(new Array[ColumnVector](valExprs.size)) { columns =>
       val numRows = batch.numRows()
       valExprs.indices.foreach { index =>
-        valExprs(index).columnarEval(batch) match {
-          case cv: GpuColumnVector =>
-            columns(index) = cv.getBase
-          case other =>
-            val dt = dataType.fields(index).dataType
-            withResource(GpuScalar.from(other, dt)) { scalar =>
-              columns(index) = ColumnVector.fromScalar(scalar, numRows)
-            }
-        }
+        columns(index) = GpuExpressionsUtils.columnarEvalToColumn(valExprs(index), batch).getBase
       }
       GpuColumnVector.from(ColumnVector.makeStruct(numRows, columns: _*), dataType)
     }
   }
+
 }

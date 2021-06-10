@@ -19,7 +19,7 @@
 # Build the image for rapids-plugin development environment
 #
 # Arguments:
-#       CUDA_VER=10.1, 10.2 or 11.0
+#       CUDA_VER=11.0, 11.1 or 11.2.x
 #       UBUNTU_VER=18.04 or 20.04
 ###
 

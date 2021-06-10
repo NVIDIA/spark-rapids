@@ -1,0 +1,6 @@
+appIndex,ID,numTasks,Duration,diskBytesSpilled_sum,duration_sum,duration_max,duration_min,duration_avg,executorCPUTime_sum,executorDeserializeCPUTime_sum,executorDeserializeTime_sum,executorRunTime_sum,gettingResultTime_sum,input_bytesRead_sum,input_recordsRead_sum,jvmGCTime_sum,memoryBytesSpilled_sum,output_bytesWritten_sum,output_recordsWritten_sum,peakExecutionMemory_max,resultSerializationTime_sum,resultSize_max,sr_fetchWaitTime_sum,sr_localBlocksFetched_sum,sr_localBytesRead_sum,sr_remoteBlocksFetched_sum,sr_remoteBytesRead_sum,sr_remoteBytesReadToDisk_sum,sr_totalBytesRead_sum,sw_bytesWritten_sum,sw_recordsWritten_sum,sw_writeTime_sum
+1,job_0,213,2515,0,25761,1624,9,120.9,7045,3021,11178,13522,0,0,0,424,0,0,0,0,10,8075,0,2600,80279920,0,0,0,80279920,80279920,2600,849
+1,stage_0,6,1761,0,9455,1624,1540,1575.8,2914,1283,5056,4248,0,0,0,228,0,0,0,0,3,2951,0,0,0,0,0,0,0,40132263,1200,373
+1,stage_1,6,1666,0,9274,1621,1528,1545.7,2568,1004,5016,4099,0,0,0,196,0,0,0,0,4,2951,0,0,0,0,0,0,0,40132257,1200,473
+1,stage_2,200,592,0,6937,221,9,34.7,1518,696,1065,5125,0,0,0,0,0,0,0,0,3,7402,0,2400,80264520,0,0,0,80264520,15400,200,3
+1,stage_3,1,101,0,95,95,95,95.0,45,38,41,50,0,0,0,0,0,0,0,0,0,8075,0,200,15400,0,0,0,15400,0,0,0

@@ -114,7 +114,16 @@ else
           $RUN_TEST_PARAMS
           "$@")
 
+    NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
+    MB_PER_EXEC=${MB_PER_EXEC:-1024}
+    CORES_PER_EXEC=${CORES_PER_EXEC:-1}
+
+    if ((NUM_LOCAL_EXECS > 0)); then
+      export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
+    fi
+
     export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
+    export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
@@ -124,6 +133,9 @@ else
     then
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
         export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=$MEMORY_FRACTION
+        # when running tests in parallel, we allocate less than the default minAllocFraction per test
+        # so we need to override this setting here
+        export PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0
         python "${RUN_TESTS_COMMAND[@]}" "${TEST_PARALLEL_OPTS[@]}" "${TEST_COMMON_OPTS[@]}"
     else
         "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
