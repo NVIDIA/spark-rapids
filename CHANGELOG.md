@@ -85,6 +85,7 @@ Generated on 2021-06-10
 ### PRs
 |||
 |:---|:---|
+|[#2697](https://github.com/NVIDIA/spark-rapids/pull/2697)|fix GDS spill bug when copying from the batch write buffer|
 |[#2691](https://github.com/NVIDIA/spark-rapids/pull/2691)|Update properties to check if table there|
 |[#2687](https://github.com/NVIDIA/spark-rapids/pull/2687)|Remove CUDA 10.x from getting started guide (#2668)|
 |[#2686](https://github.com/NVIDIA/spark-rapids/pull/2686)|Profiling tool: Print Job Information in compare mode|
