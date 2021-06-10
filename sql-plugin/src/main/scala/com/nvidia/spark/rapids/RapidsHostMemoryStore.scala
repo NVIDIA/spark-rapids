@@ -93,6 +93,7 @@ class RapidsHostMemoryStore(
           hostBuffer.close()
           throw e
       }
+      logDebug(s"Spilled to host memory size=${other.size}")
       new RapidsHostMemoryBuffer(
         other.id,
         other.size,

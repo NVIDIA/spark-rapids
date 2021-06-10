@@ -376,6 +376,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val GDS_SPILL_USE_HOST = conf("spark.rapids.memory.gpu.direct.storage.spill.useHostMemory")
+    .doc("Should host memory be used for buffering spilled GPU data, and only spill to local " +
+        "disk via GDS when host memory is full. Enabling this option may improve performance on " +
+        "systems with a large amount of host memory.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val GDS_SPILL_BATCH_WRITE_BUFFER_SIZE =
     conf("spark.rapids.memory.gpu.direct.storage.spill.batchWriteBuffer.size")
     .doc("The size of the GPU memory buffer used to batch small buffers when spilling to GDS. " +
@@ -1404,6 +1412,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
 
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
+
+  lazy val isGdsSpillUsingHostMemory: Boolean = get(GDS_SPILL_USE_HOST)
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
 
