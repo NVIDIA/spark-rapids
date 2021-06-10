@@ -617,7 +617,7 @@ def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
-def gen_df(spark, data_gen, length=2048, seed=0, numSlices=None):
+def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
@@ -636,7 +636,7 @@ def gen_df(spark, data_gen, length=2048, seed=0, numSlices=None):
     # We use `numSlices` to create an RDD with the specific number of partitions,
     # which is then turned into a dataframe. If not specified, it is `None` (default spark value)
     return spark.createDataFrame(
-        SparkContext.getOrCreate().parallelize(data, numSlices=numSlices),
+        SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
         src.data_type)
 
 def _mark_as_lit(data, data_type = None):
@@ -718,20 +718,20 @@ def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
 
-def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, numSlices=None):
+def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed, numSlices=numSlices)
+    return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def two_col_df(spark, a_gen, b_gen, length=2048, seed=0, numSlices=None):
+def two_col_df(spark, a_gen, b_gen, length=2048, seed=0, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed, numSlices=numSlices)
+    return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def binary_op_df(spark, gen, length=2048, seed=0, numSlices=None):
-    return two_col_df(spark, gen, gen, length=length, seed=seed, numSlices=numSlices)
+def binary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+    return two_col_df(spark, gen, gen, length=length, seed=seed, num_slices=num_slices)
 
-def unary_op_df(spark, gen, length=2048, seed=0, numSlices=None):
+def unary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
     return gen_df(spark, StructGen([('a', gen)], nullable=False),
-        length=length, seed=seed, numSlices=numSlices)
+        length=length, seed=seed, num_slices=num_slices)
 
 def to_cast_string(spark_type):
     if isinstance(spark_type, ByteType):
