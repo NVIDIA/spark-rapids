@@ -107,8 +107,12 @@ def test_single_nested_orderby_with_limit(data_gen, order):
 def test_single_sort_in_part(data_gen, order):
     # This outputs the source data frame each time to debug intermittent test
     # failures as documented here: https://github.com/NVIDIA/spark-rapids/issues/2477
+    # Update: we are setting the number of slices with `numSlices` as the error appears to be
+    #   because of a prior failure in an executor changing the number of total cores (and therefore
+    #   `defaultParallelism`). `numSlices` keeps the number of partitions static, rather than
+    #   the Spark default behaviour to use `defaultParallelism`.
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : debug_df(unary_op_df(spark, data_gen)).sortWithinPartitions(order),
+        lambda spark : debug_df(unary_op_df(spark, data_gen, numSlices=12)).sortWithinPartitions(order),
         conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
