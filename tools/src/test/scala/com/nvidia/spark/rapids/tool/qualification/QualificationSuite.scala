@@ -44,7 +44,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
-  private def runQualificationTest(eventLogs: Array[String], expectFileName: String) = {
+  private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
+      shouldReturnEmpty: Boolean = false) = {
     Seq(true, false).foreach { hasExecCpu =>
       TrampolineUtil.withTempDir { outpath =>
         val resultExpectation = new File(expRoot, expectFileName)
@@ -61,20 +62,25 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
             dropTempViews=true)
         assert(exit == 0)
-        val schema = new StructType()
-          .add("appName",StringType,true)
-          .add("appID",StringType,true)
-          .add("dfRankTotal",DoubleType,true)
-          .add("potentialProblems",StringType,true)
-          .add("dfDurationFinal",LongType,true)
-          .add("appDuration",LongType,true)
-          .add("executorCPURatio",DoubleType,true)
-          .add("appEndDurationEstimated",BooleanType,true)
-        val dfExpectOrig =
-          ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(), Some(schema))
-        val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
-        assert(dfQualOpt.isDefined)
-        ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)
+        if (shouldReturnEmpty) {
+          assert(dfQualOpt.isEmpty)
+        } else {
+          val schema = new StructType()
+            .add("appName",StringType,true)
+            .add("appID",StringType,true)
+            .add("dfRankTotal",DoubleType,true)
+            .add("potentialProblems",StringType,true)
+            .add("dfDurationFinal",LongType,true)
+            .add("appDuration",LongType,true)
+            .add("executorCPURatio",DoubleType,true)
+            .add("appEndDurationEstimated",BooleanType,true)
+          val dfExpectOrig =
+            ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(),
+              Some(schema))
+          val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
+          assert(dfQualOpt.isDefined)
+          ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)
+        }
       }
     }
   }
@@ -99,6 +105,16 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test missing sql end") {
     val logFiles = Array(s"$logDir/join_missing_sql_end")
     runQualificationTest(logFiles, "qual_test_missing_sql_end_expectation.csv")
+  }
+
+  test("test eventlog with no jobs") {
+    val logFiles = Array(s"$logDir/empty_eventlog")
+    runQualificationTest(logFiles, "", shouldReturnEmpty=true)
+  }
+
+  test("test eventlog with rdd only jobs") {
+    val logFiles = Array(s"$logDir/rdd_only_eventlog")
+    runQualificationTest(logFiles, "", shouldReturnEmpty=true)
   }
 
   test("test truncated log file 1") {
