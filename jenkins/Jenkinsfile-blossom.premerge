@@ -47,7 +47,8 @@ pipeline {
         ansiColor('xterm')
         buildDiscarder(logRotator(numToKeepStr: '50'))
         skipDefaultCheckout true
-        timeout(time: 180, unit: 'MINUTES')
+        // TODO: improve resource management
+        timeout(time: 9, unit: 'HOURS') // long enough to make sure we won't timeout GPU scheduling w/ too many concurrent builds
     }
 
     environment {
@@ -168,13 +169,16 @@ pipeline {
             steps {
                 script {
                     container('gpu') {
-                        sh "$PREMERGE_SCRIPT"
-                        step([$class                : 'JacocoPublisher',
-                              execPattern           : '**/target/jacoco.exec',
-                              classPattern          : 'target/jacoco_classes/',
-                              sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
-                              sourceInclusionPattern: '**/*.java,**/*.scala'
-                        ])
+                        // TODO: improve resource management
+                        timeout(time: 3, unit: 'HOURS') { // step only timeout for test run
+                            sh "$PREMERGE_SCRIPT"
+                            step([$class                : 'JacocoPublisher',
+                                  execPattern           : '**/target/jacoco.exec',
+                                  classPattern          : 'target/jacoco_classes/',
+                                  sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
+                                  sourceInclusionPattern: '**/*.java,**/*.scala'
+                            ])
+                        }
                     }
                 }
             }
