@@ -23,6 +23,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -104,7 +105,7 @@ object Qualification extends Logging {
     val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
     format match {
       case "csv" =>
-        df.repartition(1).write.option("header", "true").
+        df.repartition(1).sortWithinPartitions(desc("Score")).write.option("header", "true").
           mode("overwrite").csv(finalOutputDir)
         logInfo(s"Output log location:  $finalOutputDir")
       case "text" =>
