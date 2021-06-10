@@ -17,13 +17,16 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.File
+import java.nio.file.{Files, Paths, StandardOpenOption}
 
-import com.nvidia.spark.rapids.tool.ToolTestUtils
-import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
 
+import com.nvidia.spark.rapids.tool.ToolTestUtils
+import org.apache.hadoop.io.IOUtils
+import org.scalatest.FunSuite
+
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.profiling._
 
 class ApplicationInfoSuite extends FunSuite with Logging {
@@ -40,15 +43,47 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
   test("test single event") {
-    var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    val appArgs = new ProfileArgs(Array(s"$logDir/eventlog_minimal_events"))
-    var index: Int = 1
-    val eventlogPaths = appArgs.eventlog()
-    for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
-      index += 1
+    testSqlCompression()
+  }
+
+  test("zstd: test sqlMetrics duration and execute cpu time") {
+    testSqlCompression(Option("zstd"))
+  }
+
+  test("snappy: test sqlMetrics duration and execute cpu time") {
+    testSqlCompression(Option("snappy"))
+  }
+
+  test("lzf: test sqlMetrics duration and execute cpu time") {
+    testSqlCompression(Option("lz4"))
+  }
+
+  test("lz4: test sqlMetrics duration and execute cpu time") {
+    testSqlCompression(Option("lzf"))
+  }
+
+  private def testSqlCompression(compressionNameOpt: Option[String] = None) = {
+    val rawLog = s"$logDir/eventlog_minimal_events"
+    compressionNameOpt.foreach { compressionName =>
+      val codec = TrampolineUtil.createCodec(sparkSession.sparkContext.getConf,
+        compressionName)
+      TrampolineUtil.withTempDir { tempDir =>
+        // copy and close streams
+        IOUtils.copyBytes(Files.newInputStream(Paths.get(rawLog)),
+          codec.compressedOutputStream(Files.newOutputStream(new File(tempDir,
+            "eventlog_minimal_events." + compressionName).toPath, StandardOpenOption.CREATE)),
+          4096, true)
+        testSingleEventFile(Array(tempDir.toString))
+      }
     }
+    if (compressionNameOpt.isEmpty) {
+      testSingleEventFile(Array(rawLog))
+    }
+  }
+
+  private def testSingleEventFile(logs: Array[String]): Unit = {
+    Array(s"$logDir/eventlog_minimal_events")
+    val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     assert(apps.size == 1)
     assert(apps.head.sparkVersion.equals("3.1.1"))
     assert(apps.head.gpuMode.equals(true))
