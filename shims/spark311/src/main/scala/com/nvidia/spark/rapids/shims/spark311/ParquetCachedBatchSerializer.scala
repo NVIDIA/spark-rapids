@@ -466,23 +466,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             .includeColumn(requestedColumnNames.asJavaCollection).build()
         withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
           parquetCB.sizeInBytes)) { table =>
-          withResource {
-            for (i <- 0 until table.getNumberOfColumns) yield {
-              val colName = requestedColumnNames(i)
-              if (parquetCB.castMap != null && parquetCB.castMap.contains(colName)) {
-                //TODO: why do we have to copy to a vector
-                withResource(table.getColumn(i).bitCastTo(parquetCB.castMap(colName))) {
-                  _.copyToColumnVector()
-                }
-              } else {
-                table.getColumn(i).incRefCount()
-              }
-            }
-          } { col =>
-            withResource(new Table(col: _*)) { t =>
-              GpuColumnVector.from(t, selectedAttributes.map(_.dataType).toArray)
-            }
-          }
+          GpuColumnVector.from(table, selectedAttributes.map(_.dataType).toArray)
         }
       case _ =>
         throw new IllegalStateException("I don't know how to convert this batch")
