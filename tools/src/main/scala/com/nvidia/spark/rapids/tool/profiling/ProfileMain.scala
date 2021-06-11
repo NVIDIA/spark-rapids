@@ -61,7 +61,8 @@ object ProfileMain extends Logging {
 
     try {
       // Get the event logs required to process
-      lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
+      lazy val allPaths = ToolUtils.processAllPaths(filterN.toOption,
+        matchEventLogs.toOption, eventlogPaths)
 
       val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 

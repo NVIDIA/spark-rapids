@@ -54,7 +54,7 @@ object QualificationMain extends Logging {
 
     logWarning("eventlog paths: " + eventlogPaths)
     val allPaths = ToolUtils.processAllPaths(filterN.toOption, matchEventLogs.toOption,
-      eventlogPaths, numOutputRows, sparkSession)
+      eventlogPaths)
     logWarning("all paths is : " + allPaths.mkString(", "))
 
     val dfOpt = Qualification.qualifyApps(allPaths, numOutputRows, sparkSession,

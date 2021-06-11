@@ -56,9 +56,7 @@ object ToolUtils extends Logging {
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
-      eventLogsPaths: List[String],
-      numRows: Int,
-      sparkSession: SparkSession): ArrayBuffer[Path] = {
+      eventLogsPaths: List[String]): ArrayBuffer[Path] = {
 
     var allPathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
     for (pathString <- eventLogsPaths) {
