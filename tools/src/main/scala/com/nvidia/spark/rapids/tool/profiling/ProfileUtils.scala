@@ -84,10 +84,6 @@ object ProfileUtils extends Logging {
     path.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
   }
 
-  def isEventLogFile(fileName: String): Boolean = {
-    fileName.startsWith(EVENT_LOG_FILE_NAME_PREFIX)
-  }
-
   // Return an Array(Path) and Timestamp Map based on input path string
   def stringToPath(pathString: String): Map[Path, Long] = {
     val inputPath = new Path(pathString)
@@ -97,19 +93,17 @@ object ProfileUtils extends Logging {
     try {
       val fileStatus = fs.getFileStatus(inputPath)
       val fileName = fileStatus.getPath().getName()
-      if ((fileStatus.isDirectory && isEventLogDir(fileStatus)) ||
-        (fileStatus.isFile() && isEventLogFile(fileName))) {
+      if (fileStatus.isDirectory && isEventLogDir(fileStatus)) {
         // either event logDir v2 directory or regular event log
         pathsWithTimestamp += (fileStatus.getPath -> fileStatus.getModificationTime)
       } else {
-        // assume directory with event logs in it, we don't supported nested dirs, so
-        // if event log dir within another one we skip it
+        // assume either single event log or directory with event logs in it, we don't
+        // supported nested dirs, so if event log dir within another one we skip it
         val (validLogs, invalidLogs) = fs.listStatus(inputPath)
           .partition(s => {
             val name = s.getPath().getName()
             logWarning(s"s is: $name dir ${s.isDirectory} file: ${s.isFile}")
-            (s.isFile && isEventLogFile(name)) ||
-              (s.isDirectory && isEventLogDir(name))
+            (s.isFile || (s.isDirectory && isEventLogDir(name)))
           })
         logWarning("file status is are: " + validLogs.map(_.getPath).mkString(", "))
         if (validLogs != null) {
