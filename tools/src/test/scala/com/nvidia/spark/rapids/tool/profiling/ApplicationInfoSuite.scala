@@ -233,8 +233,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       "src/test/resources/spark-events-qualification/dataset_eventlog"
     ))
 
-    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
-      appArgs.matchEventLogs, appArgs.eventlog())
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria.toOption,
+      appArgs.matchEventLogs.toOption, appArgs.eventlog())
     assert(result.length == 2)
   }
 
@@ -260,8 +260,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile3.toString
     ))
 
-    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
-      appArgs.matchEventLogs, appArgs.eventlog())
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria.toOption,
+      appArgs.matchEventLogs.toOption, appArgs.eventlog())
     assert(result.length == 2)
     // Validate 2 newest files
     assert(result(0).getName.equals(tempFile1.getName))
@@ -297,8 +297,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile4.toString
     ))
 
-    val result = ToolUtils.processAllPaths(appArgs.filterCriteria,
-      appArgs.matchEventLogs, appArgs.eventlog())
+    val result = ToolUtils.processAllPaths(appArgs.filterCriteria.toOption,
+      appArgs.matchEventLogs.toOption, appArgs.eventlog())
     assert(result.length == 3)
     // Validate 3 oldest files
     assert(result(0).getName.equals(tempFile2.getName))
