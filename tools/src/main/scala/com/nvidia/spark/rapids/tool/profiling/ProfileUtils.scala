@@ -105,8 +105,9 @@ object ProfileUtils extends Logging {
         // if event log dir within another one we skip it
         val (filesStatus, dirsStatus) = fs.listStatus(inputPath)
           .partition(s => {
-            s.isFile && isEventLogFile(fileStatus.getPath().getName()) ||
-            s.isDirectory && isEventLogDir(fileStatus)
+            logWarning(s"s is: $s dir ${s.isDirectory} file: ${s.isFile}")
+            (s.isFile && isEventLogFile(fileStatus.getPath().getName())) ||
+              (s.isDirectory && isEventLogDir(fileStatus))
           })
         if (filesStatus != null) {
           filesStatus.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
