@@ -215,34 +215,33 @@ class ApplicationInfo(
 
     val eventsProcessor = new EventsProcessor(forQualification)
 
-    Utils.tryWithResource(EventLogFileReader(fs, eventlog)) { readerOpt =>
-      if (readerOpt.isDefined) {
-        val reader = readerOpt.get
-        val logFiles = reader.listEventLogFiles
-        // stop replaying next log files if ReplayListenerBus indicates some error or halt
-        var continueReplay = true
-        logFiles.foreach { file =>
-          if (continueReplay) {
-            Utils.tryWithResource(EventLogFileReader.openEventLog(file.getPath, fs)) { in =>
-              val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-              totalNumEvents = lines.size
-              lines.foreach { line =>
-                try {
-                  val event = JsonProtocol.sparkEventFromJson(parse(line))
-                  eventsProcessor.processAnyEvent(this, event)
-                  logDebug(line)
-                }
-                catch {
-                  case e: ClassNotFoundException =>
-                    logWarning(s"ClassNotFoundException: ${e.getMessage}")
-                }
+    val readerOpt = EventLogFileReader(fs, eventlog)
+    if (readerOpt.isDefined) {
+      val reader = readerOpt.get
+      val logFiles = reader.listEventLogFiles
+      // stop replaying next log files if ReplayListenerBus indicates some error or halt
+      var continueReplay = true
+      logFiles.foreach { file =>
+        if (continueReplay) {
+          Utils.tryWithResource(EventLogFileReader.openEventLog(file.getPath, fs)) { in =>
+            val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
+            totalNumEvents = lines.size
+            lines.foreach { line =>
+              try {
+                val event = JsonProtocol.sparkEventFromJson(parse(line))
+                eventsProcessor.processAnyEvent(this, event)
+                logDebug(line)
+              }
+              catch {
+                case e: ClassNotFoundException =>
+                  logWarning(s"ClassNotFoundException: ${e.getMessage}")
               }
             }
           }
         }
-      } else {
-        logError(s"Error getting reader for ${eventlog.getName}")
       }
+    } else {
+      logError(s"Error getting reader for ${eventlog.getName}")
     }
     logInfo("Total number of events parsed: " + totalNumEvents)
   }
