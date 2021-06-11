@@ -17,12 +17,13 @@
 package org.apache.spark.sql.rapids.tool.profiling
 
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
+
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
+import org.apache.hadoop.fs.Path
 import org.rogach.scallop.ScallopOption
+
 import org.apache.spark.deploy.history.EventLogFileWriter
-import org.apache.spark.internal.{Logging, config}
+import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.DataFrame
 
 object ToolUtils extends Logging {
@@ -45,17 +46,6 @@ object ToolUtils extends Logging {
       .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES.contains(suffix))
   }
 
-  val EVENT_LOG_DIR_NAME_PREFIX = "eventlog_v2_"
-  val EVENT_LOG_FILE_NAME_PREFIX = "events_"
-
-  def isEventLogDir(status: FileStatus): Boolean = {
-    status.isDirectory && status.getPath.getName.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
-  }
-
-  def isEventLogFile(fileName: String): Boolean = {
-    fileName.startsWith(EVENT_LOG_FILE_NAME_PREFIX)
-  }
-
   /**
    * Function to evaluate the event logs to be processed.
    *
@@ -70,23 +60,10 @@ object ToolUtils extends Logging {
       eventLogsPaths: List[String]): ArrayBuffer[Path] = {
 
     var allPathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
-
     for (pathString <- eventLogsPaths) {
-      if (isEventLogFile(pathString)) {
-        // this is a rolling event log
-        val inputPath = new Path(pathString)
-        val uri = inputPath.toUri
-        val fs = FileSystem.get(uri, new Configuration())
-        val allStatus = fs.listStatus(inputPath)
-        if (allStatus.size > 1) {
-          logError("should only be 1")
-        }
-        allPathsWithTimestamp += (allStatus.head.getPath -> allStatus.head.getModificationTime)
-      } else {
-        val paths = ProfileUtils.stringToPath(pathString)
-        if (paths.nonEmpty) {
-          allPathsWithTimestamp ++= paths
-        }
+      val paths = ProfileUtils.stringToPath(pathString)
+      if (paths.nonEmpty) {
+        allPathsWithTimestamp ++= paths
       }
     }
     // Filter the event logs to be processed based on the criteria. If it is not provided in the

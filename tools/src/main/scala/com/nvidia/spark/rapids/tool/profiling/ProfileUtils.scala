@@ -16,11 +16,14 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.mutable.{ArrayBuffer, Map}
+import java.io.FileNotFoundException
+
+import scala.collection.mutable.Map
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FileUtil, Path}
+import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
 
@@ -28,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
  * object Utils provides toolkit functions
  *
  */
-object ProfileUtils {
+object ProfileUtils extends Logging {
 
   // Create a SparkSession
   def createSparkSession: SparkSession = {
@@ -69,20 +72,46 @@ object ProfileUtils {
       case _: NoSuchElementException => None
     }
 
+  val EVENT_LOG_DIR_NAME_PREFIX = "eventlog_v2_"
+  val EVENT_LOG_FILE_NAME_PREFIX = "events_"
+
+  def isEventLogDir(status: FileStatus): Boolean = {
+    status.isDirectory && status.getPath.getName.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
+  }
+
+  def isEventLogFile(fileName: String): Boolean = {
+    fileName.startsWith(EVENT_LOG_FILE_NAME_PREFIX)
+  }
+
   // Return an Array(Path) and Timestamp Map based on input path string
   def stringToPath(pathString: String): Map[Path, Long] = {
     val inputPath = new Path(pathString)
     val uri = inputPath.toUri
     val fs = FileSystem.get(uri, new Configuration())
-    val allStatus = fs.listStatus(inputPath).filter(s => s.isFile)
     val pathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
-    if (allStatus != null) {
-      allStatus.map(a => {
-        pathsWithTimestamp += (a.getPath -> a.getModificationTime)
-      })
-      pathsWithTimestamp
-    } else {
-      null
+    try {
+      val fileStatus = fs.getFileStatus(inputPath)
+      if ((fileStatus.isDirectory && isEventLogDir(fileStatus)) ||
+        (fileStatus.isFile() && isEventLogFile(fileStatus.getPath().getName()))) {
+        // either event logDir v2 directory or regular event log
+        pathsWithTimestamp += (fileStatus.getPath -> fileStatus.getModificationTime)
+      } else {
+        // assume directory with event logs in it, we don't supported nested dirs, so
+        // if event log dir within another one we skip it
+        val (filesStatus, dirsStatus) = fs.listStatus(inputPath).partition(s => s.isFile)
+        if (filesStatus != null) {
+          filesStatus.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
+        }
+        if (dirsStatus.nonEmpty) {
+          logWarning("Skipping the following directories: " +
+            s"${dirsStatus.map(_.getPath().getName()).mkString(", ")}")
+        }
+      }
+    } catch {
+      case e: FileNotFoundException => logWarning(s"$pathString not found, skipping!")
     }
+    pathsWithTimestamp
   }
+
+
 }
