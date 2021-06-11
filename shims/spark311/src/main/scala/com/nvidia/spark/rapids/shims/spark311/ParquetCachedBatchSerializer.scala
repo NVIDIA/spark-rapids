@@ -26,7 +26,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{GpuColumnVector, _}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import java.util
@@ -47,7 +47,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{vectorized, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, GenericInternalRow, SpecializedGetters, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, ExprId, GenericInternalRow, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
@@ -328,10 +328,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       conf: SQLConf): RDD[CachedBatch] = {
 
     val rapidsConf = new RapidsConf(conf)
-    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schema)) {
+    val schemaWithUnambiguousNames = getSchemaWithUnambiguousNames(schema, schema)
+    val structSchema = schemaWithUnambiguousNames.toStructType
+    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schemaWithUnambiguousNames)) {
       def putOnGpuIfNeeded(batch: ColumnarBatch): ColumnarBatch = {
         if (!batch.column(0).isInstanceOf[GpuColumnVector]) {
-          val s: StructType = schema.toStructType
+          val s: StructType = structSchema
           val gpuCB = new GpuColumnarBatchBuilder(s, batch.numRows()).build(batch.numRows())
           batch.close()
           gpuCB
@@ -345,17 +347,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
-            compressColumnarBatchWithParquet(gpuCB, schema.toStructType)
+            compressColumnarBatchWithParquet(gpuCB, structSchema)
           }
         }
       })
     } else {
-      val cachedSchema = getCatalystSchema(schema, schema)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter =>
-          new CachedBatchIteratorProducer[ColumnarBatch](cbIter, cachedSchema, broadcastedConf)
-              .getColumnarBatchToCachedBatchIterator
+          new CachedBatchIteratorProducer[ColumnarBatch](cbIter, schemaWithUnambiguousNames,
+            broadcastedConf).getColumnarBatchToCachedBatchIterator
       }
     }
   }
@@ -365,54 +366,76 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   val BYTES_ALLOWED_PER_BATCH: Long = _2GB - APPROX_PAR_META_DATA
 
   private[rapids] def compressColumnarBatchWithParquet(
-      gpuCB: ColumnarBatch,
+      oldGpuCB: ColumnarBatch,
       schema: StructType): List[ParquetCachedBatch] = {
-    val estimatedRowSize = scala.Range(0, gpuCB.numCols()).map { idx =>
-      gpuCB.column(idx).asInstanceOf[GpuColumnVector]
-          .getBase.getDeviceMemorySize / gpuCB.numRows()
+    val estimatedRowSize = scala.Range(0, oldGpuCB.numCols()).map { idx =>
+      oldGpuCB.column(idx).asInstanceOf[GpuColumnVector]
+          .getBase.getDeviceMemorySize / oldGpuCB.numRows()
     }.sum
-    val schemaWithUnambiguousNames = StructType(schema.fields.indices.map(index => {
-      val field = schema.fields(index)
-      StructField(s"_col$index", field.dataType, field.nullable, field.metadata)
-    }))
-    val rowsAllowedInBatch = (BYTES_ALLOWED_PER_BATCH / estimatedRowSize).toInt
-    val splitIndices = scala.Range(rowsAllowedInBatch, gpuCB.numRows(), rowsAllowedInBatch)
-    val buffers = new ListBuffer[ParquetCachedBatch]
-    if (splitIndices.nonEmpty) {
-      val splitVectors = new ListBuffer[Array[ColumnVector]]
-      try {
-        for (index <- 0 until gpuCB.numCols()) {
-          splitVectors +=
-              gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
-        }
+    // We want to map the name of the cols we are casting so we can cast them back when reading
+    // back the cache
+    val castMap = new scala.collection.mutable.HashMap[String, DType]()
 
-        // Splitting the table
-        // e.g. T0 = {col1, col2,...,coln} => split columns into 'm' cols =>
-        // T00= {splitCol1(0), splitCol2(0),...,splitColn(0)}
-        // T01= {splitCol1(1), splitCol2(1),...,splitColn(1)}
-        // ...
-        // T0m= {splitCol1(m), splitCol2(m),...,splitColn(m)}
-        def makeTableForIndex(i: Int): Table = {
-          val columns = splitVectors.indices.map(j => splitVectors(j)(i))
-          new Table(columns: _*)
-        }
-
-        for (i <- splitVectors.head.indices) {
-          withResource(makeTableForIndex(i)) { table =>
-            val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
-            buffers += ParquetCachedBatch(buffer)
+    val columns = for (i <- 0 until oldGpuCB.numCols()) yield {
+      val gpuVector = oldGpuCB.column(i).asInstanceOf[GpuColumnVector]
+      var dataType = schema(i).dataType
+      val v = ColumnUtil.convertTypeAtoTypeB(gpuVector.getBase,
+        // we are checking for scale > 0 because cudf and spark refer to scales as opposites
+        // e.g. scale = -3 in Spark is scale = 3 in cudf
+        cv => cv.getType().isDecimalType() && cv.getType().getScale > 0,
+        cv => {
+          castMap(schema(i).name) = cv.getType()
+          if (cv.getType.isBackedByLong) {
+            dataType = LongType
+            cv.bitCastTo(DType.INT64)
+          } else {
+            dataType = IntegerType
+            cv.bitCastTo(DType.INT32)
           }
         }
-      } finally {
-        splitVectors.foreach(array => array.safeClose())
-      }
-    } else {
-      withResource(GpuColumnVector.from(gpuCB)) { table =>
-        val buffer = writeTableToCachedBatch(table, schemaWithUnambiguousNames)
-        buffers += ParquetCachedBatch(buffer)
-      }
+      )
+      GpuColumnVector.from(v, getSupportedDataType(schema(i).dataType))
     }
-    buffers.toList
+    withResource(new ColumnarBatch(columns.toArray, oldGpuCB.numRows())) { gpuCB =>
+      val rowsAllowedInBatch = (BYTES_ALLOWED_PER_BATCH / estimatedRowSize).toInt
+      val splitIndices = scala.Range(rowsAllowedInBatch, gpuCB.numRows(), rowsAllowedInBatch)
+      val buffers = new ListBuffer[ParquetCachedBatch]
+      if (splitIndices.nonEmpty) {
+        val splitVectors = new ListBuffer[Array[ColumnVector]]
+        try {
+          for (index <- 0 until gpuCB.numCols()) {
+            splitVectors +=
+                gpuCB.column(index).asInstanceOf[GpuColumnVector].getBase.split(splitIndices: _*)
+          }
+
+          // Splitting the table
+          // e.g. T0 = {col1, col2,...,coln} => split columns into 'm' cols =>
+          // T00= {splitCol1(0), splitCol2(0),...,splitColn(0)}
+          // T01= {splitCol1(1), splitCol2(1),...,splitColn(1)}
+          // ...
+          // T0m= {splitCol1(m), splitCol2(m),...,splitColn(m)}
+          def makeTableForIndex(i: Int): Table = {
+            val columns = splitVectors.indices.map(j => splitVectors(j)(i))
+            new Table(columns: _*)
+          }
+
+          for (i <- splitVectors.head.indices) {
+            withResource(makeTableForIndex(i)) { table =>
+              val buffer = writeTableToCachedBatch(table, schema)
+              buffers += ParquetCachedBatch(buffer, castMap)
+            }
+          }
+        } finally {
+          splitVectors.foreach(array => array.safeClose())
+        }
+      } else {
+        withResource(GpuColumnVector.from(gpuCB)) { table =>
+          val buffer = writeTableToCachedBatch(table, schema)
+          buffers += ParquetCachedBatch(buffer, castMap)
+        }
+      }
+      buffers.toList
+    }
   }
 
   private def writeTableToCachedBatch(
@@ -450,7 +473,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         new ColumnarBatch(Array())
       }
     }
-    convertCachedBatchToColumnarInternal(input, cacheAttributes, selectedAttributes)
+    val cachedSchemaWithNames =
+      getSchemaWithUnambiguousNames(cacheAttributes, cacheAttributes)
+    val selectedSchemaWithNames =
+      getSelectedSchemaFromCachedSchema(selectedAttributes, cachedSchemaWithNames)
+    convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames, selectedSchemaWithNames)
   }
 
   private def convertCachedBatchToColumnarInternal(
@@ -458,7 +485,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute]): RDD[ColumnarBatch] = {
 
-    val requestedColumnNames = getColumnNames(selectedAttributes, cacheAttributes)
+    val requestedColumnNames = selectedAttributes.map {
+      a => cacheAttributes.find(a0 => a0.exprId.equals(a.exprId)).get.name
+    }
 
     val cbRdd: RDD[ColumnarBatch] = input.map {
       case parquetCB: ParquetCachedBatch =>
@@ -466,7 +495,23 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             .includeColumn(requestedColumnNames.asJavaCollection).build()
         withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
           parquetCB.sizeInBytes)) { table =>
-          GpuColumnVector.from(table, selectedAttributes.map(_.dataType).toArray)
+          withResource {
+            for (i <- 0 until table.getNumberOfColumns) yield {
+              val colName = requestedColumnNames(i)
+              if (parquetCB.castMap != null && parquetCB.castMap.contains(colName)) {
+                //TODO: why do we have to copy to a vector
+                withResource(table.getColumn(i).bitCastTo(parquetCB.castMap(colName))) {
+                  _.copyToColumnVector()
+                }
+              } else {
+                table.getColumn(i).incRefCount()
+              }
+            }
+          } { col =>
+            withResource(new Table(col: _*)) { t =>
+              GpuColumnVector.from(t, selectedAttributes.map(_.dataType).toArray)
+            }
+          }
         }
       case _ =>
         throw new IllegalStateException("I don't know how to convert this batch")
@@ -474,10 +519,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     cbRdd
   }
 
-  private def getColumnNames(
+  private def getSelectedSchemaFromCachedSchema(
       selectedAttributes: Seq[Attribute],
-      cacheAttributes: Seq[Attribute]): Seq[String] = {
-    selectedAttributes.map(a => "_col" + cacheAttributes.map(_.exprId).indexOf(a.exprId))
+      cacheAttributes: Seq[Attribute]): Seq[Attribute] = {
+    cacheAttributes.map {
+      a => selectedAttributes.find(a0 => a0.exprId.equals(a.exprId)).get
+    }
   }
 
   /**
@@ -501,9 +548,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       }
     }
     val rapidsConf = new RapidsConf(conf)
-    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(cacheAttributes)) {
-      val batches = convertCachedBatchToColumnarInternal(input, cacheAttributes,
-        selectedAttributes)
+    val cachedSchemaWithNames =
+      getSchemaWithUnambiguousNames(cacheAttributes, cacheAttributes)
+    val selectedSchemaWithNames =
+      getSelectedSchemaFromCachedSchema(selectedAttributes, cachedSchemaWithNames)
+    if (rapidsConf.isSqlEnabled &&
+        isSchemaSupportedByCudf(cachedSchemaWithNames)) {
+      val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
+        selectedSchemaWithNames)
       val cbRdd = batches.map(batch => {
         withResource(batch) { gpuBatch =>
           val cols = GpuColumnVector.extractColumns(gpuBatch)
@@ -515,7 +567,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter => {
-          new CachedBatchIteratorConsumer(cbIter, cacheAttributes, selectedAttributes,
+          new CachedBatchIteratorConsumer(cbIter, cachedSchemaWithNames, selectedSchemaWithNames,
             broadcastedConf).getColumnBatchIterator
         }
       }
@@ -543,10 +595,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         InternalRow.empty
       }
     }
+    val cachedSchemaWithNames =
+      getSchemaWithUnambiguousNames(cacheAttributes, cacheAttributes)
+    val selectedSchemaWithNames =
+      getSelectedSchemaFromCachedSchema(selectedAttributes, cachedSchemaWithNames)
     val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
     input.mapPartitions {
       cbIter => {
-        new CachedBatchIteratorConsumer(cbIter, cacheAttributes, selectedAttributes,
+        new CachedBatchIteratorConsumer(cbIter, cachedSchemaWithNames, selectedSchemaWithNames,
           broadcastedConf).getInternalRowIterator
       }
     }
@@ -554,7 +610,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   private abstract class UnsupportedDataHandlerIterator extends Iterator[InternalRow] {
 
-    def handleInternalRow(schema: Seq[DataType], row: InternalRow, newRow: InternalRow): Unit
+    val castMap = new mutable.HashMap[String, DType]()
+
+    def handleInternalRow(schema: Seq[Attribute], row: InternalRow, newRow: InternalRow): Unit
 
     def handleInterval(data: SpecializedGetters, index: Int): Any
 
@@ -563,7 +621,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         origSchema: StructType,
         supportedSchema: StructType): InternalRow = {
       val structRow = InternalRow.fromSeq(supportedSchema)
-      handleInternalRow(origSchema.map(field => field.dataType), data, structRow)
+      handleInternalRow(origSchema.map(field =>
+        AttributeReference(field.name, field.dataType, field.nullable)()), data, structRow)
       structRow
     }
 
@@ -634,9 +693,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       sharedConf: Broadcast[Map[String, String]]) {
 
     val conf: SQLConf = getConfFromMap(sharedConf)
-    val origRequestedSchema: Seq[Attribute] = getCatalystSchema(selectedAttributes, cacheAttributes)
+    val origRequestedSchema: Seq[Attribute] =
+      getSchemaWithUnambiguousNames(selectedAttributes, cacheAttributes)
     val hadoopConf: Configuration = getHadoopConf(origRequestedSchema.toStructType, conf)
-    val origCacheSchema: Seq[Attribute] = getCatalystSchema(cacheAttributes, cacheAttributes)
+    val origCacheSchema: Seq[Attribute] =
+      getSchemaWithUnambiguousNames(cacheAttributes, cacheAttributes)
     val options: ParquetReadOptions = HadoopReadOptions.builder(hadoopConf).build()
     /**
      * We are getting this method using reflection because its a package-private
@@ -728,7 +789,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               override def next(): InternalRow = {
                 //read a row and convert it to what the caller is expecting
                 val row = wrappedIter.next()
-                handleInternalRow(origCacheSchema.map(attr => attr.dataType), row, newRow)
+                handleInternalRow(origCacheSchema, row, newRow)
                 val unsafeProjection =
                   GenerateUnsafeProjection.generate(origRequestedSchema, origCacheSchema)
                 unsafeProjection.apply(newRow)
@@ -747,13 +808,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               }
 
               override def handleInternalRow(
-                  schema: Seq[DataType],
+                  schema: Seq[Attribute],
                   row: InternalRow,
                   newRow: InternalRow): Unit = {
                 schema.indices.foreach { index =>
-                  val dataType = schema(index)
+                  val dataType = schema(index).dataType
                   if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
-                      dataType == NullType) {
+                      dataType == NullType ||
+                      (dataType.isInstanceOf[DecimalType]
+                          && dataType.asInstanceOf[DecimalType].scale < 0)) {
                     if (row.isNullAt(index)) {
                       newRow.setNullAt(index)
                     } else {
@@ -974,10 +1037,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     conf
   }
 
-  private def getCatalystSchema(
+  private def getSchemaWithUnambiguousNames(
       selectedAttributes: Seq[Attribute],
       cacheAttributes: Seq[Attribute]): Seq[Attribute] = {
-    val catalystColumns = getColumnNames(selectedAttributes, cacheAttributes)
+    val catalystColumns = selectedAttributes.map { a =>
+      "_col" + cacheAttributes.map(_.exprId).indexOf(a.exprId)
+    }
     selectedAttributes.zip(catalystColumns).map {
       case (attr, name) => attr.withName(name)
     }
@@ -1004,8 +1069,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       sharedConf: Broadcast[Map[String, String]]) {
 
     val conf: SQLConf = getConfFromMap(sharedConf)
-    val hadoopConf: Configuration =
-      getHadoopConf(getCatalystSchema(cachedAttributes, cachedAttributes).toStructType, conf)
+    val hadoopConf: Configuration = getHadoopConf(
+      getSchemaWithUnambiguousNames(cachedAttributes, cachedAttributes).toStructType,
+      conf)
 
     def getInternalRowToCachedBatchIterator: Iterator[CachedBatch] = {
       new InternalRowToCachedBatchIterator
@@ -1037,7 +1103,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val newCachedAttributes: Seq[Attribute] =
         if (hasUnsupportedType) {
           val newCachedAttributes =
-            getSupportedSchemaFromUnsupported(getCatalystSchema(cachedAttributes,
+            getSupportedSchemaFromUnsupported(getSchemaWithUnambiguousNames(cachedAttributes,
               cachedAttributes))._1
           // save it to sharedConf and sharedHadoopConf
           hadoopConf.set(
@@ -1059,11 +1125,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
             val newRow: InternalRow = InternalRow.fromSeq(newCachedAttributes)
 
+
             override def hasNext: Boolean = wrappedIter.hasNext
 
             override def next(): InternalRow = {
               val row = wrappedIter.next()
-              handleInternalRow(cachedAttributes.map(attr => attr.dataType), row, newRow)
+              handleInternalRow(cachedAttributes, row, newRow)
               newRow
             }
 
@@ -1083,13 +1150,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             }
 
             override def handleInternalRow(
-                schema: Seq[DataType],
+                schema: Seq[Attribute],
                 row: InternalRow,
                 newRow: InternalRow): Unit = {
               schema.indices.foreach { index =>
-                val dataType = schema(index)
+                val dataType = schema(index).dataType
                 if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
-                    dataType == NullType) {
+                    dataType == NullType ||
+                    (dataType.isInstanceOf[DecimalType]
+                        && dataType.asInstanceOf[DecimalType].scale < 0)) {
                   if (row.isNullAt(index)) {
                     newRow.setNullAt(index)
                   } else {
@@ -1118,7 +1187,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                           newRow.update(index, structData)
                         }
 
-                      case d: DecimalType =>
+                      case d: DecimalType if d.scale < 0 =>
+                        castMap(schema(index).name) =
+                            DecimalUtil.createCudfDecimal(d.precision, d.scale)
                         if (d.precision <= Decimal.MAX_INT_DIGITS) {
                           newRow.update(index, row.getDecimal(index, d.precision, d.scale)
                               .toUnscaledLong.toInt)
@@ -1197,7 +1268,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             }
             // passing null as context isn't used in this method
             recordWriter.close(null)
-            queue += ParquetCachedBatch(rows, stream.toByteArray)
+            if (rowIterator.isInstanceOf[UnsupportedDataHandlerIterator]) {
+              queue += ParquetCachedBatch(rows, stream.toByteArray,
+                rowIterator.asInstanceOf[UnsupportedDataHandlerIterator].castMap)
+            } else {
+              queue += ParquetCachedBatch(rows, stream.toByteArray)
+            }
           }
         }
         queue.dequeue()
@@ -1219,47 +1295,47 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   val mapping = new mutable.HashMap[DataType, DataType]()
 
+  def getSupportedDataType(dataType: DataType): DataType = {
+    dataType match {
+      case CalendarIntervalType =>
+        intervalStructType
+      case NullType =>
+        ByteType
+      case s: StructType =>
+        val newStructType = StructType(
+          s.map { field =>
+            StructField(field.name,
+              getSupportedDataType(field.dataType), field.nullable,
+              field.metadata)
+          })
+        mapping.put(s, newStructType)
+        newStructType
+      case a@ArrayType(elementType, nullable) =>
+        val newArrayType =
+          ArrayType(getSupportedDataType(elementType), nullable)
+        mapping.put(a, newArrayType)
+        newArrayType
+      case m@MapType(keyType, valueType, nullable) =>
+        val newKeyType = getSupportedDataType(keyType)
+        val newValueType = getSupportedDataType(valueType)
+        val mapType = MapType(newKeyType, newValueType, nullable)
+        mapping.put(m, mapType)
+        mapType
+      case d: DecimalType if d.scale < 0 =>
+        val newType = if (d.precision <= Decimal.MAX_INT_DIGITS) {
+          IntegerType
+        } else {
+          LongType
+        }
+        newType
+      case _ =>
+        dataType
+    }
+  }
+
   private def getSupportedSchemaFromUnsupported(
       cachedAttributes: Seq[Attribute],
       requestedAttributes: Seq[Attribute] = Seq.empty): (Seq[Attribute], Seq[Attribute]) = {
-    def getSupportedDataType(dataType: DataType): DataType = {
-      dataType match {
-        case CalendarIntervalType =>
-          intervalStructType
-        case NullType =>
-          ByteType
-        case s: StructType =>
-          val newStructType = StructType(
-            s.map { field =>
-              StructField(field.name,
-                getSupportedDataType(field.dataType), field.nullable,
-                field.metadata)
-            })
-          mapping.put(s, newStructType)
-          newStructType
-        case a@ArrayType(elementType, nullable) =>
-          val newArrayType =
-            ArrayType(getSupportedDataType(elementType), nullable)
-          mapping.put(a, newArrayType)
-          newArrayType
-        case m@MapType(keyType, valueType, nullable) =>
-          val newKeyType = getSupportedDataType(keyType)
-          val newValueType = getSupportedDataType(valueType)
-          val mapType = MapType(newKeyType, newValueType, nullable)
-          mapping.put(m, mapType)
-          mapType
-        case d: DecimalType if d.scale < 0 =>
-          val newType = if (d.precision <= Decimal.MAX_INT_DIGITS) {
-            IntegerType
-          } else {
-            LongType
-          }
-          mapping.put(d, newType)
-          newType
-        case _ =>
-          dataType
-      }
-    }
 
     // We only handle CalendarIntervalType, Decimals and NullType ATM convert it to a supported type
     val newCachedAttributes = cachedAttributes.map {
@@ -1338,9 +1414,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       conf: SQLConf): RDD[CachedBatch] = {
 
     val rapidsConf = new RapidsConf(conf)
-
-    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schema)) {
-      val structSchema = schema.toStructType
+    val schemaWithUnambiguousNames = getSchemaWithUnambiguousNames(schema, schema)
+    if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schemaWithUnambiguousNames)) {
+      val structSchema = schemaWithUnambiguousNames.toStructType
       val converters = new GpuRowToColumnConverter(structSchema)
       val columnarBatchRdd = input.mapPartitions(iter => {
         new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, converters)
@@ -1352,8 +1428,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter =>
-          new CachedBatchIteratorProducer[InternalRow](cbIter, schema, broadcastedConf)
-              .getInternalRowToCachedBatchIterator
+          new CachedBatchIteratorProducer[InternalRow](cbIter, schemaWithUnambiguousNames,
+            broadcastedConf).getInternalRowToCachedBatchIterator
       }
     }
   }

@@ -660,7 +660,11 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
               val col = if (typeCastingNeeded && precisionList.nonEmpty) {
-                convertDecimal64ToDecimal32Wrapper(origCol, precisionList.dequeue())
+                val prec = precisionList.dequeue()
+                ColumnUtil.convertTypeAtoTypeB(origCol,
+                  cv => cv.getType.getTypeId == DTypeEnum.DECIMAL64
+                      && prec <= DType.DECIMAL32_MAX_PRECISION,
+                  cv => cv.castTo(DecimalUtil.createCudfDecimal(prec, -cv.getType.getScale())))
               } else {
                 origCol.incRefCount()
               }
