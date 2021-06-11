@@ -103,7 +103,11 @@ object ProfileUtils extends Logging {
       } else {
         // assume directory with event logs in it, we don't supported nested dirs, so
         // if event log dir within another one we skip it
-        val (filesStatus, dirsStatus) = fs.listStatus(inputPath).partition(s => s.isFile)
+        val (filesStatus, dirsStatus) = fs.listStatus(inputPath)
+          .partition(s => {
+            s.isFile && isEventLogFile(fileStatus.getPath().getName()) ||
+            s.isDirectory && isEventLogDir(fileStatus)
+          })
         if (filesStatus != null) {
           filesStatus.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
         }
@@ -117,6 +121,4 @@ object ProfileUtils extends Logging {
     }
     pathsWithTimestamp
   }
-
-
 }

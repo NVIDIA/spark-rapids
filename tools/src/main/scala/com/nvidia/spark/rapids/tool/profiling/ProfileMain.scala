@@ -93,7 +93,7 @@ object ProfileMain extends Logging {
         }
         // Show the application Id <-> appIndex mapping.
         for (app <- apps) {
-          logApplicationInfo(app)
+          ToolUtils.logApplicationInfo(app)
         }
       } else {
         // This mode is to process one application at one time.
@@ -104,7 +104,7 @@ object ProfileMain extends Logging {
             val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
             val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
             apps += app
-            logApplicationInfo(app)
+            ToolUtils.logApplicationInfo(app)
             // This is a bit odd that we process apps individual right now due to
             // memory concerns. So the aggregation functions only aggregate single
             // application not across applications.
@@ -166,12 +166,6 @@ object ProfileMain extends Logging {
       healthCheck.listRemovedBlockManager()
       healthCheck.listRemovedExecutors()
       healthCheck.listPossibleUnsupportedSQLPlan()
-    }
-
-    def logApplicationInfo(app: ApplicationInfo) = {
-      logInfo("========================================================================")
-      logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-      logInfo("========================================================================")
     }
 
     0

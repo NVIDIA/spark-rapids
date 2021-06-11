@@ -42,7 +42,6 @@ object Qualification extends Logging {
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths) {
       try {
-        var index: Int = 1
         // This apps only contains 1 app in each loop.
         val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
         apps += app

@@ -95,9 +95,9 @@ object ToolUtils extends Logging {
       ArrayBuffer(allPathsWithTimestamp.keys.toSeq: _*)
     }
     logWarning("paths is; " + paths)
-    val finalPaths = paths.filter(eventLogNameFilter)
-    logWarning("paths is; " + finalPaths)
-    finalPaths
+    //val finalPaths = paths.filter(eventLogNameFilter)
+    // logWarning("paths is; " + finalPaths)
+    paths
   }
 
   def logApplicationInfo(app: ApplicationInfo) = {
