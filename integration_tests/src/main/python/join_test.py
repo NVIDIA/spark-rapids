@@ -206,7 +206,7 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesean_join(data_gen, batch_size):
     def do_join(spark):
@@ -221,7 +221,7 @@ def test_cartesean_join(data_gen, batch_size):
 @ignore_order(local=True)
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesean_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
@@ -249,7 +249,7 @@ def test_cartesean_join_special_case_group_by(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join(data_gen, batch_size):
     def do_join(spark):
@@ -262,7 +262,7 @@ def test_broadcast_nested_loop_join(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
