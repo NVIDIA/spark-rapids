@@ -24,7 +24,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, CurrentRow, Expression, NamedExpression, SortOrder, UnboundedPreceding}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, CurrentRow, Expression, NamedExpression, RowFrame, SortOrder, UnboundedPreceding}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.window.WindowExec
@@ -87,12 +87,6 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
   }
 
-  def isRunningWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
-    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(_,
-      GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow))) => true
-    case _ => false
-  }
-
   override def convertToGpu(): GpuExec = {
     val resultColumnsOnly = getResultColumnsOnly
     val gpuWindowExpressions = windowExpressions.map(_.convertToGpu())
@@ -107,7 +101,9 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
           case GpuAggregateExpression(_: GpuBatchedRunningWindowFunction[_], _, _, _ , _) => true
           case _ => false
         }
-        isRunningFunc && isRunningWindow(spec)
+        // Running windows are limited to row based queries with a few changes we could make this
+        // work for range based queries too https://github.com/NVIDIA/spark-rapids/issues/2708
+        isRunningFunc && GpuWindowExec.isRunningWindow(spec)
       case GpuAlias(_ :AttributeReference, _) =>
         // If there are result columns only, then we are going to allow a few things through
         // but in practice this could be anything and we need to walk through the expression
@@ -185,6 +181,12 @@ class GpuWindowExecMeta(windowExec: WindowExec,
 }
 
 object GpuWindowExec extends Arm {
+  def isRunningWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(RowFrame,
+    GpuSpecialFrameBoundary(UnboundedPreceding), GpuSpecialFrameBoundary(CurrentRow))) => true
+    case _ => false
+  }
+
   def fixerIndexMap(windowExpressionAliases: Seq[Expression]): Map[Int, BatchedRunningWindowFixer] =
     windowExpressionAliases.zipWithIndex.flatMap {
       case (GpuAlias(GpuWindowExpression(func, _), _), index) =>

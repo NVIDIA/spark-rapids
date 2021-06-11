@@ -286,10 +286,10 @@ def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
-    query_parts = ['row_number() over (order by a) as row_num',
-            'count(b) over (order by a) as count_col',
-            'min(b) over (order by a) as min_col',
-            'max(b) over (order by a) as max_col']
+    query_parts = ['row_number() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
+            'count(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
+            'min(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
+            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : two_col_df(spark, LongRangeGen(), b_gen, length=1024 * 14),
         "window_agg_table",
@@ -309,10 +309,10 @@ def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
-    query_parts = ['row_number() over (partition by b order by a) as row_num',
-            'count(c) over (partition by b order by a) as count_col',
-            'min(c) over (partition by b order by a) as min_col',
-            'max(c) over (partition by b order by a) as max_col']
+    query_parts = ['row_number() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
+            'count(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
+            'min(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
+            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : three_col_df(spark, LongRangeGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
         "window_agg_table",
