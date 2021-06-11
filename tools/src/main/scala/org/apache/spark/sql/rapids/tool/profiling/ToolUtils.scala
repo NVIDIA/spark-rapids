@@ -20,11 +20,10 @@ import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
 
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils
 import org.apache.hadoop.fs.Path
-import org.rogach.scallop.ScallopOption
 
 import org.apache.spark.deploy.history.EventLogFileWriter
 import org.apache.spark.internal.{config, Logging}
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object ToolUtils extends Logging {
 
@@ -55,9 +54,11 @@ object ToolUtils extends Logging {
    * @return event logs to be processed
    */
   def processAllPaths(
-      filterNLogs: ScallopOption[String],
-      matchlogs: ScallopOption[String],
-      eventLogsPaths: List[String]): ArrayBuffer[Path] = {
+      filterNLogs: Option[String],
+      matchlogs: Option[String],
+      eventLogsPaths: List[String],
+      numRows: Int,
+      sparkSession: SparkSession): ArrayBuffer[Path] = {
 
     var allPathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
     for (pathString <- eventLogsPaths) {
@@ -71,12 +72,12 @@ object ToolUtils extends Logging {
     val paths = if (matchlogs.isDefined || filterNLogs.isDefined) {
       if (matchlogs.isDefined) {
         allPathsWithTimestamp = allPathsWithTimestamp.filter { case (path, _) =>
-          path.getName.contains(matchlogs.toOption.get)
+          path.getName.contains(matchlogs.get)
         }
       }
       if (filterNLogs.isDefined) {
-        val numberofEventLogs = filterNLogs.toOption.get.split("-")(0).toInt
-        val criteria = filterNLogs.toOption.get.split("-")(1)
+        val numberofEventLogs = filterNLogs.get.split("-")(0).toInt
+        val criteria = filterNLogs.get.split("-")(1)
         if (criteria.equals("newest")) {
           allPathsWithTimestamp = LinkedHashMap(
             allPathsWithTimestamp.toSeq.sortWith(_._2 > _._2): _*)
@@ -96,8 +97,13 @@ object ToolUtils extends Logging {
       ArrayBuffer(allPathsWithTimestamp.keys.toSeq: _*)
     }
     logWarning("paths is; " + paths)
-    val resPaths = paths.filter(eventLogNameFilter)
-    logWarning("paths is; " + resPaths)
-    resPaths
+    val finalPaths = paths.filter(eventLogNameFilter)
+    logWarning("paths is; " + finalPaths)
+    finalPaths
   }
+
+  def logApplicationInfo(app: ApplicationInfo) = {
+    logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
+  }
+
 }

@@ -49,16 +49,16 @@ object QualificationMain extends Logging {
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
-
-    logWarning("eventlog paths: " + eventlogPaths)
-    // Get the event logs required to process
-    lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
-    logWarning("all paths is : " + allPaths.mkString(", "))
-
     val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
-    val dfOpt = Qualification.qualifyApps(allPaths,
-      numOutputRows, sparkSession, includeCpuPercent, dropTempViews)
+
+    logWarning("eventlog paths: " + eventlogPaths)
+    val allPaths = ToolUtils.processAllPaths(filterN.toOption, matchEventLogs.toOption,
+      eventlogPaths, numOutputRows, sparkSession)
+    logWarning("all paths is : " + allPaths.mkString(", "))
+
+    val dfOpt = Qualification.qualifyApps(allPaths, numOutputRows, sparkSession,
+      includeCpuPercent, dropTempViews)
     if (dfOpt.isEmpty) {
       logWarning(s"No Applications with SQL found in events logs: ${allPaths.mkString(",")}")
     }

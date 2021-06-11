@@ -79,6 +79,11 @@ object ProfileUtils extends Logging {
     status.isDirectory && status.getPath.getName.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
   }
 
+  // This only checks the name of the path
+  def isEventLogDir(path: String): Boolean = {
+    path.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
+  }
+
   def isEventLogFile(fileName: String): Boolean = {
     fileName.startsWith(EVENT_LOG_FILE_NAME_PREFIX)
   }

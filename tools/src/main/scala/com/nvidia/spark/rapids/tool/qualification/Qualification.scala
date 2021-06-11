@@ -31,24 +31,24 @@ import org.apache.spark.sql.rapids.tool.profiling._
  */
 object Qualification extends Logging {
 
-  def logApplicationInfo(app: ApplicationInfo) = {
-    logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-  }
-
   def qualifyApps(
       allPaths: ArrayBuffer[Path],
       numRows: Int,
       sparkSession: SparkSession,
       includeCpuPercent: Boolean,
       dropTempViews: Boolean): Option[DataFrame] = {
+
     var index: Int = 1
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths) {
       try {
+        var index: Int = 1
+        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+
         // This apps only contains 1 app in each loop.
         val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
         apps += app
-        logApplicationInfo(app)
+        ToolUtils.logApplicationInfo(app)
         index += 1
       } catch {
         case e: com.fasterxml.jackson.core.JsonParseException =>
