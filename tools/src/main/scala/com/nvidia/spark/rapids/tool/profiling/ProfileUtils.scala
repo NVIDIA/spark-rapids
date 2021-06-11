@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.FileNotFoundException
+import java.io.{File, FileNotFoundException}
 
 import scala.collection.mutable.Map
 
@@ -96,25 +96,28 @@ object ProfileUtils extends Logging {
     val pathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
     try {
       val fileStatus = fs.getFileStatus(inputPath)
+      val fileName = fileStatus.getPath().getName()
       if ((fileStatus.isDirectory && isEventLogDir(fileStatus)) ||
-        (fileStatus.isFile() && isEventLogFile(fileStatus.getPath().getName()))) {
+        (fileStatus.isFile() && isEventLogFile(fileName))) {
         // either event logDir v2 directory or regular event log
         pathsWithTimestamp += (fileStatus.getPath -> fileStatus.getModificationTime)
       } else {
         // assume directory with event logs in it, we don't supported nested dirs, so
         // if event log dir within another one we skip it
-        val (filesStatus, dirsStatus) = fs.listStatus(inputPath)
+        val (validLogs, invalidLogs) = fs.listStatus(inputPath)
           .partition(s => {
-            logWarning(s"s is: $s dir ${s.isDirectory} file: ${s.isFile}")
-            (s.isFile && isEventLogFile(fileStatus.getPath().getName())) ||
-              (s.isDirectory && isEventLogDir(fileStatus))
+            val name = s.getPath().getName()
+            logWarning(s"s is: $name dir ${s.isDirectory} file: ${s.isFile}")
+            (s.isFile && isEventLogFile(name)) ||
+              (s.isDirectory && isEventLogDir(name))
           })
-        if (filesStatus != null) {
-          filesStatus.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
+        logWarning("file status is are: " + validLogs.map(_.getPath).mkString(", "))
+        if (validLogs != null) {
+          validLogs.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
         }
-        if (dirsStatus.nonEmpty) {
+        if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
-            s"${dirsStatus.map(_.getPath().getName()).mkString(", ")}")
+            s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
         }
       }
     } catch {
