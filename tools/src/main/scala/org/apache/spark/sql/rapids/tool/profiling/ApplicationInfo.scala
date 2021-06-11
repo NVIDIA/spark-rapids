@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.tool.profiling
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
+import scala.math.Ordering
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling._
@@ -320,7 +321,25 @@ class ApplicationInfo(
     if (this.appStart.nonEmpty) {
       val appStartNew: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
       for (res <- this.appStart) {
-        val durationResult = ProfileUtils.OptionLongMinusLong(this.appEndTime, res.startTime)
+
+        val estimatedResult =
+          this.appEndTime match {
+            case Some(t) => this.appEndTime
+            case None =>
+              if (this.sqlEndTime.isEmpty && this.jobEndTime.isEmpty) {
+                None
+              } else {
+                logWarning("Application End Time is unknown, estimating based on" +
+                  " job and sql end times!")
+                // estimate the app end with job or sql end times
+                val sqlEndTime = if (this.sqlEndTime.isEmpty) 0L else this.sqlEndTime.values.max
+                val jobEndTime = if (this.jobEndTime.isEmpty) 0L else this.jobEndTime.values.max
+                val maxEndTime = math.max(sqlEndTime, jobEndTime)
+                if (maxEndTime == 0) None else Some(maxEndTime)
+              }
+          }
+
+        val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
         val durationString = durationResult match {
           case Some(i) => UIUtils.formatDuration(i.toLong)
           case None => ""
@@ -328,13 +347,10 @@ class ApplicationInfo(
 
         val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
           durationStr = durationString, sparkVersion = this.sparkVersion,
-          gpuMode = this.gpuMode)
+          gpuMode = this.gpuMode, endDurationEstimated = this.appEndTime.isEmpty)
         appStartNew += newApp
       }
       this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
-    } else {
-      logError("Application is empty! Exiting...")
-      System.exit(1)
     }
 
     // For sqlDF
@@ -394,9 +410,6 @@ class ApplicationInfo(
         jobStartNew += jobNew
       }
       allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
-    } else {
-      logError("No Job Found. Exiting.")
-      System.exit(1)
     }
 
     // For stageDF
@@ -429,18 +442,12 @@ class ApplicationInfo(
         stageSubmittedNew += stageNew
       }
       allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
-    } else {
-      logError("No Stage Found. Exiting.")
-      System.exit(1)
     }
 
     // For taskDF
     if (!forQualification) {
       if (taskEnd.nonEmpty) {
         allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-      } else {
-        logError("task is empty! Exiting...")
-        System.exit(1)
       }
     }
 
@@ -478,17 +485,11 @@ class ApplicationInfo(
       // For propertiesDF
       if (this.allProperties.nonEmpty) {
         this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-      } else {
-        logError("propertiesDF is empty! Existing...")
-        System.exit(1)
       }
 
       // For executorsDF
       if (this.executors.nonEmpty) {
         this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
-      } else {
-        logError("executors is empty! Exiting...")
-        System.exit(1)
       }
 
       // For executorsRemovedDF
@@ -808,9 +809,10 @@ class ApplicationInfo(
        |first(appName) as `App Name`,
        |'$appId' as `App ID`,
        |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Score,
-       |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
+       |concat_ws(",", collect_set(problematic)) as `Potential Problems`,
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
-       |first(app.duration) as `App Duration`
+       |first(app.duration) as `App Duration`,
+       |first(app.endDurationEstimated) as `App Duration Estimated`
        |from sqlDF_$index sq, appdf_$index app
        |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
        |""".stripMargin
@@ -825,6 +827,7 @@ class ApplicationInfo(
        |sq.sqlID, sq.description,
        |sq.sqlQualDuration as dfDuration,
        |app.duration as appDuration,
+       |app.endDurationEstimated as appEndDurationEstimated,
        |problematic as potentialProblems,
        |m.executorCPUTime,
        |m.executorRunTime
@@ -838,10 +841,11 @@ class ApplicationInfo(
     s"""select first(appName) as `App Name`,
        |'$appId' as `App ID`,
        |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
-       |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
+       |concat_ws(",", collect_set(potentialProblems)) as `Potential Problems`,
        |sum(dfDuration) as `SQL Dataframe Duration`,
        |first(appDuration) as `App Duration`,
-       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`
+       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`,
+       |first(appEndDurationEstimated) as `App Duration Estimated`
        |from (${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }

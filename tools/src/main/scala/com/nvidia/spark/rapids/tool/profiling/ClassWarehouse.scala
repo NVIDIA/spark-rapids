@@ -38,7 +38,8 @@ case class PropertiesCase(
 case class ApplicationCase(
   appName: String, appId: Option[String], startTime: Long,
   sparkUser: String, endTime: Option[Long], duration: Option[Long],
-  durationStr: String, sparkVersion: String, gpuMode: Boolean)
+  durationStr: String, sparkVersion: String, gpuMode: Boolean,
+  endDurationEstimated: Boolean)
 
 case class ExecutorCase(
   executorID: String, host: String, totalCores: Int, resourceProfileId: Int)

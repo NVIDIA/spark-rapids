@@ -259,9 +259,9 @@ class RapidsGdsStore(
           case dmOriginal: DeviceMemoryBuffer =>
             val dm = dmOriginal.slice(dstOffset, length)
             if (isPending) {
-              copyToBuffer(dm, fileOffset + srcOffset, size, stream)
+              copyToBuffer(dm, fileOffset + srcOffset, length, stream)
               stream.sync()
-              logDebug(s"Created device buffer $size from batch write buffer")
+              logDebug(s"Created device buffer $length from batch write buffer")
             } else {
               // TODO: switch to async API when it's released, using the passed in CUDA stream.
               stream.sync()

@@ -32,11 +32,28 @@ class CompareApplications(apps: ArrayBuffer[ApplicationInfo],
 
   // Compare the App Information.
   def compareAppInfo(): Unit = {
-    val messageHeader = "Compare Application Information:\n"
+    val messageHeader = "\n\nCompare Application Information:\n"
     var query = ""
     var i = 1
     for (app <- apps) {
       query += app.generateAppInfo
+      if (i < apps.size) {
+        query += "\n union \n"
+      } else {
+        query += " order by appIndex"
+      }
+      i += 1
+    }
+    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
+  }
+
+  // Compare Job information
+  def compareJobInfo(): Unit = {
+    val messageHeader = "\n\nCompare Job Information:\n"
+    var query = ""
+    var i = 1
+    for (app <- apps) {
+      query += app.jobtoStagesSQL
       if (i < apps.size) {
         query += "\n union \n"
       } else {

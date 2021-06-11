@@ -670,12 +670,17 @@ case class GpuCast(
       // To avoid doing the expensive regex all the time, we will first check to see if we need
       // to do it. The only time we do need to do it is when we have a '.' in any of the strings.
       val data = input.getData
-      val hasDot = withResource(
-        ColumnView.fromDeviceBuffer(data, 0, DType.INT8, data.getLength.toInt)) { childData =>
-        withResource(GpuScalar.from('.'.toByte, ByteType)) { dot =>
-          childData.contains(dot)
+      val hasDot = if (data != null) {
+        withResource(
+          ColumnView.fromDeviceBuffer(data, 0, DType.INT8, data.getLength.toInt)) { childData =>
+          withResource(GpuScalar.from('.'.toByte, ByteType)) { dot =>
+            childData.contains(dot)
+          }
         }
+      } else {
+        false
       }
+
       if (hasDot) {
         withResource(input.extractRe("^([+\\-]?[0-9]+)(?:\\.[0-9]*)?$")) { table =>
           table.getColumn(0).incRefCount()

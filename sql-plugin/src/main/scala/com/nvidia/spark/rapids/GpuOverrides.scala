@@ -2631,9 +2631,8 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
-      "Collect a list of elements, now only supported by windowing.",
-      // It should be 'fullAgg' eventually but now only support windowing,
-      // so 'aggNotGroupByOrReduction'
+      "Collect a list of non-unique elements, only supported in rolling window in current.",
+      // GpuCollectList is not yet supported under GroupBy and Reduction context.
       ExprChecks.aggNotGroupByOrReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
@@ -2643,6 +2642,20 @@ object GpuOverrides {
           TypeSig.all))),
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
+          childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
+      }),
+    expr[CollectSet](
+      "Collect a set of unique elements, only supported in rolling window in current.",
+      // GpuCollectSet is not yet supported under GroupBy and Reduction context.
+      // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
+      // method drop_list_duplicates doesn't support nested types.
+      ExprChecks.aggNotGroupByOrReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+          TypeSig.all))),
+      (c, conf, p, r) => new ExprMeta[CollectSet](c, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCollectSet(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       }),
     expr[GetJsonObject](
