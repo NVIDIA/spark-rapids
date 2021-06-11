@@ -861,7 +861,7 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
  * Provides a way to process running window operations without needing to buffer and split the
  * batches on partition by boundaries. When this happens part of a partition by key set may
  * have been processed in the last batch, and the rest of it will need to be updated. For example
- * if we are doing a running max operation. We may first get in something like
+ * if we are doing a running min operation. We may first get in something like
  * <code>
  * PARTS:  1, 1,  2, 2
  * VALUES: 2, 3, 10, 9
@@ -873,7 +873,7 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
  * </code>
  *
  * But we don't know if the group with 2 in PARTS is done or not. So the framework will call
- * updateState to have this save the last value in MINS, which is a 9. When the next batch
+ * `updateState` to have this save the last value in MINS, which is a 9. When the next batch
  * shows up
  *
  * <code>
@@ -886,11 +886,12 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
  * <code>
  *    MINS: 11, 5, 13, 13
  * </code>
+ *
  * But we cannot output this yet because there may have been overlap with the previous batch.
  * The framework will figure that out and pass data into `fixUp` to do the fixing. It will
- * pass in MINS, and also a column of boolean values true, true, false, false to indicate
- * whcih rows overlapped with the previous batch.  In our min example fixUp will do a min
- * between the last value in for the previous batch and the values that could overlap with it.
+ * pass in MINS, and also a column of boolean values `true, true, false, false` to indicate
+ * which rows overlapped with the previous batch.  In our min example `fixUp` will do a min
+ * between the last value in the previous batch and the values that could overlap with it.
  *
  * <code>
  * RESULT: 9, 5, 13, 13
@@ -919,7 +920,8 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
    *                          modified. Because the input data is sorted by the partition by
    *                          columns the boolean values will be grouped together.
    * @param windowedColumnOutput the output of the windowAggregation without anything
-   *                             fixed/modified.
+   *                             fixed/modified. This should not be closed by `fixUp` as it will be
+   *                             handled by the framework.
    * @return a fixed ColumnVector that was with outputs updated for items that were in the same
    *         group by key as the last row in the previous batch.
    */

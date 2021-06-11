@@ -209,27 +209,33 @@ object GpuWindowExec extends Arm {
     val fixers = fixerIndexMap(boundProjectList)
     TaskContext.get().addTaskCompletionListener[Unit](_ => fixers.values.foreach(_.close()))
 
-    iter.map { cb =>
+    iter.flatMap { cb =>
       val numRows = cb.numRows
       numOutputBatches += 1
       numOutputRows += numRows
       withResource(new MetricRange(opTime)) { _ =>
-        withResource(GpuProjectExec.projectAndClose(cb, boundProjectList, NoopMetric)) { full =>
-          closeOnExcept(ArrayBuffer[ColumnVector]()) { newColumns =>
-            boundProjectList.indices.foreach { idx =>
-              val column = full.column(idx).asInstanceOf[GpuColumnVector]
-              val fixer = fixers.get(idx)
-              if (fixer.isDefined) {
-                closeOnExcept(fixer.get.fixUp(scala.util.Right(true), column)) { finalOutput =>
-                  fixer.get.updateState(finalOutput)
-                  newColumns += finalOutput
+        if (numRows > 0) {
+          withResource(GpuProjectExec.projectAndClose(cb, boundProjectList, NoopMetric)) { full =>
+            closeOnExcept(ArrayBuffer[ColumnVector]()) { newColumns =>
+              boundProjectList.indices.foreach { idx =>
+                val column = full.column(idx).asInstanceOf[GpuColumnVector]
+                fixers.get(idx) match {
+                  case Some(fixer) =>
+                    closeOnExcept(fixer.fixUp(scala.util.Right(true), column)) { finalOutput =>
+                      fixer.updateState(finalOutput)
+                      newColumns += finalOutput
+                    }
+                  case None =>
+                    newColumns += column.incRefCount()
                 }
-              } else {
-                newColumns += column.incRefCount()
               }
+              Some(new ColumnarBatch(newColumns.toArray, full.numRows()))
             }
-            new ColumnarBatch(newColumns.toArray, full.numRows())
           }
+        } else {
+          // Now rows so just filter it out
+          cb.close()
+          None
         }
       }
     }
