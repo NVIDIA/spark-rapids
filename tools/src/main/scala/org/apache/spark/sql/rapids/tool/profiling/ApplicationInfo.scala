@@ -222,6 +222,7 @@ class ApplicationInfo(
       // stop replaying next log files if ReplayListenerBus indicates some error or halt
       var continueReplay = true
       logFiles.foreach { file =>
+        logWarning(s"log file ${eventlog.getName()} parsing file: ${file.getPath().getName()}")
         if (continueReplay) {
           Utils.tryWithResource(EventLogFileReader.openEventLog(file.getPath, fs)) { in =>
             val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
