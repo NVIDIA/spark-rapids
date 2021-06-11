@@ -116,17 +116,21 @@ class RapidsGdsStore(
 
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
         length: Long, stream: Cuda.Stream): Unit = {
-      dst match {
-        case dmOriginal: DeviceMemoryBuffer =>
-          val dm = dmOriginal.slice(dstOffset, length)
-          // TODO: switch to async API when it's released, using the passed in CUDA stream.
-          stream.sync()
-          // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
-          //  resolved.
-          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
-          logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
-        case _ => throw new IllegalStateException(
-          s"GDS can only copy to device buffer, not ${dst.getClass}")
+      if (RapidsBufferCatalog.shouldUnspill) {
+        super.copyToMemoryBuffer(srcOffset, dst, dstOffset, length, stream)
+      } else {
+        dst match {
+          case dmOriginal: DeviceMemoryBuffer =>
+            val dm = dmOriginal.slice(dstOffset, length)
+            // TODO: switch to async API when it's released, using the passed in CUDA stream.
+            stream.sync()
+            // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
+            //  resolved.
+            CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+            logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+          case _ => throw new IllegalStateException(
+            s"GDS can only copy to device buffer, not ${dst.getClass}")
+        }
       }
     }
 
@@ -175,7 +179,7 @@ class RapidsGdsStore(
           val path = currentFile.getAbsolutePath
           withResource(new CuFileWriteHandle(path)) { handle =>
             handle.write(batchWriteBuffer, batchWriteBufferSize, 0)
-            logDebug(s"Spilled to $path 0:$currentOffset via GDS")
+            logDebug(s"Spilled to $path 0:$batchWriteBufferSize via GDS")
           }
           pendingBuffers.foreach(_.unsetPending())
           pendingBuffers.clear
@@ -263,12 +267,17 @@ class RapidsGdsStore(
               stream.sync()
               logDebug(s"Created device buffer $length from batch write buffer")
             } else {
-              // TODO: switch to async API when it's released, using the passed in CUDA stream.
-              stream.sync()
-              // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
-              //  resolved.
-              CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
-              logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+              if (RapidsBufferCatalog.shouldUnspill) {
+                super.copyToMemoryBuffer(srcOffset, dst, dstOffset, length, stream)
+              } else {
+                // TODO: switch to async API when it's released, using the passed in CUDA stream.
+                stream.sync()
+                // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
+                //  resolved.
+                CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+                logDebug(
+                  s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+              }
             }
           case _ => throw new IllegalStateException(
             s"GDS can only copy to device buffer, not ${dst.getClass}")
