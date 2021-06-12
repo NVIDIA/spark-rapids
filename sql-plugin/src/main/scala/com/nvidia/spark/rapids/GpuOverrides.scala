@@ -841,12 +841,12 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
             TypeSig.ARRAY),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
               TypeSig.ARRAY),
           TypeSig.all),
@@ -3018,7 +3018,7 @@ object GpuOverrides {
     exec[WindowExec](
       "Window-operator backend",
       ExecChecks(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
           TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
             + TypeSig.ARRAY),

@@ -877,7 +877,7 @@ Accelerator supports are described below.
 <td>S*</td>
 <td>S</td>
 <td>S*</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><em>PS* (missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
@@ -17623,7 +17623,7 @@ Accelerator support is described below.
 <td>S*</td>
 <td>S</td>
 <td>S*</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><em>PS* (missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
@@ -17665,7 +17665,7 @@ Accelerator support is described below.
 <td>S*</td>
 <td>S</td>
 <td>S*</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><em>PS* (missing nested NULL, BINARY, CALENDAR, MAP, UDT)</em></td>
@@ -17691,7 +17691,7 @@ Accelerator support is described below.
 <td>S*</td>
 <td>S</td>
 <td>S*</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -17712,7 +17712,7 @@ Accelerator support is described below.
 <td>S*</td>
 <td>S</td>
 <td>S*</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -17733,7 +17733,7 @@ Accelerator support is described below.
 <td>S*</td>
 <td>S</td>
 <td>S*</td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
