@@ -23,7 +23,7 @@ import java.util.function.BiFunction
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
-import com.nvidia.spark.rapids.StorageTier.StorageTier
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
@@ -234,8 +234,8 @@ class RapidsGdsStore(
     class RapidsGdsBatchedBuffer(
         id: RapidsBufferId,
         path: File,
-        fileOffset: Long,
-        size: Long,
+        val fileOffset: Long,
+        override val size: Long,
         meta: TableMeta,
         spillPriority: Long,
         spillCallback: RapidsBuffer.SpillCallback,
@@ -243,17 +243,43 @@ class RapidsGdsStore(
         extends RapidsGdsBuffer(id, size, meta, spillPriority, spillCallback) {
 
       override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
-        closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-          if (isPending) {
+        if (isPending) {
+          closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
             copyToBuffer(buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
             Cuda.DEFAULT_STREAM.sync()
             logDebug(s"Created device buffer $size from batch write buffer")
-          } else {
+            buffer
+          }
+        } else if (RapidsBufferCatalog.shouldUnspill) {
+          withResource(DeviceMemoryBuffer.allocate(batchWriteBufferSize)) { buffer =>
+            CuFile.readFileToDeviceMemory(buffer.getAddress, buffer.getLength, path, 0)
+            logDebug(s"Created device buffer for $path 0:$size via GDS")
+            spilledBuffers.get(path).foreach { id =>
+              if (id != this.id) {
+                withResource(catalog.acquireBuffer(id)) {
+                  case b: RapidsGdsBatchedBuffer =>
+                    closeOnExcept(DeviceMemoryBuffer.allocate(b.size)) { d =>
+                      logDebug(s"Unspilling $b $id to $DEVICE")
+                      d.copyFromMemoryBuffer(0, buffer, b.fileOffset, b.size, Cuda.DEFAULT_STREAM)
+                      deviceStorage.copyBuffer(b, d, Cuda.DEFAULT_STREAM)
+                    }
+                  case _ =>
+                    logDebug(s"Ignoring buffer $id")
+                }
+              }
+            }
+            closeOnExcept(DeviceMemoryBuffer.allocate(size)) { d =>
+              d.copyFromMemoryBuffer(0, buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
+              d
+            }
+          }
+        } else {
+          closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
             CuFile.readFileToDeviceMemory(
               buffer.getAddress, alignLargeBufferSize(buffer), path, fileOffset)
             logDebug(s"Created device buffer for $path $fileOffset:$size via GDS")
+            buffer
           }
-          buffer
         }
       }
 

@@ -99,8 +99,7 @@ class RapidsHostMemoryStore(
         other.getSpillPriority,
         hostBuffer,
         isPinned,
-        other.spillCallback,
-        deviceStorage)
+        other.spillCallback)
     }
   }
 
@@ -118,10 +117,8 @@ class RapidsHostMemoryStore(
       spillPriority: Long,
       buffer: HostMemoryBuffer,
       isInternalPoolAllocated: Boolean,
-      spillCallback: RapidsBuffer.SpillCallback,
-      deviceStorage: RapidsDeviceMemoryStore)
-      extends RapidsBufferBase(
-        id, size, meta, spillPriority, spillCallback, deviceStorage = deviceStorage) {
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     override val storageTier: StorageTier = StorageTier.HOST
 
     override def getMemoryBuffer: MemoryBuffer = {

@@ -57,7 +57,7 @@ class RapidsDiskStore(
       }
       logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
       new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
-        incoming.getSpillPriority, incoming.spillCallback, deviceStorage)
+        incoming.getSpillPriority, incoming.spillCallback)
     }
   }
 
@@ -89,10 +89,8 @@ class RapidsDiskStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback,
-      deviceStorage: RapidsDeviceMemoryStore)
-      extends RapidsBufferBase(
-        id, size, meta, spillPriority, spillCallback, deviceStorage = deviceStorage) {
+      spillCallback: RapidsBuffer.SpillCallback)
+      extends RapidsBufferBase(id, size, meta, spillPriority, spillCallback) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     override val storageTier: StorageTier = StorageTier.DISK
