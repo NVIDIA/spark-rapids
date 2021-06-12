@@ -253,7 +253,7 @@ class RapidsGdsStore(
         } else if (RapidsBufferCatalog.shouldUnspill) {
           withResource(DeviceMemoryBuffer.allocate(batchWriteBufferSize)) { buffer =>
             CuFile.readFileToDeviceMemory(buffer.getAddress, buffer.getLength, path, 0)
-            logDebug(s"Created device buffer for $path 0:$size via GDS")
+            logDebug(s"Created device buffer for $path 0:$batchWriteBufferSize via GDS")
             spilledBuffers.get(path).foreach { id =>
               if (id != this.id) {
                 withResource(catalog.acquireBuffer(id)) {
