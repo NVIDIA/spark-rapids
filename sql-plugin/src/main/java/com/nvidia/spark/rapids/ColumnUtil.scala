@@ -32,7 +32,7 @@ object ColumnUtil extends Arm {
    * @param convert         Method used to convert the column view to a new column view
    * @return
    */
-  def convertTypeAtoTypeB(cv: ColumnVector,
+  def ifTrueThenDeepConvertTypeAtoTypeB(cv: ColumnVector,
       predicate: ColumnView => Boolean, convert: ColumnView => ColumnView): ColumnVector = {
     /*
      * 'convertTypeAtoTypeB' method returns a ColumnView that should be copied out to a

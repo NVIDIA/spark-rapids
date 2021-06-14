@@ -379,7 +379,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     val columns = for (i <- 0 until oldGpuCB.numCols()) yield {
       val gpuVector = oldGpuCB.column(i).asInstanceOf[GpuColumnVector]
       var dataType = schema(i).dataType
-      val v = ColumnUtil.convertTypeAtoTypeB(gpuVector.getBase,
+      val v = ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(gpuVector.getBase,
         // we are checking for scale > 0 because cudf and spark refer to scales as opposites
         // e.g. scale = -3 in Spark is scale = 3 in cudf
         cv => cv.getType().isDecimalType() && cv.getType().getScale > 0,
