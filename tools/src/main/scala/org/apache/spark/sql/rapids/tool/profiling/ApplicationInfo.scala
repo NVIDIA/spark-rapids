@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.tool.profiling
 
 import java.io.{BufferedInputStream, InputStream}
 import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.GZIPInputStream
 
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
@@ -29,7 +30,6 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
-import org.apache.spark.SparkConf
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
@@ -215,10 +215,7 @@ class ApplicationInfo(
       val cName =  EventLogFileWriter.codecName(log).getOrElse("")
       logWarning("codec namne is: " + cName)
       EventLogFileWriter.codecName(log) match {
-        case c if (c.isDefined && c.get.equals("gz")) =>
-          val gzipCodec =
-            new com.nvidia.spark.rapids.tool.profiling.GZIPCompressionCodec(new SparkConf)
-          gzipCodec.compressedContinuousInputStream(in)
+        case c if (c.isDefined && c.get.equals("gz")) => new GZIPInputStream(in)
         case _ => EventLogFileReader.openEventLog(log, fs)
       }
     } catch {
