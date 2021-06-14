@@ -212,8 +212,10 @@ class ApplicationInfo(
   def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
     val in = new BufferedInputStream(fs.open(log))
     try {
+      val cName =  EventLogFileWriter.codecName(log).getOrElse("")
+      logWarning("codec namne is: " + cName)
       EventLogFileWriter.codecName(log) match {
-        case c if (c.equals("gz")) =>
+        case c if (c.isDefined && c.get.equals("gz")) =>
           val gzipCodec =
             new com.nvidia.spark.rapids.tool.profiling.GZIPCompressionCodec(new SparkConf)
           gzipCodec.compressedContinuousInputStream(in)
