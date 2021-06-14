@@ -112,10 +112,15 @@ object ProfileMain extends Logging {
             app.dropAllTempViews()
             index += 1
           }
-        } catch {
+        } catch { // TODO - should we just catch all exceptions and skip?
           case e: com.fasterxml.jackson.core.JsonParseException =>
             textFileWriter.close()
             logError(s"Error parsing JSON", e)
+            return 1
+          case il: IllegalArgumentException =>
+            textFileWriter.close()
+            // TODO - it would be nice to print file name
+            logError(s"Error parsing file, skipping", il)
             return 1
         }
       }

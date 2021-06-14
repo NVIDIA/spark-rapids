@@ -47,9 +47,11 @@ object Qualification extends Logging {
         apps += app
         ToolUtils.logApplicationInfo(app)
         index += 1
-      } catch {
-        case e: com.fasterxml.jackson.core.JsonParseException =>
+      } catch {  // TODO - should we just catch all exceptions and skip?
+        case json: com.fasterxml.jackson.core.JsonParseException =>
           logWarning(s"Error parsing JSON, skipping $path")
+        case il: IllegalArgumentException =>
+          logWarning(s"Error parsing file: $path, skipping")
       }
     }
     if (apps.isEmpty) {
