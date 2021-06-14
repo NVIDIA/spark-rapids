@@ -21,7 +21,6 @@ import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.deploy.history.EventLogFileWriter
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 
@@ -34,15 +33,6 @@ object ToolUtils extends Logging {
 
   def showString(df: DataFrame, numRows: Int) = {
     df.showString(numRows, 0)
-  }
-
-  // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
-  // core/src/main/scala/org/apache/spark/io/CompressionCodec.scala#L67
-  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd")
-
-  def eventLogNameFilter(logFile: Path): Boolean = {
-    EventLogFileWriter.codecName(logFile)
-      .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES.contains(suffix))
   }
 
   /**
@@ -65,6 +55,7 @@ object ToolUtils extends Logging {
         allPathsWithTimestamp ++= paths
       }
     }
+
     // Filter the event logs to be processed based on the criteria. If it is not provided in the
     // command line, then return all the event logs processed above.
     val paths = if (matchlogs.isDefined || filterNLogs.isDefined) {

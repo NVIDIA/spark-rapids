@@ -23,6 +23,7 @@ import scala.collection.mutable.Map
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
 
+import org.apache.spark.deploy.history.EventLogFileWriter
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
@@ -84,6 +85,15 @@ object ProfileUtils extends Logging {
     path.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
   }
 
+  // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
+  // core/src/main/scala/org/apache/spark/io/CompressionCodec.scala#L67
+  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd")
+
+  def eventLogNameFilter(logFile: Path): Boolean = {
+    EventLogFileWriter.codecName(logFile)
+      .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES.contains(suffix))
+  }
+
   // Return an Array(Path) and Timestamp Map based on input path string
   def stringToPath(pathString: String): Map[Path, Long] = {
     val inputPath = new Path(pathString)
@@ -92,8 +102,14 @@ object ProfileUtils extends Logging {
     val pathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
     try {
       val fileStatus = fs.getFileStatus(inputPath)
-      val fileName = fileStatus.getPath().getName()
-      if (fileStatus.isDirectory && isEventLogDir(fileStatus)) {
+      val filePath = fileStatus.getPath()
+      val fileName = filePath.getName()
+      if (!eventLogNameFilter(filePath)) {
+        logWarning(s"File: $fileName it not a supported file type. " +
+          "Supported compression types are: " +
+          s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES.mkString(", ")}. " +
+          "Skipping this file.")
+      } else if (fileStatus.isDirectory && isEventLogDir(fileStatus)) {
         // either event logDir v2 directory or regular event log
         pathsWithTimestamp += (fileStatus.getPath -> fileStatus.getModificationTime)
       } else {
@@ -105,13 +121,20 @@ object ProfileUtils extends Logging {
             logWarning(s"s is: $name dir ${s.isDirectory} file: ${s.isFile}")
             (s.isFile || (s.isDirectory && isEventLogDir(name)))
           })
-        logWarning("file status is are: " + validLogs.map(_.getPath).mkString(", "))
-        if (validLogs != null) {
-          validLogs.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
+        val (logsSupported, unsupportLogs) = validLogs.partition(eventLogNameFilter(_))
+        logWarning("file status is are: " + logsSupported.map(_.getPath).mkString(", "))
+        if (logsSupported != null) {
+          logsSupported.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
         }
         if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
             s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
+        }
+        if (unsupportLogs.nonEmpty) {
+          logWarning(s"Files: ${unsupportLogs.map(_.getPath.getName.mkString(", "))} " +
+            s"have unsupported file types. Supported compression types are: " +
+            s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES.mkString(", ")}. " +
+            "Skipping these files.")
         }
       }
     } catch {
