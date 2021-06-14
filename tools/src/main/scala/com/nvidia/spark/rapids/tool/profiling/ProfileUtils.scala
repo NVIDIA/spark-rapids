@@ -132,7 +132,7 @@ object ProfileUtils extends Logging {
             s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
         }
         if (unsupportLogs.nonEmpty) {
-          logWarning(s"Files: ${unsupportLogs.map(_.getPath.getName.mkString(", "))} " +
+          logWarning(s"Files: ${unsupportLogs.map(_.getPath.getName).mkString(", ")} " +
             s"have unsupported file types. Supported compression types are: " +
             s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES.mkString(", ")}. " +
             "Skipping these files.")
