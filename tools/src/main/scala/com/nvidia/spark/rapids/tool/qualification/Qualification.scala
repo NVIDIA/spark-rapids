@@ -51,7 +51,7 @@ object Qualification extends Logging {
         case json: com.fasterxml.jackson.core.JsonParseException =>
           logWarning(s"Error parsing JSON, skipping $path")
         case il: IllegalArgumentException =>
-          logWarning(s"Error parsing file: $path, skipping")
+          logWarning(s"Error parsing file: $path, skipping", il)
       }
     }
     if (apps.isEmpty) {

@@ -90,7 +90,7 @@ object ProfileUtils extends Logging {
 
   // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
   // core/src/main/scala/org/apache/spark/io/CompressionCodec.scala#L67
-  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd")
+  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd", "gz")
 
   def eventLogNameFilter(logFile: Path): Boolean = {
     EventLogFileWriter.codecName(logFile)
