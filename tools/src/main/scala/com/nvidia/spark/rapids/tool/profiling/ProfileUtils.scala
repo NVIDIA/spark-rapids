@@ -121,7 +121,8 @@ object ProfileUtils extends Logging {
             logWarning(s"s is: $name dir ${s.isDirectory} file: ${s.isFile}")
             (s.isFile || (s.isDirectory && isEventLogDir(name)))
           })
-        val (logsSupported, unsupportLogs) = validLogs.partition(eventLogNameFilter(_))
+        val (logsSupported, unsupportLogs) =
+          validLogs.partition(l => eventLogNameFilter(l.getPath()))
         logWarning("file status is are: " + logsSupported.map(_.getPath).mkString(", "))
         if (logsSupported != null) {
           logsSupported.map(a => pathsWithTimestamp += (a.getPath -> a.getModificationTime))
