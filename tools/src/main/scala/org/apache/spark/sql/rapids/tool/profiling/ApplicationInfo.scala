@@ -223,7 +223,6 @@ class ApplicationInfo(
         in.close()
         throw e
     }
-    in
   }
 
   /**
