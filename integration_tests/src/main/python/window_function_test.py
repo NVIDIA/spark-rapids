@@ -18,8 +18,14 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
+
+def meta_idfn(meta):
+    def tmp(something):
+        return meta + idfn(something)
+    return tmp
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
@@ -112,6 +118,19 @@ _grpkey_long_with_nulls_with_overflow = [
     ('a', IntegerGen()),
     ('b', LongGen(nullable=True))]
 
+part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+
+running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+        string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+
+lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
+        boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
+
+
+all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen, 
+        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
@@ -256,29 +275,63 @@ def test_window_aggs_for_rows(data_gen, batch_size):
         conf = conf)
 
 
-part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
+# This is for aggregations that work with a running window optimization. They don't need to be batched
+# specially, but it only works if all of the aggregations can support this. Right now this is just
+# row number, but will expand to others in the future (rank and dense_rank).
+@ignore_order
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
+@pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_scale_precision], ids=meta_idfn('data:'))
+def test_window_running_no_part(b_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.hasNans': False,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = ['row_number() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
+            'count(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
+            'min(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
+            'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : two_col_df(spark, LongRangeGen(), b_gen, length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        conf = conf)
 
-lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
-
-def meta_idfn(meta):
-    def tmp(something):
-        return meta + idfn(something)
-    return tmp
+# This is for aggregations that work with a running window optimization. They don't need to be batched
+# specially, but it only works if all of the aggregations can support this. Right now this is just
+# row number, but will expand to others in the future (rank and dense_rank).
+@ignore_order
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
+        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_scale_precision]], ids=idfn)
+def test_window_running(b_gen, c_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.hasNans': False,
+            'spark.rapids.sql.castFloatToDecimal.enabled': True}
+    query_parts = ['row_number() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
+            'count(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
+            'min(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
+            'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : three_col_df(spark, LongRangeGen(), RepeatSeqGen(b_gen, length=100), c_gen, length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        conf = conf)
 
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
-@pytest.mark.parametrize('b_gen', part_and_order_gens, ids=meta_idfn('orderBy:'))
-@pytest.mark.parametrize('a_gen', part_and_order_gens, ids=meta_idfn('partBy:'))
-def test_multi_types_window_aggs_for_rows_lead_lag(a_gen, b_gen, c_gen, batch_size):
+@pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
+def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.hasNans': False}
     data_gen = [
-            ('a', RepeatSeqGen(a_gen, length=20)),
-            ('b', b_gen),
+            ('a', RepeatSeqGen(a_b_gen, length=20)),
+            ('b', a_b_gen),
             ('c', c_gen)]
     # By default for many operations a range of unbounded to unbounded is used
     # This will not work until https://github.com/NVIDIA/spark-rapids/issues/216
@@ -345,12 +398,11 @@ def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen, bat
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('c_gen', [string_gen], ids=idfn)
-@pytest.mark.parametrize('b_gen', part_and_order_gens, ids=meta_idfn('orderBy:'))
-@pytest.mark.parametrize('a_gen', part_and_order_gens, ids=meta_idfn('partBy:'))
-def test_multi_types_window_aggs_for_rows(a_gen, b_gen, c_gen):
+@pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
+def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
     data_gen = [
-            ('a', RepeatSeqGen(a_gen, length=20)),
-            ('b', b_gen),
+            ('a', RepeatSeqGen(a_b_gen, length=20)),
+            ('b', a_b_gen),
             ('c', c_gen)]
     # By default for many operations a range of unbounded to unbounded is used
     # This will not work until https://github.com/NVIDIA/spark-rapids/issues/216

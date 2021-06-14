@@ -20,10 +20,11 @@ import java.util.concurrent.TimeUnit
 
 import scala.language.{existentials, implicitConversions}
 
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
 import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
@@ -290,9 +291,9 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
             withResource(GpuWindowExpression.getRangeBasedWindowOptions(windowSpec.orderSpec,
               numGroupingColumns,
               isUnboundedPreceding,
-              preceding.getOrElse(null),
+              preceding.orNull,
               isUnBoundedFollowing,
-              following.getOrElse(null))) { windowOptions =>
+              following.orNull)) { windowOptions =>
               val agg = windowFunc.windowAggregation(bases).overWindow(windowOptions)
               withResource(table
                 .groupBy(0 until numGroupingColumns: _*)
@@ -856,7 +857,139 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
   def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[T]
 }
 
-case class GpuRowNumber() extends GpuAggregateWindowFunction[RowNumberAggregation] {
+/**
+ * Provides a way to process running window operations without needing to buffer and split the
+ * batches on partition by boundaries. When this happens part of a partition by key set may
+ * have been processed in the last batch, and the rest of it will need to be updated. For example
+ * if we are doing a running min operation. We may first get in something like
+ * <code>
+ * PARTS:  1, 1,  2, 2
+ * VALUES: 2, 3, 10, 9
+ * </code>
+ *
+ * The output of processing this would result in a new column that would look like
+ * <code>
+ *   MINS: 2, 2, 10, 9
+ * </code>
+ *
+ * But we don't know if the group with 2 in PARTS is done or not. So the framework will call
+ * `updateState` to have this save the last value in MINS, which is a 9. When the next batch
+ * shows up
+ *
+ * <code>
+ *  PARTS:  2,  2,  3,  3
+ * VALUES: 11,  5, 13, 14
+ * </code>
+ *
+ * We generate the window result again and get
+ *
+ * <code>
+ *    MINS: 11, 5, 13, 13
+ * </code>
+ *
+ * But we cannot output this yet because there may have been overlap with the previous batch.
+ * The framework will figure that out and pass data into `fixUp` to do the fixing. It will
+ * pass in MINS, and also a column of boolean values `true, true, false, false` to indicate
+ * which rows overlapped with the previous batch.  In our min example `fixUp` will do a min
+ * between the last value in the previous batch and the values that could overlap with it.
+ *
+ * <code>
+ * RESULT: 9, 5, 13, 13
+ * </code>
+ * which can be output.
+ */
+trait BatchedRunningWindowFixer extends AutoCloseable {
+  /**
+   * Save any state needed from the previous output that will be needed to fix up the next batch.
+   * You don't need to worry about the partition columns. Those will be saved separately.
+   * @param finalOutputColumn the output of fixup.
+   */
+  def updateState(finalOutputColumn: GpuColumnVector): Unit
+
+  /**
+   * Fix up `windowedColumnOutput` with any stored state from previous batches.
+   * Like all window operations the input data will have been sorted by the partition
+   * by columns and the order by columns.
+   *
+   * @param samePartitionMask a mask that uses `true` to indicate the row
+   *                          is for the same partition by keys that was the last row in the
+   *                          previous batch or `false` to indicate it is not. If this is known
+   *                          to be all true or all false values a single boolean is used. If
+   *                          it can change for different rows than a column vector is provided.
+   *                          Only values that are for the same partition by keys should be
+   *                          modified. Because the input data is sorted by the partition by
+   *                          columns the boolean values will be grouped together.
+   * @param windowedColumnOutput the output of the windowAggregation without anything
+   *                             fixed/modified. This should not be closed by `fixUp` as it will be
+   *                             handled by the framework.
+   * @return a fixed ColumnVector that was with outputs updated for items that were in the same
+   *         group by key as the last row in the previous batch.
+   */
+  def fixUp(
+      samePartitionMask: Either[GpuColumnVector, Boolean],
+      windowedColumnOutput: GpuColumnVector): GpuColumnVector
+}
+
+/**
+ * For many operations a running window (unbounded preceding to current row) can
+ * process the data without dividing the data up into batches that contain all of the data
+ * for a given group by key set. Instead we store a small amount of state from a previous result
+ * and use it to fix the final result. This is a memory optimization. Any
+ * GpuAggregateWindowFunction can still work for running window queries. This just reduces the
+ * maximum amount of memory needed to process them.
+ */
+trait GpuBatchedRunningWindowFunction[T <: Aggregation with RollingAggregation[T]]
+    extends GpuAggregateWindowFunction[T] {
+
+  /**
+   * Get a new class that can be used to fix up batched RunningWindowOperations.
+   */
+  def newFixer(): BatchedRunningWindowFixer
+}
+
+/**
+ * This class fixes up batched running windows by performing a binary op on the previous value and
+ * those in the the same partition by key group. It does not deal with nulls, so it works for things
+ * like row_number and count, that cannot produce nulls, or for NULL_MIN and NULL_MAX that do the
+ * right thing when they see a null.
+ */
+class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
+    extends BatchedRunningWindowFixer with Arm with Logging {
+  private var previousResult: Option[Scalar] = None
+
+  override def updateState(finalOutputColumn: GpuColumnVector): Unit = {
+    logDebug(s"$name: updateState from $previousResult to...")
+    previousResult.foreach(_.close)
+    previousResult =
+      Some(finalOutputColumn.getBase.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
+    logDebug(s"$name: ... $previousResult")
+  }
+
+  override def fixUp(samePartitionMask: Either[GpuColumnVector, Boolean],
+      windowedColumnOutput: GpuColumnVector): GpuColumnVector = {
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    (previousResult, samePartitionMask) match {
+      case (None, _) => windowedColumnOutput.incRefCount()
+      case (Some(prev), scala.util.Right(mask)) =>
+        if (mask) {
+          GpuColumnVector.from(windowedColumnOutput.getBase.binaryOp(binOp, prev, prev.getType),
+            windowedColumnOutput.dataType())
+        } else {
+          // The mask is all false so do nothing
+          windowedColumnOutput.incRefCount()
+        }
+      case (Some(prev), scala.util.Left(mask)) =>
+        val base = windowedColumnOutput.getBase
+        withResource(base.binaryOp(binOp, prev, prev.getType)) { updated =>
+          GpuColumnVector.from(mask.getBase.ifElse(updated, base), windowedColumnOutput.dataType())
+        }
+    }
+  }
+
+  override def close(): Unit = previousResult.foreach(_.close())
+}
+
+case class GpuRowNumber() extends GpuBatchedRunningWindowFunction[RowNumberAggregation] {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
@@ -869,6 +1002,9 @@ case class GpuRowNumber() extends GpuAggregateWindowFunction[RowNumberAggregatio
     assert(inputs.isEmpty, inputs)
     Aggregation.rowNumber().onColumn(0)
   }
+
+  override def newFixer(): BatchedRunningWindowFixer =
+    new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number")
 }
 
 abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
