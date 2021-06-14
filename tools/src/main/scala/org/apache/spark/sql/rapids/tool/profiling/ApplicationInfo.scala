@@ -16,10 +16,12 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import java.io.{BufferedInputStream, InputStream}
+import java.util.concurrent.ConcurrentHashMap
+
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
-import scala.math.Ordering
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.profiling._
@@ -27,8 +29,10 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
+import org.apache.spark.SparkConf
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
+import org.apache.spark.io.CompressionCodec
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
@@ -203,6 +207,26 @@ class ApplicationInfo(
   // Create Spark DataFrame(s) based on ArrayBuffer(s)
   arraybufferToDF()
 
+  private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
+
+  def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
+    val in = new BufferedInputStream(fs.open(log))
+    try {
+      EventLogFileWriter.codecName(log) match {
+        case c if (c.equals("gz")) =>
+          val gzipCodec =
+            new com.nvidia.spark.rapids.tool.profiling.GZIPCompressionCodec(new SparkConf)
+          gzipCodec.compressedContinuousInputStream(in)
+        case _ => EventLogFileReader.openEventLog(log, fs)
+      }
+    } catch {
+      case e: Throwable =>
+        in.close()
+        throw e
+    }
+    in
+  }
+
   /**
    * Functions to process all the events
    */
@@ -222,18 +246,12 @@ class ApplicationInfo(
       // stop replaying next log files if ReplayListenerBus indicates some error or halt
       var continueReplay = true
       logFiles.foreach { file =>
-        file.getPath()
-        // check if gzip and if so we need to set conf to point to class
-        val codecName = EventLogFileWriter.codecName(file.getPath())
-        if (codecName.isDefined && codecName.get.equals("gz")) {
-          logWarning("setting codec to gzip!")
-          System.setProperty("spark.eventLog.compression.codec",
-            "com.nvidia.spark.rapids.tool.profiling.GZIPCompressionCodec")
-        }
-
-        logWarning(s"log file ${eventlog.getName()} parsing file: ${file.getPath().getName()}")
         if (continueReplay) {
-          Utils.tryWithResource(EventLogFileReader.openEventLog(file.getPath, fs)) { in =>
+
+          logWarning(s"log file ${eventlog.getName()} parsing file: ${file.getPath().getName()}")
+          //Utils.tryWithResource(EventLogFileReader.openEventLog(file.getPath, fs)) { in =>
+          Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
+
             val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
             totalNumEvents = lines.size
             lines.foreach { line =>

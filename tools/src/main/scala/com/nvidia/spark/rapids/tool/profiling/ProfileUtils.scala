@@ -35,6 +35,17 @@ import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
  * object Utils provides toolkit functions
  *
  */
+
+class GZIPCompressionCodec(conf: SparkConf) extends CompressionCodec {
+
+  override def compressedOutputStream(s: OutputStream): OutputStream = {
+    new GZIPOutputStream(s)
+  }
+
+  override def compressedInputStream(s: InputStream): InputStream = new GZIPInputStream(s)
+}
+
+
 object ProfileUtils extends Logging {
 
   // Create a SparkSession
@@ -90,21 +101,13 @@ object ProfileUtils extends Logging {
 
   // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
   // core/src/main/scala/org/apache/spark/io/CompressionCodec.scala#L67
-  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd", "gz")
+  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd")
 
   def eventLogNameFilter(logFile: Path): Boolean = {
     EventLogFileWriter.codecName(logFile)
       .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES.contains(suffix))
   }
 
-  class GZIPCompressionCodec(conf: SparkConf) extends CompressionCodec {
-
-    override def compressedOutputStream(s: OutputStream): OutputStream = {
-      new GZIPOutputStream(s)
-    }
-
-    override def compressedInputStream(s: InputStream): InputStream = new GZIPInputStream(s)
-  }
 
   // Return an Array(Path) and Timestamp Map based on input path string
   def stringToPath(pathString: String): Map[Path, Long] = {
