@@ -89,7 +89,8 @@ object Qualification extends Logging {
         }
       }.mkString(" union ")
     if (nonQualApps.nonEmpty) {
-      logWarning("The following event logs were skipped: " +
+      logWarning("The following event logs were skipped because the event logs don't " +
+        "contain enough information to run qualification on: " +
         s"${nonQualApps.map(_.eventlog).mkString(", ")}")
     }
     if (query.nonEmpty) {

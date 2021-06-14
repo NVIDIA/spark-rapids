@@ -16,15 +16,18 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.{File, FileNotFoundException}
+import java.io.{FileNotFoundException, InputStream, OutputStream}
+import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 
 import scala.collection.mutable.Map
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
 
+import org.apache.spark.SparkConf
 import org.apache.spark.deploy.history.EventLogFileWriter
 import org.apache.spark.internal.Logging
+import org.apache.spark.io.CompressionCodec
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
 
@@ -92,6 +95,15 @@ object ProfileUtils extends Logging {
   def eventLogNameFilter(logFile: Path): Boolean = {
     EventLogFileWriter.codecName(logFile)
       .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES.contains(suffix))
+  }
+
+  class GZIPCompressionCodec(conf: SparkConf) extends CompressionCodec {
+
+    override def compressedOutputStream(s: OutputStream): OutputStream = {
+      new GZIPOutputStream(s)
+    }
+
+    override def compressedInputStream(s: InputStream): InputStream = new GZIPInputStream(s)
   }
 
   // Return an Array(Path) and Timestamp Map based on input path string

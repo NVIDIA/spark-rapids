@@ -27,7 +27,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
-import org.apache.spark.deploy.history.EventLogFileReader
+import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -222,6 +222,15 @@ class ApplicationInfo(
       // stop replaying next log files if ReplayListenerBus indicates some error or halt
       var continueReplay = true
       logFiles.foreach { file =>
+        file.getPath()
+        // check if gzip and if so we need to set conf to point to class
+        val codecName = EventLogFileWriter.codecName(file.getPath())
+        if (codecName.isDefined && codecName.get.equals("gz")) {
+          logWarning("setting codec to gzip!")
+          System.setProperty("spark.eventLog.compression.codec",
+            "com.nvidia.spark.rapids.tool.profiling.GZIPCompressionCodec")
+        }
+
         logWarning(s"log file ${eventlog.getName()} parsing file: ${file.getPath().getName()}")
         if (continueReplay) {
           Utils.tryWithResource(EventLogFileReader.openEventLog(file.getPath, fs)) { in =>
@@ -231,6 +240,8 @@ class ApplicationInfo(
               try {
                 val event = JsonProtocol.sparkEventFromJson(parse(line))
                 eventsProcessor.processAnyEvent(this, event)
+                // TODO - put in try?
+                System.clearProperty("spark.eventLog.compression.codec")
                 logDebug(line)
               }
               catch {
