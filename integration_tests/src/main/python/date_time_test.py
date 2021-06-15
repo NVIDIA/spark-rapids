@@ -218,14 +218,14 @@ def test_date_format(data_gen, date_format):
 unsupported_date_formats = ['F']
 @pytest.mark.parametrize('date_format', unsupported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu('ProjectExec,date_format,Alias,DateFormatClass,Literal,Cast')
+@allow_non_gpu('ProjectExec,Alias,DateFormatClass,Literal,Cast')
 def test_date_format_f(data_gen, date_format):
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), 'ProjectExec')
 
 @pytest.mark.parametrize('date_format', unsupported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu('ProjectExec,date_format,Alias,DateFormatClass,Literal,Cast')
+@allow_non_gpu('ProjectExec,Alias,DateFormatClass,Literal,Cast')
 def test_date_format_f_incompat(data_gen, date_format):
     # note that we can't support it even with incompatibleDateFormats enabled
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
@@ -235,7 +235,7 @@ def test_date_format_f_incompat(data_gen, date_format):
 maybe_supported_date_formats = ['dd-MM-yyyy']
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
-@allow_non_gpu('ProjectExec,date_format,Alias,DateFormatClass,Literal,Cast')
+@allow_non_gpu('ProjectExec,Alias,DateFormatClass,Literal,Cast')
 def test_date_format_maybe(data_gen, date_format):
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)),
