@@ -379,10 +379,6 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 
 case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
-  )
-
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {
     children.map(_.output).transpose.map { attrs =>
@@ -408,20 +404,21 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
 
     sparkContext.union(children.map(_.executeColumnar())).map { batch =>
-      withResource(new NvtxWithMetrics("Union", NvtxColor.CYAN, totalTime)) { _ =>
-        numOutputBatches += 1
-        numOutputRows += batch.numRows
-        batch
-      }
+      numOutputBatches += 1
+      numOutputRows += batch.numRows
+      batch
     }
   }
 }
 
 case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     extends UnaryExecNode with GpuExec {
+
+  // This operator does not record any metrics
+  override lazy val allMetrics: Map[String, GpuMetric] = Map.empty
+
   override def output: Seq[Attribute] = child.output
 
   override def outputPartitioning: Partitioning = {
