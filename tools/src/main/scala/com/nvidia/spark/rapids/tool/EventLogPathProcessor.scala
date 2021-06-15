@@ -241,8 +241,9 @@ object EventLogPathProcessor extends Logging {
       val month = Integer.parseInt(date(2))
       val year = Integer.parseInt(date(1))
       val time = fileParts(1).split("-")
+      val minParse = time(1).split(".")
       val hour = Integer.parseInt(time(0))
-      val min = Integer.parseInt(time(1))
+      val min = Integer.parseInt(minParse(0))
       LocalDateTime.of(year, month, day, hour, min)
     }
   }
