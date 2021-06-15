@@ -23,11 +23,13 @@ import java.util.zip.GZIPInputStream
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
-import com.nvidia.spark.rapids.tool.{DatabricksEventLog, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
+
+import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
+
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
@@ -234,38 +236,27 @@ class ApplicationInfo(
     // at this point all paths should be valid event logs or event log dirs
     val fs = eventLogInfo.eventLog.getFileSystem(new Configuration())
     var totalNumEvents = 0
-
     val eventsProcessor = new EventsProcessor(forQualification)
     val readerOpt = eventLogInfo match {
       case dblog: DatabricksEventLog =>
-        // todo check valid?
-        Some(new EventLogPathProcessor.DatabricksRollingEventLogFilesFileReader(fs, eventlog))
+        Some(new DatabricksRollingEventLogFilesFileReader(fs, eventlog))
       case apachelog => EventLogFileReader(fs, eventlog)
-
     }
 
     if (readerOpt.isDefined) {
       val reader = readerOpt.get
       val logFiles = reader.listEventLogFiles
-      logWarning("event log list is: " + logFiles.mkString(", "))
       // stop replaying next log files if ReplayListenerBus indicates some error or halt
       var continueReplay = true
       logFiles.foreach { file =>
         if (continueReplay) {
-
-          logWarning(s"log file ${eventlog.getName()} parsing file: ${file.getPath().getName()}")
-          //Utils.tryWithResource(EventLogFileReader.openEventLog(file.getPath, fs)) { in =>
           Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
-
             val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
             totalNumEvents = lines.size
             lines.foreach { line =>
               try {
                 val event = JsonProtocol.sparkEventFromJson(parse(line))
                 eventsProcessor.processAnyEvent(this, event)
-                // TODO - put in try?
-                System.clearProperty("spark.eventLog.compression.codec")
-                logDebug(line)
               }
               catch {
                 case e: ClassNotFoundException =>

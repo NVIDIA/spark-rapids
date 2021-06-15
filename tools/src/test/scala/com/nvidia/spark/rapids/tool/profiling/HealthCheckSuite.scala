@@ -18,10 +18,10 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.File
 
+import scala.collection.mutable.ArrayBuffer
+
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import org.scalatest.FunSuite
-
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
