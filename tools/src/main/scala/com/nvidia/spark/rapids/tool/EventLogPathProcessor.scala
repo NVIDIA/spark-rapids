@@ -149,6 +149,7 @@ object EventLogPathProcessor extends Logging {
       }
     }
 
+    logDebug("Paths after stringToPath: " + allPathsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the
     // command line, then return all the event logs processed above.
     val paths = if (matchlogs.isDefined || filterNLogs.isDefined) {

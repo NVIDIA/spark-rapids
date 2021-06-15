@@ -239,10 +239,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   test("test filter file newest") {
-    val tempFile1 = File.createTempFile("tempOutputFile1", null)
-    val tempFile2 = File.createTempFile("tempOutputFile2", null)
-    val tempFile3 = File.createTempFile("tempOutputFile3", null)
-    val tempFile4 = File.createTempFile("tempOutputFile3", null)
+    val tempFile1 = File.createTempFile("tempOutputFile1", "")
+    val tempFile2 = File.createTempFile("tempOutputFile2", "")
+    val tempFile3 = File.createTempFile("tempOutputFile3", "")
+    val tempFile4 = File.createTempFile("tempOutputFile3", "")
     tempFile1.deleteOnExit()
     tempFile2.deleteOnExit()
     tempFile3.deleteOnExit()
@@ -270,10 +270,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
 
   test("test filter file oldest and file name match") {
 
-    val tempFile1 = File.createTempFile("tempOutputFile1", null)
-    val tempFile2 = File.createTempFile("tempOutputFile2", null)
-    val tempFile3 = File.createTempFile("tempOutputFile3", null)
-    val tempFile4 = File.createTempFile("tempOutputFile3", null)
+    val tempFile1 = File.createTempFile("tempOutputFile1", "")
+    val tempFile2 = File.createTempFile("tempOutputFile2", "")
+    val tempFile3 = File.createTempFile("tempOutputFile3", "")
+    val tempFile4 = File.createTempFile("tempOutputFile3", "")
     tempFile1.deleteOnExit()
     tempFile2.deleteOnExit()
     tempFile3.deleteOnExit()
