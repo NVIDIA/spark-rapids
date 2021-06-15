@@ -229,7 +229,7 @@ class ApplicationInfo(
   def processEvents(): Unit = {
     val eventlog = eventLogInfo.eventLog
 
-    logInfo("Parsing Event Log File: " + eventlog.toString)
+    logInfo("Parsing Event Log: " + eventlog.toString)
 
     // at this point all paths should be valid event logs or event log dirs
     val fs = eventLogInfo.eventLog.getFileSystem(new Configuration())

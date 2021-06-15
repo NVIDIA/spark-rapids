@@ -256,6 +256,7 @@ object EventLogPathProcessor extends Logging {
 
     private lazy val files: Seq[FileStatus] = {
       val ret = fs.listStatus(rootPath).toSeq
+      logWarning(s"files is: ${ret.map(_.getPath.getName).mkString(", ")}")
       if (!ret.exists(isDBEventLogFile)) {
         logWarning("Log directory must contain at least one event log file!")
         Seq.empty[FileStatus]
