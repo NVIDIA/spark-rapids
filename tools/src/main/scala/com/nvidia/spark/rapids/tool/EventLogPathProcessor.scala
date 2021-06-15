@@ -58,15 +58,21 @@ object EventLogPathProcessor extends Logging {
   // eventlog-2021-06-14--20-00.gz
   def isDatabricksEventLogDir(dir: FileStatus,
       fs: FileSystem, databricksLogs: Option[Boolean]): Boolean = {
+    logWarning(s"checking is databricks log ${dir.getPath.getName}")
     databricksLogs match {
       case Some(true) => true
       case Some(false) => false
       case _ =>
         // try to determine if dir structure looks right
+        logWarning(s"listing status ${dir.getPath.getName}")
         val dirList = fs.listStatus(dir.getPath)
         if (dirList.size > 0) {
+          logWarning(s"listing status 2 ${dir.getPath.getName}")
+
           if (dirList.exists(_.getPath.getName.equals("eventlog"))) {
             if (dirList.size > 1) {
+              logWarning(s"listing status 2 ${dir.getPath.getName}")
+
               dirList.exists(_.getPath.getName
                 .matches("eventlog-([0-9]){4}-([0-9]){2}-([0-9]){2}--([0-9]){2}-([0-9]){2}.*"))
             } else {

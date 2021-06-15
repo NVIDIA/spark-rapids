@@ -236,8 +236,6 @@ class ApplicationInfo(
     var totalNumEvents = 0
 
     val eventsProcessor = new EventsProcessor(forQualification)
-
-
     val readerOpt = eventLogInfo match {
       case dblog: DatabricksEventLog =>
         // todo check valid?
