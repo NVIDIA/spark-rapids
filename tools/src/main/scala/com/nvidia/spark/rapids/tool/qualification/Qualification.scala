@@ -17,9 +17,8 @@ package com.nvidia.spark.rapids.tool.qualification
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling.Analysis
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -32,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
 object Qualification extends Logging {
 
   def qualifyApps(
-      allPaths: ArrayBuffer[Path],
+      allPaths: ArrayBuffer[EventLogInfo],
       numRows: Int,
       sparkSession: SparkSession,
       includeCpuPercent: Boolean,
@@ -45,7 +44,7 @@ object Qualification extends Logging {
         // This apps only contains 1 app in each loop.
         val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
         apps += app
-        ToolUtils.logApplicationInfo(app)
+        EventLogPathProcessor.logApplicationInfo(app)
         index += 1
       } catch {  // TODO - should we just catch all exceptions and skip?
         case json: com.fasterxml.jackson.core.JsonParseException =>

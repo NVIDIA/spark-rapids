@@ -16,13 +16,8 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
-
-import com.nvidia.spark.rapids.tool.profiling.ProfileUtils
-import org.apache.hadoop.fs.Path
-
 import org.apache.spark.internal.{config, Logging}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.DataFrame
 
 object ToolUtils extends Logging {
 
@@ -34,65 +29,4 @@ object ToolUtils extends Logging {
   def showString(df: DataFrame, numRows: Int) = {
     df.showString(numRows, 0)
   }
-
-  /**
-   * Function to evaluate the event logs to be processed.
-   *
-   * @param filterNLogs    number of event logs to be selected
-   * @param matchlogs      keyword to match file names in the directory
-   * @param eventLogsPaths Array of event log paths
-   * @return event logs to be processed
-   */
-  def processAllPaths(
-      filterNLogs: Option[String],
-      matchlogs: Option[String],
-      eventLogsPaths: List[String]): ArrayBuffer[Path] = {
-
-    var allPathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
-    for (pathString <- eventLogsPaths) {
-      val paths = ProfileUtils.stringToPath(pathString)
-      if (paths.nonEmpty) {
-        allPathsWithTimestamp ++= paths
-      }
-    }
-
-    // Filter the event logs to be processed based on the criteria. If it is not provided in the
-    // command line, then return all the event logs processed above.
-    val paths = if (matchlogs.isDefined || filterNLogs.isDefined) {
-      if (matchlogs.isDefined) {
-        allPathsWithTimestamp = allPathsWithTimestamp.filter { case (path, _) =>
-          path.getName.contains(matchlogs.get)
-        }
-      }
-      if (filterNLogs.isDefined) {
-        val numberofEventLogs = filterNLogs.get.split("-")(0).toInt
-        val criteria = filterNLogs.get.split("-")(1)
-        if (criteria.equals("newest")) {
-          allPathsWithTimestamp = LinkedHashMap(
-            allPathsWithTimestamp.toSeq.sortWith(_._2 > _._2): _*)
-        } else if (criteria.equals("oldest")) {
-          allPathsWithTimestamp = LinkedHashMap(
-            allPathsWithTimestamp.toSeq.sortWith(_._2 < _._2): _*)
-        } else {
-          logError("Criteria should be either newest or oldest")
-          System.exit(1)
-        }
-        ArrayBuffer(allPathsWithTimestamp.keys.toSeq.take(numberofEventLogs): _*)
-      } else {
-        // return event logs which contains the keyword.
-        ArrayBuffer(allPathsWithTimestamp.keys.toSeq: _*)
-      }
-    } else { // send all event logs for processing
-      ArrayBuffer(allPathsWithTimestamp.keys.toSeq: _*)
-    }
-    logWarning("paths is; " + paths)
-    //val finalPaths = paths.filter(eventLogNameFilter)
-    // logWarning("paths is; " + finalPaths)
-    paths
-  }
-
-  def logApplicationInfo(app: ApplicationInfo) = {
-    logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-  }
-
 }

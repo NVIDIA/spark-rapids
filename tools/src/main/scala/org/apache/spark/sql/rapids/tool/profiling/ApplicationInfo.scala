@@ -23,13 +23,11 @@ import java.util.zip.GZIPInputStream
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
-
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.{DatabricksEventLog, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
-
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
@@ -47,7 +45,7 @@ import org.apache.spark.util._
 class ApplicationInfo(
     val numOutputRows: Int,
     val sparkSession: SparkSession,
-    val eventlog: Path,
+    val eventLogInfo: EventLogInfo,
     val index: Int,
     val forQualification: Boolean = false) extends Logging {
 
@@ -229,18 +227,29 @@ class ApplicationInfo(
    * Functions to process all the events
    */
   def processEvents(): Unit = {
+    val eventlog = eventLogInfo.eventLog
+
     logInfo("Parsing Event Log File: " + eventlog.toString)
 
     // at this point all paths should be valid event logs or event log dirs
-    val fs = eventlog.getFileSystem(new Configuration())
+    val fs = eventLogInfo.eventLog.getFileSystem(new Configuration())
     var totalNumEvents = 0
 
     val eventsProcessor = new EventsProcessor(forQualification)
 
-    val readerOpt = EventLogFileReader(fs, eventlog)
+
+    val readerOpt = eventLogInfo match {
+      case dblog: DatabricksEventLog =>
+        // todo check valid?
+        Some(new EventLogPathProcessor.DatabricksRollingEventLogFilesFileReader(fs, eventlog))
+      case apachelog => EventLogFileReader(fs, eventlog)
+
+    }
+
     if (readerOpt.isDefined) {
       val reader = readerOpt.get
       val logFiles = reader.listEventLogFiles
+      logWarning("event log list is: " + logFiles.mkString(", "))
       // stop replaying next log files if ReplayListenerBus indicates some error or halt
       var continueReplay = true
       logFiles.foreach { file =>

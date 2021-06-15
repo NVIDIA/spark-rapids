@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTextFileWriter}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -61,7 +62,7 @@ object ProfileMain extends Logging {
 
     try {
       // Get the event logs required to process
-      lazy val allPaths = ToolUtils.processAllPaths(filterN.toOption,
+      lazy val allPaths = EventLogPathProcessor.processAllPaths(filterN.toOption,
         matchEventLogs.toOption, eventlogPaths)
 
       val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
@@ -93,7 +94,7 @@ object ProfileMain extends Logging {
         }
         // Show the application Id <-> appIndex mapping.
         for (app <- apps) {
-          ToolUtils.logApplicationInfo(app)
+          EventLogPathProcessor.logApplicationInfo(app)
         }
       } else {
         // This mode is to process one application at one time.
@@ -104,7 +105,7 @@ object ProfileMain extends Logging {
             val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
             val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
             apps += app
-            ToolUtils.logApplicationInfo(app)
+            EventLogPathProcessor.logApplicationInfo(app)
             // This is a bit odd that we process apps individual right now due to
             // memory concerns. So the aggregation functions only aggregate single
             // application not across applications.

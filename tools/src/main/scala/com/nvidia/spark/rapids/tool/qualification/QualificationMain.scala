@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
+import com.nvidia.spark.rapids.tool.EventLogPathProcessor
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
 
 /**
  * A tool to analyze Spark event logs and determine if 
@@ -53,8 +53,8 @@ object QualificationMain extends Logging {
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     logWarning("eventlog paths: " + eventlogPaths)
-    val allPaths = ToolUtils.processAllPaths(filterN.toOption, matchEventLogs.toOption,
-      eventlogPaths)
+    val allPaths = EventLogPathProcessor.processAllPaths(filterN.toOption, matchEventLogs.toOption,
+      eventlogPaths, appArgs.databricksLogs.toOption)
     logWarning("all paths is : " + allPaths.mkString(", "))
 
     val dfOpt = Qualification.qualifyApps(allPaths, numOutputRows, sparkSession,
