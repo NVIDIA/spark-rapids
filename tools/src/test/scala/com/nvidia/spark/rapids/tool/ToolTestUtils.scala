@@ -100,9 +100,8 @@ object ToolTestUtils extends Logging {
     val appArgs = new ProfileArgs(logs)
     var index: Int = 1
     for (path <- appArgs.eventlog()) {
-      logWarning(s"path is $path")
       val eventLogInfo = EventLogPathProcessor.stringToPath(path)
-      assert(eventLogInfo.size >= 1)
+      assert(eventLogInfo.size >= 1, s"event log not parsed as expected $path")
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
         eventLogInfo.head._1, index)
       index += 1
