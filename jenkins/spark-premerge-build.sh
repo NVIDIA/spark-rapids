@@ -19,6 +19,13 @@ set -ex
 
 nvidia-smi
 
+function on_exit {
+    echo '### END OF TEST LOG ###'
+}
+trap on_exit EXIT
+
+echo '### BEGIN OF TEST LOG ###'
+
 . jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/.download"
