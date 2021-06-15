@@ -209,10 +209,7 @@ def test_cache_cpu_gpu_mixed(data_gen, conf):
         df = binary_op_df(spark, data_gen)
         df.cache().count()
         enabled = spark.conf.get("spark.rapids.sql.enabled")
-        if (enabled == "true"):
-            spark.conf.set("spark.rapids.sql.enabled", "false")
-        else:
-            spark.conf.set("spark.rapids.sql.enabled", "true")
+        spark.conf.set("spark.rapids.sql.enabled", not enabled)
 
         return df.selectExpr("a", "b")
 
