@@ -445,6 +445,9 @@ object GpuOverrides {
 
   private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
 
+  private[this] val _notNullCudfTypes = (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+    TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+
   val pluginSupportedOrderableSig: TypeSig = _commonTypes + TypeSig.STRUCT.nested(_commonTypes)
 
   private[this] def isStructType(dataType: DataType) = dataType match {
@@ -1343,8 +1346,7 @@ object GpuOverrides {
     expr[KnownNotNull](
       "Tag an expression as known to not be null",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL,
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+        _notNullCudfTypes, TypeSig.all),
       (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownNotNull(child)
