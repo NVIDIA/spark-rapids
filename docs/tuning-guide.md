@@ -328,5 +328,5 @@ Custom Spark SQL Metrics are available which can help identify performance bottl
 | totalTime        | total time               | Total execution time for the operator, including the time spent executing and fetching data from child operator(s). |
 
 Not all metrics are enabled by default. The configuration setting `spark.rapids.sql.metrics.level` can be set
-to `DEBUG`, `MODERATE`, or `ESEENTIAL`, with `MODERATE` being the default value. More information about this
+to `DEBUG`, `MODERATE`, or `ESSENTIAL`, with `MODERATE` being the default value. More information about this
 configuration option is available in the <a href="configs.md#sql.metrics.level">configuration</a> documentation.
