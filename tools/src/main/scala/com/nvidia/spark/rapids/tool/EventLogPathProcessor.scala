@@ -229,9 +229,11 @@ object EventLogPathProcessor extends Logging {
     if (!isDBEventLogFile(eventLogFileName)) {
       logError(s"$eventLogFileName Not an event log file!")
     }
+    logWarning(s"get event log date for $eventLogFileName")
     val fileParts = eventLogFileName.split("--")
     if (fileParts.size < 2) {
       // assume this is the current log
+      logWarning("returning now")
       LocalDateTime.now()
     } else {
       val date = fileParts(0).split("-")
