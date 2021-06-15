@@ -75,10 +75,12 @@ object EventLogPathProcessor extends Logging {
 
           if (dirList.exists(_.getPath.getName.equals("eventlog"))) {
             if (dirList.size > 1) {
-              logWarning(s"listing status 2 ${dir.getPath.getName}")
+              logWarning(s"listing status 3 ${dirList.map(_.getPath.getName).mkString(", ")}")
 
-              dirList.exists(_.getPath.getName
+              val res = dirList.exists(_.getPath.getName
                 .matches("eventlog-([0-9]){4}-([0-9]){2}-([0-9]){2}--([0-9]){2}-([0-9]){2}.*"))
+              logWarning(s"checking exists res is: $res")
+              res
             } else {
               true
             }
@@ -110,6 +112,7 @@ object EventLogPathProcessor extends Logging {
           (ApacheSparkEventLog(fileStatus.getPath) -> fileStatus.getModificationTime)
       } else if (fileStatus.isDirectory &&
         isDatabricksEventLogDir(fileStatus, fs, databricksLogs)) {
+        logWarning("is databricks event log dir")
         pathsWithTimestamp +=
           (DatabricksEventLog(fileStatus.getPath) -> fileStatus.getModificationTime)
       } else {
