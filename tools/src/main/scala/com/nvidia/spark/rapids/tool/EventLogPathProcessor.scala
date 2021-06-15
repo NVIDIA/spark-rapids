@@ -219,14 +219,15 @@ object EventLogPathProcessor extends Logging {
   }
 
   def isDBEventLogFile(status: FileStatus): Boolean = {
+    logWarning(s"is db event log ${status.isFile} and ${isDBEventLogFile(status.getPath.getName)}")
     status.isFile && isDBEventLogFile(status.getPath.getName)
   }
 
   val dbFileFormat = "eventlog-([0-9]){4}-([0-9]){2}-([0-9]){2}--([0-9]){2}-([0-9]){2}.*"
 
   def getDBEventLogFileDate(eventLogFileName: String): LocalDateTime = {
-    if (isDBEventLogFile(eventLogFileName)) {
-      logError("Not an event log file!")
+    if (!isDBEventLogFile(eventLogFileName)) {
+      logError(s"$eventLogFileName Not an event log file!")
     }
     val fileParts = eventLogFileName.split("--")
     if (fileParts.size < 2) {
@@ -234,9 +235,9 @@ object EventLogPathProcessor extends Logging {
       LocalDateTime.now()
     } else {
       val date = fileParts(0).split("-")
-      val day = Integer.parseInt(fileParts(4))
-      val month = Integer.parseInt(fileParts(3))
-      val year = Integer.parseInt(fileParts(2))
+      val day = Integer.parseInt(fileParts(3))
+      val month = Integer.parseInt(fileParts(2))
+      val year = Integer.parseInt(fileParts(1))
       val time = fileParts(1).split("-")
       val hour = Integer.parseInt(time(0))
       val min = Integer.parseInt(time(1))
@@ -267,6 +268,7 @@ object EventLogPathProcessor extends Logging {
 
     private lazy val eventLogFiles: Seq[FileStatus] = {
       files.filter(isDBEventLogFile).sortWith { (status1, status2) =>
+        logWarning(s"comparing ${status1.getPath.getName} and ${status2.getPath.getName}")
         val dateTime = getDBEventLogFileDate(status1.getPath.getName)
         val dateTime2 = getDBEventLogFileDate(status2.getPath.getName)
         val res = dateTime.isBefore(dateTime2)
