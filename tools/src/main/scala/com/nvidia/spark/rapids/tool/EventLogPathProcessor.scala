@@ -84,9 +84,12 @@ object EventLogPathProcessor extends Logging {
             } else {
               true
             }
+          } else {
+            false
           }
+        } else {
+          false
         }
-        false
     }
   }
 
