@@ -97,13 +97,16 @@ object ToolTestUtils extends Logging {
   def processProfileApps(logs: Array[String],
       sparkSession: SparkSession): ArrayBuffer[ApplicationInfo] = {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    val appArgs =
-      new ProfileArgs(logs)
+    val appArgs = new ProfileArgs(logs)
     var index: Int = 1
-    val eventlogPaths = appArgs.eventlog()
-    for (path <- eventlogPaths) {
+    for (path <- appArgs.eventlog()) {
+      logWarning(s"path is $path")
+      val eventLogInfopre = EventLogPathProcessor.stringToPath(path)
+        .map(_._1.eventLog.getName()).mkString(", ")
+      logWarning(s"event log info is: $eventLogInfopre")
+      val eventLogInfo = EventLogPathProcessor.stringToPath(path).head._1
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.stringToPath(path).head._1, index)
+        eventLogInfo, index)
       index += 1
     }
     apps
