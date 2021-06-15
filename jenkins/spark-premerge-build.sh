@@ -21,6 +21,11 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
+# get BASE commit from merged PR, e.g. "Merge HEAD into BASE"
+BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }');
+# file size check for pull request, the size of committed file should be less than 1.5MiB
+pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
+
 ARTF_ROOT="$WORKSPACE/.download"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
