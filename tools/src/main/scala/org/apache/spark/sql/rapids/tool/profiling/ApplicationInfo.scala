@@ -24,7 +24,7 @@ import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
 
-import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -918,5 +918,33 @@ class ApplicationInfo(
       case u if u.matches(".*UDF.*") => "UDF"
       case _ => ""
     }
+  }
+}
+
+object ApplicationInfo extends Logging {
+  def createApps(
+      allPaths: ArrayBuffer[EventLogInfo],
+      numRows: Int,
+      sparkSession: SparkSession): (ArrayBuffer[ApplicationInfo], Int) = {
+    var index: Int = 1
+    var errorCode = 0
+    val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    for (path <- allPaths) {
+      try {
+        // This apps only contains 1 app in each loop.
+        val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
+        apps += app
+        EventLogPathProcessor.logApplicationInfo(app)
+        index += 1
+      } catch {  // TODO - should we just catch all exceptions and skip?
+        case json: com.fasterxml.jackson.core.JsonParseException =>
+          logWarning(s"Error parsing JSON: $path")
+          errorCode = 1
+        case il: IllegalArgumentException =>
+          logWarning(s"Error parsing file: $path", il)
+          errorCode = 2
+      }
+    }
+    (apps, errorCode)
   }
 }

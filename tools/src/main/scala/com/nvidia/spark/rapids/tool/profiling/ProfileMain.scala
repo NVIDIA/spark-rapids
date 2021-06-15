@@ -59,70 +59,48 @@ object ProfileMain extends Logging {
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)
-
     try {
       // Get the event logs required to process
       lazy val allPaths = EventLogPathProcessor.processAllPaths(filterN.toOption,
         matchEventLogs.toOption, eventlogPaths)
-
       val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
-
 
       // If compare mode is on, we need lots of memory to cache all applications then compare.
       // Suggest only enable compare mode if there is no more than 10 applications as input.
       if (appArgs.compare()) {
         // Create an Array of Applications(with an index starting from 1)
-        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        try {
-          var index: Int = 1
-          for (path <- allPaths) {
-            apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
-            index += 1
-          }
-
-          //Exit if there are no applications to process.
-          if (apps.isEmpty) {
-            logInfo("No application to process. Exiting")
-            return 0
-          }
-          processApps(apps, generateDot = false, printPlans = false)
-        } catch {
-          case e: com.fasterxml.jackson.core.JsonParseException =>
-            textFileWriter.close()
-            logError(s"Error parsing JSON", e)
-            return 1
+        val (apps, errorCode) = ApplicationInfo.createApps(allPaths, numOutputRows, sparkSession)
+        if (errorCode > 0) {
+          logError(s"Error parsing one of the event logs")
+          return 1
         }
+        if (apps.isEmpty) {
+          logInfo("No application to process. Exiting")
+          return 0
+        }
+        processApps(apps, generateDot = false, printPlans = false)
         // Show the application Id <-> appIndex mapping.
         for (app <- apps) {
           EventLogPathProcessor.logApplicationInfo(app)
         }
       } else {
         // This mode is to process one application at one time.
-        var index: Int = 1
-        try {
-          for (path <- allPaths) {
-            // This apps only contains 1 app in each loop.
-            val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-            val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
-            apps += app
-            EventLogPathProcessor.logApplicationInfo(app)
-            // This is a bit odd that we process apps individual right now due to
-            // memory concerns. So the aggregation functions only aggregate single
-            // application not across applications.
-            processApps(apps, appArgs.generateDot(), appArgs.printPlans())
-            app.dropAllTempViews()
-            index += 1
+        for (path <- allPaths) {
+          // This apps only contains 1 app in each loop.
+          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(path), numOutputRows, sparkSession)
+          if (errorCode > 0) {
+            logError(s"Error parsing ${path.eventLog}")
+            return 1
           }
-        } catch { // TODO - should we just catch all exceptions and skip?
-          case e: com.fasterxml.jackson.core.JsonParseException =>
-            textFileWriter.close()
-            logError(s"Error parsing JSON", e)
-            return 1
-          case il: IllegalArgumentException =>
-            textFileWriter.close()
-            // TODO - it would be nice to print file name
-            logError(s"Error parsing file, skipping", il)
-            return 1
+          if (apps.isEmpty) {
+            logInfo("No application to process. Exiting")
+            return 0
+          }
+          // This is a bit odd that we process apps individual right now due to
+          // memory concerns. So the aggregation functions only aggregate single
+          // application not across applications.
+          processApps(apps, appArgs.generateDot(), appArgs.printPlans())
+          apps.foreach(_.dropAllTempViews())
         }
       }
     } finally {

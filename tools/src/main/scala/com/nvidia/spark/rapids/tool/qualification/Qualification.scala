@@ -37,22 +37,7 @@ object Qualification extends Logging {
       includeCpuPercent: Boolean,
       dropTempViews: Boolean): Option[DataFrame] = {
 
-    var index: Int = 1
-    val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    for (path <- allPaths) {
-      try {
-        // This apps only contains 1 app in each loop.
-        val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
-        apps += app
-        EventLogPathProcessor.logApplicationInfo(app)
-        index += 1
-      } catch {  // TODO - should we just catch all exceptions and skip?
-        case json: com.fasterxml.jackson.core.JsonParseException =>
-          logWarning(s"Error parsing JSON, skipping $path")
-        case il: IllegalArgumentException =>
-          logWarning(s"Error parsing file: $path, skipping", il)
-      }
-    }
+    val (apps, _) = ApplicationInfo.createApps(allPaths, numRows, sparkSession)
     if (apps.isEmpty) {
       logWarning("No Applications found that contain SQL!")
       return None
