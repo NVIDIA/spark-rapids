@@ -213,7 +213,6 @@ class ApplicationInfo(
     val in = new BufferedInputStream(fs.open(log))
     try {
       val cName =  EventLogFileWriter.codecName(log).getOrElse("")
-      logWarning("codec namne is: " + cName)
       EventLogFileWriter.codecName(log) match {
         case c if (c.isDefined && c.get.equals("gz")) => new GZIPInputStream(in)
         case _ => EventLogFileReader.openEventLog(log, fs)
