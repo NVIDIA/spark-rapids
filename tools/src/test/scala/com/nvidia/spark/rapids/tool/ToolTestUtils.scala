@@ -18,8 +18,9 @@ package com.nvidia.spark.rapids.tool
 
 import java.io.{File, FilenameFilter, FileNotFoundException}
 
-import com.nvidia.spark.rapids.tool.profiling.{ProfileArgs, ProfileUtils}
 import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.tool.profiling.{ProfileArgs, ProfileUtils}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
@@ -102,7 +103,7 @@ object ToolTestUtils extends Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
+        EventLogPathProcessor.stringToPath(path).head._1, index)
       index += 1
     }
     apps
