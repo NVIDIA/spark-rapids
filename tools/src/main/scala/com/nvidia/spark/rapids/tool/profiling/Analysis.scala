@@ -75,19 +75,35 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
   def jobAndStageMetricsAggregation(): DataFrame = {
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
     if (apps.size == 1) {
-      apps.head.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc",
-        false, fileWriter, messageHeader)
+      val app = apps.head
+      if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
+        app.allDataFrames.contains(s"stageDF_${app.index}") &&
+        app.allDataFrames.contains(s"jobDF_${app.index}")) {
+        app.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc",
+          false, fileWriter, messageHeader)
+      } else {
+        apps.head.sparkSession.emptyDataFrame
+      }
     } else {
       var query = ""
       for (app <- apps) {
-        if (query.isEmpty) {
-          query += app.jobAndStageMetricsAggregationSQL
-        } else {
-          query += " union " + app.jobAndStageMetricsAggregationSQL
+        if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
+          app.allDataFrames.contains(s"stageDF_${app.index}") &&
+          app.allDataFrames.contains(s"jobDF_${app.index}")) {
+          if (query.isEmpty) {
+            query += app.jobAndStageMetricsAggregationSQL
+          } else {
+            query += " union " + app.jobAndStageMetricsAggregationSQL
+          }
         }
       }
-      apps.head.runQuery(query + " order by appIndex, Duration desc",
-        false, fileWriter, messageHeader)
+      if (query.nonEmpty) {
+        apps.head.runQuery(query + " order by appIndex, Duration desc",
+          false, fileWriter, messageHeader)
+      } else {
+        fileWriter.foreach(_.write("Unable to calculate Job and Stage Metrics\n"))
+        apps.head.sparkSession.emptyDataFrame
+      }
     }
   }
 
@@ -95,7 +111,11 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
   def sqlMetricsAggregation(): DataFrame = {
     val messageHeader = "\nSQL level aggregated task metrics:\n"
     if (apps.size == 1) {
-      if (apps.head.allDataFrames.contains(s"sqlDF_${apps.head.index}")) {
+      val app = apps.head
+      if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
+        app.allDataFrames.contains(s"stageDF_${app.index}") &&
+        app.allDataFrames.contains(s"jobDF_${app.index}") &&
+        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
         apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc",
           false, fileWriter, messageHeader)
       } else {
@@ -105,14 +125,24 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
       var query = ""
       val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
       for (app <- appsWithSQL) {
-        if (query.isEmpty) {
-          query += app.sqlMetricsAggregationSQL
-        } else {
-          query += " union " + app.sqlMetricsAggregationSQL
+        if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
+          app.allDataFrames.contains(s"stageDF_${app.index}") &&
+          app.allDataFrames.contains(s"jobDF_${app.index}") &&
+          app.allDataFrames.contains(s"sqlDF_${app.index}")) {
+          if (query.isEmpty) {
+            query += app.sqlMetricsAggregationSQL
+          } else {
+            query += " union " + app.sqlMetricsAggregationSQL
+          }
         }
       }
-      apps.head.runQuery(query + " order by appIndex, Duration desc", false,
-        fileWriter, messageHeader)
+      if (query.nonEmpty) {
+        apps.head.runQuery(query + " order by appIndex, Duration desc", false,
+          fileWriter, messageHeader)
+      } else {
+        fileWriter.foreach(_.write("Unable to aggregate SQL task Metrics\n"))
+        apps.head.sparkSession.emptyDataFrame
+      }
     }
   }
 
@@ -120,8 +150,11 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
   // it aggregates executor time metrics differently
   def sqlMetricsAggregationQual(): DataFrame = {
     val query = apps
-      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
+      .filter { p =>
+        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
+          p.allDataFrames.contains(s"stageDF_${p.index}") &&
+          p.allDataFrames.contains(s"jobDF_${p.index}")
+      }.map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
       .mkString(" union ")
     if (query.nonEmpty) {
       apps.head.runQuery(query)
@@ -133,8 +166,10 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
   def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
     val query = apps
-      .filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      .map( app => "(" + app.profilingDurationSQL+ ")")
+      .filter { p =>
+        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
+        p.allDataFrames.contains(s"appDF_${p.index}")
+      }.map( app => "(" + app.profilingDurationSQL + ")")
       .mkString(" union ")
     if (query.nonEmpty) {
       apps.head.runQuery(query, false, fileWriter, messageHeader)
@@ -159,32 +194,36 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
     }
   }
 
-  def shuffleSkewCheckSingleApp(app: ApplicationInfo): DataFrame ={
-    val customQuery =
-      s"""with tmp as
-         |(select stageId, stageAttemptId,
-         |avg(sr_totalBytesRead) avgShuffleReadBytes,
-         |avg(duration) avgDuration
-         |from taskDF_${app.index}
-         |group by stageId,stageAttemptId)
-         |select ${app.index} as appIndex, t.stageId,t.stageAttemptId,
-         |t.taskId, t.attempt,
-         |round(t.duration/1000,2) as taskDurationSec,
-         |round(tmp.avgDuration/1000,2) as avgDurationSec,
-         |round(t.sr_totalBytesRead/1024/1024,2) as taskShuffleReadMB,
-         |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
-         |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
-         |t.successful,
-         |substr(t.endReason,0,100) endReason_first100char
-         |from tmp, taskDF_${app.index} t
-         |where tmp.stageId=t.StageId
-         |and tmp.stageAttemptId=t.stageAttemptId
-         |and t.sr_totalBytesRead > 3 * tmp.avgShuffleReadBytes
-         |and t.sr_totalBytesRead > 100*1024*1024
-         |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
-         |""".stripMargin
-    val messageHeader = s"\nShuffle Skew Check:" +
-      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
-    app.runQuery(customQuery, false, fileWriter, messageHeader)
+  def shuffleSkewCheckSingleApp(app: ApplicationInfo): DataFrame = {
+    if (app.allDataFrames.contains(s"taskDF_${app.index}")) {
+      val customQuery =
+        s"""with tmp as
+           |(select stageId, stageAttemptId,
+           |avg(sr_totalBytesRead) avgShuffleReadBytes,
+           |avg(duration) avgDuration
+           |from taskDF_${app.index}
+           |group by stageId,stageAttemptId)
+           |select ${app.index} as appIndex, t.stageId,t.stageAttemptId,
+           |t.taskId, t.attempt,
+           |round(t.duration/1000,2) as taskDurationSec,
+           |round(tmp.avgDuration/1000,2) as avgDurationSec,
+           |round(t.sr_totalBytesRead/1024/1024,2) as taskShuffleReadMB,
+           |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
+           |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
+           |t.successful,
+           |substr(t.endReason,0,100) endReason_first100char
+           |from tmp, taskDF_${app.index} t
+           |where tmp.stageId=t.StageId
+           |and tmp.stageAttemptId=t.stageAttemptId
+           |and t.sr_totalBytesRead > 3 * tmp.avgShuffleReadBytes
+           |and t.sr_totalBytesRead > 100*1024*1024
+           |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
+           |""".stripMargin
+      val messageHeader = s"\nShuffle Skew Check:" +
+        " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
+      app.runQuery(customQuery, false, fileWriter, messageHeader)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
+    }
   }
 }

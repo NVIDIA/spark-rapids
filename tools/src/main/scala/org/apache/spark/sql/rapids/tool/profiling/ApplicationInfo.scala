@@ -351,9 +351,6 @@ class ApplicationInfo(
         appStartNew += newApp
       }
       this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
-    } else {
-      logError("Application is empty! Exiting...")
-      System.exit(1)
     }
 
     // For sqlDF
@@ -413,9 +410,6 @@ class ApplicationInfo(
         jobStartNew += jobNew
       }
       allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
-    } else {
-      logError("No Job Found. Exiting.")
-      System.exit(1)
     }
 
     // For stageDF
@@ -448,18 +442,12 @@ class ApplicationInfo(
         stageSubmittedNew += stageNew
       }
       allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
-    } else {
-      logError("No Stage Found. Exiting.")
-      System.exit(1)
     }
 
     // For taskDF
     if (!forQualification) {
       if (taskEnd.nonEmpty) {
         allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-      } else {
-        logError("task is empty! Exiting...")
-        System.exit(1)
       }
     }
 
@@ -497,17 +485,11 @@ class ApplicationInfo(
       // For propertiesDF
       if (this.allProperties.nonEmpty) {
         this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-      } else {
-        logError("propertiesDF is empty! Existing...")
-        System.exit(1)
       }
 
       // For executorsDF
       if (this.executors.nonEmpty) {
         this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
-      } else {
-        logError("executors is empty! Exiting...")
-        System.exit(1)
       }
 
       // For executorsRemovedDF
@@ -827,7 +809,7 @@ class ApplicationInfo(
        |first(appName) as `App Name`,
        |'$appId' as `App ID`,
        |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Score,
-       |concat_ws(",", collect_list(problematic)) as `Potential Problems`,
+       |concat_ws(",", collect_set(problematic)) as `Potential Problems`,
        |sum(sqlQualDuration) as `SQL Dataframe Duration`,
        |first(app.duration) as `App Duration`,
        |first(app.endDurationEstimated) as `App Duration Estimated`
@@ -859,7 +841,7 @@ class ApplicationInfo(
     s"""select first(appName) as `App Name`,
        |'$appId' as `App ID`,
        |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
-       |concat_ws(",", collect_list(potentialProblems)) as `Potential Problems`,
+       |concat_ws(",", collect_set(potentialProblems)) as `Potential Problems`,
        |sum(dfDuration) as `SQL Dataframe Duration`,
        |first(appDuration) as `App Duration`,
        |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`,

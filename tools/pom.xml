@@ -41,7 +41,6 @@
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
-            <version>${scala.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
@@ -66,12 +65,10 @@
         <dependency>
             <groupId>org.rogach</groupId>
             <artifactId>scallop_${scala.binary.version}</artifactId>
-            <version>3.5.1</version>
         </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
-            <version>3.0.5</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -86,7 +83,6 @@
             <plugin>
                 <groupId>org.scala-tools</groupId>
                 <artifactId>maven-scala-plugin</artifactId>
-                <version>2.15.2</version>
                 <executions>
                     <execution>
                         <goals>
@@ -99,7 +95,6 @@
             <plugin>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
-                <version>1.0</version>
                 <executions>
                     <execution>
                         <id>test</id>
@@ -112,7 +107,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.2.4</version>
                 <executions>
                     <execution>
                         <phase>package</phase>

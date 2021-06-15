@@ -21,4 +21,10 @@ repos:
         language: script
         pass_filenames: true
         verbose: true
+  - repo: https://github.com/pre-commit/pre-commit-hooks.git
+    rev: v4.0.1
+    hooks:
+      - id: check-added-large-files
+        name: Check for file over 1.5MiB
+        args: ['--maxkb=1500', '--enforce-all']
 
