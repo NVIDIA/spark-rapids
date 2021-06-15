@@ -237,9 +237,9 @@ object EventLogPathProcessor extends Logging {
       LocalDateTime.now()
     } else {
       val date = fileParts(0).split("-")
-      val day = Integer.parseInt(fileParts(3))
-      val month = Integer.parseInt(fileParts(2))
-      val year = Integer.parseInt(fileParts(1))
+      val day = Integer.parseInt(date(3))
+      val month = Integer.parseInt(date(2))
+      val year = Integer.parseInt(date(1))
       val time = fileParts(1).split("-")
       val hour = Integer.parseInt(time(0))
       val min = Integer.parseInt(time(1))
