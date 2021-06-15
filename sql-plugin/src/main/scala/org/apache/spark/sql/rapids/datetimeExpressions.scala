@@ -394,26 +394,31 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
 
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
-      try {
-        extractStringLit(expr.right) match {
-          case Some(rightLit) =>
-            sparkFormat = rightLit
-            if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
-              willNotWorkOnGpu("legacyTimeParserPolicy LEGACY is not supported")
-            } else if (GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat) ||
-                conf.incompatDateFormats) {
+      extractStringLit(expr.right) match {
+        case Some(rightLit) =>
+          sparkFormat = rightLit
+          if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
+            willNotWorkOnGpu("legacyTimeParserPolicy LEGACY is not supported")
+          } else {
+            try {
+              // try and convert the format to cuDF format - this will throw an exception if
+              // the format contains unsupported characters or words
               strfFormat = DateUtils.toStrf(sparkFormat,
                 expr.left.dataType == DataTypes.StringType)
-            } else {
-              willNotWorkOnGpu(s"incompatible format '$sparkFormat'. Set " +
+              // format parsed ok, so it is either compatible (tested/certified) or incompatible
+              if (!GpuToTimestamp.COMPATIBLE_FORMATS.contains(sparkFormat) &&
+                  !conf.incompatDateFormats) {
+                willNotWorkOnGpu(s"format '$sparkFormat' on the GPU is not guaranteed " +
+                  s"to produce the same results as Spark on CPU. Set " +
                   s"spark.rapids.sql.incompatibleDateFormats.enabled=true to force onto GPU.")
+              }
+            } catch {
+              case e: TimestampFormatConversionException =>
+                willNotWorkOnGpu(s"Failed to convert ${e.reason} ${e.getMessage}")
             }
-          case None =>
-            willNotWorkOnGpu("format has to be a string literal")
-        }
-      } catch {
-        case x: TimestampFormatConversionException =>
-          willNotWorkOnGpu(s"Failed to convert ${x.reason} ${x.getMessage()}")
+          }
+        case None =>
+          willNotWorkOnGpu("format has to be a string literal")
       }
     }
   }
