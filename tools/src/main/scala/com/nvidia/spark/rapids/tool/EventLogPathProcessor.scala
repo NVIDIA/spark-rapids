@@ -60,8 +60,12 @@ object EventLogPathProcessor extends Logging {
       fs: FileSystem, databricksLogs: Option[Boolean]): Boolean = {
     logWarning(s"checking is databricks log ${dir.getPath.getName}")
     databricksLogs match {
-      case Some(true) => true
-      case Some(false) => false
+      case Some(true) =>
+        logWarning("true is databricks log")
+        true
+      case Some(false) =>
+        logWarning("false not databricks log")
+        false
       case _ =>
         // try to determine if dir structure looks right
         logWarning(s"listing status ${dir.getPath.getName}")
