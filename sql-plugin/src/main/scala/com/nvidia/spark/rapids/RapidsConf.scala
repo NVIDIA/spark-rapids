@@ -401,7 +401,7 @@ object RapidsConf {
         "cause more memory consumption because of padding.")
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.KiB.toBytes(64))
+    .createWithDefault(ByteUnit.MiB.toBytes(8))
 
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +

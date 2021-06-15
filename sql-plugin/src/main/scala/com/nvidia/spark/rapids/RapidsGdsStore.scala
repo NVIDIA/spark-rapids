@@ -242,14 +242,21 @@ class RapidsGdsStore(
         var isPending: Boolean = true)
         extends RapidsGdsBuffer(id, size, meta, spillPriority, spillCallback) {
 
-      override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
-        if (isPending) {
-          closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-            copyToBuffer(buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
-            Cuda.DEFAULT_STREAM.sync()
-            logDebug(s"Created device buffer $size from batch write buffer")
-            buffer
+      override def materializeMemoryBuffer: MemoryBuffer = {
+        val pendingBuffer = this.synchronized {
+          if (isPending) {
+            closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
+              copyToBuffer(buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
+              Cuda.DEFAULT_STREAM.sync()
+              logDebug(s"Created device buffer $size from batch write buffer")
+              buffer
+            }
+          } else {
+            null
           }
+        }
+        if (pendingBuffer != null) {
+          pendingBuffer
         } else if (RapidsBufferCatalog.shouldUnspill) {
           withResource(DeviceMemoryBuffer.allocate(batchWriteBufferSize)) { buffer =>
             CuFile.readFileToDeviceMemory(buffer.getAddress, buffer.getLength, path, 0)
