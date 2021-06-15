@@ -21,7 +21,7 @@ import java.nio.file.{Files, Paths, StandardOpenOption}
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.tool.ToolTestUtils
+import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import org.apache.hadoop.io.IOUtils
 import org.scalatest.FunSuite
 
@@ -104,7 +104,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
+        EventLogPathProcessor.stringToPath(path).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -161,7 +161,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
+        EventLogPathProcessor.stringToPath(path).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -183,7 +183,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
         apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-          ProfileUtils.stringToPath(path).head._1, index)
+          EventLogPathProcessor.stringToPath(path).head._1, index)
         index += 1
       }
       assert(apps.size == 1)
@@ -203,7 +203,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
+        EventLogPathProcessor.stringToPath(path).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -233,7 +233,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       "src/test/resources/spark-events-qualification/dataset_eventlog"
     ))
 
-    val result = ToolUtils.processAllPaths(appArgs.filterCriteria.toOption,
+    val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
       appArgs.matchEventLogs.toOption, appArgs.eventlog())
     assert(result.length == 2)
   }
@@ -260,12 +260,12 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile3.toString
     ))
 
-    val result = ToolUtils.processAllPaths(appArgs.filterCriteria.toOption,
+    val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
       appArgs.matchEventLogs.toOption, appArgs.eventlog())
     assert(result.length == 2)
     // Validate 2 newest files
-    assert(result(0).getName.equals(tempFile1.getName))
-    assert(result(1).getName.equals(tempFile3.getName))
+    assert(result(0).eventLog.getName.equals(tempFile1.getName))
+    assert(result(1).eventLog.getName.equals(tempFile3.getName))
   }
 
   test("test filter file oldest and file name match") {
@@ -297,12 +297,12 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile4.toString
     ))
 
-    val result = ToolUtils.processAllPaths(appArgs.filterCriteria.toOption,
+    val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
       appArgs.matchEventLogs.toOption, appArgs.eventlog())
     assert(result.length == 3)
     // Validate 3 oldest files
-    assert(result(0).getName.equals(tempFile2.getName))
-    assert(result(1).getName.equals(tempFile4.getName))
-    assert(result(2).getName.equals(tempFile3.getName))
+    assert(result(0).eventLog.getName.equals(tempFile2.getName))
+    assert(result(1).eventLog.getName.equals(tempFile4.getName))
+    assert(result(2).eventLog.getName.equals(tempFile3.getName))
   }
 }
