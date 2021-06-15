@@ -51,7 +51,7 @@ class AnalysisSuite extends FunSuite {
 
   test("test sqlMetricsAggregation 2 combined") {
     testSqlMetricsAggregation(
-      Array(s"$logDir/rapids_join_eventlog", s"$logDir/rapids_join_eventlog2.zstd"),
+      Array(s"$logDir/rapids_join_eventlog.zstd", s"$logDir/rapids_join_eventlog2.zstd"),
       "rapids_join_eventlog_sqlmetricsaggmulti_expectation.csv",
       "rapids_join_eventlog_jobandstagemetricsmulti_expectation.csv")
   }

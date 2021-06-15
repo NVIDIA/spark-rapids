@@ -101,12 +101,10 @@ object ToolTestUtils extends Logging {
     var index: Int = 1
     for (path <- appArgs.eventlog()) {
       logWarning(s"path is $path")
-      val eventLogInfopre = EventLogPathProcessor.stringToPath(path)
-        .map(_._1.eventLog.getName()).mkString(", ")
-      logWarning(s"event log info is: $eventLogInfopre")
-      val eventLogInfo = EventLogPathProcessor.stringToPath(path).head._1
+      val eventLogInfo = EventLogPathProcessor.stringToPath(path)
+      assert(eventLogInfo.size >= 1)
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        eventLogInfo, index)
+        eventLogInfo.head._1, index)
       index += 1
     }
     apps
