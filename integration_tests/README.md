@@ -149,7 +149,7 @@ Next you can start to run the tests.
 
 ```scala
 durations.run(new com.nvidia.spark.rapids.JoinsSuite)
-...
+// ...
 ```
 
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
@@ -303,3 +303,66 @@ The marks you care about are all in marks.py
 
 For the most part you can ignore this file. It provides the underlying Spark session to operations that need it, but most tests should interact with
 it through `asserts.py`.
+
+## Guidelines for Testing
+
+When support for a new operator is added to `rapids-plugin-4-spark`, it is recommended that
+the following conditions be covered in its corresponding integration tests:
+
+### 1. Cover all supported data types
+Ensure that tests cover all data types supported by the added operation. An exhaustive list of data types supported in 
+Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes.html). These include:
+   * Numeric Types (`ByteType`, `ShortType`, `IntegerType`, etc.)
+   * Strings (`StringType`, `VarcharType`)
+   * Booleans (`BooleanType`)
+   * Chrono Types (`TimestampType`, `DateType`, `Interval`)
+   * Complex Types (`ArrayType`, `StructType`, `MapType`)
+
+`data_gen.py` provides `DataGen` classes that help generate test data in integration tests.
+
+### 2. Nested Data types
+Complex data types (`ArrayType`, `StructType`, `MapType`) warrant extensive testing for various combinations of nesting.
+E.g.
+   * `Array<primitive_type>`
+   * `Array<Array<primitive_type>>`
+   * `Array<Struct<primitive_type>>`
+   * `Struct<Array<primitive_type>>`
+   * `Array<Struct<Array<primitive_type>>>`
+   * `Struct<Array<Struct<primitive_type>>>`
+
+The `ArrayGen` and `StructGen` classes in `data_gen.py` can be configured to support arbitrary nesting.
+
+### 3. Null rows
+Ensure that the test data accommodates null values for input columns.
+Null values in input columns are a frequent source of bugs in `rapids-plugin-4-spark`, because of mismatches in null-handling
+and semantics, between RAPIDS `libcudf` (on which `rapids-plugin-4-spark` relies heavily), and Apache Spark. 
+
+Apart from null rows in columns of primitive types, the following conditions must be covered for nested types:
+   * Null rows at the "top" level for `Array`/`Struct` columns.   E.g. `[ [1,2], [3], ∅, [4,5,6] ]`.
+   * Non-null rows containing null elements in the child column. E.g. `[ [1,2], [3,∅], ∅, [4,∅,6] ]`.
+
+### 4. Empty rows in `Array` columns
+Operations on `ArrayType` columns must be tested with input columns containing non-null *empty* rows.
+E.g.
+```
+[
+    [0,1,2,3],
+    [], <------- Empty, non-null row.
+    [4,5,6,7],
+    ...
+]
+```
+
+### 5. Degenerate cases with "empty" inputs
+Ensure that operations are tested with "empty" input columns (i.e. containing zero rows.)
+
+E.g. `COUNT()` on an empty input column yields `0`. `SUM()` yields `0` for the appropriate numeric type.
+
+### 6. Special floating point values
+Apart from `null` values, `FloatType` and `DoubleType` input columns must also include the following special values:
+   * +/- Zero
+   * +/- Infinity
+   * +/- NaN
+
+### 7. Special values in timestamp columns
+Ensure date/timestamp columns include dates before [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
