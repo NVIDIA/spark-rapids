@@ -41,7 +41,6 @@ object ProfileMain extends Logging {
 
   val SUBDIR = "rapids_4_spark_qualification_profile"
 
-
   /**
    * Entry point for tests
    */
@@ -85,9 +84,13 @@ object ProfileMain extends Logging {
         }
       } else {
         // This mode is to process one application at one time.
+        var index: Int = 1
         for (path <- allPaths) {
           // This apps only contains 1 app in each loop.
-          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(path), numOutputRows, sparkSession)
+          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(path), numOutputRows,
+            sparkSession, startIndex = index)
+          index += 1
+
           if (errorCode > 0) {
             logError(s"Error parsing ${path.eventLog}")
             return 1

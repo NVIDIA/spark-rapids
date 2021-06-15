@@ -59,13 +59,14 @@ object QualificationMain extends Logging {
       None
     }
 
-    val allPaths = EventLogPathProcessor.processAllPaths(filterN.toOption, matchEventLogs.toOption,
-      eventlogPaths, databricksLog)
+    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      matchEventLogs.toOption, eventlogPaths, databricksLog)
 
-    val dfOpt = Qualification.qualifyApps(allPaths, numOutputRows, sparkSession,
+    val dfOpt = Qualification.qualifyApps(eventLogInfos, numOutputRows, sparkSession,
       includeCpuPercent, dropTempViews)
     if (dfOpt.isEmpty) {
-      logWarning(s"No Applications with SQL found in events logs: ${allPaths.mkString(",")}")
+      logWarning("No Applications with SQL found in events logs: " +
+        s"${eventLogInfos.map(_.eventLog.getName).mkString(",")}")
     }
     if (writeOutput && dfOpt.isDefined) {
       Qualification.writeQualification(dfOpt.get, outputDirectory,

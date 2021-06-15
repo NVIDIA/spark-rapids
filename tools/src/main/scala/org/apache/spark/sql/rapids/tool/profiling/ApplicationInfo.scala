@@ -925,8 +925,9 @@ object ApplicationInfo extends Logging {
   def createApps(
       allPaths: ArrayBuffer[EventLogInfo],
       numRows: Int,
-      sparkSession: SparkSession): (ArrayBuffer[ApplicationInfo], Int) = {
-    var index: Int = 1
+      sparkSession: SparkSession,
+      startIndex: Int = 1): (ArrayBuffer[ApplicationInfo], Int) = {
+    var index: Int = startIndex
     var errorCode = 0
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths) {

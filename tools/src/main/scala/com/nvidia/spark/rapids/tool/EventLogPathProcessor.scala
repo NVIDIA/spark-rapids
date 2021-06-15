@@ -143,12 +143,14 @@ object EventLogPathProcessor extends Logging {
   }
 
   /**
-   * Function to evaluate the event logs to be processed.
+   * Function to process event log paths passed in and evaluate which ones are really event
+   * logs and filter based on user options.
    *
    * @param filterNLogs    number of event logs to be selected
    * @param matchlogs      keyword to match file names in the directory
    * @param eventLogsPaths Array of event log paths
-   * @return event logs to be processed
+   * @param databricksLog  boolean indicating if the event log being processed is from databricks
+   * @return EventLogInfo indicating type and location of event log
    */
   def processAllPaths(
       filterNLogs: Option[String],
@@ -236,10 +238,7 @@ object EventLogPathProcessor extends Logging {
 }
 
 /**
- * The reader which will read the information of rolled multiple event log files.
- *
- * This reader lists the files only once; if caller would like to play with updated list,
- * it needs to create another reader instance.
+ * The reader which will read the information of Databricks rolled multiple event log files.
  */
 class DatabricksRollingEventLogFilesFileReader(
     fs: FileSystem,
