@@ -489,17 +489,15 @@ class ApplicationInfo(
       if (taskEnd.nonEmpty) {
         allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
       }
-    }
 
-    // For sqlMetricsDF
-    if (sqlPlanMetrics.nonEmpty) {
-      logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
-      allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
-    } else {
-      logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
-    }
+      // For sqlMetricsDF
+      if (sqlPlanMetrics.nonEmpty) {
+        logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
+        allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
+      } else {
+        logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
+      }
 
-    if (!forQualification) {
       // For resourceProfilesDF
       if (this.resourceProfiles.nonEmpty) {
         this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
