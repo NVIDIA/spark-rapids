@@ -761,7 +761,8 @@ object GpuOverrides {
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT + TypeSig.ARRAY +
           TypeSig.MAP).nested(),
-      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
+          TypeSig.ARRAY).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
@@ -840,12 +841,12 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
             TypeSig.ARRAY),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
               TypeSig.ARRAY),
           TypeSig.all),
@@ -2362,6 +2363,20 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
+    expr[SortArray](
+      "Returns a sorted array with the input array and the ascending / descending order",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.ARRAY.nested(_commonTypes),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array", TypeSig.ARRAY.nested(_commonTypes),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("ascendingOrder", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.lit(TypeEnum.BOOLEAN))),
+      (sortExpression, conf, p, r) => new BinaryExprMeta[SortArray](sortExpression, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuSortArray(lhs, rhs)
+        }
+      }
+    ),
     expr[CreateArray](
       " Returns an array with the given elements",
       ExprChecks.projectNotLambda(
@@ -2616,9 +2631,8 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
-      "Collect a list of elements, now only supported by windowing.",
-      // It should be 'fullAgg' eventually but now only support windowing,
-      // so 'aggNotGroupByOrReduction'
+      "Collect a list of non-unique elements, only supported in rolling window in current.",
+      // GpuCollectList is not yet supported under GroupBy and Reduction context.
       ExprChecks.aggNotGroupByOrReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
@@ -2628,6 +2642,20 @@ object GpuOverrides {
           TypeSig.all))),
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
+          childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
+      }),
+    expr[CollectSet](
+      "Collect a set of unique elements, only supported in rolling window in current.",
+      // GpuCollectSet is not yet supported under GroupBy and Reduction context.
+      // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
+      // method drop_list_duplicates doesn't support nested types.
+      ExprChecks.aggNotGroupByOrReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+          TypeSig.all))),
+      (c, conf, p, r) => new ExprMeta[CollectSet](c, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCollectSet(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       }),
     expr[GetJsonObject](
@@ -2828,7 +2856,8 @@ object GpuOverrides {
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes +
         TypeSig.DECIMAL.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
-        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet")).nested(),
+        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
+        TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -2916,7 +2945,8 @@ object GpuOverrides {
     exec[UnionExec](
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+            + TypeSig.STRUCT)
         .withPsNote(TypeEnum.STRUCT,
           "unionByName will not optionally impute nulls for missing struct fields  " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
@@ -2932,11 +2962,15 @@ object GpuOverrides {
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        TypeSig.all),
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        TypeSig.all),
       (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
         val condition: Option[BaseExprMeta[_]] =
           join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -2984,7 +3018,7 @@ object GpuOverrides {
     exec[WindowExec](
       "Window-operator backend",
       ExecChecks(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
           TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
             + TypeSig.ARRAY),
