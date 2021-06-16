@@ -53,7 +53,7 @@ object EventLogPathProcessor extends Logging {
   // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
   // core/src/main/scala/org/apache/spark/io/CompressionCodec.scala#L67
   val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd")
-  // Apache Spark ones plug gzip
+  // Apache Spark ones plus gzip
   val SPARK_SHORT_COMPRESSION_CODEC_NAMES_FOR_FILTER =
     SPARK_SHORT_COMPRESSION_CODEC_NAMES ++ Set("gz")
 
@@ -62,7 +62,7 @@ object EventLogPathProcessor extends Logging {
       .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES_FOR_FILTER.contains(suffix))
   }
 
-  // Databricks tends to have latest eventlog and then any rolled in format
+  // Databricks has the latest events in file named eventlog and then any rolled in format
   // eventlog-2021-06-14--20-00.gz
   def isDatabricksEventLogDir(dir: FileStatus,
       fs: FileSystem, databricksLogs: Option[Boolean]): Boolean = {
@@ -119,15 +119,16 @@ object EventLogPathProcessor extends Logging {
             val name = s.getPath().getName()
             (s.isFile || (s.isDirectory && isEventLogDir(name)))
           })
-        val (logsSupported, unsupportLogs) =
-          validLogs.partition(l => eventLogNameFilter(l.getPath()))
-        if (logsSupported != null) {
-          logsSupported.map(a => pathsWithTimestamp +=
-            (ApacheSparkEventLog(a.getPath) -> a.getModificationTime))
-        }
         if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
             s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
+        }
+        val (logsSupported, unsupportLogs) =
+          validLogs.partition(l => eventLogNameFilter(l.getPath()))
+
+        if (logsSupported != null) {
+          logsSupported.map(a => pathsWithTimestamp +=
+            (ApacheSparkEventLog(a.getPath) -> a.getModificationTime))
         }
         if (unsupportLogs.nonEmpty) {
           logWarning(s"Files: ${unsupportLogs.map(_.getPath.getName).mkString(", ")} " +
@@ -149,7 +150,7 @@ object EventLogPathProcessor extends Logging {
    * @param filterNLogs    number of event logs to be selected
    * @param matchlogs      keyword to match file names in the directory
    * @param eventLogsPaths Array of event log paths
-   * @param databricksLog  boolean indicating if the event log being processed is from databricks
+   * @param databricksLogs  boolean indicating if the event log being processed is from Databricks
    * @return EventLogInfo indicating type and location of event log
    */
   def processAllPaths(
@@ -212,8 +213,6 @@ object EventLogPathProcessor extends Logging {
   def isDBEventLogFile(status: FileStatus): Boolean = {
     status.isFile && isDBEventLogFile(status.getPath.getName)
   }
-
-  val dbFileFormat = "eventlog-([0-9]){4}-([0-9]){2}-([0-9]){2}--([0-9]){2}-([0-9]){2}.*"
 
   def getDBEventLogFileDate(eventLogFileName: String): LocalDateTime = {
     if (!isDBEventLogFile(eventLogFileName)) {

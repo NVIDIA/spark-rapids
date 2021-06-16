@@ -251,7 +251,7 @@ class ApplicationInfo(
         if (continueReplay) {
           Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
             val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-            totalNumEvents = lines.size
+            totalNumEvents += lines.size
             lines.foreach { line =>
               try {
                 val event = JsonProtocol.sparkEventFromJson(parse(line))
@@ -938,13 +938,17 @@ object ApplicationInfo extends Logging {
         apps += app
         EventLogPathProcessor.logApplicationInfo(app)
         index += 1
-      } catch {  // TODO - should we just catch all exceptions and skip?
+      } catch {
         case json: com.fasterxml.jackson.core.JsonParseException =>
           logWarning(s"Error parsing JSON: $path")
           errorCode = 1
         case il: IllegalArgumentException =>
           logWarning(s"Error parsing file: $path", il)
           errorCode = 2
+        case e: Exception =>
+          // catch all exceptions and skip that file
+          logWarning(s"Got unexpected exception processing file: $path", e)
+          errorCode = 3
       }
     }
     (apps, errorCode)
