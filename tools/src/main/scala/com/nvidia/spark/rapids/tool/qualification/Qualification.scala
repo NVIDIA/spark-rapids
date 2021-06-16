@@ -31,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
 object Qualification extends Logging {
 
   def qualifyApps(
-      allPaths: ArrayBuffer[EventLogInfo],
+      allPaths: Seq[EventLogInfo],
       numRows: Int,
       sparkSession: SparkSession,
       includeCpuPercent: Boolean,

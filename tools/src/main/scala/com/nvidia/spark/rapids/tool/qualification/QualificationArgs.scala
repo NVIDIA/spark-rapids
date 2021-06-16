@@ -81,5 +81,11 @@ For usage see below:
       required = false,
       default = Some(false),
       descr = "Do not include the executor CPU time percent.")
+
+  validate(filterCriteria) {
+    case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(filterCriteria)
+    case _ => Left("")
+  }
+
   verify()
 }

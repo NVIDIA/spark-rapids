@@ -48,7 +48,7 @@ For usage see below:
     opt[String](required = false,
       descr = "Base output directory. Default is current directory for the default filesystem." +
         " The final output will go into a subdirectory called" +
-        " rapids_4_spark_qualification_profile. It will overwrite any existing files" +
+        " rapids_4_spark_profile. It will overwrite any existing files" +
         " with the same name.",
       default = Some("."))
   val eventlog: ScallopOption[List[String]] =

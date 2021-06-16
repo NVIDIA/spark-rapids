@@ -923,7 +923,7 @@ class ApplicationInfo(
 
 object ApplicationInfo extends Logging {
   def createApps(
-      allPaths: ArrayBuffer[EventLogInfo],
+      allPaths: Seq[EventLogInfo],
       numRows: Int,
       sparkSession: SparkSession,
       startIndex: Int = 1,

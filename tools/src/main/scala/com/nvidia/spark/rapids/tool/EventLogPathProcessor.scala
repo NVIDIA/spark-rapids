@@ -19,7 +19,7 @@ import java.io.FileNotFoundException
 import java.time.LocalDateTime
 import java.util.zip.ZipOutputStream
 
-import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Map}
+import scala.collection.mutable.LinkedHashMap
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
@@ -89,33 +89,33 @@ object EventLogPathProcessor extends Logging {
     }
   }
 
-  def stringToPath(pathString: String,
+  def getEventLogInfo(pathString: String,
       databricksLogs: Option[Boolean] = None): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
     val fs = inputPath.getFileSystem(new Configuration())
-    val pathsWithTimestamp: Map[EventLogInfo, Long] = Map.empty[EventLogInfo, Long]
     try {
       val fileStatus = fs.getFileStatus(inputPath)
       val filePath = fileStatus.getPath()
       val fileName = filePath.getName()
+
       if (!eventLogNameFilter(filePath)) {
         logWarning(s"File: $fileName it not a supported file type. " +
           "Supported compression types are: " +
           s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES_FOR_FILTER.mkString(", ")}. " +
           "Skipping this file.")
+        Map.empty[EventLogInfo, Long]
       } else if (fileStatus.isDirectory && isEventLogDir(fileStatus)) {
         // either event logDir v2 directory or regular event log
-        pathsWithTimestamp +=
-          (ApacheSparkEventLog(fileStatus.getPath) -> fileStatus.getModificationTime)
+        val info = ApacheSparkEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
+        Map(info -> fileStatus.getModificationTime)
       } else if (fileStatus.isDirectory &&
-        isDatabricksEventLogDir(fileStatus, fs, databricksLogs)) {
-        pathsWithTimestamp +=
-          (DatabricksEventLog(fileStatus.getPath) -> fileStatus.getModificationTime)
+          isDatabricksEventLogDir(fileStatus, fs, databricksLogs)) {
+        val dbinfo = DatabricksEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
+        Map(dbinfo -> fileStatus.getModificationTime)
       } else {
         // assume either single event log or directory with event logs in it, we don't
-        // supported nested dirs, so if event log dir within another one we skip it
-        val (validLogs, invalidLogs) = fs.listStatus(inputPath)
-          .partition(s => {
+        // support nested dirs, so if event log dir within another one we skip it
+        val (validLogs, invalidLogs) = fs.listStatus(inputPath).partition(s => {
             val name = s.getPath().getName()
             (s.isFile || (s.isDirectory && isEventLogDir(name)))
           })
@@ -123,24 +123,22 @@ object EventLogPathProcessor extends Logging {
           logWarning("Skipping the following directories: " +
             s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
         }
-        val (logsSupported, unsupportLogs) =
-          validLogs.partition(l => eventLogNameFilter(l.getPath()))
-
-        if (logsSupported != null) {
-          logsSupported.map(a => pathsWithTimestamp +=
-            (ApacheSparkEventLog(a.getPath) -> a.getModificationTime))
-        }
-        if (unsupportLogs.nonEmpty) {
-          logWarning(s"Files: ${unsupportLogs.map(_.getPath.getName).mkString(", ")} " +
+        val (logsSupported, unsupport) = validLogs.partition(l => eventLogNameFilter(l.getPath()))
+        if (unsupport.nonEmpty) {
+          logWarning(s"Files: ${unsupport.map(_.getPath.getName).mkString(", ")} " +
             s"have unsupported file types. Supported compression types are: " +
             s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES_FOR_FILTER.mkString(", ")}. " +
             "Skipping these files.")
         }
+        logsSupported.map { a =>
+          (ApacheSparkEventLog(a.getPath).asInstanceOf[EventLogInfo] -> a.getModificationTime)
+        }.toMap
       }
     } catch {
-      case e: FileNotFoundException => logWarning(s"$pathString not found, skipping!")
+      case e: FileNotFoundException =>
+        logWarning(s"$pathString not found, skipping!")
+        Map.empty[EventLogInfo, Long]
     }
-    pathsWithTimestamp
   }
 
   /**
@@ -157,47 +155,33 @@ object EventLogPathProcessor extends Logging {
       filterNLogs: Option[String],
       matchlogs: Option[String],
       eventLogsPaths: List[String],
-      databricksLogs: Option[Boolean] = None): ArrayBuffer[EventLogInfo] = {
+      databricksLogs: Option[Boolean] = None): Seq[EventLogInfo] = {
 
-    var allPathsWithTimestamp: Map[EventLogInfo, Long] = Map.empty[EventLogInfo, Long]
-    for (pathString <- eventLogsPaths) {
-      val paths = stringToPath(pathString, databricksLogs)
-      if (paths.nonEmpty) {
-        allPathsWithTimestamp ++= paths
-      }
-    }
+    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, databricksLogs)).toMap
 
-    logDebug("Paths after stringToPath: " + allPathsWithTimestamp)
+    logDebug("Paths after stringToPath: " + logsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the
     // command line, then return all the event logs processed above.
-    val paths = if (matchlogs.isDefined || filterNLogs.isDefined) {
-      if (matchlogs.isDefined) {
-        allPathsWithTimestamp = allPathsWithTimestamp.filter { case (logInfo, _) =>
-          logInfo.eventLog.getName.contains(matchlogs.get)
-        }
-      }
-      if (filterNLogs.isDefined) {
-        val numberofEventLogs = filterNLogs.get.split("-")(0).toInt
-        val criteria = filterNLogs.get.split("-")(1)
-        if (criteria.equals("newest")) {
-          allPathsWithTimestamp = LinkedHashMap(
-            allPathsWithTimestamp.toSeq.sortWith(_._2 > _._2): _*)
-        } else if (criteria.equals("oldest")) {
-          allPathsWithTimestamp = LinkedHashMap(
-            allPathsWithTimestamp.toSeq.sortWith(_._2 < _._2): _*)
-        } else {
-          logError("Criteria should be either newest or oldest")
-          System.exit(1)
-        }
-        ArrayBuffer(allPathsWithTimestamp.keys.toSeq.take(numberofEventLogs): _*)
+    val matchedLogs = matchlogs.map { strMatch =>
+      logsWithTimestamp.filterKeys(_.eventLog.getName.contains(strMatch))
+    }.getOrElse(logsWithTimestamp)
+
+    val filteredLogs = filterNLogs.map { filter =>
+      val filteredInfo = filterNLogs.get.split("-")
+      val numberofEventLogs = filteredInfo(0).toInt
+      val criteria = filteredInfo(1)
+      val matched = if (criteria.equals("newest")) {
+        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 > _._2): _*)
+      } else if (criteria.equals("oldest")) {
+        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
       } else {
-        // return event logs which contains the keyword.
-        ArrayBuffer(allPathsWithTimestamp.keys.toSeq: _*)
+        logError("Criteria should be either newest or oldest")
+        Map.empty[EventLogInfo, Long]
       }
-    } else { // send all event logs for processing
-      ArrayBuffer(allPathsWithTimestamp.keys.toSeq: _*)
-    }
-    paths
+      matched.take(numberofEventLogs)
+    }.getOrElse(matchedLogs)
+
+    filteredLogs.keys.toSeq
   }
 
   def logApplicationInfo(app: ApplicationInfo) = {

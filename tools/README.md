@@ -477,7 +477,7 @@ For usage see below:
   -o, --output-directory  <arg>   Base output directory. Default is current
                                   directory for the default filesystem. The
                                   final output will go into a subdirectory
-                                  called rapids_4_spark_qualification_profile.
+                                  called rapids_4_spark_profile.
                                   It will overwrite any existing files with
                                   the same name.
   -p, --print-plans               Print the SQL plans to a file starting with
@@ -491,7 +491,7 @@ For usage see below:
 ```
 
 ### Output
-By default this outputs a log file under sub-directory `./rapids_4_spark_qualification_profile` named
+By default this outputs a log file under sub-directory `./rapids_4_spark_profile` named
 `rapids_4_spark_tools_output.log` that contains the processed applications. The output will go into your
 default filesystem, it supports local filesystem or HDFS. There are separate files that are generated
 under the same sub-directory when using the options to generate query visualizations or printing the SQL plans.

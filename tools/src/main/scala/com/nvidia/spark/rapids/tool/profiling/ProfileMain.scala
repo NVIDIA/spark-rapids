@@ -39,7 +39,7 @@ object ProfileMain extends Logging {
     }
   }
 
-  val SUBDIR = "rapids_4_spark_qualification_profile"
+  val SUBDIR = "rapids_4_spark_profile"
 
   /**
    * Entry point for tests
@@ -55,20 +55,24 @@ object ProfileMain extends Logging {
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/") +
       s"/$SUBDIR"
+    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)
     try {
       // Get the event logs required to process
-      lazy val allPaths = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
         matchEventLogs.toOption, eventlogPaths)
-      val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
+      if (eventLogInfos.isEmpty) {
+        logWarning("No event logs to process, exiting!")
+        return 1
+      }
 
       // If compare mode is on, we need lots of memory to cache all applications then compare.
       // Suggest only enable compare mode if there is no more than 10 applications as input.
       if (appArgs.compare()) {
         // Create an Array of Applications(with an index starting from 1)
-        val (apps, errorCode) = ApplicationInfo.createApps(allPaths, numOutputRows, sparkSession)
+        val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos, numOutputRows, sparkSession)
         if (errorCode > 0) {
           logError(s"Error parsing one of the event logs")
           return 1
@@ -85,7 +89,7 @@ object ProfileMain extends Logging {
       } else {
         // This mode is to process one application at one time.
         var index: Int = 1
-        for (path <- allPaths) {
+        for (path <- eventLogInfos) {
           // This apps only contains 1 app in each loop.
           val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(path), numOutputRows,
             sparkSession, startIndex = index)

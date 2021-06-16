@@ -51,8 +51,6 @@ object QualificationMain extends Logging {
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
-
-    // TODO - why doesn't toOption return none when not supplied?
     val databricksLog = if (appArgs.databricksLogs.isSupplied) {
       appArgs.databricksLogs.toOption
     } else {
@@ -61,6 +59,11 @@ object QualificationMain extends Logging {
 
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
       matchEventLogs.toOption, eventlogPaths, databricksLog)
+
+    if (eventLogInfos.isEmpty) {
+      logWarning("No event logs to process after checking paths, exiting!")
+      return (0, None)
+    }
 
     val dfOpt = Qualification.qualifyApps(eventLogInfos, numOutputRows, sparkSession,
       includeCpuPercent, dropTempViews)
