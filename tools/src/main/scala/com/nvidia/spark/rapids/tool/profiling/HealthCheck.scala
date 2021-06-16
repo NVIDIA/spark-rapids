@@ -24,7 +24,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 /**
  * HealthCheck defined health check rules
  */
-class HealthCheck(apps: ArrayBuffer[ApplicationInfo], textFileWriter: ToolTextFileWriter) {
+class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter) {
 
   require(apps.nonEmpty)
 

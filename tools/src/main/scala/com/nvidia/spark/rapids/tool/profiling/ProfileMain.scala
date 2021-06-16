@@ -83,14 +83,11 @@ object ProfileMain extends Logging {
         }
         processApps(apps, generateDot = false, printPlans = false)
         // Show the application Id <-> appIndex mapping.
-        for (app <- apps) {
-          EventLogPathProcessor.logApplicationInfo(app)
-        }
+        apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
       } else {
-        // This mode is to process one application at one time.
         var index: Int = 1
         for (path <- eventLogInfos) {
-          // This apps only contains 1 app in each loop.
+          // Only process 1 app at a time.
           val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(path), numOutputRows,
             sparkSession, startIndex = index)
           index += 1
@@ -119,8 +116,7 @@ object ProfileMain extends Logging {
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean,
-        printPlans: Boolean): Unit = {
+    def processApps(apps: Seq[ApplicationInfo], generateDot: Boolean, printPlans: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
 
         textFileWriter.write("### A. Compare Information Collected ###")

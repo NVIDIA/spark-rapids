@@ -925,28 +925,31 @@ object ApplicationInfo extends Logging {
       numRows: Int,
       sparkSession: SparkSession,
       startIndex: Int = 1,
-      forQualification: Boolean = false): (ArrayBuffer[ApplicationInfo], Int) = {
+      forQualification: Boolean = false): (Seq[ApplicationInfo], Int) = {
     var index: Int = startIndex
     var errorCode = 0
-    val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    for (path <- allPaths) {
+    val appss: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val apps = allPaths.flatMap { path =>
       try {
         // This apps only contains 1 app in each loop.
         val app = new ApplicationInfo(numRows, sparkSession, path, index, forQualification)
-        apps += app
         EventLogPathProcessor.logApplicationInfo(app)
         index += 1
+        Some(app)
       } catch {
         case json: com.fasterxml.jackson.core.JsonParseException =>
           logWarning(s"Error parsing JSON: $path")
           errorCode = 1
+          None
         case il: IllegalArgumentException =>
           logWarning(s"Error parsing file: $path", il)
           errorCode = 2
+          None
         case e: Exception =>
           // catch all exceptions and skip that file
           logWarning(s"Got unexpected exception processing file: $path", e)
           errorCode = 3
+          None
       }
     }
     (apps, errorCode)

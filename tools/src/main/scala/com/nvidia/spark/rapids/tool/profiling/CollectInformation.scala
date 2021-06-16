@@ -31,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CollectInformation mainly print information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
+class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter: Option[ToolTextFileWriter]) {
 
   require(apps.nonEmpty)

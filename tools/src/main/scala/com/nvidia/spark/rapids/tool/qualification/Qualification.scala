@@ -59,7 +59,7 @@ object Qualification extends Logging {
     dfOpt
   }
 
-  def constructQueryQualifyApps(apps: ArrayBuffer[ApplicationInfo],
+  def constructQueryQualifyApps(apps: Seq[ApplicationInfo],
       includeCpuPercent: Boolean): Option[DataFrame] = {
     val (qualApps, nonQualApps) = apps
       .partition { p =>
