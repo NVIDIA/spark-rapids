@@ -64,8 +64,8 @@ object ProfileMain extends Logging {
       val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
         matchEventLogs.toOption, eventlogPaths)
       if (eventLogInfos.isEmpty) {
-        logWarning("No event logs to process, exiting!")
-        return 1
+        logWarning("No event logs to process after checking paths, exiting!")
+        return 0
       }
 
       // If compare mode is on, we need lots of memory to cache all applications then compare.

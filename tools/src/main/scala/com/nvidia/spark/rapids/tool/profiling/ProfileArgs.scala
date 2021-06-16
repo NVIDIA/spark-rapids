@@ -77,5 +77,10 @@ For usage see below:
     opt[Boolean](required = false,
       descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
 
+  validate(filterCriteria) {
+    case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(filterCriteria)
+    case _ => Left("Error, the filter criteria must end with either -newest or -oldest")
+  }
+
   verify()
 }

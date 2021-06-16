@@ -117,7 +117,9 @@ object EventLogPathProcessor extends Logging {
         // support nested dirs, so if event log dir within another one we skip it
         val (validLogs, invalidLogs) = fs.listStatus(inputPath).partition(s => {
             val name = s.getPath().getName()
-            (s.isFile || (s.isDirectory && isEventLogDir(name)))
+            (s.isFile ||
+              (s.isDirectory &&
+                (isEventLogDir(name) || isDatabricksEventLogDir(s, fs, databricksLogs))))
           })
         if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
@@ -130,8 +132,12 @@ object EventLogPathProcessor extends Logging {
             s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES_FOR_FILTER.mkString(", ")}. " +
             "Skipping these files.")
         }
-        logsSupported.map { a =>
-          (ApacheSparkEventLog(a.getPath).asInstanceOf[EventLogInfo] -> a.getModificationTime)
+        logsSupported.map { s =>
+          if (s.isFile || (s.isDirectory && isEventLogDir(s.getPath().getName()))) {
+            (ApacheSparkEventLog(s.getPath).asInstanceOf[EventLogInfo] -> s.getModificationTime)
+          } else {
+            (DatabricksEventLog(s.getPath).asInstanceOf[EventLogInfo] -> s.getModificationTime)
+          }
         }.toMap
       }
     } catch {
