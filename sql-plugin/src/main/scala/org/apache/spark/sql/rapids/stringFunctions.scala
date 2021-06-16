@@ -484,6 +484,35 @@ case class GpuInitCap(child: Expression) extends GpuUnaryExpression with Implici
     input.getBase.toTitle
 }
 
+case class GpuStringRepeat(strs: Expression, repeatTimes: Expression)
+    extends GpuBinaryExpression with ImplicitCastInputTypes {
+  override def left: Expression = strs
+
+  override def right: Expression = repeatTimes
+
+  override def dataType: DataType = strs.dataType
+
+  override def inputTypes: Seq[AbstractDataType] =
+    Seq(TypeCollection(StringType, BinaryType), IntegerType)
+
+  def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  def doColumnar(strs: GpuColumnVector, repeatTimes: GpuScalar): ColumnVector = {
+    val repeatTimesVal = repeatTimes.getValue.asInstanceOf[Int]
+    strs.getBase.repeatStrings(repeatTimesVal)
+  }
+
+  def doColumnar(numRows: Int, str: GpuScalar, repeatTimes: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(str, numRows, str.dataType)) { strCol =>
+      doColumnar(strCol, repeatTimes)
+    }
+  }
+}
+
 case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
