@@ -72,10 +72,6 @@ For usage see below:
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000.")
-  val databricksLogs: ScallopOption[Boolean] =
-    opt[Boolean](required = false,
-      descr = "Indicates the event logs being read are from Databricks. It tries to " +
-        "automatically figure it out, but this can force it one way or another.")
   val noExecCpuPercent: ScallopOption[Boolean] =
     opt[Boolean](
       required = false,

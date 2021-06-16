@@ -64,33 +64,26 @@ object EventLogPathProcessor extends Logging {
 
   // Databricks has the latest events in file named eventlog and then any rolled in format
   // eventlog-2021-06-14--20-00.gz
-  def isDatabricksEventLogDir(dir: FileStatus,
-      fs: FileSystem, databricksLogs: Option[Boolean]): Boolean = {
-    databricksLogs match {
-      case Some(true) => true
-      case Some(false) => false
-      case _ =>
-        // try to determine if dir structure looks right
-        val dirList = fs.listStatus(dir.getPath)
-        if (dirList.size > 0) {
-          if (dirList.exists(_.getPath.getName.equals("eventlog"))) {
-            if (dirList.size > 1) {
-              dirList.exists(_.getPath.getName
-                .matches("eventlog-([0-9]){4}-([0-9]){2}-([0-9]){2}--([0-9]){2}-([0-9]){2}.*"))
-            } else {
-              true
-            }
-          } else {
-            false
-          }
+  def isDatabricksEventLogDir(dir: FileStatus, fs: FileSystem): Boolean = {
+    // try to determine if dir structure looks right
+    val dirList = fs.listStatus(dir.getPath)
+    if (dirList.size > 0) {
+      if (dirList.exists(_.getPath.getName.equals("eventlog"))) {
+        if (dirList.size > 1) {
+          dirList.exists(_.getPath.getName
+            .matches("eventlog-([0-9]){4}-([0-9]){2}-([0-9]){2}--([0-9]){2}-([0-9]){2}.*"))
         } else {
-          false
+          true
         }
+      } else {
+        false
+      }
+    } else {
+      false
     }
   }
 
-  def getEventLogInfo(pathString: String,
-      databricksLogs: Option[Boolean] = None): Map[EventLogInfo, Long] = {
+  def getEventLogInfo(pathString: String): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
     val fs = inputPath.getFileSystem(new Configuration())
     try {
@@ -109,7 +102,7 @@ object EventLogPathProcessor extends Logging {
         val info = ApacheSparkEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
         Map(info -> fileStatus.getModificationTime)
       } else if (fileStatus.isDirectory &&
-          isDatabricksEventLogDir(fileStatus, fs, databricksLogs)) {
+          isDatabricksEventLogDir(fileStatus, fs)) {
         val dbinfo = DatabricksEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
         Map(dbinfo -> fileStatus.getModificationTime)
       } else {
@@ -119,7 +112,7 @@ object EventLogPathProcessor extends Logging {
             val name = s.getPath().getName()
             (s.isFile ||
               (s.isDirectory &&
-                (isEventLogDir(name) || isDatabricksEventLogDir(s, fs, databricksLogs))))
+                (isEventLogDir(name) || isDatabricksEventLogDir(s, fs))))
           })
         if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
@@ -160,10 +153,9 @@ object EventLogPathProcessor extends Logging {
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
-      eventLogsPaths: List[String],
-      databricksLogs: Option[Boolean] = None): Seq[EventLogInfo] = {
+      eventLogsPaths: List[String]): Seq[EventLogInfo] = {
 
-    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, databricksLogs)).toMap
+    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_)).toMap
 
     logDebug("Paths after stringToPath: " + logsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the

@@ -51,14 +51,9 @@ object QualificationMain extends Logging {
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
-    val databricksLog = if (appArgs.databricksLogs.isSupplied) {
-      appArgs.databricksLogs.toOption
-    } else {
-      None
-    }
 
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths, databricksLog)
+      matchEventLogs.toOption, eventlogPaths)
 
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
