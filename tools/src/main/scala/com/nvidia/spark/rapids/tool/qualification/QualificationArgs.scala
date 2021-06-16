@@ -84,7 +84,7 @@ For usage see below:
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(filterCriteria)
-    case _ => Left("")
+    case _ => Left("Error, the filter criteria must end with either -newest or -oldest")
   }
 
   verify()
