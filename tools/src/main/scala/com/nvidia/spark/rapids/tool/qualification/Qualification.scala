@@ -37,7 +37,8 @@ object Qualification extends Logging {
       includeCpuPercent: Boolean,
       dropTempViews: Boolean): Option[DataFrame] = {
 
-    val (apps, _) = ApplicationInfo.createApps(allPaths, numRows, sparkSession)
+    val (apps, _) = ApplicationInfo.createApps(allPaths, numRows, sparkSession,
+      forQualification = true)
     if (apps.isEmpty) {
       logWarning("No Applications found that contain SQL!")
       return None

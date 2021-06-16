@@ -926,14 +926,15 @@ object ApplicationInfo extends Logging {
       allPaths: ArrayBuffer[EventLogInfo],
       numRows: Int,
       sparkSession: SparkSession,
-      startIndex: Int = 1): (ArrayBuffer[ApplicationInfo], Int) = {
+      startIndex: Int = 1,
+      forQualification: Boolean = false): (ArrayBuffer[ApplicationInfo], Int) = {
     var index: Int = startIndex
     var errorCode = 0
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     for (path <- allPaths) {
       try {
         // This apps only contains 1 app in each loop.
-        val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
+        val app = new ApplicationInfo(numRows, sparkSession, path, index, forQualification)
         apps += app
         EventLogPathProcessor.logApplicationInfo(app)
         index += 1
