@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
 
@@ -24,7 +23,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
  * object Utils provides toolkit functions
  *
  */
-object ProfileUtils extends Logging {
+object ProfileUtils {
 
   // Create a SparkSession
   def createSparkSession: SparkSession = {
