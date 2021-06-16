@@ -13,11 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.{EventLogInfo, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling.Analysis
 
 import org.apache.spark.internal.Logging

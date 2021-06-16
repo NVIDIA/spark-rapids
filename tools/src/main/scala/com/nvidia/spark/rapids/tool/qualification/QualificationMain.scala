@@ -54,7 +54,6 @@ object QualificationMain extends Logging {
 
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
       matchEventLogs.toOption, eventlogPaths)
-
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return (0, None)
@@ -66,6 +65,7 @@ object QualificationMain extends Logging {
       logWarning("No Applications with SQL found in events logs: " +
         s"${eventLogInfos.map(_.eventLog.getName).mkString(",")}")
     }
+
     if (writeOutput && dfOpt.isDefined) {
       Qualification.writeQualification(dfOpt.get, outputDirectory,
         appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)

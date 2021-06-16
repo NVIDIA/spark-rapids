@@ -13,9 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.mutable.ArrayBuffer
+package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 

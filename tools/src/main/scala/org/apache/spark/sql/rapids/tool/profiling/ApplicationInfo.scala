@@ -928,7 +928,6 @@ object ApplicationInfo extends Logging {
       forQualification: Boolean = false): (Seq[ApplicationInfo], Int) = {
     var index: Int = startIndex
     var errorCode = 0
-    val appss: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val apps = allPaths.flatMap { path =>
       try {
         // This apps only contains 1 app in each loop.
