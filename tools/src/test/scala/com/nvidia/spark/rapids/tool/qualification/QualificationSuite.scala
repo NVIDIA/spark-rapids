@@ -127,6 +127,19 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
 
+  // event log rolling creates files under a directory
+  test("test event log rolling") {
+    val logFiles = Array(s"$logDir/eventlog_v2_local-1623876083964")
+    runQualificationTest(logFiles, "directory_test_expectation.csv")
+  }
+
+  // these test files were setup to simulator the directory structure
+  // when running on Databricks and are not really from there
+  test("test db event log rolling") {
+    val logFiles = Array(s"$logDir/db_sim_eventlog")
+    runQualificationTest(logFiles, "db_sim_test_expectation.csv")
+  }
+
   test("test nds q86 with failure test") {
     val logFiles = Array(s"$logDir/nds_q86_fail_test.zstd")
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
