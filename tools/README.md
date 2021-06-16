@@ -12,10 +12,12 @@ GPU generated event logs.
 ## Prerequisites
 - Spark 3.0.1 or newer installed
 - Java 8 or above
-- Complete Spark event log(s) from Spark 3.0 or above version
-  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes. 
-  Spark event logs can be downloaded from Spark UI using a "Download" button on the right side, 
-  or can be found in the location specified by `spark.eventLog.dir`.)
+- Complete Spark event log(s) from Spark 3.0 or above version.
+  Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
+  Also support Databricks specific rolled and compressed(.gz) eventlogs.
+
+Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
+or can be found in the location specified by `spark.eventLog.dir`.
 
 Optional:
 - maven installed 
