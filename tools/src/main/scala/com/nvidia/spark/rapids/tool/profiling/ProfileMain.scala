@@ -86,14 +86,13 @@ object ProfileMain extends Logging {
         apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
       } else {
         var index: Int = 1
-        for (path <- eventLogInfos) {
+        eventLogInfos.foreach { log =>
           // Only process 1 app at a time.
-          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(path), numOutputRows,
+          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(log), numOutputRows,
             sparkSession, startIndex = index)
           index += 1
-
           if (errorCode > 0) {
-            logError(s"Error parsing ${path.eventLog}")
+            logError(s"Error parsing ${log.eventLog}")
             return 1
           }
           if (apps.isEmpty) {
