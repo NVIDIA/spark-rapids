@@ -195,6 +195,12 @@ pipeline {
                 if (currentBuild.currentResult == "SUCCESS") {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
                 } else {
+                    // upload log only in case of build failure
+                    def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com"]
+                    def logPattern = "### BEGIN OF TEST LOG ###.*### END OF TEST LOG ###"
+
+                    githubHelper.uploadPartialLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords, logPattern)
+
                     githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
                 }
 

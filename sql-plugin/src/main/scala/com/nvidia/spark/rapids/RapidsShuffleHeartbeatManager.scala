@@ -164,7 +164,11 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
   }
 
   GpuShuffleEnv.mgr.foreach { mgr =>
-    executorService.submit(new InitializeShuffleManager(pluginContext, mgr))
+    if (mgr.isDriver) {
+      logDebug("Local mode detected. Skipping shuffle heartbeat registration.")
+    } else {
+      executorService.submit(new InitializeShuffleManager(pluginContext, mgr))
+    }
   }
 
   override def close(): Unit = {
