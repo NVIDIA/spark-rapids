@@ -17,14 +17,13 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 /**
  * HealthCheck defined health check rules
  */
-class HealthCheck(apps: ArrayBuffer[ApplicationInfo], textFileWriter: ToolTextFileWriter) {
+class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter) {
 
   require(apps.nonEmpty)
 

@@ -12,10 +12,14 @@ GPU generated event logs.
 ## Prerequisites
 - Spark 3.0.1 or newer installed
 - Java 8 or above
-- Complete Spark event log(s) from Spark 3.0 or above version
-  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes. 
-  Spark event logs can be downloaded from Spark UI using a "Download" button on the right side, 
-  or can be found in the location specified by `spark.eventLog.dir`.)
+- Complete Spark event log(s) from Spark 3.0 or above version.
+  Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
+  Also support Databricks specific rolled and compressed(.gz) eventlogs.
+  The tool does not support nested directories, event log files or event log directories should be
+  at the top level when specifying a directory.
+
+Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
+or can be found in the location specified by `spark.eventLog.dir`.
 
 Optional:
 - maven installed 
@@ -477,7 +481,7 @@ For usage see below:
   -o, --output-directory  <arg>   Base output directory. Default is current
                                   directory for the default filesystem. The
                                   final output will go into a subdirectory
-                                  called rapids_4_spark_qualification_profile.
+                                  called rapids_4_spark_profile.
                                   It will overwrite any existing files with
                                   the same name.
   -p, --print-plans               Print the SQL plans to a file starting with
@@ -491,7 +495,7 @@ For usage see below:
 ```
 
 ### Output
-By default this outputs a log file under sub-directory `./rapids_4_spark_qualification_profile` named
+By default this outputs a log file under sub-directory `./rapids_4_spark_profile` named
 `rapids_4_spark_tools_output.log` that contains the processed applications. The output will go into your
 default filesystem, it supports local filesystem or HDFS. There are separate files that are generated
 under the same sub-directory when using the options to generate query visualizations or printing the SQL plans.
