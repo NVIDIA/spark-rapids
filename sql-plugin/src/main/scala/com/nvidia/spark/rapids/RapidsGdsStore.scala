@@ -17,12 +17,13 @@
 package com.nvidia.spark.rapids
 
 import java.io.File
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, Executors}
 import java.util.function.BiFunction
 
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -116,21 +117,17 @@ class RapidsGdsStore(
 
     override def copyToMemoryBuffer(srcOffset: Long, dst: MemoryBuffer, dstOffset: Long,
         length: Long, stream: Cuda.Stream): Unit = {
-      if (RapidsBufferCatalog.shouldUnspill) {
-        super.copyToMemoryBuffer(srcOffset, dst, dstOffset, length, stream)
-      } else {
-        dst match {
-          case dmOriginal: DeviceMemoryBuffer =>
-            val dm = dmOriginal.slice(dstOffset, length)
-            // TODO: switch to async API when it's released, using the passed in CUDA stream.
-            stream.sync()
-            // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
-            //  resolved.
-            CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
-            logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
-          case _ => throw new IllegalStateException(
-            s"GDS can only copy to device buffer, not ${dst.getClass}")
-        }
+      dst match {
+        case dmOriginal: DeviceMemoryBuffer =>
+          val dm = dmOriginal.slice(dstOffset, length)
+          // TODO: switch to async API when it's released, using the passed in CUDA stream.
+          stream.sync()
+          // TODO: align the reads once https://github.com/NVIDIA/spark-rapids/issues/2492 is
+          //  resolved.
+          CuFile.readFileToDeviceBuffer(dm, path, fileOffset + srcOffset)
+          logDebug(s"Created device buffer for $path ${fileOffset + srcOffset}:$length via GDS")
+        case _ => throw new IllegalStateException(
+          s"GDS can only copy to device buffer, not ${dst.getClass}")
       }
     }
 
@@ -171,6 +168,11 @@ class RapidsGdsStore(
     private[this] val batchWriteBuffer = CuFileBuffer.allocate(batchWriteBufferSize, true)
     private[this] var currentFile = TempSpillBufferId().getDiskPath(diskBlockManager)
     private[this] var currentOffset = 0L
+    private[this] val batchReadExecutor = Executors.newSingleThreadExecutor(
+      GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
+          .setNameFormat(s"shuffle-server-copy-thread-%d")
+          .setDaemon(true)
+          .build))
 
     def spill(other: RapidsBuffer, deviceBuffer: DeviceMemoryBuffer): RapidsBufferBase =
       this.synchronized {
@@ -242,41 +244,44 @@ class RapidsGdsStore(
         var isPending: Boolean = true)
         extends RapidsGdsBuffer(id, size, meta, spillPriority, spillCallback) {
 
-      override def materializeMemoryBuffer: MemoryBuffer = {
-        val pendingBuffer = this.synchronized {
-          if (isPending) {
-            closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
-              copyToBuffer(buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
-              Cuda.DEFAULT_STREAM.sync()
-              logDebug(s"Created device buffer $size from batch write buffer")
-              buffer
+      private def batchUnspill(buffer: DeviceMemoryBuffer): Unit = {
+        withResource(buffer) { _ =>
+          spilledBuffers.get(path).foreach { id =>
+            withResource(catalog.acquireBuffer(id)) {
+              case gdsBuffer: RapidsGdsBatchedBuffer =>
+                closeOnExcept(DeviceMemoryBuffer.allocate(gdsBuffer.size)) { d =>
+                  logDebug(s"Unspilling $gdsBuffer $id to $DEVICE")
+                  d.copyFromMemoryBuffer(
+                    0, buffer, gdsBuffer.fileOffset, gdsBuffer.size, Cuda.DEFAULT_STREAM)
+                  try {
+                    deviceStorage.copyBuffer(gdsBuffer, d, Cuda.DEFAULT_STREAM)
+                  } catch {
+                    case _: DuplicateBufferException =>
+                      logDebug(s"Lost device buffer registration race for buffer $id, ignored")
+                  }
+                }
+              case _ =>
+                logDebug(s"Ignoring buffer $id")
             }
-          } else {
-            null
           }
         }
-        if (pendingBuffer != null) {
-          pendingBuffer
+      }
+
+      override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
+        if (isPending) {
+          closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
+            copyToBuffer(buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
+            Cuda.DEFAULT_STREAM.sync()
+            logDebug(s"Created device buffer $size from batch write buffer")
+            buffer
+          }
         } else if (RapidsBufferCatalog.shouldUnspill) {
-          withResource(DeviceMemoryBuffer.allocate(batchWriteBufferSize)) { buffer =>
+          closeOnExcept(DeviceMemoryBuffer.allocate(batchWriteBufferSize)) { buffer =>
             CuFile.readFileToDeviceMemory(buffer.getAddress, buffer.getLength, path, 0)
             logDebug(s"Created device buffer for $path 0:$batchWriteBufferSize via GDS")
-            spilledBuffers.get(path).foreach { id =>
-              if (id != this.id) {
-                withResource(catalog.acquireBuffer(id)) {
-                  case b: RapidsGdsBatchedBuffer =>
-                    closeOnExcept(DeviceMemoryBuffer.allocate(b.size)) { d =>
-                      logDebug(s"Unspilling $b $id to $DEVICE")
-                      d.copyFromMemoryBuffer(0, buffer, b.fileOffset, b.size, Cuda.DEFAULT_STREAM)
-                      deviceStorage.copyBuffer(b, d, Cuda.DEFAULT_STREAM)
-                    }
-                  case _ =>
-                    logDebug(s"Ignoring buffer $id")
-                }
-              }
-            }
             closeOnExcept(DeviceMemoryBuffer.allocate(size)) { d =>
               d.copyFromMemoryBuffer(0, buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
+              batchReadExecutor.execute(() => batchUnspill(buffer))
               d
             }
           }
