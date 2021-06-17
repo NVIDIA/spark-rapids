@@ -316,6 +316,14 @@ class ApplicationInfo(
     }
   }
 
+  def printChildMeta(planInfo: SparkPlanInfo): Unit = {
+    logWarning(s"metadata for  name: ${planInfo.nodeName}")
+    planInfo.metadata.foreach { case(k, v) =>
+      logWarning(s" key: $k value: $v")
+    }
+    planInfo.children.foreach(printChildMeta(_))
+  }
+
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
@@ -324,9 +332,7 @@ class ApplicationInfo(
 
       // check if planInfo has ReadSchema
       logWarning(s"metadata for sqlID: $sqlID name: ${planInfo.nodeName}")
-      planInfo.metadata.foreach { case(k, v) =>
-        logWarning(s" key: $k value: $v")
-      }
+      printChildMeta(planInfo)
 
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
