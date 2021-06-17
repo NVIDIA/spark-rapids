@@ -15,6 +15,8 @@ GPU generated event logs.
 - Complete Spark event log(s) from Spark 3.0 or above version.
   Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
   Also support Databricks specific rolled and compressed(.gz) eventlogs.
+  The tool does not support nested directories, event log files or event log directories should be
+  at the top level when specifying a directory.
 
 Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
 or can be found in the location specified by `spark.eventLog.dir`.
