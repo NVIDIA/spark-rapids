@@ -105,7 +105,7 @@ class Spark301dbShims extends Spark301Shims {
         "Databricks-specific window function exec, for \"running\" windows, " +
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.Null +
+          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
               TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
               TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
                   + TypeSig.ARRAY),
