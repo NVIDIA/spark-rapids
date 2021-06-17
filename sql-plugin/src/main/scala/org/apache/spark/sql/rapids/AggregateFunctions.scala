@@ -541,7 +541,7 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
     new CudfSum(cudfCount))
 
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
-  // divide-by-zero exceptions, even when ansi mode is enabled in Spark. 
+  // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: GpuExpression = GpuDivide(
     GpuCast(cudfSum, DoubleType),

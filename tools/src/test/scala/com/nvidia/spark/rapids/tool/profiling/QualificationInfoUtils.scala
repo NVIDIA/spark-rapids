@@ -129,7 +129,7 @@ object QualificationInfoUtils extends Logging {
         )).toDF("id", "name", "city", "country")
         userData.write.json(jsonInputFile.getCanonicalPath)
         val userDataRead = spark.read.json(jsonInputFile.getCanonicalPath)
-        val allUSA = Seq("US", "USa", "USA", "United states", "United states of America") 
+        val allUSA = Seq("US", "USa", "USA", "United states", "United states of America")
         userDataRead.createOrReplaceTempView("user_data")
         val cleanCountryUdf = udf(cleanCountry)
         val resDf = userDataRead.withColumn("normalisedCountry", cleanCountryUdf(col("country")))

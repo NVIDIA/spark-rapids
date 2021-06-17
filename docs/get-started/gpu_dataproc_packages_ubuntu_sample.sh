@@ -146,7 +146,7 @@ function install_spark_rapids() {
   local cudf_cuda_version="${CUDA_VERSION//\./-}"
   # Convert "11-0" to "11"
   cudf_cuda_version="${cudf_cuda_version%-0}"
-    
+
   wget -nv --timeout=30 --tries=5 --retry-connrefused \
     "${nvidia_repo_url}/xgboost4j-spark_${SPARK_VERSION}/${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}/xgboost4j-spark_${SPARK_VERSION}-${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}.jar" \
     -P /usr/lib/spark/jars/
@@ -164,7 +164,7 @@ function install_spark_rapids() {
 function configure_spark() {
     cat >>${SPARK_CONF_DIR}/spark-defaults.conf <<EOF
 ###### BEGIN : RAPIDS properties for Spark ${SPARK_VERSION} ######
-# Rapids Accelerator for Spark can utilize AQE, but when plan is not finalized, 
+# Rapids Accelerator for Spark can utilize AQE, but when plan is not finalized,
 # query explain output won't show GPU operator, if user have doubt
 # they can uncomment the line before to see the GPU plan explan, but AQE on give user the best performance.
 # spark.sql.adaptive.enabled=false

@@ -49,7 +49,7 @@ orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens =[string_gen,
         byte_gen, short_gen, int_gen, long_gen, boolean_gen]
- 
+
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/ORC_DATA'
@@ -81,7 +81,7 @@ orc_pred_push_gens = [
         # date_gen
         DateGen(start=date(1590, 1, 1)),
         # Once https://github.com/NVIDIA/spark-rapids/issues/140 is fixed replace this with
-        # timestamp_gen 
+        # timestamp_gen
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
 
 @pytest.mark.parametrize('orc_gen', orc_pred_push_gens, ids=idfn)

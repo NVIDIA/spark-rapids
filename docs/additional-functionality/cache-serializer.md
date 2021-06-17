@@ -4,7 +4,7 @@ title: RAPIDS Cache Serializer
 parent: Additional Functionality
 nav_order: 2
 ---
-# RAPIDS Cache Serializer  
+# RAPIDS Cache Serializer
   Apache Spark provides an important feature to cache intermediate data and provide
   significant performance improvement while running multiple queries on the same data. There
   are two ways to cache a Dataframe or a DataSet i.e. call `persist(storageLevel)` or
@@ -29,8 +29,8 @@ nav_order: 2
   `spark.sql.inMemoryColumnarStorage.enableVectorizedReader` will not be honored as the GPU
   data is always read in as columnar. If `spark.rapids.sql.enabled` is set to false
   the cached objects will still be compressed on the CPU as a part of the caching process.
-  
-  Please note that ParquetCachedBatchSerializer doesn't support negative decimal scale, so if 
+
+  Please note that ParquetCachedBatchSerializer doesn't support negative decimal scale, so if
   `spark.sql.legacy.allowNegativeScaleOfDecimal` is set to true ParquetCachedBatchSerializer
   should not be used.  Using the serializer with negative decimal scales will generate
   an error at runtime.
@@ -42,17 +42,17 @@ nav_order: 2
   ```
   See the below table for all the names of the serializers corresponding to the Spark
   versions
- 
+
   | Spark version | Serializer name |
   | ------ | -----|
   | 3.1.1 | com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer |
   | 3.1.2 | com.nvidia.spark.rapids.shims.spark312.ParquetCachedBatchSerializer |
   | 3.1.3 | com.nvidia.spark.rapids.shims.spark313.ParquetCachedBatchSerializer |
-  | 3.2.0 | com.nvidia.spark.rapids.shims.spark320.ParquetCachedBatchSerializer | 
-  
-##          Supported Types                       
- 
+  | 3.2.0 | com.nvidia.spark.rapids.shims.spark320.ParquetCachedBatchSerializer |
+
+##          Supported Types
+
  All types are supported on the CPU, on the Gpu, ArrayType, MapType and BinaryType are not
- supported. If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall 
- back to using the CPU for caching. 
+ supported. If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall
+ back to using the CPU for caching.
 

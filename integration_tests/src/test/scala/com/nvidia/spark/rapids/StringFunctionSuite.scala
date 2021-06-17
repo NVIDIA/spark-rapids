@@ -22,8 +22,8 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions._
 
- /* 
- * Different versions of Java support different versions of Unicode. 
+ /*
+ * Different versions of Java support different versions of Unicode.
  *
  * java 8  :  unicode 6.2
  * java 9  :  unicode 8.0     (unsupported)
@@ -36,9 +36,9 @@ import org.apache.spark.sql.functions._
 object SupportedUnicodeVersion extends Enumeration {
   val UNICODE_6 = 0
   val UNICODE_10 = 1
-  val UNICODE_12 = 2  
-  
-  val NUM_UNICODE_VERSIONS = 3  
+  val UNICODE_12 = 2
+
+  val NUM_UNICODE_VERSIONS = 3
   val UNICODE_UNSUPPORTED = 4
 
   val currentSupportedVersion = UNICODE_12
@@ -51,7 +51,7 @@ object SupportedUnicodeVersion extends Enumeration {
  * during a test, depending on Java/unicode version. To work around this, we maintain lists of
  * known bad characters for earlier versions of Java/unicode so that the tests don't break.
  */
-object CudfIncompatibleCodepoints {     
+object CudfIncompatibleCodepoints {
   val uppercaseIncompatible = Array[List[Int]](
                                   // Java 8 / unicode 6.2
                                   List( 604,   609,   618,   620,   642,   647,   669,   670,
@@ -95,9 +95,9 @@ object CudfIncompatibleCodepoints {
                                   List())
 }
 
-/* 
+/*
  * Different versions of Java support different versions of Unicode.  this class provides
- * the valid list of codepoints for whatever version of Java is being run.  It also 
+ * the valid list of codepoints for whatever version of Java is being run.  It also
  * provides filtered lists of codepoints that are known to be broken in cudf.
  *
  * java 8  :  unicode 6.2
@@ -113,8 +113,8 @@ object TestCodepoints {
   val validCodepointIndices = validCodepoints.map(tuple => tuple._1)
 
   // determine what 'supported' version of unicode we're using, if any
-  def getActiveUnicodeVersion(): Int = {       
-    val vp = System.getProperties().getProperty("java.specification.version").split('.')    
+  def getActiveUnicodeVersion(): Int = {
+    val vp = System.getProperties().getProperty("java.specification.version").split('.')
 
     // java <= 8
     if (vp(0).toInt == 1 && vp.length > 1) {
@@ -122,14 +122,14 @@ object TestCodepoints {
         return SupportedUnicodeVersion.UNICODE_6
       }
       return SupportedUnicodeVersion.UNICODE_UNSUPPORTED
-    } 
+    }
 
     // java 9+
     vp(0).toInt match {
       case 11 => SupportedUnicodeVersion.UNICODE_10
       case 13 => SupportedUnicodeVersion.UNICODE_12
       case _ => SupportedUnicodeVersion.UNICODE_UNSUPPORTED
-    }    
+    }
   }
   // print out a warning if we're on an unsupported version
   if (getActiveUnicodeVersion() == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
@@ -139,15 +139,15 @@ object TestCodepoints {
 
   // get the unicode index to use. if we are on an unknown/unsupported version, just
   // default to unicode 12
-  def getUnicodeIncompatibleIndex(): Int = {            
-    val version = getActiveUnicodeVersion()  
+  def getUnicodeIncompatibleIndex(): Int = {
+    val version = getActiveUnicodeVersion()
     if (version == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
-      SupportedUnicodeVersion.UNICODE_12 
+      SupportedUnicodeVersion.UNICODE_12
     } else {
       version
     }
-  }  
-    
+  }
+
   // all unicode codepoints valid for this particular version of Java/Unicode.
   def validCodepointCharsDF(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
@@ -170,10 +170,10 @@ object TestCodepoints {
     val utf8Chars = (validCodepointIndices diff
       CudfIncompatibleCodepoints.lowercaseIncompatible(version)).map(i => i.toChar.toString)
     utf8Chars.toDF("strings")
-  }  
+  }
 }
 
-class StringOperatorsSuite extends SparkQueryCompareTestSuite {         
+class StringOperatorsSuite extends SparkQueryCompareTestSuite {
   INCOMPAT_testSparkResultsAreEqual("Test compatible values upper case modifier",
     TestCodepoints.uppercaseCompatibleCharsDF) {
     frame => frame.select(upper(col("strings")))
@@ -190,7 +190,7 @@ class StringOperatorsSuite extends SparkQueryCompareTestSuite {
 * differences present.
 */
 @Ignore
-class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {  
+class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
   def generateResults(gen : org.apache.spark.sql.Column => org.apache.spark.sql.Column):
       (Array[Row], Array[Row]) = {
     val (testConf, _) = setupTestConfAndQualifierName("", true, false,
@@ -198,20 +198,20 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
     runOnCpuAndGpu(TestCodepoints.validCodepointCharsDF,
       frame => frame.select(gen(col("strings"))), testConf)
   }
- 
+
   // utility function to print out detailed information on differences
   def generateUnicodeDiffs(title  : String,
       gen: () => (Array[Row], Array[Row])): Unit = {
     val (fromCpu, fromGpu) = gen()
-   
+
     println(s"$title ----------------------------------------")
 
     println("\u001b[1;36mSummary of diffs:\u001b[0m")
-    println("\u001b[1;36mCodepoint:\u001b[0m ")    
+    println("\u001b[1;36mCodepoint:\u001b[0m ")
     for (i <- fromCpu.indices) {
-      if (fromCpu(i) != fromGpu(i)) { 
+      if (fromCpu(i) != fromGpu(i)) {
         val codepoint = TestCodepoints.validCodepointIndices(i)
-        print(f"$codepoint%5d, ")  
+        print(f"$codepoint%5d, ")
       }
     }
     print("\n\n")
@@ -236,39 +236,39 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
         var gpu_str = fromGpu(i).getString(0)
 
         val codepoint = TestCodepoints.validCodepointIndices(i)
-        print(f"(${codepoint.toChar.toString} $codepoint[$codepoint%04x]) ($cpu_str ")        
+        print(f"(${codepoint.toChar.toString} $codepoint[$codepoint%04x]) ($cpu_str ")
         print(f"${cpu_str.map(_.toInt.formatted("%d")).mkString(",")}")
-        print("[")        
+        print("[")
         print(f"${cpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
         print(f"]) ($gpu_str ")
-        print(f"${gpu_str.map(_.toInt.formatted("%d")).mkString(",")}")        
+        print(f"${gpu_str.map(_.toInt.formatted("%d")).mkString(",")}")
         print("[");
         print(f"${gpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
         println("])");
       }
     }
     println("---------------------------------------------")
-  }  
+  }
   // generateUnicodeDiffs("UPPER", () => generateResults(upper))
   // generateUnicodeDiffs("LOWER", () => generateResults(lower))
-  
+
   // generates special case character mapping hash table generation input data.
-  def generateCharMappings(): Unit = {    
+  def generateCharMappings(): Unit = {
     class charMapping {
       var   num_upper = 0
       val   upper = Array(0, 0, 0)
       var   num_lower = 0
       val   lower = Array(0, 0, 0)
-    }    
+    }
     val mapping = Array.fill[charMapping](65536)(new charMapping())
-            
+
     // upper results
     val (fromCpuUpper, fromGpuUpper) = generateResults(upper)
     for (i <- fromCpuUpper.indices) {
       if (fromCpuUpper(i) != fromGpuUpper(i) && fromGpuUpper(i).getString(0).length == 1) {
         val codepoint = TestCodepoints.validCodepointIndices(i)
-        
-        val cpu_str = fromCpuUpper(i).getString(0)        
+
+        val cpu_str = fromCpuUpper(i).getString(0)
         mapping(codepoint).num_upper = cpu_str.length
         for (c <- 0 until cpu_str.length) { mapping(codepoint).upper(c) = cpu_str(c).toInt }
       }
@@ -279,7 +279,7 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
     for (i <- fromCpuLower.indices) {
       if (fromCpuLower(i) != fromGpuLower(i) && fromGpuLower(i).getString(0).length == 1) {
         val codepoint = TestCodepoints.validCodepointIndices(i)
-        
+
         val cpu_str = fromCpuLower(i).getString(0)
         mapping(codepoint).num_lower = cpu_str.length
         for (c <- 0 until cpu_str.length) { mapping(codepoint).lower(c) = cpu_str(c).toInt }
@@ -293,14 +293,14 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
     println("   uint16_t num_lower_chars;")
     println("   uint16_t lower[3];")
     println("};")
-            
+
     // mappings
     println("constexpr special_case_mapping_in codepoint_mapping_in[] = {")
     for (i <- 0 until 65536) {
       val mc = mapping(i)
       if (mc.num_upper != 0 || mc.num_lower != 0) {
         println(s"   { ${mc.num_upper} {${mc.upper(0)}, ${mc.upper(1)}, ${mc.upper(2)}}, " +
-          s"${mc.num_lower}, {${mc.lower(0)}, ${mc.lower(1)}, ${mc.lower(2)}} },")                
+          s"${mc.num_lower}, {${mc.lower(0)}, ${mc.lower(1)}, ${mc.lower(2)}} },")
       }
     }
     println("};")
@@ -319,6 +319,6 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
       }
     }
     println("\n};")
-  }  
-  // generateCharMappings()  
+  }
+  // generateCharMappings()
 }

@@ -17,7 +17,7 @@ on NVIDIA GPUs on Databricks.
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
-runtimes which may impact the behavior of the plugin. 
+runtimes which may impact the behavior of the plugin.
 
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
@@ -31,7 +31,7 @@ cluster meets the prerequisites above by configuring it as follows:
 4. Select a worker type.  On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
    p2 nodes do not meet the architecture requirements (Pascal or higher) for the Spark worker
    (although they can be used for the driver node).  For Azure, choose GPU nodes such as
-   Standard_NC6s_v3.  For GCP, choose N1 or A2 instance types with GPUs. 
+   Standard_NC6s_v3.  For GCP, choose N1 or A2 instance types with GPUs.
 5. Select the driver type. Generally this can be set to be the same as the worker.
 6. Start the cluster.
 
@@ -43,7 +43,7 @@ cluster.
 1. To create the initialization script, import the initialization script notebook from the repo to
    your workspace.  See [Managing
    Notebooks](https://docs.databricks.com/notebooks/notebooks-manage.html#id2) for instructions on
-   how to import a notebook.  
+   how to import a notebook.
    Select the initialization script based on the Databricks runtime
    version:
     - [Databricks 7.3 LTS
@@ -51,7 +51,7 @@ ML](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environm
 Update 2. Users wishing to try 21.06 on Databricks 7.3 LTS ML will need to install the CUDA
 11.0 toolkit on the cluster.  This can be done with the [generate-init-script-cuda11.ipynb
 ](../demo/Databricks/generate-init-script-cuda11.ipynb) init script, which installs both the RAPIDS
-Spark plugin and the CUDA 11 toolkit. 
+Spark plugin and the CUDA 11 toolkit.
     - [Databricks 8.2
     ML](https://docs.databricks.com/release-notes/runtime/8.2ml.html#system-environment) has CUDA 11
     installed.  In this case use
@@ -126,14 +126,14 @@ larger dataset if needed. You can find the links to the datasets at
 %sh
 
 USER_ID=<your_user_id>
- 
+
 wget http://rapidsai-data.s3-website.us-east-2.amazonaws.com/notebook-mortgage-data/mortgage_2000.tgz -P /Users/${USER_ID}/
- 
+
 mkdir -p /dbfs/FileStore/tables/mortgage
 mkdir -p /dbfs/FileStore/tables/mortgage_parquet_gpu/perf
 mkdir /dbfs/FileStore/tables/mortgage_parquet_gpu/acq
 mkdir /dbfs/FileStore/tables/mortgage_parquet_gpu/output
- 
+
 tar xfvz /Users/${USER_ID}/mortgage_2000.tgz --directory /dbfs/FileStore/tables/mortgage
 ```
 
@@ -147,7 +147,7 @@ tmp_perf_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/perf/'
 tmp_acq_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/acq/'
 output_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/output/'
 ```
-Run the notebook by clicking “Run All”. 
+Run the notebook by clicking “Run All”.
 
 ## Hints
 Spark logs in Databricks are removed upon cluster shutdown.  It is possible to save logs in a cloud

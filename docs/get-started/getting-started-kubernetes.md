@@ -25,7 +25,7 @@ image - Spark, the RAPIDS Accelerator for Spark jars, and the discovery script. 
 
 These instructions do not cover how to setup a Kubernetes cluster.
 
-Please refer to [Install Kubernetes](https://docs.nvidia.com/datacenter/cloud-native/kubernetes/install-k8s.html) on 
+Please refer to [Install Kubernetes](https://docs.nvidia.com/datacenter/cloud-native/kubernetes/install-k8s.html) on
 how to install a Kubernetes cluster with NVIDIA GPU support.
 
 ## Docker Image Preparation
@@ -34,38 +34,38 @@ On a client machine which has access to the Kubernetes cluster:
 
 1. [Download Apache Spark](https://spark.apache.org/downloads.html).
    Supported versions of Spark are listed on the [RAPIDS Accelerator download page](../download.md).  Please note that only
-   Scala version 2.12 is currently supported by the accelerator. 
+   Scala version 2.12 is currently supported by the accelerator.
 
    Note that you can download these into a local directory and untar the Spark `.tar.gz` as a directory named `spark`.
 
 2. Download the [RAPIDS Accelerator for Spark jars](getting-started-on-prem.md#download-the-rapids-jars) and the
   [GPU discovery script](getting-started-on-prem.md#install-the-gpu-discovery-script).
-  
+
    Put the 2 jars -- `rapids-4-spark_<version>.jar`, `cudf-<version>.jar`  and `getGpusResources.sh` in the same directory as `spark`.
-   
-   Note: If here you decide to put above 2 jars in the `spark/jars` directory which will be copied into 
-   `/opt/spark/jars` directory in Docker image, then in the future you do not need to 
+
+   Note: If here you decide to put above 2 jars in the `spark/jars` directory which will be copied into
+   `/opt/spark/jars` directory in Docker image, then in the future you do not need to
    specify `spark.driver.extraClassPath` or `spark.executor.extraClassPath` using `cluster` mode.
    This example just shows you a way to put customized jars or 3rd party jars.
 
 3. Download the sample [Dockerfile.cuda](Dockerfile.cuda) in the same directory as `spark`.
 
-   The sample Dockerfile.cuda will copy the `spark` directory's several sub-directories into `/opt/spark/` 
+   The sample Dockerfile.cuda will copy the `spark` directory's several sub-directories into `/opt/spark/`
    along with the RAPIDS Accelerator jars and `getGpusResources.sh` into `/opt/sparkRapidsPlugin`
    inside the Docker image.
-   
+
    You can modify the Dockerfile to copy your application into the docker image, i.e. `test.py`.
-   
+
    Examine the Dockerfile.cuda file to ensure the file names are correct and modify if needed.
-   
+
    Currently the directory in the local machine should look as below:
-   ```shell 
+   ```shell
    $ ls
    Dockerfile.cuda   cudf-<version>.jar   getGpusResources.sh   rapids-4-spark_<version>.jar   spark
    ```
 
 4. Build the Docker image with a proper repository name and tag and push it to the repository
-   ```shell 
+   ```shell
    export IMAGE_NAME=xxx/yyy:tag
    docker build . -f Dockerfile.cuda -t $IMAGE_NAME
    docker push $IMAGE_NAME
@@ -76,13 +76,13 @@ On a client machine which has access to the Kubernetes cluster:
 ### Submitting a Simple Test Job
 
 This simple job will test if the RAPIDS plugin can be found.
-`ClassNotFoundException` is a common error if the Spark driver can not 
+`ClassNotFoundException` is a common error if the Spark driver can not
 find the RAPIDS Accelerator jar, resulting in an exception like this:
 ```
 Exception in thread "main" java.lang.ClassNotFoundException: com.nvidia.spark.SQLPlugin
 ```
 
-Here is an example job: 
+Here is an example job:
 
 ```shell
 export SPARK_HOME=~/spark
@@ -179,7 +179,7 @@ $SPARK_HOME/bin/spark-shell \
      --conf spark.kubernetes.container.image=$IMAGE_NAME \
      --conf spark.executor.extraClassPath=/opt/sparkRapidsPlugin/rapids-4-spark_<version>.jar:/opt/sparkRapidsPlugin/cudf-<version>.jar   \
      --driver-class-path=./cudf-<version>.jar:./rapids-4-spark_<version>.jar \
-     --driver-memory 2G 
+     --driver-memory 2G
 ```
 
 Only the `client` deploy mode should be used. If you specify the `cluster` deploy mode, you would see the following error:

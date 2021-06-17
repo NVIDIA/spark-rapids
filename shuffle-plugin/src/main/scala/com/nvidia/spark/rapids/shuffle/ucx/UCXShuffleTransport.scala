@@ -381,7 +381,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
           }
         }
 
-        var requestIx = 0 
+        var requestIx = 0
         while (requestIx < requestsToHandle.size) {
           var hasBounceBuffers = true
           var fitsInFlight = true

@@ -1103,7 +1103,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.groupBy("more_longs").agg(countDistinct("longs"),
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
-  
+
   private val partialOnlyConf = replaceHashAggMode("partial", enableCsvConf()).set(
     RapidsConf.ENABLE_FLOAT_AGG.key, "true").set(RapidsConf.HAS_NANS.key, "false")
   private val finalOnlyConf = replaceHashAggMode("final", enableCsvConf()).set(

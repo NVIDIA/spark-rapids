@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -146,7 +146,7 @@ class ShuffleBufferCatalog(
     }
 
     // associate this new buffer with the shuffle block
-    val blockBufferIds = info.blockMap.computeIfAbsent(blockId, _ => 
+    val blockBufferIds = info.blockMap.computeIfAbsent(blockId, _ =>
       new ArrayBuffer[ShuffleBufferId])
     blockBufferIds.synchronized {
       blockBufferIds.append(id)

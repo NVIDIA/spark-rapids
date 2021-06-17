@@ -153,7 +153,7 @@ Please visit the [testing doc](tests/README.md) for details about how to run tes
 
 ### Pre-commit hooks
 We provide a basic config `.pre-commit-config.yaml` for [pre-commit](https://pre-commit.com/) to
-automate some aspects of the development process. As a convenience you can enable automatic 
+automate some aspects of the development process. As a convenience you can enable automatic
 copyright year updates by following the installation instructions on the
 [pre-commit homepage](https://pre-commit.com/).
 

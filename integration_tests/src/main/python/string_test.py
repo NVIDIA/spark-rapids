@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -345,7 +345,7 @@ def test_like_null_xfail():
             .with_special_case('%SystemDrive%\\Users\\John')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
-                f.col('a').like('_'))) 
+                f.col('a').like('_')))
 
 def test_like():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
@@ -375,7 +375,7 @@ def test_like():
                 f.col('a').like('_$%'),
                 f.col('a').like('_._'),
                 f.col('a').like('_?|}{_%'),
-                f.col('a').like('%a{3}%'))) 
+                f.col('a').like('%a{3}%')))
 
 def test_like_simple_escape():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
@@ -395,7 +395,7 @@ def test_like_simple_escape():
                 'a like "c_" escape "c"',
                 'a like x "6162632325616263" escape "#"',
                 'a like x "61626325616263" escape "#"'))
- 
+
 def test_like_complex_escape():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')\
             .with_special_pattern('\\w{0,3}oo\\w{0,3}', weight=100.0)\
@@ -419,4 +419,4 @@ def test_like_complex_escape():
                 'a like "\\%SystemDrive\\%\\\\\\\\Users%"',
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
- 
+

@@ -1,9 +1,9 @@
 # API validation script for Rapids Plugin
 
-API validation script checks the compatibility of community Spark Execs and GPU Execs in the Rapids Plugin for Spark.  
+API validation script checks the compatibility of community Spark Execs and GPU Execs in the Rapids Plugin for Spark.
 For example: HashAggregateExec with GpuHashAggregateExec.
 Script can be used to audit different versions of Spark(3.0.1 and 3.1.1)
-The script prints Execs where validation fails. 
+The script prints Execs where validation fails.
 Validation fails when:
 1) The number of parameters differ between community Spark Execs and Gpu Execs.
 2) Parameters to the exec have a type mismatch.
@@ -25,7 +25,7 @@ mvn scala:run -P spark301
 ```
 
 # Output
-Output is saved in `api-validation-result.log` in api_validation/target directory.  
+Output is saved in `api-validation-result.log` in api_validation/target directory.
 
 Sample Output
 
@@ -101,6 +101,6 @@ Spark parameters                                                    Plugin param
 ------------------------------------------------------------------------------------------------
 Seq[org.apache.spark.sql.catalyst.expressions.NamedExpression]    | Seq[com.nvidia.spark.rapids.GpuExpression]
 Seq[org.apache.spark.sql.catalyst.expressions.Expression]         | org.apache.spark.sql.execution.SparkPlan
-Seq[org.apache.spark.sql.catalyst.expressions.SortOrder]          | 
-org.apache.spark.sql.execution.SparkPlan 
+Seq[org.apache.spark.sql.catalyst.expressions.SortOrder]          |
+org.apache.spark.sql.execution.SparkPlan
 ```

@@ -23,7 +23,7 @@
 #   lastcommit - File which contains the latest commit hash when this script ran last.
 #   basebranch - branch in Apache Spark for which commits needs to be audited.
 #                Currently it's master as Spark-3.2 branch is not cut yet.
-#   tag        - tag until which the commits are audited 
+#   tag        - tag until which the commits are audited
 
 
 set -ex
@@ -44,7 +44,7 @@ done
 
 SPARK_TREE="$WORKSPACE/spark"
 if [ -e ${SPARK_TREE} ]; then
- rm -rf $SPARK_TREE 
+ rm -rf $SPARK_TREE
 fi
 git clone https://github.com/apache/spark.git $SPARK_TREE
 
@@ -107,5 +107,5 @@ else
     done < $filename
     git log HEAD -n 1 --pretty="%h" > $lastcommit
 fi
-cd ${ABSOLUTE_PATH}/../ 
+cd ${ABSOLUTE_PATH}/../
 . scripts/prioritize-commits.sh

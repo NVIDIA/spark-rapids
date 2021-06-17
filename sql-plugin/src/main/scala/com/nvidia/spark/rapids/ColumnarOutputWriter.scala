@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
   }
 
   /**
-   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically 
+   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
    * partitioned tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */

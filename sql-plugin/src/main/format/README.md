@@ -5,7 +5,7 @@ the RAPIDS Spark plugin.
 
 ## Building the FlatBuffers Compiler
 
-Build the compiler 1.11.0 version: 
+Build the compiler 1.11.0 version:
 ```
 git clone https://github.com/google/flatbuffers.git
 cd flatbuffers

@@ -46,10 +46,10 @@ to test improved transfer performance to pandas based user defined functions.
 Tests will run as a part of the maven build if you have the environment variable `SPARK_HOME` set.
 
 The suggested way to run these tests is to use the shell-script file located in the
- integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes 
-care of some of the flags that are required to run the tests which will have to be set for the 
-plugin to work. It will be very useful to read the contents of the 
-[run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight 
+ integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes
+care of some of the flags that are required to run the tests which will have to be set for the
+plugin to work. It will be very useful to read the contents of the
+[run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight
 into what is needed as we constantly keep working on to improve and expand the plugin-support.
 
 The python tests run with pytest and the script honors pytest parameters. Some handy flags are:
@@ -102,9 +102,9 @@ To run the tests separate from the build go to the `integration_tests` directory
 `runtests.py` through `spark-submit`, but if you want to run the tests in parallel with
 `pytest-xdist` you will need to submit it as a regular python application and have `findspark`
 installed.  Be sure to include the necessary jars for the RAPIDS plugin either with
-`spark-submit` or with the cluster when it is 
+`spark-submit` or with the cluster when it is
 [setup](../docs/get-started/getting-started-on-prem.md).
-The command line arguments to `runtests.py` are the same as for 
+The command line arguments to `runtests.py` are the same as for
 [pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
 is that `spark-submit` uses python if the file name ends with `.py`.
 
@@ -133,7 +133,7 @@ It is recommended that you use `spark-shell` and the scalatest shell to run each
 individually, so you don't risk running unit tests along with the integration tests.
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
-```shell 
+```shell
 spark-shell --jars rapids-4-spark-tests_2.12-21.08.0-SNAPSHOT-tests.jar,rapids-4-spark-udf-examples_2.12-21.08.0-SNAPSHOT,rapids-4-spark-integration-tests_2.12-21.08.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
@@ -240,8 +240,8 @@ cudf_udf tests needs a couple of different settings, they may need to run separa
 To enable cudf_udf tests, need following pre requirements:
    * Install cuDF Python library on all the nodes running executors. The instruction could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cuDF library via Conda or use other ways like building from source.
    * Disable the GPU exclusive mode on all the nodes running executors. The sample command is `sudo nvidia-smi -c DEFAULT`
-   
-To run cudf_udf tests, need following configuration changes:   
+
+To run cudf_udf tests, need following configuration changes:
    * Add configurations `--py-files` and `spark.executorEnv.PYTHONPATH` to specify the plugin jar for python modules 'rapids/daemon' 'rapids/worker'.
    * Decrease `spark.rapids.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
    * Add `spark.rapids.python.concurrentPythonWorkers` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.

@@ -37,7 +37,7 @@ For java based profile tests add this to `JAVA_OPTS`
 ```
 export JAVA_OPTS=”-Dai.rapids.cudf.nvtx.enabled=true”
 ```
-To capture the process’ profile run: `nsys profile <command>` where command can be your Spark shell 
+To capture the process’ profile run: `nsys profile <command>` where command can be your Spark shell
 / Java program etc.  This works typically in non-distributed mode.
 
 To make it run in Spark’s distributed mode, start the worker with `nsys profile` in front of the

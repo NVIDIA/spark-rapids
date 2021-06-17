@@ -97,7 +97,7 @@ def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     # we want lots of nulls
-    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=1000.0)) 
+    gen = StructGen([('_c' + str(x), data_gen.copy_special_case(None, weight=1000.0))
         for x in range(0, num_cols)], nullable=False)
     command_args = [f.col('_c' + str(x)) for x in range(0, num_cols)]
     command_args.append(s1)

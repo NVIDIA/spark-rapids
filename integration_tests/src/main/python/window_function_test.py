@@ -128,7 +128,7 @@ lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
 
 
-all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen, 
+all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
@@ -280,7 +280,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # row number, but will expand to others in the future (rank and dense_rank).
 @ignore_order
 @approximate_float
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_scale_precision], ids=meta_idfn('data:'))
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,

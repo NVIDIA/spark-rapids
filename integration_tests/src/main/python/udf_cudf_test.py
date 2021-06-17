@@ -149,7 +149,7 @@ def test_select(enable_cudf_udf):
     def gpu_run(spark):
         df = _create_df(spark)
         return df.select(_plus_one_gpu_iter_func(df.v)).collect()
-    
+
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
 
 
@@ -171,7 +171,7 @@ def test_map_in_pandas(enable_cudf_udf):
                 yield gdf[gdf.id == 1].to_pandas()
         df = _create_df(spark)
         return df.mapInPandas(_filter_gpu_func, df.schema).collect()
-    
+
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf)
 
 
@@ -220,7 +220,7 @@ def test_group_apply_in_pandas(enable_cudf_udf):
             return gdf.assign(v=(v - v.mean()) / v.std()).to_pandas()
         df = _create_df(spark)
         return df.groupby("id").applyInPandas(_normalize_gpu_in_pandas_func, df.schema).collect()
-    
+
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
 
 
@@ -244,7 +244,7 @@ def test_group_agg(enable_cudf_udf):
     def gpu_run(spark):
         df = _create_df(spark)
         return df.groupby("id").agg(_sum_gpu_func(df.v)).collect()
-    
+
     _assert_cpu_gpu(cpu_run, gpu_run, gpu_conf=_conf, is_sort=True)
 
 

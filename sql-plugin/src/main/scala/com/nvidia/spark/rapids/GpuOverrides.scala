@@ -2528,7 +2528,7 @@ object GpuOverrides {
       (a, conf, p, r) => new ExprMeta[ConcatWs](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (a.children.size <= 1) {
-            // If only a separator specified and its a column, Spark returns an empty 
+            // If only a separator specified and its a column, Spark returns an empty
             // string for all entries unless they are null, then it returns null.
             // This seems like edge case so instead of handling on GPU just fallback.
             willNotWorkOnGpu("Only specifying separator column not supported on GPU")
