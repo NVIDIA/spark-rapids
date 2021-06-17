@@ -86,8 +86,8 @@ object EventLogPathProcessor extends Logging {
 
   def getEventLogInfo(pathString: String): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
-    val fs = inputPath.getFileSystem(new Configuration())
     try {
+      val fs = inputPath.getFileSystem(new Configuration())
       val fileStatus = fs.getFileStatus(inputPath)
       val filePath = fileStatus.getPath()
       val fileName = filePath.getName()
@@ -135,8 +135,11 @@ object EventLogPathProcessor extends Logging {
         }.toMap
       }
     } catch {
-      case e: FileNotFoundException =>
+      case fe: FileNotFoundException =>
         logWarning(s"$pathString not found, skipping!")
+        Map.empty[EventLogInfo, Long]
+      case e: Exception =>
+        logWarning(s"Unexpected exception occurred reading $pathString, skipping!", e)
         Map.empty[EventLogInfo, Long]
     }
   }
