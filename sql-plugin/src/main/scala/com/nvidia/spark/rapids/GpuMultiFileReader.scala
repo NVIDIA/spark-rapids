@@ -107,6 +107,34 @@ object MultiFileThreadPoolUtil {
 }
 
 /**
+ * The base class for PartitionReader
+ *
+ * @param execMetrics metrics
+ */
+abstract class FilePartitionReaderBase(execMetrics: Map[String, GpuMetric])
+    extends PartitionReader[ColumnarBatch] with Logging with ScanWithMetrics with Arm {
+
+  metrics = execMetrics
+
+  protected var isDone: Boolean = false
+  protected var maxDeviceMemory: Long = 0
+  protected var batch: Option[ColumnarBatch] = None
+
+  override def get(): ColumnarBatch = {
+    val ret = batch.getOrElse(throw new NoSuchElementException)
+    batch = None
+    ret
+  }
+
+  override def close(): Unit = {
+    batch.foreach(_.close())
+    batch = None
+    isDone = true
+  }
+
+}
+
+/**
  * The Abstract multi-file cloud reading framework
  *
  * The data driven:
@@ -127,15 +155,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     numThreads: Int,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
-    execMetrics: Map[String, GpuMetric]) extends PartitionReader[ColumnarBatch] with Logging
-  with ScanWithMetrics with Arm {
-
-  metrics = execMetrics
-
-  protected var maxDeviceMemory: Long = 0
-
-  protected var batch: Option[ColumnarBatch] = None
-  protected var isDone: Boolean = false
+    execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(execMetrics) {
 
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
@@ -257,12 +277,6 @@ abstract class MultiFileCloudPartitionReaderBase(
     batch.isDefined
   }
 
-  override def get(): ColumnarBatch = {
-    val ret = batch.getOrElse(throw new NoSuchElementException)
-    batch = None
-    ret
-  }
-
   private def getSizeOfHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
     fileInfo.memBuffersAndSizes.map(_._2).sum
   }
@@ -338,7 +352,7 @@ trait SingleDataBlockInfo {
 /**
  * The abstracted multi-file coalescing reading class, which tries to coalesce small
  * ColumnarBatch into a bigger ColumnarBatch according to maxReadBatchSizeRows,
- * maxReadBatchSizeBytes and others.
+ * maxReadBatchSizeBytes and the [[checkIfNeedToSplitDataBlock]].
  *
  * Please be note, this class is applied to below similar file format
  *
@@ -349,11 +363,11 @@ trait SingleDataBlockInfo {
  * The data driven:
  *
  * next() -> populateCurrentBlockChunk (try the best to coalesce ColumnarBatch)
- *        -> allocate a bigger HostMemoryBuffer for the populated block chunks
- *        -> writer header
+ *        -> allocate a bigger HostMemoryBuffer for HEADER + the populated block chunks + FOOTER
+ *        -> write header to HostMemoryBuffer
  *        -> launch tasks to copy the blocks to the HostMemoryBuffer
  *        -> wait all tasks finished
- *        -> writer footer
+ *        -> write footer to HostMemoryBuffer
  *        -> decode the HostMemoryBuffer in the GPU
  *
  * @param clippedBlocks         the block metadata from the original file that has been
@@ -372,17 +386,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     numThreads: Int,
-    execMetrics: Map[String, GpuMetric]) extends PartitionReader[ColumnarBatch] with Logging
-  with ScanWithMetrics with Arm with MultiFileReaderFunctions {
+    execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(execMetrics)
+    with MultiFileReaderFunctions {
 
-  protected var isDone: Boolean = false
-  protected var maxDeviceMemory: Long = 0
-  protected var batch: Option[ColumnarBatch] = None
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
-
-  metrics = execMetrics
 
   private case class CurrentChunkMeta(
     isCorrectRebaseMode: Boolean,
@@ -399,13 +408,13 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param nextBlockInfo    next SingleDataBlockInfo
    * @return true: split the next block into another ColumnarBatch and vice versa
    */
-  def checkIfNeededToSplitDataBlock(
+  def checkIfNeedToSplitDataBlock(
     currentBlockInfo: SingleDataBlockInfo,
     nextBlockInfo: SingleDataBlockInfo): Boolean
 
   /**
    * Calculate the output size according to the block chunks and the schema, and the
-   * output size will be used as the initialized size of allocating HostMemoryBuffer
+   * estimated output size will be used as the initialized size of allocating HostMemoryBuffer
    *
    * @param currentChunkedBlocks a sequence of data block to be evaluated
    * @param schema               schema info
@@ -431,8 +440,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * which will be running in a thread pool
    *
    * @param file   file to be read
-   * @param outhmb the sliced HostMemoryBuffer to hold the blocks, and the user is
-   *               in charge of closing it in sub-class
+   * @param outhmb the sliced HostMemoryBuffer to hold the blocks, and the implementation
+   *               is in charge of closing it in sub-class
    * @param blocks blocks meta info to specify which blocks to be read
    * @param offset used as the offset adjustment
    * @return Callable[(Seq[DataBlockBase], Long)], which will be submitted to a
@@ -488,22 +497,10 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param footerOffset   Where begin to write the footer
    * @param blocks         The data block meta info
    * @param clippedSchema  The clipped schema info
-   * @return the final HostMemoryBuffer and its size
+   * @return the final HostMemoryBuffer (header + data + footer) and its size
    */
   def writeFileFooter(hmb: HostMemoryBuffer, initTotalSize: Long, footerOffset: Long,
     blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long)
-
-  override def get(): ColumnarBatch = {
-    val ret = batch.getOrElse(throw new NoSuchElementException)
-    batch = None
-    ret
-  }
-
-  override def close(): Unit = {
-    batch.foreach(_.close())
-    batch = None
-    isDone = true
-  }
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -630,7 +627,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           }
           (hmb, offset, allOutputBlocks)
       }
-      // Fourth,
+      // Fourth, write footer
       writeFileFooter(buf, initTotalSize, offset, outBlocks, clippedSchema)
     }
   }
@@ -680,7 +677,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             // only care to check if we are actually adding in the next chunk
             if (currentFile != blockIterator.head.filePath) {
               // check if need to split next data block into another ColumnarBatch
-              if (checkIfNeededToSplitDataBlock(currrentDataBlock, blockIterator.head)) {
+              if (checkIfNeedToSplitDataBlock(currrentDataBlock, blockIterator.head)) {
                 logInfo(s"splitting ${blockIterator.head.filePath} into another batch!")
                 return
               }

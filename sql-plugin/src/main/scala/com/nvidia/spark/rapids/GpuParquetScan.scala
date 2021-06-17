@@ -462,41 +462,13 @@ case class GpuParquetPartitionReaderFactory(
   }
 }
 
-/**
- * Base classes with common functions for MultiFileParquetPartitionReader and ParquetPartitionReader
- */
-abstract class FileParquetPartitionReaderBase(
-    override val conf: Configuration,
-    override val isSchemaCaseSensitive: Boolean,
-    override val readDataSchema: StructType,
-    debugDumpPrefix: String,
-    execMetrics: Map[String, GpuMetric]) extends PartitionReader[ColumnarBatch] with Logging
-  with ParquetPartitionReaderBase with ScanWithMetrics with Arm {
-
-  protected var isDone: Boolean = false
-  protected var maxDeviceMemory: Long = 0
-  protected var batch: Option[ColumnarBatch] = None
-  metrics = execMetrics
-
-  override def get(): ColumnarBatch = {
-    val ret = batch.getOrElse(throw new NoSuchElementException)
-    batch = None
-    ret
-  }
-
-  override def close(): Unit = {
-    batch.foreach(_.close())
-    batch = None
-    isDone = true
-  }
-
-}
-
 trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     with MultiFileReaderFunctions {
 
+  // Configuration
   def conf: Configuration
 
+  // Schema to read
   def readDataSchema: StructType
 
   def isSchemaCaseSensitive: Boolean
@@ -876,7 +848,6 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
 }
 
-
 // Singleton threadpool that is used across all the tasks.
 // Please note that the TaskContext is not set in these threads and should not be used.
 object ParquetMultiFileThreadPoolFactory {
@@ -893,39 +864,6 @@ object ParquetMultiFileThreadPoolFactory {
 
   def getThreadPool(threadTag: String, numThreads: Int): ThreadPoolExecutor = {
     threadPool.getOrElse(initThreadPool(threadTag, numThreads))
-  }
-}
-
-// Singleton threadpool that is used across all the tasks.
-// Please note that the TaskContext is not set in these threads and should not be used.
-object MultiFileThreadPoolFactory {
-
-  private var threadPool: Option[ThreadPoolExecutor] = None
-
-  private def initThreadPool(
-      maxThreads: Int = 20,
-      keepAliveSeconds: Long = 60): ThreadPoolExecutor = synchronized {
-    if (threadPool.isEmpty) {
-      val threadFactory = new ThreadFactoryBuilder()
-        .setNameFormat("parquet reader worker-%d")
-        .setDaemon(true)
-        .build()
-
-      threadPool = Some(new ThreadPoolExecutor(
-        maxThreads, // corePoolSize: max number of threads to create before queuing the tasks
-        maxThreads, // maximumPoolSize: because we use LinkedBlockingDeque, this is not used
-        keepAliveSeconds,
-        TimeUnit.SECONDS,
-        new LinkedBlockingQueue[Runnable],
-        threadFactory))
-      threadPool.get.allowCoreThreadTimeOut(true)
-    }
-    threadPool.get
-  }
-
-  def submitToThreadPool[T](task: Callable[T], numThreads: Int): Future[T] = {
-    val pool = threadPool.getOrElse(initThreadPool(numThreads))
-    pool.submit(task)
   }
 }
 
@@ -1020,7 +958,7 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  override def checkIfNeededToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
+  override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
       nextBlockInfo: SingleDataBlockInfo): Boolean = {
     // We need to ensure all files we are going to combine have the same datetime
     // rebase mode.
@@ -1202,7 +1140,7 @@ class MultiFileCloudParquetPartitionReader(
     filterHandler: GpuParquetFileFilterHandler,
     filters: Array[Filter])
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics) with ParquetPartitionReaderBase with MultiFileReaderFunctions {
+    execMetrics) with ParquetPartitionReaderBase {
 
   case class HostMemoryBuffersWithMetaData(
     override val partitionedFile: PartitionedFile,
@@ -1425,9 +1363,8 @@ class ParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, GpuMetric],
-    isCorrectedRebaseMode: Boolean)  extends
-  FileParquetPartitionReaderBase(conf,
-    isSchemaCaseSensitive, readDataSchema, debugDumpPrefix, execMetrics) {
+    isCorrectedRebaseMode: Boolean) extends FilePartitionReaderBase(execMetrics)
+  with ParquetPartitionReaderBase {
 
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
 
