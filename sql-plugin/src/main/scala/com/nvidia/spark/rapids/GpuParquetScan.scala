@@ -25,7 +25,7 @@ import java.util.concurrent._
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
-import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, LinkedHashMap}
+import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 import scala.language.implicitConversions
 import scala.math.max
 
@@ -244,10 +244,6 @@ object GpuParquetPartitionReaderFactoryBase {
 
 // contains meta about all the blocks in a file
 private case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaData],
-    partValues: InternalRow, schema: MessageType, isCorrectedRebaseMode: Boolean)
-
-// contains meta about a single block in a file
-private case class ParquetFileInfoWithSingleBlockMeta(filePath: Path, blockMeta: BlockMetaData,
     partValues: InternalRow, schema: MessageType, isCorrectedRebaseMode: Boolean)
 
 private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) extends Arm {

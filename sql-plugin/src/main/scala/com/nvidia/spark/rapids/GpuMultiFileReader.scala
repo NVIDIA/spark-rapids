@@ -28,7 +28,6 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.parquet.hadoop.metadata.BlockMetaData
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
