@@ -72,7 +72,8 @@ object ProfileMain extends Logging {
       // Suggest only enable compare mode if there is no more than 10 applications as input.
       if (appArgs.compare()) {
         // Create an Array of Applications(with an index starting from 1)
-        val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos, numOutputRows, sparkSession)
+        val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos,
+          numOutputRows, sparkSession)
         if (errorCode > 0) {
           logError(s"Error parsing one of the event logs")
           return 1
