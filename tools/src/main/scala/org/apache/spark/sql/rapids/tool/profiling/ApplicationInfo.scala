@@ -321,6 +321,13 @@ class ApplicationInfo(
    */
   def processSQLPlanMetrics(): Unit ={
     for ((sqlID, planInfo) <- sqlPlan){
+
+      // check if planInfo has ReadSchema
+      logWarning(s"metadata for sqlID: $sqlID name: ${planInfo.nodeName}")
+      planInfo.metadata.foreach { case(k, v) =>
+        logWarning(s" key: $k value: $v")
+      }
+
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
