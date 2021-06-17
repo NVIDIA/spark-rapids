@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, GDS, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
@@ -170,7 +170,7 @@ class RapidsGdsStore(
     private[this] var currentOffset = 0L
     private[this] val batchReadExecutor = Executors.newSingleThreadExecutor(
       GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
-          .setNameFormat(s"shuffle-server-copy-thread-%d")
+          .setNameFormat(s"gds-spill-batch-read-thread-%d")
           .setDaemon(true)
           .build))
 
