@@ -1002,10 +1002,8 @@ class MultiFileParquetPartitionReader(
   implicit def toBlockMetaDataSeq(blocks: Seq[DataBlockBase]): Seq[BlockMetaData] =
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 
-  implicit def toBlockMetaDataArrayBuffer(blocks: ArrayBuffer[DataBlockBase]):
-    ArrayBuffer[BlockMetaData] = blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
-
-  class ParquetCopyBlocksRunner1(
+  // The runner to copy blocks to offset of HostMemoryBuffer
+  class ParquetCopyBlocksRunner(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
@@ -1026,13 +1024,6 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  /**
-   * To check if the next block will be split into another ColumnarBatch
-   *
-   * @param currentBlockInfo current SingleDataBlockInfo
-   * @param nextBlockInfo    next SingleDataBlockInfo
-   * @return Boolean
-   */
   override def checkIfNeededToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
       nextBlockInfo: SingleDataBlockInfo): Boolean = {
     // We need to ensure all files we are going to combine have the same datetime
@@ -1056,56 +1047,24 @@ class MultiFileParquetPartitionReader(
     false
   }
 
-  /**
-   * Calculate the output size according to the block chunks and the schema
-   *
-   * @param currentChunkedBlocks a sequence of data block to be evaluated
-   * @param schema               Schema info
-   * @return Long, the estimated output size
-   */
   override def calculateEstimatedBlocksOutputSize(currentChunkedBlocks: Seq[DataBlockBase],
       schema: SchemaBase): Long = {
     calculateParquetOutputSize(currentChunkedBlocks, schema, true)
   }
 
-  /**
-   * Get ThreadPoolExecutor to run the Callable.
-   *
-   * The rules:
-   * 1. same ThreadPoolExecutor for cloud and coalescing for the same file format
-   * 2. different file formats have different ThreadPoolExecutors
-   *
-   * @return ThreadPoolExecutor
-   */
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
     ParquetMultiFileThreadPoolFactory.getThreadPool(getFileFormatShortName, numThreads)
   }
 
-  /**
-   * The sub-class must implement the real file reading logic in a Callable
-   * which will be running in a thread pool
-   *
-   * @param file file to be read
-   * @param outhmb
-   * @param blocks
-   * @param offset
-   * @return Callable[(Seq[DataBlockBase], Long)]
-   */
   override def getBatchRunner(
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long): Callable[(Seq[DataBlockBase], Long)] = {
-    new ParquetCopyBlocksRunner1(file, outhmb, blocks, offset)
+    new ParquetCopyBlocksRunner(file, outhmb, blocks, offset)
   }
 
-  /**
-   * File format short name used for logging and other things to uniquely identity
-   * which file format is being used.
-   *
-   * @return the file format short name
-   */
-  override def getFileFormatShortName: String = "Parquet"
+  override final def getFileFormatShortName: String = "Parquet"
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
       isCorrectRebaseMode: Boolean, clippedSchema: SchemaBase): Table = {
@@ -1140,12 +1099,6 @@ class MultiFileParquetPartitionReader(
     evolveSchemaIfNeededAndClose(table, splits.mkString(","), clippedSchema)
   }
 
-  /**
-   * Write a header for a specific file format
-   *
-   * @param buffer where the header will be written
-   * @return how many bytes written
-   */
   override def writeFileHeader(buffer: HostMemoryBuffer): Long = {
     withResource(new HostMemoryOutputStream(buffer)) { out =>
       out.write(ParquetPartitionReader.PARQUET_MAGIC)
@@ -1153,7 +1106,7 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  override def writeFileFooter(hmb: HostMemoryBuffer, initTotalSize: Long, offset: Long,
+  override def writeFileFooter(hmb: HostMemoryBuffer, initTotalSize: Long, footerOffset: Long,
       blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
 
     // The footer size can change vs the initial estimated because we are combining more blocks
@@ -1162,15 +1115,15 @@ class MultiFileParquetPartitionReader(
     // size comes out > then the estimated size.
     val actualFooterSize = calculateParquetFooterSize(blocks, clippedSchema)
     // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
-    val bufferSizeReq = offset + actualFooterSize + 4 + 4
+    val bufferSizeReq = footerOffset + actualFooterSize + 4 + 4
 
     var buf: HostMemoryBuffer = hmb
     val totalBufferSize = if (bufferSizeReq > initTotalSize) {
-      logWarning(s"The original estimated size $initTotalSize is to small, " +
+      logWarning(s"The original estimated size $initTotalSize is too small, " +
         s"reallocing and copying data to bigger buffer size: $bufferSizeReq")
       // Close the old buffer
       buf = withResource(hmb) { _ =>
-        withResource(new HostMemoryInputStream(hmb, offset)) { in =>
+        withResource(new HostMemoryInputStream(hmb, footerOffset)) { in =>
           reallocHostBufferAndCopy(in, bufferSizeReq)
         }
       }
@@ -1179,15 +1132,15 @@ class MultiFileParquetPartitionReader(
       initTotalSize
     }
 
-    val lenLeft = totalBufferSize - offset
+    val lenLeft = totalBufferSize - footerOffset
 
     val amountWritten = closeOnExcept(buf) { _ =>
-      withResource(buf.slice(offset, lenLeft)) { finalizehmb =>
+      withResource(buf.slice(footerOffset, lenLeft)) { finalizehmb =>
         val written = withResource(new HostMemoryOutputStream(finalizehmb)) { footerOut =>
           writeFooter(footerOut, blocks, clippedSchema)
           BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
           footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
-          offset + footerOut.getPos
+          footerOffset + footerOut.getPos
         }
 
         // triple check we didn't go over memory
@@ -1203,8 +1156,8 @@ class MultiFileParquetPartitionReader(
   }
 
   private def reallocHostBufferAndCopy(
-    in: HostMemoryInputStream,
-    newSizeEstimate: Long): HostMemoryBuffer = {
+      in: HostMemoryInputStream,
+      newSizeEstimate: Long): HostMemoryBuffer = {
     // realloc memory and copy
     closeOnExcept(HostMemoryBuffer.allocate(newSizeEstimate)) { newhmb =>
       withResource(new HostMemoryOutputStream(newhmb)) { out =>
@@ -1357,7 +1310,7 @@ class MultiFileCloudParquetPartitionReader(
    *
    * @return the file format short name
    */
-  override def getFileFormatShortName: String = "Parquet"
+  override final def getFileFormatShortName: String = "Parquet"
 
   /**
    * Decode HostMemoryBuffers by GPU
