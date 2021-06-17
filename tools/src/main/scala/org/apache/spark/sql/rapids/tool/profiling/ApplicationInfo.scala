@@ -316,12 +316,18 @@ class ApplicationInfo(
     }
   }
 
-  def printChildMeta(planInfo: SparkPlanInfo): Unit = {
+  def printChildMeta(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     logWarning(s"metadata for  name: ${planInfo.nodeName}")
     planInfo.metadata.foreach { case(k, v) =>
       logWarning(s" key: $k value: $v")
     }
-    planInfo.children.foreach(printChildMeta(_))
+    val childRes = planInfo.children.flatMap(printChildMeta(_))
+    val keep = if (planInfo.metadata.contains("ReadSchema")) {
+      childRes :+ planInfo
+    } else {
+      childRes
+    }
+    keep
   }
 
   /**
@@ -332,7 +338,15 @@ class ApplicationInfo(
 
       // check if planInfo has ReadSchema
       logWarning(s"metadata for sqlID: $sqlID name: ${planInfo.nodeName}")
-      printChildMeta(planInfo)
+      val allMetaWithSchema = printChildMeta(planInfo)
+
+      logWarning("returned all meta with schema: ")
+      allMetaWithSchema.foreach { node =>
+        logWarning(s"node ${node.nodeName}")
+        node.metadata.foreach { case (k, v) =>
+          logWarning(s" key: $k value: $v")
+        }
+      }
 
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
