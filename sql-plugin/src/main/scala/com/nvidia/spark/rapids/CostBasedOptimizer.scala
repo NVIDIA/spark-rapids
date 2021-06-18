@@ -147,7 +147,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
         }
         showCosts(plan, s"transitionFromCpuCost=$transitionCost", totalCpuCost, totalGpuCost)
       } else {
-        // at least one child is transitioning from GPU to CPU so we evaulate each of this
+        // at least one child is transitioning from GPU to CPU so we evaluate each of this
         // child plans to see if it was worth running on GPU now that we have the cost of
         // transitioning back to CPU
         plan.childPlans.zip(childCosts).foreach {
@@ -292,7 +292,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
 
     val operatorCost = plan.wrapped match {
       case _: ProjectExec =>
-        // this is not accurage because CPU projections do have a cost due to appending values
+        // this is not accurate because CPU projections do have a cost due to appending values
         // to each row that is produced, but this needs to be a really small number because
         // GpuProject cost is zero (in our cost model) and we don't want to encourage moving to
         // the GPU just to do a trivial projection, so we pretend the overhead of a
