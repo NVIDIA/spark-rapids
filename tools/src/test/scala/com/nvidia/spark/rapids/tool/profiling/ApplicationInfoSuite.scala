@@ -75,8 +75,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         val outputStream = codec.compressedOutputStream(
           Files.newOutputStream(compressionFileName.toPath, StandardOpenOption.CREATE))
         IOUtils.copyBytes(inputStream, outputStream, 4096, true)
-        inputStream.close()
-        outputStream.close()
         testSingleEventFile(Array(tempDir.toString))
         compressionFileName.delete()
       }
