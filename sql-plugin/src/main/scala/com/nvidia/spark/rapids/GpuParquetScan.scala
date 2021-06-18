@@ -31,7 +31,6 @@ import scala.math.max
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.DType.DTypeEnum
-import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
@@ -768,26 +767,11 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     }
   }
 
-  protected def dumpParquetData(
-      hmb: HostMemoryBuffer,
-      dataLength: Long,
-      splits: Array[PartitionedFile],
-      debugDumpPrefix: String): Unit = {
-    val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix, ".parquet")
-    try {
-      logInfo(s"Writing Parquet split data for $splits to $path")
-      val in = new HostMemoryInputStream(hmb, dataLength)
-      IOUtils.copy(in, out)
-    } finally {
-      out.close()
-    }
-  }
-
   protected def readPartFile(
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
       filePath: Path): (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
+    withResource(new NvtxWithMetrics("Parquet buffer file split", NvtxColor.YELLOW,
       metrics("bufferTime"))) { _ =>
       withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
         val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema, false)
@@ -919,8 +903,8 @@ class MultiFileParquetPartitionReader(
     execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int)
-  extends MultiFileCoalescingPartitionReaderBase(clippedBlocks, readDataSchema, partitionSchema,
-    maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, execMetrics)
+  extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
+    partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, execMetrics)
   with ParquetPartitionReaderBase {
 
   // Some implicits to convert the base class to the sub-class and vice versa
@@ -1004,9 +988,7 @@ class MultiFileParquetPartitionReader(
       isCorrectRebaseMode: Boolean, clippedSchema: SchemaBase): Table = {
 
     // Dump parquet data into a file
-    if (debugDumpPrefix != null) {
-      dumpParquetData(dataBuffer, dataSize, splits, debugDumpPrefix)
-    }
+    dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
 
     val parseOpts = ParquetOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
@@ -1040,53 +1022,30 @@ class MultiFileParquetPartitionReader(
     }
   }
 
-  override def writeFileFooter(hmb: HostMemoryBuffer, initTotalSize: Long, footerOffset: Long,
+  override def calculateFinalBlocksOutputSize(footerOffset: Long,
+      blocks: Seq[DataBlockBase], schema: SchemaBase): Long = {
+
+    val actualFooterSize = calculateParquetFooterSize(blocks, schema)
+    // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
+    footerOffset + actualFooterSize + 4 + 4
+  }
+
+  override def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
       blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
 
-    // The footer size can change vs the initial estimated because we are combining more blocks
-    //  and offsets are larger, check to make sure we allocated enough memory before writing.
-    // Not sure how expensive this is, we could throw exception instead if the written
-    // size comes out > then the estimated size.
-    val actualFooterSize = calculateParquetFooterSize(blocks, clippedSchema)
-    // 4 + 4 is for writing size and the ending PARQUET_MAGIC.
-    val bufferSizeReq = footerOffset + actualFooterSize + 4 + 4
+    val lenLeft = bufferSize - footerOffset
 
-    var buf: HostMemoryBuffer = hmb
-    val totalBufferSize = if (bufferSizeReq > initTotalSize) {
-      logWarning(s"The original estimated size $initTotalSize is too small, " +
-        s"reallocing and copying data to bigger buffer size: $bufferSizeReq")
-      // Close the old buffer
-      buf = withResource(hmb) { _ =>
-        withResource(new HostMemoryInputStream(hmb, footerOffset)) { in =>
-          reallocHostBufferAndCopy(in, bufferSizeReq)
-        }
-      }
-      bufferSizeReq
-    } else {
-      initTotalSize
-    }
-
-    val lenLeft = totalBufferSize - footerOffset
-
-    val amountWritten = closeOnExcept(buf) { _ =>
-      withResource(buf.slice(footerOffset, lenLeft)) { finalizehmb =>
-        val written = withResource(new HostMemoryOutputStream(finalizehmb)) { footerOut =>
+    val finalSize = closeOnExcept(buffer) { _ =>
+      withResource(buffer.slice(footerOffset, lenLeft)) { finalizehmb =>
+        withResource(new HostMemoryOutputStream(finalizehmb)) { footerOut =>
           writeFooter(footerOut, blocks, clippedSchema)
           BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
           footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
           footerOffset + footerOut.getPos
         }
-
-        // triple check we didn't go over memory
-        if (written > totalBufferSize) {
-          throw new QueryExecutionException(s"Calculated buffer size $totalBufferSize is to " +
-            s"small, actual written: ${written}")
-        }
-        written
       }
     }
-
-    (buf, amountWritten)
+    (buffer, finalSize)
   }
 
   private def reallocHostBufferAndCopy(
@@ -1287,9 +1246,10 @@ class MultiFileCloudParquetPartitionReader(
       return addPartitionValues(Some(emptyBatch), partValues, partitionSchema)
     }
     val table = withResource(hostBuffer) { _ =>
-      if (debugDumpPrefix != null) {
-        dumpParquetData(hostBuffer, dataSize, files, debugDumpPrefix)
-      }
+
+      // Dump parquet data into a file
+      dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("parquet"))
+
       val parseOpts = ParquetOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
         .enableStrictDecimalType(true)
@@ -1363,7 +1323,7 @@ class ParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, GpuMetric],
-    isCorrectedRebaseMode: Boolean) extends FilePartitionReaderBase(execMetrics)
+    isCorrectedRebaseMode: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
   with ParquetPartitionReaderBase {
 
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
@@ -1422,9 +1382,10 @@ class ParquetPartitionReader(
       if (dataSize == 0) {
         None
       } else {
-        if (debugDumpPrefix != null) {
-          dumpParquetData(dataBuffer, dataSize, Array(split), debugDumpPrefix)
-        }
+
+        // Dump parquet data into a file
+        dumpDataToFile(dataBuffer, dataSize, Array(split), Option(debugDumpPrefix), Some("parquet"))
+
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .enableStrictDecimalType(true)

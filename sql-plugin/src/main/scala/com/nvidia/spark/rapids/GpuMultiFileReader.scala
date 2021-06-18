@@ -26,6 +26,7 @@ import scala.math.max
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY}
+import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
@@ -109,9 +110,10 @@ object MultiFileThreadPoolUtil {
 /**
  * The base class for PartitionReader
  *
+ * @param conf        Configuration
  * @param execMetrics metrics
  */
-abstract class FilePartitionReaderBase(execMetrics: Map[String, GpuMetric])
+abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[String, GpuMetric])
     extends PartitionReader[ColumnarBatch] with Logging with ScanWithMetrics with Arm {
 
   metrics = execMetrics
@@ -132,6 +134,32 @@ abstract class FilePartitionReaderBase(execMetrics: Map[String, GpuMetric])
     isDone = true
   }
 
+  /**
+   * Dump the data from HostMemoryBuffer to a file named by debugDumpPrefix + random + format
+   *
+   * @param hmb             host data to be dumped
+   * @param dataLength      data size
+   * @param splits          PartitionedFile to be handled
+   * @param debugDumpPrefix file name prefix, if it is None, will not dump
+   * @param format          file name suffix, if it is None, will not dump
+   */
+  protected def dumpDataToFile(
+      hmb: HostMemoryBuffer,
+      dataLength: Long,
+      splits: Array[PartitionedFile],
+      debugDumpPrefix: Option[String] = None,
+      format: Option[String] = None): Unit = {
+    if (debugDumpPrefix.isDefined && format.isDefined) {
+      val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix.get, s".${format.get}")
+
+      withResource(out) { _ =>
+        withResource(new HostMemoryInputStream(hmb, dataLength)) { in =>
+          logInfo(s"Writing split data for $splits to $path")
+          IOUtils.copy(in, out)
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -155,7 +183,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     numThreads: Int,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
-    execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(execMetrics) {
+    execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
@@ -370,6 +398,7 @@ trait SingleDataBlockInfo {
  *        -> write footer to HostMemoryBuffer
  *        -> decode the HostMemoryBuffer in the GPU
  *
+ * @param conf                  Configuration
  * @param clippedBlocks         the block metadata from the original file that has been
  *                                clipped to only contain the column chunks to be read
  * @param readDataSchema        the Spark schema describing what will be read
@@ -380,13 +409,14 @@ trait SingleDataBlockInfo {
  * @param execMetrics           metrics
  */
 abstract class MultiFileCoalescingPartitionReaderBase(
+    conf: Configuration,
     clippedBlocks: Seq[SingleDataBlockInfo],
     readDataSchema: StructType,
     partitionSchema: StructType,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     numThreads: Int,
-    execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(execMetrics)
+    execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
     with MultiFileReaderFunctions {
 
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
@@ -416,12 +446,26 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * Calculate the output size according to the block chunks and the schema, and the
    * estimated output size will be used as the initialized size of allocating HostMemoryBuffer
    *
-   * @param currentChunkedBlocks a sequence of data block to be evaluated
+   * Please be note, the estimated size should be at least equal to size of HEAD + Blocks + FOOTER
+   *
+   * @param blocks a sequence of data block to be evaluated
    * @param schema               schema info
    * @return Long, the estimated output size
    */
-  def calculateEstimatedBlocksOutputSize(
-    currentChunkedBlocks: Seq[DataBlockBase],
+  def calculateEstimatedBlocksOutputSize(blocks: Seq[DataBlockBase], schema: SchemaBase): Long
+
+  /**
+   * calculate the final block output size.
+   *
+   * There is no need to re-calculate the block size,
+   * just calculate the footer size and plus footerOffset
+   *
+   * @param footerOffset  footer offset
+   * @param blocks        blocks to be evaluated
+   * @param schema        schema info
+   * @return the output size
+   */
+  def calculateFinalBlocksOutputSize(footerOffset: Long, blocks: Seq[DataBlockBase],
     schema: SchemaBase): Long
 
   /**
@@ -492,14 +536,14 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * estimated initialized buffer size may be a little smaller than the actual size. So in
    * this case, the hmb should be closed in the implementation.
    *
-   * @param hmb            The original buffer holding (header + data blocks)
-   * @param initTotalSize  The initialized buffer size
+   * @param buffer         The buffer holding (header + data blocks)
+   * @param bufferSize     The total buffer size which equals to size of (header + blocks + footer)
    * @param footerOffset   Where begin to write the footer
    * @param blocks         The data block meta info
    * @param clippedSchema  The clipped schema info
-   * @return the final HostMemoryBuffer (header + data + footer) and its size
+   * @return the buffer and the buffer size
    */
-  def writeFileFooter(hmb: HostMemoryBuffer, initTotalSize: Long, footerOffset: Long,
+  def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
     blocks: Seq[DataBlockBase], clippedSchema: SchemaBase): (HostMemoryBuffer, Long)
 
   override def next(): Boolean = {
@@ -601,11 +645,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
       val allBlocks = blocks.map(_._2)
 
-      // First, estimate the output file size for the initial allocating
+      // First, estimate the output file size for the initial allocating.
+      //   the estimated size should be >= size of HEAD + Blocks + FOOTER
       val initTotalSize = calculateEstimatedBlocksOutputSize(allBlocks, clippedSchema)
 
-      val (buf, offset, outBlocks) = closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) {
-        hmb =>
+      val (buffer, bufferSize, footerOffset, outBlocks) =
+        closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { hmb =>
           // Second, write header
           var offset = writeFileHeader(hmb)
 
@@ -625,10 +670,60 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             allOutputBlocks ++= blocks
             TrampolineUtil.incBytesRead(inputMetrics, bytesRead)
           }
-          (hmb, offset, allOutputBlocks)
+
+
+          // Fourth, calculate the final buffer size
+          val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks,
+            clippedSchema)
+
+          (hmb, finalBufferSize, offset, allOutputBlocks)
       }
-      // Fourth, write footer
-      writeFileFooter(buf, initTotalSize, offset, outBlocks, clippedSchema)
+
+      // The footer size can change vs the initial estimated because we are combining more
+      // blocks and offsets are larger, check to make sure we allocated enough memory before
+      // writing. Not sure how expensive this is, we could throw exception instead if the
+      // written size comes out > then the estimated size.
+      var buf: HostMemoryBuffer = buffer
+      val totalBufferSize = if (bufferSize > initTotalSize) {
+        // Just ensure to close buffer when there is an exception
+        closeOnExcept(buffer) { _ =>
+          logWarning(s"The original estimated size $initTotalSize is too small, " +
+            s"reallocing and copying data to bigger buffer size: $bufferSize")
+        }
+
+        // Copy the old buffer to a new allocated bigger buffer and close the old buffer
+        buf = withResource(buffer) { _ =>
+          withResource(new HostMemoryInputStream(buffer, footerOffset)) { in =>
+            // realloc memory and copy
+            closeOnExcept(HostMemoryBuffer.allocate(bufferSize)) { newhmb =>
+              withResource(new HostMemoryOutputStream(newhmb)) { out =>
+                IOUtils.copy(in, out)
+              }
+              newhmb
+            }
+          }
+        }
+        bufferSize
+      } else {
+        initTotalSize
+      }
+
+      // Fifth, write footer,
+      // The implementation should be in charge of closing buf when there is an exception thrown,
+      // Closing the original buf and returning a new allocated buffer is allowed, but there is no
+      // reason to do that.
+      // If you have to do this, please think about to add other abstract methods first.
+      val (finalBuffer, finalBufferSize) = writeFileFooter(buf, totalBufferSize, footerOffset,
+        outBlocks, clippedSchema)
+
+      closeOnExcept(finalBuffer) { _ =>
+        // triple check we didn't go over memory
+        if (finalBufferSize > totalBufferSize) {
+          throw new QueryExecutionException(s"Calculated buffer size $totalBufferSize is to " +
+            s"small, actual written: ${finalBufferSize}")
+        }
+      }
+      (finalBuffer, finalBufferSize)
     }
   }
 
