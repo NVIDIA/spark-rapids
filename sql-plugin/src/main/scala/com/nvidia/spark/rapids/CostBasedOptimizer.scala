@@ -89,7 +89,6 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // get the CPU and GPU cost of this operator (excluding cost of children)
     val operatorCpuCost = cpuCostModel.getCost(plan)
     val operatorGpuCost = gpuCostModel.getCost(plan)
-
     showCosts(plan, "Operator costs", operatorCpuCost, operatorGpuCost)
 
     // get the CPU and GPU cost of the child plan(s)
@@ -101,13 +100,11 @@ class CostBasedOptimizer extends Optimizer with Logging {
         child,
         optimizations,
         finalOperator = false))
-
     val (childCpuCosts, childGpuCosts) = childCosts.unzip
 
     // calculate total (this operator + children)
     val totalCpuCost = operatorCpuCost + childCpuCosts.sum
     var totalGpuCost = operatorGpuCost + childGpuCosts.sum
-
     showCosts(plan, "Operator + child costs", totalCpuCost, totalGpuCost)
 
     plan.estimatedOutputRows = RowCountPlanVisitor.visit(plan)
@@ -117,7 +114,6 @@ class CostBasedOptimizer extends Optimizer with Logging {
     val numTransitions = plan.childPlans
       .filterNot(isExchangeOp)
       .count(canRunOnGpu(_) != canRunOnGpu(plan))
-
     showCosts(plan, s"numTransitions=$numTransitions", totalCpuCost, totalGpuCost)
 
     if (numTransitions > 0) {
@@ -258,13 +254,13 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // if the child query stage already executed on GPU then we need to keep the
     // next operator on GPU in these cases
     SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
-        case _: CustomShuffleReaderExec
-           | _: ShuffledHashJoinExec
-           | _: BroadcastHashJoinExec
-           | _: BroadcastExchangeExec
-           | _: BroadcastNestedLoopJoinExec => true
-        case _ => false
-      })
+      case _: CustomShuffleReaderExec
+         | _: ShuffledHashJoinExec
+         | _: BroadcastHashJoinExec
+         | _: BroadcastExchangeExec
+         | _: BroadcastNestedLoopJoinExec => true
+      case _ => false
+    })
   }
 }
 
