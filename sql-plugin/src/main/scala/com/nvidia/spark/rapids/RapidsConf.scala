@@ -1153,25 +1153,25 @@ object RapidsConf {
 
   val OPTIMIZER_DEFAULT_CPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.cpu.exec.default")
     .internal()
-    .doc("Default per-row CPU cost of executing an operator")
+    .doc("Default per-row CPU cost of executing an operator, in seconds")
     .doubleConf
-    .createWithDefault(0.0)
+    .createWithDefault(0.0002)
 
   val OPTIMIZER_DEFAULT_CPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.cpu.expr.default")
     .internal()
-    .doc("Default per-row CPU cost of evaluating an expression")
+    .doc("Default per-row CPU cost of evaluating an expression, in seconds")
     .doubleConf
     .createWithDefault(0.0)
 
   val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.gpu.exec.default")
       .internal()
-      .doc("Default per-row GPU cost of executing an operator")
+      .doc("Default per-row GPU cost of executing an operator, in seconds")
       .doubleConf
-      .createWithDefault(0.0)
+      .createWithDefault(0.0001)
 
   val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.gpu.expr.default")
       .internal()
-      .doc("Default per-row GPU cost of evaluating an expression")
+      .doc("Default per-row GPU cost of evaluating an expression, in seconds")
       .doubleConf
       .createWithDefault(0.0)
 
