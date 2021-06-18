@@ -115,6 +115,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // determine how many transitions between CPU and GPU are taking place between
     // the child operators and this operator
     val numTransitions = plan.childPlans
+      .filterNot(isExchangeOp)
       .count(canRunOnGpu(_) != canRunOnGpu(plan))
 
     showCosts(plan, s"numTransitions=$numTransitions", totalCpuCost, totalGpuCost)
@@ -129,7 +130,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
         // at least one child is transitioning from CPU to GPU so we calculate the
         // transition costs
         val transitionCost = plan.childPlans
-          //.filterNot(canRunOnGpu)
+          .filterNot(canRunOnGpu)
           .map(transitionToGpuCost(conf, _)).sum
 
         // if the GPU cost including transition is more than the CPU cost then avoid this
@@ -184,7 +185,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     if (totalGpuCost > totalCpuCost) {
       // we have reached a point where we have transitioned onto GPU for part of this
       // plan but with no benefit from doing so, so we want to undo this and go back to CPU
-      if (canRunOnGpu(plan) && !  isExchangeOp(plan)) {
+      if (canRunOnGpu(plan) && !isExchangeOp(plan)) {
         // this plan would have been on GPU so we move it and onto CPU and recurse down
         // until we reach a part of the plan that is already on CPU and then stop
         optimizations.append(ReplaceSection(plan, totalCpuCost, totalGpuCost))
