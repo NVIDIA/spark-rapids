@@ -70,10 +70,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       TrampolineUtil.withTempDir { tempDir =>
         val compressionFileName = new File(tempDir,
           "eventlog_minimal_events." + compressionName)
-        // copy and close streams
         val inputStream = Files.newInputStream(Paths.get(rawLog))
         val outputStream = codec.compressedOutputStream(
           Files.newOutputStream(compressionFileName.toPath, StandardOpenOption.CREATE))
+        // copy and close streams
         IOUtils.copyBytes(inputStream, outputStream, 4096, true)
         testSingleEventFile(Array(tempDir.toString))
         compressionFileName.delete()
@@ -85,7 +85,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   private def testSingleEventFile(logs: Array[String]): Unit = {
-    Array(s"$logDir/eventlog_minimal_events")
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     assert(apps.size == 1)
     assert(apps.head.sparkVersion.equals("3.1.1"))

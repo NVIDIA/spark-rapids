@@ -233,7 +233,7 @@ class ApplicationInfo(
     logInfo("Parsing Event Log: " + eventlog.toString)
 
     // at this point all paths should be valid event logs or event log dirs
-    val fs = eventLogInfo.eventLog.getFileSystem(new Configuration())
+    val fs = eventlog.getFileSystem(new Configuration())
     var totalNumEvents = 0
     val eventsProcessor = new EventsProcessor(forQualification)
     val readerOpt = eventLogInfo match {
