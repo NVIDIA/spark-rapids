@@ -234,7 +234,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     ))
 
     val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog())
+      appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
     assert(result.length == 2)
   }
 
