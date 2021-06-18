@@ -20,19 +20,16 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
 import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
 
-import org.apache.spark.SparkContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.SerializableConfiguration
 
 
 /**
@@ -148,7 +145,10 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
       val cb = new ColumnarBatch(gpuCols, ROWS)
       whenSplitCalled(cb)
       val ser = new ParquetCachedBatchSerializer
-      val dummySchema = new StructType(Array(new StructField("empty", BooleanType, false)))
+      val dummySchema = new StructType(
+        Array(StructField("empty", ByteType, false),
+          StructField("empty", ByteType, false),
+          StructField("empty", ByteType, false)))
       ser.compressColumnarBatchWithParquet(cb, dummySchema)
       theTableMock.close()
     }
