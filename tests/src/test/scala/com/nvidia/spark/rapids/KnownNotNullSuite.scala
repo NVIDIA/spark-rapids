@@ -40,7 +40,7 @@ class KnownNotNullSuite extends SparkQueryCompareTestSuite {
     longsFromCSVDf,
     enableCsvConf,
     decimalTypeEnabled = false) { frame =>
-    val plusOne = frame.sparkSession.udf.register("plusOne", new IntPlusOne())
+    val plusOne = frame.sparkSession.udf.register("plusOne", new LongPlusOne())
     frame.select(plusOne(col("longs")))
   }
 
@@ -48,7 +48,7 @@ class KnownNotNullSuite extends SparkQueryCompareTestSuite {
     shortsFromCsv,
     enableCsvConf,
     decimalTypeEnabled = false) { frame =>
-    val plusOne = frame.sparkSession.udf.register("plusOne", new IntPlusOne())
+    val plusOne = frame.sparkSession.udf.register("plusOne", new ShortPlusOne())
     frame.select(plusOne(col("shorts")))
   }
 
