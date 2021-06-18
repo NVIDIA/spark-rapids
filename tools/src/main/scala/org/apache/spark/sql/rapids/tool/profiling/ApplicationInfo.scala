@@ -210,17 +210,17 @@ class ApplicationInfo(
   private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
 
   def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
-    val in = new BufferedInputStream(fs.open(log))
-    try {
-      val cName =  EventLogFileWriter.codecName(log).getOrElse("")
-      EventLogFileWriter.codecName(log) match {
-        case c if (c.isDefined && c.get.equals("gz")) => new GZIPInputStream(in)
-        case _ => EventLogFileReader.openEventLog(log, fs)
-      }
-    } catch {
-      case e: Throwable =>
-        in.close()
-        throw e
+    EventLogFileWriter.codecName(log) match {
+      case c if (c.isDefined && c.get.equals("gz")) =>
+        val in = new BufferedInputStream(fs.open(log))
+        try {
+          new GZIPInputStream(in)
+        } catch {
+          case e: Throwable =>
+            in.close()
+            throw e
+        }
+      case _ => EventLogFileReader.openEventLog(log, fs)
     }
   }
 
@@ -245,22 +245,18 @@ class ApplicationInfo(
     if (readerOpt.isDefined) {
       val reader = readerOpt.get
       val logFiles = reader.listEventLogFiles
-      // stop replaying next log files if ReplayListenerBus indicates some error or halt
-      var continueReplay = true
       logFiles.foreach { file =>
-        if (continueReplay) {
-          Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
-            val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-            totalNumEvents += lines.size
-            lines.foreach { line =>
-              try {
-                val event = JsonProtocol.sparkEventFromJson(parse(line))
-                eventsProcessor.processAnyEvent(this, event)
-              }
-              catch {
-                case e: ClassNotFoundException =>
-                  logWarning(s"ClassNotFoundException: ${e.getMessage}")
-              }
+        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
+          val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
+          totalNumEvents += lines.size
+          lines.foreach { line =>
+            try {
+              val event = JsonProtocol.sparkEventFromJson(parse(line))
+              eventsProcessor.processAnyEvent(this, event)
+            }
+            catch {
+              case e: ClassNotFoundException =>
+                logWarning(s"ClassNotFoundException: ${e.getMessage}")
             }
           }
         }
