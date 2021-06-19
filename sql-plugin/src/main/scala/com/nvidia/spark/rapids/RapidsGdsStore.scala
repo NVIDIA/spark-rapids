@@ -269,6 +269,7 @@ class RapidsGdsStore(
 
       override def materializeMemoryBuffer: MemoryBuffer = this.synchronized {
         if (isPending) {
+          // If the buffer is in the batch write buffer, simply copy it to a new buffer.
           closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
             copyToBuffer(buffer, fileOffset, size, Cuda.DEFAULT_STREAM)
             Cuda.DEFAULT_STREAM.sync()
@@ -276,6 +277,8 @@ class RapidsGdsStore(
             buffer
           }
         } else if (RapidsBufferCatalog.shouldUnspill) {
+          // When unspill is enabled, read the whole batched buffer file, and unspill individual
+          // buffers in a background thread.
           closeOnExcept(DeviceMemoryBuffer.allocate(batchWriteBufferSize)) { buffer =>
             CuFile.readFileToDeviceMemory(buffer.getAddress, buffer.getLength, path, 0)
             logDebug(s"Created device buffer for $path 0:$batchWriteBufferSize via GDS")
@@ -286,6 +289,7 @@ class RapidsGdsStore(
             }
           }
         } else {
+          // When unspill is not enabled, read the individual buffer from the batched buffer file.
           closeOnExcept(DeviceMemoryBuffer.allocate(size)) { buffer =>
             CuFile.readFileToDeviceMemory(
               buffer.getAddress, alignLargeBufferSize(buffer), path, fileOffset)
