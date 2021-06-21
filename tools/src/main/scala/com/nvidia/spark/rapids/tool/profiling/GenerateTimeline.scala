@@ -108,7 +108,9 @@ object GenerateTimeline {
       scheduleCallback: (A, Int) => Unit,
       errorOnMissingSlot: Boolean,
       slotsFreeUntil: mutable.Buffer[Long]): Unit = {
-    toSchedule.foreach { timing =>
+    toSchedule.toSeq.sortWith{
+      case (a, b) => a.startTime < b.startTime
+    }.foreach { timing =>
       val startTime = timing.startTime
       val slot = slotsFreeUntil.indices
           // There is some slop in how Spark reports this. Not sure why...
@@ -213,25 +215,15 @@ object GenerateTimeline {
     var colorIndex = 0
     var minStartTime = Long.MaxValue
     var maxEndTime = 0L
-    app.runQuery(
-      s"""
-         | select
-         | host,
-         | executorId,
-         | stageId,
-         | taskId,
-         | launchTime,
-         | finishTime,
-         | duration
-         | from taskDF_${app.index} order by executorId, launchTime
-         | """.stripMargin).collect().foreach { row =>
-      val host = row.getString(0)
-      val execId = row.getString(1)
-      val stageId = row.getInt(2)
-      val taskId = row.getLong(3)
-      val launchTime = row.getLong(4)
-      val finishTime = row.getLong(5)
-      val duration = row.getLong(6)
+    // Sort the data so
+    app.taskEnd.foreach { tc =>
+      val host = tc.host
+      val execId = tc.executorId
+      val stageId = tc.stageId
+      val taskId = tc.taskId
+      val launchTime = tc.launchTime
+      val finishTime = tc.finishTime
+      val duration = tc.duration
       val taskInfo = new TimelineTaskInfo(stageId, taskId, launchTime, finishTime, duration)
       val execHost = s"$execId/$host"
       execHostToTaskList.getOrElseUpdate(execHost, ArrayBuffer.empty) += taskInfo
@@ -255,19 +247,11 @@ object GenerateTimeline {
         new TimelineStageInfo(stageId, start, end, end-start)
     }
 
-    val stageInfo = app.runQuery(
-      s"""
-         |select
-         |stageId,
-         |submissionTime,
-         |completionTime,
-         |duration
-         |from stageDF_${app.index} order by submissionTime
-         |""".stripMargin).collect().map { row =>
-      val stageId = row.getInt(0)
-      val submissionTime = row.getLong(1)
-      val completionTime = row.getLong(2)
-      val duration = row.getLong(3)
+    val stageInfo = app.enhancedStage.map { sc =>
+      val stageId = sc.stageId
+      val submissionTime = sc.submissionTime.get
+      val completionTime = sc.completionTime.get
+      val duration = sc.duration.get
       minStartTime = Math.min(minStartTime, submissionTime)
       maxEndTime = Math.max(maxEndTime, completionTime)
       new TimelineStageInfo(stageId, submissionTime, completionTime, duration)
@@ -278,37 +262,21 @@ object GenerateTimeline {
         (execHost, calcLayoutSlotsNeeded(taskList))
     }.toMap
 
-    val jobInfo = app.runQuery(
-      s"""
-         |select
-         |jobID,
-         |startTime,
-         |endTime,
-         |duration
-         |from jobDF_${app.index} order by startTime
-         |""".stripMargin).collect().map { row =>
-      val jobId = row.getInt(0)
-      val startTime = row.getLong(1)
-      val endTime = row.getLong(2)
-      val duration = row.getLong(3)
+    val jobInfo = app.enhancedJob.map { jc =>
+      val jobId = jc.jobID
+      val startTime = jc.startTime
+      val endTime = jc.endTime.get
+      val duration = jc.duration.get
       minStartTime = Math.min(minStartTime, startTime)
       maxEndTime = Math.max(maxEndTime, endTime)
       new TimelineJobInfo(jobId, startTime, endTime, duration)
     }
 
-    val sqlInfo = app.runQuery(
-      s"""
-         |select
-         |sqlID,
-         |startTime,
-         |endTime,
-         |duration
-         |from sqlDF_${app.index} order by startTime
-         |""".stripMargin).collect().map { row =>
-      val sqlId = row.getLong(0)
-      val startTime = row.getLong(1)
-      val endTime = row.getLong(2)
-      val duration = row.getLong(3)
+    val sqlInfo = app.enhancedSql.map { sc =>
+      val sqlId = sc.sqlID
+      val startTime = sc.startTime
+      val endTime = sc.endTime.get
+      val duration = sc.duration.get
       minStartTime = Math.min(minStartTime, startTime)
       maxEndTime = Math.max(maxEndTime, endTime)
       new TimelineSqlInfo(sqlId, startTime, endTime, duration)
