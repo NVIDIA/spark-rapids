@@ -378,18 +378,12 @@ class ApplicationInfo(
         meta.getOrElse("PushedFilters", "unknown"),
         formatSchemaStr(schemaStr)
       )
-      // TODO - remove after debug
-      logWarning(s"node ${node.nodeName}")
-      node.metadata.foreach { case (k, v) =>
-        logWarning(s" key: $k value: $v")
-      }
     }
   }
 
   def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode) = {
     logWarning(s"node is ${node.name} desc ${node.desc}")
     if (node.name.equals("BatchScan")) {
-      logWarning("node is batch scan")
       // try to get ReadSchema
       val schema = if (node.desc.contains("ReadSchema")) {
         val schemaTag = "ReadSchema: "
@@ -399,7 +393,6 @@ class ApplicationInfo(
           val endIndex = subStr.indexOf(", ")
           if (endIndex != -1) {
             val schemaOnly = subStr.substring(0, endIndex)
-            logWarning("read schema is: " + schemaOnly)
             formatSchemaStr(schemaOnly)
           } else {
             ""
@@ -415,7 +408,6 @@ class ApplicationInfo(
         val subStr = node.desc.substring(index)
         val endIndex = subStr.indexOf(", ")
         val location = subStr.substring(0, endIndex)
-        logWarning("Location is: " + location)
         location
       } else {
         "unknown"
@@ -425,13 +417,11 @@ class ApplicationInfo(
         val subStr = node.desc.substring(index)
         val endIndex = subStr.indexOf("]")
         val filters = subStr.substring(0, endIndex + 1)
-        logWarning("Pushed Filters is: " + filters)
         filters
       } else {
         "unknown"
       }
       val format = if (node.desc.contains("ParquetScan")) {
-        logWarning("format is Parquet")
         "Parquet"
       } else {
         "unknown"
