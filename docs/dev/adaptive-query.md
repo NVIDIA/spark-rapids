@@ -1,13 +1,11 @@
 # Adaptive Query Execution with the RAPIDS Accelerator for Apache Spark
 
-This article explains how Adaptive Query Execution (AQE) is supported in the
-RAPIDS Accelerator for Apache Spark.
-
 The benefits of AQE are not specific to CPU execution and can provide
 additional performance improvements in conjunction with GPU-acceleration.
 
 The main benefit of AQE is that queries can be optimized during execution based
-on statistics that may not be available when initially planning a query.
+on statistics that may not be available when initially planning the query.
+
 Specific optimizations offered by AQE include:
 
 - Coalescing shuffle partitions
@@ -73,14 +71,14 @@ so we rely on the plan being tagged upfront.
 This set of rules is applied to an Exchange node when creating a query stage
 and will result in a `BroadcastQueryStageLike` or `ShuffleQueryStageLike` node
 being created. This set of rules does not involve the RAPIDS Accelerator and
-applied optimizations such as optimizing skewed joins and coalescing
+applies optimizations such as optimizing skewed joins and coalescing
 shuffle partitions.
 
 ### postStageCreationRules
 
 This set of rules is applied after a new query stage has been created. This
 will apply `ColumnarOverrideRules` and this is where the query stage gets
-translated into a GPU plan. These rules rely on the plan being tagged by and
+translated into a GPU plan. These rules rely on the plan being tagged by an
 earlier run of the `queryStagePreparationRules` rules.
 
 ### finalStageCreationRules
@@ -93,10 +91,9 @@ do not apply to the final query stage.
 ## Query Stage Re-use
 
 The logic in `AdaptiveSparkPlanExec.getFinalPhysicalPlan` attempts to cache
-query stages and re-use compatible query stages. The original Spark logic used
-the canonicalized version of the Exchange node as the key for this cache but
-this can result in errors if there are both CPU and GPU query stages that are
-created from Exchange nodes that have equivalent canonical plan. This issue was
-resolved in
+query stages for re-use. The original Spark logic used the canonicalized
+version of the Exchange node as the key for this cache but this can result in
+errors if there are both CPU and GPU query stages that are created from
+Exchange nodes that have equivalent canonical plan. This issue was resolved in
 [SPARK-35093](https://issues.apache.org/jira/browse/SPARK-35093) and the fix is
 available in Spark versions 3.0.3, 3.1.2, and 3.2.0.
