@@ -149,7 +149,7 @@ class ApplicationInfo(
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
   // The data source read schema for datasource v1
-  var readSchemaV1: ArrayBuffer[ReadSchemaV1] = ArrayBuffer[ReadSchemaV1]()
+  var readSchema: ArrayBuffer[ReadSchema] = ArrayBuffer[ReadSchema]()
 
   // From all other events
   var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
@@ -333,18 +333,30 @@ class ApplicationInfo(
     keep
   }
 
+
+  private def splitKeyValueSchema(entry: String): (String, String) = {
+    val keyValue = entry.split(":")
+    if (keyValue.size == 2) {
+      (keyValue(0) -> keyValue(1))
+    } else {
+      logWarning(s"Splitting key and value didn't result in key and value $entry")
+      (entry -> "unknown")
+    }
+  }
+
   def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
     schemaOpt.map { schema =>
       if (schema.startsWith("struct<") && schema.endsWith(">")) {
         val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
         schemaStr.split(",").map { entry =>
-          val keyValue = entry.split(":")
-          if (keyValue.size == 2) {
-            (keyValue(0) -> keyValue(1))
-          } else {
-            logWarning(s"Splitting key and value didn't result in key and value $entry")
-            (entry -> "unknown")
-          }
+          splitKeyValueSchema(entry)
+        }.toMap
+      } else if (schema.startsWith("struct<") && schema.endsWith("...")) {
+        val schemaStr = schema.stripPrefix("struct<")
+        // the last schema element will be cutoff because it has the ...
+        val validSchema = schemaStr.split(",").dropRight(1)
+        validSchema.map { entry =>
+          splitKeyValueSchema(entry)
         }.toMap
       } else {
         logWarning(s"Schema format is unknown: $schema, skipping!")
@@ -359,7 +371,7 @@ class ApplicationInfo(
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
       val schemaMap = parseSchemaString(meta.get("ReadSchema"))
-      readSchemaV1 += ReadSchemaV1(sqlID,
+      readSchema += ReadSchema(sqlID,
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
         meta.getOrElse("PushedFilters", "unknown"),
@@ -384,7 +396,7 @@ class ApplicationInfo(
           val subStr = node.desc.substring(index)
           val endIndex = subStr.indexOf(", ")
           if (endIndex != -1) {
-            val schemaOnly = subStr.substring(0, endIndex + 1)
+            val schemaOnly = subStr.substring(0, endIndex)
             logWarning("read schema is: " + schemaOnly)
             parseSchemaString(Some(schemaOnly))
           } else {
@@ -422,7 +434,7 @@ class ApplicationInfo(
       } else {
         "unknown"
       }
-      readSchemaV1 += ReadSchemaV1(sqlID,
+      readSchema += ReadSchema(sqlID,
         format,
         location,
         pushedFilters,

@@ -174,7 +174,7 @@ case class ProblematicSQLCase(sqlID: Long, reason: String)
 
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String, nodeDesc: String)
 
-case class ReadSchemaV1(
+case class ReadSchema(
     sqlID: Long,
     format: String,
     location: String,
