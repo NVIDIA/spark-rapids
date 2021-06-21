@@ -44,7 +44,7 @@ Software Requirements:
 ### Download v21.06.0
 * Download the [RAPIDS
   Accelerator for Apache Spark 21.06.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.0/rapids-4-spark_2.12-21.06.0.jar)
-* Download the [RAPIDS cuDF 21.06.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11.jar) 
+* Download the [RAPIDS cuDF 21.06.1 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.1/cudf-21.06.1-cuda11.jar)
 
 This package is built against CUDA 11.2 and has [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
