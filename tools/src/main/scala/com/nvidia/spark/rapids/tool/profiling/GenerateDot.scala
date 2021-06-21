@@ -15,12 +15,16 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.{File, FileWriter}
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+
+import scala.annotation.tailrec
+import scala.collection.mutable
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import org.apache.commons.text.StringEscapeUtils
 
-import org.apache.spark.sql.execution.SparkPlanInfo
+import org.apache.spark.sql.execution.{SparkPlanInfo, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
 
 /**
@@ -38,170 +42,46 @@ import org.apache.spark.sql.execution.metric.SQLMetricInfo
  * See https://graphviz.org/pdf/dotguide.pdf for a description of DOT files.
  */
 object GenerateDot {
-  private val GPU_COLOR = "#76b900" // NVIDIA Green
-  private val CPU_COLOR = "#0071c5"
-  private val TRANSITION_COLOR = "red"
+  val GPU_COLOR = "#76b900" // NVIDIA Green
+  val CPU_COLOR = "#0071c5"
+  val TRANSITION_COLOR = "red"
+
+  def formatMetric(m: SQLMetricInfo, value: Long): String = {
+    val formatter = java.text.NumberFormat.getIntegerInstance
+    m.metricType match {
+      case "timing" =>
+        val ms = value
+        s"${formatter.format(ms)} ms"
+      case "nsTiming" =>
+        val ms = TimeUnit.NANOSECONDS.toMillis(value)
+        s"${formatter.format(ms)} ms"
+      case _ =>
+        s"${formatter.format(value)}"
+    }
+  }
 
   /**
    * Generate a query plan visualization in dot format.
    *
    * @param plan First query plan and metrics
-   * @param comparisonPlan Optional second query plan and metrics
+   * @param physicalPlanString The physical plan as a String
+   * @param accumIdToStageId a map of accumulator ID to stage ID. This is used
+   *                         to try and show stages in the graph too.
+   * @param stageIdToStageMetrics metrics for teh stages.
    * @param sqlId id of the SQL query for the dot graph
    * @param appId Spark application Id
    */
-  def generateDotGraph(
-    plan: QueryPlanWithMetrics,
-    physicalPlanString: String,
-    comparisonPlan: Option[QueryPlanWithMetrics],
-    fileWriter: ToolTextFileWriter,
-    sqlId: Long,
-    appId: String
-  ): Unit = {
-
-    val fileName  = s"$sqlId.dot"
-    var nextId = 1
-
-    def isGpuPlan(plan: SparkPlanInfo): Boolean = {
-      plan.nodeName match {
-        case name if name contains "QueryStage" =>
-          plan.children.isEmpty || isGpuPlan(plan.children.head)
-        case name if name == "ReusedExchange" =>
-          plan.children.isEmpty || isGpuPlan(plan.children.head)
-        case name =>
-          name.startsWith("Gpu")
-      }
-    }
-
-    def formatMetric(m: SQLMetricInfo, value: Long): String = {
-      val formatter = java.text.NumberFormat.getIntegerInstance
-      m.metricType match {
-        case "timing" =>
-          val ms = value
-          s"${formatter.format(ms)} ms"
-        case "nsTiming" =>
-          val ms = TimeUnit.NANOSECONDS.toMillis(value)
-          s"${formatter.format(ms)} ms"
-        case _ =>
-          s"${formatter.format(value)}"
-      }
-    }
-
-    /** Recursively graph the operator nodes in the spark plan */
-    def writeGraph(
-        w: ToolTextFileWriter,
-        node: QueryPlanWithMetrics,
-        comparisonNode: QueryPlanWithMetrics,
-        id: Int = 0): Unit = {
-
-      val nodePlan = node.plan
-      val comparisonPlan = comparisonNode.plan
-      if (nodePlan.nodeName == comparisonPlan.nodeName &&
-        nodePlan.children.length == comparisonPlan.children.length) {
-
-        val metricNames = (nodePlan.metrics.map(_.name) ++
-          comparisonPlan.metrics.map(_.name)).distinct.sorted
-
-        val metrics = metricNames.flatMap(name => {
-          val l = nodePlan.metrics.find(_.name == name)
-          val r = comparisonPlan.metrics.find(_.name == name)
-          (l, r) match {
-            case (Some(metric1), Some(metric2)) =>
-              (node.metrics.get(metric1.accumulatorId),
-                comparisonNode.metrics.get(metric1.accumulatorId)) match {
-                case (Some(value1), Some(value2)) =>
-                  if (value1 == value2) {
-                    Some(s"$name: ${formatMetric(metric1, value1)}")
-                  } else {
-                    metric1.metricType match {
-                      case "nsTiming" | "timing" =>
-                        val pctStr = createPercentDiffString(value1, value2)
-                        Some(s"$name: ${formatMetric(metric1, value1)} / " +
-                          s"${formatMetric(metric2, value2)} ($pctStr %)")
-                      case _ =>
-                        Some(s"$name: ${formatMetric(metric1, value1)} / " +
-                          s"${formatMetric(metric2, value2)}")
-                    }
-                  }
-                case _ => None
-              }
-            case _ => None
-          }
-        }).mkString("\n")
-
-        val color = if (isGpuPlan(nodePlan)) { GPU_COLOR } else { CPU_COLOR }
-
-        val label = if (nodePlan.nodeName.contains("QueryStage")) {
-          nodePlan.simpleString
-        } else {
-          nodePlan.nodeName
-        }
-
-        val nodeText =
-          s"""node$id [shape=box,color="$color",style="filled",
-             |label = "$label\n
-             |$metrics"];
-             |""".stripMargin
-
-        w.write(nodeText)
-        nodePlan.children.indices.foreach(i => {
-          val childId = nextId
-          nextId += 1
-          writeGraph(
-            w,
-            QueryPlanWithMetrics(nodePlan.children(i), node.metrics),
-            QueryPlanWithMetrics(comparisonPlan.children(i), comparisonNode.metrics),
-            childId);
-
-          val style = (isGpuPlan(nodePlan), isGpuPlan(nodePlan.children(i))) match {
-            case (true, true) => s"""color="$GPU_COLOR""""
-            case (false, false) => s"""color="$CPU_COLOR""""
-            case _ =>
-              // show emphasis on transitions between CPU and GPU
-              s"color=$TRANSITION_COLOR, style=bold"
-          }
-          w.write(s"node$childId -> node$id [$style];\n")
-        })
-      } else {
-        // plans have diverged - cannot recurse further
-        w.write(
-          s"""node$id [shape=box, color=red,
-             |label = "plans diverge here:
-             |${nodePlan.nodeName} vs ${comparisonPlan.nodeName}"];\n""".stripMargin)
-      }
-    }
-
-    val leftAlignedLabel =
-      s"""
-         |Application: $appId
-         |Query: $sqlId
-         |
-         |$physicalPlanString"""
-          .stripMargin
-          .replace("\n", "\\l")
-
-    // write the dot graph to a file
-    fileWriter.write(
-      s"""digraph G {
-         |
-         |label="$leftAlignedLabel"
-         |labelloc=b
-         |fontname=Courier
-         |
-         |""".stripMargin)
-
-    writeGraph(fileWriter, plan, comparisonPlan.getOrElse(plan), 0)
-    fileWriter.write("}\n")
-  }
-
-  private def createPercentDiffString(n1: Long, n2: Long) = {
-    val pct = (n2 - n1) * 100.0 / n1
-    val pctStr = if (pct < 0) {
-      f"$pct%.1f"
-    } else {
-      f"+$pct%.1f"
-    }
-    pctStr
+  def writeDotGraph(plan: QueryPlanWithMetrics,
+      physicalPlanString: String,
+      accumIdToStageId: Map[Long, Int],
+      stageIdToStageMetrics: Map[Int, StageMetrics],
+      fileWriter: ToolTextFileWriter,
+      sqlId: Long,
+      appId: String): Unit = {
+    val graph = SparkPlanGraph(plan.plan, appId, sqlId.toString, physicalPlanString,
+      accumIdToStageId, stageIdToStageMetrics)
+    val str = graph.makeDotFile(plan.metrics)
+    fileWriter.write(str)
   }
 }
 
@@ -212,3 +92,343 @@ object GenerateDot {
  * @param metrics Map of accumulatorId to metric.
  */
 case class QueryPlanWithMetrics(plan: SparkPlanInfo, metrics: Map[Long, Long])
+
+/**
+ * This code is mostly copied from org.apache.spark.sql.execution.ui.SparkPlanGraph
+ * with additions/changes to fit our needs.
+ * A graph used for storing information of an executionPlan of DataFrame.
+ *
+ * Each graph is defined with a set of nodes and a set of edges. Each node represents a node in the
+ * SparkPlan tree, and each edge represents a parent-child relationship between two nodes.
+ */
+case class SparkPlanGraph(
+    nodes: Seq[SparkPlanGraphNode],
+    edges: Seq[SparkPlanGraphEdge],
+    appId: String,
+    sqlId: String,
+    physicalPlan: String) {
+
+  def makeDotFile(metrics: Map[Long, Long]): String = {
+    val leftAlignedLabel =
+      s"""
+         |Application: $appId
+         |Query: $sqlId
+         |
+         |$physicalPlan"""
+          .stripMargin
+          .replace("\n", "\\l")
+
+
+    val dotFile = new StringBuilder
+    dotFile.append("digraph G {\n")
+    dotFile.append(s"""label="$leftAlignedLabel"\n""")
+    dotFile.append("labelloc=b\n")
+    dotFile.append("fontname=Courier\n")
+    dotFile.append(s"""tooltip="APP: $appId Query: $sqlId"\n""")
+
+    nodes.foreach(node => dotFile.append(node.makeDotNode(metrics) + "\n"))
+    edges.foreach(edge => dotFile.append(edge.makeDotEdge + "\n"))
+    dotFile.append("}")
+    dotFile.toString()
+  }
+
+  /**
+   * All the SparkPlanGraphNodes, including those inside of WholeStageCodegen.
+   */
+  val allNodes: Seq[SparkPlanGraphNode] = {
+    nodes.flatMap {
+      case cluster: SparkPlanGraphCluster => cluster.nodes :+ cluster
+      case node => Seq(node)
+    }
+  }
+}
+
+object SparkPlanGraph {
+
+  /**
+   * Build a SparkPlanGraph from the root of a SparkPlan tree.
+   */
+  def apply(planInfo: SparkPlanInfo,
+      appId: String,
+      sqlId: String,
+      physicalPlan: String,
+      accumIdToStageId: Map[Long, Int],
+      stageIdToStageMetrics: Map[Int, StageMetrics]): SparkPlanGraph = {
+    val nodeIdGenerator = new AtomicLong(0)
+    val nodes = mutable.ArrayBuffer[SparkPlanGraphNode]()
+    val edges = mutable.ArrayBuffer[SparkPlanGraphEdge]()
+    val exchanges = mutable.HashMap[SparkPlanInfo, SparkPlanGraphNode]()
+    buildSparkPlanGraphNode(planInfo, nodeIdGenerator, nodes, edges, null, null, null, exchanges,
+      accumIdToStageId, stageIdToStageMetrics)
+    new SparkPlanGraph(nodes, edges, appId, sqlId, physicalPlan)
+  }
+
+  @tailrec
+  def isGpuPlan(plan: SparkPlanInfo): Boolean = {
+    plan.nodeName match {
+      case name if name contains "QueryStage" =>
+        plan.children.isEmpty || isGpuPlan(plan.children.head)
+      case name if name == "ReusedExchange" =>
+        plan.children.isEmpty || isGpuPlan(plan.children.head)
+      case name =>
+        name.startsWith("Gpu") || name.startsWith("Execute Gpu")
+    }
+  }
+
+  private def buildSparkPlanGraphNode(
+      planInfo: SparkPlanInfo,
+      nodeIdGenerator: AtomicLong,
+      nodes: mutable.ArrayBuffer[SparkPlanGraphNode],
+      edges: mutable.ArrayBuffer[SparkPlanGraphEdge],
+      parent: SparkPlanGraphNode,
+      codeGen: SparkPlanGraphCluster,
+      stage: StageGraphCluster,
+      exchanges: mutable.HashMap[SparkPlanInfo, SparkPlanGraphNode],
+      accumIdToStageId: Map[Long, Int],
+      stageIdToStageMetrics: Map[Int, StageMetrics]): Unit = {
+
+    def getOrMakeStage(metrics: Seq[SQLMetricInfo]): StageGraphCluster = {
+      val stages = metrics.flatMap { m =>
+        accumIdToStageId.get(m.accumulatorId)
+      }.reduceOption((l, r) => Math.min(l, r))
+      // In some cases Spark will do a shuffle in the middle of an operation,
+      // like TakeOrderedAndProject. In those cases the node is associated with the
+      // min stage ID, just to remove ambiguity
+
+      val retStage = if (stage == null ||
+          (stages.nonEmpty && stage.getStageId > 0 && stage.getStageId != stages.head)) {
+        val ret = new StageGraphCluster(nodeIdGenerator.getAndIncrement(), stageIdToStageMetrics)
+        nodes += ret
+        ret
+      } else {
+        stage
+      }
+      stages.foreach { stageId =>
+        retStage.setStage(stageId)
+      }
+      retStage
+    }
+
+    planInfo.nodeName match {
+      case name if name.startsWith("WholeStageCodegen") =>
+
+        val codeGenCluster = new SparkPlanGraphCluster(
+          nodeIdGenerator.getAndIncrement(),
+          planInfo.nodeName,
+          planInfo.simpleString,
+          mutable.ArrayBuffer[SparkPlanGraphNode](),
+          planInfo.metrics)
+        val s = getOrMakeStage(planInfo.metrics)
+        s.nodes += codeGenCluster
+
+        buildSparkPlanGraphNode(
+          planInfo.children.head, nodeIdGenerator, nodes, edges, parent, codeGenCluster,
+          s, exchanges, accumIdToStageId, stageIdToStageMetrics)
+      case "InputAdapter" =>
+        buildSparkPlanGraphNode(
+          planInfo.children.head, nodeIdGenerator, nodes, edges, parent, null, stage, exchanges,
+          accumIdToStageId, stageIdToStageMetrics)
+      case "BroadcastQueryStage" | "ShuffleQueryStage" =>
+        if (exchanges.contains(planInfo.children.head)) {
+          // Point to the re-used exchange
+          val node = exchanges(planInfo.children.head)
+          edges += SparkPlanGraphEdge(node, parent)
+        } else {
+          buildSparkPlanGraphNode(
+            planInfo.children.head, nodeIdGenerator, nodes, edges, parent, null, null, exchanges,
+            accumIdToStageId, stageIdToStageMetrics)
+        }
+      case "Subquery" if codeGen != null =>
+        // Subquery should not be included in WholeStageCodegen
+        buildSparkPlanGraphNode(planInfo, nodeIdGenerator, nodes, edges, parent, null,
+          null, exchanges, accumIdToStageId, stageIdToStageMetrics)
+      case "Subquery" if exchanges.contains(planInfo) =>
+        // Point to the re-used subquery
+        val node = exchanges(planInfo)
+        edges += SparkPlanGraphEdge(node, parent)
+      case "SubqueryBroadcast" if codeGen != null =>
+        // SubqueryBroadcast should not be included in WholeStageCodegen
+        buildSparkPlanGraphNode(planInfo, nodeIdGenerator, nodes, edges, parent, null,
+          null, exchanges, accumIdToStageId, stageIdToStageMetrics)
+      case "SubqueryBroadcast" if exchanges.contains(planInfo) =>
+        // Point to the re-used SubqueryBroadcast
+        val node = exchanges(planInfo)
+        edges += SparkPlanGraphEdge(node, parent)
+      case "ReusedSubquery" =>
+        // Re-used subquery might appear before the original subquery, so skip this node and let
+        // the previous `case` make sure the re-used and the original point to the same node.
+        buildSparkPlanGraphNode(
+          planInfo.children.head, nodeIdGenerator, nodes, edges, parent, codeGen, stage, exchanges,
+          accumIdToStageId, stageIdToStageMetrics)
+      case "ReusedExchange" if exchanges.contains(planInfo.children.head) =>
+        // Point to the re-used exchange
+        val node = exchanges(planInfo.children.head)
+        edges += SparkPlanGraphEdge(node, parent)
+      case name =>
+        val metrics = planInfo.metrics
+        val node = new SparkPlanGraphNode(
+          nodeIdGenerator.getAndIncrement(), planInfo.nodeName,
+          planInfo.simpleString, metrics, isGpuPlan(planInfo))
+
+        val s = if (name.contains("Exchange") ||
+            name == "Subquery" ||
+            name == "SubqueryBroadcast") {
+          exchanges += planInfo -> node
+          null
+        } else {
+          getOrMakeStage(metrics)
+        }
+
+        val toAddTo = Option(codeGen).map(_.nodes).getOrElse {
+          Option(s).map(_.nodes).getOrElse(nodes)
+        }
+        toAddTo += node
+
+        if (parent != null) {
+          edges += SparkPlanGraphEdge(node, parent)
+        }
+        planInfo.children.foreach(
+          buildSparkPlanGraphNode(_, nodeIdGenerator, nodes, edges, node, codeGen, s,
+            exchanges, accumIdToStageId, stageIdToStageMetrics))
+    }
+  }
+}
+
+/**
+ * Represent a node in the SparkPlan tree, along with its metrics.
+ *
+ * @param id generated by "SparkPlanGraph". There is no duplicate id in a graph
+ * @param name the name of this SparkPlan node
+ * @param metrics metrics that this SparkPlan node will track
+ */
+class SparkPlanGraphNode(
+    val id: Long,
+    val name: String,
+    val desc: String,
+    val metrics: Seq[SQLMetricInfo],
+    val isGpuNode: Boolean) {
+
+  def makeDotNode(metricsValue: Map[Long, Long]): String = {
+    val builder = new mutable.StringBuilder(name)
+
+    val values = for {
+      metric <- metrics
+      value <- metricsValue.get(metric.accumulatorId)
+    } yield {
+      s"${metric.name}: ${GenerateDot.formatMetric(metric, value)}"
+    }
+
+    val color = if (isGpuNode) { GenerateDot.GPU_COLOR } else { GenerateDot.CPU_COLOR }
+
+    if (values.nonEmpty) {
+      // If there are metrics, display each entry in a separate line.
+      // Note: whitespace between two "\n"s is to create an empty line between the name of
+      // SparkPlan and metrics. If removing it, it won't display the empty line in UI.
+      builder ++= "\n\n"
+      builder ++= values.mkString("\n")
+      val labelStr = StringEscapeUtils.escapeJava(builder.toString())
+      s"""  $id [shape=box,style="filled",color="$color",label="$labelStr",tooltip="$desc"];"""
+    } else {
+      // SPARK-30684: when there is no metrics, add empty lines to increase the height of the node,
+      // so that there won't be gaps between an edge and a small node.
+      s"""  $id [shape=box,style="filled",color="$color",label="\\n$name\\n\\n"];"""
+    }
+  }
+
+  override def toString: String = s"NODE $name ($id)"
+}
+
+/**
+ * A sub part of the plan. This may be used for WholeStageCodegen or for a Stage
+ */
+class SparkPlanGraphCluster(
+    id: Long,
+    name: String,
+    desc: String,
+    val nodes: mutable.ArrayBuffer[SparkPlanGraphNode],
+    metrics: Seq[SQLMetricInfo])
+    extends SparkPlanGraphNode(id, name, desc, metrics, isGpuNode = false) {
+
+  override def makeDotNode(metricsValue: Map[Long, Long]): String = {
+    val duration = metrics.filter(_.name.startsWith(WholeStageCodegenExec.PIPELINE_DURATION_METRIC))
+    val labelStr = if (duration.nonEmpty) {
+      require(duration.length == 1)
+      val id = duration.head.accumulatorId
+      if (metricsValue.contains(id)) {
+        name + "\n \n" + duration.head.name + ": " + metricsValue(id)
+      } else {
+        name
+      }
+    } else {
+      name
+    }
+    s"""
+       |  subgraph cluster$id {
+       |    isCluster="true";
+       |    label="${StringEscapeUtils.escapeJava(labelStr)}";
+       |    ${nodes.map(_.makeDotNode(metricsValue)).mkString("    \n")}
+       |  }
+     """.stripMargin
+  }
+}
+
+class StageGraphCluster(
+    id: Long,
+    val stageIdToStageMetrics: Map[Int, StageMetrics])
+    extends SparkPlanGraphCluster(id, "STAGE", "STAGE", mutable.ArrayBuffer.empty, Seq.empty) {
+  private var stageId = -1
+
+  def setStage(stageId: Int): Unit = {
+    if (this.stageId >= 0) {
+      require(this.stageId == stageId, s"Trying to set multiple ids for a single " +
+          s"stage ${this.stageId} != $stageId")
+    }
+    this.stageId = stageId
+  }
+
+  def getStageId: Int = stageId
+
+  override def makeDotNode(metricsValue: Map[Long, Long]): String = {
+    val labelStr = if (stageId < 0) {
+      "UNKNOWN STAGE\n"
+    } else {
+      val m = stageIdToStageMetrics.get(stageId).map { metrics =>
+        s"""
+           |numTasks: ${metrics.numTasks}
+
+           |duration: ${metrics.duration}
+
+           |
+      """.stripMargin}.getOrElse("")
+      s"STAGE $stageId\n$m"
+    }
+
+    s"""
+       |  subgraph cluster$id {
+       |    isCluster="true";
+       |    label="${StringEscapeUtils.escapeJava(labelStr)}";
+       |    ${nodes.map(_.makeDotNode(metricsValue)).mkString("    \n")}
+       |  }
+     """.stripMargin
+  }
+
+  override def toString: String =
+    s"STAGE: $stageId ($id)"
+}
+
+
+/**
+ * Represent an edge in the SparkPlan tree. `fromId` is the child node id, and `toId` is the parent
+ * node id.
+ */
+case class SparkPlanGraphEdge(from: SparkPlanGraphNode, to: SparkPlanGraphNode) {
+
+  def makeDotEdge: String = {
+    val color = (from.isGpuNode, to.isGpuNode) match {
+      case (true, true) => GenerateDot.GPU_COLOR
+      case (false, false) => GenerateDot.CPU_COLOR
+      case _ => GenerateDot.TRANSITION_COLOR
+    }
+    s"""  ${from.id}->${to.id} [color="$color",style=bold];\n"""
+  }
+}
