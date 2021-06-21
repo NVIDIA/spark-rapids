@@ -333,33 +333,37 @@ class ApplicationInfo(
     keep
   }
 
+  def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
+    schemaOpt.map { schema =>
+      if (schema.startsWith("struct<") && schema.endsWith(">")) {
+        val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
+        schemaStr.split(",").map { entry =>
+          val keyValue = entry.split(":")
+          if (keyValue.size == 2) {
+            (keyValue(0) -> keyValue(1))
+          } else {
+            logWarning(s"Splitting key and value didn't result in key and value $entry")
+            (entry -> "unknown")
+          }
+        }.toMap
+      } else {
+        logWarning(s"Schema format is unknown: $schema, skipping!")
+        Map.empty[String, String]
+      }
+    }.getOrElse(Map.empty[String, String])
+  }
+
   def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo) = {
     // check if planInfo has ReadSchema
     val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
-      val schemaMap = meta.get("ReadSchema").map { schema =>
-        if (schema.startsWith("struct<") && schema.endsWith(">")) {
-          val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
-          schemaStr.split(",").map { entry =>
-            val keyValue = entry.split(":")
-            if (keyValue.size == 2) {
-              (keyValue(0) -> keyValue(1))
-            } else {
-              logWarning(s"Splitting key and value didn't result in key and value $entry")
-              (entry -> "unknown")
-            }
-          }.toMap
-        } else {
-          logWarning(s"Schema format is unknown: $schema, skipping!")
-          Map.empty[String, String]
-        }
-      }.getOrElse(Map.empty[String, String])
+      val schemaMap = parseSchemaString(meta.get("ReadSchema"))
       readSchemaV1 += ReadSchemaV1(sqlID,
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
         meta.getOrElse("PushedFilters", "unknown"),
-        schemaMap
+        schemaMap.toMap
       )
       // TODO - remove after debug
       logWarning(s"node ${node.nodeName}")
@@ -374,15 +378,23 @@ class ApplicationInfo(
     if (node.name.equals("BatchScan")) {
       logWarning("node is batch scan")
       // try to get ReadSchema
-      val schema = if (node.desc.contains("ReadSchema")) {
+      val schemaMap = if (node.desc.contains("ReadSchema")) {
         val index = node.desc.indexOf("ReadSchema:")
-        val subStr = node.desc.substring(index)
-        val endIndex = subStr.indexOf(", ")
-        val schemaOnly = subStr.substring(0, endIndex + 1)
-        logWarning("read schema is: " + schemaOnly)
-        schemaOnly
+        if (index != -1) {
+          val subStr = node.desc.substring(index)
+          val endIndex = subStr.indexOf(", ")
+          if (endIndex != -1) {
+            val schemaOnly = subStr.substring(0, endIndex + 1)
+            logWarning("read schema is: " + schemaOnly)
+            parseSchemaString(Some(schemaOnly))
+          } else {
+            Map.empty[String, String]
+          }
+        } else {
+          Map.empty[String, String]
+        }
       } else {
-        "unknown"
+        Map.empty[String, String]
       }
       val location = if (node.desc.contains("Location:")) {
         val index = node.desc.indexOf("Location:")
@@ -414,7 +426,7 @@ class ApplicationInfo(
         format,
         location,
         pushedFilters,
-        schemaMap
+        schemaMap.toMap
       )
     }
   }
