@@ -1,5 +1,5 @@
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION. All Rights Reserved.
+  Copyright (c) 2020-2021, NVIDIA CORPORATION. All Rights Reserved.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -103,6 +103,8 @@ You can also disable only one rule, by specifying its rule id, as specified in:
         </parameters>
         <customMessage>Use Javadoc style indentation for multiline comments</customMessage>
     </check>
+
+    <check level="error" class="org.scalastyle.file.WhitespaceEndOfLineChecker" enabled="true"/>
 
     <!-- ================================================================================ -->
     <!--       rules we'd like to enforce, but haven't cleaned up the codebase yet        -->
