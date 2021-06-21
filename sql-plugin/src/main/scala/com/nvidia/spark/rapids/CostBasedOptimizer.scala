@@ -214,7 +214,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     } else {
       ">"
     }
-    println(s"CBO [${plan.wrapped.getClass.getSimpleName}] $message: " +
+    logTrace(s"CBO [${plan.wrapped.getClass.getSimpleName}] $message: " +
       s"cpuCost=$cpuCost $sign gpuCost=$gpuCost)")
   }
 
