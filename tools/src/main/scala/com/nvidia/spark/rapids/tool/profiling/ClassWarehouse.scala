@@ -179,4 +179,4 @@ case class ReadSchema(
     format: String,
     location: String,
     pushedFilters: String,
-    schema: Map[String, String])
+    schema: String)

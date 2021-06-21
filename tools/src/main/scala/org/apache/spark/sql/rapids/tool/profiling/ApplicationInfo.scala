@@ -367,12 +367,12 @@ class ApplicationInfo(
     val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
-      val schemaMap = parseSchemaString(meta.get("ReadSchema"))
+      val schemaStr = meta.getOrElse("ReadSchema", "")
       readSchema += ReadSchema(sqlID,
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
         meta.getOrElse("PushedFilters", "unknown"),
-        schemaMap.toMap
+        schemaStr
       )
       // TODO - remove after debug
       logWarning(s"node ${node.nodeName}")
@@ -387,7 +387,7 @@ class ApplicationInfo(
     if (node.name.equals("BatchScan")) {
       logWarning("node is batch scan")
       // try to get ReadSchema
-      val schemaMap = if (node.desc.contains("ReadSchema")) {
+      val schema = if (node.desc.contains("ReadSchema")) {
         val schemaTag = "ReadSchema: "
         val index = node.desc.indexOf(schemaTag)
         if (index != -1) {
@@ -396,15 +396,15 @@ class ApplicationInfo(
           if (endIndex != -1) {
             val schemaOnly = subStr.substring(0, endIndex)
             logWarning("read schema is: " + schemaOnly)
-            parseSchemaString(Some(schemaOnly))
+            schemaOnly
           } else {
-            Map.empty[String, String]
+            ""
           }
         } else {
-          Map.empty[String, String]
+          ""
         }
       } else {
-        Map.empty[String, String]
+        ""
       }
       val location = if (node.desc.contains("Location:")) {
         val index = node.desc.indexOf("Location:")
@@ -436,7 +436,7 @@ class ApplicationInfo(
         format,
         location,
         pushedFilters,
-        schemaMap.toMap
+        schema
       )
     }
   }
