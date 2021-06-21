@@ -89,7 +89,6 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // get the CPU and GPU cost of this operator (excluding cost of children)
     val operatorCpuCost = cpuCostModel.getCost(plan)
     val operatorGpuCost = gpuCostModel.getCost(plan)
-    showCosts(plan, "Operator costs", operatorCpuCost, operatorGpuCost)
 
     // get the CPU and GPU cost of the child plan(s)
     val childCosts = plan.childPlans
@@ -105,6 +104,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // calculate total (this operator + children)
     val totalCpuCost = operatorCpuCost + childCpuCosts.sum
     var totalGpuCost = operatorGpuCost + childGpuCosts.sum
+    showCosts(plan, "Operator costs", operatorCpuCost, operatorGpuCost)
     showCosts(plan, "Operator + child costs", totalCpuCost, totalGpuCost)
 
     plan.estimatedOutputRows = RowCountPlanVisitor.visit(plan)
@@ -112,7 +112,6 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // determine how many transitions between CPU and GPU are taking place between
     // the child operators and this operator
     val numTransitions = plan.childPlans
-      .filterNot(isExchangeOp)
       .count(canRunOnGpu(_) != canRunOnGpu(plan))
     showCosts(plan, s"numTransitions=$numTransitions", totalCpuCost, totalGpuCost)
 
@@ -137,11 +136,12 @@ class CostBasedOptimizer extends Optimizer with Logging {
           plan.costPreventsRunningOnGpu()
           // reset GPU cost
           totalGpuCost = totalCpuCost
+          showCosts(plan, s"Avoid transition to GPU", totalCpuCost, totalGpuCost)
         } else {
           // add transition cost to total GPU cost
           totalGpuCost += transitionCost
+          showCosts(plan, s"transitionFromCpuCost=$transitionCost", totalCpuCost, totalGpuCost)
         }
-        showCosts(plan, s"transitionFromCpuCost=$transitionCost", totalCpuCost, totalGpuCost)
       } else {
         // at least one child is transitioning from GPU to CPU so we evaluate each of this
         // child plans to see if it was worth running on GPU now that we have the cost of
@@ -195,7 +195,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     if (!canRunOnGpu(plan) || isExchangeOp(plan)) {
       // reset the costs because this section of the plan was not moved to GPU
       totalGpuCost = totalCpuCost
-      showCosts(plan, s"Reset costs (not on GPU)", totalCpuCost, totalGpuCost)
+      showCosts(plan, s"Reset costs (not on GPU / exchange)", totalCpuCost, totalGpuCost)
     }
 
     showCosts(plan, "END", totalCpuCost, totalGpuCost)
@@ -214,7 +214,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     } else {
       ">"
     }
-    logTrace(s"CBO [${plan.wrapped.getClass.getSimpleName}] $message: " +
+    println(s"CBO [${plan.wrapped.getClass.getSimpleName}] $message: " +
       s"cpuCost=$cpuCost $sign gpuCost=$gpuCost)")
   }
 
