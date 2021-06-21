@@ -320,10 +320,6 @@ class ApplicationInfo(
   }
 
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
-    logWarning(s"metadata for  name: ${planInfo.nodeName}")
-    planInfo.metadata.foreach { case(k, v) =>
-      logWarning(s" key: $k value: $v")
-    }
     val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
     val keep = if (planInfo.metadata.contains("ReadSchema")) {
       childRes :+ planInfo
