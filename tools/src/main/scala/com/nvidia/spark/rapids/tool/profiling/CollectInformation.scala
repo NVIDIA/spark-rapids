@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, ToolUtils}
 
 /**
@@ -74,7 +74,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     apps.foreach { app =>
       import sparkSession.implicits._
       val df = app.readSchemaV1.toDF
-      val dfWithApp = df.withColumn("appIndex", col(app.index.toString))
+      val dfWithApp = df.withColumn("appIndex", lit(app.index.toString))
         .select("appIndex", df.columns:_*)
       if (app.readSchemaV1.nonEmpty) {
         fileWriter.foreach { writer =>
