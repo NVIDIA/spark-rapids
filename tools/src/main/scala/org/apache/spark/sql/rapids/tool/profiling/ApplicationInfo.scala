@@ -568,7 +568,7 @@ class ApplicationInfo(
 
   // Function to generate a query for printing Application information
   def generateAppInfo: String =
-    s"""select $index as appIndex, appId, startTime, endTime, duration,
+    s"""select $index as appIndex, appName, appId, startTime, endTime, duration,
        |durationStr, sparkVersion, gpuMode
        |from appDF_$index
        |""".stripMargin
@@ -579,9 +579,19 @@ class ApplicationInfo(
     if (allDataFrames.contains(s"blockManagersDF_$index") &&
         allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
-      s"""select $index as appIndex, e.executorID, e.totalCores,
-         |b.maxMem, b.maxOnHeapMem,b.maxOffHeapMem,
-         |r.exec_cpu, r.exec_mem, r.exec_gpu, r.exec_offheap, r.task_cpu, r.task_gpu
+      s"""select $index as appIndex,
+         |first(r.id) as resourceProfileId,
+         |count(e.executorID) as numExecutors,
+         |first(e.totalCores) as coresPerExecutor,
+         |first(b.maxMem) as maxMemory,
+         |first(b.maxOnHeapMem) as maxOnHeapMem,
+         |first(b.maxOffHeapMem) as maxOffHeapMem,
+         |first(r.exec_cpu) as exec_cpu,
+         |first(r.exec_mem) as exec_mem,
+         |first(r.exec_gpu) as exec_gpu,
+         |first(r.exec_offheap) as exec_offheap,
+         |first(r.task_cpu) as task_cpu,
+         |first(r.task_gpu) as task_gpu
          |from executorsDF_$index e, blockManagersDF_$index b, resourceProfilesDF_$index r
          |where e.executorID=b.executorID
          |and e.resourceProfileId=r.id
@@ -589,8 +599,12 @@ class ApplicationInfo(
     } else if (allDataFrames.contains(s"blockManagersDF_$index") &&
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
-      s"""select $index as appIndex,e.executorID, e.totalCores,
-         |b.maxMem, b.maxOnHeapMem,b.maxOffHeapMem,
+      s"""select $index as appIndex,
+         |count(e.executorID) as numExecutors,
+         |first(e.totalCores) as coresPerExecutor,
+         |first(b.maxMem) as maxMemory,
+         |first(b.maxOnHeapMem) as maxOnHeapMem,
+         |first(b.maxOffHeapMem) as maxOffHeapMem,
          |null as exec_cpu, null as exec_mem, null as exec_gpu,
          |null as exec_offheap, null as task_cpu, null as task_gpu
          |from executorsDF_$index e, blockManagersDF_$index b
@@ -598,30 +612,42 @@ class ApplicationInfo(
          |""".stripMargin
     } else if (!allDataFrames.contains(s"blockManagersDF_$index") &&
         allDataFrames.contains(s"resourceProfilesDF_$index")) {
-      s"""select $index as appIndex,e.executorID, e.totalCores,
+      s"""select $index as appIndex,
+         |first(r.id) as resourceProfileId,
+         |count(e.executorID) as numExecutors,
+         |first(e.totalCores) as coresPerExecutor,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |r.exec_cpu, r.exec_mem, r.exec_gpu, r.exec_offheap, r.task_cpu, r.task_gpu
+         |first(r.exec_cpu) as exec_cpu,
+         |first(r.exec_mem) as exec_mem,
+         |first(r.exec_gpu) as exec_gpu,
+         |first(r.exec_offheap) as exec_offheap,
+         |first(r.task_cpu) as task_cpu,
+         |first(r.task_gpu) as task_gpu
          |from executorsDF_$index e, resourceProfilesDF_$index r
          |where e.resourceProfileId=r.id
          |""".stripMargin
     } else {
-      s"""select $index as appIndex,executorID, totalCores
+      s"""select $index as appIndex,
+         |count(executorID) as numExecutors,
+         |first(totalCores) as coresPerExecutor,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
          |null as exec_cpu, null as exec_mem, null as exec_gpu,
          |null as exec_offheap, null as task_cpu, null as task_gpu
          |from executorsDF_$index
+         |group by appIndex
          |""".stripMargin
     }
   }
 
   // Function to generate a query for printing Rapids related Spark properties
-  def generateRapidsProperties: String =
-    s"""select key,value as value_app$index
+  def generateRapidsProperties: String = {
+    s"""select key as propertyName,value as appIndex_$index
        |from propertiesDF_$index
        |where source ='spark'
        |and key like 'spark.rapids%'
        |""".stripMargin
+  }
 
   // Function to generate the SQL string for aggregating task metrics columns.
   def generateAggSQLString: String = {
@@ -749,17 +775,17 @@ class ApplicationInfo(
   }
 
   def getFailedTasks: String = {
-    s"""select stageId, stageAttemptId, taskId, attempt,
-       |substr(endReason, 1, 100) as endReason_first100char
+    s"""select $index as appIndex, stageId, stageAttemptId, taskId, attempt,
+       |substr(endReason, 1, 100) as failureReason
        |from taskDF_$index
        |where successful = false
-       |order by stageId, stageAttemptId, taskId, attempt
+       |order by appIndex, stageId, stageAttemptId, taskId, attempt
        |""".stripMargin
   }
 
   def getFailedStages: String = {
-    s"""select stageId, attemptId, name, numTasks,
-       |substr(failureReason, 1, 100) as failureReason_first100char
+    s"""select $index as appIndex, stageId, attemptId, name, numTasks,
+       |substr(failureReason, 1, 100) as failureReason
        |from stageDF_$index
        |where failureReason is not null
        |order by stageId, attemptId
@@ -767,8 +793,8 @@ class ApplicationInfo(
   }
 
   def getFailedJobs: String = {
-    s"""select jobID, jobResult,
-       |substr(failedReason, 1, 100) as failedReason_first100char
+    s"""select $index as appIndex, jobID, jobResult,
+       |substr(failedReason, 1, 100) as failureReason
        |from jobDF_$index
        |where jobResult <> 'JobSucceeded'
        |order by jobID
@@ -791,8 +817,8 @@ class ApplicationInfo(
   }
 
   def unsupportedSQLPlan: String = {
-    s"""select sqlID, nodeID, nodeName,
-       |substr(nodeDesc, 1, 100) nodeDesc_first100char
+    s"""select $index as appIndex, sqlID, nodeID, nodeName,
+       |substr(nodeDesc, 1, 100) nodeDescription
        |from unsupportedSQLplan_$index""".stripMargin
   }
 

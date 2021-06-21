@@ -241,29 +241,29 @@ We can input multiple Spark event logs and this tool can compare environments, e
 ### A. Compare Information Collected ###
 Compare Application Information:
 
-+--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
-|appIndex|appId                  |startTime    |endTime      |duration|durationStr|sparkVersion|gpuMode|
-+--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
-|1       |app-20210329165943-0103|1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false  |
-|2       |app-20210329170243-0018|1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true   |
-+--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
++--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
+|appIndex|appName    |appId                  |startTime    |endTime      |duration|durationStr|sparkVersion|gpuMode|
++--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
+|1       |Spark shell|app-20210329165943-0103|1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false  |
+|2       |Spark shell|app-20210329170243-0018|1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true   |
++--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
 ```
 
 - Compare Executor information:
 ```
 Compare Executor Information:
-+--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
-|appIndex|executorID|totalCores|maxMem     |maxOnHeapMem|maxOffHeapMem|exec_cpu|exec_mem|exec_gpu|exec_offheap|task_cpu|task_gpu|
-+--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
-|1       |0         |4         |13984648396|13984648396 |0            |null    |null    |null    |null        |null    |null    |
-|1       |1         |4         |13984648396|13984648396 |0            |null    |null    |null    |null        |null    |null    |
++--------+------------+----------------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
+|appIndex|numExecutors|coresPerExecutor|maxMem     |maxOnHeapMem|maxOffHeapMem|exec_cpu|exec_mem|exec_gpu|exec_offheap|task_cpu|task_gpu|
++--------+------------+----------------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
+|1       |2           |4               |47055896576|25581060096 |21474836480  |null    |null    |null    |null        |null    |null    |
+|2       |2           |4               |55645831168|12696158208 |42949672960  |null    |null    |null    |null        |null    |null    |
 ```
 
 - Compare Rapids related Spark properties side-by-side:
 ```
 Compare Rapids Properties which are set explicitly:
 +-------------------------------------------+----------+----------+
-|key                                        |value_app1|value_app2|
+|propertyName                               |appIndex_1|appIndex_2|
 +-------------------------------------------+----------+----------+
 |spark.rapids.memory.pinnedPool.size        |null      |2g        |
 |spark.rapids.sql.castFloatToDecimal.enabled|null      |true      |
@@ -370,7 +370,7 @@ SQL Duration and Executor CPU Time Percent
 ```
 Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
-|appIndex|stageId|stageAttemptId|taskId|attempt|taskDurationSec|avgDurationSec|taskShuffleReadMB|avgShuffleReadMB|taskPeakMemoryMB|successful|endReason_first100char                                                                              |
+|appIndex|stageId|stageAttemptId|taskId|attempt|taskDurationSec|avgDurationSec|taskShuffleReadMB|avgShuffleReadMB|taskPeakMemoryMB|successful|reason                                                                              |
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 |1       |2      |0             |2222  |0      |111.11         |7.7           |2222.22          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
 |1       |2      |0             |2224  |1      |222.22         |8.8           |3333.33          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
@@ -384,46 +384,46 @@ Below are examples.
 - Print failed tasks:
 ```
 Failed tasks:
-+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
-|stageId|stageAttemptId|taskId|attempt|endReason_first100char                                                                              |
-+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
-|4      |0             |2842  |0      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
-|4      |0             |2858  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(22000),None,false,true,None)|
-|4      |0             |2884  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(21148),None,false,true,None)|
-|4      |0             |2908  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(20420),None,false,true,None)|
-|4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
-+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
++--------+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+|appIndex|stageId|stageAttemptId|taskId|attempt|failureReason                                                                              |
++--------+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+|3       |4      |0             |2842  |0      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
+|3       |4      |0             |2858  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(22000),None,false,true,None)|
+|3       |4      |0             |2884  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(21148),None,false,true,None)|
+|3       |4      |0             |2908  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(20420),None,false,true,None)|
+|3       |4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
++--------+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
 ```
 
 - Print failed stages:
 ```
 Failed stages:
-+-------+---------+-------------------------------------+--------+---------------------------------------------------+
-|stageId|attemptId|name                                 |numTasks|failureReason_first100char                         |
-+-------+---------+-------------------------------------+--------+---------------------------------------------------+
-|4      |0        |attachTree at Spark300Shims.scala:624|1000    |Job 0 cancelled as part of cancellation of all jobs|
-+-------+---------+-------------------------------------+--------+---------------------------------------------------+
++--------+-------+---------+-------------------------------------+--------+---------------------------------------------------+
+|appIndex|stageId|attemptId|name                                 |numTasks|failureReason                         |
++--------+-------+---------+-------------------------------------+--------+---------------------------------------------------+
+|3       |4      |0        |attachTree at Spark300Shims.scala:624|1000    |Job 0 cancelled as part of cancellation of all jobs|
++--------+-------+---------+-------------------------------------+--------+---------------------------------------------------+
 ```
 
 - Print failed jobs:
 ```
 Failed jobs:
-+-----+---------+------------------------------------------------------------------------+
-|jobID|jobResult|failedReason_first100char                                               |
-+-----+---------+------------------------------------------------------------------------+
-|0    |JobFailed|java.lang.Exception: Job 0 cancelled as part of cancellation of all jobs|
-+-----+---------+------------------------------------------------------------------------+
++--------+-----+---------+------------------------------------------------------------------------+
+|appIndex|jobID|jobResult|failureReason                                               |
++--------+-----+---------+------------------------------------------------------------------------+
+|3       |0    |JobFailed|java.lang.Exception: Job 0 cancelled as part of cancellation of all jobs|
++--------+-----+---------+------------------------------------------------------------------------+
 ```
 
 - SQL Plan HealthCheck:
 
   Prints possibly unsupported query plan nodes such as `$Lambda` key word means dataset API.
 ```
-+-----+------+--------+---------------------------------------------------------------------------------------------------+
-|sqlID|nodeID|nodeName|nodeDesc_first100char                                                                              |
-+-----+------+--------+---------------------------------------------------------------------------------------------------+
-|1    |8     |Filter  |Filter $line21.$read$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$Lambda$4578/0x00000008019f1840@4b63e04c.apply|
-+-----+------+--------+---------------------------------------------------------------------------------------------------+
++--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
+|appIndex|sqlID|nodeID|nodeName|nodeDescription                                                                             |
++--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
+|3       |1    |8     |Filter  |Filter $line21.$read$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$Lambda$4578/0x00000008019f1840@4b63e04c.apply|
++--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
 ```
 
 ### How to use this tool

@@ -1,2 +1,2 @@
-stageId,attemptId,name,numTasks,failureReason_first100char
-238,0,show at <console>:33,200,"org.apache.spark.shuffle.FetchFailedException: /hadoop_disks/disk0/local/usercache/username/appcache"
+appIndex,stageId,attemptId,name,numTasks,failureReason
+1,238,0,show at <console>:33,200,"org.apache.spark.shuffle.FetchFailedException: /hadoop_disks/disk0/local/usercache/username/appcache"
