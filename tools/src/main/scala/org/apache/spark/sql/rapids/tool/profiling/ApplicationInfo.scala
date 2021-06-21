@@ -362,6 +362,10 @@ class ApplicationInfo(
     }.getOrElse(Map.empty[String, String])
   }
 
+  private def formatSchemaStr(schema: String): String = {
+    schema.stripPrefix("struct<").stripSuffix(">")
+  }
+
   def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo) = {
     // check if planInfo has ReadSchema
     val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
@@ -372,7 +376,7 @@ class ApplicationInfo(
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
         meta.getOrElse("PushedFilters", "unknown"),
-        schemaStr
+        formatSchemaStr(schemaStr)
       )
       // TODO - remove after debug
       logWarning(s"node ${node.nodeName}")
@@ -396,7 +400,7 @@ class ApplicationInfo(
           if (endIndex != -1) {
             val schemaOnly = subStr.substring(0, endIndex)
             logWarning("read schema is: " + schemaOnly)
-            schemaOnly
+            formatSchemaStr(schemaOnly)
           } else {
             ""
           }
