@@ -378,7 +378,6 @@ class ApplicationInfo(
   }
 
   def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode) = {
-    logWarning(s"node is ${node.name} desc ${node.desc}")
     if (node.name.equals("BatchScan")) {
       // try to get ReadSchema
       val schema = if (node.desc.contains("ReadSchema")) {
