@@ -173,3 +173,10 @@ case class DatasetSQLCase(sqlID: Long)
 case class ProblematicSQLCase(sqlID: Long, reason: String)
 
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String, nodeDesc: String)
+
+case class ReadSchemaV1(
+    sqlID: Long,
+    format: String,
+    location: String,
+    pushedFilters: String,
+    schema: Map[String, String])

@@ -23,9 +23,9 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
+import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, ToolUtils}
 
 /**
  * CollectInformation mainly print information based on this event log:
@@ -62,6 +62,21 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         }
         if (cuDFJar.nonEmpty) {
           cuDFJar.keys.foreach(k => fileWriter.foreach(_.write(s"$k\n")))
+        }
+      }
+    }
+  }
+
+  // Print read data schema information
+  def printReadSchemaInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+    val messageHeader = "\nRead Schema Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    apps.foreach { app =>
+      import sparkSession.implicits._
+      val df = app.readSchemaV1.toDF
+      if (app.readSchemaV1.nonEmpty) {
+        fileWriter.foreach { writer =>
+          writer.write(ToolUtils.showString(df, numRows))
         }
       }
     }

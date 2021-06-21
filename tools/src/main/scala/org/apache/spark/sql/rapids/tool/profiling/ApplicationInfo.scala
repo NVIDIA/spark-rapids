@@ -148,6 +148,9 @@ class ApplicationInfo(
   // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
+  // The data source read schema for datasource v1
+  var readSchemaV1: ArrayBuffer[ReadSchemaV1] = ArrayBuffer[ReadSchemaV1]()
+
   // From all other events
   var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
 
@@ -316,12 +319,12 @@ class ApplicationInfo(
     }
   }
 
-  def printChildMeta(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
+  def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     logWarning(s"metadata for  name: ${planInfo.nodeName}")
     planInfo.metadata.foreach { case(k, v) =>
       logWarning(s" key: $k value: $v")
     }
-    val childRes = planInfo.children.flatMap(printChildMeta(_))
+    val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
     val keep = if (planInfo.metadata.contains("ReadSchema")) {
       childRes :+ planInfo
     } else {
@@ -329,6 +332,10 @@ class ApplicationInfo(
     }
     keep
   }
+
+  private val STRUCT_PREFIX = "struct<"
+  private val STRUCT_SUFFIX = ">"
+
 
   /**
    * Function to process SQL Plan Metrics after all events are processed
@@ -338,10 +345,32 @@ class ApplicationInfo(
 
       // check if planInfo has ReadSchema
       logWarning(s"metadata for sqlID: $sqlID name: ${planInfo.nodeName}")
-      val allMetaWithSchema = printChildMeta(planInfo)
+      val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
 
-      logWarning("returned all meta with schema: ")
       allMetaWithSchema.foreach { node =>
+        val meta = node.metadata
+        val schema = meta.getOrElse("ReadSchema", "")
+        val schemaMap = if (schema.startsWith(STRUCT_PREFIX)) {
+          val schemaStr = schema.stripPrefix(STRUCT_PREFIX).stripSuffix(STRUCT_SUFFIX)
+          schemaStr.split(",").map { entry =>
+            val keyValue = entry.split(":")
+            if (keyValue.size == 2) {
+              (keyValue(0) -> keyValue(1))
+            } else {
+              logWarning(s"Splitting key and value didn't result in key and value $entry")
+              (entry ->  "unknown")
+            }
+          }.toMap
+        } else {
+          logWarning("Schema format is unknown, skipping!")
+          Map.empty[String, String]
+        }
+        readSchemaV1 += ReadSchemaV1(sqlID,
+          meta.getOrElse("Format", "unknown"),
+          meta.getOrElse("Location", "unknown"),
+          meta.getOrElse("PushedFilters", ""),
+          schemaMap
+        )
         logWarning(s"node ${node.nodeName}")
         node.metadata.foreach { case (k, v) =>
           logWarning(s" key: $k value: $v")
