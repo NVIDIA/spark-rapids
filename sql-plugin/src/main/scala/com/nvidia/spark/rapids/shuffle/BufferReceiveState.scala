@@ -43,7 +43,7 @@ case class ConsumedBatchFromBounceBuffer(
  *
  * It also is AutoCloseable. close() should be called to free bounce buffers.
  *
- * @param id - a numeric id that is used as in all headers for this `BufferReceiveState`
+ * @param id - a numeric id that is used in all headers for this `BufferReceiveState`
  * @param bounceBuffer - bounce buffer to use (device memory strictly)
  * @param requests - collection of `PendingTransferRequest` as issued by iterators
  *                 currently requesting
