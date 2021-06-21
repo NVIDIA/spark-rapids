@@ -349,22 +349,23 @@ class ApplicationInfo(
 
       allMetaWithSchema.foreach { node =>
         val meta = node.metadata
-        val schema = meta.getOrElse("ReadSchema", "")
-        val schemaMap = if (schema.startsWith(STRUCT_PREFIX)) {
-          val schemaStr = schema.stripPrefix(STRUCT_PREFIX).stripSuffix(STRUCT_SUFFIX)
-          schemaStr.split(",").map { entry =>
-            val keyValue = entry.split(":")
-            if (keyValue.size == 2) {
-              (keyValue(0) -> keyValue(1))
-            } else {
-              logWarning(s"Splitting key and value didn't result in key and value $entry")
-              (entry ->  "unknown")
-            }
-          }.toMap
-        } else {
-          logWarning("Schema format is unknown, skipping!")
-          Map.empty[String, String]
-        }
+        val schemaMap = meta.get("ReadSchema").map { schema =>
+          if (schema.startsWith(STRUCT_PREFIX)) {
+            val schemaStr = schema.stripPrefix(STRUCT_PREFIX).stripSuffix(STRUCT_SUFFIX)
+            schemaStr.split(",").map { entry =>
+              val keyValue = entry.split(":")
+              if (keyValue.size == 2) {
+                (keyValue(0) -> keyValue(1))
+              } else {
+                logWarning(s"Splitting key and value didn't result in key and value $entry")
+                (entry -> "unknown")
+              }
+            }.toMap
+          } else {
+            logWarning("Schema format is unknown, skipping!")
+            Map.empty[String, String]
+          }
+        }.getOrElse(Map.empty[String, String])
         readSchemaV1 += ReadSchemaV1(sqlID,
           meta.getOrElse("Format", "unknown"),
           meta.getOrElse("Location", "unknown"),
