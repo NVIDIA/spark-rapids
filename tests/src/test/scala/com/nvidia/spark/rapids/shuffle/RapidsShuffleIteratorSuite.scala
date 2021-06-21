@@ -22,7 +22,7 @@ import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 
 import org.apache.spark.shuffle.{RapidsShuffleFetchFailedException, RapidsShuffleTimeoutException}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
   test("inability to get a client raises a fetch failure") {
@@ -147,12 +147,9 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       mockCatalog,
       123))
 
-    val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any())).thenReturn(client)
-    doNothing().when(client).doFetch(any(), ac.capture())
+    doNothing().when(client).doFetch(any(), any())
     cl.start()
-
-    val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
 
     // signal a timeout to the iterator
     when(cl.pollForResult(any())).thenReturn(None)

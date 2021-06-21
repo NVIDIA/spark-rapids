@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids.shuffle
 
+import java.util
+
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
 import com.nvidia.spark.rapids.Arm
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -62,7 +63,7 @@ class BufferReceiveState(
   // we use this to keep a list (should be depth 1) of "requests for receives"
   //  => the transport is ready to receive again, but we are not done consuming the
   //     buffers from the previous receive, so we must delay the transport.
-  var toFinalize = new ArrayBuffer[TransportBuffer => Unit]()
+  var toFinalize = new util.ArrayDeque[TransportBuffer => Unit]()
 
   // if this is > 0, we are waiting to consume, so we need to queue up in `toFinalize`
   // any callbacks
@@ -96,22 +97,22 @@ class BufferReceiveState(
 
   private[this] var hasMoreBuffers_ = windowedBlockIterator.hasNext
 
-  def getBufferWhenReady(finalizeCb: TransportBuffer => Unit, size: Long): Unit = synchronized {
-    require(transportBuffer.getLength() >= size,
-      "Asked to receive a buffer greater than the available bounce buffer.")
+  def getBufferWhenReady(finalizeCb: TransportBuffer => Unit, size: Long): Unit =
+    synchronized {
+      require(transportBuffer.getLength() >= size,
+        "Asked to receive a buffer greater than the available bounce buffer.")
 
-    if (toConsume == 0) {
-      logDebug(s"${toConsume} " +
-        s"calling callback immediatelly fo ${TransportUtils.toHex(id)}")
-      finalizeCb(transportBuffer)
-    } else {
-      // have pending and haven't consumed it yet, consume will call the callback
-      logDebug(s"${toConsume} " +
-        s"deferring callback to ${TransportUtils.toHex(id)}, have ${toFinalize.size} pending")
-      toFinalize.append(finalizeCb)
+      if (toConsume == 0) {
+        logDebug(s"Calling callback immediately for ${TransportUtils.toHex(id)}")
+        finalizeCb(transportBuffer)
+      } else {
+        // have pending and haven't consumed it yet, consume will call the callback
+        logDebug(s"Deferring callback for ${TransportUtils.toHex(id)}, " +
+          s"have ${toFinalize.size} pending")
+        toFinalize.add(finalizeCb)
+      }
+      toConsume += 1
     }
-    toConsume += 1
-  }
 
   def getRequests: Seq[PendingTransferRequest] = requests
 
@@ -233,8 +234,8 @@ class BufferReceiveState(
         stream.sync()
 
         // cpu is in sync, we can recycle the bounce buffer
-        if (toFinalize.nonEmpty) {
-          val firstCb = toFinalize.remove(0)
+        if (!toFinalize.isEmpty) {
+          val firstCb = toFinalize.pop()
           firstCb(transportBuffer)
         }
 

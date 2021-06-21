@@ -302,7 +302,6 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       shuffleServerId,
       requestHandler,
       serverExecutor,
-      serverCopyExecutor,
       bssExecutor,
       rapidsConf)
   }
@@ -361,25 +360,34 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     }
   }
 
-  private val pendingBrs = new ConcurrentHashMap[Long, (RapidsShuffleClient, BufferReceiveState)]()
+  private case class ClientAndBufferReceiveState(client: RapidsShuffleClient,
+                                                 brs: BufferReceiveState)
+  private val pendingBrs = new ConcurrentHashMap[Long, ClientAndBufferReceiveState]()
 
   def handleBufferReceive(size: Long, header: Long,
       finalizeCb: TransportBuffer => Unit): Unit = {
     logDebug(s"Handling: ${TransportUtils.toHex(header)} with size $size")
-    val (_, pbrs) = pendingBrs.get(header)
-    pbrs.getBufferWhenReady(finalizeCb, size)
+    val clientAndBrs = pendingBrs.get(header)
+    require(clientAndBrs != null,
+      s"Unknown header for a buffer receive: ${TransportUtils.toHex(header)}")
+    clientAndBrs.brs.getBufferWhenReady(finalizeCb, size)
   }
 
   def handleBufferTransaction(tx: Transaction): Unit = {
     val header = tx.getHeader
-    val (client, pbrs) = pendingBrs.get(header)
+    val clientAndBrs = pendingBrs.get(header)
+    require(clientAndBrs != null,
+      s"Unknown header for a buffer receive: ${TransportUtils.toHex(header)}")
+    val client = clientAndBrs.client
     logDebug(s"Handling for peer ${client.connection.getPeerExecutorId}, " +
       s"handling ${TransportUtils.toHex(header)}, SUCCESS")
-    client.handleBufferReceive(tx, pbrs)
+    client.handleBufferReceive(tx, clientAndBrs.brs)
   }
 
   def bufferReceiveStateComplete(header: Long): Unit = {
-    pendingBrs.remove(header)
+    val existing = pendingBrs.remove(header)
+    require(existing != null,
+      s"Unknown header ${TransportUtils.toHex(header)} for a `BufferReceiveState`")
   }
 
   exec.execute(() => {
@@ -473,7 +481,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                 perClientRequests.bounceBuffer,
                 perClientRequests.transferRequests,
                 () => bufferReceiveStateComplete(brsId))
-              pendingBrs.put(brs.id, (client, brs))
+              pendingBrs.put(brs.id, ClientAndBufferReceiveState(client, brs))
               client.issueBufferReceives(brs)
             }
           } else if (!hasBounceBuffers) {

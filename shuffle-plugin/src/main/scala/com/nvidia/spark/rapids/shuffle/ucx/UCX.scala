@@ -24,15 +24,13 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
-
 import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{Arm, GpuDeviceManager, RapidsConf}
-import com.nvidia.spark.rapids.shuffle.{ClientConnection, MemoryRegistrationCallback, TransportBuffer, TransportUtils}
+import com.nvidia.spark.rapids.shuffle.{ClientConnection, MemoryRegistrationCallback, MetadataTransportBuffer, TransportBuffer, TransportUtils}
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
 import org.openucx.jucx.ucs.UcsConstants
-
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
@@ -241,13 +239,16 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
             drainWorker()
             if (workerTasks.isEmpty) {
               withResource(new NvtxRange("UCX Sleeping", NvtxColor.PURPLE)) { _ =>
+                // Note that `waitForEvents` checks any events that have occurred, and will
+                // return early in those cases. Therefore, `waitForEvents` is safe to be
+                // called after `worker.signal()`, as it will wake up right away.
                 worker.waitForEvents()
               }
             }
           }
 
-          while (!workerTasks.isEmpty) {
-            withResource(new NvtxRange("UCX Handling Tasks", NvtxColor.CYAN)) { _ =>
+          withResource(new NvtxRange("UCX Handling Tasks", NvtxColor.CYAN)) { _ =>
+            while (!workerTasks.isEmpty) {
               val wt = workerTasks.poll()
               if (wt != null) {
                 wt()
@@ -386,7 +387,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   class ReceiveActiveMessageRegistration(override val activeMessageId: Int, mask: Long)
       extends ActiveMessageRegistration {
 
-    val handlers = new ConcurrentHashMap[Long, () => UCXAmCallback]()
+    private[this] val handlers = new ConcurrentHashMap[Long, () => UCXAmCallback]()
 
     def addWildcardHeaderHandler(wildcardHdr: Long, cbGen: () => UCXAmCallback): Unit = {
       handlers.put(wildcardHdr, cbGen)
@@ -415,7 +416,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
   class ResponseActiveMessageRegistration(override val activeMessageId: Int)
       extends ActiveMessageRegistration {
-    private val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
+    private[this] val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
 
     def getCallback(header: Long): UCXAmCallback = {
       val cb = responseCallbacks.remove(header) // 1 callback per header
@@ -534,9 +535,13 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
                 // copy the data onto a buffer we own because it is going to be reused
                 // in UCX
-                cb.onMessageReceived(amData.getLength, header, dbb => {
-                  dbb.copy(resp)
-                  cb.onSuccess(am, dbb)
+                cb.onMessageReceived(amData.getLength, header, {
+                  case mtb: MetadataTransportBuffer =>
+                    mtb.copy(resp)
+                    cb.onSuccess(am, mtb)
+                  case _ =>
+                    cb.onError(am, 0,
+                      "Received an eager message for non-metadata message")
                 })
 
                 // we return OK telling UCX `amData` is ok to be closed, along with the eagerly
@@ -629,7 +634,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       // waste to get a larger hard-partitioned buffer just for 8 bytes.
       // TODO: since we no longer have metadata limits, the pool can be managed using the
       //   address-space allocator, so we should obtain this direct buffer from that pool
-      val header = ByteBuffer.allocateDirect(8)
+      val header = ByteBuffer.allocateDirect(UCX.ACTIVE_MESSAGE_HEADER_SIZE.toInt)
       header.putLong(am.header)
       header.rewind()
 
@@ -649,7 +654,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         ep.sendAmNonBlocking(
           am.activeMessageId,
           TransportUtils.getAddress(header),
-          8L,
+          UCX.ACTIVE_MESSAGE_HEADER_SIZE,
           dataAddress,
           dataSize,
           flags,
@@ -756,7 +761,9 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   def onWorkerThreadAsync(task: () => Unit): Unit = {
     workerTasks.add(task)
     if (rapidsConf.shuffleUcxUseWakeup) {
-      worker.signal()
+      withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
+        worker.signal()
+      }
     }
   }
 
@@ -940,6 +947,9 @@ object UCX {
   // as the callback is the same (onError)
   // from https://github.com/openucx/ucx/blob/master/src/ucs/type/status.h
   private val UCS_ERR_CANCELED = -16
+
+  // We include a header with this size in our active messages
+  private val ACTIVE_MESSAGE_HEADER_SIZE = 8L
 
   def formatAmIdAndHeader(activeMessageId: Int, header: Long) =
     s"[amId=${TransportUtils.toHex(activeMessageId)}, hdr=${TransportUtils.toHex(header)}]"

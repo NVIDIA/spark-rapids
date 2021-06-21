@@ -62,7 +62,6 @@ trait RapidsShuffleRequestHandler {
  * @param requestHandler instance of [[RapidsShuffleRequestHandler]]
  * @param exec Executor used to handle tasks that take time, and should not be in the
  *             transport's thread
- * @param copyExec Executor used to handle synchronous mem copies
  * @param bssExec Executor used to handle [[BufferSendState]]s that are waiting
  *                for bounce buffers to become available
  * @param rapidsConf plugin configuration instance
@@ -72,7 +71,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           val originalShuffleServerId: BlockManagerId,
                           requestHandler: RapidsShuffleRequestHandler,
                           exec: Executor,
-                          copyExec: Executor,
                           bssExec: Executor,
                           rapidsConf: RapidsConf) extends AutoCloseable with Logging with Arm {
 
@@ -164,17 +162,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   }
 
   /**
-   * Pushes a task onto the queue to be handled by the server's copy executor.
-   *
-   * @note - at this stage, tasks in this pool can block (it will grow as needed)
-   *
-   * @param op One of the case classes in [[ShuffleServerOps]]
-   */
-  private[this] def asyncOnCopyThread(op: Any): Unit = {
-    copyExec.execute(() => handleOp(op))
-  }
-
-  /**
    * Keep a list of BufferSendState that are waiting for bounce buffers.
    */
   private[this] val pendingTransfersQueue = new ConcurrentLinkedQueue[PendingTransferResponse]()
@@ -242,7 +229,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       withResource(new NvtxRange("Handle Meta Request", NvtxColor.PURPLE)) { _ =>
         messageType match {
           case MessageType.MetadataRequest =>
-            doHandleMetadataRequest(tx)
+            asyncOrBlock(HandleMeta(tx))
           case MessageType.TransferRequest =>
             val pendingTransfer = PendingTransferResponse(tx, requestHandler)
             bssExec.synchronized {
@@ -266,11 +253,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   def doHandleMetadataRequest(tx: Transaction): Unit = {
     withResource(tx) { _ =>
       withResource(new NvtxRange("doHandleMeta", NvtxColor.PURPLE)) { _ =>
-        withResource(tx.releaseMessage()) { metaRequest =>
+        withResource(tx.releaseMessage) { mtb =>
           if (tx.getStatus == TransactionStatus.Error) {
             logError("error getting metadata request: " + tx)
           } else {
-            val req = ShuffleMetadata.getMetadataRequest(metaRequest.getBuffer())
+            val req = ShuffleMetadata.getMetadataRequest(mtb.getBuffer())
 
             logDebug(s"Received request req:\n: ${ShuffleMetadata.printRequest(req)}")
             logDebug(s"HandleMetadataRequest for peerExecutorId ${tx.peerExecutorId()} and " +
@@ -344,11 +331,12 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       bssBuffers.foreach {
         case (bufferSendState, buffersToSend) =>
           val peerExecutorId = bufferSendState.getRequestTransaction.peerExecutorId()
+          val sendHeader = bufferSendState.getPeerBufferReceiveHeader
           // make sure we close the buffer slice
           withResource(buffersToSend) { _ =>
             serverConnection.send(peerExecutorId, MessageType.Buffer,
-              // TODO: it may be nice to hide this header in `Transaction`
-              bufferSendState.peerBufferReceiveHeader, buffersToSend, bufferTx =>
+              // TODO: it may be nice to hide `sendHeader` in `Transaction`
+              sendHeader, buffersToSend, bufferTx =>
                 withResource(bufferTx) { _ =>
                   logDebug(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
 
@@ -386,7 +374,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
                     // wake up the bssExec since bounce buffers became available
                     logDebug(s"Buffer send state " +
-                      s"${TransportUtils.toHex(bufferSendState.peerBufferReceiveHeader)} " +
+                      s"${TransportUtils.toHex(bufferSendState.getPeerBufferReceiveHeader)} " +
                       s"is done, closing. Still pending: ${pendingTransfersQueue.size}.")
                     bssExec.synchronized {
                       bufferSendState.close()

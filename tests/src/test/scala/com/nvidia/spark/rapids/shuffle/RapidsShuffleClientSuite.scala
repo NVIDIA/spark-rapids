@@ -102,7 +102,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful degenerate metadata fetch") {
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
-    val numRows = 100000
     val numBatches = 3
 
     RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransaction, numBatches)
@@ -498,25 +497,25 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     override def size: Long = hmb.getLength
   }
 
-  case class ExpectedTagAndMaterialized(
-      tag: Long,
+  case class ReceivedBufferWindow(
       blocksInWindow: Int,
       materializedBatches: Int,
       bytesInWindow: Long,
       isLast: Boolean)
 
   def endToEndTest(buff: BounceBuffer,
-      expected: Seq[ExpectedTagAndMaterialized],
-      ptrBuffs: Seq[(PendingTransferRequest, HostMemoryBuffer, TableMeta)]): Unit = {
+                   expected: Seq[ReceivedBufferWindow],
+                   ptrBuffs: Seq[(PendingTransferRequest, HostMemoryBuffer, TableMeta)]): Unit = {
     withResource(ptrBuffs.map(_._2)) { sources =>
       withResource(new BufferReceiveState(123, buff, ptrBuffs.map(_._1), () => {})) { br =>
         val blocks = sources.map(x => new MockBlock(x))
         val sendWindow = new WindowedBlockIterator[MockBlock](blocks, 1000)
 
         expected.foreach {
-          case ExpectedTagAndMaterialized(tag, inWindow, materialized, bytesInWindow, isLast) =>
+          case ReceivedBufferWindow(inWindow, materialized, bytesInWindow, isLast) =>
             br.getBufferWhenReady(tb => {
-              val bb = tb.getMemoryBuffer.asInstanceOf[DeviceMemoryBuffer]
+              val cb = tb.asInstanceOf[CudfTransportBuffer]
+              val bb = cb.getMemoryBuffer.asInstanceOf[DeviceMemoryBuffer]
               val ranges = sendWindow.next()
               assertResult(inWindow)(ranges.size)
               var offset = 0L
@@ -543,15 +542,14 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("one request spanning several bounce buffer lengths") {
     val bb = closeOnExcept(getBounceBuffer(1000)) { buff =>
       val rowCounts = Seq(1000)
-      val ptrBuffs = rowCounts.zipWithIndex.map { case (c, ix) => makeRequest(c) }
+      val ptrBuffs = rowCounts.map(makeRequest(_))
       var remaining = ptrBuffs.map(_._2.getLength).sum
-      val expected = new ArrayBuffer[ExpectedTagAndMaterialized]()
+      val expected = new ArrayBuffer[ReceivedBufferWindow]()
 
       // 4 buffer lengths
       (0 until 4).foreach { _ =>
         expected.append(
-          ExpectedTagAndMaterialized(
-            tag = 1,
+          ReceivedBufferWindow(
             blocksInWindow = 1,
             materializedBatches = 0,
             bytesInWindow = math.min(1000, remaining),
@@ -561,8 +559,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
       // then a last one to finish it off
       expected.append(
-        ExpectedTagAndMaterialized(
-          tag = 1,
+        ReceivedBufferWindow(
           blocksInWindow = 1,
           materializedBatches = 1,
           bytesInWindow = math.min(1000, remaining),
@@ -577,12 +574,11 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test ("three requests within a bounce buffer") {
     val bb = closeOnExcept(getBounceBuffer(1000)) { buff =>
       val rowCounts = Seq(40, 50, 60)
-      val ptrBuffs = rowCounts.zipWithIndex.map { case (c, ix) => makeRequest( c) }
+      val ptrBuffs = rowCounts.map(makeRequest(_))
       val remaining = ptrBuffs.map(_._2.getLength).sum
-      val expected = new ArrayBuffer[ExpectedTagAndMaterialized]()
+      val expected = new ArrayBuffer[ReceivedBufferWindow]()
       expected.append(
-        ExpectedTagAndMaterialized(
-          tag = 1,
+        ReceivedBufferWindow(
           blocksInWindow = 3,
           materializedBatches = 3,
           bytesInWindow = math.min(1000, remaining),
@@ -599,10 +595,9 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       val rowCounts = Seq(40, 180, 100)
       val ptrBuffs = rowCounts.zipWithIndex.map { case (c, ix) => makeRequest(c) }
       var remaining = ptrBuffs.map(_._2.getLength).sum
-      val expected = new ArrayBuffer[ExpectedTagAndMaterialized]()
+      val expected = new ArrayBuffer[ReceivedBufferWindow]()
       expected.append(
-        ExpectedTagAndMaterialized(
-          tag = 1,
+        ReceivedBufferWindow(
           blocksInWindow = 3,
           materializedBatches = 2,
           bytesInWindow = math.min(1000, remaining),
@@ -610,8 +605,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       remaining = remaining - 1000
 
       expected.append(
-        ExpectedTagAndMaterialized(
-          tag = 3,
+        ReceivedBufferWindow(
           blocksInWindow = 1,
           materializedBatches = 1,
           bytesInWindow = math.min(1000, remaining),
@@ -626,12 +620,11 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test ("two requests larger than the bounce buffer length") {
     val bb = closeOnExcept(getBounceBuffer(1000)) { buff =>
       val rowCounts = Seq(300, 300)
-      val ptrBuffs = rowCounts.zipWithIndex.map { case (c, ix) => makeRequest(c) }
+      val ptrBuffs = rowCounts.map(makeRequest(_))
       var remaining = ptrBuffs.map(_._2.getLength).sum
-      val expected = new ArrayBuffer[ExpectedTagAndMaterialized]()
+      val expected = new ArrayBuffer[ReceivedBufferWindow]()
       expected.append(
-        ExpectedTagAndMaterialized(
-          tag = 1,
+        ReceivedBufferWindow(
           blocksInWindow = 1,
           materializedBatches = 0,
           bytesInWindow = math.min(1000, remaining),
@@ -639,8 +632,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       remaining = remaining - 1000
 
       expected.append(
-        ExpectedTagAndMaterialized(
-          tag = 1,
+        ReceivedBufferWindow(
           blocksInWindow = 2,
           materializedBatches = 1,
           bytesInWindow = math.min(1000, remaining),
@@ -648,8 +640,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       remaining = remaining - 1000
 
       expected.append(
-        ExpectedTagAndMaterialized(
-          tag = 2,
+        ReceivedBufferWindow(
           blocksInWindow = 1,
           materializedBatches = 1,
           bytesInWindow = math.min(1000, remaining),

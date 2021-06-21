@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.MemoryBuffer
 import com.nvidia.spark.rapids.Arm
 import com.nvidia.spark.rapids.shuffle._
 import org.openucx.jucx.UcxCallback
@@ -96,9 +96,8 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
     logDebug(s"Sending to ${peerExecutorId} at ${TransportUtils.toHex(header)} " +
       s"with ${buffer}")
 
-    val sendAm = UCXActiveMessage(
-      UCXConnection.composeSendAmId(messageType), header,
-      buffer.isInstanceOf[DeviceMemoryBuffer])
+    val sendAm = UCXActiveMessage(UCXConnection.composeSendAmId(messageType),
+      header, forceRndv = true)
 
     ucx.sendActiveMessage(peerExecutorId, sendAm, buffer,
       new UcxCallback {

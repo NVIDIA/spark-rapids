@@ -203,14 +203,14 @@ class RapidsShuffleClient(
       shuffleRequests: Seq[ShuffleBlockBatchId],
       handler: RapidsShuffleFetchHandler): Unit = {
     withResource(tx) { _ =>
-      withResource(tx.releaseMessage()) { resp =>
+      withResource(tx.releaseMessage) { mtb =>
         withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
           try {
             tx.getStatus match {
               case TransactionStatus.Success =>
                 // start the receives
-                val metadataResponse: MetadataResponse =
-                  ShuffleMetadata.getMetadataResponse(resp.getBuffer())
+                val metadataResponse =
+                  ShuffleMetadata.getMetadataResponse(mtb.getBuffer())
 
                 logDebug(s"Received from ${tx} response: \n:" +
                   s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
@@ -282,12 +282,12 @@ class RapidsShuffleClient(
       ShuffleMetadata.buildTransferRequest(id, requestsToIssue.map(i => i.tableMeta)))
 
     connection.request(MessageType.TransferRequest, transferReq.acquire(), withResource(_) { tx =>
-      withResource(tx.releaseMessage()) { res =>
+      withResource(tx.releaseMessage) { mtb =>
         withResource(transferReq) { _ =>
           tx.getStatus match {
             case TransactionStatus.Success =>
               // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
-              val transferResponse = ShuffleMetadata.getTransferResponse(res.getBuffer())
+              val transferResponse = ShuffleMetadata.getTransferResponse(mtb.getBuffer())
               (0 until transferResponse.responsesLength()).foreach(r => {
                 val response = transferResponse.responses(r)
                 if (response.state() != TransferState.STARTED) {

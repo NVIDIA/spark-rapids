@@ -62,13 +62,12 @@ class BufferSendState(
 
   private[this] var isClosed = false
 
-  // the client on the other side expects messages that include this header
-  var peerBufferReceiveHeader: Long = -1L
-
-  private[this] val (bufferMetas: Array[BufferMeta], blocksToSend: Seq[SendBlock]) = {
-    withResource(transaction.releaseMessage()) { transportBuffer =>
-      val transferRequest = ShuffleMetadata.getTransferRequest(transportBuffer.getBuffer())
-      peerBufferReceiveHeader = transferRequest.id()
+  private[this] val (peerBufferReceiveHeader: Long,
+      bufferMetas: Array[BufferMeta],
+      blocksToSend: Seq[SendBlock]) = {
+    withResource(transaction.releaseMessage) { mtb =>
+      val transferRequest = ShuffleMetadata.getTransferRequest(mtb.getBuffer())
+      val peerBufferReceiveHeader = transferRequest.id()
 
       val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
 
@@ -82,8 +81,14 @@ class BufferSendState(
         }
       }
 
-      (bufferMetas, blocksToSend)
+      (peerBufferReceiveHeader, bufferMetas, blocksToSend)
     }
+  }
+
+  // the header to use for all sends in this `BufferSendState` (sent to us
+  // by the peer)
+  def getPeerBufferReceiveHeader: Long = {
+    peerBufferReceiveHeader
   }
 
   private[this] val windowedBlockIterator =

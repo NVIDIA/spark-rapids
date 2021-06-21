@@ -159,14 +159,26 @@ case class TransactionStats(txTimeMs: Double,
                             sendThroughput: Double,
                             recvThroughput: Double)
 
+/**
+ * TransportBuffer represents a buffer with an address and length.
+ *
+ * There are two implementations:
+ *
+ *  - `MetadataTransportBuffer`: This is host memory backing a flat buffer, used for
+ *    block metadata and transfer requests.
+ *
+ *  - `CudfTransportBuffer`: This is data backing a cuDF `MemoryBuffer`, and can be on the
+ *    host or device (sender side) and exclusively on the device (client side)
+ */
 trait TransportBuffer extends AutoCloseable {
-  def copy(in: ByteBuffer): Unit
   def getAddress(): Long
   def getLength(): Long
-  def getBuffer(): ByteBuffer
-  def getMemoryBuffer: MemoryBuffer
 }
 
+/**
+ * MetadataTransportBuffer encapsulates a direct byte buffer used exclusively for metadata
+ * transfers via the transport.
+ */
 class MetadataTransportBuffer(val dbb: RefCountedDirectByteBuffer) extends TransportBuffer {
   def copy(in: ByteBuffer): Unit = {
     val bb = dbb.getBuffer()
@@ -174,33 +186,28 @@ class MetadataTransportBuffer(val dbb: RefCountedDirectByteBuffer) extends Trans
     bb.rewind()
   }
 
-  def getAddress(): Long =
+  override def getAddress(): Long =
     TransportUtils.getAddress(dbb.getBuffer())
 
-  override def getBuffer(): ByteBuffer = dbb.getBuffer()
-
-  override def getMemoryBuffer: MemoryBuffer =
-    throw new NotImplementedError("Cannot get MemoryBuffer for metadata")
-
   override def getLength(): Long = dbb.getBuffer().remaining()
+
+  def getBuffer(): ByteBuffer = dbb.getBuffer()
 
   override def close(): Unit = dbb.close()
 }
 
-class CudfTransportBuffer(dbb: MemoryBuffer) extends TransportBuffer {
-  def copy(in: ByteBuffer): Unit =
-    throw new NotImplementedError("Cannot copy from ByteBuffer to MemoryBuffer")
+/**
+ * CudfTransportBuffer encapsulates a cuDF `MemoryBuffer` used for shuffle block transfers
+ * via the transport
+ */
+class CudfTransportBuffer(mb: MemoryBuffer) extends TransportBuffer {
+  override def getAddress(): Long = mb.getAddress
 
-  def getAddress(): Long = dbb.getAddress
+  override def getLength(): Long = mb.getLength
 
-  override def getBuffer(): ByteBuffer =
-    throw new NotImplementedError("Cannot get ByteBuffer from MemoryBuffer")
+  def getMemoryBuffer: MemoryBuffer = mb
 
-  override def getMemoryBuffer: MemoryBuffer = dbb
-
-  override def getLength(): Long = dbb.getLength
-
-  override def close(): Unit = dbb.close()
+  override def close(): Unit = mb.close()
 }
 
 /**
@@ -261,7 +268,7 @@ trait Transaction extends AutoCloseable {
    * @note The caller must call `close` on the returned message
    * @return a `TransportBuffer` instance
    */
-  def releaseMessage(): TransportBuffer
+  def releaseMessage: MetadataTransportBuffer
 
   /**
    * For `Request` transactions, `respond` will be able to reply to a peer who issued

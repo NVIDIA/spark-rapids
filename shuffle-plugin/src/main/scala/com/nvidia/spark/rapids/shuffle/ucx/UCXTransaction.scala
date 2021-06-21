@@ -22,10 +22,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.shuffle.{MessageType, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportBuffer, TransportUtils}
+import com.nvidia.spark.rapids.shuffle.{MessageType, MetadataTransportBuffer, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportBuffer, TransportUtils}
 import org.openucx.jucx.ucp.UcpRequest
-
 import org.apache.spark.internal.Logging
+
+import scala.reflect.{ClassTag, classTag}
 
 /**
  * Helper enum to describe transaction types supported in UCX
@@ -88,9 +89,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   override def getErrorMessage: Option[String] = errorMessage
 
-  override def toString: String = toString(log.isTraceEnabled())
-
-  private def toString(verbose: Boolean): String = {
+  override def toString: String = {
     s"Transaction(" +
       s"txId=$txId, " +
       s"type=$transactionType, " +
@@ -342,10 +341,14 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   // Reference count is not updated here. The caller is responsible to close
-  override def releaseMessage(): TransportBuffer = {
+  override def releaseMessage: MetadataTransportBuffer = {
     val msg = activeMessageData.get
     activeMessageData = None
-    msg
+    msg match {
+      case mtb: MetadataTransportBuffer => mtb
+      case _ =>
+        throw new IllegalStateException(s"Expected a metadata buffer, but got ${msg}")
+    }
   }
 
   private[ucx] def setHeader(id: Option[Long]): Unit = header = id
@@ -361,7 +364,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   private[ucx] def setErrorMessage(errorMsg: Option[String]): Unit = {
-    errorMessage = errorMessage
+    errorMessage = errorMsg
   }
 
   override def peerExecutorId(): Long =
