@@ -339,6 +339,7 @@ class ApplicationInfo(
   def processSQLPlanMetrics(): Unit ={
     for ((sqlID, planInfo) <- sqlPlan){
 
+      logWarning(s"plan description for ${planInfo.nodeName} is : " + planInfo.simpleString)
       // check if planInfo has ReadSchema
       logWarning(s"metadata for sqlID: $sqlID name: ${planInfo.nodeName}")
       val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
@@ -379,6 +380,35 @@ class ApplicationInfo(
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
+        logWarning(s"node is ${node.name} desc ${node.desc}")
+        if (node.name.equals("BatchScan")) {
+          logWarning("node is batch scan")
+          // try to get ReadSchema
+          if (node.desc.contains("ReadSchema")) {
+            val index = node.desc.indexOf("ReadSchema:")
+            val subStr = node.desc.substring(index)
+            val endIndex = subStr.indexOf(", ")
+            val schemaOnly = subStr.substring(0, endIndex)
+            logWarning("read schema is: " + schemaOnly)
+          }
+          if (node.desc.contains("Location:")) {
+            val index = node.desc.indexOf("Location:")
+            val subStr = node.desc.substring(index)
+            val endIndex = subStr.indexOf(", ")
+            val schemaOnly = subStr.substring(0, endIndex)
+            logWarning("Location is: " + schemaOnly)
+          }
+          if (node.desc.contains("PushedFilters:")) {
+            val index = node.desc.indexOf("PushedFilters:")
+            val subStr = node.desc.substring(index)
+            val endIndex = subStr.indexOf("]")
+            val schemaOnly = subStr.substring(0, endIndex + 1)
+            logWarning("Pushed Filters is: " + schemaOnly)
+          }
+          if (node.desc.contains("ParquetScan")) {
+            logWarning("format is Parquet")
+          }
+        }
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {
