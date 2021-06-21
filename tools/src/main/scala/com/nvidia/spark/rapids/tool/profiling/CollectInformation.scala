@@ -23,8 +23,9 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.functions.{col, desc, lit}
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, ToolUtils}
 
 /**
@@ -32,7 +33,7 @@ import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, ToolUtils}
  * Such as executors, parameters, etc.
  */
 class CollectInformation(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter]) {
+    fileWriter: Option[ToolTextFileWriter]) extends Logging {
 
   require(apps.nonEmpty)
 
@@ -73,7 +74,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter.foreach(_.write(messageHeader))
     apps.foreach { app =>
       import sparkSession.implicits._
-      val df = app.readSchemaV1.toDF
+      logWarning("before toDF")
+      val df = app.readSchemaV1.toDF.sort(desc("sqlID"), desc("location"))
       val dfWithApp = df.withColumn("appIndex", lit(app.index.toString))
         .select("appIndex", df.columns:_*)
       if (app.readSchemaV1.nonEmpty) {
@@ -81,6 +83,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           writer.write(ToolUtils.showString(dfWithApp, numRows))
         }
       }
+      logWarning("after toDF and write")
     }
   }
 
