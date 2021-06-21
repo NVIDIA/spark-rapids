@@ -621,6 +621,8 @@ class ApplicationInfo(
        |from propertiesDF_$index
        |where source ='spark'
        |and key like 'spark.rapids%'
+       |or key like 'spark.executorEnv.UCX%'
+       |or key in ('spark.shuffle.manager','spark.shuffle.service.enabled')
        |""".stripMargin
 
   // Function to generate the SQL string for aggregating task metrics columns.
