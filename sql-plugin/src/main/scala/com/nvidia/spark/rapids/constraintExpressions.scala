@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,19 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuKnownFloatingPointNormalized(child: Expression) extends TaggingExpression
     with GpuExpression {
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    child.columnarEval(batch)
+  }
+}
+
+/**
+ * GPU version of the 'KnownNotNull', a TaggingExpression in spark,
+ * to tag an expression as known to not be null.
+ */
+case class GpuKnownNotNull(child: Expression) extends TaggingExpression
+    with GpuExpression {
+  override def nullable: Boolean = false
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     child.columnarEval(batch)
   }

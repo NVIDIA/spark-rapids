@@ -125,7 +125,7 @@ def test_single_sort_in_part(data_gen, order):
 def test_single_nested_sort_in_part(data_gen, order, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).sortWithinPartitions(order),
+        lambda spark : unary_op_df(spark, data_gen, num_slices=12).sortWithinPartitions(order),
         conf={**allow_negative_scale_of_decimal_conf, **sort_conf})
 
 orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen,
