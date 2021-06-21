@@ -346,7 +346,7 @@ class ApplicationInfo(
       allMetaWithSchema.foreach { node =>
         val meta = node.metadata
         val schemaMap = meta.get("ReadSchema").map { schema =>
-          if (schema.startsWith("struct<") && schema.endsWitch(">") {
+          if (schema.startsWith("struct<") && schema.endsWith(">")) {
             val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
             schemaStr.split(",").map { entry =>
               val keyValue = entry.split(":")
