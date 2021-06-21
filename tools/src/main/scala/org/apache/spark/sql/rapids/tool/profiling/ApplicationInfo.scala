@@ -36,7 +36,7 @@ import org.apache.spark.io.CompressionCodec
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.SparkPlanGraph
+import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
 import org.apache.spark.ui.UIUtils
 import org.apache.spark.util._
 
@@ -333,82 +333,106 @@ class ApplicationInfo(
     keep
   }
 
+  def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo) = {
+    // check if planInfo has ReadSchema
+    val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
+    allMetaWithSchema.foreach { node =>
+      val meta = node.metadata
+      val schemaMap = meta.get("ReadSchema").map { schema =>
+        if (schema.startsWith("struct<") && schema.endsWith(">")) {
+          val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
+          schemaStr.split(",").map { entry =>
+            val keyValue = entry.split(":")
+            if (keyValue.size == 2) {
+              (keyValue(0) -> keyValue(1))
+            } else {
+              logWarning(s"Splitting key and value didn't result in key and value $entry")
+              (entry -> "unknown")
+            }
+          }.toMap
+        } else {
+          logWarning(s"Schema format is unknown: $schema, skipping!")
+          Map.empty[String, String]
+        }
+      }.getOrElse(Map.empty[String, String])
+      readSchemaV1 += ReadSchemaV1(sqlID,
+        meta.getOrElse("Format", "unknown"),
+        meta.getOrElse("Location", "unknown"),
+        meta.getOrElse("PushedFilters", "unknown"),
+        schemaMap
+      )
+      // TODO - remove after debug
+      logWarning(s"node ${node.nodeName}")
+      node.metadata.foreach { case (k, v) =>
+        logWarning(s" key: $k value: $v")
+      }
+    }
+  }
+
+  def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode) = {
+    logWarning(s"node is ${node.name} desc ${node.desc}")
+    if (node.name.equals("BatchScan")) {
+      logWarning("node is batch scan")
+      // try to get ReadSchema
+      val schema = if (node.desc.contains("ReadSchema")) {
+        val index = node.desc.indexOf("ReadSchema:")
+        val subStr = node.desc.substring(index)
+        val endIndex = subStr.indexOf(", ")
+        val schemaOnly = subStr.substring(0, endIndex + 1)
+        logWarning("read schema is: " + schemaOnly)
+        schemaOnly
+      } else {
+        "unknown"
+      }
+      val location = if (node.desc.contains("Location:")) {
+        val index = node.desc.indexOf("Location:")
+        val subStr = node.desc.substring(index)
+        val endIndex = subStr.indexOf(", ")
+        val location = subStr.substring(0, endIndex)
+        logWarning("Location is: " + location)
+        location
+      } else {
+        "unknown"
+      }
+      val pushedFilters = if (node.desc.contains("PushedFilters:")) {
+        val index = node.desc.indexOf("PushedFilters:")
+        val subStr = node.desc.substring(index)
+        val endIndex = subStr.indexOf("]")
+        val filters = subStr.substring(0, endIndex + 1)
+        logWarning("Pushed Filters is: " + filters)
+        filters
+      } else {
+        "unknown"
+      }
+      val format = if (node.desc.contains("ParquetScan")) {
+        logWarning("format is Parquet")
+        "Parquet"
+      } else {
+        "unknown"
+      }
+      readSchemaV1 += ReadSchemaV1(sqlID,
+        format,
+        location,
+        pushedFilters,
+        schemaMap
+      )
+    }
+  }
+
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
   def processSQLPlanMetrics(): Unit ={
     for ((sqlID, planInfo) <- sqlPlan){
 
-      logWarning(s"plan description for ${planInfo.nodeName} is : " + planInfo.simpleString)
-      // check if planInfo has ReadSchema
-      logWarning(s"metadata for sqlID: $sqlID name: ${planInfo.nodeName}")
-      val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
-
-      allMetaWithSchema.foreach { node =>
-        val meta = node.metadata
-        val schemaMap = meta.get("ReadSchema").map { schema =>
-          if (schema.startsWith("struct<") && schema.endsWith(">")) {
-            val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
-            schemaStr.split(",").map { entry =>
-              val keyValue = entry.split(":")
-              if (keyValue.size == 2) {
-                (keyValue(0) -> keyValue(1))
-              } else {
-                logWarning(s"Splitting key and value didn't result in key and value $entry")
-                (entry -> "unknown")
-              }
-            }.toMap
-          } else {
-            logWarning(s"Schema format is unknown: $schema, skipping!")
-            Map.empty[String, String]
-          }
-        }.getOrElse(Map.empty[String, String])
-        readSchemaV1 += ReadSchemaV1(sqlID,
-          meta.getOrElse("Format", "unknown"),
-          meta.getOrElse("Location", "unknown"),
-          meta.getOrElse("PushedFilters", ""),
-          schemaMap
-        )
-        logWarning(s"node ${node.nodeName}")
-        node.metadata.foreach { case (k, v) =>
-          logWarning(s" key: $k value: $v")
-        }
-      }
+      checkMetadataForReadSchema(sqlID, planInfo)
 
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
-        logWarning(s"node is ${node.name} desc ${node.desc}")
-        if (node.name.equals("BatchScan")) {
-          logWarning("node is batch scan")
-          // try to get ReadSchema
-          if (node.desc.contains("ReadSchema")) {
-            val index = node.desc.indexOf("ReadSchema:")
-            val subStr = node.desc.substring(index)
-            val endIndex = subStr.indexOf(", ")
-            val schemaOnly = subStr.substring(0, endIndex)
-            logWarning("read schema is: " + schemaOnly)
-          }
-          if (node.desc.contains("Location:")) {
-            val index = node.desc.indexOf("Location:")
-            val subStr = node.desc.substring(index)
-            val endIndex = subStr.indexOf(", ")
-            val schemaOnly = subStr.substring(0, endIndex)
-            logWarning("Location is: " + schemaOnly)
-          }
-          if (node.desc.contains("PushedFilters:")) {
-            val index = node.desc.indexOf("PushedFilters:")
-            val subStr = node.desc.substring(index)
-            val endIndex = subStr.indexOf("]")
-            val schemaOnly = subStr.substring(0, endIndex + 1)
-            logWarning("Pushed Filters is: " + schemaOnly)
-          }
-          if (node.desc.contains("ParquetScan")) {
-            logWarning("format is Parquet")
-          }
-        }
+        checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {

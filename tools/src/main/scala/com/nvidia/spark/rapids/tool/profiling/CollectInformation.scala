@@ -69,7 +69,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
   // Print read data schema information
   def printReadSchemaInfo(sparkSession: SparkSession, numRows: Int): Unit = {
-    val messageHeader = "\nRead Schema Information:\n"
+    val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     apps.foreach { app =>
       import sparkSession.implicits._
