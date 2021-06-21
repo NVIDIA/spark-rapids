@@ -74,9 +74,11 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     apps.foreach { app =>
       import sparkSession.implicits._
       val df = app.readSchemaV1.toDF
+      val dfWithApp = df.withColumn("appIndex", col(app.index.toString))
+        .select("appIndex", df.columns:_*)
       if (app.readSchemaV1.nonEmpty) {
         fileWriter.foreach { writer =>
-          writer.write(ToolUtils.showString(df, numRows))
+          writer.write(ToolUtils.showString(dfWithApp, numRows))
         }
       }
     }
