@@ -89,8 +89,10 @@ object Qualification extends Logging {
     val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
     format match {
       case "csv" =>
-        df.repartition(1).sortWithinPartitions(desc("Score")).write.option("header", "true").
-          mode("overwrite").csv(finalOutputDir)
+        df.repartition(1)
+          .sortWithinPartitions(desc("Score"), desc("SQL Dataframe Duration"))
+          .write.option("header", "true")
+          .mode("overwrite").csv(finalOutputDir)
         logInfo(s"Output log location:  $finalOutputDir")
       case "text" =>
         val logFileName = "rapids_4_spark_qualification_output.log"
