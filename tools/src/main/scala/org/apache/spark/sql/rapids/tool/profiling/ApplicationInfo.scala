@@ -333,31 +333,28 @@ class ApplicationInfo(
     keep
   }
 
-
-  private def splitKeyValueSchema(entry: String): (String, String) = {
-    val keyValue = entry.split(":")
-    if (keyValue.size == 2) {
-      (keyValue(0) -> keyValue(1))
-    } else {
-      logWarning(s"Splitting key and value didn't result in key and value $entry")
-      (entry -> "unknown")
-    }
+  private def splitKeyValueSchema(schemaArr: Array[String]): Map[String, String] = {
+    schemaArr.map { entry =>
+      val keyValue = entry.split(":")
+      if (keyValue.size == 2) {
+        (keyValue(0) -> keyValue(1))
+      } else {
+        logWarning(s"Splitting key and value didn't result in key and value $entry")
+        (entry -> "unknown")
+      }
+    }.toMap
   }
 
   def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
     schemaOpt.map { schema =>
       if (schema.startsWith("struct<") && schema.endsWith(">")) {
         val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
-        schemaStr.split(",").map { entry =>
-          splitKeyValueSchema(entry)
-        }.toMap
+        splitKeyValueSchema(schemaStr.split(","))
       } else if (schema.startsWith("struct<") && schema.endsWith("...")) {
         val schemaStr = schema.stripPrefix("struct<")
         // the last schema element will be cutoff because it has the ...
         val validSchema = schemaStr.split(",").dropRight(1)
-        validSchema.map { entry =>
-          splitKeyValueSchema(entry)
-        }.toMap
+        splitKeyValueSchema(validSchema) ++ Map("..." -> "...")
       } else {
         logWarning(s"Schema format is unknown: $schema, skipping!")
         Map.empty[String, String]
@@ -391,9 +388,10 @@ class ApplicationInfo(
       logWarning("node is batch scan")
       // try to get ReadSchema
       val schemaMap = if (node.desc.contains("ReadSchema")) {
-        val index = node.desc.indexOf("ReadSchema:")
+        val schemaTag = "ReadSchema: "
+        val index = node.desc.indexOf(schemaTag)
         if (index != -1) {
-          val subStr = node.desc.substring(index)
+          val subStr = node.desc.substring(index + schemaTag.size)
           val endIndex = subStr.indexOf(", ")
           if (endIndex != -1) {
             val schemaOnly = subStr.substring(0, endIndex)
