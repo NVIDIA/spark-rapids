@@ -333,10 +333,6 @@ class ApplicationInfo(
     keep
   }
 
-  private val STRUCT_PREFIX = "struct<"
-  private val STRUCT_SUFFIX = ">"
-
-
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
@@ -350,8 +346,8 @@ class ApplicationInfo(
       allMetaWithSchema.foreach { node =>
         val meta = node.metadata
         val schemaMap = meta.get("ReadSchema").map { schema =>
-          if (schema.startsWith(STRUCT_PREFIX)) {
-            val schemaStr = schema.stripPrefix(STRUCT_PREFIX).stripSuffix(STRUCT_SUFFIX)
+          if (schema.startsWith("struct<") && schema.endsWitch(">") {
+            val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
             schemaStr.split(",").map { entry =>
               val keyValue = entry.split(":")
               if (keyValue.size == 2) {
@@ -362,7 +358,7 @@ class ApplicationInfo(
               }
             }.toMap
           } else {
-            logWarning("Schema format is unknown, skipping!")
+            logWarning(s"Schema format is unknown: $schema, skipping!")
             Map.empty[String, String]
           }
         }.getOrElse(Map.empty[String, String])
