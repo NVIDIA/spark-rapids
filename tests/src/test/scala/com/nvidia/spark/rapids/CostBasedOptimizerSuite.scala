@@ -73,7 +73,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,BroadcastExchangeExec,BroadcastHashJoinExec,SortExec,SortMergeJoinExec," +
-          "Alias,Cast,LessThan,ShuffleExchangeExec,RangePartitioning,HashPartitioning,ShuffleExchangeExec")
+          "Alias,Cast,LessThan,ShuffleExchangeExec,RangePartitioning,HashPartitioning," +
+          "ShuffleExchangeExec")
 
     val optimizations: ListBuffer[Seq[Optimization]] = new ListBuffer[Seq[Optimization]]()
     GpuOverrides.addListener(
