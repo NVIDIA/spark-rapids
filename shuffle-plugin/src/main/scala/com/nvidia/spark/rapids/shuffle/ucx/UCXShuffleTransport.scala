@@ -465,7 +465,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
           if (perClientReq.nonEmpty) {
             perClientReq.foreach { case (client, perClientRequests) =>
-              // The transport uses uses this `brsId` as the active message header for this
+              // The transport uses this `brsId` as the active message header for this
               // `BufferReceiveState`
               val brsId = UCXConnection.composeBufferHeader(
                 client.connection.getPeerExecutorId, ucx.assignUniqueId())
