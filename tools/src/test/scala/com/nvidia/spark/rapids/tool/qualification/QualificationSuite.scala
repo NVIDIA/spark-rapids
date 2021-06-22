@@ -87,7 +87,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("skip malformed json eventlog") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val badEventLog = s"$profileLogDir/malformed_json_eventlog"
+    val badEventLog = s"$profileLogDir/malformed_json_eventlog.zstd"
     val logFiles = Array(s"$logDir/nds_q86_test", badEventLog)
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
@@ -95,7 +95,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test udf event logs") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
-      s"$logDir/dsAndDf_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
@@ -125,6 +125,19 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test nds q86 test") {
     val logFiles = Array(s"$logDir/nds_q86_test")
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
+  }
+
+  // event log rolling creates files under a directory
+  test("test event log rolling") {
+    val logFiles = Array(s"$logDir/eventlog_v2_local-1623876083964")
+    runQualificationTest(logFiles, "directory_test_expectation.csv")
+  }
+
+  // these test files were setup to simulator the directory structure
+  // when running on Databricks and are not really from there
+  test("test db event log rolling") {
+    val logFiles = Array(s"$logDir/db_sim_eventlog")
+    runQualificationTest(logFiles, "db_sim_test_expectation.csv")
   }
 
   test("test nds q86 with failure test") {

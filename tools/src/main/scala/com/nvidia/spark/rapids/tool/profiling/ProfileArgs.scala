@@ -48,7 +48,7 @@ For usage see below:
     opt[String](required = false,
       descr = "Base output directory. Default is current directory for the default filesystem." +
         " The final output will go into a subdirectory called" +
-        " rapids_4_spark_qualification_profile. It will overwrite any existing files" +
+        " rapids_4_spark_profile. It will overwrite any existing files" +
         " with the same name.",
       default = Some("."))
   val eventlog: ScallopOption[List[String]] =
@@ -76,6 +76,11 @@ For usage see below:
   val printPlans: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
+
+  validate(filterCriteria) {
+    case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)
+    case _ => Left("Error, the filter criteria must end with either -newest or -oldest")
+  }
 
   verify()
 }
