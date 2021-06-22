@@ -1,6 +1,6 @@
 # Spark Qualification and Profiling tools
 
-The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark 
+The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications.
 
 The profiling tool generates information which can be used for debugging and profiling applications.
@@ -13,16 +13,16 @@ GPU generated event logs.
 - Spark 3.0.1 or newer installed
 - Java 8 or above
 - Complete Spark event log(s) from Spark 3.0 or above version
-  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes. 
-  Spark event logs can be downloaded from Spark UI using a "Download" button on the right side, 
+  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
+  Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
   or can be found in the location specified by `spark.eventLog.dir`.)
 
 Optional:
-- maven installed 
+- maven installed
   (only if you want to compile the jar yourself)
-- hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar 
+- hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar
   (only if any input event log is from S3)
-  
+
 ## Download the jar or compile it
 You do not need to compile the jar yourself because you can download it from maven repository directly.
 
@@ -43,9 +43,9 @@ If any input is a S3 file path or directory path, 2 extra steps are needed to ac
 1. Download the matched jars based on the Hadoop version:
    - `hadoop-aws-<version>.jar`
    - `aws-java-sdk-<version>.jar`
-     
+
 Take Hadoop 2.7.4 for example, we can download and include below jars in the '--jars' option to spark-shell or spark-submit:
-[hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and 
+[hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and
 [aws-java-sdk-1.7.4.jar](https://repo.maven.apache.org/maven2/com/amazonaws/aws-java-sdk/1.7.4/aws-java-sdk-1.7.4.jar)
 
 2. In $SPARK_HOME/conf, create `hdfs-site.xml` with below AWS S3 keys inside:
@@ -62,7 +62,7 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 </property>
 </configuration>
 ```
-Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
+Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on
 more options about integrating hadoop-aws module with S3.
 
 
@@ -108,7 +108,7 @@ Each application(event log) could have multiple SQL queries. If a SQL's plan has
 Note: the duration(s) reported are in milli-seconds.
 
 It can also print out any potential problems it finds in a separate column, which is not included in the score. This
-currently only includes some UDFs. The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps. 
+currently only includes some UDFs. The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
 Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
 
 The output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
@@ -179,7 +179,7 @@ For usage see below:
                                    To process 10 recent event logs: --filter-criteria "10-newest"
                                    To process 10 oldest event logs: --filter-criteria "10-oldest"
   -m, --match-event-logs  <arg>    Filter event logs filenames which contains the input string.
-       
+
       --no-exec-cpu-percent        Do not include the executor CPU time percent.
   -n, --num-output-rows  <arg>     Number of output rows for each Application.
                                    Default is 1000.
@@ -203,7 +203,7 @@ For usage see below:
 ```
 
 ### Output
-By default this outputs a csv file under sub-directory `./rapids_4_spark_qualification_output/` that contains 
+By default this outputs a csv file under sub-directory `./rapids_4_spark_qualification_output/` that contains
 the processed applications. The output will go into your default filesystem, it supports local filesystem
 or HDFS. The csv output can be used later to read back into Spark and do further processing or combined with other reports
 as needed.
@@ -211,9 +211,9 @@ as needed.
 The output location can be changed using the `--output-directory` option. Default is current directory.
 
 The output format can be changed using the `--output-format` option. Default is csv. The other option is text.
-  
+
 Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
-  
+
 Run `--help` for more information.
 
 
@@ -276,8 +276,8 @@ Compare Rapids Properties which are set explicitly:
 |spark.rapids.sql.variableFloatAgg.enabled  |null      |TRUE      |
 +-------------------------------------------+----------+----------+
 ```
- 
-- List rapids-4-spark and cuDF jars based on classpath: 
+
+- List rapids-4-spark and cuDF jars based on classpath:
 ```
 Rapids Accelerator Jar and cuDF Jar:
 /path/rapids-4-spark_2.12-0.5.0.jar
@@ -319,7 +319,7 @@ filename will be `planDescriptions-app-20210507103057-0000`
 ```
 Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
 ```
-Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file 
+Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file
 as a graph in pdf format using below command:
 ```bash
 dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
@@ -345,7 +345,7 @@ Job + Stage level aggregated task metrics:
 +--------+-------+--------+--------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
 |1       |job_0  |3333    |222222  |0                   |11111111    |111111      |111         |1111.1      |6666666            |55555                         |55555                      |55555555           |0                    |222222222222       |22222222222          |111111       |0                     |0                      |0                        |222222222              |1                          |11111         |11111               |99999                    |22222222222          |2222221                   |222222222222          |0                           |222222222222         |222222222222       |5555555              |444444          |
 ```
-  
+
 
 - SQL level aggregated task metrics:
 ```
@@ -356,7 +356,7 @@ SQL level aggregated task metrics:
 |1       |application_1111111111111_0001|0    |show at <console>:11|1111    |222222  |6666666        |55555555       |55.55           |0                   |13333333    |111111      |999         |3333.3      |6666666            |55555                         |66666                      |11111111           |0                    |111111111111       |11111111111          |111111       |0                     |0                      |0                        |888888888              |8                          |11111         |11111               |99999                    |11111111111          |2222222                   |222222222222          |0                           |222222222222         |444444444444       |5555555              |444444          |
 ```
 
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent: 
+- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent:
 ```
 SQL Duration and Executor CPU Time Percent
 +--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
@@ -366,7 +366,7 @@ SQL Duration and Executor CPU Time Percent
 +--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
 ```
 
-- Shuffle Skew Check: 
+- Shuffle Skew Check:
 ```
 Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
@@ -453,7 +453,7 @@ rapids-4-spark-tools_2.12-<version>.jar \
 ```
 
 ### Options (`--help` output)
-  
+
   Note: `--help` should be before the trailing event logs.
 ```bash
 $SPARK_HOME/bin/spark-submit \
@@ -497,7 +497,7 @@ default filesystem, it supports local filesystem or HDFS. There are separate fil
 under the same sub-directory when using the options to generate query visualizations or printing the SQL plans.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
-  
+
 Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
 
 Run `--help` for more information.

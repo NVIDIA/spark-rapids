@@ -30,9 +30,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockBatchId
 
 object MetaUtils extends Arm {
-  // Used in cases where the `tableId` is not known at meta creation. 
-  // We pick a non-zero integer since FlatBuffers prevent mutating the 
-  // field if originally set to the default value as specified in the 
+  // Used in cases where the `tableId` is not known at meta creation.
+  // We pick a non-zero integer since FlatBuffers prevent mutating the
+  // field if originally set to the default value as specified in the
   // FlatBuffer (0 by default).
   val TableIdDefaultValue: Int = -1
 

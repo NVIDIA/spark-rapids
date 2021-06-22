@@ -4,9 +4,9 @@ title: yarn-gpu
 nav_exclude: true
 ---
 
-## Spark3 GPU Configuration Guide on Yarn 3.2.1 
+## Spark3 GPU Configuration Guide on Yarn 3.2.1
 
-Following files recommended to be configured to enable GPU scheduling on Yarn 3.2.1 and later. 
+Following files recommended to be configured to enable GPU scheduling on Yarn 3.2.1 and later.
 
 GPU resource discovery script - `/usr/lib/spark/scripts/gpu/getGpusResources.sh`:
 ```bash
@@ -36,7 +36,7 @@ Yarn Scheduler config - `/etc/hadoop/conf/capacity-scheduler.xml`:
 ```xml
 <configuration>
   <property>
-    <name>yarn.scheduler.capacity.resource-calculator</name>     
+    <name>yarn.scheduler.capacity.resource-calculator</name>
     <value>org.apache.hadoop.yarn.util.resource.DominantResourceCalculator</value>
   </property>
 </configuration>

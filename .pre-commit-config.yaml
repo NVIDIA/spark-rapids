@@ -27,4 +27,6 @@ repos:
       - id: check-added-large-files
         name: Check for file over 1.5MiB
         args: ['--maxkb=1500', '--enforce-all']
+      - id: trailing-whitespace
+        verbose: true
 

@@ -457,7 +457,7 @@ class CSVPartitionReader(
           if (newTotal > hmb.getLength) {
             hmb = growHostBuffer(hmb, newTotal)
           }
-          // Can have an empty line, do not write this to buffer but add the separator 
+          // Can have an empty line, do not write this to buffer but add the separator
           // and totalRows
           if (lineSize != 0) {
             hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
@@ -502,7 +502,7 @@ class CSVPartitionReader(
         None
       } else {
         val newReadDataSchema: StructType = if (readDataSchema.isEmpty) {
-          val smallestField = 
+          val smallestField =
               dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize))
           StructType(Seq(smallestField))
         } else {

@@ -22,7 +22,7 @@ from pyspark.sql.types import *
 def test_struct_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.range(2).selectExpr(
-                "named_struct('1', 2, '3', 4) as i", 
+                "named_struct('1', 2, '3', 4) as i",
                 "named_struct('a', 'b', 'c', 'd', 'e', named_struct()) as s",
                 "named_struct('a', map('foo', 10, 'bar', 11), 'arr', array(1.0, 2.0, 3.0)) as st"
                 "id"))

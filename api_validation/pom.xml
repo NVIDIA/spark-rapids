@@ -91,7 +91,7 @@
                 <configuration>
 			<mainClass>com.nvidia.spark.rapids.api.ApiValidation</mainClass>
                 </configuration>
-	    </plugin>	
+	    </plugin>
         </plugins>
     </build>
 </project>

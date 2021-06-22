@@ -12,7 +12,7 @@ performance when using the RAPIDS Accelerator plugin.
 ## Number of Executors
 The RAPIDS Accelerator plugin only supports a one-to-one mapping between GPUs and executors.
 
-## Number of Tasks per Executor 
+## Number of Tasks per Executor
 Running multiple, concurrent tasks per executor is supported in the same manner as standard
 Apache Spark. For example, if the cluster nodes each have 24 CPU cores and 4 GPUs then setting
 `spark.executor.cores=6` will run each executor with 6 cores and 6 concurrent tasks per executor,
@@ -59,7 +59,7 @@ called [RMM](https://github.com/rapidsai/rmm) to mitigate this overhead. By defa
 the plugin will allocate `90%` (`0.9`) of the _available_ memory on the GPU and keep it as a pool
 that can be allocated from. If the pool is exhausted more memory will be allocated and added to
 the pool.
-Most of the time this is a huge win, but if you need to share the GPU with other 
+Most of the time this is a huge win, but if you need to share the GPU with other
 [libraries](additional-functionality/ml-integration.md) that are not aware of RMM this can lead
 to memory issues, and you may need to disable pooling.
 
@@ -273,16 +273,16 @@ load CSV files then write Parquet files) need to lower this setting when using l
 partition sizes to avoid GPU out of memory errors.
 
 ### Enable Incompatible Operations
-Configuration key: 
+Configuration key:
 [`spark.rapids.sql.incompatibleOps.enabled`](configs.md#sql.incompatibleOps.enabled)
 
 Default value: `false`
 
 There are several operators/expressions that are not 100% compatible with the CPU version. These
-incompatibilities are documented [here](compatibility.md) and in the 
+incompatibilities are documented [here](compatibility.md) and in the
 [configuration documentation](./configs.md). Many of these incompatibilities are around corner
 cases that most queries do not encounter, or that would not result in any meaningful difference
-to the resulting output.  By enabling these operations either individually or with the 
+to the resulting output.  By enabling these operations either individually or with the
 `spark.rapids.sql.incompatibleOps.enabled` config it can greatly improve performance of your
 queries. Over time, we expect the number of incompatible operators to reduce.
 
@@ -291,7 +291,7 @@ If you want to understand if an operation is or is not on the GPU and why see se
 
 The following configs all enable different types of incompatible operations that can improve
 performance.
-- [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled) 
+- [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled)
 - [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans)
 - [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled)
 - [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled)

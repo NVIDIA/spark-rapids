@@ -30,7 +30,7 @@ not true for sorting. For all versions of the plugin `-0.0` == `0.0` for sorting
 Spark's sorting is typically a [stable](https://en.wikipedia.org/wiki/Sorting_algorithm#Stability)
 sort. Sort stability cannot be guaranteed in distributed work loads because the order in which
 upstream data arrives to a task is not guaranteed. Sort stability is only
-guaranteed in one situation which is reading and sorting data from a file using a single 
+guaranteed in one situation which is reading and sorting data from a file using a single
 task/partition. The RAPIDS Accelerator does an unstable
 [out of core](https://en.wikipedia.org/wiki/External_memory_algorithm) sort by default. This
 simply means that the sort algorithm allows for spilling parts of the data if it is larger than
@@ -44,7 +44,7 @@ in the future to allow for a spillable stable sort.
 
 For most basic floating-point operations like addition, subtraction, multiplication, and division
 the plugin will produce a bit for bit identical result as Spark does. For other functions like
-`sin`, `cos`, etc. the output may be different, but within the rounding error inherent in 
+`sin`, `cos`, etc. the output may be different, but within the rounding error inherent in
 floating-point calculations. The ordering of operations to calculate the value may differ between the
 underlying JVM implementation used by the CPU and the C++ standard library implementation used by
 the GPU.
@@ -120,7 +120,7 @@ If you know that your particular data type will be parsed correctly enough, you 
 type you expect to use. Often the performance improvement is so good that it is worth
 checking if it is parsed correctly.
 
-Spark is generally very strict when reading CSV and if the data does not conform with the 
+Spark is generally very strict when reading CSV and if the data does not conform with the
 expected format exactly it will result in a `null` value. The underlying parser that the RAPIDS Accelerator
 uses is much more lenient. If you have badly formatted CSV data you may get data back instead of
 nulls.
@@ -132,7 +132,7 @@ There are also discrepancies/issues with specific types that are detailed below.
 
 ### CSV Boolean
 
-Invalid values like `BAD` show up as `true` as described by this 
+Invalid values like `BAD` show up as `true` as described by this
 [issue](https://github.com/NVIDIA/spark-rapids/issues/2071)
 
 This is the same for all other types, but because that is the only issue with boolean parsing
@@ -244,11 +244,11 @@ values occurring before the transition between the Julian and Gregorian calendar
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/144).
 
-When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and 
-result in an `IllegalArgumentException` thrown, if any value is before 
+When `spark.sql.parquet.outputTimestampType` is set to `INT96`, the timestamps will overflow and
+result in an `IllegalArgumentException` thrown, if any value is before
 September 21, 1677 12:12:43 AM or it is after April 11, 2262 11:47:17 PM. To get around this
-issue, turn off the ParquetWriter acceleration for timestamp columns by either setting 
-`spark.rapids.sql.format.parquet.writer.int96.enabled` to false or 
+issue, turn off the ParquetWriter acceleration for timestamp columns by either setting
+`spark.rapids.sql.format.parquet.writer.int96.enabled` to false or
 set `spark.sql.parquet.outputTimestampType` to `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS` to by
 -pass the issue entirely.
 
@@ -368,8 +368,8 @@ The formats which are supported on GPU and 100% compatible with Spark are :
 
 Examples of supported formats that may produce different results are:
 
-- Trailing characters (including whitespace) may return a non-null value on GPU and Spark will 
-  return null 
+- Trailing characters (including whitespace) may return a non-null value on GPU and Spark will
+  return null
 
 To attempt to use other formats on the GPU, set
 [`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
@@ -463,7 +463,7 @@ represents any number in the following ranges. In both cases the GPU returns `Do
 default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respectively.
 
 - `1.7976931348623158E308 <= x < 1.7976931348623159E308`
-- `-1.7976931348623159E308 < x <= -1.7976931348623158E308` 
+- `-1.7976931348623159E308 < x <= -1.7976931348623158E308`
 
 Also, the GPU does not support casting from strings containing hex values.
 
@@ -491,10 +491,10 @@ The following formats/patterns are supported on the GPU. Timezone of UTC is assu
 
 ### String to Timestamp
 
-To allow casts from string to timestamp on the GPU, enable the configuration property 
+To allow casts from string to timestamp on the GPU, enable the configuration property
 [`spark.rapids.sql.castStringToTimestamp.enabled`](configs.md#sql.castStringToTimestamp.enabled).
 
-Casting from string to timestamp currently has the following limitations. 
+Casting from string to timestamp currently has the following limitations.
 
 | Format or Pattern                                                   | Supported on GPU? |
 | ------------------------------------------------------------------- | ------------------|
@@ -514,14 +514,14 @@ Casting from string to timestamp currently has the following limitations.
 | `"yesterday"`                                                       | Yes               |
 
 - <a name="Footnote1"></a>[1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
- milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
- Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
+ milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds.
+ Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
 
 ### Constant Folding
 
 ConstantFolding is an operator optimization rule in Catalyst that replaces expressions that can
 be statically evaluated with their equivalent literal values. The RAPIDS Accelerator relies
-on constant folding and parts of the query will not be accelerated if 
+on constant folding and parts of the query will not be accelerated if
 `org.apache.spark.sql.catalyst.optimizer.ConstantFolding` is excluded as a rule.
 
 ## JSON string handling

@@ -33,7 +33,7 @@ to set up testing and validation on their distributions.
 CUDA 11.0 and 11.2 are currently supported.  Please look [here](download.md) for download links for
 the latest release.
 
-### What hardware is supported? 
+### What hardware is supported?
 
 The plugin is tested and supported on V100, T4, A30 and A100 datacenter GPUs.  It is possible to run
 the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware does
@@ -174,30 +174,30 @@ operator if you can accept the incompatibility.
 Typically, there is a one to one mapping between CPU stages in a plan and GPU stages.  There are a
 few places where this is not the case.
 
-* `WholeStageCodeGen` - The GPU plan typically does not do code generation, and does not support 
-  generating code for an entire stage in the plan. Code generation reduces the cost of processing 
-  data one row at a time. The GPU plan processes the data in a columnar format, so the costs 
+* `WholeStageCodeGen` - The GPU plan typically does not do code generation, and does not support
+  generating code for an entire stage in the plan. Code generation reduces the cost of processing
+  data one row at a time. The GPU plan processes the data in a columnar format, so the costs
   of processing a batch is amortized over the entire batch of data and code generation is not
   needed.
 
-* `ColumnarToRow` and `RowToColumnar` transitions - The CPU version of Spark plans typically process 
-  data in a row based format. The main exception to this is reading some kinds of columnar data, 
+* `ColumnarToRow` and `RowToColumnar` transitions - The CPU version of Spark plans typically process
+  data in a row based format. The main exception to this is reading some kinds of columnar data,
   like Parquet. Transitioning between the CPU and the GPU also requires transitioning between row
   and columnar formatted data.
 
-* `GpuCoalesceBatches` and `GpuShuffleCoalesce` - Processing data on the GPU scales 
+* `GpuCoalesceBatches` and `GpuShuffleCoalesce` - Processing data on the GPU scales
   sublinearly. That means doubling the data does often takes less than half the time. Because of
   this we want to process larger batches of data when possible. These operators will try to combine
   smaller batches of data into fewer, larger batches to process more efficiently.
 
-* `SortMergeJoin` - The RAPIDS Accelerator does not support sort merge joins yet. For now, we 
-  translate sort merge joins into shuffled hash joins. Because of this there are times when sorts 
+* `SortMergeJoin` - The RAPIDS Accelerator does not support sort merge joins yet. For now, we
+  translate sort merge joins into shuffled hash joins. Because of this there are times when sorts
   may be removed or other sorts added to meet the ordering requirements of the query.
 
-* `TakeOrderedAndProject` - The `TakeOrderedAndProject` operator will take the top N entries in 
-  each task, shuffle the results to a single executor and then take the top N results from that. 
-  The GPU plan often has more metrics than the CPU versions do, and when we tried to combine all of 
-  these operations into a single stage the metrics were confusing to understand. Instead, we split 
+* `TakeOrderedAndProject` - The `TakeOrderedAndProject` operator will take the top N entries in
+  each task, shuffle the results to a single executor and then take the top N results from that.
+  The GPU plan often has more metrics than the CPU versions do, and when we tried to combine all of
+  these operations into a single stage the metrics were confusing to understand. Instead, we split
   the single stage up into multiple smaller parts, so the metrics are clearer.
 
 ### Why does `explain()` show that the GPU will be used even after setting `spark.rapids.sql.enabled` to `false`?
@@ -229,9 +229,9 @@ Yes, DPP still works.  It might not be as efficient as it could be, and we are w
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
-In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3 
-release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
-the GPU when AQE is enabled. 
+In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3
+release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on
+the GPU when AQE is enabled.
 
 #### Why does my query show as not on the GPU when Adaptive Query Execution is enabled?
 
@@ -239,7 +239,7 @@ When running an `explain()` on a query where AQE is on, it is possible that AQE 
 the plan.  In this case a message stating `AdaptiveSparkPlan isFinalPlan=false` will be printed at
 the top of the physical plan, and the explain output will show the query plan with CPU operators.
 As the query runs, the plan on the UI will update and show operations running on the GPU.  This can
-happen for any AdaptiveSparkPlan where `isFinalPlan=false`. 
+happen for any AdaptiveSparkPlan where `isFinalPlan=false`.
 
 ```
 == Physical Plan ==

@@ -386,7 +386,7 @@ class RapidsShuffleClient(
    * @param tx live transaction for these bounce buffers, it should be closed in this function
    * @param bufferReceiveState state management objects for live transfer requests
    */
-  def doHandleBounceBufferReceive(tx: Transaction, 
+  def doHandleBounceBufferReceive(tx: Transaction,
       bufferReceiveState: BufferReceiveState): Unit = {
     try {
       withResource(new NvtxRange("Buffer Callback", NvtxColor.RED)) { _ =>

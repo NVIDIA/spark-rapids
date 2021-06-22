@@ -15,9 +15,9 @@
 
 # Sample Dockerfile to install UCX in a Ubuntu 18.04 image
 #
-# The parameters are: 
+# The parameters are:
 #   - CUDA_VER: 11.0.3 to pick up the latest 11.x CUDA base layer
-#   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matchin a specific UCX version and 
+#   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matchin a specific UCX version and
 #                               CUDA runtime from the UCX github repo.
 #                               See: https://github.com/openucx/ucx/releases/
 

@@ -46,7 +46,7 @@ orc_part_write_gens = [
         # date_gen
         DateGen(start=date(1590, 1, 1)),
         # Once https://github.com/NVIDIA/spark-rapids/issues/140 is fixed replace this with
-        # timestamp_gen 
+        # timestamp_gen
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
 
 # There are race conditions around when individual files are read in for partitioned data

@@ -23,7 +23,7 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
 
 /**
- * A tool to analyze Spark event logs and determine if 
+ * A tool to analyze Spark event logs and determine if
  * they might be a good fit for running on the GPU.
  */
 object QualificationMain extends Logging {

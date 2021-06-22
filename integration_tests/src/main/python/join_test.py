@@ -296,7 +296,7 @@ def test_broadcast_nested_loop_join_special_case_group_by(data_gen, batch_size):
 def test_broadcast_nested_loop_join_with_conditionals(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
-        # This test is impacted by https://github.com/NVIDIA/spark-rapids/issues/294 
+        # This test is impacted by https://github.com/NVIDIA/spark-rapids/issues/294
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
@@ -389,7 +389,7 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
 
         if (cache_side == 'cache_left'):
             # Try to force the shuffle to be split between CPU and GPU for the join
-            # by default if the operation after the shuffle is not on the GPU then 
+            # by default if the operation after the shuffle is not on the GPU then
             # don't do a GPU shuffle, so do something simple after the repartition
             # to make sure that the GPU shuffle is used.
             left = left.repartition('a').selectExpr('b + 1 as b', 'a').cache()
@@ -397,7 +397,7 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
         else:
             #cache_right
             # Try to force the shuffle to be split between CPU and GPU for the join
-            # by default if the operation after the shuffle is not on the GPU then 
+            # by default if the operation after the shuffle is not on the GPU then
             # don't do a GPU shuffle, so do something simple after the repartition
             # to make sure that the GPU shuffle is used.
             right = right.repartition('r_a').selectExpr('c + 1 as c', 'r_a').cache()

@@ -261,8 +261,8 @@ The regular [jacoco maven plugin](https://www.jacoco.org/jacoco/trunk/doc/maven.
 is not currently [able to support](https://github.com/jacoco/jacoco/issues/965) this type of
 setup. So if you want to generate a coverage report you need to do it manually.  Coverage is
 collected by default so first run the tests, and then generate the report, this should be run
-from the root project directory.  It will print out the URL of the report at the end. 
- 
+from the root project directory.  It will print out the URL of the report at the end.
+
 ```bash
 mvn clean verify
 ./build/coverage-report

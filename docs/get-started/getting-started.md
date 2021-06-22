@@ -13,17 +13,17 @@ supports with GPU accelerated versions. If an operation is not supported it will
 the Spark CPU version. Note that the plugin cannot accelerate operations that manipulate RDDs
 directly.
 
-The accelerator library also provides an implementation of Spark's shuffle that can leverage 
+The accelerator library also provides an implementation of Spark's shuffle that can leverage
 [UCX](https://www.openucx.org/) to optimize GPU data transfers keeping as much data on the GPU as
 possible and bypassing the CPU to do GPU to GPU transfers.
 
 The GPU accelerated processing plugin does not require the accelerated shuffle implementation.
 However, if accelerated SQL processing is not enabled, the shuffle implementation falls back to the
-default `SortShuffleManager`. 
+default `SortShuffleManager`.
 
 To enable GPU processing acceleration you will need:
 - Apache Spark 3.0+
-- A spark cluster configured with GPUs that comply with the requirements for the version of 
+- A spark cluster configured with GPUs that comply with the requirements for the version of
   [cudf](https://github.com/rapidsai/cudf).
     - One GPU per executor.
 - The following jars:

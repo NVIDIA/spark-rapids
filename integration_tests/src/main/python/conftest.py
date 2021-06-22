@@ -301,7 +301,7 @@ class MortgageRunner:
         raise AssertionError('Not Supported Format {}'.format(self.mortgage_format))
 
     return DataFrame(df, spark.getActiveSession())
-   
+
 @pytest.fixture(scope="session")
 def mortgage(request):
     mortgage_format = request.config.getoption("mortgage_format")

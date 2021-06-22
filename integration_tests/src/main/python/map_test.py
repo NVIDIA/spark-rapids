@@ -35,7 +35,7 @@ def test_simple_get_map_value(data_gen):
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.range(2).selectExpr(
-                "map(1, 2, 3, 4) as i", 
+                "map(1, 2, 3, 4) as i",
                 "map('a', 'b', 'c', 'd') as s",
                 "map('a', named_struct('foo', 10, 'bar', 'bar')) as st"
                 "id"))

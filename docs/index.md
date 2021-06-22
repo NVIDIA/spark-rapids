@@ -11,7 +11,7 @@ The RAPIDS Accelerator for Apache Spark leverages GPUs to accelerate processing 
 
 As data scientists shift from using traditional analytics to leveraging AI applications that better model complex market demands, traditional CPU-based processing can no longer keep up without compromising either speed or cost. The growing adoption of AI in analytics has created the need for a new framework to process data quickly and cost efficiently with GPUs.
 
-The RAPIDS Accelerator for Apache Spark combines the power of the <a href="https://github.com/rapidsai/cudf/">RAPIDS cuDF</a> library and the scale of the Spark distributed computing framework.  The RAPIDS Accelerator library also has a built-in accelerated shuffle based on <a href="https://github.com/openucx/ucx/">UCX</a> that can be configured to leverage GPU-to-GPU communication and RDMA capabilities. 
+The RAPIDS Accelerator for Apache Spark combines the power of the <a href="https://github.com/rapidsai/cudf/">RAPIDS cuDF</a> library and the scale of the Spark distributed computing framework.  The RAPIDS Accelerator library also has a built-in accelerated shuffle based on <a href="https://github.com/openucx/ucx/">UCX</a> that can be configured to leverage GPU-to-GPU communication and RDMA capabilities.
 
 ## Performance & Cost Benefits
 Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while saving infrastructure costs.
@@ -20,17 +20,17 @@ Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while s
 
 
 ## Ease of Use
-Run your existing Apache Spark applications with no code change.  Launch Spark with the RAPIDS Accelerator for Apache Spark plugin jar and enable a configuration setting: 
+Run your existing Apache Spark applications with no code change.  Launch Spark with the RAPIDS Accelerator for Apache Spark plugin jar and enable a configuration setting:
 
 `spark.conf.set('spark.rapids.sql.enabled','true')`
 
-The following is an example of a physical plan with operators running on the GPU: 
+The following is an example of a physical plan with operators running on the GPU:
 
 ![ease-of-use](/docs/img/ease-of-use.png)
 
 Learn more on how to [get started](get-started/getting-started.md).
 
-## A Unified AI framework for ETL + ML/DL 
+## A Unified AI framework for ETL + ML/DL
 A single pipeline, from ingest to data preparation to model training
 ![spark3cluster](/docs/img/spark3cluster.png)
 

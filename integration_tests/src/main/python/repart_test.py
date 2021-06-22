@@ -146,8 +146,8 @@ def test_round_robin_sort_fallback(data_gen):
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
 @pytest.mark.parametrize('gen', [
-    ([('a', boolean_gen)], ['a']), 
-    ([('a', byte_gen)], ['a']), 
+    ([('a', boolean_gen)], ['a']),
+    ([('a', byte_gen)], ['a']),
     ([('a', short_gen)], ['a']),
     ([('a', int_gen)], ['a']),
     ([('a', long_gen)], ['a']),
@@ -162,11 +162,11 @@ def test_round_robin_sort_fallback(data_gen):
     ([('a', decimal_gen_64bit)], ['a']),
     ([('a', string_gen)], ['a']),
     ([('a', null_gen)], ['a']),
-    ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('c1_0', byte_gen), ('c1_1', string_gen), ('c1_2', boolean_gen)]))]))], ['a']), 
+    ([('a', StructGen([('c0', boolean_gen), ('c1', StructGen([('c1_0', byte_gen), ('c1_1', string_gen), ('c1_2', boolean_gen)]))]))], ['a']),
     ([('a', long_gen), ('b', StructGen([('b1', long_gen)]))], ['a']),
     ([('a', long_gen), ('b', ArrayGen(long_gen, max_length=2))], ['a']),
-    ([('a', byte_gen)], [f.col('a') - 5]), 
-    ([('a', long_gen)], [f.col('a') + 15]), 
+    ([('a', byte_gen)], [f.col('a') - 5]),
+    ([('a', long_gen)], [f.col('a') + 15]),
     ([('a', byte_gen), ('b', boolean_gen)], ['a', 'b']),
     ([('a', short_gen), ('b', string_gen)], ['a', 'b']),
     ([('a', int_gen), ('b', byte_gen)], ['a', 'b']),

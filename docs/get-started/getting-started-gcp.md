@@ -17,7 +17,7 @@ parent: Getting-Started
 * [Build custom Dataproc image to accelerate cluster initialization time](#build-custom-dataproc-image-to-accelerate-cluster-init-time)
 
 ## Spin up a Dataproc Cluster Accelerated by GPUs
- 
+
  You can use [Cloud Shell](https://cloud.google.com/shell) to execute shell commands that will
  create a Dataproc cluster.  Cloud Shell contains command line tools for interacting with Google
  Cloud Platform, including gcloud and gsutil.  Alternatively, you can install [GCloud
@@ -30,14 +30,14 @@ parent: Getting-Started
 gcloud services enable compute.googleapis.com
 gcloud services enable dataproc.googleapis.com
 gcloud services enable storage-api.googleapis.com
-``` 
+```
 
 After the command line environment is setup, log in to your GCP account.  You can now create a
 Dataproc cluster with the configuration shown below.  The configuration will allow users to run any
 of the [notebook demos](https://github.com/NVIDIA/spark-rapids/tree/main/docs/demo/GCP) on
 GCP.  Alternatively, users can also start 2*2T4 worker nodes.
 
-The script below will initialize with the following: 
+The script below will initialize with the following:
 
 * [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) and
   [RAPIDS Acclerator for Apache
@@ -71,8 +71,8 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata rapids-runtime=SPARK \
     --bucket $GCS_BUCKET \
-    --enable-component-gateway 
-``` 
+    --enable-component-gateway
+```
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
 Google Cloud Console to see the progress.
@@ -80,7 +80,7 @@ Google Cloud Console to see the progress.
 ![Dataproc Cluster](../img/GCP/dataproc-cluster.png)
 
 If you'd like to further accelerate init time to 4-5 minutes, create a custom Dataproc image using
-[this](#build-custom-dataproc-image-to-accelerate-cluster-init-time) guide. 
+[this](#build-custom-dataproc-image-to-accelerate-cluster-init-time) guide.
 
 ## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab
@@ -131,8 +131,8 @@ submitted as a Dataproc job.  The mortgage examples we use above are also availa
 application](https://github.com/NVIDIA/spark-xgboost-examples/tree/spark-3/examples/apps/scala).
 After [building the jar
 files](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-3/getting-started-guides/building-sample-apps/scala.md)
-they are available through maven `mvn package -Dcuda.classifier=cuda11-0`. In the 21.06 release, 
-CUDA 11.0/11.2 will be supported. 
+they are available through maven `mvn package -Dcuda.classifier=cuda11-0`. In the 21.06 release,
+CUDA 11.0/11.2 will be supported.
 
 Place the jar file `sample_xgboost_apps-0.2.2.jar` under the `gs://$GCS_BUCKET/scala/` folder by
 running `gsutil cp target/sample_xgboost_apps-0.2.2.jar gs://$GCS_BUCKET/scala/`.  To do this you
@@ -162,10 +162,10 @@ gcloud dataproc jobs submit spark \
     -numWorkers=${SPARK_NUM_EXECUTORS} \
     -treeMethod=gpu_hist \
     -numRound=100 \
-    -maxDepth=8   
-``` 
+    -maxDepth=8
+```
 
-## Dataproc Hub in AI Platform Notebook to Dataproc cluster 
+## Dataproc Hub in AI Platform Notebook to Dataproc cluster
 With the integration between AI Platform Notebooks and Dataproc, users can create a [Dataproc Hub
 notebook](https://cloud.google.com/blog/products/data-analytics/administering-jupyter-notebooks-for-spark-workloads-on-dataproc).
 The AI platform will connect to a Dataproc cluster through a yaml configuration.
@@ -175,12 +175,12 @@ can use example [pyspark notebooks](../demo/GCP/Mortgage-ETL-GPU.ipynb) to exper
 
 ## Build custom dataproc image to accelerate cluster init time
 In order to accelerate cluster init time to 3-4 minutes, we need to build a custom Dataproc image
-that already has NVIDIA drivers and CUDA toolkit installed, with RAPIDS deployed. The custom image 
+that already has NVIDIA drivers and CUDA toolkit installed, with RAPIDS deployed. The custom image
 could also be used in an air gap environment. In this section, we will be using [these
 instructions from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a
-custom image. 
+custom image.
 
-Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) 
+Currently, the [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu)
 initialization actions:
 1. Configure YARN, the YARN node manager, GPU isolation and GPU exclusive mode.
 2. Install GPU drivers.
@@ -194,7 +194,7 @@ Google provides a `generate_custom_image.py` script that:
   configurations.
 - After the customization script finishes, it shuts down the VM instance and creates a Dataproc
   custom image from the disk of the VM instance.
-- The temporary VM is deleted after the custom image is created. 
+- The temporary VM is deleted after the custom image is created.
 - The custom image is saved and can be used to create Dataproc clusters.
 
 Download `gpu_dataproc_packages_ubuntu_sample.sh` in this repo.  The script uses
@@ -225,14 +225,14 @@ python generate_custom_image.py \
 ```
 
 See [here](https://cloud.google.com/dataproc/docs/guides/dataproc-images#running_the_code) for more
-details on `generate_custom_image.py` script arguments and 
+details on `generate_custom_image.py` script arguments and
 [here](https://cloud.google.com/dataproc/docs/concepts/versioning/dataproc-versions) for dataproc version description.
 
 The image `sample-209-ubuntu18-gpu-t4` is now ready and can be viewed in the GCP console under
 `Compute Engine > Storage > Images`. The next step is to launch the cluster using this new image and
 new initialization actions (that do not install NVIDIA drivers since we are already past that step).
 
-Here is the new custom GPU initialization action that needs to be run after cluster creation with 
+Here is the new custom GPU initialization action that needs to be run after cluster creation with
 custom images, save this as `addon.sh`
 
 ```bash
@@ -243,7 +243,7 @@ chmod a+rwx -R /sys/fs/cgroup/devices
 
 Move this to your own bucket. Lets launch the cluster:
 
-```bash 
+```bash
 export REGION=[Your Preferred GCP Region]
 export GCS_BUCKET=[Your GCS Bucket]
 export CLUSTER_NAME=[Your Cluster Name]
@@ -262,7 +262,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata rapids-runtime=SPARK \
     --bucket $GCS_BUCKET \
-    --enable-component-gateway 
+    --enable-component-gateway
 ```
 
 The new cluster should be up and running within 3-4 minutes!

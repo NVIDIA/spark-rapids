@@ -42,7 +42,7 @@ def test_explode_makearray(data_gen):
 def test_explode_litarray(data_gen):
     array_lit = gen_scalar(ArrayGen(data_gen, min_length=3, max_length=3, nullable=False))
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'), 
+            lambda spark : four_op_df(spark, data_gen).select(f.col('a'), f.col('b'), f.col('c'),
                 f.explode(array_lit)))
 
 # use a small `spark.rapids.sql.batchSizeBytes` to enforce input batches splitting up during explode

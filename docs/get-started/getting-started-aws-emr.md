@@ -30,8 +30,8 @@ for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids
 
 ###  Launch an EMR Cluster using AWS CLI
 
-You can use the AWS CLI to launch a cluster with one Master node (m5.xlarge) and two 
-g4dn.2xlarge nodes: 
+You can use the AWS CLI to launch a cluster with one Master node (m5.xlarge) and two
+g4dn.2xlarge nodes:
 
 ```
 aws emr create-cluster \
@@ -47,21 +47,21 @@ aws emr create-cluster \
 ```
 
 Please fill with actual value for `KeyName` and file paths. You can further customize SubnetId,
-EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc. 
+EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc.
 
 The `my-configurations.json` installs the spark-rapids plugin on your cluster, configures YARN to use
 
 GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example JSON
 
-configuration can be found in the section on launching in the GUI below. 
+configuration can be found in the section on launching in the GUI below.
 
 The `my-boostrap-action.sh` script referenced in the above script opens cgroup permissions to YARN
-on your cluster.  This is required for YARN to use GPUs.  An example script is as follows: 
+on your cluster.  This is required for YARN to use GPUs.  An example script is as follows:
 ```bash
 #!/bin/bash
- 
+
 set -ex
- 
+
 sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 sudo chmod a+rwx -R /sys/fs/cgroup/devices
 ```
@@ -80,10 +80,10 @@ Select **emr-6.3.0** for the release, uncheck all the software options, and then
 
 In the "Edit software settings" field, copy and paste the configuration from the [EMR
 document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also
-create a JSON file on you own S3 bucket. 
+create a JSON file on you own S3 bucket.
 
 For clusters with 2x g4dn.2xlarge GPU instances as worker nodes, we recommend the following
-default settings: 
+default settings:
 ```json
 [
 	{
@@ -108,7 +108,7 @@ default settings:
 	{
 		"Classification":"container-executor",
 		"Properties":{
-			
+
 		},
 		"Configurations":[
 			{
@@ -157,16 +157,16 @@ default settings:
 ```
 Adjust the settings as appropriate for your cluster.  For example, setting the appropriate
 number of cores based on the node type.  The `spark.task.resource.gpu.amount` should be set to
-1/(number of cores per executor) which will allow multiple tasks to run in parallel on the GPU. 
+1/(number of cores per executor) which will allow multiple tasks to run in parallel on the GPU.
 
-For example, for clusters with 2x g4dn.12xlarge as core nodes, use the following: 
+For example, for clusters with 2x g4dn.12xlarge as core nodes, use the following:
 
 ```json
         "spark.executor.cores":"12",
         "spark.task.resource.gpu.amount":"0.0833",
 ```
 
-More configuration details can be found in the [configuration](../configs.md) documentation. 
+More configuration details can be found in the [configuration](../configs.md) documentation.
 
 ![Step 1: Step 1:  Software, Configuration and Steps](../img/AWS-EMR/RAPIDS_EMR_GUI_1.png)
 
@@ -186,12 +186,12 @@ In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2x
 Enter a custom "Cluster name" and make a note of the s3 folder that cluster logs will be written to.
 
 Add a custom "Bootstrap Actions" to allow cgroup permissions to YARN on your cluster.  An example
-bootstrap script is as follows: 
+bootstrap script is as follows:
 ```bash
 #!/bin/bash
- 
+
 set -ex
- 
+
 sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 sudo chmod a+rwx -R /sys/fs/cgroup/devices
 ```
@@ -271,7 +271,7 @@ XGBoost](https://github.com/NVIDIA/spark-xgboost-examples/tree/spark-3/examples)
 
 ![Create EMR Notebook](../img/AWS-EMR/EMR_notebook_2.png)
 
-#### Create EMR Notebook and Connect to EMR GPU Cluster 
+#### Create EMR Notebook and Connect to EMR GPU Cluster
 
 Go to the AWS Management Console and select Notebooks on the left column. Click the Create notebook
 button. You can then click "Choose an existing cluster" and pick the right cluster after click
@@ -279,7 +279,7 @@ Choose button. Once the instance is ready, launch the Jupyter from EMR Notebook 
 
 ![Create EMR Notebook](../img/AWS-EMR/EMR_notebook_1.png)
 
-#### Run Mortgage ETL PySpark Notebook on EMR GPU Cluster 
+#### Run Mortgage ETL PySpark Notebook on EMR GPU Cluster
 
 Download [the Mortgate ETL PySpark Notebook](../demo/AWS-EMR/Mortgage-ETL-GPU-EMR.ipynb). Make sure
 to use PySpark as kernel. This example use 1 year (year 2000) data for a two node g4dn GPU
@@ -290,7 +290,7 @@ code will also display how long it takes to run the query
 
 ![Create EMR Notebook](../img/AWS-EMR/EMR_notebook_3.png)
 
-#### Run Mortgage XGBoost Scala Notebook on EMR GPU Cluster 
+#### Run Mortgage XGBoost Scala Notebook on EMR GPU Cluster
 
 Please refer to this [quick start
 guide](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-2/getting-started-guides/csp/aws/Using_EMR_Notebook.md)

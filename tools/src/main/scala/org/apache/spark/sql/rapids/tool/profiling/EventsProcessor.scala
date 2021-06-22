@@ -93,7 +93,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       case _: SparkListenerSQLAdaptiveSQLMetricUpdates =>
         doSparkListenerSQLAdaptiveSQLMetricUpdates(app,
           event.asInstanceOf[SparkListenerSQLAdaptiveSQLMetricUpdates])
-      case _ => 
+      case _ =>
         val wasResourceProfileAddedEvent = doSparkListenerResourceProfileAddedReflect(app, event)
         if (!wasResourceProfileAddedEvent) doOtherEvent(app, event)
     }
