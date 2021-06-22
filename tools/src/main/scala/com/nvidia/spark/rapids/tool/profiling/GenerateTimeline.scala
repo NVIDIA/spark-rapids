@@ -108,7 +108,7 @@ object GenerateTimeline {
       scheduleCallback: (A, Int) => Unit,
       errorOnMissingSlot: Boolean,
       slotsFreeUntil: mutable.Buffer[Long]): Unit = {
-    toSchedule.toSeq.sortWith{
+    toSchedule.toSeq.sortWith {
       case (a, b) => a.startTime < b.startTime
     }.foreach { timing =>
       val startTime = timing.startTime
@@ -288,8 +288,8 @@ object GenerateTimeline {
     // Do the high level layout of what the output page should look like
     // TITLE
     // EXEC(s)      | TASK TIMING
-    // STAGES       | STAGE TIMING
-    // STAGE RANGES | STAGE RANGE TIMING
+    // STAGES       | STAGE TIMING (Scheduled Stage to completed Stage)
+    // STAGE RANGES | STAGE RANGE TIMING (Start of first task to end of the last task in stage)
     // JOBS         | JOB TIMING
     // SQLS         | SQL TIMING
     val titleStartX = PADDING
@@ -445,7 +445,7 @@ object GenerateTimeline {
       doLayout(jobInfo, numJobsSlots) {
         case (ji, slot) =>
           timingBox(s"JOB ${ji.jobId} ${ji.duration} ms",
-            "green", // TODO select unique colors???
+            "green",
             ji,
             slot,
             timingsStartX,
@@ -466,7 +466,7 @@ object GenerateTimeline {
       doLayout(sqlInfo, numSqlsSlots) {
         case (sql, slot) =>
           timingBox(s"SQL ${sql.sqlId} ${sql.duration} ms",
-            "blue", // TODO select unique colors???
+            "blue",
             sql,
             slot,
             timingsStartX,
