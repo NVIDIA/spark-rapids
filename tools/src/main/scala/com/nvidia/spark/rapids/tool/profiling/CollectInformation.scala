@@ -23,7 +23,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.{asc, col, lit}
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, ToolUtils}
@@ -33,7 +32,7 @@ import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, ToolUtils}
  * Such as executors, parameters, etc.
  */
 class CollectInformation(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter]) extends Logging {
+    fileWriter: Option[ToolTextFileWriter]) {
 
   require(apps.nonEmpty)
 

@@ -68,12 +68,15 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val codec = TrampolineUtil.createCodec(sparkSession.sparkContext.getConf,
         compressionName)
       TrampolineUtil.withTempDir { tempDir =>
+        val compressionFileName = new File(tempDir,
+          "eventlog_minimal_events." + compressionName)
+        val inputStream = Files.newInputStream(Paths.get(rawLog))
+        val outputStream = codec.compressedOutputStream(
+          Files.newOutputStream(compressionFileName.toPath, StandardOpenOption.CREATE))
         // copy and close streams
-        IOUtils.copyBytes(Files.newInputStream(Paths.get(rawLog)),
-          codec.compressedOutputStream(Files.newOutputStream(new File(tempDir,
-            "eventlog_minimal_events." + compressionName).toPath, StandardOpenOption.CREATE)),
-          4096, true)
+        IOUtils.copyBytes(inputStream, outputStream, 4096, true)
         testSingleEventFile(Array(tempDir.toString))
+        compressionFileName.delete()
       }
     }
     if (compressionNameOpt.isEmpty) {
@@ -82,7 +85,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   private def testSingleEventFile(logs: Array[String]): Unit = {
-    Array(s"$logDir/eventlog_minimal_events")
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     assert(apps.size == 1)
     assert(apps.head.sparkVersion.equals("3.1.1"))
@@ -104,7 +106,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -161,7 +163,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -183,7 +185,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
         apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-          EventLogPathProcessor.getEventLogInfo(path).head._1, index)
+          EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
         index += 1
       }
       assert(apps.size == 1)
@@ -203,7 +205,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -234,7 +236,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     ))
 
     val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog())
+      appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
     assert(result.length == 2)
   }
 
@@ -242,30 +244,38 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val tempFile1 = File.createTempFile("tempOutputFile1", "")
     val tempFile2 = File.createTempFile("tempOutputFile2", "")
     val tempFile3 = File.createTempFile("tempOutputFile3", "")
-    val tempFile4 = File.createTempFile("tempOutputFile3", "")
-    tempFile1.deleteOnExit()
-    tempFile2.deleteOnExit()
-    tempFile3.deleteOnExit()
+    val tempFile4 = File.createTempFile("tempOutputFile4", "")
+    try {
+      tempFile1.deleteOnExit()
+      tempFile2.deleteOnExit()
+      tempFile3.deleteOnExit()
+      tempFile4.deleteOnExit()
 
-    tempFile1.setLastModified(98765432)  // newest file
-    tempFile2.setLastModified(12324567)  // oldest file
-    tempFile3.setLastModified(34567891)  // second newest file
-    tempFile4.setLastModified(23456789)
-    val filterNew = "2-newest"
-    val appArgs = new ProfileArgs(Array(
-      "--filter-criteria",
-      filterNew,
-      tempFile1.toString,
-      tempFile2.toString,
-      tempFile3.toString
-    ))
+      tempFile1.setLastModified(98765432) // newest file
+      tempFile2.setLastModified(12324567) // oldest file
+      tempFile3.setLastModified(34567891) // second newest file
+      tempFile4.setLastModified(23456789)
+      val filterNew = "2-newest"
+      val appArgs = new ProfileArgs(Array(
+        "--filter-criteria",
+        filterNew,
+        tempFile1.toString,
+        tempFile2.toString,
+        tempFile3.toString
+      ))
 
-    val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog())
-    assert(result.length == 2)
-    // Validate 2 newest files
-    assert(result(0).eventLog.getName.equals(tempFile1.getName))
-    assert(result(1).eventLog.getName.equals(tempFile3.getName))
+      val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+        appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+      assert(result.length == 2)
+      // Validate 2 newest files
+      assert(result(0).eventLog.getName.equals(tempFile1.getName))
+      assert(result(1).eventLog.getName.equals(tempFile3.getName))
+    } finally {
+      tempFile1.delete()
+      tempFile2.delete()
+      tempFile3.delete()
+      tempFile4.delete()
+    }
   }
 
   test("test filter file oldest and file name match") {
@@ -273,36 +283,43 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val tempFile1 = File.createTempFile("tempOutputFile1", "")
     val tempFile2 = File.createTempFile("tempOutputFile2", "")
     val tempFile3 = File.createTempFile("tempOutputFile3", "")
-    val tempFile4 = File.createTempFile("tempOutputFile3", "")
-    tempFile1.deleteOnExit()
-    tempFile2.deleteOnExit()
-    tempFile3.deleteOnExit()
-    tempFile4.deleteOnExit()
+    val tempFile4 = File.createTempFile("tempOutputFile4", "")
+    try {
+      tempFile1.deleteOnExit()
+      tempFile2.deleteOnExit()
+      tempFile3.deleteOnExit()
+      tempFile4.deleteOnExit()
 
-    tempFile1.setLastModified(98765432)  // newest file
-    tempFile2.setLastModified(12324567)  // oldest file
-    tempFile3.setLastModified(34567891)  // second newest file
-    tempFile4.setLastModified(23456789)
+      tempFile1.setLastModified(98765432) // newest file
+      tempFile2.setLastModified(12324567) // oldest file
+      tempFile3.setLastModified(34567891) // second newest file
+      tempFile4.setLastModified(23456789)
 
-    val filterOld = "3-oldest"
-    val matchFileName = "temp"
-    val appArgs = new ProfileArgs(Array(
-      "--filter-criteria",
-      filterOld,
-      "--match-event-logs",
-      matchFileName,
-      tempFile1.toString,
-      tempFile2.toString,
-      tempFile3.toString,
-      tempFile4.toString
-    ))
+      val filterOld = "3-oldest"
+      val matchFileName = "temp"
+      val appArgs = new ProfileArgs(Array(
+        "--filter-criteria",
+        filterOld,
+        "--match-event-logs",
+        matchFileName,
+        tempFile1.toString,
+        tempFile2.toString,
+        tempFile3.toString,
+        tempFile4.toString
+      ))
 
-    val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog())
-    assert(result.length == 3)
-    // Validate 3 oldest files
-    assert(result(0).eventLog.getName.equals(tempFile2.getName))
-    assert(result(1).eventLog.getName.equals(tempFile4.getName))
-    assert(result(2).eventLog.getName.equals(tempFile3.getName))
+      val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+        appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+      assert(result.length == 3)
+      // Validate 3 oldest files
+      assert(result(0).eventLog.getName.equals(tempFile2.getName))
+      assert(result(1).eventLog.getName.equals(tempFile4.getName))
+      assert(result(2).eventLog.getName.equals(tempFile3.getName))
+    } finally {
+      tempFile1.delete()
+      tempFile2.delete()
+      tempFile3.delete()
+      tempFile4.delete()
+    }
   }
 }

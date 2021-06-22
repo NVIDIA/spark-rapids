@@ -22,11 +22,11 @@ import java.util.zip.ZipOutputStream
 
 import scala.collection.mutable.LinkedHashMap
 
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
+import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 sealed trait EventLogInfo {
@@ -41,6 +41,7 @@ object EventLogPathProcessor extends Logging {
   // Apache Spark event log prefixes
   val EVENT_LOG_DIR_NAME_PREFIX = "eventlog_v2_"
   val EVENT_LOG_FILE_NAME_PREFIX = "events_"
+  val DB_EVENT_LOG_FILE_NAME_PREFIX = "eventlog"
 
   def isEventLogDir(status: FileStatus): Boolean = {
     status.isDirectory && status.getPath.getName.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
@@ -49,6 +50,14 @@ object EventLogPathProcessor extends Logging {
   // This only checks the name of the path
   def isEventLogDir(path: String): Boolean = {
     path.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
+  }
+
+  def isDBEventLogFile(fileName: String): Boolean = {
+    fileName.startsWith(DB_EVENT_LOG_FILE_NAME_PREFIX)
+  }
+
+  def isDBEventLogFile(status: FileStatus): Boolean = {
+    status.isFile && isDBEventLogFile(status.getPath.getName)
   }
 
   // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
@@ -64,30 +73,21 @@ object EventLogPathProcessor extends Logging {
   }
 
   // Databricks has the latest events in file named eventlog and then any rolled in format
-  // eventlog-2021-06-14--20-00.gz
+  // eventlog-2021-06-14--20-00.gz, here we assume that is any files start with eventlog
+  // then the directory is a Databricks event log directory.
   def isDatabricksEventLogDir(dir: FileStatus, fs: FileSystem): Boolean = {
-    // try to determine if dir structure looks right
-    val dirList = fs.listStatus(dir.getPath)
-    if (dirList.size > 0) {
-      if (dirList.exists(_.getPath.getName.equals("eventlog"))) {
-        if (dirList.size > 1) {
-          dirList.exists(_.getPath.getName
-            .matches("eventlog-([0-9]){4}-([0-9]){2}-([0-9]){2}--([0-9]){2}-([0-9]){2}.*"))
-        } else {
-          true
-        }
-      } else {
-        false
+    val dbLogFiles = fs.listStatus(dir.getPath, new PathFilter {
+      override def accept(path: Path): Boolean = {
+        isDBEventLogFile(path.getName)
       }
-    } else {
-      false
-    }
+    })
+    (dbLogFiles.size > 1)
   }
 
-  def getEventLogInfo(pathString: String): Map[EventLogInfo, Long] = {
+  def getEventLogInfo(pathString: String, sparkSession: SparkSession): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
+    val fs = inputPath.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
     try {
-      val fs = inputPath.getFileSystem(new Configuration())
       val fileStatus = fs.getFileStatus(inputPath)
       val filePath = fileStatus.getPath()
       val fileName = filePath.getName()
@@ -151,15 +151,27 @@ object EventLogPathProcessor extends Logging {
    * @param filterNLogs    number of event logs to be selected
    * @param matchlogs      keyword to match file names in the directory
    * @param eventLogsPaths Array of event log paths
+<<<<<<< HEAD
    * @param databricksLogs  boolean indicating if the event log being processed is from Databricks
+=======
+   * @param databricksLogs boolean indicating if the event log being processed is from Databricks
+   * @param sparkSession   SparkSession
+>>>>>>> origin/branch-21.08
    * @return EventLogInfo indicating type and location of event log
    */
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
+<<<<<<< HEAD
       eventLogsPaths: List[String]): Seq[EventLogInfo] = {
 
     val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_)).toMap
+=======
+      eventLogsPaths: List[String],
+      sparkSession: SparkSession): Seq[EventLogInfo] = {
+
+    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, sparkSession)).toMap
+>>>>>>> origin/branch-21.08
 
     logDebug("Paths after stringToPath: " + logsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the
@@ -188,16 +200,6 @@ object EventLogPathProcessor extends Logging {
 
   def logApplicationInfo(app: ApplicationInfo) = {
     logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-  }
-
-  val DB_EVENT_LOG_FILE_NAME_PREFIX = "eventlog"
-
-  def isDBEventLogFile(fileName: String): Boolean = {
-    fileName.startsWith(DB_EVENT_LOG_FILE_NAME_PREFIX)
-  }
-
-  def isDBEventLogFile(status: FileStatus): Boolean = {
-    status.isFile && isDBEventLogFile(status.getPath.getName)
   }
 
   def getDBEventLogFileDate(eventLogFileName: String): LocalDateTime = {
