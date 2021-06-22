@@ -69,21 +69,19 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 
   // Print read data schema information
-  def printReadSchemaInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+  def printDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
     val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     apps.foreach { app =>
       import sparkSession.implicits._
-      logWarning("before toDF")
-      val df = app.readSchema.toDF.sort(asc("sqlID"), asc("location"))
+      val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"))
       val dfWithApp = df.withColumn("appIndex", lit(app.index.toString))
         .select("appIndex", df.columns:_*)
-      if (app.readSchema.nonEmpty) {
+      if (app.dataSourceInfo.nonEmpty) {
         fileWriter.foreach { writer =>
           writer.write(ToolUtils.showString(dfWithApp, numRows))
         }
       }
-      logWarning("after toDF and write")
     }
   }
 

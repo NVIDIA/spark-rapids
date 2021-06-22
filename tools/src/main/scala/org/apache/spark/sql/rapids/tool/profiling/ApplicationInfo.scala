@@ -148,8 +148,8 @@ class ApplicationInfo(
   // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
-  // The data source read schema for datasource v1
-  var readSchema: ArrayBuffer[ReadSchema] = ArrayBuffer[ReadSchema]()
+  // The data source information
+  var dataSourceInfo: ArrayBuffer[DataSourceCase] = ArrayBuffer[DataSourceCase]()
 
   // From all other events
   var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
@@ -362,13 +362,14 @@ class ApplicationInfo(
     schema.stripPrefix("struct<").stripSuffix(">")
   }
 
+  // The ReadSchema metadata is only in the eventlog for DataSource V1 readers
   def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo) = {
     // check if planInfo has ReadSchema
     val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
       val schemaStr = meta.getOrElse("ReadSchema", "")
-      readSchema += ReadSchema(sqlID,
+      dataSourceInfo += DataSourceCase(sqlID,
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
         meta.getOrElse("PushedFilters", "unknown"),
@@ -377,9 +378,9 @@ class ApplicationInfo(
     }
   }
 
+  // This will find scans for DataSource V2
   def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode) = {
     if (node.name.equals("BatchScan")) {
-      // try to get ReadSchema
       val schemaTag = "ReadSchema: "
       val schema = if (node.desc.contains(schemaTag)) {
         val index = node.desc.indexOf(schemaTag)
@@ -428,7 +429,7 @@ class ApplicationInfo(
       } else {
         "unknown"
       }
-      readSchema += ReadSchema(sqlID,
+      dataSourceInfo += DataSourceCase(sqlID,
         fileFormat,
         location,
         pushedFilters,
