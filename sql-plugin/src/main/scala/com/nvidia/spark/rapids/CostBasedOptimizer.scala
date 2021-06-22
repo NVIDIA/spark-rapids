@@ -104,8 +104,8 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // calculate total (this operator + children)
     val totalCpuCost = operatorCpuCost + childCpuCosts.sum
     var totalGpuCost = operatorGpuCost + childGpuCosts.sum
-    showCosts(plan, "Operator costs", operatorCpuCost, operatorGpuCost)
-    showCosts(plan, "Operator + child costs", totalCpuCost, totalGpuCost)
+    logCosts(plan, "Operator costs", operatorCpuCost, operatorGpuCost)
+    logCosts(plan, "Operator + child costs", totalCpuCost, totalGpuCost)
 
     plan.estimatedOutputRows = RowCountPlanVisitor.visit(plan)
 
@@ -113,7 +113,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     // the child operators and this operator
     val numTransitions = plan.childPlans
       .count(canRunOnGpu(_) != canRunOnGpu(plan))
-    showCosts(plan, s"numTransitions=$numTransitions", totalCpuCost, totalGpuCost)
+    logCosts(plan, s"numTransitions=$numTransitions", totalCpuCost, totalGpuCost)
 
     if (numTransitions > 0) {
       // there are transitions between CPU and GPU so we need to calculate the transition costs
@@ -136,11 +136,11 @@ class CostBasedOptimizer extends Optimizer with Logging {
           plan.costPreventsRunningOnGpu()
           // reset GPU cost
           totalGpuCost = totalCpuCost
-          showCosts(plan, s"Avoid transition to GPU", totalCpuCost, totalGpuCost)
+          logCosts(plan, s"Avoid transition to GPU", totalCpuCost, totalGpuCost)
         } else {
           // add transition cost to total GPU cost
           totalGpuCost += transitionCost
-          showCosts(plan, s"transitionFromCpuCost=$transitionCost", totalCpuCost, totalGpuCost)
+          logCosts(plan, s"transitionFromCpuCost=$transitionCost", totalCpuCost, totalGpuCost)
         }
       } else {
         // at least one child is transitioning from GPU to CPU so we evaluate each of this
@@ -165,7 +165,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
           .filter(canRunOnGpu)
           .map(transitionToCpuCost(conf, _)).sum
         totalGpuCost += transitionCost
-        showCosts(plan, s"transitionFromGpuCost=$transitionCost", totalCpuCost, totalGpuCost)
+        logCosts(plan, s"transitionFromGpuCost=$transitionCost", totalCpuCost, totalGpuCost)
       }
     }
 
@@ -174,7 +174,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
     if (finalOperator && canRunOnGpu(plan)) {
       val transitionCost = transitionToCpuCost(conf, plan)
       totalGpuCost += transitionCost
-      showCosts(plan, s"final operator, transitionFromGpuCost=$transitionCost",
+      logCosts(plan, s"final operator, transitionFromGpuCost=$transitionCost",
         totalCpuCost, totalGpuCost)
     }
 
@@ -188,21 +188,21 @@ class CostBasedOptimizer extends Optimizer with Logging {
         plan.recursiveCostPreventsRunningOnGpu()
         // reset the costs because this section of the plan was not moved to GPU
         totalGpuCost = totalCpuCost
-        showCosts(plan, s"ReplaceSection: ${plan}", totalCpuCost, totalGpuCost)
+        logCosts(plan, s"ReplaceSection: ${plan}", totalCpuCost, totalGpuCost)
       }
     }
 
     if (!canRunOnGpu(plan) || isExchangeOp(plan)) {
       // reset the costs because this section of the plan was not moved to GPU
       totalGpuCost = totalCpuCost
-      showCosts(plan, s"Reset costs (not on GPU / exchange)", totalCpuCost, totalGpuCost)
+      logCosts(plan, s"Reset costs (not on GPU / exchange)", totalCpuCost, totalGpuCost)
     }
 
-    showCosts(plan, "END", totalCpuCost, totalGpuCost)
+    logCosts(plan, "END", totalCpuCost, totalGpuCost)
     (totalCpuCost, totalGpuCost)
   }
 
-  private def showCosts(
+  private def logCosts(
       plan: SparkPlanMeta[_],
       message: String,
       cpuCost: Double,
