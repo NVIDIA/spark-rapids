@@ -18,9 +18,10 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.File
 
-import com.nvidia.spark.rapids.tool.ToolTestUtils
-import org.scalatest.FunSuite
 import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
+import org.scalatest.FunSuite
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
@@ -46,7 +47,7 @@ class HealthCheckSuite extends FunSuite {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -83,7 +84,7 @@ class HealthCheckSuite extends FunSuite {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -114,7 +115,7 @@ class HealthCheckSuite extends FunSuite {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        ProfileUtils.stringToPath(path).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
       index += 1
     }
     assert(apps.size == 1)

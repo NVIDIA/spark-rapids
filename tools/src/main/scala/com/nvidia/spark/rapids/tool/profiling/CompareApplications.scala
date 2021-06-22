@@ -13,9 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.mutable.ArrayBuffer
+package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
@@ -25,8 +24,8 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 /**
  * CompareApplications compares multiple ApplicationInfo objects
  */
-class CompareApplications(apps: ArrayBuffer[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter]) extends Logging {
+class CompareApplications(apps: Seq[ApplicationInfo],
+    fileWriter: ToolTextFileWriter) extends Logging {
 
   require(apps.size>1)
 

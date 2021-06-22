@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
@@ -31,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CollectInformation mainly print information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
+class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter: Option[ToolTextFileWriter]) {
 
   require(apps.nonEmpty)
