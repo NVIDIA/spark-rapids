@@ -380,8 +380,8 @@ class ApplicationInfo(
   def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode) = {
     if (node.name.equals("BatchScan")) {
       // try to get ReadSchema
-      val schema = if (node.desc.contains("ReadSchema")) {
-        val schemaTag = "ReadSchema: "
+      val schemaTag = "ReadSchema: "
+      val schema = if (node.desc.contains(schemaTag)) {
         val index = node.desc.indexOf(schemaTag)
         if (index != -1) {
           val subStr = node.desc.substring(index + schemaTag.size)
@@ -398,8 +398,9 @@ class ApplicationInfo(
       } else {
         ""
       }
-      val location = if (node.desc.contains("Location:")) {
-        val index = node.desc.indexOf("Location:")
+      val locationTag = "Location:"
+      val location = if (node.desc.contains(locationTag)) {
+        val index = node.desc.indexOf(locationTag)
         val subStr = node.desc.substring(index)
         val endIndex = subStr.indexOf(", ")
         val location = subStr.substring(0, endIndex)
@@ -407,8 +408,9 @@ class ApplicationInfo(
       } else {
         "unknown"
       }
-      val pushedFilters = if (node.desc.contains("PushedFilters:")) {
-        val index = node.desc.indexOf("PushedFilters:")
+      val pushedFilterTag = "PushedFilters:"
+      val pushedFilters = if (node.desc.contains(pushedFilterTag)) {
+        val index = node.desc.indexOf(pushedFilterTag)
         val subStr = node.desc.substring(index)
         val endIndex = subStr.indexOf("]")
         val filters = subStr.substring(0, endIndex + 1)
@@ -416,20 +418,16 @@ class ApplicationInfo(
       } else {
         "unknown"
       }
-      val fileFormat = if (node.desc.contains("Format:")) {
-        val index = node.desc.indexOf("Format:")
-        val subStr = node.desc.substring(index)
+      val formatTag = "Format: "
+      val fileFormat = if (node.desc.contains(formatTag)) {
+        val index = node.desc.indexOf(formatTag)
+        val subStr = node.desc.substring(index + formatTag.size)
         val endIndex = subStr.indexOf(", ")
-        val format = subStr.substring(0, endIndex + 1)
+        val format = subStr.substring(0, endIndex)
         format
       } else {
         "unknown"
       }
-     /* val format = if (node.desc.contains("ParquetScan")) {
-        "Parquet"
-      } else {
-        "unknown"
-      }*/
       readSchema += ReadSchema(sqlID,
         fileFormat,
         location,
