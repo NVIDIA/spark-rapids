@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Random
+
 import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{Arm, GpuDeviceManager, RapidsConf}
@@ -31,6 +32,7 @@ import com.nvidia.spark.rapids.shuffle.{ClientConnection, MemoryRegistrationCall
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
 import org.openucx.jucx.ucs.UcsConstants
+
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils

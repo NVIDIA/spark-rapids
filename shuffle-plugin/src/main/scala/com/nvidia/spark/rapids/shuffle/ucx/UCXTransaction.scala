@@ -24,9 +24,8 @@ import java.util.concurrent.locks.ReentrantLock
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.shuffle.{MessageType, MetadataTransportBuffer, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportBuffer, TransportUtils}
 import org.openucx.jucx.ucp.UcpRequest
-import org.apache.spark.internal.Logging
 
-import scala.reflect.{ClassTag, classTag}
+import org.apache.spark.internal.Logging
 
 /**
  * Helper enum to describe transaction types supported in UCX
