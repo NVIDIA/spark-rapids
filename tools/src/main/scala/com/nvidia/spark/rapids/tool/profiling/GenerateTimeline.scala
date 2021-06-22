@@ -380,6 +380,12 @@ object GenerateTimeline {
                 fileWriter)
           }
           currentExecsStartY += execHostHeight
+
+          // Add a line to show different executors from each other
+          fileWriter.write(
+            s"""<line x1="$timingsStartX" y1="$currentExecsStartY"
+               |  x2="$timingsEndX" y2="$currentExecsStartY" style="stroke:black;stroke-width:1"/>
+               |""".stripMargin)
       }
 
       scaleWithLines(timingsStartX,
