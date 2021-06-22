@@ -189,27 +189,58 @@ NM_hostname_2
       more about this topic, please refer to the
       [tiered storage document](https://docs.alluxio.io/os/user/stable/en/core-services/Caching.html#multiple-tier-storage).
 
-5. Mount an existing S3 bucket to Alluxio.
+5. Mount an existing data storage to Alluxio.
 
-   ``` bash
-   ${ALLUXIO_HOME}/bin/alluxio fs mount \
-      --option aws.accessKeyId=<AWS_ACCESS_KEY_ID> \
-      --option aws.secretKey=<AWS_SECRET_KEY_ID> \
-      alluxio://RM_hostname:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
-   ```
+   - Mount S3 bucket
+
+      ``` bash
+      ${ALLUXIO_HOME}/bin/alluxio fs mount \
+         --option aws.accessKeyId=<AWS_ACCESS_KEY_ID> \
+         --option aws.secretKey=<AWS_SECRET_KEY_ID> \
+         alluxio://RM_hostname:19998/s3 s3a://<S3_BUCKET>/<S3_DIRECTORY>
+      ```
+
+   - Mount Azure directory
+
+      ``` bash
+      ${ALLUXIO_HOME}/bin/alluxio fs mount \
+      --option fs.azure.account.key.<AZURE_ACCOUNT>.blob.core.windows.net=<AZURE_ACCESS_KEY> \
+      alluxio://master:port/azure wasb://<AZURE_CONTAINER>@<AZURE_ACCOUNT>.blob.core.windows.net/<AZURE_DIRECTORY>/
+      ```
 
    For other filesystems, please refer to [this site](https://www.alluxio.io/).
 
-6. Start Alluxio cluster.
+6. Configure SSH login without password.
 
-   Login to Alluxio master node, and run
+   Enable SSH login without password from the master node to worker nodes and from the master node to itself.
+   You can add a public SSH key for the host into ~/.ssh/authorized_keys. See [this tutorial](http://www.linuxproblem.org/art_9.html)
+   for more details.
 
-   ``` bash
-   ${ALLUXIO_HOME}/bin/alluxio-start.sh all
-   ```
+7. Start Alluxio cluster.
 
-   To verify that Alluxio is running, visit [http://RM_hostname:19999](http://RM_hostname:19999)
-   to see the status page of the Alluxio master.
+   - Format Alluxio
+
+      Before Alluxio can be started **for the first time**, the journal must be formatted. Formatting the journal will delete all metadata
+      from Alluxio. However, the data in under storage will be untouched.
+
+      Format the journal for the Alluxio master node with the following command:
+
+      ``` bash
+      ${ALLUXIO_HOME}/bin/alluxio formatMasters
+      ```
+
+   - Launch Alluxio
+
+      On the master node, start the Alluxio cluster with the following command:
+
+      ``` bash
+      ${ALLUXIO_HOME}/bin/alluxio-start.sh all
+      ```
+
+   - Verify Alluxio
+
+      To verify that Alluxio is running, visit [http://RM_hostname:19999](http://RM_hostname:19999)
+      to see the status page of the Alluxio master.
 
 ## RAPIDS Configuration
 
