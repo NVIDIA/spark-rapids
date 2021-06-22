@@ -26,13 +26,13 @@ object TrampolineUtil {
   def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 
   def withTempPath(f: File => Unit): Unit = {
-    val path = Utils.createTempDir()
+    val path = Utils.createTempDir(namePrefix = "toolTestDir")
     path.delete()
     try f(path) finally Utils.deleteRecursively(path)
   }
 
   def withTempDir(f: File => Unit): Unit = {
-    val path = Utils.createTempDir()
+    val path = Utils.createTempDir(namePrefix = "toolTestDir")
     try f(path) finally Utils.deleteRecursively(path)
   }
 

@@ -13,13 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.{EventLogInfo, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling.Analysis
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -31,30 +29,15 @@ import org.apache.spark.sql.rapids.tool.profiling._
  */
 object Qualification extends Logging {
 
-  def logApplicationInfo(app: ApplicationInfo) = {
-    logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-  }
-
   def qualifyApps(
-      allPaths: ArrayBuffer[Path],
+      allPaths: Seq[EventLogInfo],
       numRows: Int,
       sparkSession: SparkSession,
       includeCpuPercent: Boolean,
       dropTempViews: Boolean): Option[DataFrame] = {
-    var index: Int = 1
-    val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    for (path <- allPaths.filterNot(_.getName.contains("."))) {
-      try {
-        // This apps only contains 1 app in each loop.
-        val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
-        apps += app
-        logApplicationInfo(app)
-        index += 1
-      } catch {
-        case e: com.fasterxml.jackson.core.JsonParseException =>
-          logWarning(s"Error parsing JSON, skipping $path")
-      }
-    }
+
+    val (apps, _) = ApplicationInfo.createApps(allPaths, numRows, sparkSession,
+      forQualification = true)
     if (apps.isEmpty) {
       logWarning("No Applications found that contain SQL!")
       return None
@@ -75,7 +58,7 @@ object Qualification extends Logging {
     dfOpt
   }
 
-  def constructQueryQualifyApps(apps: ArrayBuffer[ApplicationInfo],
+  def constructQueryQualifyApps(apps: Seq[ApplicationInfo],
       includeCpuPercent: Boolean): Option[DataFrame] = {
     val (qualApps, nonQualApps) = apps
       .partition { p =>
@@ -90,8 +73,9 @@ object Qualification extends Logging {
         }
       }.mkString(" union ")
     if (nonQualApps.nonEmpty) {
-      logWarning("The following event logs were skipped: " +
-        s"${nonQualApps.map(_.eventlog).mkString(", ")}")
+      logWarning("The following event logs were skipped because the event logs don't " +
+        "contain enough information to run qualification on: " +
+        s"${nonQualApps.map(_.eventLogInfo.eventLog).mkString(", ")}")
     }
     if (query.nonEmpty) {
       Some(apps.head.runQuery(query + " order by Score desc, `App Duration` desc"))

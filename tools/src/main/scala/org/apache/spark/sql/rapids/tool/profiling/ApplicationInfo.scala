@@ -16,19 +16,23 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import java.io.{BufferedInputStream, InputStream}
+import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.GZIPInputStream
+
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
-import scala.math.Ordering
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
-import org.apache.spark.deploy.history.EventLogFileReader
+import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
+import org.apache.spark.io.CompressionCodec
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
@@ -43,7 +47,7 @@ import org.apache.spark.util._
 class ApplicationInfo(
     val numOutputRows: Int,
     val sparkSession: SparkSession,
-    val eventlog: Path,
+    val eventLogInfo: EventLogInfo,
     val index: Int,
     val forQualification: Boolean = false) extends Logging {
 
@@ -203,30 +207,62 @@ class ApplicationInfo(
   // Create Spark DataFrame(s) based on ArrayBuffer(s)
   arraybufferToDF()
 
+  private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
+
+  def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
+    EventLogFileWriter.codecName(log) match {
+      case c if (c.isDefined && c.get.equals("gz")) =>
+        val in = new BufferedInputStream(fs.open(log))
+        try {
+          new GZIPInputStream(in)
+        } catch {
+          case e: Throwable =>
+            in.close()
+            throw e
+        }
+      case _ => EventLogFileReader.openEventLog(log, fs)
+    }
+  }
+
   /**
    * Functions to process all the events
    */
   def processEvents(): Unit = {
-    logInfo("Parsing Event Log File: " + eventlog.toString)
+    val eventlog = eventLogInfo.eventLog
 
-    val fs = FileSystem.get(eventlog.toUri,new Configuration())
+    logInfo("Parsing Event Log: " + eventlog.toString)
+
+    // at this point all paths should be valid event logs or event log dirs
+    val fs = eventlog.getFileSystem(new Configuration())
     var totalNumEvents = 0
-
     val eventsProcessor = new EventsProcessor(forQualification)
-    Utils.tryWithResource(EventLogFileReader.openEventLog(eventlog, fs)) { in =>
-      val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-      totalNumEvents = lines.size
-      lines.foreach { line =>
-        try {
-          val event = JsonProtocol.sparkEventFromJson(parse(line))
-          eventsProcessor.processAnyEvent(this, event)
-          logDebug(line)
-        }
-        catch {
-          case e: ClassNotFoundException =>
-            logWarning(s"ClassNotFoundException: ${e.getMessage}")
+    val readerOpt = eventLogInfo match {
+      case dblog: DatabricksEventLog =>
+        Some(new DatabricksRollingEventLogFilesFileReader(fs, eventlog))
+      case apachelog => EventLogFileReader(fs, eventlog)
+    }
+
+    if (readerOpt.isDefined) {
+      val reader = readerOpt.get
+      val logFiles = reader.listEventLogFiles
+      logFiles.foreach { file =>
+        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
+          val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
+          totalNumEvents += lines.size
+          lines.foreach { line =>
+            try {
+              val event = JsonProtocol.sparkEventFromJson(parse(line))
+              eventsProcessor.processAnyEvent(this, event)
+            }
+            catch {
+              case e: ClassNotFoundException =>
+                logWarning(s"ClassNotFoundException: ${e.getMessage}")
+            }
+          }
         }
       }
+    } else {
+      logError(s"Error getting reader for ${eventlog.getName}")
     }
     logInfo("Total number of events parsed: " + totalNumEvents)
   }
@@ -449,17 +485,15 @@ class ApplicationInfo(
       if (taskEnd.nonEmpty) {
         allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
       }
-    }
 
-    // For sqlMetricsDF
-    if (sqlPlanMetrics.nonEmpty) {
-      logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
-      allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
-    } else {
-      logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
-    }
+      // For sqlMetricsDF
+      if (sqlPlanMetrics.nonEmpty) {
+        logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
+        allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
+      } else {
+        logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
+      }
 
-    if (!forQualification) {
       // For resourceProfilesDF
       if (this.resourceProfiles.nonEmpty) {
         this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
@@ -878,5 +912,41 @@ class ApplicationInfo(
       case u if u.matches(".*UDF.*") => "UDF"
       case _ => ""
     }
+  }
+}
+
+object ApplicationInfo extends Logging {
+  def createApps(
+      allPaths: Seq[EventLogInfo],
+      numRows: Int,
+      sparkSession: SparkSession,
+      startIndex: Int = 1,
+      forQualification: Boolean = false): (Seq[ApplicationInfo], Int) = {
+    var index: Int = startIndex
+    var errorCode = 0
+    val apps = allPaths.flatMap { path =>
+      try {
+        // This apps only contains 1 app in each loop.
+        val app = new ApplicationInfo(numRows, sparkSession, path, index, forQualification)
+        EventLogPathProcessor.logApplicationInfo(app)
+        index += 1
+        Some(app)
+      } catch {
+        case json: com.fasterxml.jackson.core.JsonParseException =>
+          logWarning(s"Error parsing JSON: $path")
+          errorCode = 1
+          None
+        case il: IllegalArgumentException =>
+          logWarning(s"Error parsing file: $path", il)
+          errorCode = 2
+          None
+        case e: Exception =>
+          // catch all exceptions and skip that file
+          logWarning(s"Got unexpected exception processing file: $path", e)
+          errorCode = 3
+          None
+      }
+    }
+    (apps, errorCode)
   }
 }
