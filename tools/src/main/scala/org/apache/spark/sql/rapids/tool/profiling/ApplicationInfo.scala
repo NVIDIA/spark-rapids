@@ -26,7 +26,6 @@ import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
@@ -236,7 +235,7 @@ class ApplicationInfo(
     logInfo("Parsing Event Log: " + eventlog.toString)
 
     // at this point all paths should be valid event logs or event log dirs
-    val fs = eventlog.getFileSystem(new Configuration())
+    val fs = eventlog.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
     var totalNumEvents = 0
     val eventsProcessor = new EventsProcessor(forQualification)
     val readerOpt = eventLogInfo match {

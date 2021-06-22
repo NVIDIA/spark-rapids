@@ -151,27 +151,17 @@ object EventLogPathProcessor extends Logging {
    * @param filterNLogs    number of event logs to be selected
    * @param matchlogs      keyword to match file names in the directory
    * @param eventLogsPaths Array of event log paths
-<<<<<<< HEAD
-   * @param databricksLogs  boolean indicating if the event log being processed is from Databricks
-=======
    * @param databricksLogs boolean indicating if the event log being processed is from Databricks
    * @param sparkSession   SparkSession
->>>>>>> origin/branch-21.08
    * @return EventLogInfo indicating type and location of event log
    */
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
-<<<<<<< HEAD
-      eventLogsPaths: List[String]): Seq[EventLogInfo] = {
-
-    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_)).toMap
-=======
       eventLogsPaths: List[String],
       sparkSession: SparkSession): Seq[EventLogInfo] = {
 
     val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, sparkSession)).toMap
->>>>>>> origin/branch-21.08
 
     logDebug("Paths after stringToPath: " + logsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the
