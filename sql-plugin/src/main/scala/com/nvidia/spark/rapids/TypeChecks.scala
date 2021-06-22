@@ -30,6 +30,7 @@ import org.apache.spark.sql.types._
  */
 sealed abstract class SupportLevel {
   def htmlTag: String
+  def text: String
 }
 
 /**
@@ -37,13 +38,15 @@ sealed abstract class SupportLevel {
  */
 object NotApplicable extends SupportLevel {
   override def htmlTag: String = "<td> </td>"
+  override def text: String = "NA"
 }
 
 /**
  * Spark supports this but the plugin does not.
  */
 object NotSupported extends SupportLevel {
-  override def htmlTag: String = "<td><b>NS</b></td>"
+  override def htmlTag: String = s"<td><b>$text</b></td>"
+  override def text: String = "NS"
 }
 
 /**
@@ -52,12 +55,14 @@ object NotSupported extends SupportLevel {
  *                  types because they are not 100% supported.
  */
 class Supported(val asterisks: Boolean = false) extends SupportLevel {
-  override def htmlTag: String =
+  override def htmlTag: String = s"<td>$text</td>"
+  override def text: String = {
     if (asterisks) {
-      "<td>S*</td>"
+      "S*"
     } else {
-      "<td>S</td>"
+      "S"
     }
+  }
 }
 
 /**
@@ -74,7 +79,9 @@ class PartiallySupported(
     val missingNestedTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     val needsLitWarning: Boolean = false,
     val note: Option[String] = None) extends SupportLevel {
-  override def htmlTag: String = {
+  override def htmlTag: String = s"<td><em>$text</em></td>"
+
+  override def text: String = {
     val typeStr = if (missingNestedTypes.isEmpty) {
       None
     } else {
@@ -87,10 +94,10 @@ class PartiallySupported(
     }
     val extraInfo = (note.toSeq ++ litOnly.toSeq ++ typeStr.toSeq).mkString("; ")
     if (asterisks) {
-      "<td><em>PS* (" + extraInfo + ")</em></td>"
+      "PS*"
     } else {
-      "<td><em>PS (" + extraInfo + ")</em></td>"
-    }
+      "PS"
+    } +  s" ($extraInfo)"
   }
 }
 
@@ -1626,14 +1633,15 @@ object SupportOpsForTools {
         val read = ioMap(ReadFileOp)
         val write = ioMap(WriteFileOp)
 
-        TypeEnum.values.foreach { t =>
-          println(read.support(t).htmlTag)
+        val readOps = TypeEnum.values.map { t =>
+          read.support(t).text
         }
-
-        TypeEnum.values.foreach { t =>
-          println(write.support(t).htmlTag)
+        val writeOps = TypeEnum.values.map { t =>
+          write.support(t).text
         }
-
+        println(s"Types: ${TypeEnum.values.mkString(",")}")
+        println(s"Read ops: ${readOps.mkString(",")}")
+        println(s"Write ops: ${writeOps.mkString(",")}")
     }
   }
 
