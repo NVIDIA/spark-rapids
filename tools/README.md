@@ -19,7 +19,9 @@ GPU generated event logs.
   at the top level when specifying a directory.
 
 Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
-or can be found in the location specified by `spark.eventLog.dir`.
+or can be found in the location specified by `spark.eventLog.dir`. See the
+[Apache Spark Monitoring](http://spark.apache.org/docs/latest/monitoring.html)  documentation for
+more information.
 
 Optional:
 - maven installed 
