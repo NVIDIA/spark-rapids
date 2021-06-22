@@ -1627,27 +1627,29 @@ object SupportedOpsDocs {
 
 object SupportOpsForTools {
   private def outputSupportIO() {
+    // write header
+    val types = TypeEnum.values.map(_.toString()).toSeq
+    val header = Seq("Format", "Direction") ++ types
+    println(header.mkString(","))
     GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
       case (format, ioMap) =>
-        println(s"format is: $format")
         val read = ioMap(ReadFileOp)
         val write = ioMap(WriteFileOp)
 
-        val readOps = TypeEnum.values.map { t =>
+        val formatAndDir = Seq(format, "Read")
+        val readOps = TypeEnum.values.toSeq.map { t =>
           read.support(t).text
         }
-        val writeOps = TypeEnum.values.map { t =>
+        val writeOps = TypeEnum.values.toSeq.map { t =>
           write.support(t).text
         }
-        println(s"Types: ${TypeEnum.values.mkString(",")}")
-        println(s"Read ops: ${readOps.mkString(",")}")
-        println(s"Write ops: ${writeOps.mkString(",")}")
+
+        println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
+        println(s"${(Seq(format, "write") ++ writeOps).mkString(",")}")
     }
   }
 
   def help(): Unit = {
-    // scalastyle:off line.size.limit
-    println("Help For tools support ops.")
     outputSupportIO()
   }
 
