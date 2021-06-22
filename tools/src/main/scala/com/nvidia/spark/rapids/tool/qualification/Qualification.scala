@@ -51,10 +51,17 @@ object Qualification extends Logging {
         .select("appIndex", df.columns:_*)
       // here we want to check the schema of what we are reading so perhaps combine these
       // and just look at data types
-      val allTypes = app.dataSourceInfo.flatMap(ds => ds.schema.split(",")).toSet
-      val incomplete = app.dataSourceInfo.exists(_.schemaIncomplete)
+      val groupedTypes = app.dataSourceInfo.groupBy(ds => ds.format.toLowerCase)
+      val res = groupedTypes.map { case (format, dsArr) =>
+        (format -> (dsArr.flatMap(_.schema.split(",")).toSet, dsArr.exists(_.schemaIncomplete)))
+      }
+
+      res.foreach { case (format, info) =>
+        logWarning(s" format $format  types are (incomplete: ${info._2}: " + info._1.mkString(", "))
+      }
       // debug
-      logWarning(s" all types are (incomplete: ${incomplete}: " + allTypes.mkString(", "))
+      // val supportedDf = sparkSession.read.csv("tools/src/main/resources/supportedDataSource.csv")
+      // supportedDf.filter(supportedDf("Format") === )
       df.createOrReplaceTempView(s"datasource_${app.index}")
     }
 

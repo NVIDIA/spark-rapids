@@ -1635,17 +1635,11 @@ object SupportOpsForTools {
       case (format, ioMap) =>
         val read = ioMap(ReadFileOp)
         val write = ioMap(WriteFileOp)
-
-        val formatAndDir = Seq(format, "Read")
         val readOps = TypeEnum.values.toSeq.map { t =>
           read.support(t).text
         }
-        val writeOps = TypeEnum.values.toSeq.map { t =>
-          write.support(t).text
-        }
-
+        // only support reads for now
         println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
-        println(s"${(Seq(format, "write") ++ writeOps).mkString(",")}")
     }
   }
 
