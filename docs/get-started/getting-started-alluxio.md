@@ -41,20 +41,29 @@ NM_hostname_2
 
 ## Alluxio setup
 
-1. Download the latest Alluxio version (2.4.1-1) **alluxio-${LATEST}-bin.tar.gz**
-   from [alluxio website](https://www.alluxio.io/download/).
-2. Copy `alluxio-${LATEST}-bin.tar.gz` to all the NodeManagers and ResourceManager.
-3. Extract `alluxio-${LATEST}-bin.tar.gz` to the directory specified by **ALLUXIO_HOME**
-   in the NodeManagers and ResourceManager.
+1. Prerequisites
 
-   ``` shell
-   # Let's assume we extract alluxio to /opt
-   mkdir -p /opt
-   tar xvf alluxio-${LATEST}-bin.tar.gz -C /opt
-   export ALLUXIO_HOME=/opt/alluxio-${LATEST}
-   ```
+   - Download Alluxio binary file
 
-4. Configure alluxio.
+      Download the latest Alluxio binary file (2.4.1-1) **alluxio-${LATEST}-bin.tar.gz** from
+      [this site](https://www.alluxio.io/download/).
+
+   - Copy `alluxio-${LATEST}-bin.tar.gz` to NodeManagers and ResourceManager
+
+   - Extract `alluxio-${LATEST}-bin.tar.gz` to the directory specified by **ALLUXIO_HOME** in the NodeManagers and ResourceManager
+
+      ``` shell
+      # Let's assume we extract alluxio to /opt
+      mkdir -p /opt
+      tar xvf alluxio-${LATEST}-bin.tar.gz -C /opt
+      export ALLUXIO_HOME=/opt/alluxio-${LATEST}
+      ```
+
+   For **SSH login wihtout password** and **Alluxio ports** problem, please refer to
+   [this site](https://docs.alluxio.io/os/user/stable/en/deploy/Running-Alluxio-On-a-Cluster.html#prerequisites).
+
+2. Configure alluxio
+
    - Alluxio master configuration
 
       On the master node, create `${ALLUXIO_HOME}/conf/alluxio-site.properties` configuration
@@ -156,14 +165,14 @@ NM_hostname_2
       Note, this guide demonstrates how to deploy Alluxio cluster in a insecure way, for the Alluxio security,
       please refer to [this site](https://docs.alluxio.io/os/user/stable/en/operation/Security.html)
 
-      - Add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`.
+      - Add Alluxio worker hostnames into `${ALLUXIO_HOME}/conf/workers`
 
          ``` json
          NM_hostname_1
          NM_hostname_2
          ```
 
-      - Copy configuration from Alluxio master to Alluxio workers.
+      - Copy configuration from Alluxio master to Alluxio workers
 
          ``` shell
          ${ALLUXIO_HOME}/bin/alluxio copyDir ${ALLUXIO_HOME}/conf
@@ -172,7 +181,7 @@ NM_hostname_2
          This command will copy the `conf/` directory to all the workers specified in the `conf/workers` file.
          Once this command succeeds, all the Alluxio nodes will be correctly configured.
 
-   - Alluxio worker configuration.
+   - Alluxio worker configuration
 
       After copying configuration to every Alluxio worker from Alluxio master, User
       needs to add below extra configuration for each Alluxio worker.
@@ -189,7 +198,7 @@ NM_hostname_2
       more about this topic, please refer to the
       [tiered storage document](https://docs.alluxio.io/os/user/stable/en/core-services/Caching.html#multiple-tier-storage).
 
-5. Mount an existing data storage to Alluxio.
+3. Mount an existing data storage to Alluxio
 
    - Mount S3 bucket
 
@@ -210,14 +219,7 @@ NM_hostname_2
 
    For other filesystems, please refer to [this site](https://www.alluxio.io/).
 
-6. Configure SSH login without password.
-
-   Enable SSH login without password from the master node to worker nodes and from the master node to itself.
-   You can add a public SSH key for the host into ~/.ssh/authorized_keys. Please refer to
-   [this site](https://docs.alluxio.io/os/user/stable/en/deploy/Running-Alluxio-On-a-Cluster.html#prerequisites).
-   for more details.
-
-7. Start Alluxio cluster.
+4. Start Alluxio cluster
 
    - Format Alluxio
 
@@ -247,7 +249,7 @@ NM_hostname_2
 
 There are two ways to leverage Alluxio in RAPIDS.
 
-1. Explicitly specify the Alluxio path.
+1. Explicitly specify the Alluxio path
 
    This may require user to change code. For example, change
 
@@ -261,7 +263,7 @@ There are two ways to leverage Alluxio in RAPIDS.
    val df = spark.read.parquet("alluxio://RM_hostname:19998/s3/foo.parquet")
    ```
 
-2. Transparently replace in RAPIDS.
+2. Transparently replace in RAPIDS
 
    RAPIDS has added a configuration `spark.rapids.alluxio.pathsToReplace` which can allow RAPIDS
    to replace the input file paths to the Alluxio paths transparently at runtime. So there is no
@@ -286,7 +288,7 @@ There are two ways to leverage Alluxio in RAPIDS.
      .selectExpr('a', 'input_file_name()', 'input_file_block_start()', 'input_file_block_length()')
    ```
 
-3. Submit an application.
+3. Submit an application
 
    Spark driver and tasks will parse `alluxio://` schema and access Alluxio cluster using
    `alluxio-${LATEST}-client.jar`.
