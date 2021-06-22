@@ -20,6 +20,8 @@ import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 
+import org.apache.spark.sql.types.{ArrayType, DataType, StructField, StructType}
+
 object ColumnUtil extends Arm {
 
   /**
@@ -32,8 +34,11 @@ object ColumnUtil extends Arm {
    * @param convert         Method used to convert the column view to a new column view
    * @return
    */
-  def ifTrueThenDeepConvertTypeAtoTypeB(cv: ColumnVector,
-      predicate: ColumnView => Boolean, convert: ColumnView => ColumnView): ColumnVector = {
+  def ifTrueThenDeepConvertTypeAtoTypeB(
+      cv: ColumnVector,
+      dataType: DataType,
+      predicate: (DataType, ColumnView) => Boolean,
+      convert: (DataType, ColumnView) => ColumnView): ColumnVector = {
     /*
      * 'convertTypeAtoTypeB' method returns a ColumnView that should be copied out to a
      * ColumnVector  before closing the `toClose` views otherwise it will close the returned view
@@ -41,58 +46,57 @@ object ColumnUtil extends Arm {
      */
     def convertTypeAToTypeB(
         cv: ColumnView,
-        predicate: ColumnView => Boolean,
+        dataType: DataType,
+        predicate: (DataType, ColumnView) => Boolean,
         toClose: ArrayBuffer[ColumnView]): ColumnView = {
-      val dt = cv.getType
-      if (!dt.isNestedType) {
-        if (predicate(cv)) {
-          val col = convert(cv)
-          toClose += col
-          col
-        } else {
-          cv
-        }
-      } else if (dt == DType.LIST) {
-        val child = cv.getChildColumnView(0)
-        toClose += child
-        val newChild = convertTypeAToTypeB(child, predicate, toClose)
-        if (child == newChild) {
-          cv
-        } else {
-          val newView = cv.replaceListChild(newChild)
-          toClose += newView
-          newView
-        }
-      } else if (dt == DType.STRUCT) {
-        val newColumns = ArrayBuilder.make[ColumnView]()
-        newColumns.sizeHint(cv.getNumChildren)
-        val newColIndices = ArrayBuilder.make[Int]()
-        newColIndices.sizeHint(cv.getNumChildren)
-        (0 until cv.getNumChildren).foreach { i =>
-          val child = cv.getChildColumnView(i)
+      dataType match {
+        case a:ArrayType =>
+          val child = cv.getChildColumnView(0)
           toClose += child
-          val newChild = convertTypeAToTypeB(child, predicate, toClose)
-          if (newChild != child) {
-            newColumns += newChild
-            newColIndices += i
+          val newChild = convertTypeAToTypeB(child, a.elementType, predicate, toClose)
+          if (child == newChild) {
+            cv
+          } else {
+            val newView = cv.replaceListChild(newChild)
+            toClose += newView
+            newView
           }
-        }
-        val cols = newColumns.result()
-        if (cols.nonEmpty) {
-          // create a new struct column with the new ones
-          val newView = cv.replaceChildrenWithViews(newColIndices.result(), cols)
-          toClose += newView
-          newView
-        } else {
-          cv
-        }
-      } else {
-        throw new IllegalArgumentException(s"Unsupported data type ${dt.getTypeId}")
+        case s:StructType =>
+          val newColumns = ArrayBuilder.make[ColumnView]()
+          newColumns.sizeHint(cv.getNumChildren)
+          val newColIndices = ArrayBuilder.make[Int]()
+          newColIndices.sizeHint(cv.getNumChildren)
+          (0 until cv.getNumChildren).foreach { i =>
+            val child = cv.getChildColumnView(i)
+            toClose += child
+            val newChild = convertTypeAToTypeB(child, s.fields(i).dataType, predicate, toClose)
+            if (newChild != child) {
+              newColumns += newChild
+              newColIndices += i
+            }
+          }
+          val cols = newColumns.result()
+          if (cols.nonEmpty) {
+            // create a new struct column with the new ones
+            val newView = cv.replaceChildrenWithViews(newColIndices.result(), cols)
+            toClose += newView
+            newView
+          } else {
+            cv
+          }
+        case _ =>
+          if (predicate(dataType, cv)) {
+            val col = convert(dataType, cv)
+            toClose += col
+            col
+          } else {
+            cv
+          }
       }
     }
 
     withResource(new ArrayBuffer[ColumnView]) { toClose =>
-      val tmp = convertTypeAToTypeB(cv, predicate, toClose)
+      val tmp = convertTypeAToTypeB(cv, dataType, predicate, toClose)
       if (tmp != cv) {
         tmp.copyToColumnVector()
       } else {

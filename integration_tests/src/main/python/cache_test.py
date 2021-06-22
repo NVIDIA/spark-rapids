@@ -25,6 +25,9 @@ conf = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true",
          "spark.sql.legacy.allowNegativeScaleOfDecimal": "true"},
         {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false",
          "spark.sql.legacy.allowNegativeScaleOfDecimal": "true"}]
+decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
+                DecimalGen(precision=7, scale=-2),
+                decimal_gen_same_scale_precision, decimal_gen_64bit]
 decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
 
 @pytest.mark.parametrize('conf', conf, ids=idfn)
@@ -139,17 +142,27 @@ def test_cache_expand_exec(data_gen, conf):
 
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = conf)
 
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
-                                      decimal_struct_gen] + all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [ decimal_struct_gen], ids=idfn)
 @pytest.mark.parametrize('conf', conf, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(data_gen, conf):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, data_gen, string_gen)
-            .select(f.col("a"), f.col("b"))
-            .cache()
-            .limit(50).select(f.col("b")), conf
-    )
+    def partial_return(col):
+        def partial_return_cache(spark):
+            return two_col_df(spark, data_gen, string_gen).select(f.col("a"), f.col("b")).cache().limit(50).select(col)
+        return partial_return_cache
+    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("a")), conf)
+    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("b")), conf)
+
+@pytest.mark.parametrize('data_gen', [StructGen([['child0', StructGen([['child0', byte_gen],['child1', byte_gen]])],['child1', IntegerGen()]])], ids=idfn)
+@pytest.mark.parametrize('conf', conf, ids=idfn)
+@allow_non_gpu('CollectLimitExec')
+def test_cache_partial_load_struct(data_gen, conf):
+    def partial_return(col):
+        def partial_return_cache(spark):
+            return two_col_df(spark, data_gen, string_gen).select(f.col("a"), f.col("b")).cache().limit(50).select(col)
+        return partial_return_cache
+    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("a.child0.child0")), conf)
+#    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("b")), conf)
 
 @allow_non_gpu('CollectLimitExec')
 def test_cache_diff_req_order(spark_tmp_path):

@@ -215,25 +215,18 @@ private class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer
 }
 
 private object ParquetCachedBatch {
-  def apply(
-      parquetBuff: ParquetBufferConsumer,
-      castMap: mutable.HashMap[String, DType]): ParquetCachedBatch = {
-    ParquetCachedBatch(parquetBuff.numRows, parquetBuff.getBuffer, castMap)
-  }
-
   def apply(parquetBuff: ParquetBufferConsumer): ParquetCachedBatch = {
-    ParquetCachedBatch(parquetBuff.numRows, parquetBuff.getBuffer, null)
+    new ParquetCachedBatch(parquetBuff.numRows, parquetBuff.getBuffer)
   }
 
   def apply(numRows: Int, buff: Array[Byte]): ParquetCachedBatch = {
-    ParquetCachedBatch(numRows, buff, null)
+    new ParquetCachedBatch(numRows, buff)
   }
 }
 
 case class ParquetCachedBatch(
     numRows: Int,
-    buffer: Array[Byte],
-    castMap: mutable.HashMap[String, DType]) extends CachedBatch {
+    buffer: Array[Byte]) extends CachedBatch {
   override def sizeInBytes: Long = buffer.length
 }
 
@@ -374,17 +367,16 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }.sum
     // We want to map the name of the cols we are casting so we can cast them back when reading
     // back the cache
-    val castMap = new scala.collection.mutable.HashMap[String, DType]()
+    val castMap = new scala.collection.mutable.HashMap[String, ArrayBuffer[DType]]()
 
     val columns = for (i <- 0 until oldGpuCB.numCols()) yield {
       val gpuVector = oldGpuCB.column(i).asInstanceOf[GpuColumnVector]
       var dataType = schema(i).dataType
-      val v = ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(gpuVector.getBase,
+      val v = ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(gpuVector.getBase, schema(i).dataType,
         // we are checking for scale > 0 because cudf and spark refer to scales as opposites
         // e.g. scale = -3 in Spark is scale = 3 in cudf
-        cv => cv.getType().isDecimalType() && cv.getType().getScale > 0,
-        cv => {
-          castMap(schema(i).name) = cv.getType()
+        (_, cv) => cv.getType().isDecimalType() && cv.getType().getScale > 0,
+        (_, cv) => {
           if (cv.getType.isBackedByLong) {
             dataType = LongType
             cv.bitCastTo(DType.INT64)
@@ -422,7 +414,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           for (i <- splitVectors.head.indices) {
             withResource(makeTableForIndex(i)) { table =>
               val buffer = writeTableToCachedBatch(table, schema)
-              buffers += ParquetCachedBatch(buffer, castMap)
+              buffers += ParquetCachedBatch(buffer)
             }
           }
         } finally {
@@ -431,7 +423,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       } else {
         withResource(GpuColumnVector.from(gpuCB)) { table =>
           val buffer = writeTableToCachedBatch(table, schema)
-          buffers += ParquetCachedBatch(buffer, castMap)
+          buffers += ParquetCachedBatch(buffer)
         }
       }
       buffers.toList
@@ -497,15 +489,25 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           parquetCB.sizeInBytes)) { table =>
           withResource {
             for (i <- 0 until table.getNumberOfColumns) yield {
-              val colName = requestedColumnNames(i)
-              if (parquetCB.castMap != null && parquetCB.castMap.contains(colName)) {
-                //TODO: why do we have to copy to a vector
-                withResource(table.getColumn(i).bitCastTo(parquetCB.castMap(colName))) {
-                  _.copyToColumnVector()
+              ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(table.getColumn(i),
+                selectedAttributes(i).dataType,
+                (dataType, _) => dataType match {
+                  case d: DecimalType if d.scale < 0 => true
+                  case _ => false
+                },
+                (dataType, cv) => {
+                  //TODO: why do we have to copy to a vector
+                  dataType match {
+                    case d: DecimalType =>
+                      withResource(cv.bitCastTo(DecimalUtil.createCudfDecimal(d))) {
+                        _.copyToColumnVector()
+                      }
+                    case _ =>
+                      throw new IllegalStateException("We don't cast any type besides Decimal " +
+                          "with scale < 0")
+                  }
                 }
-              } else {
-                table.getColumn(i).incRefCount()
-              }
+              )
             }
           } { col =>
             withResource(new Table(col: _*)) { t =>
@@ -522,8 +524,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
   private def getSelectedSchemaFromCachedSchema(
       selectedAttributes: Seq[Attribute],
       cacheAttributes: Seq[Attribute]): Seq[Attribute] = {
-    cacheAttributes.map {
-      a => selectedAttributes.find(a0 => a0.exprId.equals(a.exprId)).get
+    selectedAttributes.map {
+      a => cacheAttributes(cacheAttributes.map(_.exprId).indexOf(a.exprId))
     }
   }
 
@@ -610,7 +612,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
   private abstract class UnsupportedDataHandlerIterator extends Iterator[InternalRow] {
 
-    val castMap = new mutable.HashMap[String, DType]()
+    val castMap = new mutable.HashMap[String, ArrayBuffer[DType]]()
 
     def handleInternalRow(schema: Seq[Attribute], row: InternalRow, newRow: InternalRow): Unit
 
@@ -883,7 +885,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
       val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
       val parquetFileReader = ParquetFileReader.open(inputFile, options)
-      val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
+      val inMemCacheParquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
 
       val hasUnsupportedType = cacheAttributes.exists { attribute =>
         !isTypeSupportedByParquet(attribute.dataType)
@@ -893,7 +895,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       // because catalyst schema that we get from Spark doesn't have the exact schema expected by
       // the columnar parquet reader
       val parquetToSparkSchemaConverter = new ParquetToSparkSchemaConverter(hadoopConf)
-      val sparkSchema = parquetToSparkSchemaConverter.convert(parquetSchema)
+      val inMemCacheSparkSchema = parquetToSparkSchemaConverter.convert(inMemCacheParquetSchema)
       val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(hadoopConf)
 
       val (_, requestedSchema) = if (hasUnsupportedType) {
@@ -902,15 +904,21 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         (origCacheSchema, origRequestedSchema)
       }
 
-      val reqSparkSchema = StructType(requestedSchema.toStructType.map { field =>
-        sparkSchema.fields(sparkSchema.fieldIndex(field.name))
+      val inMemReqSparkSchema = StructType(requestedSchema.toStructType.map { field =>
+        inMemCacheSparkSchema.fields(inMemCacheSparkSchema.fieldIndex(field.name))
       })
 
-      val reqParquetSchema = sparkToParquetSchemaConverter.convert(reqSparkSchema)
+      val reqSparkSchemaInCacheOrder = StructType(inMemCacheSparkSchema.filter(f =>
+        inMemReqSparkSchema.fields.exists(f0 => f0.name.equals(f.name))))
+
+      val reqParquetSchemaInCacheOrder =
+        sparkToParquetSchemaConverter.convert(reqSparkSchemaInCacheOrder)
+
+      val inMemReqParquetSchema = sparkToParquetSchemaConverter.convert(inMemReqSparkSchema)
 
       // reset spark schema calculated from parquet schema
-      hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, reqSparkSchema.json)
-      hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, reqSparkSchema.json)
+      hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, inMemReqSparkSchema.json)
+      hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, inMemReqSparkSchema.json)
 
       /**
        * Read the next RowGroup and read each column and return the columnarBatch
@@ -920,7 +928,15 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           OffHeapColumnVector.allocateColumns(capacity, requestedSchema.toStructType)
         val columnarBatch = new ColumnarBatch(columnVectors
             .asInstanceOf[Array[vectorized.ColumnVector]])
-        val missingColumns = new Array[Boolean](reqParquetSchema.getFieldCount)
+
+        // There could be a case especially in a distributed environment where the requestedSchema
+        // and cacheSchema are not in the same order. We need to create a map so we can guarantee
+        // that we writing to the correct columnVector
+        val cacheSchemaToReqSchemaMap = reqSparkSchemaInCacheOrder.indices.map { index =>
+          index -> inMemReqSparkSchema.fields.indexOf(reqSparkSchemaInCacheOrder.fields(index))
+        }.toMap
+
+        val missingColumns = new Array[Boolean](inMemReqParquetSchema.getFieldCount)
         var columnReaders: Array[VectorizedColumnReader] = _
 
         var rowsReturned: Long = 0L
@@ -935,24 +951,26 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
         // initialize missingColumns to cover the case where requested column isn't present in the
         // cache, which should never happen but just in case it does
-        val columns: util.List[ColumnDescriptor] = reqParquetSchema.getColumns
-        val paths: util.List[Array[String]] = reqParquetSchema.getPaths
+        val columnsRequested: util.List[ColumnDescriptor] = inMemReqParquetSchema.getColumns
+        val paths: util.List[Array[String]] = inMemReqParquetSchema.getPaths
+        val columnsInCache: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
         val fileSchema: MessageType = parquetFileReader.getFooter.getFileMetaData.getSchema
-        val types: util.List[Type] = reqParquetSchema.asGroupType.getFields
-        for (i <- 0 until reqParquetSchema.getFieldCount) {
-          val t = reqParquetSchema.getFields.get(i)
+        val typesRequested: util.List[Type] = inMemReqParquetSchema.asGroupType.getFields
+        val typesInCache: util.List[Type] = reqParquetSchemaInCacheOrder.asGroupType.getFields
+        for (i <- 0 until inMemReqParquetSchema.getFieldCount) {
+          val t = inMemReqParquetSchema.getFields.get(i)
           if (!t.isPrimitive || t.isRepetition(Type.Repetition.REPEATED)) {
             throw new UnsupportedOperationException("Complex types not supported.")
           }
           val colPath = paths.get(i)
           if (fileSchema.containsPath(colPath)) {
             val fd = fileSchema.getColumnDescription(colPath)
-            if (!(fd == columns.get(i))) {
+            if (!(fd == columnsRequested.get(i))) {
               throw new UnsupportedOperationException("Schema evolution not supported.")
             }
             missingColumns(i) = false
           } else {
-            if (columns.get(i).getMaxDefinitionLevel == 0) {
+            if (columnsRequested.get(i).getMaxDefinitionLevel == 0) {
               // Column is missing in data but the required data is non-nullable.
               // This file is invalid.
               throw new IOException(s"Required column is missing in data file: ${colPath.toList}")
@@ -976,14 +994,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             throw new IOException("expecting more rows but reached last" +
                 " block. Read " + rowsReturned + " out of " + totalRowCount)
           }
-          columnReaders = new Array[VectorizedColumnReader](columns.size)
-          for (i <- 0 until columns.size) {
+          columnReaders = new Array[VectorizedColumnReader](columnsRequested.size)
+          for (i <- 0 until columnsRequested.size) {
             if (!missingColumns(i)) {
               columnReaders(i) =
                   new VectorizedColumnReader(
-                    columns.get(i),
-                    types.get(i).getOriginalType,
-                    pages.getPageReader(columns.get(i)),
+                    columnsInCache.get(i),
+                    typesInCache.get(i).getOriginalType,
+                    pages.getPageReader(columnsInCache.get(i)),
                     null /*convertTz*/ ,
                     LegacyBehaviorPolicy.CORRECTED.toString,
                     LegacyBehaviorPolicy.EXCEPTION.toString)
@@ -1003,7 +1021,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           for (i <- columnReaders.indices) {
             if (columnReaders(i) != null) {
               readBatchMethod.invoke(columnReaders(i), num.asInstanceOf[AnyRef],
-                columnVectors(i).asInstanceOf[AnyRef])
+                columnVectors(cacheSchemaToReqSchemaMap(i)).asInstanceOf[AnyRef])
             }
           }
           rowsReturned += num
@@ -1188,8 +1206,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                         }
 
                       case d: DecimalType if d.scale < 0 =>
-                        castMap(schema(index).name) =
-                            DecimalUtil.createCudfDecimal(d.precision, d.scale)
                         if (d.precision <= Decimal.MAX_INT_DIGITS) {
                           newRow.update(index, row.getDecimal(index, d.precision, d.scale)
                               .toUnscaledLong.toInt)
@@ -1268,12 +1284,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
             }
             // passing null as context isn't used in this method
             recordWriter.close(null)
-            if (rowIterator.isInstanceOf[UnsupportedDataHandlerIterator]) {
-              queue += ParquetCachedBatch(rows, stream.toByteArray,
-                rowIterator.asInstanceOf[UnsupportedDataHandlerIterator].castMap)
-            } else {
-              queue += ParquetCachedBatch(rows, stream.toByteArray)
-            }
+            queue += ParquetCachedBatch(rows, stream.toByteArray)
           }
         }
         queue.dequeue()
