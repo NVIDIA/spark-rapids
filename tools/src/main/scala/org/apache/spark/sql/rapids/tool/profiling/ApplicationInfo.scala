@@ -295,25 +295,6 @@ class ApplicationInfo(
     }
   }
 
-  def processSQLPlanForQualification(): Unit ={
-    for ((sqlID, planInfo) <- sqlPlan){
-      val planGraph = SparkPlanGraph(planInfo)
-      // SQLPlanMetric is a case Class of
-      // (name: String,accumulatorId: Long,metricType: String)
-      val allnodes = planGraph.allNodes
-      for (node <- allnodes){
-        // Firstly identify problematic SQLs if there is any
-        if (isDataSetPlan(node.desc)) {
-          datasetSQL += DatasetSQLCase(sqlID)
-        }
-        val issues = findPotentialIssues(node.desc)
-        if (issues.nonEmpty) {
-          problematicSQL += ProblematicSQLCase(sqlID, issues)
-        }
-      }
-    }
-  }
-
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
     val keep = if (planInfo.metadata.contains("ReadSchema")) {
@@ -322,35 +303,6 @@ class ApplicationInfo(
       childRes
     }
     keep
-  }
-
-  private def splitKeyValueSchema(schemaArr: Array[String]): Map[String, String] = {
-    schemaArr.map { entry =>
-      val keyValue = entry.split(":")
-      if (keyValue.size == 2) {
-        (keyValue(0) -> keyValue(1))
-      } else {
-        logWarning(s"Splitting key and value didn't result in key and value $entry")
-        (entry -> "unknown")
-      }
-    }.toMap
-  }
-
-  def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
-    schemaOpt.map { schema =>
-      if (schema.startsWith("struct<") && schema.endsWith(">")) {
-        val schemaStr = schema.stripPrefix("struct<").stripSuffix(">")
-        splitKeyValueSchema(schemaStr.split(","))
-      } else if (schema.startsWith("struct<") && schema.endsWith("...")) {
-        val schemaStr = schema.stripPrefix("struct<")
-        // the last schema element will be cutoff because it has the ...
-        val validSchema = schemaStr.split(",").dropRight(1)
-        splitKeyValueSchema(validSchema) ++ Map("..." -> "...")
-      } else {
-        logWarning(s"Schema format is unknown: $schema, skipping!")
-        Map.empty[String, String]
-      }
-    }.getOrElse(Map.empty[String, String])
   }
 
   private def formatSchemaStr(schema: String): String = {
@@ -438,9 +390,7 @@ class ApplicationInfo(
    */
   def processSQLPlanMetrics(): Unit ={
     for ((sqlID, planInfo) <- sqlPlan){
-
       checkMetadataForReadSchema(sqlID, planInfo)
-
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
@@ -468,6 +418,27 @@ class ApplicationInfo(
     if (this.sqlPlanMetricsAdaptive.nonEmpty){
       logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive) for appID=$appId")
       sqlPlanMetrics = sqlPlanMetrics.union(sqlPlanMetricsAdaptive).distinct
+    }
+  }
+
+  def processSQLPlanForQualification(): Unit ={
+    for ((sqlID, planInfo) <- sqlPlan) {
+      checkMetadataForReadSchema(sqlID, planInfo)
+      val planGraph = SparkPlanGraph(planInfo)
+      // SQLPlanMetric is a case Class of
+      // (name: String,accumulatorId: Long,metricType: String)
+      val allnodes = planGraph.allNodes
+      for (node <- allnodes){
+        checkGraphNodeForBatchScan(sqlID, node)
+        // Firstly identify problematic SQLs if there is any
+        if (isDataSetPlan(node.desc)) {
+          datasetSQL += DatasetSQLCase(sqlID)
+        }
+        val issues = findPotentialIssues(node.desc)
+        if (issues.nonEmpty) {
+          problematicSQL += ProblematicSQLCase(sqlID, issues)
+        }
+      }
     }
   }
 
@@ -1041,6 +1012,32 @@ class ApplicationInfo(
 }
 
 object ApplicationInfo extends Logging {
+
+  private def splitKeyValueSchema(schemaArr: Array[String]): Map[String, String] = {
+    schemaArr.map { entry =>
+      val keyValue = entry.split(":")
+      if (keyValue.size == 2) {
+        (keyValue(0) -> keyValue(1))
+      } else {
+        logWarning(s"Splitting key and value didn't result in key and value $entry")
+        (entry -> "unknown")
+      }
+    }.toMap
+  }
+
+  def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
+    schemaOpt.map { schema =>
+      val keyValues = schema.split(",")
+      val validSchema = if (keyValues.last.endsWith("...")) {
+        // the last schema element will be cutoff because it has the ...
+        keyValues.dropRight(1)
+      } else {
+        keyValues
+      }
+      splitKeyValueSchema(validSchema)
+    }.getOrElse(Map.empty[String, String])
+  }
+
   def createApps(
       allPaths: Seq[EventLogInfo],
       numRows: Int,

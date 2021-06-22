@@ -42,6 +42,21 @@ object Qualification extends Logging {
       logWarning("No Applications found that contain SQL!")
       return None
     }
+
+    // Add tables for the data source information
+    apps.foreach { app =>
+      import sparkSession.implicits._
+      val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"))
+      val dfWithApp = df.withColumn("appIndex", lit(app.index.toString))
+        .select("appIndex", df.columns:_*)
+      // here we want to check the schema of what we are reading so perhaps combine these
+      // and just look at data types
+      val allTypes = app.dataSourceInfo.flatMap(ds => ApplicationInfo.parseSchemaString(Some(ds.schema)).values).toSet
+      // debug
+      logWarning(" all types are: " + allTypes.mkString(", "))
+      df.createOrReplaceTempView(s"datasource_${app.index}")
+    }
+
     val analysis = new Analysis(apps, None)
     if (includeCpuPercent) {
       val sqlAggMetricsDF = analysis.sqlMetricsAggregationQual()
