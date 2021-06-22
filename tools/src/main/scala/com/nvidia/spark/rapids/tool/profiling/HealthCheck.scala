@@ -29,7 +29,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter
 
   // Function to list all failed tasks , stages and jobs.
   def listFailedJobsStagesTasks(): Unit = {
-    val tasksMessageHeader = s"Failed tasks:\n"
+    val tasksMessageHeader = s"\nFailed tasks:\n"
     val tasksQuery = apps
         .filter { p =>
           p.allDataFrames.contains(s"taskDF_${p.index}")
@@ -42,7 +42,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter
       apps.head.sparkSession.emptyDataFrame
     }
 
-    val stagesMessageHeader = s"Failed stages:\n"
+    val stagesMessageHeader = s"\nFailed stages:\n"
     val stagesQuery = apps
         .filter { p =>
           p.allDataFrames.contains(s"stageDF_${p.index}")
@@ -55,7 +55,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter
       apps.head.sparkSession.emptyDataFrame
     }
 
-    val jobsMessageHeader = s"Failed jobs:\n"
+    val jobsMessageHeader = s"\nFailed jobs:\n"
     val jobsQuery = apps
         .filter { p =>
           p.allDataFrames.contains(s"jobDF_${p.index}")
@@ -95,7 +95,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter
 
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
   def listPossibleUnsupportedSQLPlan(): Unit = {
-    textFileWriter.write("\nSQL Plan HealthCheck\n")
+    textFileWriter.write("\nSQL Plan HealthCheck:\n")
     val query = apps
         .filter { p =>
           (p.allDataFrames.contains(s"sqlDF_${p.index}") && p.sqlPlan.nonEmpty)
