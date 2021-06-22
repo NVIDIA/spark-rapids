@@ -286,21 +286,9 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
 
-    val operatorCost = plan.wrapped match {
-      case _: ProjectExec =>
-        // this is not accurate because CPU projections do have a cost due to appending values
-        // to each row that is produced, but this needs to be a really small number because
-        // GpuProject cost is zero (in our cost model) and we don't want to encourage moving to
-        // the GPU just to do a trivial projection, so we pretend the overhead of a
-        // CPU projection (beyond evaluating the expressions) is also zero
-        0
-      case _: UnionExec =>
-        // union does not further process data produced by its children
-        0
-      case _ => plan.conf
+    val operatorCost = plan.conf
         .getCpuOperatorCost(plan.wrapped.getClass.getSimpleName)
         .getOrElse(conf.defaultCpuOperatorCost) * rowCount
-    }
 
     val exprEvalCost = plan.childExprs
       .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))
@@ -347,18 +335,9 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
 
-    val operatorCost = plan.wrapped match {
-      case _: ProjectExec =>
-        // The cost of a GPU projection is mostly the cost of evaluating the expressions
-        // to produce the projected columns
-        0
-      case _: UnionExec =>
-        // union does not further process data produced by its children
-        0
-      case _ => plan.conf
+    val operatorCost = plan.conf
         .getGpuOperatorCost(plan.wrapped.getClass.getSimpleName)
         .getOrElse(conf.defaultGpuOperatorCost) * rowCount
-    }
 
     val exprEvalCost = plan.childExprs
       .map(expr => exprCost(expr.asInstanceOf[BaseExprMeta[Expression]], rowCount))

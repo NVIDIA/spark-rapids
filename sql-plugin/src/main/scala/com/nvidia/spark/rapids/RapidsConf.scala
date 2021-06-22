@@ -1609,6 +1609,21 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
+  private val optimizerDefaults = Map(
+    // this is not accurate because CPU projections do have a cost due to appending values
+    // to each row that is produced, but this needs to be a really small number because
+    // GpuProject cost is zero (in our cost model) and we don't want to encourage moving to
+    // the GPU just to do a trivial projection, so we pretend the overhead of a
+    // CPU projection (beyond evaluating the expressions) is also zero
+    "spark.rapids.sql.optimizer.cpu.exec.ProjectExec" -> "0",
+    // The cost of a GPU projection is mostly the cost of evaluating the expressions
+    // to produce the projected columns
+    "spark.rapids.sql.optimizer.gpu.exec.ProjectExec" -> "0",
+    // union does not further process data produced by its children
+    "spark.rapids.sql.optimizer.cpu.exec.UnionExec" -> "0",
+    "spark.rapids.sql.optimizer.gpu.exec.UnionExec" -> "0"
+  )
+
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
     conf.get(key).map(toBoolean(_, key)).getOrElse(default)
@@ -1647,6 +1662,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   private def getOptionalCost(key: String) = {
-    conf.get(key).map(toDouble(_, key))
+    // user-provided value takes precedence, then look in defaults map
+    conf.get(key).orElse(optimizerDefaults.get(key)).map(toDouble(_, key))
   }
 }
