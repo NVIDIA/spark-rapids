@@ -43,7 +43,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   private val TRANSITION_TO_GPU_COST = "spark.rapids.sql.optimizer.gpu.exec.GpuRowToColumnarExec"
   private val TRANSITION_TO_CPU_COST = "spark.rapids.sql.optimizer.gpu.exec.GpuColumnarToRowExec"
 
-  private def DEFAULT_CONF = new SparkConf()
+  private def createDefaultConf() = new SparkConf()
     .set(RapidsConf.EXPLAIN.key, "ALL")
     .set(RapidsConf.OPTIMIZER_ENABLED.key, "true")
     .set(RapidsConf.OPTIMIZER_EXPLAIN.key, "ALL")
@@ -66,7 +66,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   test("Avoid transition to GPU for trivial projection after CPU SMJ") {
     logError("Avoid transition to GPU for trivial projection after CPU SMJ")
 
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
@@ -117,7 +117,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     logError("Force section of plan back onto CPU, AQE on")
     assumeSpark311orLater
 
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
@@ -172,7 +172,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   test("Force section of plan back onto CPU, AQE off") {
     logError("Force section of plan back onto CPU, AQE off")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       .set(TRANSITION_TO_CPU_COST, "0.15")
@@ -232,7 +232,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     logError("Force last section of plan back onto CPU, AQE on")
     assumeSpark311orLater
 
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(TRANSITION_TO_CPU_COST, "0.3")
       .set(TRANSITION_TO_GPU_COST, "0.3")
@@ -274,7 +274,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   test("Force last section of plan back onto CPU, AQE off") {
     logError("Force last section of plan back onto CPU, AQE off")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
       .set(TRANSITION_TO_CPU_COST, "0.15")
       .set(TRANSITION_TO_GPU_COST, "0.15")
@@ -317,7 +317,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   test("Avoid move to GPU for trivial projection, AQE on") {
     logError("Avoid move to GPU for trivial projection, AQE on")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
@@ -348,7 +348,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   test("Avoid move to GPU for trivial projection, AQE off") {
     logError("Avoid move to GPU for trivial projection, AQE off")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(TRANSITION_TO_CPU_COST, "0.1")
       .set(TRANSITION_TO_GPU_COST, "0.1")
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -393,7 +393,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   test("Avoid move to GPU for shuffle, AQE on") {
     logError("Avoid move to GPU for shuffle, AQE on")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
@@ -414,7 +414,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   test("Avoid move to GPU for shuffle, AQE off") {
     logError("Avoid move to GPU for shuffle, AQE off")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "false")
       .set(RapidsConf.OPTIMIZER_DEFAULT_CPU_OPERATOR_COST.key, "0")
@@ -441,7 +441,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     // if we force a GPU CustomShuffleReaderExec back onto CPU due to cost then the query will
     // fail because the shuffle already happened on GPU and we end up with an invalid plan
 
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1")
       .set("spark.rapids.sql.optimizer.gpu.exec.GpuCustomShuffleReaderExec", "99999999")
@@ -463,7 +463,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   test("Compute estimated row count nested joins no broadcast") {
     assumeSpark301orLater
     logError("Compute estimated row count nested joins no broadcast")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
@@ -512,7 +512,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   test("Compute estimated row count nested joins with broadcast") {
     assumeSpark301orLater
     logError("Compute estimated row count nested joins with broadcast")
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
@@ -559,7 +559,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   test("Window expression (unevaluable)") {
     logError("Window expression (unevaluable)")
 
-    val conf = DEFAULT_CONF
+    val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,WindowExec,ShuffleExchangeExec,WindowSpecDefinition," +
