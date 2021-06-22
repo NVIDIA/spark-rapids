@@ -44,7 +44,7 @@ object EventLogPathProcessor extends Logging {
   val DB_EVENT_LOG_FILE_NAME_PREFIX = "eventlog"
 
   def isEventLogDir(status: FileStatus): Boolean = {
-    status.isDirectory && status.getPath.getName.startsWith(EVENT_LOG_DIR_NAME_PREFIX)
+    status.isDirectory && isEventLogDir(status.getPath.getName)
   }
 
   // This only checks the name of the path
