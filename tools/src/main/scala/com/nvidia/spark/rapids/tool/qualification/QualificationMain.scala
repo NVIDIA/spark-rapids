@@ -53,7 +53,7 @@ object QualificationMain extends Logging {
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths)
+      matchEventLogs.toOption, eventlogPaths, sparkSession)
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return (0, None)

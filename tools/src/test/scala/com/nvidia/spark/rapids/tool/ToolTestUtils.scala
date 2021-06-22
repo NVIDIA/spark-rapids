@@ -20,7 +20,7 @@ import java.io.{File, FilenameFilter, FileNotFoundException}
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.tool.profiling.{ProfileArgs, ProfileUtils}
+import com.nvidia.spark.rapids.tool.profiling.ProfileArgs
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
@@ -100,7 +100,7 @@ object ToolTestUtils extends Logging {
     val appArgs = new ProfileArgs(logs)
     var index: Int = 1
     for (path <- appArgs.eventlog()) {
-      val eventLogInfo = EventLogPathProcessor.getEventLogInfo(path)
+      val eventLogInfo = EventLogPathProcessor.getEventLogInfo(path, sparkSession)
       assert(eventLogInfo.size >= 1, s"event log not parsed as expected $path")
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
         eventLogInfo.head._1, index)
