@@ -315,12 +315,13 @@ class ApplicationInfo(
     val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
+      val readSchema = formatSchemaStr(meta.getOrElse("ReadSchema", ""))
       val schemaStr = if (forQualification) {
         // for qualification just store the raw types not the key names
-        val allTypes = ApplicationInfo.parseSchemaString(Some(meta.getOrElse("ReadSchema", ""))).values.toSet
+        val allTypes = ApplicationInfo.parseSchemaString(Some(readSchema)).values.toSet
         allTypes.mkString(",")
       } else {
-        formatSchemaStr(meta.getOrElse("ReadSchema", ""))
+        readSchema
       }
       dataSourceInfo += DataSourceCase(sqlID,
         meta.getOrElse("Format", "unknown"),
