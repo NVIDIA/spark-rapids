@@ -416,13 +416,22 @@ class ApplicationInfo(
       } else {
         "unknown"
       }
-      val format = if (node.desc.contains("ParquetScan")) {
-        "Parquet"
+      val fileFormat = if (node.desc.contains("Format:")) {
+        val index = node.desc.indexOf("Format:")
+        val subStr = node.desc.substring(index)
+        val endIndex = subStr.indexOf(", ")
+        val format = subStr.substring(0, endIndex + 1)
+        format
       } else {
         "unknown"
       }
+     /* val format = if (node.desc.contains("ParquetScan")) {
+        "Parquet"
+      } else {
+        "unknown"
+      }*/
       readSchema += ReadSchema(sqlID,
-        format,
+        fileFormat,
         location,
         pushedFilters,
         schema
