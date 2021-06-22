@@ -50,6 +50,16 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    in machines that don't connect their GPUs and NICs to PCIe switches (i.e. directly to the 
    root-complex). 
    
+   Other considerations:
+
+   - Please refer to [Mellanox documentation](
+   https://community.mellanox.com/s/article/recommended-network-configuration-examples-for-roce-deployment)
+   on how to configure RoCE networks (lossless/lossy, QoS, and more)
+
+   - We recommend that the `--without-ucx` option is passed when installing MLNX_OFED
+   (`mlnxofedinstall`). This is because the UCX included in MLNX_OFED does not have CUDA support,
+   and is likely older than what is available in the UCX repo (see Step 2 below).
+
    If you encounter issues or poor performance, GPUDirectRDMA can be controlled via the 
    UCX environment variable `UCX_IB_GPU_DIRECT_RDMA=no`, but please 
    [file a GitHub issue](https://github.com/NVIDIA/spark-rapids/issues) so we can investigate 
