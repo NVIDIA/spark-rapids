@@ -213,7 +213,8 @@ NM_hostname_2
 6. Configure SSH login without password.
 
    Enable SSH login without password from the master node to worker nodes and from the master node to itself.
-   You can add a public SSH key for the host into ~/.ssh/authorized_keys. See [this tutorial](http://www.linuxproblem.org/art_9.html)
+   You can add a public SSH key for the host into ~/.ssh/authorized_keys. Please refer to
+   [this site](https://docs.alluxio.io/os/user/stable/en/deploy/Running-Alluxio-On-a-Cluster.html#prerequisites).
    for more details.
 
 7. Start Alluxio cluster.
