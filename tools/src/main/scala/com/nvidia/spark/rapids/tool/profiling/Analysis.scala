@@ -172,7 +172,8 @@ class Analysis(apps: ArrayBuffer[ApplicationInfo], fileWriter: Option[ToolTextFi
       }.map( app => "(" + app.profilingDurationSQL + ")")
       .mkString(" union ")
     if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex", false, fileWriter, messageHeader)
+      apps.head.runQuery(query + "order by appIndex, sqlID, `SQL Duration`",
+        false, fileWriter, messageHeader)
     } else {
       apps.head.sparkSession.emptyDataFrame
     }

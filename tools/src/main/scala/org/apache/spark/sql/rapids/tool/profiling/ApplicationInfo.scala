@@ -569,7 +569,7 @@ class ApplicationInfo(
   // Function to generate a query for printing Application information
   def generateAppInfo: String =
     s"""select $index as appIndex, appName, appId, startTime, endTime, duration,
-       |durationStr, sparkVersion, gpuMode
+       |durationStr, sparkVersion, gpuMode as pluginEnabled
        |from appDF_$index
        |""".stripMargin
 
@@ -578,53 +578,52 @@ class ApplicationInfo(
     // If both blockManagersDF and resourceProfilesDF exist:
     if (allDataFrames.contains(s"blockManagersDF_$index") &&
         allDataFrames.contains(s"resourceProfilesDF_$index")) {
-
       s"""select $index as appIndex,
-         |first(r.id) as resourceProfileId,
-         |count(e.executorID) as numExecutors,
-         |first(e.totalCores) as coresPerExecutor,
-         |first(b.maxMem) as maxMemory,
-         |first(b.maxOnHeapMem) as maxOnHeapMem,
-         |first(b.maxOffHeapMem) as maxOffHeapMem,
-         |first(r.exec_cpu) as exec_cpu,
-         |first(r.exec_mem) as exec_mem,
-         |first(r.exec_gpu) as exec_gpu,
-         |first(r.exec_offheap) as exec_offheap,
-         |first(r.task_cpu) as task_cpu,
-         |first(r.task_gpu) as task_gpu
-         |from executorsDF_$index e, blockManagersDF_$index b, resourceProfilesDF_$index r
-         |where e.executorID=b.executorID
-         |and e.resourceProfileId=r.id
-         |""".stripMargin
+         |t.resourceProfileId, t.numExecutors, t.totalCores as coresPerExecutor ,
+         |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
+         |rp.executorCores, rp.executorMemory, rp.numGpusPerExecutor,
+         |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
+         |from (select resourceProfileId, totalCores ,
+         |count(executorId) as numExecutors,
+         |max(executorId) as maxId
+         |from executorsDF_$index
+         |group by resourceProfileId, totalCores) t
+         |inner join resourceProfilesDF_$index rp
+         |on t.resourceProfileId = rp.id
+         |inner join blockManagersDF_$index bm
+         |on t.maxId = bm.executorId""".stripMargin
     } else if (allDataFrames.contains(s"blockManagersDF_$index") &&
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
       s"""select $index as appIndex,
-         |count(e.executorID) as numExecutors,
-         |first(e.totalCores) as coresPerExecutor,
-         |first(b.maxMem) as maxMemory,
-         |first(b.maxOnHeapMem) as maxOnHeapMem,
-         |first(b.maxOffHeapMem) as maxOffHeapMem,
-         |null as exec_cpu, null as exec_mem, null as exec_gpu,
-         |null as exec_offheap, null as task_cpu, null as task_gpu
-         |from executorsDF_$index e, blockManagersDF_$index b
-         |where e.executorID=b.executorID
-         |""".stripMargin
+         |t.numExecutors, t.totalCores as coresPerExecutor ,
+         |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
+         |null as executorCores, null as executorMemory, null as numGpusPerExecutor,
+         |null as executorOffHeap, null as taskCpu, null as taskGpu
+         |from (select resourceProfileId, totalCores,
+         |count(executorId) as numExecutors,
+         |max(executorId) as maxId
+         |from executorsDF_$index
+         |group by resourceProfileId, totalCores) t
+         |inner join blockManagersDF_$index bm
+         |on t.maxId = bm.executorId""".stripMargin
+
     } else if (!allDataFrames.contains(s"blockManagersDF_$index") &&
         allDataFrames.contains(s"resourceProfilesDF_$index")) {
       s"""select $index as appIndex,
-         |first(r.id) as resourceProfileId,
-         |count(e.executorID) as numExecutors,
-         |first(e.totalCores) as coresPerExecutor,
+         |t.resourceProfileId,
+         |t.numExecutors,
+         |t.totalCores as coresPerExecutor,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |first(r.exec_cpu) as exec_cpu,
-         |first(r.exec_mem) as exec_mem,
-         |first(r.exec_gpu) as exec_gpu,
-         |first(r.exec_offheap) as exec_offheap,
-         |first(r.task_cpu) as task_cpu,
-         |first(r.task_gpu) as task_gpu
-         |from executorsDF_$index e, resourceProfilesDF_$index r
-         |where e.resourceProfileId=r.id
+         |rp. executorCores, rp.executorMemory, rp.numGpusPerExecutor,
+         |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
+         |from (select resourceProfileId, totalCores,
+         |count(executorId) as numExecutors,
+         |max(executorId) as maxId
+         |from executorsDF_$index
+         |group by resourceProfileId, totalCores) t
+         |inner join resourceProfilesDF_$index rp
+         |on t.resourceProfileId = rp.id
          |""".stripMargin
     } else {
       s"""select $index as appIndex,
@@ -632,8 +631,8 @@ class ApplicationInfo(
          |first(totalCores) as coresPerExecutor,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |null as exec_cpu, null as exec_mem, null as exec_gpu,
-         |null as exec_offheap, null as task_cpu, null as task_gpu
+         |null as executorCores, null as executorMemory, null as numGpusPerExecutor,
+         |null as executorOffHeap, null as taskCpu, null as taskGpu
          |from executorsDF_$index
          |group by appIndex
          |""".stripMargin
