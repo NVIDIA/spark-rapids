@@ -179,4 +179,5 @@ case class DataSourceCase(
     format: String,
     location: String,
     pushedFilters: String,
-    schema: String)
+    schema: String,
+    schemaIncomplete: Boolean)

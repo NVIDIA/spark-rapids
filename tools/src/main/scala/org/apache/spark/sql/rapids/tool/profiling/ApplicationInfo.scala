@@ -310,23 +310,30 @@ class ApplicationInfo(
   }
 
   // The ReadSchema metadata is only in the eventlog for DataSource V1 readers
-  def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo) = {
+  def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     // check if planInfo has ReadSchema
     val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
-      val schemaStr = meta.getOrElse("ReadSchema", "")
+      val schemaStr = if (forQualification) {
+        // for qualification just store the raw types not the key names
+        val allTypes = ApplicationInfo.parseSchemaString(Some(meta.getOrElse("ReadSchema", ""))).values.toSet
+        allTypes.mkString(",")
+      } else {
+        formatSchemaStr(meta.getOrElse("ReadSchema", ""))
+      }
       dataSourceInfo += DataSourceCase(sqlID,
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
         meta.getOrElse("PushedFilters", "unknown"),
-        formatSchemaStr(schemaStr)
+        schemaStr,
+        false
       )
     }
   }
 
   // This will find scans for DataSource V2
-  def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode) = {
+  def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode): Unit = {
     if (node.name.equals("BatchScan")) {
       val schemaTag = "ReadSchema: "
       val schema = if (node.desc.contains(schemaTag)) {
@@ -376,11 +383,20 @@ class ApplicationInfo(
       } else {
         "unknown"
       }
+      // for qualification just store the raw types not the key names
+      val schemaStr = if (forQualification) {
+        val allTypes = ApplicationInfo.parseSchemaString(Some(schema)).values.toSet
+        allTypes.mkString(",")
+      } else {
+        schema
+      }
+
       dataSourceInfo += DataSourceCase(sqlID,
         fileFormat,
         location,
         pushedFilters,
-        schema
+        schemaStr,
+        ApplicationInfo.schemaIncomplete(schema)
       )
     }
   }
@@ -1025,10 +1041,14 @@ object ApplicationInfo extends Logging {
     }.toMap
   }
 
+  def schemaIncomplete(schema: String): Boolean = {
+    schema.endsWith("...")
+  }
+
   def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
     schemaOpt.map { schema =>
       val keyValues = schema.split(",")
-      val validSchema = if (keyValues.last.endsWith("...")) {
+      val validSchema = if (schemaIncomplete(keyValues.last)) {
         // the last schema element will be cutoff because it has the ...
         keyValues.dropRight(1)
       } else {

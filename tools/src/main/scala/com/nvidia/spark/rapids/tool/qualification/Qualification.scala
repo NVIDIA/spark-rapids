@@ -51,9 +51,10 @@ object Qualification extends Logging {
         .select("appIndex", df.columns:_*)
       // here we want to check the schema of what we are reading so perhaps combine these
       // and just look at data types
-      val allTypes = app.dataSourceInfo.flatMap(ds => ApplicationInfo.parseSchemaString(Some(ds.schema)).values).toSet
+      val allTypes = app.dataSourceInfo.flatMap(ds => ds.schema.split(",")).toSet
+      val incomplete = app.dataSourceInfo.exists(_.schemaIncomplete)
       // debug
-      logWarning(" all types are: " + allTypes.mkString(", "))
+      logWarning(s" all types are (incomplete: ${incomplete}: " + allTypes.mkString(", "))
       df.createOrReplaceTempView(s"datasource_${app.index}")
     }
 
