@@ -21,6 +21,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
@@ -1613,6 +1614,42 @@ object SupportedOpsDocs {
     Console.withOut(out) {
       Console.withErr(out) {
         SupportedOpsDocs.help()
+      }
+    }
+  }
+}
+
+object SupportOpsForTools extends Logging {
+  private def outputSupportIO() {
+    GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
+      case (format, ioMap) =>
+        logWarning(s"format is $format: ")
+        val read = ioMap(ReadFileOp)
+        val write = ioMap(WriteFileOp)
+
+        TypeEnum.values.foreach { t =>
+          logWarning(s" read types is $format: ")
+          println(read.support(t).htmlTag)
+        }
+
+        TypeEnum.values.foreach { t =>
+          logWarning(s" write types is $format: ")
+          println(write.support(t).htmlTag)
+        }
+
+    }
+  }
+
+  def help(): Unit = {
+    // scalastyle:off line.size.limit
+    println("Help For tools support ops.")
+  }
+
+  def main(args: Array[String]): Unit = {
+    val out = new FileOutputStream(new File(args(0)))
+    Console.withOut(out) {
+      Console.withErr(out) {
+        outputSupportIO.help()
       }
     }
   }
