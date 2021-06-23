@@ -626,9 +626,9 @@ class ApplicationInfo(
     if (allDataFrames.contains(s"blockManagersDF_$index") &&
         allDataFrames.contains(s"resourceProfilesDF_$index")) {
       s"""select $index as appIndex,
-         |t.resourceProfileId, t.numExecutors, t.totalCores as coresPerExecutor ,
+         |t.resourceProfileId, t.numExecutors, t.totalCores as executorCores,
          |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
-         |rp.executorCores, rp.executorMemory, rp.numGpusPerExecutor,
+         |rp.executorMemory, rp.numGpusPerExecutor,
          |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
          |from (select resourceProfileId, totalCores ,
          |count(executorId) as numExecutors,
@@ -643,9 +643,9 @@ class ApplicationInfo(
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
       s"""select $index as appIndex,
-         |t.numExecutors, t.totalCores as coresPerExecutor ,
+         |t.numExecutors, t.totalCores as executorCores,
          |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
-         |null as executorCores, null as executorMemory, null as numGpusPerExecutor,
+         |null as executorMemory, null as numGpusPerExecutor,
          |null as executorOffHeap, null as taskCpu, null as taskGpu
          |from (select resourceProfileId, totalCores,
          |count(executorId) as numExecutors,
@@ -660,9 +660,9 @@ class ApplicationInfo(
       s"""select $index as appIndex,
          |t.resourceProfileId,
          |t.numExecutors,
-         |t.totalCores as coresPerExecutor,
+         |t.totalCores as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |rp. executorCores, rp.executorMemory, rp.numGpusPerExecutor,
+         |rp.executorMemory, rp.numGpusPerExecutor,
          |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
          |from (select resourceProfileId, totalCores,
          |count(executorId) as numExecutors,
@@ -675,10 +675,10 @@ class ApplicationInfo(
     } else {
       s"""select $index as appIndex,
          |count(executorID) as numExecutors,
-         |first(totalCores) as coresPerExecutor,
+         |first(totalCores) as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |null as executorCores, null as executorMemory, null as numGpusPerExecutor,
+         |null as executorMemory, null as numGpusPerExecutor,
          |null as executorOffHeap, null as taskCpu, null as taskGpu
          |from executorsDF_$index
          |group by appIndex
