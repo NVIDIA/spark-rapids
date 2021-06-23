@@ -430,6 +430,9 @@ Failed jobs:
 +-----+------+--------+---------------------------------------------------------------------------------------------------+
 ```
 
+### What does the metrics mean
+All the metrics definition can be found in [spark source code](https://github.com/apache/spark/blob/v3.1.1/core/src/main/scala/org/apache/spark/executor/TaskMetrics.scala) or [spark webUI doc](https://spark.apache.org/docs/3.1.2/web-ui.html#content).
+
 ### How to use this tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
