@@ -76,6 +76,9 @@ For usage see below:
   val printPlans: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
+  val generateTimeline: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Write an SVG graph out for the full application timeline.")
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)

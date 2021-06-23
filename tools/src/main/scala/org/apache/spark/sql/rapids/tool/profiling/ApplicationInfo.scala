@@ -130,6 +130,93 @@ class ApplicationInfo(
   val stageCompletionTime: HashMap[Int, Option[Long]] = HashMap.empty[Int, Option[Long]]
   val stageFailureReason: HashMap[Int, Option[String]] = HashMap.empty[Int, Option[String]]
 
+  // A cleaned up version of stageSubmitted
+  lazy val enhancedStage: ArrayBuffer[StageCase] = {
+    val ret: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
+    for (res <- stageSubmitted) {
+      val thisEndTime = stageCompletionTime.getOrElse(res.stageId, None)
+      val thisFailureReason = stageFailureReason.getOrElse(res.stageId, None)
+
+      val durationResult =
+        ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
+      val durationString = durationResult match {
+        case Some(i) => UIUtils.formatDuration(i)
+        case None => ""
+      }
+
+      // only for qualification set the runtime and cputime
+      // could expand later for profiling
+      val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
+      val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
+      val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
+      val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
+
+      val stageNew = res.copy(completionTime = thisEndTime,
+        failureReason = thisFailureReason,
+        duration = durationResult,
+        durationStr = durationString,
+        executorRunTimeSum = runTime,
+        executorCPUTimeSum = cpuTime)
+      ret += stageNew
+    }
+    ret
+  }
+
+  lazy val enhancedJob: ArrayBuffer[JobCase] = {
+    val ret = ArrayBuffer[JobCase]()
+    for (res <- jobStart) {
+      val thisEndTime = jobEndTime.get(res.jobID)
+      val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
+      val durationString = durationResult match {
+        case Some(i) => UIUtils.formatDuration(i)
+        case None => ""
+      }
+
+      val jobNew = res.copy(endTime = thisEndTime,
+        duration = durationResult,
+        durationStr = durationString,
+        jobResult = jobEndResult.get(res.jobID),
+        failedReason = jobFailedReason.get(res.jobID)
+      )
+      ret += jobNew
+    }
+    ret
+  }
+
+  lazy val enhancedSql: ArrayBuffer[SQLExecutionCase] = {
+    val ret: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
+    for (res <- sqlStart) {
+      val thisEndTime = sqlEndTime.get(res.sqlID)
+      val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
+      val durationString = durationResult match {
+        case Some(i) => UIUtils.formatDuration(i)
+        case None => ""
+      }
+      val (containsDataset, sqlQDuration) = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
+        (true, Some(0L))
+      } else {
+        (false, durationResult)
+      }
+      val potProbs = problematicSQL.filter { p =>
+        p.sqlID == res.sqlID && p.reason.nonEmpty
+      }.map(_.reason).mkString(",")
+      val finalPotProbs = if (potProbs.isEmpty) {
+        null
+      } else {
+        potProbs
+      }
+      val sqlExecutionNew = res.copy(endTime = thisEndTime,
+        duration = durationResult,
+        durationStr = durationString,
+        sqlQualDuration = sqlQDuration,
+        hasDataset = containsDataset,
+        problematic = finalPotProbs
+      )
+      ret += sqlExecutionNew
+    }
+    ret
+  }
+
   // From SparkListenerTaskStart & SparkListenerTaskEnd
   // taskStart was not used so comment out for now
   // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
@@ -391,93 +478,19 @@ class ApplicationInfo(
 
     // For sqlDF
     if (sqlStart.nonEmpty) {
-      val sqlStartNew: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
-      for (res <- sqlStart) {
-        val thisEndTime = sqlEndTime.get(res.sqlID)
-        val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
-        val (containsDataset, sqlQDuration) = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
-          (true, Some(0L))
-        } else {
-          (false, durationResult)
-        }
-        val potProbs = problematicSQL.filter { p =>
-          p.sqlID == res.sqlID && p.reason.nonEmpty
-        }.map(_.reason).mkString(",")
-        val finalPotProbs = if (potProbs.isEmpty) {
-          null
-        } else {
-          potProbs
-        }
-        val sqlExecutionNew = res.copy(endTime = thisEndTime,
-          duration = durationResult,
-          durationStr = durationString,
-          sqlQualDuration = sqlQDuration,
-          hasDataset = containsDataset,
-          problematic = finalPotProbs
-        )
-        sqlStartNew += sqlExecutionNew
-      }
-      allDataFrames += (s"sqlDF_$index" -> sqlStartNew.toDF)
+      allDataFrames += (s"sqlDF_$index" -> enhancedSql.toDF)
     } else {
       logInfo("No SQL Execution Found. Skipping generating SQL Execution DataFrame.")
     }
 
     // For jobDF
     if (jobStart.nonEmpty) {
-      val jobStartNew: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
-      for (res <- jobStart) {
-        val thisEndTime = jobEndTime.get(res.jobID)
-        val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
-
-        val jobNew = res.copy(endTime = thisEndTime,
-          duration = durationResult,
-          durationStr = durationString,
-          jobResult = jobEndResult.get(res.jobID),
-          failedReason = jobFailedReason.get(res.jobID)
-        )
-        jobStartNew += jobNew
-      }
-      allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
+      allDataFrames += (s"jobDF_$index" -> enhancedJob.toDF)
     }
 
     // For stageDF
     if (stageSubmitted.nonEmpty) {
-      val stageSubmittedNew: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-      for (res <- stageSubmitted) {
-        val thisEndTime = stageCompletionTime.getOrElse(res.stageId, None)
-        val thisFailureReason = stageFailureReason.getOrElse(res.stageId, None)
-
-        val durationResult =
-          ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
-
-        // only for qualification set the runtime and cputime
-        // could expand later for profiling
-        val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
-        val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
-        val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
-        val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
-
-        val stageNew = res.copy(completionTime = thisEndTime,
-          failureReason = thisFailureReason,
-          duration = durationResult,
-          durationStr = durationString,
-          executorRunTimeSum = runTime,
-          executorCPUTimeSum = cpuTime)
-        stageSubmittedNew += stageNew
-      }
-      allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
+      allDataFrames += (s"stageDF_$index" -> enhancedStage.toDF)
     }
 
     // For taskDF
