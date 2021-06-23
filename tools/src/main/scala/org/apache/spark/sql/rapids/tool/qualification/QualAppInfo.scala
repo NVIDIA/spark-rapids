@@ -114,7 +114,7 @@ class QualAppInfo(
 
   private def getSQLDurationProblematic: Long = {
     problematicSQL.map { prob =>
-      sqlDurationTime.getOrElse(prob.sqlID, 0)
+      sqlDurationTime.getOrElse(prob.sqlID, 0L)
     }.sum
   }
 
@@ -131,7 +131,7 @@ class QualAppInfo(
   def aggregateStats(): Option[QualificationSummaryInfo] = {
     appInfo.map { info =>
       // TODO - do we want 0 here or something else?
-      val appDuration = calculateAppDuration(info.startTime).getOrElse(0)
+      val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframDuration
       val score = calculateScore(sqlDataframeDur, appDuration)
       val problems = getPotentialProblems

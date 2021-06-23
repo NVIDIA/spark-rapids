@@ -45,7 +45,6 @@ class Qualification(outputDir: String) extends Logging {
       val (app, _) = QualAppInfo.createApp(path, numRows)
       if (!app.isDefined) {
         logWarning("No Applications found that contain SQL!")
-        return None
       }
       val qualSumInfo = app.get.aggregateStats()
 
