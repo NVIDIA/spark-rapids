@@ -74,7 +74,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nExecutor Information:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
-        app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
+        app.runQuery(query = app.generateExecutorInfo + " order by cast(numExecutors as long)",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Executor Information Found!\n"))
@@ -100,7 +100,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        app.runQuery(query = app.generateRapidsProperties + " order by key",
+        app.runQuery(query = app.generateRapidsProperties + " order by propertyName",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))

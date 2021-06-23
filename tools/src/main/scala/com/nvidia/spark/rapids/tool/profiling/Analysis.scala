@@ -170,7 +170,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       }.map( app => "(" + app.profilingDurationSQL + ")")
       .mkString(" union ")
     if (query.nonEmpty) {
-      apps.head.runQuery(query, false, fileWriter, messageHeader)
+      apps.head.runQuery(query + "order by appIndex, sqlID, `SQL Duration`",
+        false, fileWriter, messageHeader)
     } else {
       apps.head.sparkSession.emptyDataFrame
     }
@@ -209,7 +210,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
            |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
            |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
            |t.successful,
-           |substr(t.endReason,0,100) endReason_first100char
+           |substr(t.endReason,0,100) reason
            |from tmp, taskDF_${app.index} t
            |where tmp.stageId=t.StageId
            |and tmp.stageAttemptId=t.stageAttemptId
