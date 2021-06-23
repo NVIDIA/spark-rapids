@@ -96,4 +96,4 @@ version of the Exchange node as the key for this cache but this can result in
 errors if there are both CPU and GPU query stages that are created from
 Exchange nodes that have equivalent canonical plan. This issue was resolved in
 [SPARK-35093](https://issues.apache.org/jira/browse/SPARK-35093) and the fix is
-available in Spark versions 3.0.3, 3.1.2, and 3.2.0.
+available in Spark versions 3.0.3+, 3.1.2+, and 3.2.0+.

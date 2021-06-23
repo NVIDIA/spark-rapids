@@ -14,21 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark303
+package com.nvidia.spark.rapids.spark304
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.shims.spark301.RapidsShuffleInternalManager
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 0, 3)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
-
-  def buildShim: SparkShims = {
-    new Spark303Shims()
-  }
+/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
+sealed class RapidsShuffleManager(
+    conf: SparkConf,
+    isDriver: Boolean) extends RapidsShuffleInternalManager(conf, isDriver) {
 }
