@@ -20,7 +20,6 @@ import com.nvidia.spark.rapids.tool.EventLogPathProcessor
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
 
 /**
  * A tool to analyze Spark event logs and determine if 
@@ -32,7 +31,7 @@ object QualificationMain extends Logging {
    */
   def main(args: Array[String]) {
     val sparkSession = ProfileUtils.createSparkSession
-    val exitCode = mainInternal(sparkSession, new QualificationArgs(args))
+    val exitCode = mainInternal(new QualificationArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -41,7 +40,7 @@ object QualificationMain extends Logging {
   /**
    * Entry point for tests
    */
-  def mainInternal(sparkSession: SparkSession, appArgs: QualificationArgs,
+  def mainInternal(appArgs: QualificationArgs,
       writeOutput: Boolean = true, dropTempViews: Boolean = false): Int = {
 
     // Parsing args
@@ -49,19 +48,17 @@ object QualificationMain extends Logging {
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
-    val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths, sparkSession)
+      matchEventLogs.toOption, eventlogPaths)
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
-      return (0, None)
+      return 0
     }
 
-    Qualification.qualifyApps(eventLogInfos, numOutputRows, sparkSession,
-      includeCpuPercent, dropTempViews)
-
+    val qual = new Qualification(outputDirectory)
+    qual.qualifyApps(eventLogInfos, numOutputRows)
     0
   }
 

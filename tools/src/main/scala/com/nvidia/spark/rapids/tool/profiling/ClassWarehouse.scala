@@ -187,6 +187,6 @@ case class TaskCase(
 
 case class DatasetSQLCase(sqlID: Long)
 
-case class ProblematicSQLCase(sqlID: Long, reason: String, duration: Long)
+case class ProblematicSQLCase(sqlID: Long, reason: String)
 
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String, nodeDesc: String)

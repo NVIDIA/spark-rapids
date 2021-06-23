@@ -18,8 +18,6 @@ package org.apache.spark.sql.rapids.tool.qualification
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.mutable.ArrayBuffer
-
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.scheduler._
@@ -63,7 +61,7 @@ class QualEventProcessor() extends EventProcessorBase {
     logDebug("Processing event: " + event.getClass)
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
-      val taskSum = app.sqlIDToTaskQualificationEnd.getOrElseUpdate(sqlID, {
+      val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
         new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0)
       })
       taskSum.executorRunTime += event.taskMetrics.executorRunTime
@@ -95,7 +93,7 @@ class QualEventProcessor() extends EventProcessorBase {
       event: SparkListenerSQLExecutionEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.lastSQLEndTime = Some(event.time)
-    app.sqlEndTime += (event.executionId -> event.time)
+    // app.sqlEndTime += (event.executionId -> event.time)
     val sqlInfo = app.sqlStart.get(event.executionId)
     // if start time not there, use 0 for duration
     val sqlDuration = sqlInfo.map(_.startTime).getOrElse(0)
@@ -115,10 +113,6 @@ class QualEventProcessor() extends EventProcessorBase {
         app.stageIdToSqlID.getOrElseUpdate(id, sqlID.get)
       }
     }
-    sqlID.foreach { id =>
-      val stages = app.sqlIdToStageId.getOrElseUpdate(id, ArrayBuffer.empty)
-      stages ++ event.stageIds
-    }
   }
 
   override def doSparkListenerJobEnd(
@@ -128,14 +122,6 @@ class QualEventProcessor() extends EventProcessorBase {
     app.lastJobEndTime = Some(event.time)
     // TODO - verify job failures show up in sql failures
     // do we want to track separately for any failures?
-  }
-
-  override def doSparkListenerStageSubmitted(
-      app: QualAppInfo,
-      event: SparkListenerStageSubmitted): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    val attempts = app.stageIdToAttempts.getOrElseUpdate(event.stageInfo.stageId, ArrayBuffer.empty)
-    attempts += event.stageInfo.attemptNumber()
   }
 
   override def doSparkListenerSQLAdaptiveExecutionUpdate(

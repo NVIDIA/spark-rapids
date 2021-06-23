@@ -16,9 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.io.{BufferedInputStream, InputStream}
 import java.util.concurrent.ConcurrentHashMap
-import java.util.zip.GZIPInputStream
 
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
@@ -27,7 +25,6 @@ import scala.io.{Codec, Source}
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
@@ -47,11 +44,11 @@ import org.apache.spark.util._
 
 class ApplicationInfo(
     numRows: Int,
-    session: SparkSession,
+    val sparkSession: SparkSession,
     eLogInfo: EventLogInfo,
     val index: Int,
     val forQualification: Boolean = false)
-  extends AppBase(numRows, session, eLogInfo) with Logging {
+  extends AppBase(numRows, eLogInfo) with Logging {
 
   // allDataFrames is to store all the DataFrames
   // after event log parsing has completed.
@@ -376,7 +373,7 @@ class ApplicationInfo(
         }
         val issues = findPotentialIssues(node.desc)
         if (issues.nonEmpty) {
-          problematicSQL += ProblematicSQLCase(sqlID, issues, 0)
+          problematicSQL += ProblematicSQLCase(sqlID, issues)
         }
       }
     }

@@ -51,12 +51,6 @@ For usage see below:
         " rapids_4_spark_qualification_output. It will overwrite any existing directory" +
         " with the same name.",
       default = Some("."))
-  val outputFormat: ScallopOption[String] =
-    opt[String](required = false,
-      descr = "Output format, supports csv and text. Default is csv." +
-        " text output format creates a file named rapids_4_spark_qualification.log" +
-        " while csv will create a file using the standard Spark naming convention.",
-      default = Some("csv"))
   val eventlog: ScallopOption[List[String]] =
     trailArg[List[String]](required = true,
       descr = "Event log filenames(space separated) or directories containing event logs." +
@@ -72,11 +66,6 @@ For usage see below:
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000.")
-  val noExecCpuPercent: ScallopOption[Boolean] =
-    opt[Boolean](
-      required = false,
-      default = Some(false),
-      descr = "Do not include the executor CPU time percent.")
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)

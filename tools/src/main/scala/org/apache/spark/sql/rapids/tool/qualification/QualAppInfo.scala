@@ -19,12 +19,12 @@ package org.apache.spark.sql.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
 
+import org.apache.hadoop.conf.Configuration
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor}
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.deploy.history.EventLogFileReader
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
@@ -33,9 +33,8 @@ import org.json4s.jackson.JsonMethods.parse
 
 class QualAppInfo(
     numOutputRows: Int,
-    sparkSession: SparkSession,
     eventLogInfo: EventLogInfo,
-    val index: Int) extends AppBase(numOutputRows, sparkSession, eventLogInfo) with Logging {
+    val index: Int) extends AppBase(numOutputRows, eventLogInfo) with Logging {
 
   var appId: String = ""
   var isPluginEnabled = false
@@ -46,9 +45,7 @@ class QualAppInfo(
   val sqlStart: HashMap[Long, QualSQLExecutionInfo] = HashMap[Long, QualSQLExecutionInfo]()
 
   // The duration of the SQL execution, in ms.
-  // val sqlEndTime: HashMap[Long, Long] = HashMap.empty[Long, Long]
   val sqlDurationTime: HashMap[Long, Long] = HashMap.empty[Long, Long]
-
 
   // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
   // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
@@ -56,18 +53,17 @@ class QualAppInfo(
 
   // TODO - do I need attempt id as well?
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]]
-  val sqlIdToStageId: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
-  val stageIdToAttempts: HashMap[Int, ArrayBuffer[Int]] = HashMap.empty[Int, ArrayBuffer[Int]]
 
   // this is used to aggregate metrics for qualification to speed up processing and
   // minimize memory usage
-  var sqlIDToTaskQualificationEnd: HashMap[Long, StageTaskQualificationSummary] =
+  var sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
 
   val problematicSQL: ArrayBuffer[ProblematicSQLCase] = ArrayBuffer[ProblematicSQLCase]()
 
   // SQL containing any Dataset operation
-  val datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
+  // TODO - don't really need the DatasetSQLCase
+  val sqlIDToDataSetCase: HashMap[Long, DatasetSQLCase] = HashMap[Long, DatasetSQLCase]()
 
   processEvents()
 
@@ -107,26 +103,26 @@ class QualAppInfo(
   // if the sql contains a dataset, then duration for it is 0
   // for the sql dataframe duration
   private def calculateSqlDataframDuration: Long = {
-    sqlStart.map { info =>
-      val thisEndTime = sqlEndTime.get(info.sqlID)
-      val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, info.startTime)
-      if (datasetSQL.exists(_.sqlID == info.sqlID)) {
-        0L
-      } else {
-        durationResult.getOrElse(0)
-      }
-    }.sum
+    sqlDurationTime.filterNot { case (sqlID, _) =>
+        sqlIDToDataSetCase.contains(sqlID)
+    }.values.sum
   }
 
   private def getPotentialProblems: String = {
     problematicSQL.map(_.reason).toSet.mkString(",")
   }
 
+  private def getSQLDurationProblematic: Long = {
+    problematicSQL.map { prob =>
+      sqlDurationTime.getOrElse(prob.sqlID, 0)
+    }.sum
+  }
+
   private def calculateCpuTimePercent: Float = {
-    val totalCpuTime = sqlIDToTaskQualificationEnd.values.map { dur =>
+    val totalCpuTime = sqlIDToTaskEndSum.values.map { dur =>
       dur.executorCPUTime
     }.sum
-    val totalRunTime = sqlIDToTaskQualificationEnd.values.map { dur =>
+    val totalRunTime = sqlIDToTaskEndSum.values.map { dur =>
       dur.executorRunTime
     }.sum
     calculatePercent(totalCpuTime, totalRunTime)
@@ -141,7 +137,7 @@ class QualAppInfo(
       val problems = getPotentialProblems
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
-      val sqlDurProblem = 0
+      val sqlDurProblem = getSQLDurationProblematic
       new QualificationSummaryInfo(info.appName, appId, score, appDuration,
         sqlDataframeDur, problems, executorCpuTimePercent, endDurationEstimated, sqlDurProblem)
     }
@@ -157,7 +153,7 @@ class QualAppInfo(
     logInfo("Parsing Event Log: " + eventlog.toString)
 
     // at this point all paths should be valid event logs or event log dirs
-    val fs = eventlog.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+    val fs = eventlog.getFileSystem(new Configuration)
     var totalNumEvents = 0
     val eventsProcessor = new QualEventProcessor()
     val readerOpt = eventLogInfo match {
@@ -196,7 +192,7 @@ class QualAppInfo(
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
       if (isDataSetPlan(node.desc)) {
-        datasetSQL += DatasetSQLCase(sqlID)
+        sqlIDToDataSetCase += (sqlID -> DatasetSQLCase(sqlID))
       }
       findPotentialIssues(node.desc).foreach { issues =>
         problematicSQL += ProblematicSQLCase(sqlID, issues)
@@ -251,27 +247,14 @@ case class QualificationSummaryInfo(
     executorCpuTimePercent: Float,
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long) {
-  override def toString(): String = {
 
+  override def toString(): String = {
+    s"|$appId|$sqlDataFrameDuration|$appDuration|$sqlDurationForProblematic|"
   }
 
   def toCSV: String = {
-
-  }
-
-  /*
-  Application ID
-  Total runtime in seconds
-  Total time spent in SQL execution
-  Total time spent in SQL execution for queries with “problematic” operators
-  */
-  def headerText: String = {
-    "|App ID                 |SQL Dataframe Duration|App Duration|SQL with problematic operators Duration|"
-  }
-
-  def headerCSV: String = {
-    "App Name,App ID,Score,Potential Problems,SQL Dataframe Duration," +
-      "App Duration,Executor CPU Time Percent,App Duration Estimated"
+    s"$appName,$appId,$score,$problems,$sqlDataFrameDuration,$appDuration,$executorCpuTimePercent," +
+      s"$endDurationEstimated,$sqlDurationForProblematic"
   }
 }
 
@@ -279,13 +262,12 @@ object QualAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
       numRows: Int,
-      sparkSession: SparkSession,
       startIndex: Int = 1): (Option[QualAppInfo], Int) = {
     var index: Int = startIndex
     var errorCode = 0
     val app = try {
         // This apps only contains 1 app in each loop.
-        val app = new QualAppInfo(numRows, sparkSession, path, index)
+        val app = new QualAppInfo(numRows, path, index)
         logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
         index += 1
         Some(app)

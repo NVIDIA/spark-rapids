@@ -22,11 +22,11 @@ import java.util.zip.ZipOutputStream
 
 import scala.collection.mutable.LinkedHashMap
 
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 sealed trait EventLogInfo {
@@ -84,9 +84,9 @@ object EventLogPathProcessor extends Logging {
     (dbLogFiles.size > 1)
   }
 
-  def getEventLogInfo(pathString: String, sparkSession: SparkSession): Map[EventLogInfo, Long] = {
+  def getEventLogInfo(pathString: String): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
-    val fs = inputPath.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+    val fs = inputPath.getFileSystem(new Configuration())
     try {
       val fileStatus = fs.getFileStatus(inputPath)
       val filePath = fileStatus.getPath()
@@ -155,10 +155,9 @@ object EventLogPathProcessor extends Logging {
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
-      eventLogsPaths: List[String],
-      sparkSession: SparkSession): Seq[EventLogInfo] = {
+      eventLogsPaths: List[String]): Seq[EventLogInfo] = {
 
-    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, sparkSession)).toMap
+    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_)).toMap
 
     logDebug("Paths after stringToPath: " + logsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the

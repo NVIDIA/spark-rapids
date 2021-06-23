@@ -17,11 +17,8 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, ToolTextFileWriter}
-import com.nvidia.spark.rapids.tool.profiling.Analysis
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.qualification._
 
 /**
@@ -34,47 +31,71 @@ class Qualification(outputDir: String) extends Logging {
 
   def qualifyApps(
       allPaths: Seq[EventLogInfo],
-      numRows: Int,
-      sparkSession: SparkSession,
-      includeCpuPercent: Boolean,
-      dropTempViews: Boolean): Option[QualificationSummaryInfo] = {
+      numRows: Int): Unit = {
+
+    // TODO - add try/catch or with resource
+    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
+    // write summary to text
+    writeTextHeader(textFileWriter)
+
+    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
+    writeCSVHeader(csvFileWriter)
 
     allPaths.foreach { path =>
-      val (app, _) = QualAppInfo.createApp(path, numRows, sparkSession)
+      val (app, _) = QualAppInfo.createApp(path, numRows)
       if (!app.isDefined) {
         logWarning("No Applications found that contain SQL!")
         return None
       }
       val qualSumInfo = app.get.aggregateStats()
-      // write entire info to csv
 
-      // write summary to text
-
+      if (qualSumInfo.isDefined) {
+        // write entire info to csv
+        writeCSV(csvFileWriter, qualSumInfo.get)
+        writeCSV(textFileWriter, qualSumInfo.get)
+      } else {
+        logWarning(s"No aggregated stats for event log at: $path")
+      }
     }
-  }
-
-
-  def writeCSV(sumInfo: QualificationSummaryInfo, outputDir: String,
-      numOutputRows: Int): Unit = {
-    df.repartition(1).sortWithinPartitions(desc("Score")).write.option("header", "true").
-      mode("overwrite").csv(finalOutputDir)
-    logInfo(s"Output log location:  $finalOutputDir")
-  }
-
-
-  def writeTextSummary(sumInfo: QualificationSummaryInfo): Unit = {
-
-    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
-    val sep = "+---------------------+-----------------------+-----+------------------+--" +
-      "--------------------+------------+-------------------------+----------------------+"
-    val header = "|App Name             |App ID                 |Score|Potential Problems|" +
-      "SQL Dataframe Duration|App Duration|Executor CPU Time Percent|App Duration Estimated|"
-    textFileWriter.write(sep)
-    textFileWriter.write(header)
-    textFileWriter.write(sep)
-
-
-
+    // TODO need to sort CSV file afterwards, or keep in memory and then write
+    writeTextFooter(textFileWriter)
     textFileWriter.close()
+    csvFileWriter.close()
+  }
+
+  def headerCSV: String = {
+    "App Name,App ID,Score,Potential Problems,SQL Dataframe Duration," +
+      "App Duration,Executor CPU Time Percent,App Duration Estimated"
+    // TODO - just do what was there for testing
+    // ,SQL Duration For Problematic"
+  }
+
+  def headerText: String = {
+    "|App ID                 |SQL Dataframe Duration|App Duration|SQL Duration For Problematic|"
+  }
+
+  def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
+    writer.write(headerCSV)
+  }
+
+  def writeCSV(writer: ToolTextFileWriter, sumInfo: QualificationSummaryInfo): Unit = {
+    writer.write(sumInfo.toCSV)
+  }
+
+  val textSeperator = "+---------------------+-----------------------+-----+------------------+--" +
+    "--------------------+------------+-------------------------+----------------------+"
+
+  def writeTextHeader(writer: ToolTextFileWriter): Unit = {
+    writer.write(textSeperator)
+    writer.write(headerText)
+    writer.write(textSeperator)
+  }
+
+  def writeTextFooter(writer: ToolTextFileWriter): Unit = {
+    writer.write(textSeperator)
+  }
+
+  def writeTextSummary(writer: ToolTextFileWriter, sumInfo: QualificationSummaryInfo): Unit = {
+    writer.write(sumInfo.toString)
   }
 }
