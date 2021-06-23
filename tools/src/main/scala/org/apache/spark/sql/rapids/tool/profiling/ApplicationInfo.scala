@@ -649,8 +649,8 @@ class ApplicationInfo(
     }
   }
 
-  // Function to generate a query for printing Rapids related Spark properties
-  def generateRapidsProperties: String =
+  // Function to generate a query for printing Rapids/UCX/GDS related Spark properties
+  def generateRapidsUcxGdsProperties: String =
     s"""select key,value as value_app$index
        |from propertiesDF_$index
        |where source ='spark'

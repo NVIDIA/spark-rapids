@@ -92,20 +92,20 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       // For the 1st app
       if (i == 1) {
         withClauseAllKeys += "select distinct key from (" +
-            app.generateRapidsProperties + ") union "
-        query += "(" + app.generateRapidsProperties + s") tmp_$i"
+            app.generateRapidsUcxGdsProperties + ") union "
+        query += "(" + app.generateRapidsUcxGdsProperties + s") tmp_$i"
         query += s" on allKeys.key=tmp_$i.key"
         query += "\n LEFT OUTER JOIN \n"
       } else if (i < apps.size) { // For the 2nd to non-last app(s)
         withClauseAllKeys += "select distinct key from (" +
-            app.generateRapidsProperties + ") union "
-        query += "(" + app.generateRapidsProperties + s") tmp_$i"
+            app.generateRapidsUcxGdsProperties + ") union "
+        query += "(" + app.generateRapidsUcxGdsProperties + s") tmp_$i"
         query += s" on allKeys.key=tmp_$i.key"
         query += "\n LEFT OUTER JOIN \n"
       } else { // For the last app
         withClauseAllKeys += "select distinct key from (" +
-            app.generateRapidsProperties + "))\n"
-        query += "(" + app.generateRapidsProperties + s") tmp_$i"
+            app.generateRapidsUcxGdsProperties + "))\n"
+        query += "(" + app.generateRapidsUcxGdsProperties + s") tmp_$i"
         query += s" on allKeys.key=tmp_$i.key"
       }
       selectValuePart += s",value_app$i"
