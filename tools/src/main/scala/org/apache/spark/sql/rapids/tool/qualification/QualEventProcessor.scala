@@ -99,7 +99,7 @@ class QualEventProcessor() extends EventProcessorBase {
     val sqlDuration = sqlInfo.map(_.startTime).getOrElse(0L)
     app.sqlDurationTime += (event.executionId -> sqlDuration)
     // TODO - check for failures
-    event.executionFailure
+    // event.executionFailure
   }
 
   override def doSparkListenerJobStart(

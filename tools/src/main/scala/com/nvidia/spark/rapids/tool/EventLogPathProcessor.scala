@@ -27,6 +27,7 @@ import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 sealed trait EventLogInfo {
@@ -85,6 +86,10 @@ object EventLogPathProcessor extends Logging {
   }
 
   def getEventLogInfo(pathString: String): Map[EventLogInfo, Long] = {
+    getEventLogInfo(pathString)
+  }
+
+    def getEventLogInfo(pathString: String, sparkSession: SparkSession): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
     val fs = inputPath.getFileSystem(new Configuration())
     try {
