@@ -117,6 +117,11 @@ else
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
     MB_PER_EXEC=${MB_PER_EXEC:-1024}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
+    # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
+    # which helps with spurious task failures in the tests. If you are running
+    # older versions of Spark, and experience #31540, please set this environment
+    # variable higher (Spark has 4 by default).
+    SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
 
     if ((NUM_LOCAL_EXECS > 0)); then
       export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
@@ -129,9 +134,9 @@ else
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
     export PYSP_TEST_spark_sql_shuffle_partitions='12'
-    # prevent cluster shape to change - and fail quicker rather than retry
-    export PYSP_TEST_spark_task_maxFailures='1'
+    # prevent cluster shape to change
     export PYSP_TEST_spark_dynamicAllocation_enabled='false'
+    export PYSP_TEST_spark_task_maxFailures="${SPARK_TASK_MAXFAILURES}"
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION
