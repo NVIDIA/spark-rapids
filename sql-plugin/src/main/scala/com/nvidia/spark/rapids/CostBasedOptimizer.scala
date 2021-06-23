@@ -27,6 +27,7 @@ import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.{DataType, StructType}
 
 /**
  * Optimizer that can operate on a physical query plan.
@@ -230,7 +231,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
   private def transitionToGpuCost(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
+    val dataSize = MemoryCostHelper.estimateGpuMemory(plan.wrapped.schema, rowCount)
     conf.getGpuOperatorCost("GpuRowToColumnarExec").getOrElse(0d) * rowCount +
       MemoryCostHelper.calculateCost(dataSize, conf.cpuReadMemorySpeed) +
       MemoryCostHelper.calculateCost(dataSize, conf.gpuWriteMemorySpeed)
@@ -239,7 +240,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
   private def transitionToCpuCost(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Double = {
     val rowCount = RowCountPlanVisitor.visit(plan).map(_.toDouble)
       .getOrElse(conf.defaultRowCount.toDouble)
-    val dataSize = GpuBatchUtils.estimateGpuMemory(plan.wrapped.schema, rowCount.toLong)
+    val dataSize = MemoryCostHelper.estimateGpuMemory(plan.wrapped.schema, rowCount)
     conf.getGpuOperatorCost("GpuColumnarToRowExec").getOrElse(0d) * rowCount +
       MemoryCostHelper.calculateCost(dataSize, conf.gpuReadMemorySpeed) +
       MemoryCostHelper.calculateCost(dataSize, conf.cpuWriteMemorySpeed)
@@ -279,6 +280,8 @@ trait CostModel {
 
 }
 
+object Cost
+
 class CpuCostModel(conf: RapidsConf) extends CostModel {
 
   def getCost(plan: SparkPlanMeta[_]): Double = {
@@ -308,8 +311,8 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
         exprCost(expr.childExprs.head.asInstanceOf[BaseExprMeta[Expression]], rowCount)
 
       case _: AttributeReference | _: GetStructField =>
-        MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
-          expr.dataType, nullable = false, rowCount.toLong), conf.cpuReadMemorySpeed)
+        MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount), conf.cpuReadMemorySpeed)
 
       case _ =>
         expr.childExprs
@@ -317,8 +320,8 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
     }
 
     // the output of evaluating the expression needs to be written out to rows
-    val memoryWriteCost = MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
-      expr.dataType, nullable = false, rowCount.toLong), conf.cpuWriteMemorySpeed)
+    val memoryWriteCost = MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
+      expr.dataType, nullable = false, rowCount), conf.cpuWriteMemorySpeed)
 
     // optional additional per-row overhead of evaluating the expression
     val exprEvalCost = rowCount *
@@ -367,8 +370,8 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
         memoryReadCost = expr.childExprs
           .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
 
-        memoryWriteCost += MemoryCostHelper.calculateCost(GpuBatchUtils.estimateGpuMemory(
-          expr.dataType, nullable = false, rowCount.toLong), conf.gpuWriteMemorySpeed)
+        memoryWriteCost += MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
+          expr.dataType, nullable = false, rowCount), conf.gpuWriteMemorySpeed)
     }
 
     // optional additional per-row overhead of evaluating the expression
@@ -401,6 +404,22 @@ object MemoryCostHelper {
         true
       case _ => false
     }
+  }
+
+  def estimateGpuMemory(schema: StructType, rowCount: Double): Long = {
+    // cardinality estimates tend to grow to very large numbers with nested joins so
+    // we apply a maximum to the row count that we use when estimating data sizes in
+    // order to avoid integer overflow
+    val safeRowCount = rowCount.min(Int.MaxValue).toLong
+    GpuBatchUtils.estimateGpuMemory(schema, safeRowCount)
+  }
+
+  def estimateGpuMemory(dataType: DataType, nullable: Boolean, rowCount: Double): Long = {
+    // cardinality estimates tend to grow to very large numbers with nested joins so
+    // we apply a maximum to the row count that we use when estimating data sizes in
+    // order to avoid integer overflow
+    val safeRowCount = rowCount.min(Int.MaxValue).toLong
+    GpuBatchUtils.estimateGpuMemory(dataType, nullable, safeRowCount)
   }
 }
 
