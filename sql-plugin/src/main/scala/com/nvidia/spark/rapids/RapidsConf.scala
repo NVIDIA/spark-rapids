@@ -1157,23 +1157,6 @@ object RapidsConf {
     .doubleConf
     .createWithDefault(0.0002)
 
-  val OPTIMIZER_CPU_PROJECT_EXEC_COST = conf("spark.rapids.sql.optimizer.cpu.exec.ProjectExec")
-    .internal()
-    .doc("Default per-row CPU cost of executing an projection, in seconds. this is not accurate " +
-      "because CPU projections do have a cost due to appending values to each row that is " +
-      "produced, but this needs to be a really small number because GpuProject cost is zero " +
-      "and we don't want to encourage moving to the GPU just to do a trivial projection, so we " +
-      "pretend the overhead of a CPU projection (beyond evaluating the expressions) is also zero")
-    .doubleConf
-    .createWithDefault(0.0)
-
-  val OPTIMIZER_CPU_UNION_EXEC_COST = conf("spark.rapids.sql.optimizer.cpu.exec.UnionExec")
-    .internal()
-    .doc("Default per-row CPU cost of executing a union, in seconds. Union does not further " +
-      "process data produced by its children")
-    .doubleConf
-    .createWithDefault(0.0)
-
   val OPTIMIZER_DEFAULT_CPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.cpu.expr.default")
     .internal()
     .doc("Default per-row CPU cost of evaluating an expression, in seconds")
@@ -1185,21 +1168,6 @@ object RapidsConf {
       .doc("Default per-row GPU cost of executing an operator, in seconds")
       .doubleConf
       .createWithDefault(0.0001)
-
-  val OPTIMIZER_GPU_PROJECT_EXEC_COST = conf("spark.rapids.sql.optimizer.gpu.exec.ProjectExec")
-    .internal()
-    .doc("Default per-row GPU cost of executing a projection, in seconds. The cost of a GPU " +
-      "projection is mostly the cost of evaluating the expressions to produce the projected " +
-      "columns")
-    .doubleConf
-    .createWithDefault(0.0)
-
-  val OPTIMIZER_GPU_UNION_EXEC_COST = conf("spark.rapids.sql.optimizer.gpu.exec.UnionExec")
-    .internal()
-    .doc("Default per-row GPU cost of executing a union, in seconds. Union does not further " +
-      "process data produced by its children")
-    .doubleConf
-    .createWithDefault(0.0)
 
   val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.gpu.expr.default")
       .internal()
@@ -1242,13 +1210,6 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(true)
-
-  val OPTIMIZER_COSTS = Seq(
-    OPTIMIZER_CPU_PROJECT_EXEC_COST,
-    OPTIMIZER_CPU_UNION_EXEC_COST,
-    OPTIMIZER_GPU_PROJECT_EXEC_COST,
-    OPTIMIZER_GPU_UNION_EXEC_COST,
-  ).map(entry => entry.key -> entry).toMap
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -1648,6 +1609,20 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
+  private val optimizerDefaults = Map(
+    // this is not accurate because CPU projections do have a cost due to appending values
+    // to each row that is produced, but this needs to be a really small number because
+    // GpuProject cost is zero (in our cost model) and we don't want to encourage moving to
+    // the GPU just to do a trivial projection, so we pretend the overhead of a
+    // CPU projection (beyond evaluating the expressions) is also zero
+    "spark.rapids.sql.optimizer.cpu.exec.ProjectExec" -> "0",
+    // The cost of a GPU projection is mostly the cost of evaluating the expressions
+    // to produce the projected columns
+    "spark.rapids.sql.optimizer.gpu.exec.ProjectExec" -> "0",
+    // union does not further process data produced by its children
+    "spark.rapids.sql.optimizer.cpu.exec.UnionExec" -> "0",
+    "spark.rapids.sql.optimizer.gpu.exec.UnionExec" -> "0"
+  )
 
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
@@ -1687,14 +1662,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   private def getOptionalCost(key: String) = {
-    // this is a bit convoluted, but the flow is to see if we have a
-    // defined configuration setting (potentially with a default value)
-    // and if not, then we look for the key in the configuration values
-    // anyway so that we can provide costs for any operator or expression,
-    // even if there is no well-defined configuration yet
-    OPTIMIZER_COSTS.get(key)
-      .map(_.get(conf))
-      .orElse(conf.get(key)
-      .map(toDouble(_, key)))
+    // user-provided value takes precedence, then look in defaults map
+    conf.get(key).orElse(optimizerDefaults.get(key)).map(toDouble(_, key))
   }
 }
