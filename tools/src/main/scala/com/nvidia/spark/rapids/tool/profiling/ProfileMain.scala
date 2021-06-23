@@ -153,6 +153,15 @@ object ProfileMain extends Logging {
       healthCheck.listRemovedBlockManager()
       healthCheck.listRemovedExecutors()
       healthCheck.listPossibleUnsupportedSQLPlan()
+
+      if (appArgs.generateTimeline()) {
+        if (appArgs.compare()) {
+          logWarning("Timeline graph does not compare apps")
+        }
+        apps.foreach { app =>
+          GenerateTimeline.generateFor(app, outputDirectory)
+        }
+      }
     }
 
     0

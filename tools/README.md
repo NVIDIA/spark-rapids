@@ -235,6 +235,7 @@ The profiling tool generates information which can be used for debugging and pro
 - SQL Plan Metrics
 - Optionally : SQL Plan for each SQL query
 - Optionally : Generates DOT graphs for each SQL query
+- Optionally : Generates timeline graph for application
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -331,6 +332,33 @@ dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
 ```
 The pdf file has the SQL plan graph with metrics.
 
+- Generate timeline for application (--generate-timeline option):
+
+The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
+named `${APPLICATION_ID}-timeline.svg`.  Most web browsers can display this file.  It is a
+timeline view similar Apache Spark's 
+[event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
+
+This displays several data sections.
+
+1) **Tasks** This shows all tasks in the application divided by executor.  Please note that this
+   tries to pack the tasks in the graph. It does not represent actual scheduling on CPU cores.
+   The tasks are labeled with the time it took for them to run, but there is no breakdown about
+   different aspects of each task, like there is in Spark's timeline.
+2) **STAGES** This shows the stages times reported by Spark. It starts with when the stage was 
+   scheduled and ends when Spark considered the stage done.
+3) **STAGE RANGES** This shows the time from the start of the first task to the end of the last
+   task. Often a stage is scheduled, but there are not enough resources in the cluster to run it.
+   This helps to show. How long it takes for a task to start running after it is scheduled, and in
+   many cases how long it took to run all of the tasks in the stage. This is not always true because
+   Spark can intermix tasks from different stages.
+4) **JOBS** This shows the time range reported by Spark from when a job was scheduled to when it
+   completed.
+5) **SQL** This shows the time range reported by Spark from when a SQL statement was scheduled to
+   when it completed.
+
+Tasks and stages all are color coordinated to help know what tasks are associated with a given
+stage. Jobs and SQL are not color coordinated.
 
 #### B. Analysis
 - Job + Stage level aggregated task metrics
