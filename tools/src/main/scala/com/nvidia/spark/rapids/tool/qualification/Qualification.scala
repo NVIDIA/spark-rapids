@@ -53,11 +53,11 @@ object Qualification extends Logging {
       // and just look at data types
       val groupedTypes = app.dataSourceInfo.groupBy(ds => ds.format.toLowerCase)
       val res = groupedTypes.map { case (format, dsArr) =>
-        (format -> (dsArr.flatMap(_.schema.split(",")).toSet, dsArr.exists(_.schemaIncomplete)))
+        (format, (dsArr.flatMap(_.schema.split(",")).toSet, dsArr.exists(_.schemaIncomplete)))
       }
 
       res.foreach { case (format, info) =>
-        logWarning(s" format $format  types are (incomplete: ${info._2}: " + info._1.mkString(", "))
+        logWarning(s" format $format  types are (incomplete: ${info._2}): " + info._1.mkString(", "))
       }
       // debug
       // val supportedDf = sparkSession.read.csv("tools/src/main/resources/supportedDataSource.csv")
