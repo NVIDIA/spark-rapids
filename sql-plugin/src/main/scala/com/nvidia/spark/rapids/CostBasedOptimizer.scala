@@ -60,7 +60,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
    * @return A list of optimizations that were applied
    */
   def optimize(conf: RapidsConf, plan: SparkPlanMeta[SparkPlan]): Seq[Optimization] = {
-    println("CBO optimizing plan")
+    logTrace("CBO optimizing plan")
     val cpuCostModel = new CpuCostModel(conf)
     val gpuCostModel = new GpuCostModel(conf)
     val optimizations = new ListBuffer[Optimization]()
