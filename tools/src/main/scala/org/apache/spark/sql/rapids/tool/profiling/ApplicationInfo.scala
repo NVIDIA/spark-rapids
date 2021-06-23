@@ -37,6 +37,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
+import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 import org.apache.spark.ui.UIUtils
 import org.apache.spark.util._
 
@@ -45,14 +46,12 @@ import org.apache.spark.util._
  */
 
 class ApplicationInfo(
-    val numOutputRows: Int,
-    val sparkSession: SparkSession,
-    val eventLogInfo: EventLogInfo,
+    numRows: Int,
+    session: SparkSession,
+    eLogInfo: EventLogInfo,
     val index: Int,
-    val forQualification: Boolean = false) extends Logging {
-
-  // From SparkListenerLogStart
-  var sparkVersion: String = ""
+    val forQualification: Boolean = false)
+  extends AppBase(numRows, session, eLogInfo) with Logging {
 
   // allDataFrames is to store all the DataFrames
   // after event log parsing has completed.
@@ -89,7 +88,6 @@ class ApplicationInfo(
 
   // From SparkListenerApplicationStart and SparkListenerApplicationEnd
   var appStart: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
-  var appEndTime: Option[Long] = None
   var appId: String = ""
 
   // From SparkListenerExecutorAdded and SparkListenerExecutorRemoved
@@ -296,21 +294,6 @@ class ApplicationInfo(
 
   private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
 
-  def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
-    EventLogFileWriter.codecName(log) match {
-      case c if (c.isDefined && c.get.equals("gz")) =>
-        val in = new BufferedInputStream(fs.open(log))
-        try {
-          new GZIPInputStream(in)
-        } catch {
-          case e: Throwable =>
-            in.close()
-            throw e
-        }
-      case _ => EventLogFileReader.openEventLog(log, fs)
-    }
-  }
-
   /**
    * Functions to process all the events
    */
@@ -333,7 +316,7 @@ class ApplicationInfo(
       val reader = readerOpt.get
       val logFiles = reader.listEventLogFiles
       logFiles.foreach { file =>
-        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
+        Utils.tryWithResource(ToolUtils.openEventLogInternal(file.getPath, fs)) { in =>
           val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
           totalNumEvents += lines.size
           lines.foreach { line =>
@@ -393,7 +376,7 @@ class ApplicationInfo(
         }
         val issues = findPotentialIssues(node.desc)
         if (issues.nonEmpty) {
-          problematicSQL += ProblematicSQLCase(sqlID, issues)
+          problematicSQL += ProblematicSQLCase(sqlID, issues, 0)
         }
       }
     }

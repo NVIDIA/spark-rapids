@@ -93,7 +93,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       case _: SparkListenerSQLAdaptiveSQLMetricUpdates =>
         doSparkListenerSQLAdaptiveSQLMetricUpdates(app,
           event.asInstanceOf[SparkListenerSQLAdaptiveSQLMetricUpdates])
-      case _ => 
+      case _ =>
         val wasResourceProfileAddedEvent = doSparkListenerResourceProfileAddedReflect(app, event)
         if (!wasResourceProfileAddedEvent) doOtherEvent(app, event)
     }
@@ -185,7 +185,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.classpathEntries = event.environmentDetails("Classpath Entries").toMap
 
     //Decide if this application is on GPU Mode
-    if (ProfileUtils.isGPUMode(collection.mutable.Map() ++= app.sparkProperties)) {
+    if (ProfileUtils.isPluginEnabled(collection.mutable.Map() ++= app.sparkProperties)) {
       app.gpuMode = true
       logDebug("App's GPU Mode = TRUE")
     } else {
@@ -388,7 +388,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       None,
       None,
       "",
-      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode
+      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
     )
     app.jobStart += thisJob
   }
@@ -433,7 +433,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
       None,
       None,
       "",
-      ProfileUtils.isGPUMode(event.properties.asScala) || app.gpuMode,
+      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode,
       0,
       0
     )

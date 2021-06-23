@@ -32,7 +32,7 @@ object QualificationMain extends Logging {
    */
   def main(args: Array[String]) {
     val sparkSession = ProfileUtils.createSparkSession
-    val (exitCode, _) = mainInternal(sparkSession, new QualificationArgs(args))
+    val exitCode = mainInternal(sparkSession, new QualificationArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -42,7 +42,7 @@ object QualificationMain extends Logging {
    * Entry point for tests
    */
   def mainInternal(sparkSession: SparkSession, appArgs: QualificationArgs,
-      writeOutput: Boolean = true, dropTempViews: Boolean = false): (Int, Option[DataFrame]) = {
+      writeOutput: Boolean = true, dropTempViews: Boolean = false): Int = {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
@@ -59,18 +59,10 @@ object QualificationMain extends Logging {
       return (0, None)
     }
 
-    val dfOpt = Qualification.qualifyApps(eventLogInfos, numOutputRows, sparkSession,
+    Qualification.qualifyApps(eventLogInfos, numOutputRows, sparkSession,
       includeCpuPercent, dropTempViews)
-    if (dfOpt.isEmpty) {
-      logWarning("No Applications with SQL found in events logs: " +
-        s"${eventLogInfos.map(_.eventLog.getName).mkString(",")}")
-    }
 
-    if (writeOutput && dfOpt.isDefined) {
-      Qualification.writeQualification(dfOpt.get, outputDirectory,
-        appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)
-    }
-    (0, dfOpt)
+    0
   }
 
 }

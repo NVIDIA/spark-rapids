@@ -61,6 +61,23 @@ case class SQLExecutionCase(
     hasDataset: Boolean,
     problematic: String = "")
 
+case class SQLExecutionQualCase(
+    sqlID: Long,
+    description: String,
+    details: String,
+    startTime: Long,
+    endTime: Option[Long],
+    duration: Option[Long],
+    durationStr: String,
+    sqlQualDuration: Option[Long],
+    hasDataset: Boolean,
+    jobs: Seq[Int],
+    stages: Seq[Int],
+    problematic: String = "",
+    executorRunTimeSum: Long,
+    executorCPUTimeSum: Long)
+
+
 case class SQLPlanMetricsCase(
     sqlID: Long,
     name: String,
@@ -170,6 +187,6 @@ case class TaskCase(
 
 case class DatasetSQLCase(sqlID: Long)
 
-case class ProblematicSQLCase(sqlID: Long, reason: String)
+case class ProblematicSQLCase(sqlID: Long, reason: String, duration: Long)
 
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String, nodeDesc: String)

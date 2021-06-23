@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
+import org.apache.spark.sql.rapids.tool.ToolUtils
 
 /**
  * object Utils provides toolkit functions
@@ -48,8 +48,8 @@ object ProfileUtils {
   }
 
   // Check if the job/stage is GPU mode is on
-  def isGPUMode(properties: collection.mutable.Map[String, String]): Boolean = {
-    ToolUtils.isGPUMode(properties)
+  def isPluginEnabled(properties: collection.mutable.Map[String, String]): Boolean = {
+    ToolUtils.isPluginEnabled(properties)
   }
 
   // Return None if either of them are None
