@@ -21,7 +21,7 @@ import scala.collection.mutable.ListBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
-import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, ProjectExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
+import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, CustomShuffleReaderExec, QueryStageExec}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
@@ -279,8 +279,6 @@ trait CostModel {
   def getCost(plan: SparkPlanMeta[_]): Double
 
 }
-
-object Cost
 
 class CpuCostModel(conf: RapidsConf) extends CostModel {
 
