@@ -26,7 +26,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
-import com.nvidia.spark.rapids.{GpuColumnVector, _}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import java.util
