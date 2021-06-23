@@ -253,7 +253,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   def doHandleMetadataRequest(tx: Transaction): Unit = {
     withResource(tx) { _ =>
       withResource(new NvtxRange("doHandleMeta", NvtxColor.PURPLE)) { _ =>
-        withResource(tx.releaseMessage) { mtb =>
+        withResource(tx.releaseMessage()) { mtb =>
           if (tx.getStatus == TransactionStatus.Error) {
             logError("error getting metadata request: " + tx)
           } else {

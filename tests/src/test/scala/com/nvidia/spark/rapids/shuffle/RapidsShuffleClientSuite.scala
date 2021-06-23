@@ -593,7 +593,7 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test ("three requests spanning two bounce buffer lengths") {
     val bb = closeOnExcept(getBounceBuffer(1000)) { buff =>
       val rowCounts = Seq(40, 180, 100)
-      val ptrBuffs = rowCounts.zipWithIndex.map { case (c, ix) => makeRequest(c) }
+      val ptrBuffs = rowCounts.map(makeRequest(_))
       var remaining = ptrBuffs.map(_._2.getLength).sum
       val expected = new ArrayBuffer[ReceivedBufferWindow]()
       expected.append(

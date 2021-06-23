@@ -96,7 +96,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   test("sending tables that fit within one bounce buffer") {
     val mockTx = mock[Transaction]
     val transferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(10, 1000)
-    when(mockTx.releaseMessage).thenReturn(transferRequest)
+    when(mockTx.releaseMessage()).thenReturn(transferRequest)
 
     val bb = closeOnExcept(getSendBounceBuffer(10000)) { bounceBuffer =>
       withResource((0 until 10).map(_ => DeviceMemoryBuffer.allocate(1000))) { deviceBuffers =>
@@ -128,7 +128,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   test("sending tables that require two bounce buffer lengths") {
     val mockTx = mock[Transaction]
     val transferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(20, 1000)
-    when(mockTx.releaseMessage).thenReturn(transferRequest)
+    when(mockTx.releaseMessage()).thenReturn(transferRequest)
 
     val bb = closeOnExcept(getSendBounceBuffer(10000)) { bounceBuffer =>
       withResource((0 until 20).map(_ => DeviceMemoryBuffer.allocate(1000))) { deviceBuffers =>
@@ -164,7 +164,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   test("sending buffers larger than bounce buffer") {
     val mockTx = mock[Transaction]
     val transferRequest = RapidsShuffleTestHelper.prepareMetaTransferRequest(20, 10000)
-    when(mockTx.releaseMessage).thenReturn(transferRequest)
+    when(mockTx.releaseMessage()).thenReturn(transferRequest)
 
     val bb = closeOnExcept(getSendBounceBuffer(10000)) { bounceBuffer =>
       withResource((0 until 20).map(_ => DeviceMemoryBuffer.allocate(123000))) { deviceBuffers =>

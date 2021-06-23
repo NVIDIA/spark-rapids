@@ -340,7 +340,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   // Reference count is not updated here. The caller is responsible to close
-  override def releaseMessage: MetadataTransportBuffer = {
+  override def releaseMessage(): MetadataTransportBuffer = {
     val msg = activeMessageData.get
     activeMessageData = None
     msg match {

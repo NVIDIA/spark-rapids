@@ -268,7 +268,7 @@ trait Transaction extends AutoCloseable {
    * @note The caller must call `close` on the returned message
    * @return a `TransportBuffer` instance
    */
-  def releaseMessage: MetadataTransportBuffer
+  def releaseMessage(): MetadataTransportBuffer
 
   /**
    * For `Request` transactions, `respond` will be able to reply to a peer who issued

@@ -203,7 +203,7 @@ class RapidsShuffleClient(
       shuffleRequests: Seq[ShuffleBlockBatchId],
       handler: RapidsShuffleFetchHandler): Unit = {
     withResource(tx) { _ =>
-      withResource(tx.releaseMessage) { mtb =>
+      withResource(tx.releaseMessage()) { mtb =>
         withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
           try {
             tx.getStatus match {
@@ -282,7 +282,7 @@ class RapidsShuffleClient(
       ShuffleMetadata.buildTransferRequest(id, requestsToIssue.map(i => i.tableMeta)))
 
     connection.request(MessageType.TransferRequest, transferReq.acquire(), withResource(_) { tx =>
-      withResource(tx.releaseMessage) { mtb =>
+      withResource(tx.releaseMessage()) { mtb =>
         withResource(transferReq) { _ =>
           tx.getStatus match {
             case TransactionStatus.Success =>
