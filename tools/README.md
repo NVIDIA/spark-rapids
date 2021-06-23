@@ -12,10 +12,14 @@ GPU generated event logs.
 ## Prerequisites
 - Spark 3.0.1 or newer installed
 - Java 8 or above
-- Complete Spark event log(s) from Spark 3.0 or above version
-  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes. 
-  Spark event logs can be downloaded from Spark UI using a "Download" button on the right side, 
-  or can be found in the location specified by `spark.eventLog.dir`.)
+- Complete Spark event log(s) from Spark 3.0 or above version.
+  Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
+  Also support Databricks specific rolled and compressed(.gz) eventlogs.
+  The tool does not support nested directories, event log files or event log directories should be
+  at the top level when specifying a directory.
+
+Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
+or can be found in the location specified by `spark.eventLog.dir`.
 
 Optional:
 - maven installed 
@@ -231,6 +235,7 @@ The profiling tool generates information which can be used for debugging and pro
 - SQL Plan Metrics
 - Optionally : SQL Plan for each SQL query
 - Optionally : Generates DOT graphs for each SQL query
+- Optionally : Generates timeline graph for application
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -340,6 +345,34 @@ left out of the sections associated with a stage because they cover at least 2 s
 more. In other cases we may not be able to determine what stage something was a part of. In those
 cases we mark it as `UNKNOWN STAGE`. This is because we rely on metrics to link a node to a stage.
 If a stage hs no metrics, like if the query crashed early, we cannot establish that link.
+
+- Generate timeline for application (--generate-timeline option):
+
+The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
+named `${APPLICATION_ID}-timeline.svg`.  Most web browsers can display this file.  It is a
+timeline view similar Apache Spark's 
+[event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
+
+This displays several data sections.
+
+1) **Tasks** This shows all tasks in the application divided by executor.  Please note that this
+   tries to pack the tasks in the graph. It does not represent actual scheduling on CPU cores.
+   The tasks are labeled with the time it took for them to run, but there is no breakdown about
+   different aspects of each task, like there is in Spark's timeline.
+2) **STAGES** This shows the stages times reported by Spark. It starts with when the stage was 
+   scheduled and ends when Spark considered the stage done.
+3) **STAGE RANGES** This shows the time from the start of the first task to the end of the last
+   task. Often a stage is scheduled, but there are not enough resources in the cluster to run it.
+   This helps to show. How long it takes for a task to start running after it is scheduled, and in
+   many cases how long it took to run all of the tasks in the stage. This is not always true because
+   Spark can intermix tasks from different stages.
+4) **JOBS** This shows the time range reported by Spark from when a job was scheduled to when it
+   completed.
+5) **SQL** This shows the time range reported by Spark from when a SQL statement was scheduled to
+   when it completed.
+
+Tasks and stages all are color coordinated to help know what tasks are associated with a given
+stage. Jobs and SQL are not color coordinated.
 
 #### B. Analysis
 - Job + Stage level aggregated task metrics
@@ -491,7 +524,7 @@ For usage see below:
   -o, --output-directory  <arg>   Base output directory. Default is current
                                   directory for the default filesystem. The
                                   final output will go into a subdirectory
-                                  called rapids_4_spark_qualification_profile.
+                                  called rapids_4_spark_profile.
                                   It will overwrite any existing files with
                                   the same name.
   -p, --print-plans               Print the SQL plans to a file starting with
@@ -505,7 +538,7 @@ For usage see below:
 ```
 
 ### Output
-By default this outputs a log file under sub-directory `./rapids_4_spark_qualification_profile` named
+By default this outputs a log file under sub-directory `./rapids_4_spark_profile` named
 `rapids_4_spark_tools_output.log` that contains the processed applications. The output will go into your
 default filesystem, it supports local filesystem or HDFS. There are separate files that are generated
 under the same sub-directory when using the options to generate query visualizations or printing the SQL plans.

@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-06-10
+Generated on 2021-06-22
 
 ## Release 21.06
 
@@ -85,6 +85,10 @@ Generated on 2021-06-10
 ### PRs
 |||
 |:---|:---|
+|[#2770](https://github.com/NVIDIA/spark-rapids/pull/2770)|[Doc] add more for Alluxio page [skip ci]|
+|[#2745](https://github.com/NVIDIA/spark-rapids/pull/2745)|Add link to Mellanox RoCE documentation and mention --without-ucx installation option|
+|[#2740](https://github.com/NVIDIA/spark-rapids/pull/2740)|Update cudf Java bindings to 21.06.1|
+|[#2664](https://github.com/NVIDIA/spark-rapids/pull/2664)|Update changelog for 21.06 release [skip ci]|
 |[#2697](https://github.com/NVIDIA/spark-rapids/pull/2697)|fix GDS spill bug when copying from the batch write buffer|
 |[#2691](https://github.com/NVIDIA/spark-rapids/pull/2691)|Update properties to check if table there|
 |[#2687](https://github.com/NVIDIA/spark-rapids/pull/2687)|Remove CUDA 10.x from getting started guide (#2668)|

@@ -18,12 +18,25 @@ package com.nvidia.spark.rapids
 
 import java.sql.{Date, Timestamp}
 
-import org.apache.spark.{SparkConf, SparkException}
+import scala.collection.mutable.ListBuffer
+
+import org.scalatest.BeforeAndAfterEach
+
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
 
-class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
+class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
+
+  override def beforeEach() {
+    GpuOverrides.removeAllListeners()
+  }
+
+  override def afterEach() {
+    GpuOverrides.removeAllListeners()
+  }
 
   testSparkResultsAreEqual("to_date dd/MM/yy (fall back)",
     datesAsStrings,
@@ -140,6 +153,33 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite {
     }
     assert(e.getMessage.contains(
       "Part of the plan is not columnar class org.apache.spark.sql.execution.ProjectExec"))
+  }
+
+  test("unsupported format") {
+
+    // capture plans
+    val plans = new ListBuffer[SparkPlanMeta[SparkPlan]]()
+    GpuOverrides.addListener(
+        (plan: SparkPlanMeta[SparkPlan], _: SparkPlan, _: Seq[Optimization]) => {
+      plans.append(plan)
+    })
+
+    val e = intercept[IllegalArgumentException] {
+      val df = withGpuSparkSession(spark => {
+        datesAsStrings(spark)
+          .repartition(2)
+          .withColumn("c1", to_date(col("c0"), "F"))
+      }, new SparkConf().set(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "CORRECTED"))
+      df.collect()
+    }
+    assert(e.getMessage.contains(
+      "Part of the plan is not columnar class org.apache.spark.sql.execution.ProjectExec"))
+
+    val planStr = plans.last.toString
+    assert(planStr.contains("Failed to convert Unsupported character: F"))
+    // make sure we aren't suggesting enabling INCOMPATIBLE_DATE_FORMATS for something we
+    // can never support
+    assert(!planStr.contains(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key))
   }
 
   test("parse now") {

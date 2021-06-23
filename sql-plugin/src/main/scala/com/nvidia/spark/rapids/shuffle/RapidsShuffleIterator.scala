@@ -184,7 +184,7 @@ class RapidsShuffleIterator(
           }
 
         val client = try {
-          transport.makeClient(localExecutorId, blockManagerId)
+          transport.makeClient(blockManagerId)
         } catch {
           case t: Throwable => {
             val BlockIdMapIndex(firstId, firstMapIndex) = shuffleRequestsMapIndex.head
