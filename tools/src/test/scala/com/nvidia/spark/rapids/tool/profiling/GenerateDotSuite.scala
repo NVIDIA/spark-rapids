@@ -63,6 +63,7 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
 
         // assert that the generated files looks something like what we expect
         var hashAggCount = 0
+        var stageCount = 0
         for (file <- dotDirs) {
           assert(file.getAbsolutePath.endsWith(".dot"))
           val source = Source.fromFile(file)
@@ -71,12 +72,15 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
             assert(lines.head === "digraph G {")
             assert(lines.last === "}")
             hashAggCount += lines.count(_.contains("HashAggregate"))
+            stageCount += lines.count(_.contains("STAGE "))
           } finally {
             source.close()
           }
         }
         // 2 node labels + 1 graph label
         assert(hashAggCount === 3)
+        // Initial Aggregation, Final Aggregation, Sorting final output
+        assert(stageCount === 3)
       }
     }
   }

@@ -329,7 +329,22 @@ as a graph in pdf format using below command:
 ```bash
 dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
 ```
-The pdf file has the SQL plan graph with metrics.
+
+Or to svg using
+```bash
+dot -Tsvg ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.svg
+```
+The pdf or svg file has the SQL plan graph with metrics. The svg file will act a little
+more like the Spark UI and include extra information for nodes when hovering over it with
+a mouse.
+
+As a part of this an effort is made to associate parts of the graph with the Spark stage it is a
+part of. This is not 100% accurate. Some parts of the plan like `TakeOrderedAndProject` may
+be a part of multiple stages and only one of the stages will be selected. `Exchanges` are purposely
+left out of the sections associated with a stage because they cover at least 2 stages and possibly
+more. In other cases we may not be able to determine what stage something was a part of. In those
+cases we mark it as `UNKNOWN STAGE`. This is because we rely on metrics to link a node to a stage.
+If a stage hs no metrics, like if the query crashed early, we cannot establish that link.
 
 - Generate timeline for application (--generate-timeline option):
 
