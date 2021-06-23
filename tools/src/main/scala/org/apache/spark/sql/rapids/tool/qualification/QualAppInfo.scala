@@ -52,7 +52,7 @@ class QualAppInfo(
   // val sqlPlan: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   // TODO - do I need attempt id as well?
-  val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]]
+  val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
 
   // this is used to aggregate metrics for qualification to speed up processing and
   // minimize memory usage
@@ -153,6 +153,7 @@ class QualAppInfo(
     logInfo("Parsing Event Log: " + eventlog.toString)
 
     // at this point all paths should be valid event logs or event log dirs
+    // TODO - reuse Configuration
     val fs = eventlog.getFileSystem(new Configuration)
     var totalNumEvents = 0
     val eventsProcessor = new QualEventProcessor()
