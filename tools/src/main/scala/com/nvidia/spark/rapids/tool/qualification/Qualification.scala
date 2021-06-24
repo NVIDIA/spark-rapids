@@ -74,7 +74,8 @@ class Qualification(outputDir: String) extends Logging {
 
   private def getTextSpacing(sums: Seq[QualificationSummaryInfo]): (Int, Int)= {
     val sizePadLongs = problemDurStr.size
-    val appIdMaxSize = sums.map(_.appId.size).max
+    val sizes = sums.map(_.appId.size)
+    val appIdMaxSize = if (sizes.size > 0) sizes.max else 0
     (appIdMaxSize, sizePadLongs)
   }
 
@@ -105,7 +106,7 @@ class Qualification(outputDir: String) extends Logging {
     entireHeader.append(s"${" " * (sizePadLongs - headers(2).size)}${headers(2)}|")
     entireHeader.append(s"${" " * (sizePadLongs - headers(3).size)}${headers(3)}|")
     entireHeader.append("\n")
-    val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
+    val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 11)
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
