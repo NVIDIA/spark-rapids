@@ -202,7 +202,11 @@ class GpuHashAggregateMeta(
       conf, parent, rule)
 
 /**
+ * This is only for aggregation which contains `TypedImperativeAggregate`.
  *
+ * WARNING: Spark will plan `SortAggregateExec` instead of `ObjectHashAggregateExec` if
+ * SQLConf `USE_OBJECT_HASH_AGG` is set to false. Therefore, we should also apply the same
+ * transitions on aggBuffers in `GpuSortAggregateMeta` in future.
  */
 class GpuObjectHashAggregateMeta(
     override val agg: ObjectHashAggregateExec,
