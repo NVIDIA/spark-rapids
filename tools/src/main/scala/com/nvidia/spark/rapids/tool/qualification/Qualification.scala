@@ -69,7 +69,7 @@ class Qualification(outputDir: String) extends Logging {
     // writeTextFooter(textFileWriter)
     // textFileWriter.close()
     csvFileWriter.close()
-    allAppsSum.sortBy( sum => (sum.score, sum.sqlDataFrameDuration))
+    allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
   }
 
   def headerCSV: String = {
