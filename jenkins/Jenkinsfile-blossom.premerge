@@ -25,8 +25,6 @@
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
-def pluginPremerge
-
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
@@ -34,7 +32,6 @@ def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
 def PREMERGE_TAG
 def skipped = false
-def gpuType
 
 pipeline {
     agent {
@@ -140,11 +137,6 @@ pipeline {
                             // if no pre-merge dockerfile change, use nightly image
                             IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
                         }
-
-                        // get available GPU resources from reserved pool
-                        def gpuTypes = common.getAvailableResources("${params.GPU_POOL}")
-                        gpuType = gpuTypes.get(0)
-                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", gpuType, '8', '32Gi') // cpu: 8, memory: 32Gi
                     }
                 }
             }
@@ -162,13 +154,13 @@ pipeline {
             options {
                 // We have to use params to pass the resource label in options block,
                 // this is a limitation of declarative pipeline. And we need to lock resource before agent start
-                lock(label: "${params.GPU_POOL}", quantity: 1)
+                lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
             }
             agent {
                 kubernetes {
                     label "premerge-test-${BUILD_TAG}"
                     cloud 'sc-ipp-blossom-prod'
-                    yaml "$pluginPremerge"
+                    yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                     customWorkspace "${CUSTOM_WORKSPACE}"
                 }
