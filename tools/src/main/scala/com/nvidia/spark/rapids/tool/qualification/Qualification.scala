@@ -48,7 +48,7 @@ class Qualification(outputDir: String) extends Logging {
         }
       }
     }
-    val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
+    val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration))
     val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
     try {
       writeCSVHeader(csvFileWriter)
@@ -66,7 +66,6 @@ class Qualification(outputDir: String) extends Logging {
       textFileWriter.close()
     }
     sorted
-
   }
 
   val problemDurStr = "SQL Duration For Problematic"
@@ -82,9 +81,7 @@ class Qualification(outputDir: String) extends Logging {
   def headerCSV: String = {
     "App Name,App ID,Score,Potential Problems,SQL Dataframe Duration," +
       "App Duration,Executor CPU Time Percent,App Duration Estimated," +
-      "SQL Duration with Potential Problems\n"
-    // TODO - just do what was there for testing
-    // ,SQL Duration For Problematic"
+      "SQL Duration with Potential Problems,SQL Ids with Failures\n"
   }
 
   def writeCSVHeader(writer: ToolTextFileWriter): Unit = {

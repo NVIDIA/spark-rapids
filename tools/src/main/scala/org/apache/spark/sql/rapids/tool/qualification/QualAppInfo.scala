@@ -50,11 +50,6 @@ class QualAppInfo(
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
 
-  // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
-  // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
-  // val sqlPlan: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
-
-  // TODO - do I need attempt id as well?
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
@@ -145,8 +140,12 @@ class QualAppInfo(
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
+      val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
+        v.size > 0
+      }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
-        sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated, sqlDurProblem)
+        sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated,
+        sqlDurProblem, failedIds)
     }
   }
 
@@ -254,7 +253,8 @@ case class QualificationSummaryInfo(
     appDuration: Long,
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
-    sqlDurationForProblematic: Long) {
+    sqlDurationForProblematic: Long,
+    failedSQLIds: String) {
 
   private def stringIfempty(str: String): String = {
     if (str.isEmpty) {
@@ -268,10 +268,11 @@ case class QualificationSummaryInfo(
     val probStr = stringIfempty(potentialProblems)
     val appIdStr = stringIfempty(appId)
     val appNameStr = stringIfempty(appName)
+    val failedIds = stringIfempty(failedSQLIds)
 
     s"$appNameStr,$appIdStr,$score,$probStr,$sqlDataFrameDuration," +
       s"$appDuration,$executorCpuTimePercent," +
-      s"$endDurationEstimated,$sqlDurationForProblematic"
+      s"$endDurationEstimated,$sqlDurationForProblematic,$failedIds"
   }
 }
 
