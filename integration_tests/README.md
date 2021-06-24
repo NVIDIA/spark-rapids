@@ -312,11 +312,27 @@ the following conditions be covered in its corresponding integration tests:
 ### 1. Cover all supported data types
 Ensure that tests cover all data types supported by the added operation. An exhaustive list of data types supported in 
 Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes.html). These include:
-   * Numeric Types (`ByteType`, `ShortType`, `IntegerType`, etc.)
-   * Strings (`StringType`, `VarcharType`)
+   * Numeric Types 
+     * `ByteType` 
+     * `ShortType` 
+     * `IntegerType`
+     * `LongType`
+     * `FloatType`
+     * `DoubleType`
+     * `DecimalType`
+   * Strings 
+     * `StringType` 
+     * `VarcharType`
+   * Binary (`BinaryType`)  
    * Booleans (`BooleanType`)
-   * Chrono Types (`TimestampType`, `DateType`, `Interval`)
-   * Complex Types (`ArrayType`, `StructType`, `MapType`)
+   * Chrono Types 
+     * `TimestampType` 
+     * `DateType`
+     * `Interval`
+   * Complex Types 
+     * `ArrayType`
+     * `StructType`
+     * `MapType`
 
 `data_gen.py` provides `DataGen` classes that help generate test data in integration tests.
 
@@ -332,7 +348,17 @@ E.g.
 
 The `ArrayGen` and `StructGen` classes in `data_gen.py` can be configured to support arbitrary nesting.
 
-### 3. Null rows
+### 3. Scalar values
+Operators and expressions that support scalar operands need to be tested with scalar inputs, of all 
+supported types from 1 and 2, above. 
+For instance, `SUM()` supports numeric columns (e.g. `SUM(a + b)`), or scalars (e.g. `SUM(20)`).
+Similarly, `COUNT()` supports the following:
+   * Columns: E.g. `COUNT(a)` to count non-null rows for column `a`
+   * Scalars: E.g. `COUNT(1)` to count all rows (including nulls)
+   * `*`: E.g. `COUNT(*)`, functionally equivalent to `COUNT(1)`
+It is advised that tests be added for all applicable scalar types, for an operator.
+
+### 4. Null rows
 Ensure that the test data accommodates null values for input columns.
 Null values in input columns are a frequent source of bugs in `rapids-plugin-4-spark`, because of mismatches in null-handling
 and semantics, between RAPIDS `libcudf` (on which `rapids-plugin-4-spark` relies heavily), and Apache Spark. 
@@ -341,7 +367,7 @@ Apart from null rows in columns of primitive types, the following conditions mus
    * Null rows at the "top" level for `Array`/`Struct` columns.   E.g. `[ [1,2], [3], ∅, [4,5,6] ]`.
    * Non-null rows containing null elements in the child column. E.g. `[ [1,2], [3,∅], ∅, [4,∅,6] ]`.
 
-### 4. Empty rows in `Array` columns
+### 5. Empty rows in `Array` columns
 Operations on `ArrayType` columns must be tested with input columns containing non-null *empty* rows.
 E.g.
 ```
@@ -353,16 +379,18 @@ E.g.
 ]
 ```
 
-### 5. Degenerate cases with "empty" inputs
+### 6. Degenerate cases with "empty" inputs
 Ensure that operations are tested with "empty" input columns (i.e. containing zero rows.)
 
 E.g. `COUNT()` on an empty input column yields `0`. `SUM()` yields `0` for the appropriate numeric type.
 
-### 6. Special floating point values
+### 7. Special floating point values
 Apart from `null` values, `FloatType` and `DoubleType` input columns must also include the following special values:
    * +/- Zero
    * +/- Infinity
    * +/- NaN
 
-### 7. Special values in timestamp columns
-Ensure date/timestamp columns include dates before [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
+### 8. Special values in timestamp columns
+Ensure date/timestamp columns include dates before the [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
+It is advised that `DateGen` class from `data_gen.py` be used to generate valid (proleptic Gregorian calendar)
+dates when testing operators that work on dates.
