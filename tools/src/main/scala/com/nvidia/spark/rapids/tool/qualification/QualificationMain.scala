@@ -31,7 +31,6 @@ object QualificationMain extends Logging {
    * Entry point from spark-submit running this as the driver.
    */
   def main(args: Array[String]) {
-    val sparkSession = ProfileUtils.createSparkSession
     val (exitCode, _) = mainInternal(new QualificationArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
@@ -56,7 +55,7 @@ object QualificationMain extends Logging {
       matchEventLogs.toOption, eventlogPaths)
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
-      return 0
+      return (0, Seq[QualificationSummaryInfo]())
     }
 
     val qual = new Qualification(outputDirectory)

@@ -86,7 +86,7 @@ object EventLogPathProcessor extends Logging {
   }
 
   def getEventLogInfo(pathString: String): Map[EventLogInfo, Long] = {
-    getEventLogInfo(pathString)
+    getEventLogInfo(pathString, null)
   }
 
     def getEventLogInfo(pathString: String, sparkSession: SparkSession): Map[EventLogInfo, Long] = {
