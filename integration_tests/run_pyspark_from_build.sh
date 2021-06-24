@@ -122,13 +122,11 @@ else
     # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for
     # more lineant configuration, else it will set them to 1 as spurious task failures are not expected
     # for Spark 3.1.1+
-    VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|grep version\ |grep -v Scala|awk '{print $5}'`
+    VERSION_STRING=`unzip -q -c $SPARK_HOME/jars/spark-core_*.jar spark-version-info.properties | head -1 | cut -d'=' -f2`
     echo "Detected Spark version is $VERSION_STRING"
     IS_BEFORE_SPARK_311=`python -c "print(1 if '$VERSION_STRING' < '3.1.1' else 0)"`
     SPARK_TASK_MAXFAILURES=1
-    if (( $IS_BEFORE_SPARK_311 )); then
-      SPARK_TASK_MAXFAILURES=4
-    fi
+    [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
     export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
     export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
