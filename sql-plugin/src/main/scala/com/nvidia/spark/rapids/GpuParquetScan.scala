@@ -690,21 +690,6 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     }
   }
 
-  protected def dumpParquetData(
-      hmb: HostMemoryBuffer,
-      dataLength: Long,
-      splits: Array[PartitionedFile],
-      debugDumpPrefix: String): Unit = {
-    val (out, path) = FileUtils.createTempFile(conf, debugDumpPrefix, ".parquet")
-    try {
-      logInfo(s"Writing Parquet split data for $splits to $path")
-      val in = new HostMemoryInputStream(hmb, dataLength)
-      IOUtils.copy(in, out)
-    } finally {
-      out.close()
-    }
-  }
-
   protected def readPartFile(
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
