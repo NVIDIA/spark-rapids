@@ -431,7 +431,7 @@ Failed jobs:
 ```
 
 ### Metrics Definitions
-All the metrics definition can be found in [spark source code](https://github.com/apache/spark/blob/v3.1.1/core/src/main/scala/org/apache/spark/executor/TaskMetrics.scala) or [spark webUI doc](https://spark.apache.org/docs/3.1.2/web-ui.html#content).
+All the metrics definition can be found in [executor task metrics doc](https://spark.apache.org/docs/latest/monitoring.html#executor-task-metrics) / [executor metrics odc](https://spark.apache.org/docs/latest/monitoring.html#executor-metrics) or [spark webUI doc](https://spark.apache.org/docs/latest/web-ui.html#content).
 
 ### How to use this tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
