@@ -450,20 +450,7 @@ case class GpuHashAggregateExec(
           } else {
             withResource(new NvtxWithMetrics("Hash Aggregate Batch", NvtxColor.YELLOW,
               totalTime)) { _ =>
-              try {
-                childCvs = processIncomingBatch(batch, boundExpression.boundInputReferences)
-              } catch {
-                  case ex: Exception =>
-                    ex.addSuppressed(new IllegalStateException(
-                      childOutput.map(_.toJSON).mkString("\n\n")))
-                    ex.addSuppressed(new IllegalStateException(
-                      aggregateExpressions.flatMap(
-                        _.aggregateFunction.inputProjection.map(_.toJSON)).mkString("\n\n")
-                    ))
-                    ex.addSuppressed(new IllegalStateException(
-                      aggregateExpressions.map(_.mode).mkString("\n\n")))
-                    throw ex
-              }
+              childCvs = processIncomingBatch(batch, boundExpression.boundInputReferences)
 
               // done with the batch, clean it as soon as possible
               batch.close()
