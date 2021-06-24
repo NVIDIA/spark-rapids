@@ -31,7 +31,6 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Lo
   private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
   // this overwrites existing path
   private var outFile: Option[FSDataOutputStream] = Some(fs.create(textOutputPath))
-  logInfo(s"Output directory: $finalOutputDir")
 
   def write(stringToWrite: String): Unit = {
     outFile.foreach(_.writeBytes(stringToWrite))
@@ -43,7 +42,7 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Lo
 
   def close(): Unit = {
     outFile.foreach { file =>
-      logInfo(s"Output location: $finalOutputDir")
+      logInfo(s"Output location: $textOutputPath")
       file.flush()
       file.close()
       outFile = None

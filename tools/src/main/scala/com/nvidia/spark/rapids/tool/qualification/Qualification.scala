@@ -35,39 +35,38 @@ class Qualification(outputDir: String) extends Logging {
       allPaths: Seq[EventLogInfo],
       numRows: Int): ArrayBuffer[QualificationSummaryInfo] = {
     val allAppsSum: ArrayBuffer[QualificationSummaryInfo] = ArrayBuffer[QualificationSummaryInfo]()
-
-
-    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
-    val appsSorted = try {
-      writeCSVHeader(csvFileWriter)
-
-      allPaths.foreach { path =>
-        val (app, _) = QualAppInfo.createApp(path, numRows)
-        if (!app.isDefined) {
-          logWarning("No Applications found that contain SQL!")
+    allPaths.foreach { path =>
+      val (app, _) = QualAppInfo.createApp(path, numRows)
+      if (!app.isDefined) {
+        logWarning("No Applications found that contain SQL!")
+      } else {
+        val qualSumInfo = app.get.aggregateStats()
+        if (qualSumInfo.isDefined) {
+          allAppsSum += qualSumInfo.get
         } else {
-          val qualSumInfo = app.get.aggregateStats()
-          if (qualSumInfo.isDefined) {
-            allAppsSum += qualSumInfo.get
-            // write entire info to csv
-            writeCSV(csvFileWriter, qualSumInfo.get)
-          } else {
-            logWarning(s"No aggregated stats for event log at: $path")
-          }
+          logWarning(s"No aggregated stats for event log at: $path")
         }
       }
-      val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
-      val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
-      try {
-        writeTextSummary(textFileWriter, sorted)
-      } finally {
-        textFileWriter.close()
+    }
+    val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
+    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
+    try {
+      writeCSVHeader(csvFileWriter)
+      sorted.foreach { appSum =>
+        writeCSV(csvFileWriter, appSum)
       }
-      sorted
     } finally {
       csvFileWriter.close()
+
     }
-    appsSorted
+    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
+    try {
+      writeTextSummary(textFileWriter, sorted)
+    } finally {
+      textFileWriter.close()
+    }
+    sorted
+
   }
 
   val problemDurStr = "SQL Duration For Problematic"
