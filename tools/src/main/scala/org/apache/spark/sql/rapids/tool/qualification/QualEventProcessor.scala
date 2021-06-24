@@ -96,7 +96,8 @@ class QualEventProcessor() extends EventProcessorBase {
     // app.sqlEndTime += (event.executionId -> event.time)
     val sqlInfo = app.sqlStart.get(event.executionId)
     // if start time not there, use 0 for duration
-    val sqlDuration = sqlInfo.map(_.startTime).getOrElse(0L)
+    val startTime = sqlInfo.map(_.startTime).getOrElse(0L)
+    val sqlDuration = event.time - startTime
     app.sqlDurationTime += (event.executionId -> sqlDuration)
     logWarning("adding in sql duration of: " + sqlDuration)
     // TODO - check for failures
