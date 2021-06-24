@@ -124,7 +124,6 @@ else
     # for Spark 3.1.1+
     VERSION_STRING=`unzip -q -c $SPARK_HOME/jars/spark-core_*.jar spark-version-info.properties | head -1 | cut -d'=' -f2`
     echo "Detected Spark version is $VERSION_STRING"
-    IS_BEFORE_SPARK_311=`python -c "print(1 if '$VERSION_STRING' < '3.1.1' else 0)"`
     SPARK_TASK_MAXFAILURES=1
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
