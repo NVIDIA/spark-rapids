@@ -91,9 +91,13 @@ class QualAppInfo(
   private def calculatePercent(first: Long, total: Long): Double = {
     val firstDec = BigDecimal.decimal(first)
     val totalDec = BigDecimal.decimal(total)
-    val res = (firstDec * 100) / totalDec
-    val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
-    resScale.toDouble
+    if (firstDec == 0 || totalDec == 0) {
+      0.toDouble
+    } else {
+      val res = (firstDec * 100) / totalDec
+      val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
+      resScale.toDouble
+    }
   }
 
   private def calculateScore(sqlDataframeDur: Long, appDuration: Long): Double = {
