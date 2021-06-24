@@ -257,7 +257,7 @@ case class QualificationSummaryInfo(
     sqlDurationForProblematic: Long) {
 
   override def toString(): String = {
-    s"|$appId|$sqlDataFrameDuration|$appDuration|$sqlDurationForProblematic|"
+    s"|$appId|$appDuration|$sqlDataFrameDuration||$sqlDurationForProblematic|"
   }
 
   private def stringIfempty(str: String): String = {

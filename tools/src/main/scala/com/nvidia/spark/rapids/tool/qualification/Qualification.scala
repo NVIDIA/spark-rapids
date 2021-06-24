@@ -36,40 +36,39 @@ class Qualification(outputDir: String) extends Logging {
       numRows: Int): ArrayBuffer[QualificationSummaryInfo] = {
     val allAppsSum: ArrayBuffer[QualificationSummaryInfo] = ArrayBuffer[QualificationSummaryInfo]()
 
-    // TODO - add try/catch or with resource
-    // val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
-    // write summary to text
-    // writeTextHeader(textFileWriter)
+    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
+    val appsSorted = try {
+      writeTextHeader(textFileWriter)
+      val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
+      try {
+        writeCSVHeader(csvFileWriter)
 
-    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
-    writeCSVHeader(csvFileWriter)
-
-    allPaths.foreach { path =>
-      val (app, _) = QualAppInfo.createApp(path, numRows)
-      if (!app.isDefined) {
-        logWarning("No Applications found that contain SQL!")
-      } else {
-        val qualSumInfo = app.get.aggregateStats()
-
-        if (qualSumInfo.isDefined) {
-          allAppsSum += qualSumInfo.get
-
-          // write entire info to csv
-          writeCSV(csvFileWriter, qualSumInfo.get)
-        } else {
-          logWarning(s"No aggregated stats for event log at: $path")
+        allPaths.foreach { path =>
+          val (app, _) = QualAppInfo.createApp(path, numRows)
+          if (!app.isDefined) {
+            logWarning("No Applications found that contain SQL!")
+          } else {
+            val qualSumInfo = app.get.aggregateStats()
+            if (qualSumInfo.isDefined) {
+              allAppsSum += qualSumInfo.get
+              // write entire info to csv
+              writeCSV(csvFileWriter, qualSumInfo.get)
+            } else {
+              logWarning(s"No aggregated stats for event log at: $path")
+            }
+          }
         }
+        val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
+        writeTextSummary(textFileWriter, sorted)
+        sorted
+      } finally {
+        csvFileWriter.close()
       }
+    } finally {
+      writeTextFooter(textFileWriter)
+      textFileWriter.close()
     }
-    // TODO - sort and write the summary based on score
-    // writeCSV(textFileWriter, qualSumInfo.get)
-
-
-    // TODO need to sort CSV file afterwards, or keep in memory and then write
-    // writeTextFooter(textFileWriter)
-    // textFileWriter.close()
-    csvFileWriter.close()
-    allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
+    appsSorted
   }
 
   def headerCSV: String = {
@@ -81,7 +80,7 @@ class Qualification(outputDir: String) extends Logging {
   }
 
   def headerText: String = {
-    "|App ID                 |SQL Dataframe Duration|App Duration|SQL Duration For Problematic|\n"
+    "|App ID                 |App Duration|SQL Dataframe Duration|SQL Duration For Problematic|\n"
   }
 
   def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
@@ -105,7 +104,10 @@ class Qualification(outputDir: String) extends Logging {
     writer.write(textSeperator)
   }
 
-  def writeTextSummary(writer: ToolTextFileWriter, sumInfo: QualificationSummaryInfo): Unit = {
-    writer.write(sumInfo.toString + "\n")
+  def writeTextSummary(writer: ToolTextFileWriter,
+      sums: Seq[QualificationSummaryInfo]): Unit = {
+    sums.foreach { sumInfo =>
+      writer.write(sumInfo.toString + "\n")
+    }
   }
 }
