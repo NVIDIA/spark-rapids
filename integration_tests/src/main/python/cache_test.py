@@ -21,18 +21,17 @@ from spark_session import with_cpu_session, with_gpu_session
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order
 
-conf = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true",
-         "spark.sql.legacy.allowNegativeScaleOfDecimal": "true"},
-        {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false",
-         "spark.sql.legacy.allowNegativeScaleOfDecimal": "true"}]
+enableVectorizedConfs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
+                        {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
+allowNegativeScaleDec = {"spark.sql.legacy.allowNegativeScaleOfDecimal": "true"}
 decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
                 DecimalGen(precision=7, scale=-2),
                 decimal_gen_same_scale_precision, decimal_gen_64bit]
 decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
 
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
-def test_passing_gpuExpr_as_Expr(conf):
+def test_passing_gpuExpr_as_Expr(enableVectorizedConf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, string_gen)
             .select(f.col("a")).na.drop()
@@ -40,7 +39,7 @@ def test_passing_gpuExpr_as_Expr(conf):
             .agg(f.count(f.col("a")).alias("count_a"))
             .orderBy(f.col("count_a").desc(), f.col("a"))
             .cache()
-            .limit(50), conf)
+            .limit(50), enableVectorizedConf)
 
 # creating special cases to just remove -0.0 because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min Spark version we can drop this
@@ -60,25 +59,26 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 @ignore_order
-def test_cache_join(data_gen, join_type, conf):
+def test_cache_join(data_gen, join_type, enableVectorizedConf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count() # populates cache
         return cached
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 # We are OK running everything on CPU until we complete 'https://github.com/NVIDIA/spark-rapids/issues/360'
 # because we have an explicit check in our code that disallows InMemoryTableScan to have anything other than
 # AttributeReference
 @allow_non_gpu(any=True)
 @ignore_order
-def test_cached_join_filter(data_gen, join_type, conf):
+def test_cached_join_filter(data_gen, join_type, enableVectorizedConf):
     data = data_gen
     def do_join(spark):
         left, right = create_df(spark, data, 500, 500)
@@ -86,53 +86,57 @@ def test_cached_join_filter(data_gen, join_type, conf):
         cached.count() #populates the cache
         return cached.filter("a is not null")
 
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
-def test_cache_broadcast_hash_join(data_gen, join_type, conf):
+def test_cache_broadcast_hash_join(data_gen, join_type, enableVectorizedConf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         cached = left.join(right.hint("broadcast"), left.a == right.r_a, join_type).cache()
         cached.count()
         return cached
 
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
                  "spark.sql.join.preferSortMergeJoin": "false",
                  "spark.sql.shuffle.partitions": "2"}
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
-def test_cache_shuffled_hash_join(data_gen, join_type, conf):
+def test_cache_shuffled_hash_join(data_gen, join_type, enableVectorizedConf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 500)
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count()
         return cached
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @ignore_order
-def test_cache_broadcast_nested_loop_join(data_gen, join_type, conf):
+def test_cache_broadcast_nested_loop_join(data_gen, join_type, enableVectorizedConf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         cached = left.crossJoin(right.hint("broadcast")).cache()
         cached.count()
         return cached
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 @ignore_order
-def test_cache_expand_exec(data_gen, conf):
+def test_cache_expand_exec(data_gen, enableVectorizedConf):
     def op_df(spark, length=2048, seed=0):
         cached = gen_df(spark, StructGen([
             ('a', data_gen),
@@ -140,19 +144,21 @@ def test_cache_expand_exec(data_gen, conf):
         cached.count() # populate the cache
         return cached.rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
-    assert_gpu_and_cpu_are_equal_collect(op_df, conf = conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(op_df, conf = enableVectorizedConf)
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
-                                      parquet_decimal_struct_gen] + all_gen, ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
+                                      decimal_struct_gen] + all_gen, ids=idfn)
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
-def test_cache_partial_load(data_gen, conf):
+def test_cache_partial_load(data_gen, enableVectorizedConf):
     def partial_return(col):
         def partial_return_cache(spark):
             return two_col_df(spark, data_gen, string_gen).select(f.col("a"), f.col("b")).cache().limit(50).select(col)
         return partial_return_cache
-    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("a")), conf)
-    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("b")), conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("a")), enableVectorizedConf)
+    assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("b")), enableVectorizedConf)
 
 @allow_non_gpu('CollectLimitExec')
 def test_cache_diff_req_order(spark_tmp_path):
@@ -206,8 +212,8 @@ def test_cache_columnar(spark_tmp_path, data_gen, enableVectorized, ts_write):
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
                                       decimal_struct_gen]+ all_gen, ids=idfn)
-@pytest.mark.parametrize('conf', conf, ids=idfn)
-def test_cache_cpu_gpu_mixed(data_gen, conf):
+@pytest.mark.parametrize('enableVectorizedConf', enableVectorizedConfs, ids=idfn)
+def test_cache_cpu_gpu_mixed(data_gen, enableVectorizedConf):
     def func(spark):
         df = binary_op_df(spark, data_gen)
         df.cache().count()
@@ -216,11 +222,12 @@ def test_cache_cpu_gpu_mixed(data_gen, conf):
 
         return df.selectExpr("a", "b")
 
-    assert_gpu_and_cpu_are_equal_collect(func, conf)
+    enableVectorizedConf.update(allowNegativeScaleDec)
+    assert_gpu_and_cpu_are_equal_collect(func, enableVectorizedConf)
 
 
 @pytest.mark.parametrize('enableVectorized', ['false', 'true'], ids=idfn)
-@pytest.mark.parametrize('func', [with_cpu_session, with_gpu_session])
+@pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
 @allow_non_gpu("ProjectExec", "Alias", "Literal", "DateAddInterval", "MakeInterval", "Cast",
                "ExtractIntervalYears", "Year", "Month", "Second", "ExtractIntervalMonths",
                "ExtractIntervalSeconds", "SecondWithFraction", "ColumnarToRowExec")
@@ -233,9 +240,10 @@ def test_cache_cpu_gpu_mixed(data_gen, conf):
                                         # i.e. 'extract(years from d) will actually convert the
                                         # entire interval to year
                                         ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
-def test_cache_additional_types(enableVectorized, func, selectExpr):
-    def holder(cache):
+def test_cache_additional_types(enableVectorized, with_x_session, selectExpr):
+    def withCache(cache):
         selectExprDF, selectExprProject = selectExpr
+
         def helper(spark):
             # the goal is to just get a DF of CalendarIntervalType, therefore limiting the values
             # so when we do get the individual parts of the interval, it doesn't overflow
@@ -253,16 +261,17 @@ def test_cache_additional_types(enableVectorized, func, selectExpr):
             duration_df.count
             df_1 = duration_df.selectExpr(selectExprProject)
             return df_1.collect()
+
         return helper
 
-    cached_result = func(holder(True),
-       conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-       'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
-       'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized})
-    reg_result = func(holder(False),
-       conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-       'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
-       'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enableVectorized})
+    cached_result = with_x_session(withCache(True),
+                                   conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                                         'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+                                         'spark.sql.inMemoryColumnarStorage.enableVectorizedReader': enableVectorized})
+    reg_result = with_x_session(withCache(False),
+                                conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                                      'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
+                                      'spark.sql.inMemoryColumnarStorage.enableVectorizedReader': enableVectorized})
 
-    #NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
+    # NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
     assert_equal(reg_result, cached_result)
