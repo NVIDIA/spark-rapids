@@ -56,7 +56,7 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <modules>
-                <module>spark303</module>
+                <module>spark304</module>
                 <module>spark313</module>
             </modules>
         </profile>
@@ -66,6 +66,7 @@
         <module>spark301emr</module>
         <module>spark301</module>
         <module>spark302</module>
+        <module>spark303</module>
         <module>spark311</module>
         <module>spark312</module>
         <module>aggregator</module>

@@ -16,11 +16,10 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-import org.apache.hadoop.fs.Path
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.deploy.history.EventLogFileWriter
+import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTextFileWriter}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
@@ -40,11 +39,7 @@ object ProfileMain extends Logging {
     }
   }
 
-  val SUBDIR = "rapids_4_spark_qualification_profile"
-
-  // https://github.com/apache/spark/blob/0494dc90af48ce7da0625485a4dc6917a244d580/
-  // core/src/main/scala/org/apache/spark/io/CompressionCodec.scala#L67
-  val SPARK_SHORT_COMPRESSION_CODEC_NAMES = Set("lz4", "lzf", "snappy", "zstd")
+  val SUBDIR = "rapids_4_spark_profile"
 
   /**
    * Entry point for tests
@@ -60,71 +55,56 @@ object ProfileMain extends Logging {
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/") +
       s"/$SUBDIR"
+    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)
-
     try {
       // Get the event logs required to process
-      lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
-
-      val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
-
-      def eventLogNameFilter(logFile: Path): Boolean = {
-        EventLogFileWriter.codecName(logFile)
-          .forall(suffix => SPARK_SHORT_COMPRESSION_CODEC_NAMES.contains(suffix))
-       }
+      val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+        matchEventLogs.toOption, eventlogPaths, sparkSession)
+      if (eventLogInfos.isEmpty) {
+        logWarning("No event logs to process after checking paths, exiting!")
+        return 0
+      }
 
       // If compare mode is on, we need lots of memory to cache all applications then compare.
       // Suggest only enable compare mode if there is no more than 10 applications as input.
       if (appArgs.compare()) {
         // Create an Array of Applications(with an index starting from 1)
-        val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-        try {
-          var index: Int = 1
-          for (path <- allPaths.filter(eventLogNameFilter)) {
-            apps += new ApplicationInfo(numOutputRows, sparkSession, path, index)
-            index += 1
+        val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos,
+          numOutputRows, sparkSession)
+        if (errorCode > 0) {
+          logError(s"Error parsing one of the event logs")
+          return 1
+        }
+        if (apps.isEmpty) {
+          logInfo("No application to process. Exiting")
+          return 0
+        }
+        processApps(apps, generateDot = false, printPlans = false)
+        // Show the application Id <-> appIndex mapping.
+        apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
+      } else {
+        var index: Int = 1
+        eventLogInfos.foreach { log =>
+          // Only process 1 app at a time.
+          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(log), numOutputRows,
+            sparkSession, startIndex = index)
+          index += 1
+          if (errorCode > 0) {
+            logError(s"Error parsing ${log.eventLog}")
+            return 1
           }
-
-          //Exit if there are no applications to process.
           if (apps.isEmpty) {
             logInfo("No application to process. Exiting")
             return 0
           }
-          processApps(apps, generateDot = false, printPlans = false)
-        } catch {
-          case e: com.fasterxml.jackson.core.JsonParseException =>
-            textFileWriter.close()
-            logError(s"Error parsing JSON", e)
-            return 1
-        }
-        // Show the application Id <-> appIndex mapping.
-        for (app <- apps) {
-          logApplicationInfo(app)
-        }
-      } else {
-        // This mode is to process one application at one time.
-        var index: Int = 1
-        try {
-          for (path <- allPaths.filter(eventLogNameFilter)) {
-            // This apps only contains 1 app in each loop.
-            val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-            val app = new ApplicationInfo(numOutputRows, sparkSession, path, index)
-            apps += app
-            logApplicationInfo(app)
-            // This is a bit odd that we process apps individual right now due to
-            // memory concerns. So the aggregation functions only aggregate single
-            // application not across applications.
-            processApps(apps, appArgs.generateDot(), appArgs.printPlans())
-            app.dropAllTempViews()
-            index += 1
-          }
-        } catch {
-          case e: com.fasterxml.jackson.core.JsonParseException =>
-            textFileWriter.close()
-            logError(s"Error parsing JSON", e)
-            return 1
+          // This is a bit odd that we process apps individual right now due to
+          // memory concerns. So the aggregation functions only aggregate single
+          // application not across applications.
+          processApps(apps, appArgs.generateDot(), appArgs.printPlans())
+          apps.foreach(_.dropAllTempViews())
         }
       }
     } finally {
@@ -136,12 +116,11 @@ object ProfileMain extends Logging {
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: ArrayBuffer[ApplicationInfo], generateDot: Boolean,
-        printPlans: Boolean): Unit = {
+    def processApps(apps: Seq[ApplicationInfo], generateDot: Boolean, printPlans: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
 
         textFileWriter.write("### A. Compare Information Collected ###")
-        val compare = new CompareApplications(apps, textFileWriter)
+        val compare = new CompareApplications(apps, Some(textFileWriter))
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareJobInfo()
@@ -174,12 +153,15 @@ object ProfileMain extends Logging {
       healthCheck.listRemovedBlockManager()
       healthCheck.listRemovedExecutors()
       healthCheck.listPossibleUnsupportedSQLPlan()
-    }
 
-    def logApplicationInfo(app: ApplicationInfo) = {
-      logInfo("========================================================================")
-      logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
-      logInfo("========================================================================")
+      if (appArgs.generateTimeline()) {
+        if (appArgs.compare()) {
+          logWarning("Timeline graph does not compare apps")
+        }
+        apps.foreach { app =>
+          GenerateTimeline.generateFor(app, outputDirectory)
+        }
+      }
     }
 
     0

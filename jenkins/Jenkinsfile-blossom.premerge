@@ -25,8 +25,6 @@
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
-def pluginPremerge
-
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
@@ -48,7 +46,7 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '50'))
         skipDefaultCheckout true
         // TODO: improve resource management
-        timeout(time: 9, unit: 'HOURS') // long enough to make sure we won't timeout GPU scheduling w/ too many concurrent builds
+        timeout(time: 12, unit: 'HOURS') // long enough to make sure we won't timeout GPU scheduling w/ too many concurrent builds
     }
 
     environment {
@@ -139,9 +137,6 @@ pipeline {
                             // if no pre-merge dockerfile change, use nightly image
                             IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
                         }
-
-
-                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.PRE_MERGE_GPU_TYPE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     }
                 }
             }
@@ -151,16 +146,21 @@ pipeline {
         stage('Premerge Test') {
             when {
                 beforeAgent true
+                beforeOptions true
                 expression {
                     !skipped
                 }
             }
-
+            options {
+                // We have to use params to pass the resource label in options block,
+                // this is a limitation of declarative pipeline. And we need to lock resource before agent start
+                lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
+            }
             agent {
                 kubernetes {
                     label "premerge-test-${BUILD_TAG}"
                     cloud 'sc-ipp-blossom-prod'
-                    yaml "$pluginPremerge"
+                    yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                     customWorkspace "${CUSTOM_WORKSPACE}"
                 }
@@ -170,12 +170,12 @@ pipeline {
                 script {
                     container('gpu') {
                         // TODO: improve resource management
-                        timeout(time: 3, unit: 'HOURS') { // step only timeout for test run
+                        timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
                             sh "$PREMERGE_SCRIPT"
                             step([$class                : 'JacocoPublisher',
                                   execPattern           : '**/target/jacoco.exec',
                                   classPattern          : 'target/jacoco_classes/',
-                                  sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
+                                  sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
                                   sourceInclusionPattern: '**/*.java,**/*.scala'
                             ])
                         }

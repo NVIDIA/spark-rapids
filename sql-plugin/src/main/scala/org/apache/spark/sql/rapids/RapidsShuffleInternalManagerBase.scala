@@ -197,7 +197,7 @@ class RapidsCachingWriter[K, V](
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
-abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boolean)
+abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)

@@ -445,6 +445,9 @@ object GpuOverrides {
 
   private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
 
+  private[this] val _notNullCudfTypes = (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+    TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+
   val pluginSupportedOrderableSig: TypeSig = _commonTypes + TypeSig.STRUCT.nested(_commonTypes)
 
   private[this] def isStructType(dataType: DataType) = dataType match {
@@ -1248,7 +1251,9 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
       }).incompat(CASE_MODIFICATION_INCOMPAT + " Spark also only sees the space character as " +
-      "a word deliminator, but this uses more white space characters."),
+      "a word deliminator, but this will capitalize any character after a non-alphabetic " + 
+      "character.  The behavior will be aligned to match Spark in the future per " +
+      "https://github.com/NVIDIA/spark-rapids/issues/2786."),
     expr[Log](
       "Natural log",
       ExprChecks.mathUnary,
@@ -1339,6 +1344,14 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
+      }),
+    expr[KnownNotNull](
+      "Tag an expression as known to not be null",
+      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+        _notNullCudfTypes, TypeSig.all),
+      (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuKnownNotNull(child)
       }),
     expr[DateDiff](
       "Returns the number of days from startDate to endDate",
@@ -2962,15 +2975,11 @@ object GpuOverrides {
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
-        TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
-        TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
       (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
         val condition: Option[BaseExprMeta[_]] =
           join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))

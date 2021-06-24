@@ -12,10 +12,14 @@ GPU generated event logs.
 ## Prerequisites
 - Spark 3.0.1 or newer installed
 - Java 8 or above
-- Complete Spark event log(s) from Spark 3.0 or above version
-  (Support compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes. 
-  Spark event logs can be downloaded from Spark UI using a "Download" button on the right side, 
-  or can be found in the location specified by `spark.eventLog.dir`.)
+- Complete Spark event log(s) from Spark 3.0 or above version.
+  Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
+  Also support Databricks specific rolled and compressed(.gz) eventlogs.
+  The tool does not support nested directories, event log files or event log directories should be
+  at the top level when specifying a directory.
+
+Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
+or can be found in the location specified by `spark.eventLog.dir`.
 
 Optional:
 - maven installed 
@@ -231,6 +235,7 @@ The profiling tool generates information which can be used for debugging and pro
 - SQL Plan Metrics
 - Optionally : SQL Plan for each SQL query
 - Optionally : Generates DOT graphs for each SQL query
+- Optionally : Generates timeline graph for application
 
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
@@ -241,29 +246,30 @@ We can input multiple Spark event logs and this tool can compare environments, e
 ### A. Compare Information Collected ###
 Compare Application Information:
 
-+--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
-|appIndex|appId                  |startTime    |endTime      |duration|durationStr|sparkVersion|gpuMode|
-+--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
-|1       |app-20210329165943-0103|1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false  |
-|2       |app-20210329170243-0018|1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true   |
-+--------+-----------------------+-------------+-------------+--------+-----------+------------+-------+
++--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------------+
+|appIndex|appName    |appId                  |startTime    |endTime      |duration|durationStr|sparkVersion|pluginEnabled|
++--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------------+
+|1       |Spark shell|app-20210329165943-0103|1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false        |
+|2       |Spark shell|app-20210329170243-0018|1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true         |
++--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------------+
 ```
 
 - Compare Executor information:
 ```
 Compare Executor Information:
-+--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
-|appIndex|executorID|totalCores|maxMem     |maxOnHeapMem|maxOffHeapMem|exec_cpu|exec_mem|exec_gpu|exec_offheap|task_cpu|task_gpu|
-+--------+----------+----------+-----------+------------+-------------+--------+--------+--------+------------+--------+--------+
-|1       |0         |4         |13984648396|13984648396 |0            |null    |null    |null    |null        |null    |null    |
-|1       |1         |4         |13984648396|13984648396 |0            |null    |null    |null    |null        |null    |null    |
++--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
+|appIndex|resourceProfileId|numExecutors|executorCores|maxMem     |maxOnHeapMem|maxOffHeapMem|executorMemory|numGpusPerExecutor|executorOffHeap|taskCpu|taskGpu|
++--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
+|1       |0                |1           |4            |11264537395|11264537395 |0            |20480         |1                 |0              |1      |0.0    |
+|1       |1                |2           |2            |3247335014 |3247335014  |0            |6144          |2                 |0              |2      |2.0    |
++--------+-----------------+------------+-------------+-----------+------------+-------------+-------------+--------------+------------------+---------------+-------+-------+
 ```
 
 - Compare Rapids related Spark properties side-by-side:
 ```
 Compare Rapids Properties which are set explicitly:
 +-------------------------------------------+----------+----------+
-|key                                        |value_app1|value_app2|
+|propertyName                               |appIndex_1|appIndex_2|
 +-------------------------------------------+----------+----------+
 |spark.rapids.memory.pinnedPool.size        |null      |2g        |
 |spark.rapids.sql.castFloatToDecimal.enabled|null      |true      |
@@ -324,8 +330,50 @@ as a graph in pdf format using below command:
 ```bash
 dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
 ```
-The pdf file has the SQL plan graph with metrics.
 
+Or to svg using
+```bash
+dot -Tsvg ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.svg
+```
+The pdf or svg file has the SQL plan graph with metrics. The svg file will act a little
+more like the Spark UI and include extra information for nodes when hovering over it with
+a mouse.
+
+As a part of this an effort is made to associate parts of the graph with the Spark stage it is a
+part of. This is not 100% accurate. Some parts of the plan like `TakeOrderedAndProject` may
+be a part of multiple stages and only one of the stages will be selected. `Exchanges` are purposely
+left out of the sections associated with a stage because they cover at least 2 stages and possibly
+more. In other cases we may not be able to determine what stage something was a part of. In those
+cases we mark it as `UNKNOWN STAGE`. This is because we rely on metrics to link a node to a stage.
+If a stage hs no metrics, like if the query crashed early, we cannot establish that link.
+
+- Generate timeline for application (--generate-timeline option):
+
+The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
+named `${APPLICATION_ID}-timeline.svg`.  Most web browsers can display this file.  It is a
+timeline view similar Apache Spark's 
+[event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
+
+This displays several data sections.
+
+1) **Tasks** This shows all tasks in the application divided by executor.  Please note that this
+   tries to pack the tasks in the graph. It does not represent actual scheduling on CPU cores.
+   The tasks are labeled with the time it took for them to run, but there is no breakdown about
+   different aspects of each task, like there is in Spark's timeline.
+2) **STAGES** This shows the stages times reported by Spark. It starts with when the stage was 
+   scheduled and ends when Spark considered the stage done.
+3) **STAGE RANGES** This shows the time from the start of the first task to the end of the last
+   task. Often a stage is scheduled, but there are not enough resources in the cluster to run it.
+   This helps to show. How long it takes for a task to start running after it is scheduled, and in
+   many cases how long it took to run all of the tasks in the stage. This is not always true because
+   Spark can intermix tasks from different stages.
+4) **JOBS** This shows the time range reported by Spark from when a job was scheduled to when it
+   completed.
+5) **SQL** This shows the time range reported by Spark from when a SQL statement was scheduled to
+   when it completed.
+
+Tasks and stages all are color coordinated to help know what tasks are associated with a given
+stage. Jobs and SQL are not color coordinated.
 
 #### B. Analysis
 - Job + Stage level aggregated task metrics
@@ -370,7 +418,7 @@ SQL Duration and Executor CPU Time Percent
 ```
 Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
-|appIndex|stageId|stageAttemptId|taskId|attempt|taskDurationSec|avgDurationSec|taskShuffleReadMB|avgShuffleReadMB|taskPeakMemoryMB|successful|endReason_first100char                                                                              |
+|appIndex|stageId|stageAttemptId|taskId|attempt|taskDurationSec|avgDurationSec|taskShuffleReadMB|avgShuffleReadMB|taskPeakMemoryMB|successful|reason                                                                                              |
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 |1       |2      |0             |2222  |0      |111.11         |7.7           |2222.22          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
 |1       |2      |0             |2224  |1      |222.22         |8.8           |3333.33          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
@@ -384,46 +432,47 @@ Below are examples.
 - Print failed tasks:
 ```
 Failed tasks:
-+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
-|stageId|stageAttemptId|taskId|attempt|endReason_first100char                                                                              |
-+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
-|4      |0             |2842  |0      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
-|4      |0             |2858  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(22000),None,false,true,None)|
-|4      |0             |2884  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(21148),None,false,true,None)|
-|4      |0             |2908  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(20420),None,false,true,None)|
-|4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
-+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
++--------+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+|appIndex|stageId|stageAttemptId|taskId|attempt|failureReason                                                                              |
++--------+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
+|3       |4      |0             |2842  |0      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
+|3       |4      |0             |2858  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(22000),None,false,true,None)|
+|3       |4      |0             |2884  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(21148),None,false,true,None)|
+|3       |4      |0             |2908  |0      |TaskKilled(another attempt succeeded,List(AccumulableInfo(453,None,Some(20420),None,false,true,None)|
+|3       |4      |0             |3410  |1      |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /home/jenkins/agent/workspace/jenkins|
+|4       |1      |0             |1948  |1      |TaskKilled(another attempt succeeded,List(AccumulableInfo(290,None,Some(1107),None,false,true,None),|
++--------+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
 ```
 
 - Print failed stages:
 ```
 Failed stages:
-+-------+---------+-------------------------------------+--------+---------------------------------------------------+
-|stageId|attemptId|name                                 |numTasks|failureReason_first100char                         |
-+-------+---------+-------------------------------------+--------+---------------------------------------------------+
-|4      |0        |attachTree at Spark300Shims.scala:624|1000    |Job 0 cancelled as part of cancellation of all jobs|
-+-------+---------+-------------------------------------+--------+---------------------------------------------------+
++--------+-------+---------+-------------------------------------+--------+---------------------------------------------------+
+|appIndex|stageId|attemptId|name                                 |numTasks|failureReason                                      |
++--------+-------+---------+-------------------------------------+--------+---------------------------------------------------+
+|3       |4      |0        |attachTree at Spark300Shims.scala:624|1000    |Job 0 cancelled as part of cancellation of all jobs|
++--------+-------+---------+-------------------------------------+--------+---------------------------------------------------+
 ```
 
 - Print failed jobs:
 ```
 Failed jobs:
-+-----+---------+------------------------------------------------------------------------+
-|jobID|jobResult|failedReason_first100char                                               |
-+-----+---------+------------------------------------------------------------------------+
-|0    |JobFailed|java.lang.Exception: Job 0 cancelled as part of cancellation of all jobs|
-+-----+---------+------------------------------------------------------------------------+
++--------+-----+---------+------------------------------------------------------------------------+
+|appIndex|jobID|jobResult|failureReason                                                           |
++--------+-----+---------+------------------------------------------------------------------------+
+|3       |0    |JobFailed|java.lang.Exception: Job 0 cancelled as part of cancellation of all j...|
++--------+-----+---------+------------------------------------------------------------------------+
 ```
 
 - SQL Plan HealthCheck:
 
   Prints possibly unsupported query plan nodes such as `$Lambda` key word means dataset API.
 ```
-+-----+------+--------+---------------------------------------------------------------------------------------------------+
-|sqlID|nodeID|nodeName|nodeDesc_first100char                                                                              |
-+-----+------+--------+---------------------------------------------------------------------------------------------------+
-|1    |8     |Filter  |Filter $line21.$read$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$Lambda$4578/0x00000008019f1840@4b63e04c.apply|
-+-----+------+--------+---------------------------------------------------------------------------------------------------+
++--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
+|appIndex|sqlID|nodeID|nodeName|nodeDescription                                                                                    |
++--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
+|3       |1    |8     |Filter  |Filter $line21.$read$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$iw$$Lambda$4578/0x00000008019f1840@4b63e04c.apply|
++--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
 ```
 
 ### How to use this tool
@@ -477,7 +526,7 @@ For usage see below:
   -o, --output-directory  <arg>   Base output directory. Default is current
                                   directory for the default filesystem. The
                                   final output will go into a subdirectory
-                                  called rapids_4_spark_qualification_profile.
+                                  called rapids_4_spark_profile.
                                   It will overwrite any existing files with
                                   the same name.
   -p, --print-plans               Print the SQL plans to a file starting with
@@ -491,12 +540,17 @@ For usage see below:
 ```
 
 ### Output
-By default this outputs a log file under sub-directory `./rapids_4_spark_qualification_profile` named
+By default this outputs a log file under sub-directory `./rapids_4_spark_profile` named
 `rapids_4_spark_tools_output.log` that contains the processed applications. The output will go into your
 default filesystem, it supports local filesystem or HDFS. There are separate files that are generated
 under the same sub-directory when using the options to generate query visualizations or printing the SQL plans.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
+
+There is a 100 characters limit for each output column. If the result of the column exceeds this limit, it is suffixed with ... for that column.
+
+ResourceProfile ids are parsed for the event logs that are from Spark 3.1 or later. ResourceProfileId column is added in the output table for such event logs. 
+A ResourceProfile allows the user to specify executor and task requirements for an RDD that will get applied during a stage. This allows the user to change the resource requirements between stages.
   
 Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
 

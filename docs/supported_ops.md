@@ -650,7 +650,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -673,7 +673,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -8013,7 +8013,7 @@ Accelerator support is described below.
 <td rowSpan="4">InitCap</td>
 <td rowSpan="4">`initcap`</td>
 <td rowSpan="4">Returns str with the first letter of each word in uppercase. All other letters are in lowercase</td>
-<td rowSpan="4">This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132 Spark also only sees the space character as a word deliminator, but this uses more white space characters.</td>
+<td rowSpan="4">This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132 Spark also only sees the space character as a word deliminator, but this will capitalize any character after a non-alphabetic character.  The behavior will be aligned to match Spark in the future per https://github.com/NVIDIA/spark-rapids/issues/2786.</td>
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -8788,6 +8788,96 @@ Accelerator support is described below.
 <th>UDT</th>
 </tr>
 <tr>
+<td rowSpan="4">KnownNotNull</td>
+<td rowSpan="4"> </td>
+<td rowSpan="4">Tag an expression as known to not be null</td>
+<td rowSpan="4">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td><em>PS* (missing nested NULL, UDT)</em></td>
+<td><em>PS* (missing nested NULL, UDT)</em></td>
+<td><em>PS* (missing nested NULL, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td><em>PS* (missing nested NULL, UDT)</em></td>
+<td><em>PS* (missing nested NULL, UDT)</em></td>
+<td><em>PS* (missing nested NULL, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td rowSpan="2">lambda</td>
+<td>input</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
 <td rowSpan="4">Lag</td>
 <td rowSpan="4">`lag`</td>
 <td rowSpan="4">Window function that returns N entries behind this one</td>
@@ -9056,6 +9146,32 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="4">Least</td>
 <td rowSpan="4">`least`</td>
 <td rowSpan="4">Returns the least value of all parameters, skipping null values</td>
@@ -9144,32 +9260,6 @@ Accelerator support is described below.
 <td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">Length</td>

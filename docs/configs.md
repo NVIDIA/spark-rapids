@@ -197,7 +197,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.If"></a>spark.rapids.sql.expression.If|`if`|IF expression|true|None|
 <a name="sql.expression.In"></a>spark.rapids.sql.expression.In|`in`|IN operator|true|None|
 <a name="sql.expression.InSet"></a>spark.rapids.sql.expression.InSet| |INSET operator|true|None|
-<a name="sql.expression.InitCap"></a>spark.rapids.sql.expression.InitCap|`initcap`|Returns str with the first letter of each word in uppercase. All other letters are in lowercase|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132 Spark also only sees the space character as a word deliminator, but this uses more white space characters.|
+<a name="sql.expression.InitCap"></a>spark.rapids.sql.expression.InitCap|`initcap`|Returns str with the first letter of each word in uppercase. All other letters are in lowercase|false|This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132 Spark also only sees the space character as a word deliminator, but this will capitalize any character after a non-alphabetic character.  The behavior will be aligned to match Spark in the future per https://github.com/NVIDIA/spark-rapids/issues/2786.|
 <a name="sql.expression.InputFileBlockLength"></a>spark.rapids.sql.expression.InputFileBlockLength|`input_file_block_length`|Returns the length of the block being read, or -1 if not available|true|None|
 <a name="sql.expression.InputFileBlockStart"></a>spark.rapids.sql.expression.InputFileBlockStart|`input_file_block_start`|Returns the start offset of the block being read, or -1 if not available|true|None|
 <a name="sql.expression.InputFileName"></a>spark.rapids.sql.expression.InputFileName|`input_file_name`|Returns the name of the file being read, or empty string if not available|true|None|
@@ -206,6 +206,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|`isnotnull`|Checks if a value is not null|true|None|
 <a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|`isnull`|Checks if a value is null|true|None|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized| |Tag to prevent redundant normalization|true|None|
+<a name="sql.expression.KnownNotNull"></a>spark.rapids.sql.expression.KnownNotNull| |Tag an expression as known to not be null|true|None|
 <a name="sql.expression.Lag"></a>spark.rapids.sql.expression.Lag|`lag`|Window function that returns N entries behind this one|true|None|
 <a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|`last_day`|Returns the last day of the month which the date belongs to|true|None|
 <a name="sql.expression.Lead"></a>spark.rapids.sql.expression.Lead|`lead`|Window function that returns N entries ahead of this one|true|None|
