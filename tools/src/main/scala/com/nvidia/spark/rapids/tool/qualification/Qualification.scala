@@ -102,13 +102,13 @@ class Qualification(outputDir: String) extends Logging {
     entireHeader.append("|")
     val appIdSpaces = " " * (appIdMaxSize - headers(0).size)
     entireHeader.append(s"$appIdSpaces${headers(0)}|")
-    entireHeader.append(s"${" " * (sizePadLongs - headers(1).size - 1)}${headers(1)}|")
-    entireHeader.append(s"${" " * (sizePadLongs - headers(2).size - 1)}${headers(2)}|")
-    entireHeader.append(s"${" " * (sizePadLongs - headers(3).size - 1)}${headers(3)}|")
+    entireHeader.append(s"${" " * (sizePadLongs - headers(1).size)}${headers(1)}|")
+    entireHeader.append(s"${" " * (sizePadLongs - headers(2).size)}${headers(2)}|")
+    entireHeader.append(s"${" " * (sizePadLongs - headers(3).size)}${headers(3)}|")
     entireHeader.append("\n")
     writer.write(entireHeader.toString)
     val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
-    writer.write(sep)
+    writer.write(s"$sep\n")
 
     sums.foreach { sumInfo =>
       val appId = sumInfo.appId
