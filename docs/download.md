@@ -27,19 +27,22 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures: 
 
-	GPU Architecture: NVIDIA V100, T4 and A30/A100 GPUs
+	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 	
-	CUDA & Nvidia Drivers: 11.0 or 11.2 & v450.80.02+
+	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
 	
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0 
 	
 	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 	
 	Python 3.6+, Scala 2.12, Java 8 
+
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet 
+for your hardware's minimum driver version.
 
 ### Download v21.06.0
 * Download the [RAPIDS
@@ -74,7 +77,7 @@ New functionality for this release includes:
 Performance improvements for this release include: 
 * Moving RAPIDS Shuffle out of beta
 * Updates to UCX error handling
-* GPU Direct storage for spilling
+* GPUDirect Storage for spilling
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
