@@ -2745,7 +2745,9 @@ object GpuOverrides {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.BINARY +
-            TypeSig.STRUCT).nested(),
+            TypeSig.STRUCT).nested()
+            .withPsNote(TypeEnum.BINARY, "Marking BINARY as plugin-supported is only to " +
+                "adapt the BINARY aggregation buffers of TypedImperativeAggregate."),
         TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
@@ -3036,11 +3038,13 @@ object GpuOverrides {
       "The backend for hash based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.BINARY +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.BINARY, "Marking BINARY as plugin-supported is only to " +
+                "adapt the BINARY aggregation buffers of TypedImperativeAggregate."),
         TypeSig.all),
       (agg, conf, p, r) => new GpuObjectHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
