@@ -430,7 +430,7 @@ Failed jobs:
 +-----+------+--------+---------------------------------------------------------------------------------------------------+
 ```
 
-### What does the metrics mean
+### Metrics Definitions
 All the metrics definition can be found in [spark source code](https://github.com/apache/spark/blob/v3.1.1/core/src/main/scala/org/apache/spark/executor/TaskMetrics.scala) or [spark webUI doc](https://spark.apache.org/docs/3.1.2/web-ui.html#content).
 
 ### How to use this tool
@@ -508,4 +508,3 @@ The output location can be changed using the `--output-directory` option. Defaul
 Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
 
 Run `--help` for more information.
-
