@@ -103,9 +103,13 @@ class QualAppInfo(
   // if the sql contains a dataset, then duration for it is 0
   // for the sql dataframe duration
   private def calculateSqlDataframDuration: Long = {
-    sqlDurationTime.filterNot { case (sqlID, _) =>
+    val res = sqlDurationTime.filterNot { case (sqlID, _) =>
         sqlIDToDataSetCase.contains(sqlID)
     }.values.sum
+
+    logWarning("result calculate is: " + res
+      + "values are: " + sqlDurationTime.values.mkString(","))
+    res
   }
 
   private def getPotentialProblems: String = {
@@ -138,8 +142,8 @@ class QualAppInfo(
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
-      new QualificationSummaryInfo(info.appName, appId, score, appDuration,
-        sqlDataframeDur, problems, executorCpuTimePercent, endDurationEstimated, sqlDurProblem)
+      new QualificationSummaryInfo(info.appName, appId, score, problems,
+        sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated, sqlDurProblem)
     }
   }
 
@@ -242,9 +246,9 @@ case class QualificationSummaryInfo(
     appName: String,
     appId: String,
     score: Float,
-    appDuration: Long,
+    potentialProblems: String,
     sqlDataFrameDuration: Long,
-    problems: String,
+    appDuration: Long,
     executorCpuTimePercent: Float,
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long) {
@@ -254,7 +258,7 @@ case class QualificationSummaryInfo(
   }
 
   def toCSV: String = {
-    s"$appName,$appId,$score,$problems,$sqlDataFrameDuration," +
+    s"$appName,$appId,$score,$potentialProblems,$sqlDataFrameDuration," +
       s"$appDuration,$executorCpuTimePercent," +
       s"$endDurationEstimated,$sqlDurationForProblematic"
   }

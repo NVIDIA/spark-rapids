@@ -77,6 +77,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
               Some(schema))
           val spark2 = sparkSession
           import spark2.implicits._
+          // TODO - temporarily drop
           val dfQual = appSum.toDF().drop("sqlDurationForProblematic")
           val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
           assert(!dfQual.isEmpty)
