@@ -63,6 +63,16 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
     assert(0.5d === MemoryCostHelper.calculateCost(GIGABYTE, 2) +- 0.01)
   }
 
+  test("Estimate data size") {
+    assert(8 === MemoryCostHelper.estimateGpuMemory(
+      DataTypes.LongType, nullable = false, 1))
+    assert(17179869176L === MemoryCostHelper.estimateGpuMemory(
+      DataTypes.LongType, nullable = false, Int.MaxValue))
+    // we cap the estimate at Int.MaxValue rows to avoid integer overflow
+    assert(17179869176L === MemoryCostHelper.estimateGpuMemory(
+      DataTypes.LongType, nullable = false, Long.MaxValue))
+  }
+
   test("Avoid transition to GPU for trivial projection after CPU SMJ") {
     logError("Avoid transition to GPU for trivial projection after CPU SMJ")
 
