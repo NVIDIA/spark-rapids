@@ -47,6 +47,9 @@ class QualAppInfo(
   // The duration of the SQL execution, in ms.
   val sqlDurationTime: HashMap[Long, Long] = HashMap.empty[Long, Long]
 
+  val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
+    HashMap.empty[Long, StageTaskQualificationSummary]
+
   // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
   // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
   // val sqlPlan: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
@@ -55,12 +58,6 @@ class QualAppInfo(
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
-
-
-  // this is used to aggregate metrics for qualification to speed up processing and
-  // minimize memory usage
-  var sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
-    HashMap.empty[Long, StageTaskQualificationSummary]
 
   val problematicSQL: ArrayBuffer[ProblematicSQLCase] = ArrayBuffer[ProblematicSQLCase]()
 
@@ -110,13 +107,9 @@ class QualAppInfo(
   // if the sql contains a dataset, then duration for it is 0
   // for the sql dataframe duration
   private def calculateSqlDataframDuration: Long = {
-    val res = sqlDurationTime.filterNot { case (sqlID, _) =>
-        sqlIDToDataSetCase.contains(sqlID)
+    sqlDurationTime.filterNot { case (sqlID, dur) =>
+        sqlIDToDataSetCase.contains(sqlID) || dur == -1
     }.values.sum
-
-    logWarning("result calculate is: " + res
-      + "values are: " + sqlDurationTime.values.mkString(","))
-    res
   }
 
   private def getPotentialProblems: String = {
