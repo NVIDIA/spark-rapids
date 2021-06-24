@@ -202,6 +202,9 @@ _grpkey_small_decimals = [
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
+_init_list_with_decimal = _init_list_with_nans_and_no_nans + [
+    _grpkey_small_decimals]
+
 @approximate_float
 @ignore_order
 @incompat
@@ -370,6 +373,107 @@ def test_hash_reduction_pivot_without_nans(data_gen, conf):
             .pivot('b')
             .agg(f.sum('c')),
         conf=conf)
+
+_repeat_agg_column_for_collect_op = [
+    RepeatSeqGen(BooleanGen(), length=15),
+    RepeatSeqGen(IntegerGen(), length=15),
+    RepeatSeqGen(LongGen(), length=15),
+    RepeatSeqGen(ShortGen(), length=15),
+    RepeatSeqGen(DateGen(), length=15),
+    RepeatSeqGen(TimestampGen(), length=15),
+    RepeatSeqGen(ByteGen(), length=15),
+    RepeatSeqGen(StringGen(), length=15),
+    RepeatSeqGen(FloatGen(), length=15),
+    RepeatSeqGen(DoubleGen(), length=15),
+    RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15),
+    # case to verify the NAN_UNEQUAL strategy
+    RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5),
+]
+
+_gen_data_for_collect_op = [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', value_gen),
+    ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op
+]
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_collect_list(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')), f.count('b')))
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_collect_set(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_set('b')), f.count('b')))
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_collect_with_single_distinct(data_gen):
+    # test collect_ops with other distinct aggregations
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')),
+                 f.sort_array(f.collect_set('b')),
+                 f.countDistinct('c'),
+                 f.count('c')))
+
+    # test distinct collect with other aggregations
+    sql = """select a,
+                    sort_array(collect_list(distinct b)),
+                    sort_array(collect_set(b)),
+                    count(distinct b),
+                    count(c)
+            from tbl group by a"""
+    assert_gpu_and_cpu_are_equal_sql(
+        df_fun=lambda spark: gen_df(spark, data_gen, length=100),
+        table_name="tbl", sql=sql)
+
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'SortAggregateExec', 'ObjectHashAggregateExec',
+               'ShuffleExchangeExec', 'HashPartitioning', 'SortArray', 'Alias', 'Literal',
+               'CollectList', 'CollectSet', 'AggregateExpression')
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
+def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')),
+                 f.sort_array(f.collect_set('b'))),
+        conf=conf)
+
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('SortAggregateExec',
+               'SortArray', 'Alias', 'Literal', 'First', 'If', 'EqualTo', 'Count',
+               'CollectList', 'CollectSet', 'AggregateExpression')
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
+    sql = """select a,
+                    sort_array(collect_list(b)),
+                    sort_array(collect_set(b)),
+                    count(distinct b),
+                    count(distinct c)
+            from tbl group by a"""
+    assert_gpu_and_cpu_are_equal_sql(
+        df_fun=lambda spark: gen_df(spark, data_gen, length=100),
+        table_name="tbl", sql=sql)
 
 @approximate_float
 @ignore_order

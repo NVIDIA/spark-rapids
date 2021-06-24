@@ -35,7 +35,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
-import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, SortAggregateExec}
+import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
@@ -799,7 +799,8 @@ object GpuOverrides {
     expr[AttributeReference](
       "References an input column",
       ExprChecks.projectNotLambda((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP +
-                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.DECIMAL).nested(), TypeSig.all),
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.DECIMAL + TypeSig.BINARY).nested(),
+        TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
@@ -2631,32 +2632,35 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
-      "Collect a list of non-unique elements, only supported in rolling window in current.",
-      // GpuCollectList is not yet supported under GroupBy and Reduction context.
-      ExprChecks.aggNotGroupByOrReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
+      "Collect a list of non-unique elements, NOT yet supported in reduction.",
+      // GpuCollectList is not yet supported in Reduction context.
+      ExprChecks.aggNotReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.BINARY +
+            TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           TypeSig.commonCudfTypes + TypeSig.DECIMAL +
             TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
           TypeSig.all))),
-      (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuCollectList(
-          childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
+      (c, conf, p, r) => new ImperativeAggExprMeta[CollectList](c, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          GpuCollectList(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
+        }
       }),
     expr[CollectSet](
-      "Collect a set of unique elements, only supported in rolling window in current.",
-      // GpuCollectSet is not yet supported under GroupBy and Reduction context.
+      "Collect a set of unique elements, NOT yet supported in reduction.",
+      // GpuCollectSet is not yet supported in Reduction context.
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
-      ExprChecks.aggNotGroupByOrReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+      ExprChecks.aggNotReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.BINARY),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL,
           TypeSig.all))),
-      (c, conf, p, r) => new ExprMeta[CollectSet](c, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuCollectSet(
-          childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
+      (c, conf, p, r) => new ImperativeAggExprMeta[CollectSet](c, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
+        }
       }),
     expr[GetJsonObject](
       "Extracts a json object from path",
@@ -2729,11 +2733,22 @@ object GpuOverrides {
       "Hash based partitioning",
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.BINARY +
+            TypeSig.STRUCT).nested(),
         TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def tagPartForGpu(): Unit = {
+          AggregateUtils.filterNonAggBufBinaryExpressions(hp.expressions) match {
+            case nonAggBinExpr if nonAggBinExpr.nonEmpty =>
+              willNotWorkOnGpu("GpuHashPartitioning doesn't support expressions of BinaryType " +
+                  "other than TypedImperativeAggregateBuffers, " +
+                  s"but found ${nonAggBinExpr.map(_.toJSON)}")
+            case _ =>
+          }
+        }
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
@@ -2932,16 +2947,29 @@ object GpuOverrides {
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested()
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.BINARY +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested()
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(TypeEnum.MAP, "Round-robin partitioning is not supported if " +
-              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
+              s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
+          .withPsNote(TypeEnum.BINARY, "Marking BINARY as plugin-supported is only to " +
+              "adapt the BINARY aggregation buffers of TypedImperativeAggregate."),
         TypeSig.all),
-      (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
+      (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r) {
+        override def tagPlanForGpu(): Unit = {
+          AggregateUtils.filterNonAggBufBinaryExpressions(shuffle.output) match {
+            case nonAggBinExpr if nonAggBinExpr.nonEmpty =>
+              willNotWorkOnGpu("ShuffleExchangeExec doesn't support BinaryType output attribute " +
+                  "other than TypedImperativeAggregateBuffers, " +
+                  s"but found ${nonAggBinExpr.map(_.toJSON)}")
+            case _ =>
+          }
+          super.tagPlanForGpu()
+        }
+      }),
     exec[UnionExec](
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
@@ -2997,6 +3025,17 @@ object GpuOverrides {
             .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
+    exec[ObjectHashAggregateExec](
+      "The backend for hash based aggregations",
+      ExecChecks(
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.BINARY +
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+            .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+        TypeSig.all),
+      (agg, conf, p, r) => new GpuObjectHashAggregateMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
