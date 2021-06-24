@@ -106,8 +106,9 @@ class Qualification(outputDir: String) extends Logging {
     entireHeader.append(s"${" " * (sizePadLongs - headers(2).size)}${headers(2)}|")
     entireHeader.append(s"${" " * (sizePadLongs - headers(3).size)}${headers(3)}|")
     entireHeader.append("\n")
-    writer.write(entireHeader.toString)
     val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
+    writer.write(s"$sep\n")
+    writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
 
     sums.foreach { sumInfo =>
@@ -122,5 +123,6 @@ class Qualification(outputDir: String) extends Logging {
       val wStr = s"|$appPad$appId|$appDurPad$appDur|$sqlDurPad$sqlDur|$sqlProbDurPad$sqlProbDur|"
       writer.write(wStr + "\n")
     }
+    writer.write(s"$sep\n")
   }
 }
