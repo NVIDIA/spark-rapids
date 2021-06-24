@@ -70,24 +70,26 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
+      val spark2 = sparkSession
+      import spark2.implicits._
+      val dfTmp = appSum.toDF
+      val schema = new StructType()
+        .add("appName", StringType, true)
+        .add("appID", StringType, true)
+        .add("dfRankTotal", DoubleType, true)
+        .add("potentialProblems", StringType, true)
+        .add("dfDurationFinal", LongType, true)
+        .add("appDuration", LongType, true)
+        .add("executorCPURatio", DoubleType, true)
+        .add("appEndDurationEstimated", BooleanType, true)
+        .add("sqlDurationForProblematic", LongType, true)
+      val dfQualTemp = sparkSession.createDataFrame(dfTmp.rdd, schema)
+      dfQualTemp.show()
       if (shouldReturnEmpty) {
-        assert(appSum.isEmpty)
+        
+        assert(dfQualTemp.isEmpty)
       } else {
         val dfExpect = readExpectedFile(resultExpectation)
-        val spark2 = sparkSession
-        import spark2.implicits._
-        val dfTmp = appSum.toDF
-        val schema = new StructType()
-          .add("appName", StringType, true)
-          .add("appID", StringType, true)
-          .add("dfRankTotal", DoubleType, true)
-          .add("potentialProblems", StringType, true)
-          .add("dfDurationFinal", LongType, true)
-          .add("appDuration", LongType, true)
-          .add("executorCPURatio", DoubleType, true)
-          .add("appEndDurationEstimated", BooleanType, true)
-          .add("sqlDurationForProblematic", LongType, true)
-        val dfQualTemp = sparkSession.createDataFrame(dfTmp.rdd, schema)
         val dfQual = dfQualTemp.drop("sqlDurationForProblematic")
         assert(!dfQual.isEmpty)
         ToolTestUtils.compareDataFrames(dfQual, dfExpect)
