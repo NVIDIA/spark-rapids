@@ -25,7 +25,7 @@ import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
-import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -42,6 +42,20 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .master("local[*]")
       .appName("Rapids Spark Profiling Tool Unit Tests")
       .getOrCreate()
+  }
+
+  def readExpectedFile(expected: File): DataFrame = {
+    val schema = new StructType()
+      .add("appName", StringType, true)
+      .add("appID", StringType, true)
+      .add("dfRankTotal", DoubleType, true)
+      .add("potentialProblems", StringType, true)
+      .add("dfDurationFinal", LongType, true)
+      .add("appDuration", LongType, true)
+      .add("executorCPURatio", DoubleType, true)
+      .add("appEndDurationEstimated", BooleanType, true)
+    ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
+      Some(schema))
   }
 
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
@@ -63,18 +77,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         if (shouldReturnEmpty) {
           assert(appSum.isEmpty)
         } else {
-          val schema = new StructType()
-            .add("appName",StringType,true)
-            .add("appID",StringType,true)
-            .add("dfRankTotal",DoubleType,true)
-            .add("potentialProblems",StringType,true)
-            .add("dfDurationFinal",LongType,true)
-            .add("appDuration",LongType,true)
-            .add("executorCPURatio",DoubleType,true)
-            .add("appEndDurationEstimated",BooleanType,true)
-          val dfExpectOrig =
-            ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(),
-              Some(schema))
+          val dfExpectOrig = readExpectedFile(resultExpectation)
           val spark2 = sparkSession
           import spark2.implicits._
           // TODO - temporarily drop
