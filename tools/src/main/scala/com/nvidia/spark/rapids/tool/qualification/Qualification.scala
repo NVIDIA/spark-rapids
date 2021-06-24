@@ -74,9 +74,9 @@ class Qualification(outputDir: String) extends Logging {
   val headers = Array("App ID", "App Duration", "SQL Dataframe Duration", problemDurStr)
 
   private def getTextSpacing(sums: Seq[QualificationSummaryInfo]): (Int, Int)= {
-    val sizePadDoubles = problemDurStr.size
+    val sizePadLongs = problemDurStr.size
     val appIdMaxSize = sums.map(_.appId.size).max
-    (appIdMaxSize, sizePadDoubles)
+    (appIdMaxSize, sizePadLongs)
   }
 
   def headerCSV: String = {
@@ -97,25 +97,26 @@ class Qualification(outputDir: String) extends Logging {
 
   def writeTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo]): Unit = {
-    val (appIdMaxSize, sizePadDoubles) = getTextSpacing(sums)
+    val (appIdMaxSize, sizePadLongs) = getTextSpacing(sums)
     val entireHeader = new StringBuffer
     entireHeader.append("|")
     val appIdSpaces = " " * (appIdMaxSize - headers(0).size - 1)
     entireHeader.append(s"$appIdSpaces${headers(0)}|")
-    val doubleSpaces = " " * (sizePadDoubles - 4)
-    entireHeader.append(s"$doubleSpaces${headers(1)}|")
-    entireHeader.append(s"$doubleSpaces${headers(2)}}")
-    entireHeader.append(s"$doubleSpaces${headers(3)}|")
+    entireHeader.append(s"${" " * (sizePadLongs - headers(1).size - 1)}${headers(1)}|")
+    entireHeader.append(s"${" " * (sizePadLongs - headers(2).size - 1)}${headers(2)}|")
+    entireHeader.append(s"${" " * (sizePadLongs - headers(3).size - 1)}${headers(3)}|")
     entireHeader.append("\n")
     writer.write(entireHeader.toString)
     sums.foreach { sumInfo =>
       val appId = sumInfo.appId
       val appPad = " " * (appIdMaxSize - appId.size - 1)
-      val doublePad = " " * (sizePadDoubles - 4)
-      val appDur = sumInfo.appDuration
-      val sqlDur = sumInfo.sqlDataFrameDuration
-      val sqlProbDur = sumInfo.sqlDurationForProblematic
-      val writeStr = s"$appPad$appId|$doublePad$appDur|$doublePad$sqlDur|$doublePad$sqlProbDur|"
+      val appDur = sumInfo.appDuration.toString
+      val sqlDur = sumInfo.sqlDataFrameDuration.toString
+      val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
+      val appDurPad = " " * (sizePadLongs - appDur.size)
+      val sqlDurPad = " " * (sizePadLongs - sqlDur.size)
+      val sqlProbDurPad = " " * (sizePadLongs - sqlProbDur.size)
+      val writeStr = s"$appPad$appId|$appDurPad$appDur|$sqlDurPad$sqlDur|$sqlProbDurPad$sqlProbDur|"
       writer.write(writeStr + "\n")
     }
   }
