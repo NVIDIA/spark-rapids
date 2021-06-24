@@ -257,8 +257,20 @@ case class QualificationSummaryInfo(
     s"|$appId|$sqlDataFrameDuration|$appDuration|$sqlDurationForProblematic|"
   }
 
+  private def stringIfempty(str: String): String = {
+    if (str.isEmpty) {
+      "\"\""
+    } else {
+      str
+    }
+  }
+
   def toCSV: String = {
-    s"$appName,$appId,$score,$potentialProblems,$sqlDataFrameDuration," +
+    val probStr = stringIfempty(potentialProblems)
+    val appIdStr = stringIfempty(appId)
+    val appNameStr = stringIfempty(appName)
+
+    s"$appNameStr,$appIdStr,$score,$probStr,$sqlDataFrameDuration," +
       s"$appDuration,$executorCpuTimePercent," +
       s"$endDurationEstimated,$sqlDurationForProblematic"
   }
