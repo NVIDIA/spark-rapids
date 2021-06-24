@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
+import scala.collection.mutable.ArrayBuffer
+
 import com.nvidia.spark.rapids.tool.{EventLogInfo, ToolTextFileWriter}
 
 import org.apache.spark.internal.Logging
@@ -31,12 +33,13 @@ class Qualification(outputDir: String) extends Logging {
 
   def qualifyApps(
       allPaths: Seq[EventLogInfo],
-      numRows: Int): Unit = {
+      numRows: Int): ArrayBuffer[QualificationSummaryInfo] = {
+    val allAppsSum: ArrayBuffer[QualificationSummaryInfo] = ArrayBuffer[QualificationSummaryInfo]()
 
     // TODO - add try/catch or with resource
-    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
+    // val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
     // write summary to text
-    writeTextHeader(textFileWriter)
+    // writeTextHeader(textFileWriter)
 
     val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
     writeCSVHeader(csvFileWriter)
@@ -49,17 +52,23 @@ class Qualification(outputDir: String) extends Logging {
       val qualSumInfo = app.get.aggregateStats()
 
       if (qualSumInfo.isDefined) {
+        allAppsSum += qualSumInfo.get
+
         // write entire info to csv
         writeCSV(csvFileWriter, qualSumInfo.get)
-        writeCSV(textFileWriter, qualSumInfo.get)
       } else {
         logWarning(s"No aggregated stats for event log at: $path")
       }
     }
+    // TODO - sort and write the summary based on score
+    // writeCSV(textFileWriter, qualSumInfo.get)
+
+
     // TODO need to sort CSV file afterwards, or keep in memory and then write
-    writeTextFooter(textFileWriter)
-    textFileWriter.close()
+    // writeTextFooter(textFileWriter)
+    // textFileWriter.close()
     csvFileWriter.close()
+    allAppsSum.sortBy( sum => (sum.score, sum.sqlDataFrameDuration))
   }
 
   def headerCSV: String = {

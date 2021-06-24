@@ -58,12 +58,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         }
         val appArgs = new QualificationArgs(allArgs ++ eventLogs)
 
-        val (exit, dfQualOpt) =
-          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
-            dropTempViews=true)
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
         if (shouldReturnEmpty) {
-          assert(dfQualOpt.isEmpty)
+          assert(appSum.isEmpty)
         } else {
           val schema = new StructType()
             .add("appName",StringType,true)
@@ -77,9 +75,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           val dfExpectOrig =
             ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(),
               Some(schema))
+          val spark2 = sparkSession
+          import spark2.implicits._
+          val dfQual = appSum.toDF()
           val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
-          assert(dfQualOpt.isDefined)
-          ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)
+          assert(!dfQual.isEmpty)
+          ToolTestUtils.compareDataFrames(dfQual, dfExpect)
         }
       }
     }
@@ -145,6 +146,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
   }
 
+  /*
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener
@@ -176,8 +178,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           eventLog))
 
         val (exit, _) =
-          QualificationMain.mainInternal(spark2, appArgs, writeOutput = false,
-            dropTempViews = false)
+          QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
 
         val df = spark2.table("sqlAggMetricsDF")
@@ -200,6 +201,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
+  */
 }
 
 class ToolTestListener extends SparkListener {

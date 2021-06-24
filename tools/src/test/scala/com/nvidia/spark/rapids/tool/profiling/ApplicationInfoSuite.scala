@@ -236,7 +236,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     ))
 
     val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+      appArgs.matchEventLogs.toOption, appArgs.eventlog())
     assert(result.length == 2)
   }
 
@@ -265,7 +265,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       ))
 
       val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-        appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+        appArgs.matchEventLogs.toOption, appArgs.eventlog())
       assert(result.length == 2)
       // Validate 2 newest files
       assert(result(0).eventLog.getName.equals(tempFile1.getName))
@@ -309,7 +309,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       ))
 
       val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-        appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+        appArgs.matchEventLogs.toOption, appArgs.eventlog())
       assert(result.length == 3)
       // Validate 3 oldest files
       assert(result(0).eventLog.getName.equals(tempFile2.getName))

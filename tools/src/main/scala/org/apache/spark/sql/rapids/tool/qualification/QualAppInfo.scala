@@ -19,9 +19,10 @@ package org.apache.spark.sql.rapids.tool.qualification
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
 
-import org.apache.hadoop.conf.Configuration
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor}
 import com.nvidia.spark.rapids.tool.profiling._
+import org.apache.hadoop.conf.Configuration
+import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.deploy.history.EventLogFileReader
 import org.apache.spark.internal.Logging
@@ -29,7 +30,6 @@ import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 import org.apache.spark.util.{JsonProtocol, Utils}
-import org.json4s.jackson.JsonMethods.parse
 
 class QualAppInfo(
     numOutputRows: Int,
@@ -254,7 +254,8 @@ case class QualificationSummaryInfo(
   }
 
   def toCSV: String = {
-    s"$appName,$appId,$score,$problems,$sqlDataFrameDuration,$appDuration,$executorCpuTimePercent," +
+    s"$appName,$appId,$score,$problems,$sqlDataFrameDuration," +
+      s"$appDuration,$executorCpuTimePercent," +
       s"$endDurationEstimated,$sqlDurationForProblematic"
   }
 }

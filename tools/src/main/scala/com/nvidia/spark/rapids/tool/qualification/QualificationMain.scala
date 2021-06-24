@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.tool.EventLogPathProcessor
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
 /**
  * A tool to analyze Spark event logs and determine if 
@@ -41,7 +42,8 @@ object QualificationMain extends Logging {
    * Entry point for tests
    */
   def mainInternal(appArgs: QualificationArgs,
-      writeOutput: Boolean = true, dropTempViews: Boolean = false): Int = {
+      writeOutput: Boolean = true,
+      dropTempViews: Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
@@ -58,8 +60,8 @@ object QualificationMain extends Logging {
     }
 
     val qual = new Qualification(outputDirectory)
-    qual.qualifyApps(eventLogInfos, numOutputRows)
-    0
+    val res = qual.qualifyApps(eventLogInfos, numOutputRows)
+    (0, res)
   }
 
 }
