@@ -48,16 +48,17 @@ class Qualification(outputDir: String) extends Logging {
       val (app, _) = QualAppInfo.createApp(path, numRows)
       if (!app.isDefined) {
         logWarning("No Applications found that contain SQL!")
-      }
-      val qualSumInfo = app.get.aggregateStats()
-
-      if (qualSumInfo.isDefined) {
-        allAppsSum += qualSumInfo.get
-
-        // write entire info to csv
-        writeCSV(csvFileWriter, qualSumInfo.get)
       } else {
-        logWarning(s"No aggregated stats for event log at: $path")
+        val qualSumInfo = app.get.aggregateStats()
+
+        if (qualSumInfo.isDefined) {
+          allAppsSum += qualSumInfo.get
+
+          // write entire info to csv
+          writeCSV(csvFileWriter, qualSumInfo.get)
+        } else {
+          logWarning(s"No aggregated stats for event log at: $path")
+        }
       }
     }
     // TODO - sort and write the summary based on score
