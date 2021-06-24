@@ -74,7 +74,8 @@ class Qualification(outputDir: String) extends Logging {
 
   def headerCSV: String = {
     "App Name,App ID,Score,Potential Problems,SQL Dataframe Duration," +
-      "App Duration,Executor CPU Time Percent,App Duration Estimated\n"
+      "App Duration,Executor CPU Time Percent,App Duration Estimated," +
+      "SQL Duration with Potential Problems\n"
     // TODO - just do what was there for testing
     // ,SQL Duration For Problematic"
   }
