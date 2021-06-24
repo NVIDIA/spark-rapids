@@ -105,10 +105,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           assert(bss.hasNext)
-          val mb = bss.next()
+          val alt = bss.next()
           val receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
-          assertResult(10000)(mb.getLength)
+          assertResult(10000)(alt.length)
           assert(!bss.hasNext)
           bss.releaseAcquiredToCatalog()
           mockBuffers.foreach { b: RapidsBuffer =>
@@ -121,7 +121,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assert(bb.deviceBounceBuffer.isClosed)
-    assert(transferRequest.dbb.isClosed)
+    assert(transferRequest.isClosed)
     newMocks()
   }
 
@@ -158,7 +158,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assert(bb.deviceBounceBuffer.isClosed)
-    assert(transferRequest.dbb.isClosed)
+    assert(transferRequest.isClosed)
   }
 
   test("sending buffers larger than bounce buffer") {
@@ -188,6 +188,6 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assert(bb.deviceBounceBuffer.isClosed)
-    assert(transferRequest.dbb.isClosed)
+    assert(transferRequest.isClosed)
   }
 }

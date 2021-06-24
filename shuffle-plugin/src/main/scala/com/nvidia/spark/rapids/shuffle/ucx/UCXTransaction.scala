@@ -21,8 +21,11 @@ import java.util.concurrent.{ConcurrentLinkedQueue, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.shuffle.{MessageType, MetadataTransportBuffer, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportBuffer, TransportUtils}
+import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, RefCountedDirectByteBuffer, RequestType, Transaction, TransactionCallback, TransactionStats, TransactionStatus, TransportUtils}
 import org.openucx.jucx.ucp.UcpRequest
 
 import org.apache.spark.internal.Logging
@@ -44,7 +47,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   private var header: Option[Long] = None
 
   // Type of request this transaction is handling, used to simplify the `respond` method
-  private var messageType: Option[MessageType.Value] = None
+  private var messageType: Option[RequestType.Value] = None
 
   // various threads can access the status during the course of a Transaction
   // the UCX progress thread, client/server pools, and the executor task thread
@@ -55,11 +58,56 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   def decrementPendingAndGet: Long = pending.decrementAndGet
 
+  /**
+   * This will mark the tag as being cancelled for debugging purposes.
+   *
+   * @param tag the cancelled tag
+   */
+  def handleTagCancelled(tag: Long): Unit = {
+    if (registeredByTag.contains(tag)) {
+      val origBuff = registeredByTag(tag)
+      cancelled += origBuff
+    }
+  }
+
+  /**
+   * This will mark the tag as having an error for debugging purposes.
+   *
+   * @param tag      the tag involved in the error
+   */
+  def handleTagError(tag: Long): Unit = {
+    if (registeredByTag.contains(tag)) {
+      val origBuff = registeredByTag(tag)
+      errored += origBuff
+    }
+  }
+
+  /**
+   * This will mark the tag as completed for debugging purposes.
+   *
+   * @param tag the successful tag
+   */
+  def handleTagCompleted(tag: Long): Unit =  {
+    if (registeredByTag.contains(tag)){
+      val origBuff = registeredByTag(tag)
+      completed += origBuff
+    }
+  }
+
   override def getStatus: TransactionStatus.Value = status
+
+  private val registeredByTag = mutable.HashMap[Long, AddressLengthTag]()
 
   // This holds all the registered buffers. It is how we know when are done
   // (when completed == registered)
+  private val cancelled = new ArrayBuffer[AddressLengthTag]()
+  private val registered = new ArrayBuffer[AddressLengthTag]()
+  private val completed = new ArrayBuffer[AddressLengthTag]()
   private val pendingMessages = new ConcurrentLinkedQueue[UcpRequest]()
+
+  // This is for debugging purposes. With trace on, buffers will move from registered
+  // to error if there was a UCX error handling them.
+  private val errored = new ArrayBuffer[AddressLengthTag]()
 
   private var hadError: Boolean = false
 
@@ -86,17 +134,33 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   private[this] var transactionType: UCXTransactionType.Value = _
 
+  private def formatAlts(alts: Seq[AddressLengthTag]): String = {
+    alts.map(x => x.toString).mkString("\n")
+  }
+
   override def getErrorMessage: Option[String] = errorMessage
 
-  override def toString: String = {
-    s"Transaction(" +
+  override def toString: String = toString(log.isTraceEnabled())
+
+  private def toString(verbose: Boolean): String = {
+    val msgPre = s"Transaction(" +
       s"txId=$txId, " +
       s"type=$transactionType, " +
       s"connection=${conn.toString}, " +
       s"status=$status, " +
       s"errorMessage=$errorMessage, " +
       s"totalMessages=$total, " +
-      s"pending=$pending)"
+      s"pending=$pending"
+
+    if (verbose) {
+      msgPre +
+        s"\nregistered=\n${formatAlts(registered)}" +
+        s"\ncompleted=\n${formatAlts(completed)}" +
+        s"\ncancelled=\n${formatAlts(cancelled)}" +
+        s"\nerrored=\n${formatAlts(errored)})"
+    } else {
+      msgPre + ")"
+    }
   }
 
   /**
@@ -177,6 +241,26 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
           }
         }
       }
+  }
+
+  /**
+   * Register an [[AddressLengthTag]] for a send transaction
+   */
+  def registerForSend(alt: AddressLengthTag): Unit = {
+    registeredByTag.put(alt.tag, alt)
+    registered += alt
+    logTrace(s"Assigned tag for send ${TransportUtils.toHex(alt.tag)} for message at " +
+      s"buffer ${alt.address} with size ${alt.length}")
+  }
+
+  /**
+   * Register an [[AddressLengthTag]] for a receive transaction
+   */
+  def registerForReceive(alt: AddressLengthTag): Unit = {
+    registered += alt
+    registeredByTag.put(alt.tag, alt)
+    logTrace(s"Assigned tag for receive ${TransportUtils.toHex(alt.tag)} for message at " +
+      s"buffer ${alt.address} with size ${alt.length}")
   }
 
   def registerPendingMessage(request: UcpRequest): Unit = {
@@ -285,7 +369,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
   var callbackCalled: Boolean = false
 
-  private var activeMessageData: Option[TransportBuffer] = None
+  private var activeMessageData: Option[RefCountedDirectByteBuffer] = None
 
   override def respond(response: ByteBuffer,
                        cb: TransactionCallback): Transaction = {
@@ -294,7 +378,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
 
     conn match {
       case serverConnection: UCXServerConnection =>
-        serverConnection.send(peerExecutorId(), messageType.get, this.getHeader, response, cb)
+        serverConnection.respond(peerExecutorId(), messageType.get, this.getHeader, response, cb)
       case _ =>
         throw new IllegalStateException("Tried to respond using a client connection. " +
           "This is not supported.")
@@ -302,9 +386,9 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   def complete(status: TransactionStatus.Value,
-               messageType: Option[MessageType.Value] = None,
+               messageType: Option[RequestType.Value] = None,
                header: Option[Long] = None,
-               message: Option[TransportBuffer] = None,
+               message: Option[RefCountedDirectByteBuffer] = None,
                errorMessage: Option[String] = None): Unit = {
     setHeader(header)
     setActiveMessageData(message)
@@ -319,15 +403,16 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
       errorMessage = Option(errorMsg))
   }
 
-  def completeCancelled(messageType: MessageType.Value, hdr: Long): Unit = {
+  def completeCancelled(requestType: RequestType.Value, hdr: Long): Unit = {
     complete(TransactionStatus.Cancelled,
-      messageType = Option(messageType),
+      messageType = Option(requestType),
       header = Option(hdr))
   }
 
-  def completeWithSuccess(messageType: MessageType.Value,
-      hdr: Option[Long],
-      message: Option[TransportBuffer]): Unit = {
+  def completeWithSuccess(
+    messageType: RequestType.Value,
+    hdr: Option[Long],
+    message: Option[RefCountedDirectByteBuffer]): Unit = {
     complete(TransactionStatus.Success,
       messageType = Option(messageType),
       header = hdr,
@@ -335,19 +420,15 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
   }
 
   // Reference count is not updated here. The caller is responsible to close
-  private[ucx] def setActiveMessageData(data: Option[TransportBuffer]): Unit = {
+  private[ucx] def setActiveMessageData(data: Option[RefCountedDirectByteBuffer]): Unit = {
     activeMessageData = data
   }
 
   // Reference count is not updated here. The caller is responsible to close
-  override def releaseMessage(): MetadataTransportBuffer = {
+  override def releaseMessage(): RefCountedDirectByteBuffer = {
     val msg = activeMessageData.get
     activeMessageData = None
-    msg match {
-      case mtb: MetadataTransportBuffer => mtb
-      case _ =>
-        throw new IllegalStateException(s"Expected a metadata buffer, but got ${msg}")
-    }
+    msg
   }
 
   private[ucx] def setHeader(id: Option[Long]): Unit = header = id
@@ -358,12 +439,12 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
     header.get
   }
 
-  private[ucx] def setMessageType(msgType: Option[MessageType.Value]): Unit = {
+  private[ucx] def setMessageType(msgType: Option[RequestType.Value]): Unit = {
     messageType = msgType
   }
 
   private[ucx] def setErrorMessage(errorMsg: Option[String]): Unit = {
-    errorMessage = errorMsg
+    errorMessage = errorMessage
   }
 
   override def peerExecutorId(): Long =

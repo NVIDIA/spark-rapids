@@ -305,8 +305,8 @@ object ShuffleMetadata extends Logging{
     TransferRequest.getRootAsTransferRequest(transferRequest)
   }
 
-  def buildBufferTransferRequest(fbb: FlatBufferBuilder, bufferId: Int): Int = {
-    BufferTransferRequest.createBufferTransferRequest(fbb, bufferId)
+  def buildBufferTransferRequest(fbb: FlatBufferBuilder, bufferId: Int, tag: Long): Int = {
+    BufferTransferRequest.createBufferTransferRequest(fbb, bufferId, tag)
   }
 
   def buildBufferTransferResponse(bufferMetas: Seq[BufferMeta]): ByteBuffer = {
@@ -322,17 +322,18 @@ object ShuffleMetadata extends Logging{
     fbb.dataBuffer()
   }
 
-  def buildTransferRequest(id: Long, toIssue: Seq[TableMeta]): ByteBuffer = {
+  def buildTransferRequest(toIssue: Seq[(TableMeta, Long)]): ByteBuffer = {
     val fbb = ShuffleMetadata.getBuilder
     val requestIds = new ArrayBuffer[Int](toIssue.size)
-    toIssue.foreach { case tableMeta =>
+    toIssue.foreach { case (tableMeta, tag) =>
       requestIds.append(
         ShuffleMetadata.buildBufferTransferRequest(
           fbb,
-          tableMeta.bufferMeta().id()))
+          tableMeta.bufferMeta().id(),
+          tag))
     }
     val requestVec = TransferRequest.createRequestsVector(fbb, requestIds.toArray)
-    val transferRequestOffset = TransferRequest.createTransferRequest(fbb, id, requestVec)
+    val transferRequestOffset = TransferRequest.createTransferRequest(fbb, requestVec)
     fbb.finish(transferRequestOffset)
     fbb.dataBuffer()
   }
