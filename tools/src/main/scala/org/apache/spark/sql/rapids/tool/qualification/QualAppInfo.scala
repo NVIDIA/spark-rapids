@@ -88,15 +88,15 @@ class QualAppInfo(
     ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
   }
 
-  private def calculatePercent(first: Long, total: Long): Float = {
+  private def calculatePercent(first: Long, total: Long): Double = {
     val firstDec = BigDecimal.decimal(first)
     val totalDec = BigDecimal.decimal(total)
     val res = (firstDec * 100) / totalDec
     val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
-    resScale.toFloat
+    resScale.toDouble
   }
 
-  private def calculateScore(sqlDataframeDur: Long, appDuration: Long): Float = {
+  private def calculateScore(sqlDataframeDur: Long, appDuration: Long): Double = {
     calculatePercent(sqlDataframeDur, appDuration)
   }
 
@@ -122,7 +122,7 @@ class QualAppInfo(
     }.sum
   }
 
-  private def calculateCpuTimePercent: Float = {
+  private def calculateCpuTimePercent: Double = {
     val totalCpuTime = sqlIDToTaskEndSum.values.map { dur =>
       dur.executorCPUTime
     }.sum
@@ -245,11 +245,11 @@ case class QualSQLExecutionInfo(
 case class QualificationSummaryInfo(
     appName: String,
     appId: String,
-    score: Float,
+    score: Double,
     potentialProblems: String,
     sqlDataFrameDuration: Long,
     appDuration: Long,
-    executorCpuTimePercent: Float,
+    executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long) {
 

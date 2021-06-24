@@ -81,7 +81,18 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           val spark2 = sparkSession
           import spark2.implicits._
           // TODO - temporarily drop
-          val dfQual = appSum.toDF().drop("sqlDurationForProblematic")
+          val schema = new StructType()
+            .add("appName", StringType, true)
+            .add("appID", StringType, true)
+            .add("dfRankTotal", DoubleType, true)
+            .add("potentialProblems", StringType, true)
+            .add("dfDurationFinal", LongType, true)
+            .add("appDuration", LongType, true)
+            .add("executorCPURatio", DoubleType, true)
+            .add("appEndDurationEstimated", BooleanType, true)
+            .add("sqlDurationForProblematic", LongType, true)
+          val dfQual = sparkSession.createDataFrame(appSum, schema)
+            .drop("sqlDurationForProblematic")
           val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
           assert(!dfQual.isEmpty)
           ToolTestUtils.compareDataFrames(dfQual, dfExpect)
