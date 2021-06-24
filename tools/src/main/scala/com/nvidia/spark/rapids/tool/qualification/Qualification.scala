@@ -36,39 +36,47 @@ class Qualification(outputDir: String) extends Logging {
       numRows: Int): ArrayBuffer[QualificationSummaryInfo] = {
     val allAppsSum: ArrayBuffer[QualificationSummaryInfo] = ArrayBuffer[QualificationSummaryInfo]()
 
-    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
-    val appsSorted = try {
-      writeTextHeader(textFileWriter)
-      val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
-      try {
-        writeCSVHeader(csvFileWriter)
 
-        allPaths.foreach { path =>
-          val (app, _) = QualAppInfo.createApp(path, numRows)
-          if (!app.isDefined) {
-            logWarning("No Applications found that contain SQL!")
+    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
+    val appsSorted = try {
+      writeCSVHeader(csvFileWriter)
+
+      allPaths.foreach { path =>
+        val (app, _) = QualAppInfo.createApp(path, numRows)
+        if (!app.isDefined) {
+          logWarning("No Applications found that contain SQL!")
+        } else {
+          val qualSumInfo = app.get.aggregateStats()
+          if (qualSumInfo.isDefined) {
+            allAppsSum += qualSumInfo.get
+            // write entire info to csv
+            writeCSV(csvFileWriter, qualSumInfo.get)
           } else {
-            val qualSumInfo = app.get.aggregateStats()
-            if (qualSumInfo.isDefined) {
-              allAppsSum += qualSumInfo.get
-              // write entire info to csv
-              writeCSV(csvFileWriter, qualSumInfo.get)
-            } else {
-              logWarning(s"No aggregated stats for event log at: $path")
-            }
+            logWarning(s"No aggregated stats for event log at: $path")
           }
         }
-        val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
-        writeTextSummary(textFileWriter, sorted)
-        sorted
-      } finally {
-        csvFileWriter.close()
       }
+      val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration))
+      val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
+      try {
+        writeTextSummary(textFileWriter, sorted)
+      } finally {
+        textFileWriter.close()
+      }
+      sorted
     } finally {
-      writeTextFooter(textFileWriter)
-      textFileWriter.close()
+      csvFileWriter.close()
     }
     appsSorted
+  }
+
+  val problemDurStr = "SQL Duration For Problematic"
+  val headers = Array("App ID", "App Duration", "SQL Dataframe Duration", problemDurStr)
+
+  private def getTextSpacing(sums: Seq[QualificationSummaryInfo]): (Int, Int)= {
+    val sizePadDoubles = problemDurStr.size
+    val appIdMaxSize = sums.map(_.appId.size).max
+    (appIdMaxSize, sizePadDoubles)
   }
 
   def headerCSV: String = {
@@ -79,10 +87,6 @@ class Qualification(outputDir: String) extends Logging {
     // ,SQL Duration For Problematic"
   }
 
-  def headerText: String = {
-    "|App ID                 |App Duration|SQL Dataframe Duration|SQL Duration For Problematic|\n"
-  }
-
   def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
     writer.write(headerCSV)
   }
@@ -91,23 +95,28 @@ class Qualification(outputDir: String) extends Logging {
     writer.write(sumInfo.toCSV + "\n")
   }
 
-  val textSeperator = "+---------------------+-----------------------+-----+------------------+--" +
-    "--------------------+------------+-------------------------+----------------------+\n"
-
-  def writeTextHeader(writer: ToolTextFileWriter): Unit = {
-    writer.write(textSeperator)
-    writer.write(headerText)
-    writer.write(textSeperator)
-  }
-
-  def writeTextFooter(writer: ToolTextFileWriter): Unit = {
-    writer.write(textSeperator)
-  }
-
   def writeTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo]): Unit = {
+    val (appIdMaxSize, sizePadDoubles) = getTextSpacing(sums)
+    val entireHeader = new StringBuffer
+    entireHeader.append("|")
+    val appIdSpaces = " " * (appIdMaxSize - headers(0).size - 1)
+    entireHeader.append(s"$appIdSpaces${headers(0)}|")
+    val doubleSpaces = " " * (sizePadDoubles - 4)
+    entireHeader.append(s"$doubleSpaces${headers(1)}|")
+    entireHeader.append(s"$doubleSpaces${headers(2)}}")
+    entireHeader.append(s"$doubleSpaces${headers(3)}|")
+    entireHeader.append("\n")
+    writer.write(entireHeader.toString)
     sums.foreach { sumInfo =>
-      writer.write(sumInfo.toString + "\n")
+      val appId = sumInfo.appId
+      val appPad = " " * (appIdMaxSize - appId.size - 1)
+      val doublePad = " " * (sizePadDoubles - 4)
+      val appDur = sumInfo.appDuration
+      val sqlDur = sumInfo.sqlDataFrameDuration
+      val sqlProbDur = sumInfo.sqlDurationForProblematic
+      val writeStr = s"$appPad$appId|$doublePad$appDur|$doublePad$sqlDur|$doublePad$sqlProbDur|"
+      writer.write(writeStr + "\n")
     }
   }
 }
