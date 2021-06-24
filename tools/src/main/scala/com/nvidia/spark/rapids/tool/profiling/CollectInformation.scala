@@ -100,7 +100,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        app.runQuery(query = app.generateRapidsUcxGdsProperties + " order by key",
+        app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))

@@ -360,14 +360,14 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
     for (app <- apps) {
-      val rows = app.runQuery(query = app.generateRapidsUcxGdsProperties + " order by key",
+      val rows = app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
         fileWriter = None).collect()
-      assert(rows.length == 22) // 22 properties captured.
+      assert(rows.length == 5) // 5 properties captured.
       // verify  ucx parameters are captured.
-      assert(rows(1)(0).equals("spark.executorEnv.UCX_MAX_RNDV_RAILS"))
+      assert(rows(0)(0).equals("spark.executorEnv.UCX_RNDV_SCHEME"))
 
       //verify gds parameters are captured.
-      assert(rows(11)(0).equals("spark.rapids.memory.gpu.direct.storage.spill.useHostMemory"))
+      assert(rows(1)(0).equals("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
     }
   }
 }
