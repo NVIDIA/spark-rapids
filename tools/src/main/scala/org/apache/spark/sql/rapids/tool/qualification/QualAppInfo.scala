@@ -53,6 +53,9 @@ class QualAppInfo(
 
   // TODO - do I need attempt id as well?
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
+  val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
+  val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
+
 
   // this is used to aggregate metrics for qualification to speed up processing and
   // minimize memory usage

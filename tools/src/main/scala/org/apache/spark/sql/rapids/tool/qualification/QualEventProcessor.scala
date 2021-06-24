@@ -18,6 +18,8 @@ package org.apache.spark.sql.rapids.tool.qualification
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.mutable.ArrayBuffer
+
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.scheduler._
@@ -95,13 +97,16 @@ class QualEventProcessor() extends EventProcessorBase {
     app.lastSQLEndTime = Some(event.time)
     // app.sqlEndTime += (event.executionId -> event.time)
     val sqlInfo = app.sqlStart.get(event.executionId)
-    if (event.executionFailure.isDefined) {
+    // only include duration if it contains no jobs that failed
+    val failedJobs = app.sqlIDtoJobFailures.get(event.executionId)
+    if (event.executionFailure.isDefined || failedJobs.isDefined) {
       logWarning(s"SQL execution id ${event.executionId} had failures, skipping")
       // zero out the cpu and run times since failed
       app.sqlIDToTaskEndSum.get(event.executionId).foreach { sum =>
         sum.executorRunTime = 0
         sum.executorCPUTime = 0
       }
+      app.sqlDurationTime += (event.executionId -> 0)
     } else {
       // if start time not there, use 0 for duration
       val startTime = sqlInfo.map(_.startTime).getOrElse(0L)
@@ -116,12 +121,13 @@ class QualEventProcessor() extends EventProcessorBase {
       event: SparkListenerJobStart): Unit = {
     logDebug("Processing event: " + event.getClass)
     val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
-    val sqlID = ProfileUtils.stringToLong(sqlIDString)
-    if (sqlID.isDefined) {
-      event.stageIds.foreach { id =>
-        app.stageIdToSqlID.getOrElseUpdate(id, sqlID.get)
+    ProfileUtils.stringToLong(sqlIDString).foreach { sqlID =>
+      event.stageIds.foreach { stageId =>
+        app.stageIdToSqlID.getOrElseUpdate(stageId, sqlID)
       }
+      app.jobIdToSqlID(event.jobId) = sqlID
     }
+
   }
 
   override def doSparkListenerJobEnd(
@@ -132,7 +138,15 @@ class QualEventProcessor() extends EventProcessorBase {
     // TODO - verify job failures show up in sql failures
     // do we want to track separately for any failures?
     if (event.jobResult != JobSucceeded) {
+      val sqlID = app.jobIdToSqlID(event.jobId)
       logWarning(s"job failed: ${event.jobId}")
+      // zero out the cpu and run times since failed
+      app.sqlIDToTaskEndSum.get(sqlID).foreach { sum =>
+        sum.executorRunTime = 0
+        sum.executorCPUTime = 0
+      }
+      val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[Int])
+      failedJobs += event.jobId
     }
   }
 
