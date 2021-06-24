@@ -659,13 +659,27 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
-              val col = if (typeCastingNeeded && precisionList.nonEmpty) {
-                val prec = precisionList.dequeue()
+              val col: ColumnVector = if (typeCastingNeeded && precisionList.nonEmpty) {
                 ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
-                  (_, cv) => cv.getType.getTypeId == DTypeEnum.DECIMAL64
-                      && prec <= DType.DECIMAL32_MAX_PRECISION,
-                  (dt, cv) => cv.castTo(DecimalUtil
-                      .createCudfDecimal(prec, dt.asInstanceOf[DecimalType].scale)))
+                  (_, cv) => {
+                    assert(precisionList.nonEmpty)
+                    if (cv.getType.getTypeId == DTypeEnum.DECIMAL64 &&
+                        precisionList(0) <= DType.DECIMAL32_MAX_PRECISION) {
+                      // the decimal value is a 32-bit value stored as a 64-bit value
+                      // return true but don't pop as the `convert` method will pop
+                      true
+                    } else {
+                      if (precisionList(0) > DType.DECIMAL32_MAX_PRECISION) {
+                        // the decimal value is a 64-bit value stored as 64-bit value
+                        // just pop the precision and go to the next item
+                        precisionList.dequeue()
+                      }
+                      // no cast needed
+                      false
+                    }
+                  },
+                  (dt, cv) => cv.castTo(DecimalUtil.createCudfDecimal(precisionList.dequeue,
+                    dt.asInstanceOf[DecimalType].scale)))
               } else {
                 origCol.incRefCount()
               }
