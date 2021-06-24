@@ -32,7 +32,7 @@ object QualificationMain extends Logging {
    */
   def main(args: Array[String]) {
     val sparkSession = ProfileUtils.createSparkSession
-    val exitCode = mainInternal(new QualificationArgs(args))
+    val (exitCode, _) = mainInternal(new QualificationArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
