@@ -28,6 +28,11 @@ echo '### BEGIN OF TEST LOG ###'
 
 . jenkins/version-def.sh
 
+# get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
+BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
+# file size check for pull request. The size of a committed file should be less than 1.5MiB
+pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
+
 ARTF_ROOT="$WORKSPACE/.download"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
@@ -48,10 +53,9 @@ mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TE
     -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
 # Run the unit tests for other Spark versions but dont run full python integration tests
 # NOT ALL TESTS NEEDED FOR PREMERGE
-#env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark301tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
-env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark302tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+# Test latest stable and snapshot shims for a spark minor versions. All others shims test should be covered in nightly pipelines
 env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark303tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
-env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark311tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark304tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
 env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark312tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
 env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark313tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
 # Disabled until Spark 3.2 source incompatibility fixed, see https://github.com/NVIDIA/spark-rapids/issues/2052

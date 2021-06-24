@@ -251,17 +251,17 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       .setDaemon(true)
       .build))
 
-  override def makeClient(localExecutorId: Long,
-                 blockManagerId: BlockManagerId): RapidsShuffleClient = {
+  override def makeClient(blockManagerId: BlockManagerId): RapidsShuffleClient = {
     val peerExecutorId = blockManagerId.executorId.toLong
     val clientConnection = connect(blockManagerId)
     clients.computeIfAbsent(peerExecutorId, _ => {
-      new RapidsShuffleClient(
-        localExecutorId,
+      val client = new RapidsShuffleClient(
         clientConnection,
         this,
         clientExecutor,
         clientCopyExecutor)
+      clientConnection.registerReceiveHandler(MessageType.Buffer)
+      client
     })
   }
 
@@ -302,7 +302,6 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       shuffleServerId,
       requestHandler,
       serverExecutor,
-      serverCopyExecutor,
       bssExecutor,
       rapidsConf)
   }
@@ -361,6 +360,36 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     }
   }
 
+  private case class ClientAndBufferReceiveState(client: RapidsShuffleClient,
+                                                 brs: BufferReceiveState)
+  private val pendingBrs = new ConcurrentHashMap[Long, ClientAndBufferReceiveState]()
+
+  def handleBufferReceive(size: Long, header: Long,
+      finalizeCb: TransportBuffer => Unit): Unit = {
+    logDebug(s"Handling: ${TransportUtils.toHex(header)} with size $size")
+    val clientAndBrs = pendingBrs.get(header)
+    require(clientAndBrs != null,
+      s"Unknown header for a buffer receive: ${TransportUtils.toHex(header)}")
+    clientAndBrs.brs.getBufferWhenReady(finalizeCb, size)
+  }
+
+  def handleBufferTransaction(tx: Transaction): Unit = {
+    val header = tx.getHeader
+    val clientAndBrs = pendingBrs.get(header)
+    require(clientAndBrs != null,
+      s"Unknown header for a buffer receive: ${TransportUtils.toHex(header)}")
+    val client = clientAndBrs.client
+    logDebug(s"Handling for peer ${client.connection.getPeerExecutorId}, " +
+      s"handling ${TransportUtils.toHex(header)}, SUCCESS")
+    client.handleBufferReceive(tx, clientAndBrs.brs)
+  }
+
+  def bufferReceiveStateComplete(header: Long): Unit = {
+    val existing = pendingBrs.remove(header)
+    require(existing != null,
+      s"Unknown header ${TransportUtils.toHex(header)} for a `BufferReceiveState`")
+  }
+
   exec.execute(() => {
     while (inflightStarted) {
       try {
@@ -381,7 +410,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
           }
         }
 
-        var requestIx = 0 
+        var requestIx = 0
         while (requestIx < requestsToHandle.size) {
           var hasBounceBuffers = true
           var fitsInFlight = true
@@ -444,8 +473,15 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
           if (perClientReq.nonEmpty) {
             perClientReq.foreach { case (client, perClientRequests) =>
-              val brs = new BufferReceiveState(perClientRequests.bounceBuffer,
-                perClientRequests.transferRequests)
+              // The transport uses this `brsId` as the active message header for this
+              // `BufferReceiveState`
+              val brsId = UCXConnection.composeBufferHeader(
+                client.connection.getPeerExecutorId, ucx.assignUniqueId())
+              val brs = new BufferReceiveState(brsId,
+                perClientRequests.bounceBuffer,
+                perClientRequests.transferRequests,
+                () => bufferReceiveStateComplete(brsId))
+              pendingBrs.put(brs.id, ClientAndBufferReceiveState(client, brs))
               client.issueBufferReceives(brs)
             }
           } else if (!hasBounceBuffers) {

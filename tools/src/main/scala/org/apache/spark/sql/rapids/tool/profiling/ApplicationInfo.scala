@@ -16,19 +16,23 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import java.io.{BufferedInputStream, InputStream}
+import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.GZIPInputStream
+
 import scala.collection.Map
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 import scala.io.{Codec, Source}
-import scala.math.Ordering
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
-import org.apache.spark.deploy.history.EventLogFileReader
+import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
+import org.apache.spark.io.CompressionCodec
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
@@ -43,7 +47,7 @@ import org.apache.spark.util._
 class ApplicationInfo(
     val numOutputRows: Int,
     val sparkSession: SparkSession,
-    val eventlog: Path,
+    val eventLogInfo: EventLogInfo,
     val index: Int,
     val forQualification: Boolean = false) extends Logging {
 
@@ -126,6 +130,93 @@ class ApplicationInfo(
   val stageCompletionTime: HashMap[Int, Option[Long]] = HashMap.empty[Int, Option[Long]]
   val stageFailureReason: HashMap[Int, Option[String]] = HashMap.empty[Int, Option[String]]
 
+  // A cleaned up version of stageSubmitted
+  lazy val enhancedStage: ArrayBuffer[StageCase] = {
+    val ret: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
+    for (res <- stageSubmitted) {
+      val thisEndTime = stageCompletionTime.getOrElse(res.stageId, None)
+      val thisFailureReason = stageFailureReason.getOrElse(res.stageId, None)
+
+      val durationResult =
+        ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
+      val durationString = durationResult match {
+        case Some(i) => UIUtils.formatDuration(i)
+        case None => ""
+      }
+
+      // only for qualification set the runtime and cputime
+      // could expand later for profiling
+      val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
+      val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
+      val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
+      val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
+
+      val stageNew = res.copy(completionTime = thisEndTime,
+        failureReason = thisFailureReason,
+        duration = durationResult,
+        durationStr = durationString,
+        executorRunTimeSum = runTime,
+        executorCPUTimeSum = cpuTime)
+      ret += stageNew
+    }
+    ret
+  }
+
+  lazy val enhancedJob: ArrayBuffer[JobCase] = {
+    val ret = ArrayBuffer[JobCase]()
+    for (res <- jobStart) {
+      val thisEndTime = jobEndTime.get(res.jobID)
+      val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
+      val durationString = durationResult match {
+        case Some(i) => UIUtils.formatDuration(i)
+        case None => ""
+      }
+
+      val jobNew = res.copy(endTime = thisEndTime,
+        duration = durationResult,
+        durationStr = durationString,
+        jobResult = jobEndResult.get(res.jobID),
+        failedReason = jobFailedReason.get(res.jobID)
+      )
+      ret += jobNew
+    }
+    ret
+  }
+
+  lazy val enhancedSql: ArrayBuffer[SQLExecutionCase] = {
+    val ret: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
+    for (res <- sqlStart) {
+      val thisEndTime = sqlEndTime.get(res.sqlID)
+      val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
+      val durationString = durationResult match {
+        case Some(i) => UIUtils.formatDuration(i)
+        case None => ""
+      }
+      val (containsDataset, sqlQDuration) = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
+        (true, Some(0L))
+      } else {
+        (false, durationResult)
+      }
+      val potProbs = problematicSQL.filter { p =>
+        p.sqlID == res.sqlID && p.reason.nonEmpty
+      }.map(_.reason).mkString(",")
+      val finalPotProbs = if (potProbs.isEmpty) {
+        null
+      } else {
+        potProbs
+      }
+      val sqlExecutionNew = res.copy(endTime = thisEndTime,
+        duration = durationResult,
+        durationStr = durationString,
+        sqlQualDuration = sqlQDuration,
+        hasDataset = containsDataset,
+        problematic = finalPotProbs
+      )
+      ret += sqlExecutionNew
+    }
+    ret
+  }
+
   // From SparkListenerTaskStart & SparkListenerTaskEnd
   // taskStart was not used so comment out for now
   // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
@@ -203,30 +294,62 @@ class ApplicationInfo(
   // Create Spark DataFrame(s) based on ArrayBuffer(s)
   arraybufferToDF()
 
+  private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
+
+  def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
+    EventLogFileWriter.codecName(log) match {
+      case c if (c.isDefined && c.get.equals("gz")) =>
+        val in = new BufferedInputStream(fs.open(log))
+        try {
+          new GZIPInputStream(in)
+        } catch {
+          case e: Throwable =>
+            in.close()
+            throw e
+        }
+      case _ => EventLogFileReader.openEventLog(log, fs)
+    }
+  }
+
   /**
    * Functions to process all the events
    */
   def processEvents(): Unit = {
-    logInfo("Parsing Event Log File: " + eventlog.toString)
+    val eventlog = eventLogInfo.eventLog
 
-    val fs = FileSystem.get(eventlog.toUri,new Configuration())
+    logInfo("Parsing Event Log: " + eventlog.toString)
+
+    // at this point all paths should be valid event logs or event log dirs
+    val fs = eventlog.getFileSystem(new Configuration())
     var totalNumEvents = 0
-
     val eventsProcessor = new EventsProcessor(forQualification)
-    Utils.tryWithResource(EventLogFileReader.openEventLog(eventlog, fs)) { in =>
-      val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-      totalNumEvents = lines.size
-      lines.foreach { line =>
-        try {
-          val event = JsonProtocol.sparkEventFromJson(parse(line))
-          eventsProcessor.processAnyEvent(this, event)
-          logDebug(line)
-        }
-        catch {
-          case e: ClassNotFoundException =>
-            logWarning(s"ClassNotFoundException: ${e.getMessage}")
+    val readerOpt = eventLogInfo match {
+      case dblog: DatabricksEventLog =>
+        Some(new DatabricksRollingEventLogFilesFileReader(fs, eventlog))
+      case apachelog => EventLogFileReader(fs, eventlog)
+    }
+
+    if (readerOpt.isDefined) {
+      val reader = readerOpt.get
+      val logFiles = reader.listEventLogFiles
+      logFiles.foreach { file =>
+        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
+          val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
+          totalNumEvents += lines.size
+          lines.foreach { line =>
+            try {
+              val event = JsonProtocol.sparkEventFromJson(parse(line))
+              eventsProcessor.processAnyEvent(this, event)
+            }
+            catch {
+              case e: ClassNotFoundException =>
+                logWarning(s"ClassNotFoundException: ${e.getMessage}")
+            }
+          }
         }
       }
+    } else {
+      logError(s"Error getting reader for ${eventlog.getName}")
     }
     logInfo("Total number of events parsed: " + totalNumEvents)
   }
@@ -355,93 +478,19 @@ class ApplicationInfo(
 
     // For sqlDF
     if (sqlStart.nonEmpty) {
-      val sqlStartNew: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
-      for (res <- sqlStart) {
-        val thisEndTime = sqlEndTime.get(res.sqlID)
-        val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
-        val (containsDataset, sqlQDuration) = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
-          (true, Some(0L))
-        } else {
-          (false, durationResult)
-        }
-        val potProbs = problematicSQL.filter { p =>
-          p.sqlID == res.sqlID && p.reason.nonEmpty
-        }.map(_.reason).mkString(",")
-        val finalPotProbs = if (potProbs.isEmpty) {
-          null
-        } else {
-          potProbs
-        }
-        val sqlExecutionNew = res.copy(endTime = thisEndTime,
-          duration = durationResult,
-          durationStr = durationString,
-          sqlQualDuration = sqlQDuration,
-          hasDataset = containsDataset,
-          problematic = finalPotProbs
-        )
-        sqlStartNew += sqlExecutionNew
-      }
-      allDataFrames += (s"sqlDF_$index" -> sqlStartNew.toDF)
+      allDataFrames += (s"sqlDF_$index" -> enhancedSql.toDF)
     } else {
       logInfo("No SQL Execution Found. Skipping generating SQL Execution DataFrame.")
     }
 
     // For jobDF
     if (jobStart.nonEmpty) {
-      val jobStartNew: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
-      for (res <- jobStart) {
-        val thisEndTime = jobEndTime.get(res.jobID)
-        val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
-
-        val jobNew = res.copy(endTime = thisEndTime,
-          duration = durationResult,
-          durationStr = durationString,
-          jobResult = jobEndResult.get(res.jobID),
-          failedReason = jobFailedReason.get(res.jobID)
-        )
-        jobStartNew += jobNew
-      }
-      allDataFrames += (s"jobDF_$index" -> jobStartNew.toDF)
+      allDataFrames += (s"jobDF_$index" -> enhancedJob.toDF)
     }
 
     // For stageDF
     if (stageSubmitted.nonEmpty) {
-      val stageSubmittedNew: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-      for (res <- stageSubmitted) {
-        val thisEndTime = stageCompletionTime.getOrElse(res.stageId, None)
-        val thisFailureReason = stageFailureReason.getOrElse(res.stageId, None)
-
-        val durationResult =
-          ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i)
-          case None => ""
-        }
-
-        // only for qualification set the runtime and cputime
-        // could expand later for profiling
-        val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
-        val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
-        val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
-        val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
-
-        val stageNew = res.copy(completionTime = thisEndTime,
-          failureReason = thisFailureReason,
-          duration = durationResult,
-          durationStr = durationString,
-          executorRunTimeSum = runTime,
-          executorCPUTimeSum = cpuTime)
-        stageSubmittedNew += stageNew
-      }
-      allDataFrames += (s"stageDF_$index" -> stageSubmittedNew.toDF)
+      allDataFrames += (s"stageDF_$index" -> enhancedStage.toDF)
     }
 
     // For taskDF
@@ -449,17 +498,15 @@ class ApplicationInfo(
       if (taskEnd.nonEmpty) {
         allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
       }
-    }
 
-    // For sqlMetricsDF
-    if (sqlPlanMetrics.nonEmpty) {
-      logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
-      allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
-    } else {
-      logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
-    }
+      // For sqlMetricsDF
+      if (sqlPlanMetrics.nonEmpty) {
+        logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
+        allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
+      } else {
+        logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
+      }
 
-    if (!forQualification) {
       // For resourceProfilesDF
       if (this.resourceProfiles.nonEmpty) {
         this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
@@ -568,8 +615,8 @@ class ApplicationInfo(
 
   // Function to generate a query for printing Application information
   def generateAppInfo: String =
-    s"""select $index as appIndex, appId, startTime, endTime, duration,
-       |durationStr, sparkVersion, gpuMode
+    s"""select $index as appIndex, appName, appId, startTime, endTime, duration,
+       |durationStr, sparkVersion, gpuMode as pluginEnabled
        |from appDF_$index
        |""".stripMargin
 
@@ -578,50 +625,75 @@ class ApplicationInfo(
     // If both blockManagersDF and resourceProfilesDF exist:
     if (allDataFrames.contains(s"blockManagersDF_$index") &&
         allDataFrames.contains(s"resourceProfilesDF_$index")) {
-
-      s"""select $index as appIndex, e.executorID, e.totalCores,
-         |b.maxMem, b.maxOnHeapMem,b.maxOffHeapMem,
-         |r.exec_cpu, r.exec_mem, r.exec_gpu, r.exec_offheap, r.task_cpu, r.task_gpu
-         |from executorsDF_$index e, blockManagersDF_$index b, resourceProfilesDF_$index r
-         |where e.executorID=b.executorID
-         |and e.resourceProfileId=r.id
-         |""".stripMargin
+      s"""select $index as appIndex,
+         |t.resourceProfileId, t.numExecutors, t.totalCores as executorCores,
+         |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
+         |rp.executorMemory, rp.numGpusPerExecutor,
+         |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
+         |from (select resourceProfileId, totalCores ,
+         |count(executorId) as numExecutors,
+         |max(executorId) as maxId
+         |from executorsDF_$index
+         |group by resourceProfileId, totalCores) t
+         |inner join resourceProfilesDF_$index rp
+         |on t.resourceProfileId = rp.id
+         |inner join blockManagersDF_$index bm
+         |on t.maxId = bm.executorId""".stripMargin
     } else if (allDataFrames.contains(s"blockManagersDF_$index") &&
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
-      s"""select $index as appIndex,e.executorID, e.totalCores,
-         |b.maxMem, b.maxOnHeapMem,b.maxOffHeapMem,
-         |null as exec_cpu, null as exec_mem, null as exec_gpu,
-         |null as exec_offheap, null as task_cpu, null as task_gpu
-         |from executorsDF_$index e, blockManagersDF_$index b
-         |where e.executorID=b.executorID
-         |""".stripMargin
+      s"""select $index as appIndex,
+         |t.numExecutors, t.totalCores as executorCores,
+         |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
+         |null as executorMemory, null as numGpusPerExecutor,
+         |null as executorOffHeap, null as taskCpu, null as taskGpu
+         |from (select resourceProfileId, totalCores,
+         |count(executorId) as numExecutors,
+         |max(executorId) as maxId
+         |from executorsDF_$index
+         |group by resourceProfileId, totalCores) t
+         |inner join blockManagersDF_$index bm
+         |on t.maxId = bm.executorId""".stripMargin
+
     } else if (!allDataFrames.contains(s"blockManagersDF_$index") &&
         allDataFrames.contains(s"resourceProfilesDF_$index")) {
-      s"""select $index as appIndex,e.executorID, e.totalCores,
+      s"""select $index as appIndex,
+         |t.resourceProfileId,
+         |t.numExecutors,
+         |t.totalCores as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |r.exec_cpu, r.exec_mem, r.exec_gpu, r.exec_offheap, r.task_cpu, r.task_gpu
-         |from executorsDF_$index e, resourceProfilesDF_$index r
-         |where e.resourceProfileId=r.id
+         |rp.executorMemory, rp.numGpusPerExecutor,
+         |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
+         |from (select resourceProfileId, totalCores,
+         |count(executorId) as numExecutors,
+         |max(executorId) as maxId
+         |from executorsDF_$index
+         |group by resourceProfileId, totalCores) t
+         |inner join resourceProfilesDF_$index rp
+         |on t.resourceProfileId = rp.id
          |""".stripMargin
     } else {
-      s"""select $index as appIndex,executorID, totalCores
+      s"""select $index as appIndex,
+         |count(executorID) as numExecutors,
+         |first(totalCores) as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |null as exec_cpu, null as exec_mem, null as exec_gpu,
-         |null as exec_offheap, null as task_cpu, null as task_gpu
+         |null as executorMemory, null as numGpusPerExecutor,
+         |null as executorOffHeap, null as taskCpu, null as taskGpu
          |from executorsDF_$index
+         |group by appIndex
          |""".stripMargin
     }
   }
 
   // Function to generate a query for printing Rapids related Spark properties
-  def generateRapidsProperties: String =
-    s"""select key,value as value_app$index
+  def generateRapidsProperties: String = {
+    s"""select key as propertyName,value as appIndex_$index
        |from propertiesDF_$index
        |where source ='spark'
        |and key like 'spark.rapids%'
        |""".stripMargin
+  }
 
   // Function to generate the SQL string for aggregating task metrics columns.
   def generateAggSQLString: String = {
@@ -749,17 +821,17 @@ class ApplicationInfo(
   }
 
   def getFailedTasks: String = {
-    s"""select stageId, stageAttemptId, taskId, attempt,
-       |substr(endReason, 1, 100) as endReason_first100char
+    s"""select $index as appIndex, stageId, stageAttemptId, taskId, attempt,
+       |substr(endReason, 1, 100) as failureReason
        |from taskDF_$index
        |where successful = false
-       |order by stageId, stageAttemptId, taskId, attempt
+       |order by appIndex, stageId, stageAttemptId, taskId, attempt
        |""".stripMargin
   }
 
   def getFailedStages: String = {
-    s"""select stageId, attemptId, name, numTasks,
-       |substr(failureReason, 1, 100) as failureReason_first100char
+    s"""select $index as appIndex, stageId, attemptId, name, numTasks,
+       |substr(failureReason, 1, 100) as failureReason
        |from stageDF_$index
        |where failureReason is not null
        |order by stageId, attemptId
@@ -767,8 +839,8 @@ class ApplicationInfo(
   }
 
   def getFailedJobs: String = {
-    s"""select jobID, jobResult,
-       |substr(failedReason, 1, 100) as failedReason_first100char
+    s"""select $index as appIndex, jobID, jobResult,
+       |substr(failedReason, 1, 100) as failureReason
        |from jobDF_$index
        |where jobResult <> 'JobSucceeded'
        |order by jobID
@@ -791,8 +863,8 @@ class ApplicationInfo(
   }
 
   def unsupportedSQLPlan: String = {
-    s"""select sqlID, nodeID, nodeName,
-       |substr(nodeDesc, 1, 100) nodeDesc_first100char
+    s"""select $index as appIndex, sqlID, nodeID, nodeName,
+       |substr(nodeDesc, 1, 100) nodeDescription
        |from unsupportedSQLplan_$index""".stripMargin
   }
 
@@ -878,5 +950,41 @@ class ApplicationInfo(
       case u if u.matches(".*UDF.*") => "UDF"
       case _ => ""
     }
+  }
+}
+
+object ApplicationInfo extends Logging {
+  def createApps(
+      allPaths: Seq[EventLogInfo],
+      numRows: Int,
+      sparkSession: SparkSession,
+      startIndex: Int = 1,
+      forQualification: Boolean = false): (Seq[ApplicationInfo], Int) = {
+    var index: Int = startIndex
+    var errorCode = 0
+    val apps = allPaths.flatMap { path =>
+      try {
+        // This apps only contains 1 app in each loop.
+        val app = new ApplicationInfo(numRows, sparkSession, path, index, forQualification)
+        EventLogPathProcessor.logApplicationInfo(app)
+        index += 1
+        Some(app)
+      } catch {
+        case json: com.fasterxml.jackson.core.JsonParseException =>
+          logWarning(s"Error parsing JSON: $path")
+          errorCode = 1
+          None
+        case il: IllegalArgumentException =>
+          logWarning(s"Error parsing file: $path", il)
+          errorCode = 2
+          None
+        case e: Exception =>
+          // catch all exceptions and skip that file
+          logWarning(s"Got unexpected exception processing file: $path", e)
+          errorCode = 3
+          None
+      }
+    }
+    (apps, errorCode)
   }
 }
