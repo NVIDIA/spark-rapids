@@ -123,10 +123,13 @@ class QualAppInfo(
   }
 
   private def calculateCpuTimePercent: Double = {
-    val totalCpuTime = sqlIDToTaskEndSum.values.map { dur =>
+    val validSums = sqlIDToTaskEndSum.filterNot { case (sqlID, _) =>
+      sqlIDToDataSetCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
+    }
+    val totalCpuTime = validSums.values.map { dur =>
       dur.executorCPUTime
     }.sum
-    val totalRunTime = sqlIDToTaskEndSum.values.map { dur =>
+    val totalRunTime = validSums.values.map { dur =>
       dur.executorRunTime
     }.sum
     calculatePercent(totalCpuTime, totalRunTime)
