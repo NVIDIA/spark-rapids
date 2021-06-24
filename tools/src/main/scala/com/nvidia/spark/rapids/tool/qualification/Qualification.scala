@@ -73,13 +73,13 @@ class Qualification(outputDir: String) extends Logging {
 
   def headerCSV: String = {
     "App Name,App ID,Score,Potential Problems,SQL Dataframe Duration," +
-      "App Duration,Executor CPU Time Percent,App Duration Estimated"
+      "App Duration,Executor CPU Time Percent,App Duration Estimated\n"
     // TODO - just do what was there for testing
     // ,SQL Duration For Problematic"
   }
 
   def headerText: String = {
-    "|App ID                 |SQL Dataframe Duration|App Duration|SQL Duration For Problematic|"
+    "|App ID                 |SQL Dataframe Duration|App Duration|SQL Duration For Problematic|\n"
   }
 
   def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
@@ -87,11 +87,11 @@ class Qualification(outputDir: String) extends Logging {
   }
 
   def writeCSV(writer: ToolTextFileWriter, sumInfo: QualificationSummaryInfo): Unit = {
-    writer.write(sumInfo.toCSV)
+    writer.write(sumInfo.toCSV + "\n")
   }
 
   val textSeperator = "+---------------------+-----------------------+-----+------------------+--" +
-    "--------------------+------------+-------------------------+----------------------+"
+    "--------------------+------------+-------------------------+----------------------+\n"
 
   def writeTextHeader(writer: ToolTextFileWriter): Unit = {
     writer.write(textSeperator)
@@ -104,6 +104,6 @@ class Qualification(outputDir: String) extends Logging {
   }
 
   def writeTextSummary(writer: ToolTextFileWriter, sumInfo: QualificationSummaryInfo): Unit = {
-    writer.write(sumInfo.toString)
+    writer.write(sumInfo.toString + "\n")
   }
 }
