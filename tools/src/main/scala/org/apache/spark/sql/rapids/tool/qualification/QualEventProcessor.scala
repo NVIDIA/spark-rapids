@@ -95,13 +95,15 @@ class QualEventProcessor() extends EventProcessorBase {
     app.lastSQLEndTime = Some(event.time)
     // app.sqlEndTime += (event.executionId -> event.time)
     val sqlInfo = app.sqlStart.get(event.executionId)
-    // if start time not there, use 0 for duration
-    val startTime = sqlInfo.map(_.startTime).getOrElse(0L)
-    val sqlDuration = event.time - startTime
-    app.sqlDurationTime += (event.executionId -> sqlDuration)
-    logWarning("adding in sql duration of: " + sqlDuration)
-    // TODO - check for failures
-    // event.executionFailure
+    if (event.executionFailure.isDefined) {
+      logWarning(s"SQL execution id ${event.executionId} had failures, skipping")
+    } else {
+      // if start time not there, use 0 for duration
+      val startTime = sqlInfo.map(_.startTime).getOrElse(0L)
+      val sqlDuration = event.time - startTime
+      app.sqlDurationTime += (event.executionId -> sqlDuration)
+      logWarning("adding in sql duration of: " + sqlDuration)
+    }
   }
 
   override def doSparkListenerJobStart(
@@ -124,6 +126,9 @@ class QualEventProcessor() extends EventProcessorBase {
     app.lastJobEndTime = Some(event.time)
     // TODO - verify job failures show up in sql failures
     // do we want to track separately for any failures?
+    if (event.jobResult != JobSucceeded) {
+      logWarning(s"job failed: ${event.jobId}")
+    }
   }
 
   override def doSparkListenerSQLAdaptiveExecutionUpdate(

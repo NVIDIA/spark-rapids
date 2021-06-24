@@ -86,8 +86,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val dfQualTemp = sparkSession.createDataFrame(dfTmp.rdd, schema)
       dfQualTemp.show()
       if (shouldReturnEmpty) {
-        
-        assert(dfQualTemp.isEmpty)
+        assert(appSum.head.sqlDataFrameDuration == 0.0)
       } else {
         val dfExpect = readExpectedFile(resultExpectation)
         val dfQual = dfQualTemp.drop("sqlDurationForProblematic")
