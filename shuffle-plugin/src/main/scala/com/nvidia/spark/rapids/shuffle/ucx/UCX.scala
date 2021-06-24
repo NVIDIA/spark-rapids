@@ -183,7 +183,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       worker = context.newWorker(workerParams)
       logInfo(s"UCX Worker created")
       if (rapidsConf.shuffleUcxUseSockaddr) {
-        val secureRandom = new SecureRandom()
         // For now backward endpoints are not used, but need to create
         // an endpoint from connectionHandler in order to use ucpListener connections.
         // With AM this endpoints would be used as replyEp.
@@ -199,7 +198,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           rapidsConf.shuffleUcxListenerStartPort
         } else {
           // TODO: remove this once ucx1.11 with random port selection would be released
-          1024 + secureRandom.nextInt(65535 - 1024)
+          1024 + new SecureRandom().nextInt(65535 - 1024)
         }
         var attempt = 0
         while (listener.isEmpty && attempt < maxRetries) {
