@@ -122,7 +122,7 @@ else
     # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for
     # more lineant configuration, else it will set them to 1 as spurious task failures are not expected
     # for Spark 3.1.1+
-    VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|awk '/version\ [0-9.]+$/{print $NF}'`
+    VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|grep -v Scala|awk '/version\ [0-9.]+/{print $NF}'`
     [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
     echo "Detected Spark version $VERSION_STRING"
 
