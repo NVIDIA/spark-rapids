@@ -19,11 +19,11 @@ package com.nvidia.spark.rapids.shuffle.ucx
 import java.io._
 import java.net._
 import java.nio.ByteBuffer
+import java.security.SecureRandom
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable.ArrayBuffer
-import scala.util.Random
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
@@ -183,6 +183,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       worker = context.newWorker(workerParams)
       logInfo(s"UCX Worker created")
       if (rapidsConf.shuffleUcxUseSockaddr) {
+        val secureRandom = new SecureRandom()
         // For now backward endpoints are not used, but need to create
         // an endpoint from connectionHandler in order to use ucpListener connections.
         // With AM this endpoints would be used as replyEp.
@@ -198,7 +199,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           rapidsConf.shuffleUcxListenerStartPort
         } else {
           // TODO: remove this once ucx1.11 with random port selection would be released
-          1024 + Random.nextInt(65535 - 1024)
+          1024 + secureRandom.nextInt(65535 - 1024)
         }
         var attempt = 0
         while (listener.isEmpty && attempt < maxRetries) {
