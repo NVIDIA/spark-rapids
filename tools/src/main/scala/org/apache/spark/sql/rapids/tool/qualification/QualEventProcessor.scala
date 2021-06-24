@@ -97,6 +97,11 @@ class QualEventProcessor() extends EventProcessorBase {
     val sqlInfo = app.sqlStart.get(event.executionId)
     if (event.executionFailure.isDefined) {
       logWarning(s"SQL execution id ${event.executionId} had failures, skipping")
+      // zero out the cpu and run times since failed
+      app.sqlIDToTaskEndSum.get(event.executionId).foreach { sum =>
+        sum.executorRunTime = 0
+        sum.executorCPUTime = 0
+      }
     } else {
       // if start time not there, use 0 for duration
       val startTime = sqlInfo.map(_.startTime).getOrElse(0L)
