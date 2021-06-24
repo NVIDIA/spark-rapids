@@ -100,24 +100,27 @@ class Qualification(outputDir: String) extends Logging {
     val (appIdMaxSize, sizePadLongs) = getTextSpacing(sums)
     val entireHeader = new StringBuffer
     entireHeader.append("|")
-    val appIdSpaces = " " * (appIdMaxSize - headers(0).size - 1)
+    val appIdSpaces = " " * (appIdMaxSize - headers(0).size)
     entireHeader.append(s"$appIdSpaces${headers(0)}|")
     entireHeader.append(s"${" " * (sizePadLongs - headers(1).size - 1)}${headers(1)}|")
     entireHeader.append(s"${" " * (sizePadLongs - headers(2).size - 1)}${headers(2)}|")
     entireHeader.append(s"${" " * (sizePadLongs - headers(3).size - 1)}${headers(3)}|")
     entireHeader.append("\n")
     writer.write(entireHeader.toString)
+    val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
+    writer.write(sep)
+
     sums.foreach { sumInfo =>
       val appId = sumInfo.appId
-      val appPad = " " * (appIdMaxSize - appId.size - 1)
+      val appPad = " " * (appIdMaxSize - appId.size)
       val appDur = sumInfo.appDuration.toString
       val sqlDur = sumInfo.sqlDataFrameDuration.toString
       val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
       val appDurPad = " " * (sizePadLongs - appDur.size)
       val sqlDurPad = " " * (sizePadLongs - sqlDur.size)
       val sqlProbDurPad = " " * (sizePadLongs - sqlProbDur.size)
-      val writeStr = s"$appPad$appId|$appDurPad$appDur|$sqlDurPad$sqlDur|$sqlProbDurPad$sqlProbDur|"
-      writer.write(writeStr + "\n")
+      val wStr = s"|$appPad$appId|$appDurPad$appDur|$sqlDurPad$sqlDur|$sqlProbDurPad$sqlProbDur|"
+      writer.write(wStr + "\n")
     }
   }
 }
