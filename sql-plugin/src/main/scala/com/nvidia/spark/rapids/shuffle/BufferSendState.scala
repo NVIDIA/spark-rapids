@@ -29,9 +29,10 @@ import org.apache.spark.internal.Logging
  *
  * The class implements the Iterator interface.
  *
- * On next(), a set of RapidsBuffer are copied onto a bounce buffer, and a
- * `MemoryBuffer` slice of the bounce buffer is returned. Buffers are copied to the bounce
- * buffer in `TransferRequest` order. The receiver has the same conventions.
+ * On next(), a set of RapidsBuffer are copied onto a bounce buffer, and the
+ * `AddressLengthTag` of the bounce buffer is returned. By convention, the tag used
+ * is that of the first buffer contained in the payload. Buffers are copied to the bounce
+ * buffer in TransferRequest order. The receiver has the same conventions.
  *
  * Synchronization with `serverStream` is outside of this class. It is assumed that the caller
  * has several `BufferSendState` iterators and on calling next on this collection, it will
@@ -54,20 +55,18 @@ class BufferSendState(
     sendBounceBuffers: SendBounceBuffers,
     requestHandler: RapidsShuffleRequestHandler,
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
-    extends Iterator[MemoryBuffer] with AutoCloseable with Logging with Arm {
+    extends Iterator[AddressLengthTag] with AutoCloseable with Logging with Arm {
 
-  class SendBlock(val bufferId: Int, tableSize: Long) extends BlockWithSize {
+  class SendBlock(val bufferId: Int,
+      val tag: Long, tableSize: Long) extends BlockWithSize {
     override def size: Long = tableSize
   }
 
   private[this] var isClosed = false
 
-  private[this] val (peerBufferReceiveHeader: Long,
-      bufferMetas: Array[BufferMeta],
-      blocksToSend: Seq[SendBlock]) = {
-    withResource(transaction.releaseMessage()) { mtb =>
-      val transferRequest = ShuffleMetadata.getTransferRequest(mtb.getBuffer())
-      val peerBufferReceiveHeader = transferRequest.id()
+  private[this] val (bufferMetas: Array[BufferMeta], blocksToSend: Seq[SendBlock]) = {
+    withResource(transaction.releaseMessage()) { msg =>
+      val transferRequest = ShuffleMetadata.getTransferRequest(msg.getBuffer())
 
       val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
 
@@ -77,18 +76,13 @@ class BufferSendState(
         withResource(requestHandler.acquireShuffleBuffer(
           bufferTransferRequest.bufferId())) { table =>
           bufferMetas(ix) = table.meta.bufferMeta()
-          new SendBlock(bufferTransferRequest.bufferId(), table.size)
+          new SendBlock(bufferTransferRequest.bufferId(),
+            bufferTransferRequest.tag(), table.size)
         }
       }
 
-      (peerBufferReceiveHeader, bufferMetas, blocksToSend)
+      (bufferMetas, blocksToSend)
     }
-  }
-
-  // the header to use for all sends in this `BufferSendState` (sent to us
-  // by the peer)
-  def getPeerBufferReceiveHeader: Long = {
-    peerBufferReceiveHeader
   }
 
   private[this] val windowedBlockIterator =
@@ -143,7 +137,7 @@ class BufferSendState(
     }
   }
 
-  def next(): MemoryBuffer = synchronized {
+  def next(): AddressLengthTag = synchronized {
     require(acquiredBuffs.isEmpty,
       "Called next without calling `releaseAcquiredToCatalog` first")
 
@@ -187,7 +181,10 @@ class BufferSendState(
           buffOffset += blockRange.rangeSize()
         }
 
-        val buffSlice = bounceBuffToUse.slice(0, buffOffset)
+        val alt = AddressLengthTag.from(bounceBuffToUse,
+          blockRanges.head.block.tag)
+
+        alt.resetLength(buffOffset)
 
         if (windowedBlockIterator.hasNext) {
           blockRanges = windowedBlockIterator.next()
@@ -196,7 +193,7 @@ class BufferSendState(
           hasMoreBlocks = false
         }
 
-        buffSlice
+        alt
       } else {
         throw new NoSuchElementException("BufferSendState is already done, yet next was called")
       }

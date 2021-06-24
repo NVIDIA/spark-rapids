@@ -62,16 +62,21 @@ trait RapidsShuffleFetchHandler {
  * the transport to schedule/throttle these requests to fit within the maximum bytes in flight.
  * @param client client used to issue the requests
  * @param tableMeta shuffle metadata describing the table
+ * @param tag a transport specific tag to use for this transfer
  * @param handler a specific handler that is waiting for this batch
  */
 case class PendingTransferRequest(client: RapidsShuffleClient,
                                   tableMeta: TableMeta,
+                                  tag: Long,
                                   handler: RapidsShuffleFetchHandler) {
   val getLength: Long = tableMeta.bufferMeta.size()
 }
 
 /**
- * The client makes requests via a `ClientConnection` obtained from the [[RapidsShuffleTransport]].
+ * The client makes requests via a [[Connection]] obtained from the [[RapidsShuffleTransport]].
+ *
+ * The [[Connection]] follows a single threaded callback model, so this class posts operations
+ * to an `Executor` as quickly as it gets them from the [[Connection]].
  *
  * This class handles fetch requests from [[RapidsShuffleIterator]], turning them into
  * [[ShuffleMetadata]] messages, and shuffle `TransferRequest`s.
@@ -79,6 +84,9 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
  * Its counterpart is the [[RapidsShuffleServer]] on a specific peer executor, specified by
  * `connection`.
  *
+ * @param localExecutorId this id is sent to the server, it is required for the protocol as
+ *                        the server needs to pick an endpoint to send a response back to this
+ *                        executor.
  * @param connection a connection object against a remote executor
  * @param transport used to get metadata buffers and to work with the throttle mechanism
  * @param exec Executor used to handle tasks that take time, and should not be in the
@@ -86,6 +94,7 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
  * @param clientCopyExecutor Executors used to handle synchronous mem copies
  */
 class RapidsShuffleClient(
+    localExecutorId: Long,
     val connection: ClientConnection,
     transport: RapidsShuffleTransport,
     exec: Executor,
@@ -98,6 +107,7 @@ class RapidsShuffleClient(
     /**
      * When a metadata response is received, this event is issued to handle it.
      * @param tx the [[Transaction]] to be closed after consuming the response
+     * @param resp the response metadata buffer
      * @param shuffleRequests blocks to be requested
      * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
      */
@@ -117,6 +127,8 @@ class RapidsShuffleClient(
     /**
      * When a buffer is received, this event is posted to remove from the progress thread
      * the copy, and the callback into the iterator.
+     *
+     * Currently not used. There is a TODO below.
      *
      * @param tx live transaction for the buffer, to be closed after the buffer is handled
      * @param bufferReceiveState the object maintaining state for receives
@@ -178,7 +190,7 @@ class RapidsShuffleClient(
               ShuffleMetadata.getMetadataRequest(metaReq.getBuffer()))}")
 
         // make request
-        connection.request(MessageType.MetadataRequest, metaReq.acquire(), tx => {
+        connection.request(RequestType.MetadataRequest, metaReq.acquire(), tx => {
           withResource(metaReq) { _ =>
             logDebug(s"at callback for ${tx}")
             asyncOrBlock(HandleMetadataResponse(tx, shuffleRequests, handler))
@@ -203,14 +215,14 @@ class RapidsShuffleClient(
       shuffleRequests: Seq[ShuffleBlockBatchId],
       handler: RapidsShuffleFetchHandler): Unit = {
     withResource(tx) { _ =>
-      withResource(tx.releaseMessage()) { mtb =>
+      withResource(tx.releaseMessage()) { resp =>
         withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
           try {
             tx.getStatus match {
               case TransactionStatus.Success =>
                 // start the receives
-                val metadataResponse =
-                  ShuffleMetadata.getMetadataResponse(mtb.getBuffer())
+                val metadataResponse: MetadataResponse =
+                  ShuffleMetadata.getMetadataResponse(resp.getBuffer())
 
                 logDebug(s"Received from ${tx} response: \n:" +
                   s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
@@ -239,11 +251,7 @@ class RapidsShuffleClient(
    * @param bufferReceiveState object tracking the state of pending TransferRequests
    */
   def issueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
-    doIssueBufferReceives(bufferReceiveState)
-  }
-
-  def handleBufferReceive(tx: Transaction, bufferReceiveState: BufferReceiveState): Unit = {
-    asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState))
+    asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
   }
 
   /**
@@ -254,18 +262,40 @@ class RapidsShuffleClient(
    *                           the transport's throttle logic.
    */
   private[shuffle] def doIssueBufferReceives(bufferReceiveState: BufferReceiveState): Unit = {
-    try {
-      logDebug(s"Adding ${connection.getPeerExecutorId} BRS " +
-        s"${TransportUtils.toHex(bufferReceiveState.id)}")
 
-      // send a transfer request to kick off receives
-      sendTransferRequest(bufferReceiveState.id, bufferReceiveState)
+    try {
+      if (!bufferReceiveState.hasIterated) {
+        sendTransferRequest(bufferReceiveState)
+      }
+      receiveBuffers(bufferReceiveState)
     } catch {
       case t: Throwable =>
-        withResource(bufferReceiveState) { _ =>
-          bufferReceiveState.errorOccurred("Error issuing buffer receives", t)
-        }
+        bufferReceiveState.errorOcurred("Error issuing buffer receives", t)
+        bufferReceiveState.close()
     }
+  }
+
+  private def receiveBuffers(bufferReceiveState: BufferReceiveState): Transaction = {
+    val alt = bufferReceiveState.next()
+
+    logDebug(s"Issuing receive for $alt")
+
+    connection.receive(alt,
+      tx => {
+        tx.getStatus match {
+          case TransactionStatus.Success =>
+            logDebug(s"Handling response for $alt")
+            asyncOnCopyThread(HandleBounceBufferReceive(tx, bufferReceiveState))
+          case _ => try {
+            val errMsg = s"Unsuccessful buffer receive ${tx}"
+            logError(errMsg)
+            bufferReceiveState.errorOcurred(errMsg)
+          } finally {
+            tx.close()
+            bufferReceiveState.close()
+          }
+        }
+      })
   }
 
   /**
@@ -274,37 +304,30 @@ class RapidsShuffleClient(
    * @param toIssue sequence of [[PendingTransferRequest]] we want included in the server
    *                transfers
    */
-  private[this] def sendTransferRequest(id: Long, toIssue: BufferReceiveState): Unit = {
+  private[this] def sendTransferRequest(toIssue: BufferReceiveState): Unit = {
     val requestsToIssue = toIssue.getRequests
-    logDebug(s"Sending a transfer request for ${TransportUtils.toHex(toIssue.id)}")
+    logDebug(s"Sending a transfer request for " +
+        s"${requestsToIssue.map(r => TransportUtils.toHex(r.tag)).mkString(",")}")
 
     val transferReq = new RefCountedDirectByteBuffer(
-      ShuffleMetadata.buildTransferRequest(id, requestsToIssue.map(i => i.tableMeta)))
+      ShuffleMetadata.buildTransferRequest(requestsToIssue.map(i => (i.tableMeta, i.tag))))
 
-    connection.request(MessageType.TransferRequest, transferReq.acquire(), withResource(_) { tx =>
-      withResource(tx.releaseMessage()) { mtb =>
+    //issue the buffer transfer request
+    connection.request(RequestType.TransferRequest, transferReq.acquire(), tx => {
+      withResource(tx.releaseMessage()) { res =>
         withResource(transferReq) { _ =>
-          tx.getStatus match {
-            case TransactionStatus.Success =>
-              // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
-              val transferResponse = ShuffleMetadata.getTransferResponse(mtb.getBuffer())
-              (0 until transferResponse.responsesLength()).foreach(r => {
-                val response = transferResponse.responses(r)
-                if (response.state() != TransferState.STARTED) {
-                  // we could either re-issue the request, cancelling and releasing memory
-                  // or we could re-issue, and leave the old receive waiting
-                  // for now, leaving the old receive waiting.
-                  throw new IllegalStateException("NOT IMPLEMENTED")
-                }
-              })
-            case TransactionStatus.Error =>
-              toIssue.errorOccurred(
-                tx.getErrorMessage.getOrElse("Error receiving a TransferRequest response"),
-                null)
-            case TransactionStatus.Cancelled =>
-              toIssue.errorOccurred(
-                tx.getErrorMessage.getOrElse("TransferRequest response cancelled"),
-                null)
+          withResource(tx) { _ =>
+            // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
+            val transferResponse = ShuffleMetadata.getTransferResponse(res.getBuffer())
+            (0 until transferResponse.responsesLength()).foreach(r => {
+              val response = transferResponse.responses(r)
+              if (response.state() != TransferState.STARTED) {
+                // we could either re-issue the request, cancelling and releasing memory
+                // or we could re-issue, and leave the old receive waiting
+                // for now, leaving the old receive waiting.
+                throw new IllegalStateException("NOT IMPLEMENTED")
+              }
+            })
           }
         }
       }
@@ -328,9 +351,11 @@ class RapidsShuffleClient(
     (0 until allTables).foreach { i =>
       val tableMeta = ShuffleMetadata.copyTableMetaToHeap(metaResponse.tableMetas(i))
       if (tableMeta.bufferMeta() != null) {
+        val tag = connection.assignBufferTag(tableMeta.bufferMeta().id)
         ptrs += PendingTransferRequest(
           this,
           tableMeta,
+          tag,
           handler)
       } else {
         // Degenerate buffer (no device data) so no more data to request.
@@ -364,55 +389,49 @@ class RapidsShuffleClient(
   def doHandleBounceBufferReceive(tx: Transaction, 
       bufferReceiveState: BufferReceiveState): Unit = {
     try {
-      withResource(tx) { _ =>
-        tx.getStatus match {
-          case TransactionStatus.Success =>
-            withResource(new NvtxRange("Buffer Callback", NvtxColor.RED)) { _ =>
-              // consume buffers, which will non empty for batches that are ready
-              // to be handed off to the catalog
-              val buffMetas = bufferReceiveState.consumeWindow()
+      withResource(new NvtxRange("Buffer Callback", NvtxColor.RED)) { _ =>
+        withResource(tx) { tx =>
+          // consume buffers, which will non empty for batches that are ready
+          // to be handed off to the catalog
+          val buffMetas = bufferReceiveState.consumeWindow()
 
-              // the number of batches successfully received that the requesting iterator
-              // rejected (limit case)
-              var numBatchesRejected = 0
+          val stats = tx.getStats
 
-              // hand buffer off to the catalog
-              buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
-                val bId = track(consumed.contigBuffer, consumed.meta)
-                if (!consumed.handler.batchReceived(bId)) {
-                  catalog.removeBuffer(bId)
-                  numBatchesRejected += 1
-                }
-                transport.doneBytesInFlight(consumed.contigBuffer.getLength)
-              }
+          // the number of batches successfully received that the requesting iterator
+          // rejected (limit case)
+          var numBatchesRejected = 0
 
-              if (numBatchesRejected > 0) {
-                logDebug(s"Removed ${numBatchesRejected} batches that were received after " +
-                  s"tasks completed.")
-              }
-
-              if (!bufferReceiveState.hasMoreBlocks) {
-                logDebug(s"BufferReceiveState: " +
-                  s"${TransportUtils.toHex(bufferReceiveState.id)} is DONE, closing.")
-                bufferReceiveState.close()
-              } else {
-                logDebug(s"BufferReceiveState: " +
-                  s"${TransportUtils.toHex(bufferReceiveState.id)} is NOT done, continuing.")
-              }
+          // hand buffer off to the catalog
+          buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
+            val bId = track(consumed.contigBuffer, consumed.meta)
+            if (!consumed.handler.batchReceived(bId)) {
+              catalog.removeBuffer(bId)
+              numBatchesRejected += 1
             }
-          case TransactionStatus.Error =>
-            throw new IllegalStateException(s"Transaction errored with ${tx.getErrorMessage}")
-          case TransactionStatus.Cancelled =>
-            throw new IllegalStateException(s"Transaction cancelled")
-         }
+            transport.doneBytesInFlight(consumed.contigBuffer.getLength)
+          }
+
+          if (numBatchesRejected > 0) {
+            logDebug(s"Removed ${numBatchesRejected} batches that were received after " +
+                s"tasks completed.")
+          }
+
+          logDebug(s"Received buffer size ${stats.receiveSize} in" +
+              s" ${stats.txTimeMs} ms @ bw: [recv: ${stats.recvThroughput}] GB/sec")
+
+          if (bufferReceiveState.hasNext) {
+            logDebug(s"${bufferReceiveState} is not done.")
+            asyncOnCopyThread(IssueBufferReceives(bufferReceiveState))
+          } else {
+            logDebug(s"${bufferReceiveState} is DONE, closing.")
+            bufferReceiveState.close()
+          }
+        }
       }
     } catch {
       case t: Throwable =>
-        withResource(bufferReceiveState) { _ =>
-          bufferReceiveState.errorOccurred(
-            s"Error while handling buffer receive for BRS: " +
-            s"${TransportUtils.toHex(bufferReceiveState.id)}", t)
-        }
+        bufferReceiveState.errorOcurred("Error while handling buffer receives", t)
+        bufferReceiveState.close()
     }
   }
 
