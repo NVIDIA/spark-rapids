@@ -35,9 +35,9 @@ the latest release.
 
 ### What hardware is supported? 
 
-The plugin is tested and supported on V100, T4, A30 and A100 datacenter GPUs.  It is possible to run
-the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware does
-not support [CUDA enhanced
+The plugin is tested and supported on V100, T4, A10, A30 and A100 datacenter GPUs.  It is possible
+to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
+does not support [CUDA enhanced
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases),
 and will need CUDA 11.2 installed. If not, the following error will be displayed:
 
