@@ -60,13 +60,18 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
 
+IS_SPARK_311_OR_LATER=0
+[[ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
+
+SPARK_TASK_MAXFAILURES=1
+[[ "$IS_SPARK_311_OR_LATER" -eq "0" ]] && SPARK_TASK_MAXFAILURES=4
 
 BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
     --master spark://$HOSTNAME:7077 \
     --executor-memory 12G \
     --total-executor-cores 6 \
     --conf spark.sql.shuffle.partitions=12 \
-    --conf spark.task.maxFailures=1 \
+    --conf spark.task.maxFailures=$SPARK_TASK_MAXFAILURES \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.driver.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR}:${RAPIDS_UDF_JAR} \
     --conf spark.executor.extraClassPath=${CUDF_JAR}:${RAPIDS_PLUGIN_JAR}:${RAPIDS_UDF_JAR} \
@@ -97,7 +102,7 @@ TEST_TYPE="nightly"
 spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/" --test_type=$TEST_TYPE
 spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf --test_type=$TEST_TYPE
 #only run cache tests with our serializer in nightly test for Spark version >= 3.1.1
-if [ "$(printf '%s\n' "3.1.1" "$SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]; then
+if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
   SHIM_PACKAGE=$(echo ${SPARK_VER} | sed 's/\.//g' | sed 's/-SNAPSHOT//')
   spark-submit ${BASE_SPARK_SUBMIT_ARGS} --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark${SHIM_PACKAGE}.ParquetCachedBatchSerializer --jars $RAPIDS_TEST_JAR \
   ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/" -k cache_test.py -x

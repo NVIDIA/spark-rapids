@@ -459,6 +459,13 @@ object TypeSig {
       TIMESTAMP + STRING + DECIMAL + NULL + BINARY + CALENDAR + ARRAY + STRUCT + UDT).nested()
 
   /**
+   * All types that Spark supports for comparison operators (really everything but MAP according
+   * to https://spark.apache.org/docs/latest/api/sql/index.html#_12), e.g. "<=>", "=", "==".
+   */
+  val comparable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
+    TIMESTAMP + STRING + DECIMAL + NULL + BINARY + CALENDAR + ARRAY + STRUCT + UDT).nested()
+
+  /**
    * Different types of Pandas UDF support different sets of output type. Please refer to
    *   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
    * for more details.

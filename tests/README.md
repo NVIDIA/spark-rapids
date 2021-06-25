@@ -31,6 +31,7 @@ profiles:
    - `-Pspark301tests` (spark 3.0.1)
    - `-Pspark302tests` (spark 3.0.2)
    - `-Pspark303tests` (spark 3.0.3)
+   - `-Pspark304tests` (spark 3.0.4)
    - `-Pspark311tests` (spark 3.1.1)
    - `-Pspark312tests` (spark 3.1.2)
    - `-Pspark313tests` (spark 3.1.3)

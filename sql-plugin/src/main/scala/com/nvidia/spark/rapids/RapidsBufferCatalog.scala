@@ -192,7 +192,8 @@ object RapidsBufferCatalog extends Logging with Arm {
     }
 
     logInfo("Installing GPU memory handler for spill")
-    memoryEventHandler = new DeviceMemoryEventHandler(deviceStorage, rapidsConf.gpuOomDumpDir)
+    memoryEventHandler = new DeviceMemoryEventHandler(
+      deviceStorage, rapidsConf.gpuOomDumpDir, rapidsConf.isGdsSpillEnabled)
     Rmm.setEventHandler(memoryEventHandler)
 
     _shouldUnspill = rapidsConf.isUnspillEnabled
