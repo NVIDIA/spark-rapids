@@ -15,7 +15,7 @@
  */
 
 package org.apache.spark.sql.rapids.tool
-1
+
 import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
