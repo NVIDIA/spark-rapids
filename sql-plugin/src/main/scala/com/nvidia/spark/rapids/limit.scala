@@ -272,6 +272,7 @@ case class GpuTopN(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
     TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
     CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME)
@@ -287,9 +288,11 @@ case class GpuTopN(
     val outputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val sortTime = gpuLongMetric(SORT_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
+    val collectTime = gpuLongMetric(COLLECT_TIME)
     val callback = GpuMetric.makeSpillCallback(allMetrics)
     child.executeColumnar().mapPartitions { iter =>
-      val topN = GpuTopN(limit, sorter, iter, totalTime, sortTime, concatTime,
+      val collectIter = new CollectTimeIterator("GpuTopN: collect", iter, collectTime)
+      val topN = GpuTopN(limit, sorter, collectIter, totalTime, sortTime, concatTime,
         inputBatches, inputRows, outputBatches, outputRows, callback)
       if (projectList != child.output) {
         topN.map { batch =>
