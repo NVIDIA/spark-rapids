@@ -219,10 +219,6 @@ private object ParquetCachedBatch {
   def apply(parquetBuff: ParquetBufferConsumer): ParquetCachedBatch = {
     new ParquetCachedBatch(parquetBuff.numRows, parquetBuff.getBuffer)
   }
-
-  def apply(numRows: Int, buff: Array[Byte]): ParquetCachedBatch = {
-    new ParquetCachedBatch(numRows, buff)
-  }
 }
 
 case class ParquetCachedBatch(
@@ -294,6 +290,12 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
   }
 
+  /**
+   * This method checks if the datatype passed is officially supported by parquet.
+   *
+   * Please refer to https://github.com/apache/parquet-format/blob/master/LogicalTypes.md to see
+   * the what types are supported by parquet
+   */
   def isTypeSupportedByParquet(dataType: DataType): Boolean = {
     dataType match {
       case CalendarIntervalType | NullType => false
@@ -371,7 +373,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     val columns = for (i <- 0 until oldGpuCB.numCols()) yield {
       val gpuVector = oldGpuCB.column(i).asInstanceOf[GpuColumnVector]
       var dataType = origSchema(i).dataType
-      val v = ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(gpuVector.getBase,
+      val v = ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(gpuVector.getBase,
         origSchema(i).dataType,
         // we are checking for scale > 0 because cudf and spark refer to scales as opposites
         // e.g. scale = -3 in Spark is scale = 3 in cudf
@@ -488,7 +490,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           parquetCB.sizeInBytes)) { table =>
           withResource {
             for (i <- 0 until table.getNumberOfColumns) yield {
-              ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(table.getColumn(i),
+              ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(table.getColumn(i),
                 originalSelectedAttributes(i).dataType,
                 (dataType, _) => dataType match {
                   case d: DecimalType if d.scale < 0 => true

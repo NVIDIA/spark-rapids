@@ -199,7 +199,7 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             lambda spark : readParquetCatchException(spark, data_path),
             conf=all_confs)
 
-@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen], decimal_gens,
+@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, DecimalGen(precision=7, scale=3)], decimal_gens,
                                           [ArrayGen(DecimalGen(7,2), max_length=10)],
                                           [StructGen([['child0', DecimalGen(7, 2)]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])

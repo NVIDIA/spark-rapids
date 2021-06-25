@@ -18,11 +18,17 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
+import ai.rapids.cudf.{ColumnVector, ColumnView}
 
-import org.apache.spark.sql.types.{ArrayType, DataType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, StructType}
 
-object ColumnUtil extends Arm {
+/**
+ * This class casts a column to another column if the predicate passed resolves to true.
+ * This method should be able to handle nested or non-nested types
+ *
+ * At this time this is strictly a place for casting methods
+ */
+object ColumnCastUtil extends Arm {
 
   /**
    * This method deep casts the input ColumnView to a new column if the predicate passed to this

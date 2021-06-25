@@ -651,7 +651,6 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       // To type casting or anyting like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
-      val precisionList = scala.collection.mutable.Queue(precisions: _*)
       try {
         withResource(inputTable) { table =>
           var readAt = 0
@@ -659,27 +658,11 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
-              val col: ColumnVector = if (typeCastingNeeded && precisionList.nonEmpty) {
-                ColumnUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
-                  (_, cv) => {
-                    assert(precisionList.nonEmpty)
-                    if (cv.getType.getTypeId == DTypeEnum.DECIMAL64 &&
-                        precisionList(0) <= DType.DECIMAL32_MAX_PRECISION) {
-                      // the decimal value is a 32-bit value stored as a 64-bit value
-                      // return true but don't pop as the `convert` method will pop
-                      true
-                    } else {
-                      if (precisionList(0) > DType.DECIMAL32_MAX_PRECISION) {
-                        // the decimal value is a 64-bit value stored as 64-bit value
-                        // just pop the precision and go to the next item
-                        precisionList.dequeue()
-                      }
-                      // no cast needed
-                      false
-                    }
-                  },
-                  (dt, cv) => cv.castTo(DecimalUtil.createCudfDecimal(precisionList.dequeue,
-                    dt.asInstanceOf[DecimalType].scale)))
+              val col: ColumnVector = if (typeCastingNeeded) {
+                ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
+                  (dt, cv) => !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
+                  (dt, cv) =>
+                    cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType])))
               } else {
                 origCol.incRefCount()
               }
