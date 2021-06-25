@@ -426,9 +426,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       None,
       None,
       "",
-      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode,
-      0,
-      0
+      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
     )
     app.stageSubmitted += thisStage
   }

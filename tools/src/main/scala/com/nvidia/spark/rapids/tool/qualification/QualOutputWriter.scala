@@ -111,7 +111,7 @@ class QualOutputWriter(outputDir: String) {
       val sqlDurStr = s"%${sizePadLongs}s".format(sqlDur)
       val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
       val sqlProbDurStr = s"%${sizePadLongs}s".format(sqlProbDur)
-      val wStr = s"|appIdStr|$appDurStr|$sqlDurStr|$sqlProbDurStr|"
+      val wStr = s"|$appIdStr|$appDurStr|$sqlDurStr|$sqlProbDurStr|"
       writer.write(wStr + "\n")
     }
     writer.write(s"$sep\n")
