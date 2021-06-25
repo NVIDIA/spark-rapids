@@ -556,7 +556,7 @@ class RowToColumnarIterator(
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
     semaphoreWaitTime: GpuMetric = NoopMetric,
-    opTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
+    gpuOpTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
@@ -613,7 +613,8 @@ class RowToColumnarIterator(
       Option(TaskContext.get())
         .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx, semaphoreWaitTime))
 
-      val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, opTime)) { _ =>
+      val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
+          gpuOpTime)) { _ =>
         builders.build(rowCount)
       }
       numInputRows += rowCount
