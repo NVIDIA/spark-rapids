@@ -55,6 +55,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .add("appDuration", LongType, true)
       .add("executorCPURatio", DoubleType, true)
       .add("appEndDurationEstimated", BooleanType, true)
+      .add("sqlDurationForProblematic", LongType, true)
+      .add("failedSQLIds", StringType, true)
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
       Some(schema))
   }
@@ -84,12 +86,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         .add("executorCPURatio", DoubleType, true)
         .add("appEndDurationEstimated", BooleanType, true)
         .add("sqlDurationForProblematic", LongType, true)
-      val dfQualTemp = sparkSession.createDataFrame(dfTmp.rdd, schema)
+        .add("failedSQLIds", StringType, true)
+      val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
       if (shouldReturnEmpty) {
         assert(appSum.head.sqlDataFrameDuration == 0.0)
       } else {
         val dfExpect = readExpectedFile(resultExpectation)
-        val dfQual = dfQualTemp.drop("sqlDurationForProblematic")
         assert(!dfQual.isEmpty)
         ToolTestUtils.compareDataFrames(dfQual, dfExpect)
       }
