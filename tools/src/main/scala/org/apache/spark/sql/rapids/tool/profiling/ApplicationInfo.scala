@@ -137,7 +137,7 @@ class SparkPlanInfoWithStage(
   }
 
   /**
-   * Walk the three depth first and get all of the stages for each node in the tree
+   * Walk the tree depth first and get all of the stages for each node in the tree
    */
   def depthFirstStages: Seq[Option[Int]] =
     Seq(stageId) ++ children.flatMap(_.depthFirstStages)

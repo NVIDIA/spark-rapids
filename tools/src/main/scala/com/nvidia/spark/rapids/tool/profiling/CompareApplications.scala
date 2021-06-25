@@ -26,6 +26,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
+
 /**
  * CompareApplications compares multiple ApplicationInfo objects
  */
