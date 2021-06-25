@@ -80,7 +80,7 @@ object GenerateDot {
       appId: String): Unit = {
     val graph = SparkPlanGraph(plan.plan, appId, sqlId.toString, physicalPlanString,
       accumIdToStageId, stageIdToStageMetrics)
-    val str = graph.makeDotFile(plan.metrics)
+    val str = graph.makeDotFile(plan.metrics, fileWriter.outputFilePath.getParent.toString)
     fileWriter.write(str)
   }
 }
@@ -108,20 +108,12 @@ case class SparkPlanGraph(
     sqlId: String,
     physicalPlan: String) {
 
-  def makeDotFile(metrics: Map[Long, Long]): String = {
-    val leftAlignedLabel =
-      s"""
-         |Application: $appId
-         |Query: $sqlId
-         |
-         |$physicalPlan"""
-          .stripMargin
-          .replace("\n", "\\l")
-
+  def makeDotFile(metrics: Map[Long, Long], outputDir: String): String = {
+    val queryLabel = SparkPlanGraph.createDotLabel(outputDir, appId, sqlId, physicalPlan)
 
     val dotFile = new StringBuilder
     dotFile.append("digraph G {\n")
-    dotFile.append(s"""label="$leftAlignedLabel"\n""")
+    dotFile.append(s"label=$queryLabel\n")
     dotFile.append("labelloc=b\n")
     dotFile.append("fontname=Courier\n")
     dotFile.append(s"""tooltip="APP: $appId Query: $sqlId"\n""")
@@ -291,6 +283,39 @@ object SparkPlanGraph {
           buildSparkPlanGraphNode(_, nodeIdGenerator, nodes, edges, node, codeGen, s,
             exchanges, accumIdToStageId, stageIdToStageMetrics))
     }
+  }
+
+  def createDotLabel(
+    outputDir: String, 
+    appId: String, 
+    sqlId: String,
+    physicalPlan: String,
+    maxLength: Int = 16384 
+  ): String = {
+    val sqlPlanFile = s"file://$outputDir/planDescriptions-$appId"
+    val sqlPlanPlaceHolder = "%s"
+    val htmlLineBreak = """<br align="left"/>""" + "\n"
+    val queryLabelFormat = 
+      s"""<<table border="0">
+         |<tr><td>Application: $appId, Query: $sqlId</td></tr>
+         |<tr><td>$sqlPlanPlaceHolder</td></tr>
+         |<tr><td href="$sqlPlanFile">
+         |Large physical may be truncated. Start the profiling tool with --print-plans
+         |and open the link to locate <font color="blue">
+         |<u>Plan for SQL ID : $sqlId</u></font>
+         |</td></tr>
+         |</table>>""".stripMargin
+
+    // pre-calculate size post substitutions 
+    val formatBytes = queryLabelFormat.length() - sqlPlanPlaceHolder.length()
+    val numLinebreaks = physicalPlan.count(_ == '\n')
+    val lineBreakBytes = numLinebreaks * htmlLineBreak.length()
+    val maxPlanLength = maxLength - formatBytes - lineBreakBytes
+    
+    queryLabelFormat.format(
+      physicalPlan.take(maxPlanLength)
+        .replaceAll("\n", htmlLineBreak)
+    )
   }
 }
 
