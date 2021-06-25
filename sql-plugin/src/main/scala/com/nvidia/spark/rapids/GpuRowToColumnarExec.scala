@@ -817,7 +817,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
   }
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    "semaphoreWait" -> createNanoTimingMetric(DEBUG_LEVEL, "Semaphore wait time"),
+    SEMAPHORE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SEMAPHORE_WAIT_TIME),
     GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME),
     TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS)
@@ -831,7 +831,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val totalTime = gpuLongMetric(TOTAL_TIME)
     val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
-    val semaphoreWaitTime = gpuLongMetric("semaphoreWait")
+    val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
     val rowBased = child.execute()
 
