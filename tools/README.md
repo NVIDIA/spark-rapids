@@ -134,9 +134,9 @@ Note that SQL queries that contain failed jobs are not included.
 Sample output in csv:
 ```
 App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures
-TPC-DS Like Bench q24a,app-20210507174503-2538,98.13,"",952802,970984,63.14,false,0,""
-TPC-DS Like Bench q24b,app-20210507180116-2539,97.88,"",903845,923419,64.88,false,0,""
-TPC-DS Like Bench q14a,app-20210319151533-1704,97.59,"",737826,756039,33.95,false,0,""
+job1,app-20210507174503-2538,98.13,"",952802,970984,63.14,false,0,""
+job2,app-20210507180116-2539,97.88,"",903845,923419,64.88,false,0,""
+job3,app-20210319151533-1704,97.59,"",737826,756039,33.95,false,0,""
 ```
 
 Sample output in text:
