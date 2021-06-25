@@ -49,6 +49,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
   protected final long dataLength;
   protected final DType[] rapidsTypes;
   protected final DataType[] outputTypes;
+  protected final GpuMetric semaphoreWaitTime;
+  protected final GpuMetric gpuOpTime;
   protected final GpuMetric totalTime;
   protected final GpuMetric numInputRows;
   protected final GpuMetric numOutputRows;
@@ -58,6 +60,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
       Iterator<UnsafeRow> input,
       Attribute[] schema,
       CoalesceSizeGoal goal,
+      GpuMetric semaphoreWaitTime,
+      GpuMetric gpuOpTime,
       GpuMetric totalTime,
       GpuMetric numInputRows,
       GpuMetric numOutputRows,
@@ -74,6 +78,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
       rapidsTypes[i] = GpuColumnVector.getNonNestedRapidsType(schema[i].dataType());
       outputTypes[i] = schema[i].dataType();
     }
+    this.semaphoreWaitTime = semaphoreWaitTime;
+    this.gpuOpTime = gpuOpTime;
     this.totalTime = totalTime;
     this.numInputRows = numInputRows;
     this.numOutputRows = numOutputRows;
@@ -100,7 +106,8 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
     // buffers.  One will be for the byte data and the second will be for the offsets. We will then
     // write the data directly into those buffers using code generation in a child of this class.
     // that implements fillBatch.
-    try (HostMemoryBuffer dataBuffer = HostMemoryBuffer.allocate(dataLength);
+    try (NvtxWithMetrics nvtx = new NvtxWithMetrics("RowToColumnar", NvtxColor.CYAN, totalTime);
+         HostMemoryBuffer dataBuffer = HostMemoryBuffer.allocate(dataLength);
          HostMemoryBuffer offsetsBuffer =
              HostMemoryBuffer.allocate(((long)numRowsEstimate + 1) * BYTES_PER_OFFSET)) {
 
@@ -135,12 +142,12 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
         // Grab the semaphore because we are about to put data onto the GPU.
         TaskContext tc = TaskContext.get();
         if (tc != null) {
-          GpuSemaphore$.MODULE$.acquireIfNecessary(tc);
+          GpuSemaphore$.MODULE$.acquireIfNecessary(tc, semaphoreWaitTime);
         }
-        if (totalTime != null) {
-          buildRange = new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime);
+        if (gpuOpTime != null) {
+          buildRange = new NvtxWithMetrics("RowToColumnar: build", NvtxColor.GREEN, gpuOpTime);
         } else {
-          buildRange = new NvtxRange("RowToColumnar", NvtxColor.GREEN);
+          buildRange = new NvtxRange("RowToColumnar: build", NvtxColor.GREEN);
         }
         devColumn = hostColumn.copyToDevice();
       }
