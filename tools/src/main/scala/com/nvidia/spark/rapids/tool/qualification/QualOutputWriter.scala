@@ -22,14 +22,21 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
 // This class handles the output files for qualification.
 // It can write both a raw csv file and then a text summary report.
-class QualOutputWriter(outputDir: String) {
+class QualOutputWriter(outputDir: String, numRows: Int) {
 
   private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  val problemDurStr = "SQL Duration For Problematic"
-  val headers = Array("App ID", "App Duration", "SQL Dataframe Duration", problemDurStr)
+  private val problemDurStr = "SQL Duration For Problematic"
+  private val appIdStr = "App ID"
+  private val appDurStr = "App Duration"
+  private val sqlDurStr = "SQL Dataframe Duration"
+
+  private val headerCSV =
+    s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr," +
+      s"$appDurStr,Executor CPU Time Percent,App Duration Estimated," +
+      "SQL Duration with Potential Problems,SQL Ids with Failures\n"
 
   // find sizes of largest appId and long fields, assume the long is not bigger then
   // the problemDurStr header
@@ -38,12 +45,6 @@ class QualOutputWriter(outputDir: String) {
     val sizes = sums.map(_.appId.size)
     val appIdMaxSize = if (sizes.size > 0) sizes.max else 0
     (appIdMaxSize, sizePadLongs)
-  }
-
-  private def headerCSV: String = {
-    "App Name,App ID,Score,Potential Problems,SQL Dataframe Duration," +
-      "App Duration,Executor CPU Time Percent,App Duration Estimated," +
-      "SQL Duration with Potential Problems,SQL Ids with Failures\n"
   }
 
   private def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
@@ -69,7 +70,8 @@ class QualOutputWriter(outputDir: String) {
     val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
     try {
       writeCSVHeader(csvFileWriter)
-      summaries.foreach { appSum =>
+      val finalSums = summaries.take(numRows)
+      finalSums.foreach { appSum =>
         csvFileWriter.write(toCSV(appSum) + "\n")
       }
     } finally {
@@ -91,18 +93,19 @@ class QualOutputWriter(outputDir: String) {
       sums: Seq[QualificationSummaryInfo]): Unit = {
     val (appIdMaxSize, sizePadLongs) = getTextSpacing(sums)
     val entireHeader = new StringBuffer
-    val appIdSpaces = " " * (appIdMaxSize - headers(0).size)
-    entireHeader.append(s"|%${appIdMaxSize}s|".format(headers(0)))
-    entireHeader.append(s"%${sizePadLongs}s|".format(headers(1)))
-    entireHeader.append(s"%${sizePadLongs}s|".format(headers(2)))
-    entireHeader.append(s"%${sizePadLongs}s|".format(headers(3)))
+
+    entireHeader.append(s"|%${appIdMaxSize}s|".format(appIdStr))
+    entireHeader.append(s"%${sizePadLongs}s|".format(appDurStr))
+    entireHeader.append(s"%${sizePadLongs}s|".format(sqlDurStr))
+    entireHeader.append(s"%${sizePadLongs}s|".format(problemDurStr))
     entireHeader.append("\n")
     val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
 
-    sums.foreach { sumInfo =>
+    val finalSums = sums.take(numRows)
+    finalSums.foreach { sumInfo =>
       val appId = sumInfo.appId
       val appIdStr = s"%${appIdMaxSize}s".format(appId)
       val appDur = sumInfo.appDuration.toString

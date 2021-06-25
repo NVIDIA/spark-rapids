@@ -50,7 +50,7 @@ object Qualification extends Logging {
       }
     }
     val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration))
-    val qWriter = new QualOutputWriter(outputDir)
+    val qWriter = new QualOutputWriter(outputDir, numRows)
     qWriter.writeCSV(sorted)
     qWriter.writeReport(sorted)
     sorted
