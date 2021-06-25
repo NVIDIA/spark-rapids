@@ -22,26 +22,9 @@ class QualificationArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
   banner("""
 RAPIDS Accelerator for Apache Spark qualification tool
 
-Example:
-
-# Input 1 or more event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
-
-# Specify a directory of event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
-
-# If any event log is from S3:
-# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly.
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
-
-# Change output directory to /tmp
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar -o /tmp /path/to/eventlog1
-
-For usage see below:
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+       com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
+       <eventlogs | eventlog directories ...>
     """)
 
   val outputDirectory: ScallopOption[String] =
@@ -65,7 +48,7 @@ For usage see below:
       descr = "Filter event logs whose filenames contain the input string")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
-      descr = "Number of output rows for each Application. Default is 1000.")
+      descr = "Number of output rows. Default is 1000.")
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)

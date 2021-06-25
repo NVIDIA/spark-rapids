@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.EventLogPathProcessor
-import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
@@ -27,9 +26,7 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
  * they might be a good fit for running on the GPU.
  */
 object QualificationMain extends Logging {
-  /**
-   * Entry point from spark-submit running this as the driver.
-   */
+
   def main(args: Array[String]) {
     val (exitCode, _) = mainInternal(new QualificationArgs(args))
     if (exitCode != 0) {
@@ -44,7 +41,6 @@ object QualificationMain extends Logging {
       writeOutput: Boolean = true,
       dropTempViews: Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
-    // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
@@ -58,8 +54,7 @@ object QualificationMain extends Logging {
       return (0, Seq[QualificationSummaryInfo]())
     }
 
-    val qual = new Qualification(outputDirectory)
-    val res = qual.qualifyApps(eventLogInfos, numOutputRows)
+    val res = Qualification.qualifyApps(eventLogInfos, numOutputRows, outputDirectory)
     (0, res)
   }
 
