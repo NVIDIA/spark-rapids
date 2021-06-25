@@ -281,6 +281,11 @@ class ApplicationInfo(
 
   private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
 
+  val eventProcessor =  new EventsProcessor()
+  override def processEvent(event: SparkListenerEvent) = {
+    eventProcessor.processAnyEvent(this, event)
+  }
+
   /**
    * Functions to process all properties after all events are processed
    */

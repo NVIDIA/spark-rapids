@@ -28,7 +28,7 @@ import org.apache.spark.sql.rapids.tool.{EventProcessorBase, ToolUtils}
 
 class QualEventProcessor() extends EventProcessorBase {
 
-  type aInfo = QualAppInfo
+  type T = QualAppInfo
 
   override def doSparkListenerEnvironmentUpdate(
       app: QualAppInfo,

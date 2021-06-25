@@ -24,7 +24,7 @@ import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.deploy.history.EventLogFileReader
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.tool.qualification.QualEventProcessor
+import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.util.{JsonProtocol, Utils}
 
 
@@ -34,6 +34,8 @@ abstract class AppBase(
 
   var sparkVersion: String = ""
   var appEndTime: Option[Long] = None
+
+  def processEvent(event: SparkListenerEvent): Unit
 
   /**
    * Functions to process all the events
@@ -47,7 +49,6 @@ abstract class AppBase(
     // TODO - reuse Configuration
     val fs = eventlog.getFileSystem(new Configuration)
     var totalNumEvents = 0
-    val eventsProcessor = new QualEventProcessor()
     val readerOpt = eventLogInfo match {
       case dblog: DatabricksEventLog =>
         Some(new DatabricksRollingEventLogFilesFileReader(fs, eventlog))
@@ -63,10 +64,8 @@ abstract class AppBase(
           totalNumEvents += lines.size
           lines.foreach { line =>
             try {
-              val foo = parse(line)
               val event = JsonProtocol.sparkEventFromJson(parse(line))
-              // val event = sparkEventToJsonQual(parse(line))
-              eventsProcessor.processAnyEvent(this, event)
+              processEvent(event)
             }
             catch {
               case e: ClassNotFoundException =>

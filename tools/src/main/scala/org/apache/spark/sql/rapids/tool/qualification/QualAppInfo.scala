@@ -17,18 +17,25 @@
 package org.apache.spark.sql.rapids.tool.qualification
 
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
-
-import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
 import com.nvidia.spark.rapids.tool.profiling._
+import org.apache.hadoop.conf.Configuration
 
+import org.apache.spark.deploy.history.EventLogFileReader
 import org.apache.spark.internal.Logging
+import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.AppBase
+import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
+import org.apache.spark.util.{JsonProtocol, Utils}
+import org.json4s.jackson.JsonMethods.parse
+
+import scala.io.{Codec, Source}
 
 class QualAppInfo(
     numOutputRows: Int,
-    eventLogInfo: EventLogInfo) extends AppBase(numOutputRows, eventLogInfo) with Logging {
+    eventLogInfo: EventLogInfo)
+  extends AppBase(numOutputRows, eventLogInfo) with Logging {
 
   var appId: String = ""
   var isPluginEnabled = false
@@ -54,6 +61,11 @@ class QualAppInfo(
   val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
 
   processEvents()
+
+  val eventProcessor =  new QualEventProcessor
+  override def processEvent(event: SparkListenerEvent): Unit = {
+    eventProcessor.processAnyEvent(this, event)
+  }
 
   // time in ms
   private def calculateAppDuration(startTime: Long): Option[Long] = {

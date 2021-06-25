@@ -26,13 +26,16 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
+import org.apache.spark.sql.rapids.tool.EventProcessorBase
 
 /**
  * This class is to process all events and do validation in the end.
  */
-class EventsProcessor(forQualification: Boolean = false) extends Logging {
+class EventsProcessor(forQualification: Boolean = false) extends EventProcessorBase with  Logging {
 
-  def processAnyEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
+  type T = ApplicationInfo
+
+  override def processAnyEvent(app: T, event: SparkListenerEvent): Unit = {
     event match {
       case _: SparkListenerLogStart =>
         doSparkListenerLogStart(app, event.asInstanceOf[SparkListenerLogStart])
@@ -99,7 +102,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     }
   }
 
-  def doSparkListenerResourceProfileAddedReflect(
+  override def doSparkListenerResourceProfileAddedReflect(
       app: ApplicationInfo,
       event: SparkListenerEvent): Boolean = {
     val rpAddedClass = "org.apache.spark.scheduler.SparkListenerResourceProfileAdded"
@@ -123,12 +126,12 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     }
   }
 
-  def doSparkListenerLogStart(app: ApplicationInfo, event: SparkListenerLogStart): Unit = {
+  override def doSparkListenerLogStart(app: ApplicationInfo, event: SparkListenerLogStart): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.sparkVersion = event.sparkVersion
   }
 
-  def doSparkListenerResourceProfileAdded(
+  override def doSparkListenerResourceProfileAdded(
       app: ApplicationInfo,
       event: SparkListenerResourceProfileAdded): Unit = {
 
@@ -146,7 +149,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.resourceProfiles += thisResourceProfile
   }
 
-  def doSparkListenerBlockManagerAdded(
+  override def doSparkListenerBlockManagerAdded(
       app: ApplicationInfo,
       event: SparkListenerBlockManagerAdded): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -161,7 +164,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.blockManagers += thisBlockManager
   }
 
-  def doSparkListenerBlockManagerRemoved(
+  override def doSparkListenerBlockManagerRemoved(
       app: ApplicationInfo,
       event: SparkListenerBlockManagerRemoved): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -174,7 +177,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.blockManagersRemoved += thisBlockManagerRemoved
   }
 
-  def doSparkListenerEnvironmentUpdate(
+  override def doSparkListenerEnvironmentUpdate(
       app: ApplicationInfo,
       event: SparkListenerEnvironmentUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -193,7 +196,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     }
   }
 
-  def doSparkListenerApplicationStart(
+  override def doSparkListenerApplicationStart(
       app: ApplicationInfo,
       event: SparkListenerApplicationStart): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -213,14 +216,14 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.appId = event.appId.getOrElse("")
   }
 
-  def doSparkListenerApplicationEnd(
+  override def doSparkListenerApplicationEnd(
       app: ApplicationInfo,
       event: SparkListenerApplicationEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.appEndTime = Some(event.time)
   }
 
-  def doSparkListenerExecutorAdded(
+  override def doSparkListenerExecutorAdded(
       app: ApplicationInfo,
       event: SparkListenerExecutorAdded): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -233,7 +236,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.executors += executor
   }
 
-  def doSparkListenerExecutorRemoved(
+  override def doSparkListenerExecutorRemoved(
       app: ApplicationInfo,
       event: SparkListenerExecutorRemoved): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -245,7 +248,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.executorsRemoved += thisExecutorRemoved
   }
 
-  def doSparkListenerTaskStart(
+  override def doSparkListenerTaskStart(
       app: ApplicationInfo,
       event: SparkListenerTaskStart): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -253,7 +256,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     // app.taskStart += event
   }
 
-  def doSparkListenerTaskEnd(
+  override def doSparkListenerTaskEnd(
       app: ApplicationInfo,
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -331,7 +334,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     }
   }
 
-  def doSparkListenerSQLExecutionStart(
+  override def doSparkListenerSQLExecutionStart(
       app: ApplicationInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -352,14 +355,14 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
 
-  def doSparkListenerSQLExecutionEnd(
+  override def doSparkListenerSQLExecutionEnd(
       app: ApplicationInfo,
       event: SparkListenerSQLExecutionEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.sqlEndTime += (event.executionId -> event.time)
   }
 
-  def doSparkListenerDriverAccumUpdates(
+  override def doSparkListenerDriverAccumUpdates(
       app: ApplicationInfo,
       event: SparkListenerDriverAccumUpdates): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -371,7 +374,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     logDebug("Current driverAccum has " + app.driverAccum.size + " accums.")
   }
 
-  def doSparkListenerJobStart(
+  override def doSparkListenerJobStart(
       app: ApplicationInfo,
       event: SparkListenerJobStart): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -393,7 +396,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.jobStart += thisJob
   }
 
-  def doSparkListenerJobEnd(
+  override def doSparkListenerJobEnd(
       app: ApplicationInfo,
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -415,7 +418,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.jobFailedReason += (event.jobId -> thisFailedReason)
   }
 
-  def doSparkListenerStageSubmitted(
+  override def doSparkListenerStageSubmitted(
       app: ApplicationInfo,
       event: SparkListenerStageSubmitted): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -440,7 +443,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.stageSubmitted += thisStage
   }
 
-  def doSparkListenerStageCompleted(
+  override def doSparkListenerStageCompleted(
       app: ApplicationInfo,
       event: SparkListenerStageCompleted): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -466,14 +469,14 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     }
   }
 
-  def doSparkListenerTaskGettingResult(
+  override def doSparkListenerTaskGettingResult(
       app: ApplicationInfo,
       event: SparkListenerTaskGettingResult): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.taskGettingResult += event
   }
 
-  def doSparkListenerSQLAdaptiveExecutionUpdate(
+  override def doSparkListenerSQLAdaptiveExecutionUpdate(
       app: ApplicationInfo,
       event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -482,7 +485,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
 
-  def doSparkListenerSQLAdaptiveSQLMetricUpdates(
+  override def doSparkListenerSQLAdaptiveSQLMetricUpdates(
       app: ApplicationInfo,
       event: SparkListenerSQLAdaptiveSQLMetricUpdates): Unit = {
     logDebug("Processing event: " + event.getClass)
@@ -495,7 +498,7 @@ class EventsProcessor(forQualification: Boolean = false) extends Logging {
   }
 
   // To process all other unknown events
-  def doOtherEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
+  override def doOtherEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
     logInfo("Processing other event: " + event.getClass)
     app.otherEvents += event
   }

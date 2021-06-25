@@ -20,11 +20,11 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
 
-abstract class EventProcessorBase extends Logging {
+trait EventProcessorBase extends Logging {
 
-  type aInfo <: AppBase
+  type T <: AppBase
 
-  def processAnyEvent(app: aInfo, event: SparkListenerEvent): Unit = {
+  def processAnyEvent(app: T, event: SparkListenerEvent): Unit = {
     event match {
       case _: SparkListenerLogStart =>
         doSparkListenerLogStart(app, event.asInstanceOf[SparkListenerLogStart])
@@ -92,7 +92,7 @@ abstract class EventProcessorBase extends Logging {
   }
 
   def doSparkListenerResourceProfileAddedReflect(
-      app: aInfo,
+      app: T,
       event: SparkListenerEvent): Boolean = {
     val rpAddedClass = "org.apache.spark.scheduler.SparkListenerResourceProfileAdded"
     if (event.getClass.getName.equals(rpAddedClass)) {
@@ -116,96 +116,96 @@ abstract class EventProcessorBase extends Logging {
   }
 
   def doSparkListenerLogStart(
-      app: aInfo,
+      app: T,
       event: SparkListenerLogStart): Unit  = {
     app.sparkVersion = event.sparkVersion
   }
 
   def doSparkListenerResourceProfileAdded(
-      app: aInfo,
+      app: T,
       event: SparkListenerResourceProfileAdded): Unit = {}
 
   def doSparkListenerBlockManagerAdded(
-      app: aInfo,
+      app: T,
       event: SparkListenerBlockManagerAdded): Unit = {}
 
   def doSparkListenerBlockManagerRemoved(
-      app: aInfo,
+      app: T,
       event: SparkListenerBlockManagerRemoved): Unit = {}
 
   def doSparkListenerEnvironmentUpdate(
-      app: aInfo,
+      app: T,
       event: SparkListenerEnvironmentUpdate): Unit = {}
 
   def doSparkListenerApplicationStart(
-      app: aInfo,
+      app: T,
       event: SparkListenerApplicationStart): Unit = {}
 
   def doSparkListenerApplicationEnd(
-      app: aInfo,
+      app: T,
       event: SparkListenerApplicationEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.appEndTime = Some(event.time)
   }
 
   def doSparkListenerExecutorAdded(
-      app: aInfo,
+      app: T,
       event: SparkListenerExecutorAdded): Unit = {}
 
   def doSparkListenerExecutorRemoved(
-      app: aInfo,
+      app: T,
       event: SparkListenerExecutorRemoved): Unit = {}
 
   def doSparkListenerTaskStart(
-      app: aInfo,
+      app: T,
       event: SparkListenerTaskStart): Unit = {}
 
   def doSparkListenerTaskEnd(
-      app: aInfo,
+      app: T,
       event: SparkListenerTaskEnd): Unit = {}
 
   def doSparkListenerSQLExecutionStart(
-      app: aInfo,
+      app: T,
       event: SparkListenerSQLExecutionStart): Unit = {}
 
   def doSparkListenerSQLExecutionEnd(
-      app: aInfo,
+      app: T,
       event: SparkListenerSQLExecutionEnd): Unit = {}
 
   def doSparkListenerDriverAccumUpdates(
-      app: aInfo,
+      app: T,
       event: SparkListenerDriverAccumUpdates): Unit = {}
 
   def doSparkListenerJobStart(
-      app: aInfo,
+      app: T,
       event: SparkListenerJobStart): Unit = {}
 
   def doSparkListenerJobEnd(
-      app: aInfo,
+      app: T,
       event: SparkListenerJobEnd): Unit = {}
 
   def doSparkListenerStageSubmitted(
-      app: aInfo,
+      app: T,
       event: SparkListenerStageSubmitted): Unit = {}
 
   def doSparkListenerStageCompleted(
-      app: aInfo,
+      app: T,
       event: SparkListenerStageCompleted): Unit = {}
 
   def doSparkListenerTaskGettingResult(
-      app: aInfo,
+      app: T,
       event: SparkListenerTaskGettingResult): Unit = {}
 
   def doSparkListenerSQLAdaptiveExecutionUpdate(
-      app: aInfo,
+      app: T,
       event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {}
 
   def doSparkListenerSQLAdaptiveSQLMetricUpdates(
-      app: aInfo,
+      app: T,
       event: SparkListenerSQLAdaptiveSQLMetricUpdates): Unit = {}
 
   // To process all other unknown events
   def doOtherEvent(
-      app: aInfo,
+      app: T,
       event: SparkListenerEvent): Unit = {}
 }
