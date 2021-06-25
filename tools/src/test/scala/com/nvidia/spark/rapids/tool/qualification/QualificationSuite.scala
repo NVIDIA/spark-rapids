@@ -26,6 +26,7 @@ import scala.collection.mutable.ListBuffer
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -155,7 +156,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
   }
 
-  /*
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener
@@ -186,31 +186,22 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           outpath.getAbsolutePath,
           eventLog))
 
-        val (exit, _) =
+        val (exit, sum) =
           QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
-
-        val df = spark2.table("sqlAggMetricsDF")
-
-        def fieldIndex(name: String) = df.schema.fieldIndex(name)
-
-        val rows = df.collect()
-        assert(rows.length === 1)
-        val collect = rows.head
-        assert(collect.getString(fieldIndex("description")).startsWith("collect"))
 
         // parse results from listener
         val executorCpuTime = listener.executorCpuTime
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
 
+        val listenerCpuTimePercent = ToolUtils.calculatePercent(executorCpuTime, executorRunTime)
+
         // compare metrics from event log with metrics from listener
-        assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
-        assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
+        assert(sum.head.executorCpuTimePercent === listenerCpuTimePercent)
       }
     }
   }
-  */
 }
 
 class ToolTestListener extends SparkListener {

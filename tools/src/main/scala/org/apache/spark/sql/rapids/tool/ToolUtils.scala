@@ -29,4 +29,17 @@ object ToolUtils extends Logging {
   def showString(df: DataFrame, numRows: Int) = {
     df.showString(numRows, 0)
   }
+
+  // get percent to 2 decimal places
+  def calculatePercent(first: Long, total: Long): Double = {
+    val firstDec = BigDecimal.decimal(first)
+    val totalDec = BigDecimal.decimal(total)
+    if (firstDec == 0 || totalDec == 0) {
+      0.toDouble
+    } else {
+      val res = (firstDec * 100) / totalDec
+      val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
+      resScale.toDouble
+    }
+  }
 }

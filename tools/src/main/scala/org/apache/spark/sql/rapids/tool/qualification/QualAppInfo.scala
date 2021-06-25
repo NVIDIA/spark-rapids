@@ -26,7 +26,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.AppBase
+import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualAppInfo(
     numOutputRows: Int,
@@ -86,21 +86,8 @@ class QualAppInfo(
     ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
   }
 
-  // get percent to 2 decimal places
-  private def calculatePercent(first: Long, total: Long): Double = {
-    val firstDec = BigDecimal.decimal(first)
-    val totalDec = BigDecimal.decimal(total)
-    if (firstDec == 0 || totalDec == 0) {
-      0.toDouble
-    } else {
-      val res = (firstDec * 100) / totalDec
-      val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
-      resScale.toDouble
-    }
-  }
-
   private def calculateScore(sqlDataframeDur: Long, appDuration: Long): Double = {
-    calculatePercent(sqlDataframeDur, appDuration)
+    ToolUtils.calculatePercent(sqlDataframeDur, appDuration)
   }
 
   // if the sql contains a dataset, then duration for it is 0
@@ -131,7 +118,7 @@ class QualAppInfo(
     val totalRunTime = validSums.values.map { dur =>
       dur.executorRunTime
     }.sum
-    calculatePercent(totalCpuTime, totalRunTime)
+    ToolUtils.calculatePercent(totalCpuTime, totalRunTime)
   }
 
   def aggregateStats(): Option[QualificationSummaryInfo] = {
