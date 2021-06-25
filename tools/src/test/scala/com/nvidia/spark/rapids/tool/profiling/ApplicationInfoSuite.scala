@@ -236,7 +236,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
