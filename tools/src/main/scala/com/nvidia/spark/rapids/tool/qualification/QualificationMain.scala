@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.EventLogPathProcessor
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
@@ -47,14 +48,16 @@ object QualificationMain extends Logging {
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
+    val hadoopConf = new Configuration()
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths)
+      matchEventLogs.toOption, eventlogPaths, hadoopConf)
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return (0, Seq[QualificationSummaryInfo]())
     }
 
-    val res = Qualification.qualifyApps(eventLogInfos, numOutputRows, outputDirectory)
+    val res = Qualification.qualifyApps(eventLogInfos, numOutputRows,
+      outputDirectory, hadoopConf)
     (0, res)
   }
 

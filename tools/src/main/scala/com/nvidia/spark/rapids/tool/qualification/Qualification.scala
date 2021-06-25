@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.qualification._
@@ -32,10 +33,11 @@ object Qualification extends Logging {
   def qualifyApps(
       allPaths: Seq[EventLogInfo],
       numRows: Int,
-      outputDir: String): ArrayBuffer[QualificationSummaryInfo] = {
+      outputDir: String,
+      hadoopConf: Configuration): ArrayBuffer[QualificationSummaryInfo] = {
     val allAppsSum: ArrayBuffer[QualificationSummaryInfo] = ArrayBuffer[QualificationSummaryInfo]()
     allPaths.foreach { path =>
-      val app = QualAppInfo.createApp(path, numRows)
+      val app = QualAppInfo.createApp(path, numRows, hadoopConf)
       if (!app.isDefined) {
         logWarning("No Applications found that contain SQL!")
       } else {

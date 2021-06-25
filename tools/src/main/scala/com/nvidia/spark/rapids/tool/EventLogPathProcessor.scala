@@ -85,13 +85,9 @@ object EventLogPathProcessor extends Logging {
     (dbLogFiles.size > 1)
   }
 
-  def getEventLogInfo(pathString: String): Map[EventLogInfo, Long] = {
-    getEventLogInfo(pathString, null)
-  }
-
-    def getEventLogInfo(pathString: String, sparkSession: SparkSession): Map[EventLogInfo, Long] = {
+  def getEventLogInfo(pathString: String, hadoopConf: Configuration): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
-    val fs = inputPath.getFileSystem(new Configuration())
+    val fs = inputPath.getFileSystem(hadoopConf)
     try {
       val fileStatus = fs.getFileStatus(inputPath)
       val filePath = fileStatus.getPath()
@@ -108,18 +104,18 @@ object EventLogPathProcessor extends Logging {
         val info = ApacheSparkEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
         Map(info -> fileStatus.getModificationTime)
       } else if (fileStatus.isDirectory &&
-          isDatabricksEventLogDir(fileStatus, fs)) {
+        isDatabricksEventLogDir(fileStatus, fs)) {
         val dbinfo = DatabricksEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
         Map(dbinfo -> fileStatus.getModificationTime)
       } else {
         // assume either single event log or directory with event logs in it, we don't
         // support nested dirs, so if event log dir within another one we skip it
         val (validLogs, invalidLogs) = fs.listStatus(inputPath).partition(s => {
-            val name = s.getPath().getName()
-            (s.isFile ||
-              (s.isDirectory &&
-                (isEventLogDir(name) || isDatabricksEventLogDir(s, fs))))
-          })
+          val name = s.getPath().getName()
+          (s.isFile ||
+            (s.isDirectory &&
+              (isEventLogDir(name) || isDatabricksEventLogDir(s, fs))))
+        })
         if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
             s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
@@ -153,16 +149,16 @@ object EventLogPathProcessor extends Logging {
    * @param filterNLogs    number of event logs to be selected
    * @param matchlogs      keyword to match file names in the directory
    * @param eventLogsPaths Array of event log paths
-   * @param databricksLogs boolean indicating if the event log being processed is from Databricks
-   * @param sparkSession   SparkSession
+   * @param hadoopConf     Hadoop Configuration
    * @return EventLogInfo indicating type and location of event log
    */
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
-      eventLogsPaths: List[String]): Seq[EventLogInfo] = {
+      eventLogsPaths: List[String],
+      hadoopConf: Configuration): Seq[EventLogInfo] = {
 
-    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_)).toMap
+    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, hadoopConf)).toMap
 
     logDebug("Paths after stringToPath: " + logsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the

@@ -43,7 +43,7 @@ class ApplicationInfo(
     val sparkSession: SparkSession,
     eLogInfo: EventLogInfo,
     val index: Int)
-  extends AppBase(numRows, eLogInfo) with Logging {
+  extends AppBase(numRows, eLogInfo, sparkSession.sparkContext.hadoopConfiguration) with Logging {
 
   // allDataFrames is to store all the DataFrames
   // after event log parsing has completed.
@@ -270,7 +270,7 @@ class ApplicationInfo(
   // SQL containing any Dataset operation
   var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
 
-  val eventProcessor =  new EventsProcessor()
+  private lazy val eventProcessor =  new EventsProcessor()
 
   // Process all events
   processEvents()

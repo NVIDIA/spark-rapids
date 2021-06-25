@@ -17,25 +17,22 @@
 package org.apache.spark.sql.rapids.tool.qualification
 
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
-import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
+
+import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 
-import org.apache.spark.deploy.history.EventLogFileReader
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
-import org.apache.spark.util.{JsonProtocol, Utils}
-import org.json4s.jackson.JsonMethods.parse
-
-import scala.io.{Codec, Source}
+import org.apache.spark.sql.rapids.tool.AppBase
 
 class QualAppInfo(
     numOutputRows: Int,
-    eventLogInfo: EventLogInfo)
-  extends AppBase(numOutputRows, eventLogInfo) with Logging {
+    eventLogInfo: EventLogInfo,
+    hadoopConf: Configuration)
+  extends AppBase(numOutputRows, eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
   var isPluginEnabled = false
@@ -60,7 +57,7 @@ class QualAppInfo(
   // SQL containing any Dataset operation
   val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
 
-  val eventProcessor =  new QualEventProcessor
+  private lazy val eventProcessor =  new QualEventProcessor()
 
   processEvents()
 
@@ -203,9 +200,10 @@ case class QualificationSummaryInfo(
 object QualAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
-      numRows: Int): Option[QualAppInfo] = {
+      numRows: Int,
+      hadoopConf: Configuration): Option[QualAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(numRows, path)
+        val app = new QualAppInfo(numRows, path, hadoopConf)
         logInfo(s"==============  ${app.appId} ============== ")
         Some(app)
       } catch {
