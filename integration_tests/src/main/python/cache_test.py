@@ -273,11 +273,11 @@ def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     cached_result = with_x_session(with_cache(True),
                                    conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
                                          'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
-                                         'spark.sql.inMemoryColumnarStorage.enableVectorizedReader': enableVectorized})
+                                         'spark.sql.inMemoryColumnarStorage.enableVectorizedReader': enable_vectorized})
     reg_result = with_x_session(with_cache(False),
                                 conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
                                       'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED',
-                                      'spark.sql.inMemoryColumnarStorage.enableVectorizedReader': enableVectorized})
+                                      'spark.sql.inMemoryColumnarStorage.enableVectorizedReader': enable_vectorized})
 
     # NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
     assert_equal(reg_result, cached_result)
