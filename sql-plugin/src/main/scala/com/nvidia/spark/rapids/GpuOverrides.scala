@@ -1247,7 +1247,9 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
       }).incompat(CASE_MODIFICATION_INCOMPAT + " Spark also only sees the space character as " +
-      "a word deliminator, but this uses more white space characters."),
+      "a word deliminator, but this will capitalize any character after a non-alphabetic " + 
+      "character.  The behavior will be aligned to match Spark in the future per " +
+      "https://github.com/NVIDIA/spark-rapids/issues/2786."),
     expr[Log](
       "Natural log",
       ExprChecks.mathUnary,
