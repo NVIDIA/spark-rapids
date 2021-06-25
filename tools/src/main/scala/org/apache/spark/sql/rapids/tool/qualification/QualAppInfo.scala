@@ -60,9 +60,10 @@ class QualAppInfo(
   // SQL containing any Dataset operation
   val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
 
+  val eventProcessor =  new QualEventProcessor
+
   processEvents()
 
-  val eventProcessor =  new QualEventProcessor
   override def processEvent(event: SparkListenerEvent): Unit = {
     eventProcessor.processAnyEvent(this, event)
   }

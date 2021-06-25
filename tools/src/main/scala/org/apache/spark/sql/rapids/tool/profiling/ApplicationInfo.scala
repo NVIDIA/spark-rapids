@@ -270,6 +270,8 @@ class ApplicationInfo(
   // SQL containing any Dataset operation
   var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
 
+  val eventProcessor =  new EventsProcessor()
+
   // Process all events
   processEvents()
   // Process all properties after all events are processed
@@ -281,7 +283,6 @@ class ApplicationInfo(
 
   private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
 
-  val eventProcessor =  new EventsProcessor()
   override def processEvent(event: SparkListenerEvent) = {
     eventProcessor.processAnyEvent(this, event)
   }
