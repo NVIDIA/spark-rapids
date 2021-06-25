@@ -134,19 +134,10 @@ class ApplicationInfo(
         case None => ""
       }
 
-      // only for qualification set the runtime and cputime
-      // could expand later for profiling
-      val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
-      val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
-      val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
-      val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
-
       val stageNew = res.copy(completionTime = thisEndTime,
         failureReason = thisFailureReason,
         duration = durationResult,
-        durationStr = durationString,
-        executorRunTimeSum = runTime,
-        executorCPUTimeSum = cpuTime)
+        durationStr = durationString)
       ret += stageNew
     }
     ret
@@ -212,11 +203,6 @@ class ApplicationInfo(
   // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
   // taskEnd contains task level metrics - only used for profiling
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
-
-  // this is used to aggregate metrics for qualification to speed up processing and
-  // minimize memory usage
-  var stageTaskQualificationEnd: HashMap[String, StageTaskQualificationSummary] =
-    HashMap.empty[String, StageTaskQualificationSummary]
 
   // From SparkListenerTaskGettingResult
   var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =

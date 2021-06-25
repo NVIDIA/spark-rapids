@@ -166,6 +166,12 @@ class QualAppInfo(
   }
 }
 
+class StageTaskQualificationSummary(
+    val stageId: Int,
+    val stageAttemptId: Int,
+    var executorRunTime: Long,
+    var executorCPUTime: Long)
+
 case class QualApplicationInfo(
     appName: String,
     appId: Option[String],
