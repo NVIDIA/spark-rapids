@@ -173,20 +173,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
-
-        // create new session for tool to use
-        val spark2 = SparkSession
-          .builder()
-          .master("local[*]")
-          .appName("Rapids Spark Profiling Tool Unit Tests")
-          .getOrCreate()
-
         val appArgs = new QualificationArgs(Array(
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))
 
-        val (exit, sum) =
+        val (exit, sumInfo) =
           QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
 
@@ -198,7 +190,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val listenerCpuTimePercent = ToolUtils.calculatePercent(executorCpuTime, executorRunTime)
 
         // compare metrics from event log with metrics from listener
-        assert(sum.head.executorCpuTimePercent === listenerCpuTimePercent)
+        assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
       }
     }
   }
