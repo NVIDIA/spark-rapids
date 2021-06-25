@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-06-22
+Generated on 2021-06-25
 
 ## Release 21.06
 
@@ -85,6 +85,9 @@ Generated on 2021-06-22
 ### PRs
 |||
 |:---|:---|
+|[#2806](https://github.com/NVIDIA/spark-rapids/pull/2806)|Noted testing for A10, noted that min driver ver is HW specific|
+|[#2797](https://github.com/NVIDIA/spark-rapids/pull/2797)|Update documentation for InitCap incompatibility|
+|[#2774](https://github.com/NVIDIA/spark-rapids/pull/2774)|Update changelog for 21.06 release [skip ci]|
 |[#2770](https://github.com/NVIDIA/spark-rapids/pull/2770)|[Doc] add more for Alluxio page [skip ci]|
 |[#2745](https://github.com/NVIDIA/spark-rapids/pull/2745)|Add link to Mellanox RoCE documentation and mention --without-ucx installation option|
 |[#2740](https://github.com/NVIDIA/spark-rapids/pull/2740)|Update cudf Java bindings to 21.06.1|

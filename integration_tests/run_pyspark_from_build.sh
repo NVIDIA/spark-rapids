@@ -117,10 +117,17 @@ else
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
     MB_PER_EXEC=${MB_PER_EXEC:-1024}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
+    # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
+    # which helps with spurious task failures as observed in our tests. If you are running
+    # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for
+    # more lineant configuration, else it will set them to 1 as spurious task failures are not expected
+    # for Spark 3.1.1+
+    VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|grep -v Scala|awk '/version\ [0-9.]+/{print $NF}'`
+    [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
+    echo "Detected Spark version $VERSION_STRING"
 
-    if ((NUM_LOCAL_EXECS > 0)); then
-      export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
-    fi
+    SPARK_TASK_MAXFAILURES=1
+    [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
     export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
     export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
@@ -129,9 +136,26 @@ else
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
     export PYSP_TEST_spark_sql_shuffle_partitions='12'
-    # prevent cluster shape to change - and fail quicker rather than retry
-    export PYSP_TEST_spark_task_maxFailures='1'
+    # prevent cluster shape to change
     export PYSP_TEST_spark_dynamicAllocation_enabled='false'
+
+    # Set spark.task.maxFailures for most schedulers.
+    #
+    # Local (non-cluster) mode is the exception and does not work with `spark.task.maxFailures`.
+    # It requires two arguments to the master specification "local[N, K]" where
+    # N is the number of threads, and K is the maxFailures (otherwise this is hardcoded to 1,
+    # see https://issues.apache.org/jira/browse/SPARK-2083).
+    export PYSP_TEST_spark_task_maxFailures="$SPARK_TASK_MAXFAILURES"
+
+    if ((NUM_LOCAL_EXECS > 0)); then
+      export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
+    else
+      # If a master is not specified, use "local[*, $SPARK_TASK_MAXFAILURES]"
+      if [ -z "${PYSP_TEST_spark_master}" ] && [ "$SPARK_SUBMIT_FLAGS" != *"--master"* ]; then
+        export PYSP_TEST_spark_master="local[*,$SPARK_TASK_MAXFAILURES]"
+      fi
+    fi
+
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
         export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=$MEMORY_FRACTION

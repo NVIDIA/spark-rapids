@@ -19,11 +19,11 @@ package com.nvidia.spark.rapids.shuffle.ucx
 import java.io._
 import java.net._
 import java.nio.ByteBuffer
+import java.security.SecureRandom
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable.ArrayBuffer
-import scala.util.Random
 
 import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
@@ -204,7 +204,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           rapidsConf.shuffleUcxListenerStartPort
         } else {
           // TODO: remove this once ucx1.11 with random port selection would be released
-          1024 + Random.nextInt(65535 - 1024)
+          1024 + new SecureRandom().nextInt(65535 - 1024)
         }
         var attempt = 0
         while (listener.isEmpty && attempt < maxRetries) {

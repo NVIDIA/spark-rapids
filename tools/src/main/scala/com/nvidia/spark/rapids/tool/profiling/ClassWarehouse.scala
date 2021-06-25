@@ -22,8 +22,8 @@ package com.nvidia.spark.rapids.tool.profiling
  */
 
 case class ResourceProfileCase(
-  id: Int, exec_cpu: Int, exec_mem: Long, exec_gpu: Int,
-  exec_offheap: Long, task_cpu: Int, task_gpu: Double)
+  id: Int, executorCores: Int, executorMemory: Long, numGpusPerExecutor: Int,
+  executorOffHeap: Long, taskCpu: Int, taskGpu: Double)
 
 case class BlockManagerCase(
   executorID: String, host: String, port: Int,

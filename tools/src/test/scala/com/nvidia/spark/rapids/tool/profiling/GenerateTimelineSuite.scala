@@ -25,15 +25,15 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 
-class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
+class GenerateTimelineSuite extends FunSuite with BeforeAndAfterAll with Logging {
 
   override def beforeAll(): Unit = {
     TrampolineUtil.cleanupAnyExistingSession()
   }
 
-  test("Generate DOT") {
+  test("Generate Timeline") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "timeline") { spark =>
         import spark.implicits._
         val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
         t1.createOrReplaceTempView("t1")
@@ -51,36 +51,38 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
         val appArgs = new ProfileArgs(Array(
           "--output-directory",
           dotFileDir.getAbsolutePath,
-          "--generate-dot",
+          "--generate-timeline",
           eventLog))
         ProfileMain.mainInternal(spark2, appArgs)
 
         val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
 
         // assert that a file was generated
-        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
-        assert(dotDirs.length === 2)
+        val outputDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
+        assert(outputDirs.length === 1)
 
         // assert that the generated files looks something like what we expect
-        var hashAggCount = 0
-        var stageCount = 0
-        for (file <- dotDirs) {
-          assert(file.getAbsolutePath.endsWith(".dot"))
+        var stageZeroCount = 0
+        var stageRangeZeroCount = 0
+        var jobZeroCount = 0
+        // We cannot really simply test the SQL count because that counter does not get reset
+        // with each test
+        for (file <- outputDirs) {
+          assert(file.getAbsolutePath.endsWith(".svg"))
           val source = Source.fromFile(file)
           try {
             val lines = source.getLines().toArray
-            assert(lines.head === "digraph G {")
-            assert(lines.last === "}")
-            hashAggCount += lines.count(_.contains("HashAggregate"))
-            stageCount += lines.count(_.contains("STAGE "))
+            stageZeroCount += lines.count(_.contains("STAGE 0"))
+            stageRangeZeroCount += lines.count(_.contains("STAGE RANGE 0"))
+            jobZeroCount += lines.count(_.contains("JOB 0"))
           } finally {
             source.close()
           }
         }
-        // 2 node labels + 1 graph label
-        assert(hashAggCount === 3)
-        // Initial Aggregation, Final Aggregation, Sorting final output
-        assert(stageCount === 3)
+        //
+        assert(stageZeroCount === 1)
+        assert(stageRangeZeroCount === 1)
+        assert(jobZeroCount === 1)
       }
     }
   }
