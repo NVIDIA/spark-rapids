@@ -95,7 +95,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
     assert(apps.head.taskEnd(apps.head.index).endReason.equals("Success"))
     assert(apps.head.executors.head.totalCores.equals(8))
-    assert(apps.head.resourceProfiles.head.exec_mem.equals(1024L))
+    assert(apps.head.resourceProfiles.head.executorMemory.equals(1024L))
   }
 
   test("test rapids jar") {
@@ -227,6 +227,30 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(secondRow.getList(secondRow.schema.fieldIndex("stageIds")).size == 4)
       assert(secondRow.getLong(secondRow.schema.fieldIndex("sqlID")) == 0)
     }
+  }
+
+  test("test multiple resource profile in single app") {
+    var apps :ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs = new ProfileArgs(Array(s"$logDir/rp_nosql_eventlog"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    assert(apps.head.resourceProfiles.size == 2)
+
+    val row0= apps.head.resourceProfiles(0)
+    assert(row0.id.equals(0))
+    assert(row0.executorMemory.equals(20480L))
+    assert(row0.executorCores.equals(4))
+
+    val row1= apps.head.resourceProfiles(1)
+    assert(row1.id.equals(1))
+    assert(row1.executorMemory.equals(6144L))
+    assert(row1.executorCores.equals(2))
   }
 
   test("test filename match") {

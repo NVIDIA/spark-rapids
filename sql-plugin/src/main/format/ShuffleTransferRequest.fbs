@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, NVIDIA CORPORATION.
+// Copyright (c) 2020, NVIDIA CORPORATION.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@ namespace com.nvidia.spark.rapids.format;
 table BufferTransferRequest {
   /// ID of table to transfer
   buffer_id: int;
+
+  /// UCX tag that will receive the transfer
+  tag: long;
 }
 
 /// Flat buffer for Rapids UCX Shuffle Transfer Request.
 table TransferRequest {
-  /// ID used to disambiguate Active Message receives
-  id : long;
-
   /// array of table requests to transfer
   requests : [BufferTransferRequest];
 }

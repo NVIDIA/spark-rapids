@@ -25,7 +25,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  * CompareApplications compares multiple ApplicationInfo objects
  */
 class CompareApplications(apps: Seq[ApplicationInfo],
-    fileWriter: ToolTextFileWriter) extends Logging {
+    fileWriter: Option[ToolTextFileWriter]) extends Logging {
 
   require(apps.size>1)
 
@@ -35,15 +35,19 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     var query = ""
     var i = 1
     for (app <- apps) {
-      query += app.generateAppInfo
-      if (i < apps.size) {
-        query += "\n union \n"
+      if (app.allDataFrames.contains(s"appDF_${app.index}")) {
+        query += app.generateAppInfo
+        if (i < apps.size) {
+          query += "\n union \n"
+        } else {
+          query += " order by appIndex"
+        }
       } else {
-        query += " order by appIndex"
+        fileWriter.foreach(_.write("No Application Information Found!\n"))
       }
       i += 1
     }
-    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
+    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
 
   // Compare Job information
@@ -52,15 +56,19 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     var query = ""
     var i = 1
     for (app <- apps) {
-      query += app.jobtoStagesSQL
-      if (i < apps.size) {
-        query += "\n union \n"
+      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
+        query += app.jobtoStagesSQL
+        if (i < apps.size) {
+          query += "\n union \n"
+        } else {
+          query += " order by appIndex"
+        }
       } else {
-        query += " order by appIndex"
+        fileWriter.foreach(_.write("No Job Information Found!\n"))
       }
       i += 1
     }
-    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
+    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
 
   // Compare Executors information
@@ -69,52 +77,53 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     var query = ""
     var i = 1
     for (app <- apps) {
-      query += app.generateExecutorInfo
-      if (i < apps.size) {
-        query += "\n union \n"
+      if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
+        query += app.generateExecutorInfo
+        if (i < apps.size) {
+          query += "\n union \n"
+        } else {
+          query += " order by appIndex"
+        }
       } else {
-        query += " order by appIndex, cast(executorID as long)"
+        fileWriter.foreach(_.write("No Executor Information Found!\n"))
       }
       i += 1
     }
-    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
+    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
 
   // Compare Rapids Properties which are set explicitly
-  def compareRapidsProperties(): Unit ={
+  def compareRapidsProperties(): Unit = {
     val messageHeader = "\n\nCompare Rapids Properties which are set explicitly:\n"
     var withClauseAllKeys = "with allKeys as \n ("
-    val selectKeyPart = "select allKeys.key"
+    val selectKeyPart = "select allKeys.propertyName"
     var selectValuePart = ""
     var query = " allKeys LEFT OUTER JOIN \n"
     var i = 1
     for (app <- apps) {
-      // For the 1st app
-      if (i == 1) {
-        withClauseAllKeys += "select distinct key from (" +
-            app.generateRapidsProperties + ") union "
-        query += "(" + app.generateRapidsProperties + s") tmp_$i"
-        query += s" on allKeys.key=tmp_$i.key"
-        query += "\n LEFT OUTER JOIN \n"
-      } else if (i < apps.size) { // For the 2nd to non-last app(s)
-        withClauseAllKeys += "select distinct key from (" +
-            app.generateRapidsProperties + ") union "
-        query += "(" + app.generateRapidsProperties + s") tmp_$i"
-        query += s" on allKeys.key=tmp_$i.key"
-        query += "\n LEFT OUTER JOIN \n"
-      } else { // For the last app
-        withClauseAllKeys += "select distinct key from (" +
-            app.generateRapidsProperties + "))\n"
-        query += "(" + app.generateRapidsProperties + s") tmp_$i"
-        query += s" on allKeys.key=tmp_$i.key"
+      if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
+        if (i < apps.size) {
+          withClauseAllKeys += "select distinct propertyName from (" +
+              app.generateRapidsProperties + ") union "
+          query += "(" + app.generateRapidsProperties + s") tmp_$i"
+          query += s" on allKeys.propertyName=tmp_$i.propertyName"
+          query += "\n LEFT OUTER JOIN \n"
+        } else { // For the last app
+          withClauseAllKeys += "select distinct propertyName from (" +
+              app.generateRapidsProperties + "))\n"
+          query += "(" + app.generateRapidsProperties + s") tmp_$i"
+          query += s" on allKeys.propertyName=tmp_$i.propertyName"
+        }
+        selectValuePart += s",appIndex_${app.index}"
+      } else {
+        fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
       }
-      selectValuePart += s",value_app$i"
       i += 1
     }
 
     query = withClauseAllKeys + selectKeyPart + selectValuePart +
-        " from (\n" + query + "\n) order by key"
+        " from (\n" + query + "\n) order by propertyName"
     logDebug("Running query " + query)
-    apps.head.runQuery(query = query, fileWriter = Some(fileWriter), messageHeader = messageHeader)
+    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
 }

@@ -24,8 +24,10 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
+
+case class StageMetrics(numTasks: Int, duration: String)
 
 /**
  * CollectInformation mainly print information based on this event log:
@@ -72,7 +74,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nExecutor Information:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
-        app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
+        app.runQuery(query = app.generateExecutorInfo + " order by cast(numExecutors as long)",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Executor Information Found!\n"))
@@ -98,7 +100,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        app.runQuery(query = app.generateRapidsProperties + " order by key",
+        app.runQuery(query = app.generateRapidsProperties + " order by propertyName",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
@@ -129,14 +131,52 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           "taskStageAccumDF", "taskStageAccumDF")
         .map(name => s"${name}_${app.index}")
       if (requiredDataFrames.forall(app.allDataFrames.contains)) {
-        val accums = accumsOpt.getOrElse(app.runQuery(app.generateSQLAccums))
         val start = System.nanoTime()
+        val accums = accumsOpt.getOrElse(app.runQuery(app.generateSQLAccums))
+
+        val accumIdToStageId = app.runQuery(
+          s"""
+             | select
+             | stageId,
+             | accumulatorId
+             | from taskStageAccumDF_${app.index}
+             | """.stripMargin).groupBy("accumulatorId").agg(
+          max(col("stageId")).alias("stageId")).collect().map { row =>
+          (row.getLong(0), row.getInt(1))
+        }.toMap
+
+        val formatter = java.text.NumberFormat.getIntegerInstance
+
+        val stageIdToStageMetrics = app.runQuery(
+          s"""
+             |select
+             | stageId,
+             | duration
+             | from taskDF_${app.index}
+             |""".stripMargin).groupBy(col("stageId"))
+            .agg(min(col("duration")).alias("min_dur"),
+              max(col("duration")).alias("max_dur"),
+              mean(col("duration")).alias("mean_dur"),
+              count(col("duration")).alias("num_tasks"))
+            .collect().map { row =>
+          val stageId = row.getInt(0)
+          val minDur = row.getLong(1)
+          val maxDur = row.getLong(2)
+          val meanDur = row.getDouble(3)
+          val numTasks = row.getLong(4)
+          (stageId, StageMetrics(numTasks.toInt,
+            s"MIN: ${formatter.format(minDur)} ms " +
+                s"MAX: ${formatter.format(maxDur)} ms " +
+                s"AVG: ${formatter.format(meanDur)} ms"))
+        }.toMap
+
         val accumSummary = accums
           .select(col("sqlId"), col("accumulatorId"), col("max_value"))
           .collect()
-        val map = new mutable.HashMap[Long, ArrayBuffer[(Long,Long)]]()
+        val sqlIdToMaxMetric = new mutable.HashMap[Long, ArrayBuffer[(Long,Long)]]()
         for (row <- accumSummary) {
-          val list = map.getOrElseUpdate(row.getLong(0), new ArrayBuffer[(Long, Long)]())
+          val list = sqlIdToMaxMetric.getOrElseUpdate(row.getLong(0),
+            new ArrayBuffer[(Long, Long)]())
           list += row.getLong(1) -> row.getLong(2)
         }
 
@@ -147,9 +187,10 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           val dotFileWriter = new ToolTextFileWriter(outputDirectory,
             s"${app.appId}-query-$sqlID.dot")
           try {
-            val metrics = map.getOrElse(sqlID, Seq.empty).toMap
-            GenerateDot.generateDotGraph(QueryPlanWithMetrics(planInfo, metrics),
-              physicalPlan, None, dotFileWriter, sqlID, app.appId)
+            val metrics = sqlIdToMaxMetric.getOrElse(sqlID, Seq.empty).toMap
+            GenerateDot.writeDotGraph(QueryPlanWithMetrics(planInfo, metrics),
+              physicalPlan, accumIdToStageId, stageIdToStageMetrics, dotFileWriter,
+              sqlID, app.appId)
           } finally {
             dotFileWriter.close()
           }
@@ -157,7 +198,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
         val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
         fileWriter.foreach(_.write(s"Generated DOT graphs for app ${app.appId} " +
-          s"to ${outputDirectory} in $duration second(s)\n"))
+          s"to $outputDirectory in $duration second(s)\n"))
       } else {
         val missingDataFrames = requiredDataFrames.filterNot(app.allDataFrames.contains)
         fileWriter.foreach(_.write(s"Could not generate DOT graph for app ${app.appId} " +

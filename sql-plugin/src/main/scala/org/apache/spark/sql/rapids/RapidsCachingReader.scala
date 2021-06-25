@@ -120,8 +120,8 @@ class RapidsCachingReader[K, C](
         }
       })
 
-      logInfo(s"Will read ${cachedBlocks.size} cached blocks, " +
-        s"${blocksForRapidsTransport.size} remote blocks from the RapidsShuffleTransport. ")
+      logInfo(s"Will read $cachedBlocks cached blocks, " +
+        s"$blocksForRapidsTransport remote blocks from the RapidsShuffleTransport. ")
 
       if (transport.isEmpty && blocksForRapidsTransport.nonEmpty) {
         throw new IllegalStateException("Had blocks marked for use with the " +

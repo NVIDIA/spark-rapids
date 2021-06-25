@@ -19,16 +19,16 @@ package com.nvidia.spark.rapids.shuffle.ucx
 import java.io._
 import java.net._
 import java.nio.ByteBuffer
+import java.security.SecureRandom
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable.ArrayBuffer
-import scala.util.Random
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{Arm, GpuDeviceManager, RapidsConf}
-import com.nvidia.spark.rapids.shuffle.{ClientConnection, MemoryRegistrationCallback, MetadataTransportBuffer, TransportBuffer, TransportUtils}
+import com.nvidia.spark.rapids.shuffle.{AddressLengthTag, ClientConnection, MemoryRegistrationCallback, TransportUtils}
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
 import org.openucx.jucx.ucs.UcsConstants
@@ -51,7 +51,7 @@ case class Rkeys(rkeys: Seq[ByteBuffer])
  * This allows us to send a request (with a header that the response handler knows about),
  * and for the request handler to echo back that header when it's done.
  */
-case class UCXActiveMessage(activeMessageId: Int, header: Long, forceRndv: Boolean) {
+case class UCXActiveMessage(activeMessageId: Int, header: Long) {
   override def toString: String =
     UCX.formatAmIdAndHeader(activeMessageId, header)
 }
@@ -60,6 +60,9 @@ case class UCXActiveMessage(activeMessageId: Int, header: Long, forceRndv: Boole
  * The UCX class wraps JUCX classes and handles all communication with UCX from other
  * parts of the shuffle code. It manages a `UcpContext` and `UcpWorker`, for the
  * local executor, and maintain a set of `UcpEndpoint` for peers.
+ *
+ * The current API supported from UCX is the tag based API. Tags are exposed in this class
+ * via an `AddressLengthTag`.
  *
  * This class uses an extra TCP management connection to perform a handshake with remote peers,
  * this port should be distributed to peers by other means (e.g. via the `BlockManagerId`)
@@ -95,8 +98,11 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   private val endpoints = new ConcurrentHashMap[Long, UcpEndpoint]()
   @volatile private var initialized = false
 
-  // this is a monotonically increasing id, used for buffers
-  private val uniqueIds = new AtomicLong(0)
+  // a peer tag identifies an incoming connection uniquely
+  private val peerTag = new AtomicLong(0) // peer tags
+
+  // this is a monotonically increasing id for every response
+  private val responseTag = new AtomicLong(0) // outgoing message tag
 
   // event loop, used to call [[UcpWorker.progress]], and perform all UCX work
   private val progressThread = Executors.newFixedThreadPool(1,
@@ -198,7 +204,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           rapidsConf.shuffleUcxListenerStartPort
         } else {
           // TODO: remove this once ucx1.11 with random port selection would be released
-          1024 + Random.nextInt(65535 - 1024)
+          1024 + new SecureRandom().nextInt(65535 - 1024)
         }
         var attempt = 0
         while (listener.isEmpty && attempt < maxRetries) {
@@ -239,18 +245,13 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           // else worker.progress returned 0
           if (rapidsConf.shuffleUcxUseWakeup) {
             drainWorker()
-            if (workerTasks.isEmpty) {
-              withResource(new NvtxRange("UCX Sleeping", NvtxColor.PURPLE)) { _ =>
-                // Note that `waitForEvents` checks any events that have occurred, and will
-                // return early in those cases. Therefore, `waitForEvents` is safe to be
-                // called after `worker.signal()`, as it will wake up right away.
-                worker.waitForEvents()
-              }
+            withResource(new NvtxRange("UCX Sleeping", NvtxColor.PURPLE)) { _ =>
+              worker.waitForEvents()
             }
           }
 
-          withResource(new NvtxRange("UCX Handling Tasks", NvtxColor.CYAN)) { _ =>
-            while (!workerTasks.isEmpty) {
+          while (!workerTasks.isEmpty) {
+            withResource(new NvtxRange("UCX Handling Tasks", NvtxColor.CYAN)) { _ =>
               val wt = workerTasks.poll()
               if (wt != null) {
                 wt()
@@ -333,15 +334,45 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     serverSocket.getLocalPort
   }
 
+  // LOW LEVEL API
+  def send(endpointId: Long, alt: AddressLengthTag, cb: UCXTagCallback): Unit = {
+    val ucxCb = new UcxCallback {
+      override def onError(ucsStatus: Int, errorMsg: String): Unit = {
+        if (ucsStatus == UCX.UCS_ERR_CANCELED) {
+          logWarning(
+            s"Cancelled: tag=${TransportUtils.toHex(alt.tag)}," +
+              s" status=$ucsStatus, msg=$errorMsg")
+          cb.onCancel(alt)
+        } else {
+          logError("error sending : " + ucsStatus + " " + errorMsg)
+          cb.onError(alt, ucsStatus, errorMsg)
+        }
+      }
+
+      override def onSuccess(request: UcpRequest): Unit = {
+        cb.onSuccess(alt)
+      }
+    }
+
+    onWorkerThreadAsync(() => {
+      val ep = endpoints.get(endpointId)
+      if (ep == null) {
+        throw new IllegalStateException(s"I cant find endpoint $endpointId")
+      }
+
+      val request = ep.sendTaggedNonBlocking(alt.address, alt.length, alt.tag, ucxCb)
+      cb.onMessageStarted(request)
+    })
+  }
 
   /**
    * This trait and next two implementations represent the mapping between an Active Message Id
    * and the callback that should be triggered when a message is received.
    *
-   * There are three types of Active Messages we care about: requests, responses, and buffers.
+   * There are two types of Active Messages we care about: requests and responses.
    *
    * For requests:
-   *   - `activeMessageId` for requests is the value of the `MessageType` enum, and it is
+   *   - `activeMessageId` for requests is the value of the `RequestType` enum, and it is
    *   set once when the `RapidsShuffleServer` is initialized, and no new request handlers
    *   are established.
    *
@@ -352,11 +383,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
    *   - On a request, a callback is instantiated using `requestCallbackGen`, which creates
    *   a transaction each time. This is one way to handle several requests inbound to a server.
    *
-   *   - useRndv: is set to false. We expect UCX to be able to use eager protocols or rndv
-   *   at its leasure. `rapidsConf.shuffleUcxActiveMessagesForceRndv` can be used to force rndv.
-   *
    * For responses:
-   *   - `activeMessageId` for responses is the value of the `MessageType` enum with an extra
+   *   - `activeMessageId` for responses is the value of the `RequestType` enum with an extra
    *   bit flipped (see `UCXConnection.composeResponseAmId`). These are also set once, as requests
    *   are sent out.
    *
@@ -366,45 +394,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
    *
    *   - Each response received at the response activeMessageId, will be demuxed using the header:
    *   responseActiveMessageId1 -> [callbackForHeader1, callbackForHeader2, ..., callbackForHeaderN]
-   *
-   *   - useRndv: is set to false. We expect UCX to be able to use eager protocols or rndv
-   *   at its leasure. `rapidsConf.shuffleUcxActiveMessagesForceRndv` can be used to force rndv.
-   *
-   * For buffers:
-   *   - `activeMessageId` for buffers is the value of the `MessageType` enum (`MessageType.Buffer`)
-   *
-   *   - The Active Message header is used to pick the correct callback to call. Each header
-   *   encodes the peer we expect to receive from and a monotonically inscreasing id per request.
-   *
-   *   - useRndv: is set to true. We prefer the zero-copy method since the buffer pointer
-   *   provided to UCX could be on the GPU. An eager message would require us to issue an H2D in
-   *   the handler.
    */
   trait ActiveMessageRegistration {
     val activeMessageId: Int
     def getCallback(header: Long): UCXAmCallback
-    def useRndv: Boolean
-  }
-
-  class ReceiveActiveMessageRegistration(override val activeMessageId: Int, mask: Long)
-      extends ActiveMessageRegistration {
-
-    private[this] val handlers = new ConcurrentHashMap[Long, () => UCXAmCallback]()
-
-    def addWildcardHeaderHandler(wildcardHdr: Long, cbGen: () => UCXAmCallback): Unit = {
-      handlers.put(wildcardHdr, cbGen)
-    }
-
-    override def getCallback(header: Long): UCXAmCallback = {
-      // callback is picked using a wildcard
-      val cb = handlers.get(header & mask)
-      if (cb == null) {
-        throw new IllegalStateException(s"UCX Receive Active Message callback not found for " +
-          s"${TransportUtils.toHex(header)} and mask ${TransportUtils.toHex(mask)}")
-      }
-      cb()
-    }
-    override def useRndv: Boolean = true
   }
 
   class RequestActiveMessageRegistration(override val activeMessageId: Int,
@@ -412,13 +405,11 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       extends ActiveMessageRegistration {
 
     def getCallback(header: Long): UCXAmCallback = requestCbGen()
-
-    override def useRndv: Boolean = rapidsConf.shuffleUcxActiveMessagesForceRndv
   }
 
   class ResponseActiveMessageRegistration(override val activeMessageId: Int)
       extends ActiveMessageRegistration {
-    private[this] val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
+    private val responseCallbacks = new ConcurrentHashMap[Long, UCXAmCallback]()
 
     def getCallback(header: Long): UCXAmCallback = {
       val cb = responseCallbacks.remove(header) // 1 callback per header
@@ -428,15 +419,12 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       cb
     }
 
-    def addResponseActiveMessageHandler(
-        header: Long, responseCallback: UCXAmCallback): Unit = {
+    def addResponseActiveMessageHandler(header: Long, responseCallback: UCXAmCallback): Unit = {
       val prior = responseCallbacks.putIfAbsent(header, responseCallback)
       require(prior == null,
         s"Invalid Active Message re-registration of response handler for " +
           s"${UCX.formatAmIdAndHeader(activeMessageId, header)}")
     }
-
-    override def useRndv: Boolean = rapidsConf.shuffleUcxActiveMessagesForceRndv
   }
 
   /**
@@ -484,35 +472,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     registerActiveMessage(reg)
   }
 
-  /**
-   * Register a receive (one way) message, this is used by the clients.
-   * @param activeMessageId (up to 5 bits) used to register with UCX an Active Message
-   * @param hdrMask - a long with bits set for those bits that should be masked to find
-   *                  the proper callback.
-   * @param hdrWildcard - a long with an id that should be associated with a specific callback.
-   * @param receiveCallbackGen - a function that instantiates a callback to handle
-   *                             a particular receive.
-   */
-  def registerReceiveHandler(activeMessageId: Int, hdrMask: Long, hdrWildcard: Long,
-      receiveCallbackGen: () => UCXAmCallback): Unit = {
-    logDebug(s"Register Active Message ${TransportUtils.toHex(activeMessageId)} " +
-      s"mask ${TransportUtils.toHex(hdrMask)} " +
-      s"wild ${TransportUtils.toHex(hdrWildcard)} request handler")
-    amRegistrations.computeIfAbsent(activeMessageId,
-      _ => {
-        val reg = new ReceiveActiveMessageRegistration(activeMessageId, hdrMask)
-        registerActiveMessage(reg)
-        reg
-      }) match {
-      case reg: ReceiveActiveMessageRegistration =>
-        reg.addWildcardHeaderHandler(hdrWildcard, receiveCallbackGen)
-      case other =>
-        throw new IllegalStateException(
-          s"Attempted to add a receive Active Message handler to existing registration $other " +
-            s"for ${UCX.formatAmIdAndHeader(activeMessageId, hdrWildcard)}")
-    }
-  }
-
   private def registerActiveMessage(reg: ActiveMessageRegistration): Unit = {
     onWorkerThreadAsync(() => {
       worker.setAmRecvHandler(reg.activeMessageId,
@@ -522,160 +481,164 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
             throw new IllegalStateException(
               s"Received message with wrong header size $headerSize")
           } else {
-            val header = UcxUtils.getByteBufferView(headerAddr, headerSize).getLong()
-            val am = UCXActiveMessage(reg.activeMessageId, header, reg.useRndv)
+            val header = UcxUtils.getByteBufferView(headerAddr, headerSize).getLong
+            val am = UCXActiveMessage(reg.activeMessageId, header)
 
-            withResource(new NvtxRange("AM Receive", NvtxColor.YELLOW)) { _ =>
-              logDebug(s"Active Message received: $am")
-              val cb = reg.getCallback(header)
+            logDebug(s"Active Message received: $am")
 
-              if (amData.isDataValid) {
-                require(!reg.useRndv,
-                  s"Handling an eager Active Message, but expected rndv for: " +
-                    s"amId ${TransportUtils.toHex(reg.activeMessageId)}")
-                val resp = UcxUtils.getByteBufferView(amData.getDataAddress, amData.getLength)
+            val cb = reg.getCallback(header)
 
-                // copy the data onto a buffer we own because it is going to be reused
-                // in UCX
-                cb.onMessageReceived(amData.getLength, header, {
-                  case mtb: MetadataTransportBuffer =>
-                    mtb.copy(resp)
-                    cb.onSuccess(am, mtb)
-                  case _ =>
-                    cb.onError(am, 0,
-                      "Received an eager message for non-metadata message")
+            if (amData.isDataValid) {
+              require(notForcingAmRndv,
+                s"Handling an eager Active Message, but we are using " +
+                  s"'${rapidsConf.shuffleUcxActiveMessagesMode}' as our configured mode.")
+              logDebug(s"Handling an EAGER active message receive ${amData}")
+              val resp = UcxUtils.getByteBufferView(amData.getDataAddress, amData.getLength)
+
+              // copy the data onto a buffer we own because it is going to be reused
+              // in UCX
+              val dbb = cb.onHostMessageReceived(amData.getLength)
+              val bb = dbb.getBuffer()
+              bb.put(resp)
+              bb.rewind()
+              cb.onSuccess(am, dbb)
+
+              // we return OK telling UCX `amData` is ok to be closed, along with the eagerly
+              // received data
+              UcsConstants.STATUS.UCS_OK
+            } else {
+              // RNDV case: we get a direct buffer and UCX will fill it with data at `receive`
+              // callback
+              val resp = cb.onHostMessageReceived(amData.getLength)
+
+              val receiveAm = amData.receive(UcxUtils.getAddress(resp.getBuffer()),
+                new UcxCallback {
+                  override def onError(ucsStatus: Int, errorMsg: String): Unit = {
+                    withResource(resp) { _ =>
+                      withResource(amData) { _ =>
+                        if (ucsStatus == UCX.UCS_ERR_CANCELED) {
+                          logWarning(
+                            s"Cancelled Active Message " +
+                              s"${TransportUtils.toHex(reg.activeMessageId)}" +
+                              s" status=$ucsStatus, msg=$errorMsg")
+                          cb.onCancel(am)
+                        } else {
+                          cb.onError(am, ucsStatus, errorMsg)
+                        }
+                      }
+                    }
+                  }
+
+                  override def onSuccess(request: UcpRequest): Unit = {
+                    withResource(amData) { _ =>
+                      cb.onSuccess(am, resp)
+                    }
+                  }
                 })
 
-                // we return OK telling UCX `amData` is ok to be closed, along with the eagerly
-                // received data
-                UcsConstants.STATUS.UCS_OK
-              } else {
-                // RNDV case: we get a direct buffer and UCX will fill it with data at `receive`
-                // callback
-                cb.onMessageReceived(amData.getLength, header, (resp: TransportBuffer) => {
-                  logDebug(s"Receiving Active Message ${am} using data address " +
-                    s"${TransportUtils.toHex(resp.getAddress())}")
-
-                  // we must call `receive` on the `amData` object within the progress thread
-                  onWorkerThreadAsync(() => {
-                    val receiveAm = amData.receive(resp.getAddress(),
-                      new UcxCallback {
-                        override def onError(ucsStatus: Int, errorMsg: String): Unit = {
-                          withResource(resp) { _ =>
-                            withResource(amData) { _ =>
-                              if (ucsStatus == UCX.UCS_ERR_CANCELED) {
-                                logWarning(
-                                  s"Cancelled Active Message " +
-                                    s"${TransportUtils.toHex(reg.activeMessageId)}" +
-                                    s" status=$ucsStatus, msg=$errorMsg")
-                                cb.onCancel(am)
-                              } else {
-                                cb.onError(am, ucsStatus, errorMsg)
-                              }
-                            }
-                          }
-                        }
-
-                        override def onSuccess(request: UcpRequest): Unit = {
-                          withResource(new NvtxRange("AM Success", NvtxColor.ORANGE)) { _ =>
-                            withResource(amData) { _ =>
-                              logDebug(s"Success with Active Message ${am} using data address " +
-                                s"${TransportUtils.toHex(resp.getAddress())}")
-                              cb.onSuccess(am, resp)
-                            }
-                          }
-                        }
-                      })
-                    cb.onMessageStarted(receiveAm)
-                  })
-                })
-                UcsConstants.STATUS.UCS_INPROGRESS
-              }
+              cb.onMessageStarted(receiveAm)
+              UcsConstants.STATUS.UCS_INPROGRESS
             }
           }
         })
     })
   }
 
-  def sendActiveMessage(endpointId: Long, am: UCXActiveMessage,
-      data: MemoryBuffer, cb: UcxCallback): Unit = {
-    sendActiveMessage(
-      endpointId,
-      am,
-      data.getAddress,
-      data.getLength,
-      cb,
-      isGpu = data.isInstanceOf[DeviceMemoryBuffer])
+  // If we are not forcing RNDV (i.e. we are in auto or eager) other handling
+  // can happen when we receive an Active Message message (it can contain
+  // inline data that must be copied out in the callback).
+  private lazy val notForcingAmRndv: Boolean = {
+    !rapidsConf.shuffleUcxActiveMessagesMode
+      .equalsIgnoreCase("rndv")
+  }
+
+  private lazy val activeMessageMode: Long = {
+    rapidsConf.shuffleUcxActiveMessagesMode match {
+      case "eager" =>
+        UcpConstants.UCP_AM_SEND_FLAG_EAGER
+      case "rndv" =>
+        UcpConstants.UCP_AM_SEND_FLAG_RNDV
+      case "auto" =>
+        0L
+      case _ =>
+        throw new IllegalArgumentException(
+          s"${rapidsConf.shuffleUcxActiveMessagesMode} is an invalid Active Message mode. " +
+          s"Please ensure that ${RapidsConf.SHUFFLE_UCX_ACTIVE_MESSAGES_MODE.key} is set correctly")
+    }
   }
 
   def sendActiveMessage(endpointId: Long, am: UCXActiveMessage,
-      data: ByteBuffer, cb: UcxCallback): Unit = {
-    sendActiveMessage(
-      endpointId,
-      am,
-      TransportUtils.getAddress(data),
-      data.remaining(),
-      cb,
-      isGpu = false)
-  }
-
-  private def sendActiveMessage(endpointId: Long, am: UCXActiveMessage,
-      dataAddress: Long, dataSize: Long,
-      cb: UcxCallback, isGpu: Boolean): Unit = {
+                        dataAddress: Long, dataSize: Long, cb: UcxCallback): Unit = {
     onWorkerThreadAsync(() => {
-      val useRndv = am.forceRndv || rapidsConf.shuffleUcxActiveMessagesForceRndv
       val ep = endpoints.get(endpointId)
       if (ep == null) {
         throw new IllegalStateException(
           s"Trying to send a message to an endpoint that doesn't exist ${endpointId}")
       }
-      logDebug(s"Sending $am msg of size $dataSize to peer ${endpointId} data addr: " +
-        s"${TransportUtils.toHex(dataAddress)}. Is gpu? ${isGpu}")
+      logDebug(s"Sending $am msg of size $dataSize")
 
       // This isn't coming from the pool right now because it would be a bit of a
       // waste to get a larger hard-partitioned buffer just for 8 bytes.
       // TODO: since we no longer have metadata limits, the pool can be managed using the
       //   address-space allocator, so we should obtain this direct buffer from that pool
-      val header = ByteBuffer.allocateDirect(UCX.ACTIVE_MESSAGE_HEADER_SIZE.toInt)
+      val header = ByteBuffer.allocateDirect(8)
       header.putLong(am.header)
       header.rewind()
 
-      val flags = if (useRndv) {
-        UcpConstants.UCP_AM_SEND_FLAG_RNDV
-      } else {
-        0L /* AUTO */
-      }
+      ep.sendAmNonBlocking(
+        am.activeMessageId,
+        TransportUtils.getAddress(header),
+        header.remaining(),
+        dataAddress,
+        dataSize,
+        activeMessageMode,
+        new UcxCallback {
+          override def onSuccess(request: UcpRequest): Unit = {
+            cb.onSuccess(request)
+            RapidsStorageUtils.dispose(header)
+          }
 
-      val memType = if (isGpu) {
-        UcsConstants.MEMORY_TYPE.UCS_MEMORY_TYPE_CUDA
-      } else {
-        UcsConstants.MEMORY_TYPE.UCS_MEMORY_TYPE_HOST
-      }
-
-      withResource(new NvtxRange("AM Send", NvtxColor.GREEN)) { _ =>
-        ep.sendAmNonBlocking(
-          am.activeMessageId,
-          TransportUtils.getAddress(header),
-          UCX.ACTIVE_MESSAGE_HEADER_SIZE,
-          dataAddress,
-          dataSize,
-          flags,
-          new UcxCallback {
-            override def onSuccess(request: UcpRequest): Unit = {
-              cb.onSuccess(request)
-              RapidsStorageUtils.dispose(header)
-            }
-
-            override def onError(ucsStatus: Int, errorMsg: String): Unit = {
-              cb.onError(ucsStatus, errorMsg)
-              RapidsStorageUtils.dispose(header)
-            }
-          }, memType)
-      }
+          override def onError(ucsStatus: Int, errorMsg: String): Unit = {
+            cb.onError(ucsStatus, errorMsg)
+            RapidsStorageUtils.dispose(header)
+          }
+        })
     })
   }
 
   def getServerConnection: UCXServerConnection = serverConnection
+
+  def receive(alt: AddressLengthTag, cb: UCXTagCallback): Unit = {
+    val ucxCb = new UcxCallback {
+      override def onError(ucsStatus: Int, errorMsg: String): Unit = {
+        if (ucsStatus == UCX.UCS_ERR_CANCELED) {
+          logWarning(
+            s"Cancelled: tag=${TransportUtils.toHex(alt.tag)}," +
+              s" status=$ucsStatus, msg=$errorMsg")
+          cb.onCancel(alt)
+        } else {
+          logError(s"Error receiving: $ucsStatus $errorMsg => $alt")
+          cb.onError(alt, ucsStatus, errorMsg)
+        }
+      }
+
+      override def onSuccess(request: UcpRequest): Unit = {
+        logTrace(s"Success receiving calling callback ${TransportUtils.toHex(alt.tag)}")
+        cb.onSuccess(alt)
+      }
+    }
+
+    onWorkerThreadAsync(() => {
+      logTrace(s"Handling receive for tag ${TransportUtils.toHex(alt.tag)}")
+      val request = worker.recvTaggedNonBlocking(
+        alt.address,
+        alt.length,
+        alt.tag,
+        UCX.MATCH_FULL_TAG,
+        ucxCb)
+      cb.onMessageStarted(request)
+    })
+  }
 
   def cancel(request: UcpRequest): Unit = {
     onWorkerThreadAsync(() => {
@@ -688,7 +651,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     })
   }
 
-  def assignUniqueId(): Long = uniqueIds.incrementAndGet()
+  def assignResponseTag(): Long = responseTag.incrementAndGet()
 
   private lazy val ucxAddress: ByteBuffer = if (rapidsConf.shuffleUcxUseSockaddr) {
     val listenerAddress = listener.get.getAddress
@@ -751,7 +714,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       peerMgmtPort: Int): ClientConnection = {
     val getConnectionStartTime = System.currentTimeMillis()
     val result = connectionCache.computeIfAbsent(peerExecutorId, _ => {
-      val connection = new UCXClientConnection(peerExecutorId, this, transport)
+      val connection = new UCXClientConnection(
+        peerExecutorId, peerTag.incrementAndGet(), this, transport)
       startConnection(connection, peerMgmtHost, peerMgmtPort)
       connection
     })
@@ -763,9 +727,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   def onWorkerThreadAsync(task: () => Unit): Unit = {
     workerTasks.add(task)
     if (rapidsConf.shuffleUcxUseWakeup) {
-      withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
-        worker.signal()
-      }
+      worker.signal()
     }
   }
 
@@ -819,11 +781,13 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         val is = socket.getInputStream
         val os = socket.getOutputStream
 
+        // get the peer worker address, we need to store this so we can send to this tag
         val (peerWorkerAddress: WorkerAddress, peerExecutorId: Int, peerRkeys: Rkeys) =
           UCXConnection.readHandshakeHeader(is)
 
         logInfo(s"Got peer worker address from executor $peerExecutorId")
 
+        // ack what we saw as the local and remote peer tags
         UCXConnection.writeHandshakeHeader(os, getUcxAddress, getExecutorId, localRkeys)
 
         onWorkerThreadAsync(() => {
@@ -950,8 +914,8 @@ object UCX {
   // from https://github.com/openucx/ucx/blob/master/src/ucs/type/status.h
   private val UCS_ERR_CANCELED = -16
 
-  // We include a header with this size in our active messages
-  private val ACTIVE_MESSAGE_HEADER_SIZE = 8L
+  // We may consider matching tags partially for different request types
+  private val MATCH_FULL_TAG: Long = 0xFFFFFFFFFFFFFFFFL
 
   def formatAmIdAndHeader(activeMessageId: Int, header: Long) =
     s"[amId=${TransportUtils.toHex(activeMessageId)}, hdr=${TransportUtils.toHex(header)}]"

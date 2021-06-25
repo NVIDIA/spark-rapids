@@ -16,12 +16,11 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.util
-
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
 import com.nvidia.spark.rapids.Arm
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -34,43 +33,34 @@ case class ConsumedBatchFromBounceBuffer(
 /**
  * A helper case class to maintain the state associated with a transfer request to a peer.
  *
- * On getBufferWhenReady(finalizeCb, size), a bounce buffer is either made
- * immediately available to `finalizeCb` or it will be made available later, via `toFinalize`.
+ * The class implements the Iterator interface.
  *
- * By convention, the `id` is used as the header for receives for this `BufferReceiveState`
+ * On next(), a bounce buffer is returned earmarked for a range "window". The window
+ * is composed of eventual target buffers that will be handed off to the catalog.
+ *
+ * By convention, the tag used is that of the first buffer contained in the payload. The
+ * server follows the same convention in `BufferSendState`.
  *
  * `consumeWindow` is called when data has arrived at the bounce buffer, copying
  * onto the ranges the bytes received.
  *
  * It also is AutoCloseable. close() should be called to free bounce buffers.
  *
- * @param id - a numeric id that is used in all headers for this `BufferReceiveState`
  * @param bounceBuffer - bounce buffer to use (device memory strictly)
  * @param requests - collection of `PendingTransferRequest` as issued by iterators
  *                 currently requesting
- * @param transportOnClose - a callback invoked when the `BufferReceiveState` closes
  * @param stream - CUDA stream to use for allocations and copies
  */
 class BufferReceiveState(
-    val id: Long,
     bounceBuffer: BounceBuffer,
     requests: Seq[PendingTransferRequest],
-    transportOnClose: () => Unit,
     stream: Cuda.Stream = Cuda.DEFAULT_STREAM)
-    extends AutoCloseable with Logging with Arm {
-
-  val transportBuffer = new CudfTransportBuffer(bounceBuffer.buffer)
-  // we use this to keep a list (should be depth 1) of "requests for receives"
-  //  => the transport is ready to receive again, but we are not done consuming the
-  //     buffers from the previous receive, so we must delay the transport.
-  var toFinalize = new util.ArrayDeque[TransportBuffer => Unit]()
-
-  // if this is > 0, we are waiting to consume, so we need to queue up in `toFinalize`
-  // any callbacks
-  var toConsume = 0
+    extends Iterator[AddressLengthTag]
+        with AutoCloseable with Logging with Arm {
 
   class ReceiveBlock(val request: PendingTransferRequest) extends BlockWithSize {
     override def size: Long = request.getLength
+    def tag: Long = request.tag
   }
 
   // flags whether we need to populate a window, and if the client should send a
@@ -95,26 +85,11 @@ class BufferReceiveState(
   private[this] val windowedBlockIterator = new WindowedBlockIterator[ReceiveBlock](
     requests.map(r => new ReceiveBlock(r)), bounceBuffer.buffer.getLength)
 
-  private[this] var hasMoreBuffers_ = windowedBlockIterator.hasNext
-
-  def getBufferWhenReady(finalizeCb: TransportBuffer => Unit, size: Long): Unit =
-    synchronized {
-      require(transportBuffer.getLength() >= size,
-        "Asked to receive a buffer greater than the available bounce buffer.")
-
-      if (toConsume == 0) {
-        logDebug(s"Calling callback immediately for ${TransportUtils.toHex(id)}")
-        finalizeCb(transportBuffer)
-      } else {
-        // have pending and haven't consumed it yet, consume will call the callback
-        logDebug(s"Deferring callback for ${TransportUtils.toHex(id)}, " +
-          s"have ${toFinalize.size} pending")
-        toFinalize.add(finalizeCb)
-      }
-      toConsume += 1
-    }
+  private[this] var hasMoreBuffers = windowedBlockIterator.hasNext
 
   def getRequests: Seq[PendingTransferRequest] = requests
+
+  def hasIterated: Boolean = synchronized { iterated }
 
   override def close(): Unit = synchronized {
     if (bounceBuffer != null) {
@@ -124,26 +99,22 @@ class BufferReceiveState(
       logWarning(s"BufferReceiveState closing, but there are unfinished batches")
       workingOn.close()
     }
-    transportOnClose()
   }
 
   /**
    * Calls `transferError` on each `RapidsShuffleFetchHandler`
    * @param errMsg - the message to pass onto the handlers
    */
-  def errorOccurred(errMsg: String, throwable: Throwable = null): Unit = synchronized {
-    // for current and future blocks, tell handlers of error
-    (currentBlocks ++ windowedBlockIterator.toSeq.flatten)
-      .foreach(_.block.request.handler.transferError(errMsg, throwable))
+  def errorOcurred(errMsg: String, throwable: Throwable = null): Unit = {
+    currentBlocks.foreach(_.block.request.handler.transferError(errMsg, throwable))
   }
 
-  def hasMoreBlocks: Boolean = synchronized { hasMoreBuffers_ }
+  override def hasNext: Boolean = synchronized { hasMoreBuffers }
 
-  private def advance(): Unit = {
-    if (!hasMoreBuffers_) {
+  override def next(): AddressLengthTag = synchronized {
+    if (!hasMoreBuffers) {
       throw new NoSuchElementException(
-        s"BufferReceiveState is done for ${TransportUtils.toHex(id)}, yet " +
-          s"received a call to next")
+        "BufferReceiveState is done, yet received a call to next")
     }
 
     if (!iterated) {
@@ -152,13 +123,22 @@ class BufferReceiveState(
     }
     currentBlocks = nextBlocks
 
+    val firstTag = getFirstTag(currentBlocks)
+
+    val alt = AddressLengthTag.from(bounceBuffer.buffer, firstTag)
+    alt.resetLength(currentBlocks.map(_.rangeSize()).sum)
+
     if (windowedBlockIterator.hasNext) {
       nextBlocks = windowedBlockIterator.next()
     } else {
       nextBlocks = Seq.empty
-      hasMoreBuffers_ = false
+      hasMoreBuffers = false
     }
+    alt
   }
+
+  private def getFirstTag(blockRanges: Seq[BlockRange[ReceiveBlock]]): Long =
+    blockRanges.head.block.tag
 
   /**
    * When a receive is complete, the client calls `consumeWindow` to copy out
@@ -169,78 +149,74 @@ class BufferReceiveState(
    *         sequence if still working on a batch.
    */
   def consumeWindow(): Seq[ConsumedBatchFromBounceBuffer] = synchronized {
-    // once we reach 0 here the transport will be allowed to reuse the bounce buffer
-    // e.g. after the synchronized block, or after we sync with GPU in this function.
-    toConsume -= 1
-    withResource(new NvtxRange("consumeWindow", NvtxColor.PURPLE)) { _ =>
-      advance()
-      closeOnExcept(new ArrayBuffer[DeviceMemoryBuffer]()) { toClose =>
-        val results = currentBlocks.flatMap { b =>
-          val pendingTransferRequest = b.block.request
+    val windowRange = new NvtxRange("consumeWindow", NvtxColor.PURPLE)
+    val toClose = new ArrayBuffer[DeviceMemoryBuffer]()
+    try {
+      val results = currentBlocks.flatMap { b =>
+        val pendingTransferRequest = b.block.request
 
-          val fullSize = pendingTransferRequest.tableMeta.bufferMeta().size()
+        val fullSize = pendingTransferRequest.tableMeta.bufferMeta().size()
 
-          var contigBuffer: DeviceMemoryBuffer = null
+        var contigBuffer: DeviceMemoryBuffer = null
 
-          // Receive buffers are always in the device, and so it is safe to assume
-          // that they are `DeviceMemoryBuffer`s here.
-          val deviceBounceBuffer = bounceBuffer.buffer.asInstanceOf[DeviceMemoryBuffer]
+        // Receive buffers are always in the device, and so it is safe to assume
+        // that they are `DeviceMemoryBuffer`s here.
+        val deviceBounceBuffer = bounceBuffer.buffer.asInstanceOf[DeviceMemoryBuffer]
 
-          if (fullSize == b.rangeSize()) {
-            // we have the full buffer!
-            contigBuffer = Rmm.alloc(b.rangeSize(), stream)
-            toClose.append(contigBuffer)
+        if (fullSize == b.rangeSize()) {
+          // we have the full buffer!
+          contigBuffer = Rmm.alloc(b.rangeSize(), stream)
+          toClose.append(contigBuffer)
 
-            contigBuffer.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
+          contigBuffer.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
               bounceBufferByteOffset, b.rangeSize(), stream)
-          } else {
-            if (workingOn != null) {
-              workingOn.copyFromDeviceBufferAsync(workingOnOffset, deviceBounceBuffer,
-                bounceBufferByteOffset, b.rangeSize(), stream)
+        } else {
+          if (workingOn != null) {
+            workingOn.copyFromDeviceBufferAsync(workingOnOffset, deviceBounceBuffer,
+              bounceBufferByteOffset, b.rangeSize(), stream)
 
-              workingOnOffset += b.rangeSize()
-              if (workingOnOffset == fullSize) {
-                contigBuffer = workingOn
-                workingOn = null
-                workingOnOffset = 0
-              }
-            } else {
-              // need to keep it around
-              workingOn = Rmm.alloc(fullSize, stream)
-              toClose.append(workingOn)
-
-              workingOn.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
-                bounceBufferByteOffset, b.rangeSize(), stream)
-
-              workingOnOffset += b.rangeSize()
+            workingOnOffset += b.rangeSize()
+            if (workingOnOffset == fullSize) {
+              contigBuffer = workingOn
+              workingOn = null
+              workingOnOffset = 0
             }
-          }
-          bounceBufferByteOffset += b.rangeSize()
-          if (bounceBufferByteOffset >= deviceBounceBuffer.getLength) {
-            bounceBufferByteOffset = 0
-          }
-
-          if (contigBuffer != null) {
-            Some(ConsumedBatchFromBounceBuffer(
-              contigBuffer, pendingTransferRequest.tableMeta, pendingTransferRequest.handler))
           } else {
-            None
+            // need to keep it around
+            workingOn = Rmm.alloc(fullSize, stream)
+            toClose.append(workingOn)
+
+            workingOn.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
+              bounceBufferByteOffset, b.rangeSize(), stream)
+
+            workingOnOffset += b.rangeSize()
           }
         }
-
-        // Sync once, instead of for each copy.
-        // We need to synchronize, because we can't ask ucx to overwrite our bounce buffer
-        // unless all that data has truly moved to our final buffer in our stream
-        stream.sync()
-
-        // cpu is in sync, we can recycle the bounce buffer
-        if (!toFinalize.isEmpty) {
-          val firstCb = toFinalize.pop()
-          firstCb(transportBuffer)
+        bounceBufferByteOffset += b.rangeSize()
+        if (bounceBufferByteOffset >= deviceBounceBuffer.getLength) {
+          bounceBufferByteOffset = 0
         }
 
-        results
+        if (contigBuffer != null) {
+          Some(ConsumedBatchFromBounceBuffer(
+            contigBuffer, pendingTransferRequest.tableMeta, pendingTransferRequest.handler))
+        } else {
+          None
+        }
       }
+
+      // Sync once, instead of for each copy.
+      // We need to synchronize, because we can't ask ucx to overwrite our bounce buffer
+      // unless all that data has truly moved to our final buffer in our stream
+      stream.sync()
+
+      results
+    } catch {
+      case t: Throwable =>
+        toClose.safeClose(t)
+        throw t
+    } finally {
+      windowRange.close()
     }
   }
 }

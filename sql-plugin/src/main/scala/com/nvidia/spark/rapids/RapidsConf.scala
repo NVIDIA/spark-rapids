@@ -960,13 +960,13 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
-  val SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV =
-    conf("spark.rapids.shuffle.ucx.activeMessages.forceRndv")
-      .doc("Set to true to force 'rndv' mode for all UCX Active Messages. " +
-        "This should only be required with UCX 1.10.x. UCX 1.11.x deployments should " +
-        "set to false.")
-      .booleanConf
-      .createWithDefault(false)
+  val SHUFFLE_UCX_ACTIVE_MESSAGES_MODE = conf("spark.rapids.shuffle.ucx.activeMessages.mode")
+    .doc("Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to " +
+      "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
+      "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
+    .stringConf
+    .checkValues(Set("rndv", "eager", "auto"))
+    .createWithDefault("rndv")
 
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
@@ -1153,25 +1153,25 @@ object RapidsConf {
 
   val OPTIMIZER_DEFAULT_CPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.cpu.exec.default")
     .internal()
-    .doc("Default per-row CPU cost of executing an operator")
+    .doc("Default per-row CPU cost of executing an operator, in seconds")
     .doubleConf
-    .createWithDefault(0.0)
+    .createWithDefault(0.0002)
 
   val OPTIMIZER_DEFAULT_CPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.cpu.expr.default")
     .internal()
-    .doc("Default per-row CPU cost of evaluating an expression")
+    .doc("Default per-row CPU cost of evaluating an expression, in seconds")
     .doubleConf
     .createWithDefault(0.0)
 
   val OPTIMIZER_DEFAULT_GPU_OPERATOR_COST = conf("spark.rapids.sql.optimizer.gpu.exec.default")
       .internal()
-      .doc("Default per-row GPU cost of executing an operator")
+      .doc("Default per-row GPU cost of executing an operator, in seconds")
       .doubleConf
-      .createWithDefault(0.0)
+      .createWithDefault(0.0001)
 
   val OPTIMIZER_DEFAULT_GPU_EXPRESSION_COST = conf("spark.rapids.sql.optimizer.gpu.expr.default")
       .internal()
-      .doc("Default per-row GPU cost of evaluating an expression")
+      .doc("Default per-row GPU cost of evaluating an expression, in seconds")
       .doubleConf
       .createWithDefault(0.0)
 
@@ -1531,7 +1531,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
-  lazy val shuffleUcxActiveMessagesForceRndv: Boolean = get(SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV)
+  lazy val shuffleUcxActiveMessagesMode: String = get(SHUFFLE_UCX_ACTIVE_MESSAGES_MODE)
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
@@ -1609,6 +1609,21 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
+  private val optimizerDefaults = Map(
+    // this is not accurate because CPU projections do have a cost due to appending values
+    // to each row that is produced, but this needs to be a really small number because
+    // GpuProject cost is zero (in our cost model) and we don't want to encourage moving to
+    // the GPU just to do a trivial projection, so we pretend the overhead of a
+    // CPU projection (beyond evaluating the expressions) is also zero
+    "spark.rapids.sql.optimizer.cpu.exec.ProjectExec" -> "0",
+    // The cost of a GPU projection is mostly the cost of evaluating the expressions
+    // to produce the projected columns
+    "spark.rapids.sql.optimizer.gpu.exec.ProjectExec" -> "0",
+    // union does not further process data produced by its children
+    "spark.rapids.sql.optimizer.cpu.exec.UnionExec" -> "0",
+    "spark.rapids.sql.optimizer.gpu.exec.UnionExec" -> "0"
+  )
+
   def isOperatorEnabled(key: String, incompat: Boolean, isDisabledByDefault: Boolean): Boolean = {
     val default = !(isDisabledByDefault || incompat) || (incompat && isIncompatEnabled)
     conf.get(key).map(toBoolean(_, key)).getOrElse(default)
@@ -1647,6 +1662,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   private def getOptionalCost(key: String) = {
-    conf.get(key).map(toDouble(_, key))
+    // user-provided value takes precedence, then look in defaults map
+    conf.get(key).orElse(optimizerDefaults.get(key)).map(toDouble(_, key))
   }
 }

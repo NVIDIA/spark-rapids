@@ -142,7 +142,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       res.getExecutorCores.getOrElse(0),
       res.executorResources.get(ResourceProfile.MEMORY).map(_.amount.toLong).getOrElse(0),
       res.executorResources.get("gpu").map(_.amount.toInt).getOrElse(0),
-      res.executorResources.get(ResourceProfile.OVERHEAD_MEM).map(_.amount.toLong).getOrElse(0),
+      res.executorResources.get(ResourceProfile.OFFHEAP_MEM).map(_.amount.toLong).getOrElse(0),
       res.getTaskCpus.getOrElse(0),
       res.taskResources.get("gpu").map(_.amount.toDouble).getOrElse(0)
     )

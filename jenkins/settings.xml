@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
+  Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -80,6 +80,26 @@
       </repositories>
     </profile>
     <profile>
+      <id>mirror-apache-https-to-urm</id>
+      <repositories>
+        <repository>
+          <id>apache.snapshots.https</id>
+          <name>sw-spark-maven</name>
+          <url>${env.URM_URL}</url>
+        </repository>
+      </repositories>
+    </profile>
+    <profile>
+      <id>mirror-apache2-to-urm</id>
+      <repositories>
+        <repository>
+          <id>apache-snapshots-repo</id>
+          <name>sw-spark-maven</name>
+          <url>${env.URM_URL}</url>
+        </repository>
+      </repositories>
+    </profile>
+    <profile>
       <id>deploy-to-urm</id>
       <properties>
           <altDeploymentRepository>snapshots::default::${env.URM_URL}-local</altDeploymentRepository>
@@ -89,6 +109,8 @@
   <activeProfiles>
     <activeProfile>artifactory</activeProfile>
     <activeProfile>mirror-apache-to-urm</activeProfile>
+    <activeProfile>mirror-apache-https-to-urm</activeProfile>
+    <activeProfile>mirror-apache2-to-urm</activeProfile>
     <activeProfile>deploy-to-urm</activeProfile>
   </activeProfiles>
 </settings>

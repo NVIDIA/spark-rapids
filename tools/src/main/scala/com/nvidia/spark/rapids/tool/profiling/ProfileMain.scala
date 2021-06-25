@@ -120,7 +120,7 @@ object ProfileMain extends Logging {
       if (appArgs.compare()) { // Compare Applications
 
         textFileWriter.write("### A. Compare Information Collected ###")
-        val compare = new CompareApplications(apps, textFileWriter)
+        val compare = new CompareApplications(apps, Some(textFileWriter))
         compare.compareAppInfo()
         compare.compareExecutorInfo()
         compare.compareJobInfo()
