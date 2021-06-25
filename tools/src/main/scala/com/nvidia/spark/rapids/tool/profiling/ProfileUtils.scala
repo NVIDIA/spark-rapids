@@ -49,7 +49,7 @@ object ProfileUtils {
 
   // Check if the job/stage is GPU mode is on
   def isPluginEnabled(properties: collection.mutable.Map[String, String]): Boolean = {
-    ToolUtils.isPluginEnabled(properties)
+    ToolUtils.isPluginEnabled(properties.toMap)
   }
 
   // Return None if either of them are None

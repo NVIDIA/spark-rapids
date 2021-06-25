@@ -16,17 +16,20 @@
 
 package org.apache.spark.sql.rapids.tool
 
+import java.io.InputStream
+import java.util.zip.GZIPInputStream
+
 import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
-import org.apache.spark.deploy.history.EventLogFileReader
+import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.util.{JsonProtocol, Utils}
-
 
 abstract class AppBase(
     val numOutputRows: Int,
@@ -37,6 +40,21 @@ abstract class AppBase(
   var appEndTime: Option[Long] = None
 
   def processEvent(event: SparkListenerEvent): Unit
+
+  private def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
+    EventLogFileWriter.codecName(log) match {
+      case c if (c.isDefined && c.get.equals("gz")) =>
+        val in = fs.open(log)
+        try {
+          new GZIPInputStream(in)
+        } catch {
+          case e: Throwable =>
+            in.close()
+            throw e
+        }
+      case _ => EventLogFileReader.openEventLog(log, fs)
+    }
+  }
 
   /**
    * Functions to process all the events
@@ -59,7 +77,7 @@ abstract class AppBase(
       val reader = readerOpt.get
       val logFiles = reader.listEventLogFiles
       logFiles.foreach { file =>
-        Utils.tryWithResource(ToolUtils.openEventLogInternal(file.getPath, fs)) { in =>
+        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
           val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
           totalNumEvents += lines.size
           lines.foreach { line =>

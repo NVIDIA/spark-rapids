@@ -1,21 +1,25 @@
+/*
+ * Copyright (c) 2021, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.spark.sql.rapids.tool
 
-import java.io.{BufferedInputStream, InputStream}
-import java.util.zip.GZIPInputStream
-
-import org.apache.hadoop.fs.{FileSystem, Path}
-
-import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.DataFrame
 
 object ToolUtils extends Logging {
-
-  // TODO - need to clean these up
-  def isPluginEnabled(properties: collection.mutable.Map[String, String]): Boolean = {
-    (properties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin")
-        && properties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean)
-  }
 
   def isPluginEnabled(properties: Map[String, String]): Boolean = {
     (properties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin")
@@ -24,20 +28,5 @@ object ToolUtils extends Logging {
 
   def showString(df: DataFrame, numRows: Int) = {
     df.showString(numRows, 0)
-  }
-
-  def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
-    EventLogFileWriter.codecName(log) match {
-      case c if (c.isDefined && c.get.equals("gz")) =>
-        val in = new BufferedInputStream(fs.open(log))
-        try {
-          new GZIPInputStream(in)
-        } catch {
-          case e: Throwable =>
-            in.close()
-            throw e
-        }
-      case _ => EventLogFileReader.openEventLog(log, fs)
-    }
   }
 }
