@@ -45,18 +45,19 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
+  val schema = new StructType()
+    .add("appName", StringType, true)
+    .add("appID", StringType, true)
+    .add("dfRankTotal", DoubleType, true)
+    .add("potentialProblems", StringType, true)
+    .add("dfDurationFinal", LongType, true)
+    .add("appDuration", LongType, true)
+    .add("executorCPURatio", DoubleType, true)
+    .add("appEndDurationEstimated", BooleanType, true)
+    .add("sqlDurationForProblematic", LongType, true)
+    .add("failedSQLIds", StringType, true)
+
   def readExpectedFile(expected: File): DataFrame = {
-    val schema = new StructType()
-      .add("appName", StringType, true)
-      .add("appID", StringType, true)
-      .add("dfRankTotal", DoubleType, true)
-      .add("potentialProblems", StringType, true)
-      .add("dfDurationFinal", LongType, true)
-      .add("appDuration", LongType, true)
-      .add("executorCPURatio", DoubleType, true)
-      .add("appEndDurationEstimated", BooleanType, true)
-      .add("sqlDurationForProblematic", LongType, true)
-      .add("failedSQLIds", StringType, true)
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
       Some(schema))
   }
@@ -70,23 +71,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         outpath.getAbsolutePath())
 
       val appArgs = new QualificationArgs(allArgs ++ eventLogs)
-
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
       val spark2 = sparkSession
       import spark2.implicits._
       val dfTmp = appSum.toDF
-      val schema = new StructType()
-        .add("appName", StringType, true)
-        .add("appID", StringType, true)
-        .add("dfRankTotal", DoubleType, true)
-        .add("potentialProblems", StringType, true)
-        .add("dfDurationFinal", LongType, true)
-        .add("appDuration", LongType, true)
-        .add("executorCPURatio", DoubleType, true)
-        .add("appEndDurationEstimated", BooleanType, true)
-        .add("sqlDurationForProblematic", LongType, true)
-        .add("failedSQLIds", StringType, true)
       val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
       if (shouldReturnEmpty) {
         assert(appSum.head.sqlDataFrameDuration == 0.0)
