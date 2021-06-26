@@ -80,7 +80,7 @@ object GenerateDot {
       appId: String): Unit = {
     val graph = SparkPlanGraph(plan.plan, appId, sqlId.toString, physicalPlanString,
       accumIdToStageId, stageIdToStageMetrics)
-    val str = graph.makeDotFile(plan.metrics, fileWriter.outputFilePath.getParent.toString)
+    val str = graph.makeDotFile(plan.metrics)
     fileWriter.write(str)
   }
 }
@@ -108,8 +108,8 @@ case class SparkPlanGraph(
     sqlId: String,
     physicalPlan: String) {
 
-  def makeDotFile(metrics: Map[Long, Long], outputDir: String): String = {
-    val queryLabel = SparkPlanGraph.createDotLabel(outputDir, appId, sqlId, physicalPlan)
+  def makeDotFile(metrics: Map[Long, Long]): String = {
+    val queryLabel = SparkPlanGraph.makeDotLabel(appId, sqlId, physicalPlan)
 
     val dotFile = new StringBuilder
     dotFile.append("digraph G {\n")
@@ -285,33 +285,30 @@ object SparkPlanGraph {
     }
   }
 
-  def createDotLabel(
-    outputDir: String, 
-    appId: String, 
+  val htmlLineBreak = """<br align="left"/>""" + "\n"
+
+  def makeDotLabel(
+    appId: String,
     sqlId: String,
     physicalPlan: String,
-    maxLength: Int = 16384 
+    maxLength: Int = 16384
   ): String = {
-    val sqlPlanFile = s"file://$outputDir/planDescriptions-$appId"
     val sqlPlanPlaceHolder = "%s"
-    val htmlLineBreak = """<br align="left"/>""" + "\n"
-    val queryLabelFormat = 
+    val queryLabelFormat =
       s"""<<table border="0">
          |<tr><td>Application: $appId, Query: $sqlId</td></tr>
          |<tr><td>$sqlPlanPlaceHolder</td></tr>
-         |<tr><td href="$sqlPlanFile">
-         |Large physical may be truncated. Start the profiling tool with --print-plans
-         |and open the link to locate <font color="blue">
-         |<u>Plan for SQL ID : $sqlId</u></font>
+         |<tr><td>Large physical plans may be truncated. See output from
+         |--print-plans captioned "Plan for SQL ID : $sqlId"
          |</td></tr>
          |</table>>""".stripMargin
 
-    // pre-calculate size post substitutions 
+    // pre-calculate size post substitutions
     val formatBytes = queryLabelFormat.length() - sqlPlanPlaceHolder.length()
     val numLinebreaks = physicalPlan.count(_ == '\n')
     val lineBreakBytes = numLinebreaks * htmlLineBreak.length()
     val maxPlanLength = maxLength - formatBytes - lineBreakBytes
-    
+
     queryLabelFormat.format(
       physicalPlan.take(maxPlanLength)
         .replaceAll("\n", htmlLineBreak)

@@ -29,9 +29,6 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Lo
 
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
   private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
-
-  def outputFilePath = textOutputPath
-
   // this overwrites existing path
   private var outFile: Option[FSDataOutputStream] = Some(fs.create(textOutputPath))
   logInfo(s"Output directory: $finalOutputDir")
