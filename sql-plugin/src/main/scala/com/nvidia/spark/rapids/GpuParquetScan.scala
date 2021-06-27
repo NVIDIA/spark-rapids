@@ -660,7 +660,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
               val origCol = table.getColumn(readAt)
               val col: ColumnVector = if (typeCastingNeeded) {
                 ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
-                  (dt, cv) => !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
+                  (dt, cv) => cv.getType.isDecimalType &&
+                      !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
                   (dt, cv) =>
                     cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType])))
               } else {
