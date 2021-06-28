@@ -149,7 +149,7 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
         Array(StructField("empty", ByteType, false),
           StructField("empty", ByteType, false),
           StructField("empty", ByteType, false)))
-      ser.compressColumnarBatchWithParquet(cb, dummySchema)
+      ser.compressColumnarBatchWithParquet(cb, dummySchema, dummySchema)
       theTableMock.close()
     }
   }
@@ -170,7 +170,7 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
     val ser = new ParquetCachedBatchSerializer
 
-    val producer = new ser.CachedBatchIteratorProducer[ColumnarBatch](cbIter, schema,
+    val producer = new ser.CachedBatchIteratorProducer[ColumnarBatch](cbIter, schema, schema,
       withCpuSparkSession(spark => spark.sparkContext.broadcast(new SQLConf().getAllConfs)))
     val mockParquetOutputFileFormat = mock(classOf[ParquetOutputFileFormat])
     var totalSize = 0L
