@@ -92,7 +92,7 @@ object EventLogPathProcessor extends Logging {
       val filePath = fileStatus.getPath()
       val fileName = filePath.getName()
 
-      if (!eventLogNameFilter(filePath)) {
+      if (fileStatus.isFile() && !eventLogNameFilter(filePath)) {
         logWarning(s"File: $fileName it not a supported file type. " +
           "Supported compression types are: " +
           s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES_FOR_FILTER.mkString(", ")}. " +
@@ -112,14 +112,15 @@ object EventLogPathProcessor extends Logging {
         val (validLogs, invalidLogs) = fs.listStatus(inputPath).partition(s => {
             val name = s.getPath().getName()
             (s.isFile ||
-              (s.isDirectory &&
-                (isEventLogDir(name) || isDatabricksEventLogDir(s, fs))))
+              (s.isDirectory && (isEventLogDir(name) || isDatabricksEventLogDir(s, fs))))
           })
         if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
             s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
         }
-        val (logsSupported, unsupport) = validLogs.partition(l => eventLogNameFilter(l.getPath()))
+        val (logsSupported, unsupport) = validLogs.partition { l =>
+          (l.isFile && eventLogNameFilter(l.getPath())) || l.isDirectory
+        }
         if (unsupport.nonEmpty) {
           logWarning(s"Files: ${unsupport.map(_.getPath.getName).mkString(", ")} " +
             s"have unsupported file types. Supported compression types are: " +
