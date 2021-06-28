@@ -155,19 +155,11 @@ case class SparkPlanGraph(
     physicalPlan: String) {
 
   def makeDotFile(metrics: Map[Long, Long]): String = {
-    val leftAlignedLabel =
-      s"""
-         |Application: $appId
-         |Query: $sqlId
-         |
-         |$physicalPlan"""
-          .stripMargin
-          .replace("\n", "\\l")
-
+    val queryLabel = SparkPlanGraph.makeDotLabel(appId, sqlId, physicalPlan)
 
     val dotFile = new StringBuilder
     dotFile.append("digraph G {\n")
-    dotFile.append(s"""label="$leftAlignedLabel"\n""")
+    dotFile.append(s"label=$queryLabel\n")
     dotFile.append("labelloc=b\n")
     dotFile.append("fontname=Courier\n")
     dotFile.append(s"""tooltip="APP: $appId Query: $sqlId"\n""")
@@ -329,6 +321,36 @@ object SparkPlanGraph {
           buildSparkPlanGraphNode(_, nodeIdGenerator, nodes, edges, node, codeGen, s,
             exchanges, stageIdToStageMetrics))
     }
+  }
+
+  val htmlLineBreak = """<br align="left"/>""" + "\n"
+
+  def makeDotLabel(
+    appId: String,
+    sqlId: String,
+    physicalPlan: String,
+    maxLength: Int = 16384
+  ): String = {
+    val sqlPlanPlaceHolder = "%s"
+    val queryLabelFormat =
+      s"""<<table border="0">
+         |<tr><td>Application: $appId, Query: $sqlId</td></tr>
+         |<tr><td>$sqlPlanPlaceHolder</td></tr>
+         |<tr><td>Large physical plans may be truncated. See output from
+         |--print-plans captioned "Plan for SQL ID : $sqlId"
+         |</td></tr>
+         |</table>>""".stripMargin
+
+    // pre-calculate size post substitutions
+    val formatBytes = queryLabelFormat.length() - sqlPlanPlaceHolder.length()
+    val numLinebreaks = physicalPlan.count(_ == '\n')
+    val lineBreakBytes = numLinebreaks * htmlLineBreak.length()
+    val maxPlanLength = maxLength - formatBytes - lineBreakBytes
+
+    queryLabelFormat.format(
+      physicalPlan.take(maxPlanLength)
+        .replaceAll("\n", htmlLineBreak)
+    )
   }
 }
 
