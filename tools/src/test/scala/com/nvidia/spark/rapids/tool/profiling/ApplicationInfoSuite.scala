@@ -138,8 +138,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
     assert(apps.head.sparkVersion.equals("2.2.3"))
     assert(apps.head.gpuMode.equals(false))
-    assert(apps.head.jobStart(apps.head.index).jobID.equals(1))
-    assert(apps.head.stageSubmitted(apps.head.index).numTasks.equals(6))
+    assert(apps.head.jobStart.size == 1)
+    assert(apps.head.jobStart.head.jobID.equals(0))
+    val stage0 = apps.head.stageSubmitted.filter(_.stageId == 0)
+    assert(stage0.head.numTasks.equals(6))
   }
 
   test("malformed json eventlog") {
