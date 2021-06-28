@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.util.concurrent.Executor
+import java.util.concurrent.{ConcurrentHashMap, Executor}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -101,7 +101,11 @@ class RapidsShuffleClient(
     clientCopyExecutor: Executor,
     devStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
-      extends Logging with Arm {
+      extends Logging with Arm with AutoCloseable {
+
+  // these are handlers that are interested (live spark tasks) in peer failure handling
+  private val liveHandlers =
+    ConcurrentHashMap.newKeySet[RapidsShuffleFetchHandler]()
 
   object ShuffleClientOps {
     /**
@@ -166,7 +170,6 @@ class RapidsShuffleClient(
     clientCopyExecutor.execute(() => handleOp(op))
   }
 
-
   /**
    * Starts a fetch request for all the shuffleRequests, using `handler` to communicate
    * events back to the iterator.
@@ -178,9 +181,7 @@ class RapidsShuffleClient(
               handler: RapidsShuffleFetchHandler): Unit = {
     try {
       withResource(new NvtxRange("Client.fetch", NvtxColor.PURPLE)) { _ =>
-        if (shuffleRequests.isEmpty) {
-          throw new IllegalStateException("Sending empty blockIds in the MetadataRequest?")
-        }
+        require(shuffleRequests.nonEmpty, "Sending empty blockIds in the MetadataRequest?")
 
         val metaReq = new RefCountedDirectByteBuffer(
           ShuffleMetadata.buildShuffleMetadataRequest(shuffleRequests))
@@ -192,7 +193,6 @@ class RapidsShuffleClient(
         // make request
         connection.request(RequestType.MetadataRequest, metaReq.acquire(), tx => {
           withResource(metaReq) { _ =>
-            logDebug(s"at callback for ${tx}")
             asyncOrBlock(HandleMetadataResponse(tx, shuffleRequests, handler))
           }
         })
@@ -215,11 +215,11 @@ class RapidsShuffleClient(
       shuffleRequests: Seq[ShuffleBlockBatchId],
       handler: RapidsShuffleFetchHandler): Unit = {
     withResource(tx) { _ =>
-      withResource(tx.releaseMessage()) { resp =>
-        withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
-          try {
-            tx.getStatus match {
-              case TransactionStatus.Success =>
+      tx.getStatus match {
+        case TransactionStatus.Success =>
+          withResource(tx.releaseMessage()) { resp =>
+            withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
+              try {
                 // start the receives
                 val metadataResponse: MetadataResponse =
                   ShuffleMetadata.getMetadataResponse(resp.getBuffer())
@@ -232,15 +232,15 @@ class RapidsShuffleClient(
 
                 // queue up the receives
                 queueTransferRequests(metadataResponse, handler)
-              case _ =>
-                handler.transferError(
-                  tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request ${tx}"))
+              } catch {
+                case t: Throwable =>
+                  handler.transferError("Error occurred while handling metadata", t)
+              }
             }
-          } catch {
-            case t: Throwable =>
-              handler.transferError("Error occurred while handling metadata", t)
           }
-        }
+        case _ =>
+          handler.transferError(
+            tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request $tx"))
       }
     }
   }
@@ -310,25 +310,32 @@ class RapidsShuffleClient(
         s"${requestsToIssue.map(r => TransportUtils.toHex(r.tag)).mkString(",")}")
 
     val transferReq = new RefCountedDirectByteBuffer(
-      ShuffleMetadata.buildTransferRequest(requestsToIssue.map(i => (i.tableMeta, i.tag))))
+      ShuffleMetadata.buildTransferRequest(requestsToIssue.map { i =>
+        (i.tableMeta.bufferMeta().id(), i.tag)
+      }))
 
     //issue the buffer transfer request
     connection.request(RequestType.TransferRequest, transferReq.acquire(), tx => {
-      withResource(tx.releaseMessage()) { res =>
-        withResource(transferReq) { _ =>
-          withResource(tx) { _ =>
-            // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
-            val transferResponse = ShuffleMetadata.getTransferResponse(res.getBuffer())
-            (0 until transferResponse.responsesLength()).foreach(r => {
-              val response = transferResponse.responses(r)
-              if (response.state() != TransferState.STARTED) {
-                // we could either re-issue the request, cancelling and releasing memory
-                // or we could re-issue, and leave the old receive waiting
-                // for now, leaving the old receive waiting.
-                throw new IllegalStateException("NOT IMPLEMENTED")
+      withResource(tx) { _ =>
+        tx.getStatus match {
+          case TransactionStatus.Success =>
+            withResource(tx.releaseMessage()) { res =>
+              withResource(transferReq) { _ =>
+                // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
+                val transferResponse = ShuffleMetadata.getTransferResponse(res.getBuffer())
+                (0 until transferResponse.responsesLength()).foreach(r => {
+                  val response = transferResponse.responses(r)
+                  if (response.state() != TransferState.STARTED) {
+                    // we could either re-issue the request, cancelling and releasing memory
+                    // or we could re-issue, and leave the old receive waiting
+                    // for now, leaving the old receive waiting.
+                    throw new IllegalStateException("NOT IMPLEMENTED")
+                  }
+                })
               }
-            })
-          }
+            }
+          case _ =>
+            toIssue.errorOcurred(tx.getErrorMessage.getOrElse("TransferRequest failed"))
         }
       }
     })
@@ -454,5 +461,26 @@ class RapidsShuffleClient(
       catalog.registerNewBuffer(new DegenerateRapidsBuffer(id, meta))
     }
     id
+  }
+
+  override def close(): Unit = {
+    logInfo(s"Closing pending requests for ${connection.getPeerExecutorId}")
+    liveHandlers.forEach { handler =>
+      logWarning(s"Signaling ${handler} that ${connection.getPeerExecutorId} errored")
+      handler.transferError(s"Connection to ${connection.getPeerExecutorId} closed")
+    }
+    liveHandlers.clear()
+    // pop all the pending buffer receives, and signal that there is an error
+  }
+
+  def registerPeerErrorListener(handler: RapidsShuffleFetchHandler): Unit = {
+    // keep track of this `RapidsShuffleFetchHandler` as we will need to
+    // signal it when there are failures for this peer
+    liveHandlers.add(handler)
+  }
+
+  def unregisterPeerErrorListener(handler: RapidsShuffleFetchHandler): Unit = {
+    logDebug(s"Unregister $handler from client for ${connection.getPeerExecutorId}")
+    liveHandlers.remove(handler)
   }
 }

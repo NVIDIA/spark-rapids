@@ -19,10 +19,13 @@ package com.nvidia.spark.rapids.shuffle
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer}
+import com.nvidia.spark.rapids.ShuffleMetadata
 import com.nvidia.spark.rapids.format.{BufferMeta, TableMeta}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
+
+import org.apache.spark.storage.ShuffleBlockBatchId
 
 class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   def prepareBufferReceiveState(
@@ -105,7 +108,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("successful degenerate metadata fetch") {
     when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
-    val numRows = 100000
     val numBatches = 3
 
     RapidsShuffleTestHelper.mockDegenerateMetaResponse(mockTransaction, numBatches)
@@ -150,7 +152,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       // the transport will receive no pending requests (for buffers) for queuing
       verify(mockTransport, times(0)).queuePending(any())
 
-      assert(response.isClosed)
+      // this is not called since a message implies success
+      verify(mockTransaction, times(0)).releaseMessage()
 
       newMocks()
     }
@@ -176,8 +179,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     // the transport will receive no pending requests (for buffers) for queuing
     verify(mockTransport, times(0)).queuePending(any())
-
-    assert(response.isClosed)
 
     newMocks()
   }
@@ -479,7 +480,9 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   }
 
   test("exception in buffer fetch escalates to handler") {
-    when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
+    when(mockTransaction.getStatus)
+      .thenReturn(TransactionStatus.Success) // TransferRequest succeded
+      .thenThrow(new RuntimeException("test exception")) // Buffer receive fails
 
     val numRows = 100000
     val tableMeta =
@@ -702,5 +705,39 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       buff
     }
     assert(bb.isClosed)
+  }
+
+  test("on endpoint failure the iterator is notified if it is registered") {
+    when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
+    val metaResp = ShuffleMetadata.buildMetaResponse(Seq.empty)
+    when(mockTransaction.releaseMessage()).thenReturn(
+      new RefCountedDirectByteBuffer(metaResp))
+
+    client.registerPeerErrorListener(mockHandler)
+    client.doFetch(Seq(ShuffleBlockBatchId(1,2,3,4)), mockHandler)
+    client.close()
+
+    // error not expected at the iterator
+    verify(mockHandler, times(1)).transferError(any(), any())
+
+    newMocks()
+  }
+
+  test("on endpoint failure the iterator is not notified if it is done (unregistered)") {
+    when(mockTransaction.getStatus).thenReturn(TransactionStatus.Success)
+    val metaResp = ShuffleMetadata.buildMetaResponse(Seq.empty)
+    when(mockTransaction.releaseMessage()).thenReturn(
+      new RefCountedDirectByteBuffer(metaResp))
+
+    client.registerPeerErrorListener(mockHandler)
+    client.doFetch(Seq(ShuffleBlockBatchId(1,2,3,4)), mockHandler)
+    // tell the client that we are done (task finished or we actually consumed)
+    client.unregisterPeerErrorListener(mockHandler)
+    client.close()
+
+    // error not expected at the iterator
+    verify(mockHandler, times(0)).transferError(any(), any())
+
+    newMocks()
   }
 }

@@ -63,6 +63,10 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 }
 
 object GpuShuffleEnv extends Logging {
+  def shutdown() = {
+    mgr.foreach(_.stop())
+  }
+
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
 
   var mgr: Option[RapidsShuffleInternalManagerBase] = None

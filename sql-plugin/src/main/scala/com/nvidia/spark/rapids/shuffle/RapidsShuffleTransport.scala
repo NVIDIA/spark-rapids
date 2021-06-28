@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -126,7 +126,7 @@ trait MemoryRegistrationCallback {
  */
 trait ServerConnection extends Connection {
   /**
-   * Starts a TCP management port, bound to `host`, on an ephemeral port (returned)
+   * Starts a management port, bound to `host`, on an ephemeral port (returned)
    * @param host host to bind to
    * @return integer ephemeral port that was bound
    */
@@ -172,6 +172,12 @@ trait ServerConnection extends Connection {
  * Currently supported request types in the transport
  */
 object RequestType extends Enumeration {
+  /**
+   * A message used during startup when establishing
+   * a connection to a peer.
+   */
+  val Control = Value
+
   /**
    * A client will issue: `MetadataRequest`
    * A server will respond with: `MetadataResponse`
@@ -453,12 +459,16 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
       new RefCountedDirectByteBuffer(ByteBuffer.allocateDirect(bufferSize.toInt), Option(this))
     } else {
       buff.clear()
+      // reset endianness to BIG_ENDIAN, as it could have changed depending on the consumer
+      // flatbuffers
+      buff.order(ByteOrder.BIG_ENDIAN)
       new RefCountedDirectByteBuffer(buff, Option(this))
     }
   }
 
   def releaseBuffer(buff: RefCountedDirectByteBuffer): Boolean = {
     logDebug(s"Free direct buffers ${buffers.size()}")
+    buff.getBuffer().clear()
     buffers.offer(buff.getBuffer())
   }
 }
