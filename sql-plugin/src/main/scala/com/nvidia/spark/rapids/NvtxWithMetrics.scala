@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 
 object NvtxWithMetrics {
-  def apply(name: String, color: NvtxColor, metric: Option[GpuMetric] = None): NvtxRange = {
+  def apply(name: String, color: NvtxColor, metric: Option[GpuMetric]): NvtxRange = {
     metric match {
       case Some(m) => new NvtxWithMetrics(name, color, m)
       case _ => new NvtxRange(name, color)
