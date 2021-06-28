@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.{asc, col, lit}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, ToolUtils}
 
 case class StageMetrics(numTasks: Int, duration: String)
