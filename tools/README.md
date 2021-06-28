@@ -251,6 +251,50 @@ Compare Executor Information:
 +--------+-----------------+------------+-------------+-----------+------------+-------------+-------------+--------------+------------------+---------------+-------+-------+
 ```
 
+- Matching SQL IDs Across Applications:
+```
+Matching SQL IDs Across Applications:
++-----------------------+-----------------------+
+|app-20210329165943-0103|app-20210329170243-0018|
++-----------------------+-----------------------+
+|0                      |0                      |
+|1                      |1                      |
+|2                      |2                      |
+|3                      |3                      |
+|4                      |4                      |
++-----------------------+-----------------------+
+```
+
+There is one column per application. There is a row per SQL ID. The SQL IDs are matched
+primarily on the structure of the SQL query run, and then on the order in which they were
+run. Be aware that this is truly the structure of the query. Two queries that do similar
+things, but on different data are likely to match as the same.  An effort is made to
+also match between CPU plans and GPU plans so in most cases the same query run on the
+CPU and on the GPU will match.
+
+- Matching Stage IDs Across Applications:
+```
+Matching Stage IDs Across Applications:
++-----------------------+-----------------------+
+|app-20210329165943-0103|app-20210329170243-0018|
++-----------------------+-----------------------+
+|31                     |31                     |
+|32                     |32                     |
+|33                     |33                     |
+|39                     |38                     |
+|40                     |40                     |
+|41                     |41                     |
++-----------------------+-----------------------+
+```
+
+There is one column per application. There is a row per stage ID. If a SQL query matches
+between applications, see Matching SQL IDs Across Applications, then an attempt is made
+to match stages within that application to each other.  This has the same issues with
+stages when generating a dot graph.  This can be especially helpful when trying to compare
+large queries and Spark happened to assign the stage IDs slightly differently, or in some
+cases there are a different number of stages because of slight differences in the plan. This
+is a best effort, and it is not guaranteed to match up all stages in a plan.
+
 - Compare Rapids related Spark properties side-by-side:
 ```
 Compare Rapids Properties which are set explicitly:

@@ -20,12 +20,15 @@ import java.util.concurrent.atomic.AtomicLong
 
 import scala.annotation.tailrec
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import org.apache.commons.text.StringEscapeUtils
 
 import org.apache.spark.sql.execution.{SparkPlanInfo, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
 
 /**
  * Generate a DOT graph for one query plan, or showing differences between two query plans.
@@ -65,23 +68,66 @@ object GenerateDot {
    *
    * @param plan First query plan and metrics
    * @param physicalPlanString The physical plan as a String
-   * @param accumIdToStageId a map of accumulator ID to stage ID. This is used
-   *                         to try and show stages in the graph too.
    * @param stageIdToStageMetrics metrics for teh stages.
    * @param sqlId id of the SQL query for the dot graph
    * @param appId Spark application Id
    */
   def writeDotGraph(plan: QueryPlanWithMetrics,
       physicalPlanString: String,
-      accumIdToStageId: Map[Long, Int],
       stageIdToStageMetrics: Map[Int, StageMetrics],
       fileWriter: ToolTextFileWriter,
       sqlId: Long,
       appId: String): Unit = {
     val graph = SparkPlanGraph(plan.plan, appId, sqlId.toString, physicalPlanString,
-      accumIdToStageId, stageIdToStageMetrics)
+      stageIdToStageMetrics)
     val str = graph.makeDotFile(plan.metrics)
     fileWriter.write(str)
+  }
+
+  def apply(app: ApplicationInfo, outputDirectory: String): Unit = {
+    val accums = app.runQuery(app.generateSQLAccums)
+
+    val accumIdToStageId = app.accumIdToStageId
+
+    val formatter = java.text.NumberFormat.getIntegerInstance
+
+    val stageIdToStageMetrics = app.taskEnd.groupBy(task => task.stageId).mapValues { tasks =>
+      val durations = tasks.map(_.duration)
+      val numTasks = durations.length
+      val minDur = durations.min
+      val maxDur = durations.max
+      val meanDur = durations.sum/numTasks.toDouble
+      StageMetrics(numTasks,
+        s"MIN: ${formatter.format(minDur)} ms " +
+            s"MAX: ${formatter.format(maxDur)} ms " +
+            s"AVG: ${formatter.format(meanDur)} ms")
+    }
+
+    val accumSummary = accums
+        .select(col("sqlId"), col("accumulatorId"), col("max_value"))
+        .collect()
+    val sqlIdToMaxMetric = new mutable.HashMap[Long, ArrayBuffer[(Long,Long)]]()
+    for (row <- accumSummary) {
+      val list = sqlIdToMaxMetric.getOrElseUpdate(row.getLong(0),
+        new ArrayBuffer[(Long, Long)]())
+      list += row.getLong(1) -> row.getLong(2)
+    }
+
+    val sqlPlansMap = app.sqlPlan.map { case (sqlId, sparkPlanInfo) =>
+      sqlId -> ((sparkPlanInfo, app.physicalPlanDescription(sqlId)))
+    }
+    for ((sqlID,  (planInfo, physicalPlan)) <- sqlPlansMap) {
+      val dotFileWriter = new ToolTextFileWriter(outputDirectory,
+        s"${app.appId}-query-$sqlID.dot")
+      try {
+        val metrics = sqlIdToMaxMetric.getOrElse(sqlID, Seq.empty).toMap
+        GenerateDot.writeDotGraph(
+          QueryPlanWithMetrics(SparkPlanInfoWithStage(planInfo, accumIdToStageId), metrics),
+          physicalPlan, stageIdToStageMetrics, dotFileWriter, sqlID, app.appId)
+      } finally {
+        dotFileWriter.close()
+      }
+    }
   }
 }
 
@@ -91,7 +137,7 @@ object GenerateDot {
  * @param plan Query plan.
  * @param metrics Map of accumulatorId to metric.
  */
-case class QueryPlanWithMetrics(plan: SparkPlanInfo, metrics: Map[Long, Long])
+case class QueryPlanWithMetrics(plan: SparkPlanInfoWithStage, metrics: Map[Long, Long])
 
 /**
  * This code is mostly copied from org.apache.spark.sql.execution.ui.SparkPlanGraph
@@ -109,19 +155,11 @@ case class SparkPlanGraph(
     physicalPlan: String) {
 
   def makeDotFile(metrics: Map[Long, Long]): String = {
-    val leftAlignedLabel =
-      s"""
-         |Application: $appId
-         |Query: $sqlId
-         |
-         |$physicalPlan"""
-          .stripMargin
-          .replace("\n", "\\l")
-
+    val queryLabel = SparkPlanGraph.makeDotLabel(appId, sqlId, physicalPlan)
 
     val dotFile = new StringBuilder
     dotFile.append("digraph G {\n")
-    dotFile.append(s"""label="$leftAlignedLabel"\n""")
+    dotFile.append(s"label=$queryLabel\n")
     dotFile.append("labelloc=b\n")
     dotFile.append("fontname=Courier\n")
     dotFile.append(s"""tooltip="APP: $appId Query: $sqlId"\n""")
@@ -148,18 +186,17 @@ object SparkPlanGraph {
   /**
    * Build a SparkPlanGraph from the root of a SparkPlan tree.
    */
-  def apply(planInfo: SparkPlanInfo,
+  def apply(planInfo: SparkPlanInfoWithStage,
       appId: String,
       sqlId: String,
       physicalPlan: String,
-      accumIdToStageId: Map[Long, Int],
       stageIdToStageMetrics: Map[Int, StageMetrics]): SparkPlanGraph = {
     val nodeIdGenerator = new AtomicLong(0)
     val nodes = mutable.ArrayBuffer[SparkPlanGraphNode]()
     val edges = mutable.ArrayBuffer[SparkPlanGraphEdge]()
-    val exchanges = mutable.HashMap[SparkPlanInfo, SparkPlanGraphNode]()
+    val exchanges = mutable.HashMap[SparkPlanInfoWithStage, SparkPlanGraphNode]()
     buildSparkPlanGraphNode(planInfo, nodeIdGenerator, nodes, edges, null, null, null, exchanges,
-      accumIdToStageId, stageIdToStageMetrics)
+      stageIdToStageMetrics)
     new SparkPlanGraph(nodes, edges, appId, sqlId, physicalPlan)
   }
 
@@ -176,34 +213,27 @@ object SparkPlanGraph {
   }
 
   private def buildSparkPlanGraphNode(
-      planInfo: SparkPlanInfo,
+      planInfo: SparkPlanInfoWithStage,
       nodeIdGenerator: AtomicLong,
       nodes: mutable.ArrayBuffer[SparkPlanGraphNode],
       edges: mutable.ArrayBuffer[SparkPlanGraphEdge],
       parent: SparkPlanGraphNode,
       codeGen: SparkPlanGraphCluster,
       stage: StageGraphCluster,
-      exchanges: mutable.HashMap[SparkPlanInfo, SparkPlanGraphNode],
-      accumIdToStageId: Map[Long, Int],
+      exchanges: mutable.HashMap[SparkPlanInfoWithStage, SparkPlanGraphNode],
       stageIdToStageMetrics: Map[Int, StageMetrics]): Unit = {
 
-    def getOrMakeStage(metrics: Seq[SQLMetricInfo]): StageGraphCluster = {
-      val stages = metrics.flatMap { m =>
-        accumIdToStageId.get(m.accumulatorId)
-      }.reduceOption((l, r) => Math.min(l, r))
-      // In some cases Spark will do a shuffle in the middle of an operation,
-      // like TakeOrderedAndProject. In those cases the node is associated with the
-      // min stage ID, just to remove ambiguity
-
+    def getOrMakeStage(planInfo: SparkPlanInfoWithStage): StageGraphCluster = {
+      val stageId = planInfo.stageId
       val retStage = if (stage == null ||
-          (stages.nonEmpty && stage.getStageId > 0 && stage.getStageId != stages.head)) {
+          (stageId.nonEmpty && stage.getStageId > 0 && stage.getStageId != stageId.head)) {
         val ret = new StageGraphCluster(nodeIdGenerator.getAndIncrement(), stageIdToStageMetrics)
         nodes += ret
         ret
       } else {
         stage
       }
-      stages.foreach { stageId =>
+      stageId.foreach { stageId =>
         retStage.setStage(stageId)
       }
       retStage
@@ -218,16 +248,16 @@ object SparkPlanGraph {
           planInfo.simpleString,
           mutable.ArrayBuffer[SparkPlanGraphNode](),
           planInfo.metrics)
-        val s = getOrMakeStage(planInfo.metrics)
+        val s = getOrMakeStage(planInfo)
         s.nodes += codeGenCluster
 
         buildSparkPlanGraphNode(
           planInfo.children.head, nodeIdGenerator, nodes, edges, parent, codeGenCluster,
-          s, exchanges, accumIdToStageId, stageIdToStageMetrics)
+          s, exchanges, stageIdToStageMetrics)
       case "InputAdapter" =>
         buildSparkPlanGraphNode(
           planInfo.children.head, nodeIdGenerator, nodes, edges, parent, null, stage, exchanges,
-          accumIdToStageId, stageIdToStageMetrics)
+          stageIdToStageMetrics)
       case "BroadcastQueryStage" | "ShuffleQueryStage" =>
         if (exchanges.contains(planInfo.children.head)) {
           // Point to the re-used exchange
@@ -236,12 +266,12 @@ object SparkPlanGraph {
         } else {
           buildSparkPlanGraphNode(
             planInfo.children.head, nodeIdGenerator, nodes, edges, parent, null, null, exchanges,
-            accumIdToStageId, stageIdToStageMetrics)
+            stageIdToStageMetrics)
         }
       case "Subquery" if codeGen != null =>
         // Subquery should not be included in WholeStageCodegen
         buildSparkPlanGraphNode(planInfo, nodeIdGenerator, nodes, edges, parent, null,
-          null, exchanges, accumIdToStageId, stageIdToStageMetrics)
+          null, exchanges, stageIdToStageMetrics)
       case "Subquery" if exchanges.contains(planInfo) =>
         // Point to the re-used subquery
         val node = exchanges(planInfo)
@@ -249,7 +279,7 @@ object SparkPlanGraph {
       case "SubqueryBroadcast" if codeGen != null =>
         // SubqueryBroadcast should not be included in WholeStageCodegen
         buildSparkPlanGraphNode(planInfo, nodeIdGenerator, nodes, edges, parent, null,
-          null, exchanges, accumIdToStageId, stageIdToStageMetrics)
+          null, exchanges, stageIdToStageMetrics)
       case "SubqueryBroadcast" if exchanges.contains(planInfo) =>
         // Point to the re-used SubqueryBroadcast
         val node = exchanges(planInfo)
@@ -259,7 +289,7 @@ object SparkPlanGraph {
         // the previous `case` make sure the re-used and the original point to the same node.
         buildSparkPlanGraphNode(
           planInfo.children.head, nodeIdGenerator, nodes, edges, parent, codeGen, stage, exchanges,
-          accumIdToStageId, stageIdToStageMetrics)
+          stageIdToStageMetrics)
       case "ReusedExchange" if exchanges.contains(planInfo.children.head) =>
         // Point to the re-used exchange
         val node = exchanges(planInfo.children.head)
@@ -276,7 +306,7 @@ object SparkPlanGraph {
           exchanges += planInfo -> node
           null
         } else {
-          getOrMakeStage(metrics)
+          getOrMakeStage(planInfo)
         }
 
         val toAddTo = Option(codeGen).map(_.nodes).getOrElse {
@@ -289,8 +319,38 @@ object SparkPlanGraph {
         }
         planInfo.children.foreach(
           buildSparkPlanGraphNode(_, nodeIdGenerator, nodes, edges, node, codeGen, s,
-            exchanges, accumIdToStageId, stageIdToStageMetrics))
+            exchanges, stageIdToStageMetrics))
     }
+  }
+
+  val htmlLineBreak = """<br align="left"/>""" + "\n"
+
+  def makeDotLabel(
+    appId: String,
+    sqlId: String,
+    physicalPlan: String,
+    maxLength: Int = 16384
+  ): String = {
+    val sqlPlanPlaceHolder = "%s"
+    val queryLabelFormat =
+      s"""<<table border="0">
+         |<tr><td>Application: $appId, Query: $sqlId</td></tr>
+         |<tr><td>$sqlPlanPlaceHolder</td></tr>
+         |<tr><td>Large physical plans may be truncated. See output from
+         |--print-plans captioned "Plan for SQL ID : $sqlId"
+         |</td></tr>
+         |</table>>""".stripMargin
+
+    // pre-calculate size post substitutions
+    val formatBytes = queryLabelFormat.length() - sqlPlanPlaceHolder.length()
+    val numLinebreaks = physicalPlan.count(_ == '\n')
+    val lineBreakBytes = numLinebreaks * htmlLineBreak.length()
+    val maxPlanLength = maxLength - formatBytes - lineBreakBytes
+
+    queryLabelFormat.format(
+      physicalPlan.take(maxPlanLength)
+        .replaceAll("\n", htmlLineBreak)
+    )
   }
 }
 
