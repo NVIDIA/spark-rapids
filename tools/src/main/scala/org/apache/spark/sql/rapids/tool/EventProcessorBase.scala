@@ -98,9 +98,8 @@ trait EventProcessorBase extends Logging {
     if (event.getClass.getName.equals(rpAddedClass)) {
       try {
         event match {
-          case _: SparkListenerResourceProfileAdded =>
-            doSparkListenerResourceProfileAdded(app,
-              event.asInstanceOf[SparkListenerResourceProfileAdded])
+          case rpAdded: SparkListenerResourceProfileAdded =>
+            doSparkListenerResourceProfileAdded(app, rpAdded)
             true
           case _ => false
         }
