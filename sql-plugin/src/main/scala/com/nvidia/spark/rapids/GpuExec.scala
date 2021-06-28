@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.NvtxColor
+import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
 
 import org.apache.spark.internal.Logging
@@ -23,6 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Exp
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
   def >=(other: MetricsLevel): Boolean =
@@ -160,6 +163,23 @@ case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
   def add(v: Long): Unit = sqlMetric.add(v)
   override def set(v: Long): Unit = sqlMetric.set(v)
   override def value: Long = sqlMetric.value
+}
+
+class CollectTimeIterator(
+    nvtxName: String,
+    it: Iterator[ColumnarBatch],
+    collectTime: GpuMetric) extends Iterator[ColumnarBatch] {
+  override def hasNext: Boolean = {
+    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
+      it.hasNext
+    }
+  }
+
+  override def next(): ColumnarBatch = {
+    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
+      it.next
+    }
+  }
 }
 
 object GpuExec {

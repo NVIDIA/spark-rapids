@@ -193,7 +193,7 @@ case class BatchedByKey(order: Seq[SortOrder]) extends CoalesceGoal {
 }
 
 abstract class AbstractGpuCoalesceIterator(
-    iter: Iterator[ColumnarBatch],
+    batches: Iterator[ColumnarBatch],
     goal: CoalesceSizeGoal,
     numInputRows: GpuMetric,
     numInputBatches: GpuMetric,
@@ -203,6 +203,9 @@ abstract class AbstractGpuCoalesceIterator(
     concatTime: GpuMetric,
     totalTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Arm with Logging {
+
+  private val iter = new CollectTimeIterator(s"$opName: collect", batches, collectTime)
+
   private var batchInitialized: Boolean = false
 
   /**
@@ -233,17 +236,9 @@ abstract class AbstractGpuCoalesceIterator(
   Option(TaskContext.get())
       .foreach(_.addTaskCompletionListener[Unit](_ => clearOnDeck()))
 
-  private def iterHasNext: Boolean = withResource(new MetricRange(collectTime)) { _ =>
-    iter.hasNext
-  }
-
-  private def iterNext(): ColumnarBatch = withResource(new MetricRange(collectTime)) { _ =>
-    iter.next()
-  }
-
   override def hasNext: Boolean = withResource(new MetricRange(totalTime)) { _ =>
-    while (!hasOnDeck && iterHasNext) {
-      closeOnExcept(iterNext()) { cb =>
+    while (!hasOnDeck && iter.hasNext) {
+      closeOnExcept(iter.next()) { cb =>
         val numRows = cb.numRows()
         numInputBatches += 1
         numInputRows += numRows
@@ -333,8 +328,8 @@ abstract class AbstractGpuCoalesceIterator(
       }
 
       // there is a hard limit of 2^31 rows
-      while (numRows < Int.MaxValue && !hasOnDeck && iterHasNext) {
-        closeOnExcept(iterNext()) { cb =>
+      while (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
+        closeOnExcept(iter.next()) { cb =>
           val nextRows = cb.numRows()
           numInputBatches += 1
 
@@ -375,7 +370,7 @@ abstract class AbstractGpuCoalesceIterator(
       }
 
       // enforce single batch limit when appropriate
-      if (goal == RequireSingleBatch && (hasOnDeck || iterHasNext)) {
+      if (goal == RequireSingleBatch && (hasOnDeck || iter.hasNext)) {
         throw new IllegalStateException("A single batch is required for this operation." +
             " Please try increasing your partition count.")
       }

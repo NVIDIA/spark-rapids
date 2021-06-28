@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.util.concurrent.TimeUnit
+
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTextFileWriter}
@@ -78,11 +80,12 @@ object ProfileMain extends Logging {
           logError(s"Error parsing one of the event logs")
           return 1
         }
+
         if (apps.isEmpty) {
           logInfo("No application to process. Exiting")
           return 0
         }
-        processApps(apps, generateDot = false, printPlans = false)
+        processApps(apps, printPlans = false)
         // Show the application Id <-> appIndex mapping.
         apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
       } else {
@@ -103,7 +106,7 @@ object ProfileMain extends Logging {
           // This is a bit odd that we process apps individual right now due to
           // memory concerns. So the aggregation functions only aggregate single
           // application not across applications.
-          processApps(apps, appArgs.generateDot(), appArgs.printPlans())
+          processApps(apps, appArgs.printPlans())
           apps.foreach(_.dropAllTempViews())
         }
       }
@@ -116,13 +119,14 @@ object ProfileMain extends Logging {
      * evaluated at once and the output is one row per application. Else each eventlog is parsed one
      * at a time.
      */
-    def processApps(apps: Seq[ApplicationInfo], generateDot: Boolean, printPlans: Boolean): Unit = {
+    def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean): Unit = {
       if (appArgs.compare()) { // Compare Applications
 
         textFileWriter.write("### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps, Some(textFileWriter))
         compare.compareAppInfo()
         compare.compareExecutorInfo()
+        compare.findMatchingStages()
         compare.compareJobInfo()
         compare.compareRapidsProperties()
       } else {
@@ -133,7 +137,7 @@ object ProfileMain extends Logging {
         collect.printJobInfo()
         collect.printRapidsProperties()
         collect.printRapidsJAR()
-        collect.printSQLPlanMetrics(generateDot, outputDirectory)
+        collect.printSQLPlanMetrics()
         if (printPlans) {
           collect.printSQLPlans(outputDirectory)
         }
@@ -154,12 +158,29 @@ object ProfileMain extends Logging {
       healthCheck.listRemovedExecutors()
       healthCheck.listPossibleUnsupportedSQLPlan()
 
+      if (appArgs.generateDot()) {
+        if (appArgs.compare()) {
+          logWarning("Dot graph does not compare apps")
+        }
+        apps.foreach { app =>
+          val start = System.nanoTime()
+          GenerateDot(app, outputDirectory)
+          val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
+          textFileWriter.write(s"Generated DOT graphs for app ${app.appId} " +
+              s"to $outputDirectory in $duration second(s)\n")
+        }
+      }
+
       if (appArgs.generateTimeline()) {
         if (appArgs.compare()) {
           logWarning("Timeline graph does not compare apps")
         }
         apps.foreach { app =>
+          val start = System.nanoTime()
           GenerateTimeline.generateFor(app, outputDirectory)
+          val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
+          textFileWriter.write(s"Generated timeline graphs for app ${app.appId} " +
+              s"to $outputDirectory in $duration second(s)\n")
         }
       }
     }

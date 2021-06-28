@@ -16,15 +16,10 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.util.concurrent.TimeUnit
-
-import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 case class StageMetrics(numTasks: Int, duration: String)
@@ -125,90 +120,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }
   }
 
-  def generateDot(outputDirectory: String, accumsOpt: Option[DataFrame]): Unit = {
-    for (app <- apps) {
-      val requiredDataFrames = Seq("sqlMetricsDF", "driverAccumDF",
-          "taskStageAccumDF", "taskStageAccumDF")
-        .map(name => s"${name}_${app.index}")
-      if (requiredDataFrames.forall(app.allDataFrames.contains)) {
-        val start = System.nanoTime()
-        val accums = accumsOpt.getOrElse(app.runQuery(app.generateSQLAccums))
-
-        val accumIdToStageId = app.runQuery(
-          s"""
-             | select
-             | stageId,
-             | accumulatorId
-             | from taskStageAccumDF_${app.index}
-             | """.stripMargin).groupBy("accumulatorId").agg(
-          max(col("stageId")).alias("stageId")).collect().map { row =>
-          (row.getLong(0), row.getInt(1))
-        }.toMap
-
-        val formatter = java.text.NumberFormat.getIntegerInstance
-
-        val stageIdToStageMetrics = app.runQuery(
-          s"""
-             |select
-             | stageId,
-             | duration
-             | from taskDF_${app.index}
-             |""".stripMargin).groupBy(col("stageId"))
-            .agg(min(col("duration")).alias("min_dur"),
-              max(col("duration")).alias("max_dur"),
-              mean(col("duration")).alias("mean_dur"),
-              count(col("duration")).alias("num_tasks"))
-            .collect().map { row =>
-          val stageId = row.getInt(0)
-          val minDur = row.getLong(1)
-          val maxDur = row.getLong(2)
-          val meanDur = row.getDouble(3)
-          val numTasks = row.getLong(4)
-          (stageId, StageMetrics(numTasks.toInt,
-            s"MIN: ${formatter.format(minDur)} ms " +
-                s"MAX: ${formatter.format(maxDur)} ms " +
-                s"AVG: ${formatter.format(meanDur)} ms"))
-        }.toMap
-
-        val accumSummary = accums
-          .select(col("sqlId"), col("accumulatorId"), col("max_value"))
-          .collect()
-        val sqlIdToMaxMetric = new mutable.HashMap[Long, ArrayBuffer[(Long,Long)]]()
-        for (row <- accumSummary) {
-          val list = sqlIdToMaxMetric.getOrElseUpdate(row.getLong(0),
-            new ArrayBuffer[(Long, Long)]())
-          list += row.getLong(1) -> row.getLong(2)
-        }
-
-        val sqlPlansMap = app.sqlPlan.map { case (sqlId, sparkPlanInfo) =>
-          sqlId -> ((sparkPlanInfo, app.physicalPlanDescription(sqlId)))
-        }
-        for ((sqlID,  (planInfo, physicalPlan)) <- sqlPlansMap) {
-          val dotFileWriter = new ToolTextFileWriter(outputDirectory,
-            s"${app.appId}-query-$sqlID.dot")
-          try {
-            val metrics = sqlIdToMaxMetric.getOrElse(sqlID, Seq.empty).toMap
-            GenerateDot.writeDotGraph(QueryPlanWithMetrics(planInfo, metrics),
-              physicalPlan, accumIdToStageId, stageIdToStageMetrics, dotFileWriter,
-              sqlID, app.appId)
-          } finally {
-            dotFileWriter.close()
-          }
-        }
-
-        val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-        fileWriter.foreach(_.write(s"Generated DOT graphs for app ${app.appId} " +
-          s"to $outputDirectory in $duration second(s)\n"))
-      } else {
-        val missingDataFrames = requiredDataFrames.filterNot(app.allDataFrames.contains)
-        fileWriter.foreach(_.write(s"Could not generate DOT graph for app ${app.appId} " +
-          s"because of missing data frames: ${missingDataFrames.mkString(", ")}\n"))
-      }
-    }
-  }
-
   // Print SQL Plan Metrics
-  def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String): Unit = {
+  def printSQLPlanMetrics(): Unit = {
     for (app <- apps){
       if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
         app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
@@ -216,11 +129,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         app.allDataFrames.contains(s"jobDF_${app.index}") &&
         app.allDataFrames.contains(s"sqlDF_${app.index}")) {
         val messageHeader = "\nSQL Plan Metrics for Application:\n"
-        val accums = app.runQuery(app.generateSQLAccums, fileWriter = fileWriter,
-          messageHeader=messageHeader)
-        if (shouldGenDot) {
-          generateDot(outputDir, Some(accums))
-        }
+        app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader=messageHeader)
       }
     }
   }
