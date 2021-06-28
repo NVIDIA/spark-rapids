@@ -30,6 +30,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
+import scala.Option;
 import scala.collection.Iterator;
 
 import java.util.ArrayList;
@@ -144,11 +145,7 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
         if (tc != null) {
           GpuSemaphore$.MODULE$.acquireIfNecessary(tc, semaphoreWaitTime);
         }
-        if (gpuOpTime != null) {
-          buildRange = new NvtxWithMetrics("RowToColumnar: build", NvtxColor.GREEN, gpuOpTime);
-        } else {
-          buildRange = new NvtxRange("RowToColumnar: build", NvtxColor.GREEN);
-        }
+        buildRange = NvtxWithMetrics.apply("RowToColumnar: build", NvtxColor.GREEN, Option.apply(gpuOpTime));
         devColumn = hostColumn.copyToDevice();
       }
     }

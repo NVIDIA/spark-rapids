@@ -111,17 +111,13 @@ object GpuSemaphore {
   }
 }
 
-private final class GpuSemaphore(tasksPerGpu: Int) extends Logging {
+private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
   private val semaphore = new Semaphore(tasksPerGpu)
   // Map to track which tasks have acquired the semaphore.
   private val activeTasks = new ConcurrentHashMap[Long, MutableInt]
 
   def acquireIfNecessary(context: TaskContext, waitMetric: Option[GpuMetric] = None): Unit = {
-    val nvtxRange = waitMetric match {
-      case Some(m) => new NvtxWithMetrics("Acquire GPU", NvtxColor.RED, m)
-      case _ => new NvtxRange("Acquire GPU", NvtxColor.RED)
-    }
-    try {
+    withResource(NvtxWithMetrics.apply("Acquire GPU", NvtxColor.RED, waitMetric)) { _ =>
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
       if (refs == null || refs.getValue == 0) {
@@ -136,8 +132,6 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging {
         }
         GpuDeviceManager.initializeFromTask()
       }
-    } finally {
-      nvtxRange.close()
     }
   }
 
