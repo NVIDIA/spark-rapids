@@ -49,10 +49,24 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows. Default is 1000.")
+  val numThreads: ScallopOption[Int] =
+    opt[Int](required = false,
+      descr = "Number of thread to use for parallel processing. The default is the " +
+        "number of cores on host divided by 4.")
+  val timeout: ScallopOption[Long] =
+    opt[Long](required = false,
+      descr = "Maximum time in seconds to wait for the event logs to be processed. " +
+        "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
+        "times out, it will report what it was able to process up until the timeout.")
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)
     case _ => Left("Error, the filter criteria must end with either -newest or -oldest")
+  }
+
+  validate(timeout) {
+    case timeout if (timeout > 3) => Right(Unit)
+    case _ => Left("Error, timeout must be greater than 3 seconds.")
   }
 
   verify()
