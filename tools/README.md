@@ -111,16 +111,21 @@ Each application(event log) could have multiple SQL queries. If a SQL's plan has
 
 Note: the duration(s) reported are in milli-seconds.
 
-It can also print out any potential problems it finds in a separate column, which is not included in the score. This
+There are 2 output files from running the tool. One is a summary text file printing in order the applications most
+likely to be good candidates for the GPU to the ones least likely. It outputs the application ID, duration,
+the SQL Dataframe duration and the SQL duration spent when we found SQL queries with potential problems.
+The other file is a CSV file that contains more information and can be used for further post processing.
+
+Note, potential problems are reported in the CSV file in a separate column, which is not included in the score. This
 currently only includes some UDFs. The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps. 
 Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
 
-The output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
+The CSV output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
 at how much time the tasks spent doing processing on the CPU vs waiting on IO. This is not always a good indicator
 because sometimes you may be doing IO that is encrypted and the CPU has to do work to decrypt it, so the environment
 you are running on needs to be taken into account.
 
-The last column `App Duration Estimated` is used to indicate if we had to estimate the application duration. If we
+`App Duration Estimated` is used to indicate if we had to estimate the application duration. If we
 had to estimate it, it means the event log was missing the application finished event so we will use the last job
 or sql execution time we find as the end time used to calculate the duration.
 
@@ -128,19 +133,20 @@ Note that SQL queries that contain failed jobs are not included.
 
 Sample output in csv:
 ```
-App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent,App Duration Estimated
-Spark shell,app-20210507105707-0001,78.03,"",810923,1039276,32.03,false
-Spark shell,app-20210507103057-0000,75.87,"",316622,417307,64.07,false
+App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures
+job1,app-20210507174503-2538,98.13,"",952802,970984,63.14,false,0,""
+job2,app-20210507180116-2539,97.88,"",903845,923419,64.88,false,0,""
+job3,app-20210319151533-1704,97.59,"",737826,756039,33.95,false,0,""
 ```
 
 Sample output in text:
 ```
-+-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+----------------------+
-|App Name   |App ID                 |Score|Potential Problems|SQL Dataframe Duration|App Duration|Executor CPU Time Percent|App Duration Estimated|
-+-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+----------------------+
-|Spark shell|app-20210507105707-0001|78.03|                  |810923                |1039276     |32.03                    |false                 |
-|Spark shell|app-20210507103057-0000|75.87|                  |316622                |417307      |64.07                    |false                 |
-+-----------+-----------------------+-----+------------------+----------------------+------------+-------------------------+----------------------+
+================================================================================================================
+|                 App ID|                App Duration|      SQL Dataframe Duration|SQL Duration For Problematic|
+================================================================================================================
+|app-20210507174503-2538|                      970984|                      952802|                           0|
+|app-20210507180116-2539|                      923419|                      903845|                           0|
+|app-20210319151533-1704|                      756039|                      737826|                           0|
 ```
 
 ### How to use this tool
@@ -148,57 +154,42 @@ This tool parses the Spark CPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
 in the local filesystem, HDFS, S3 or mixed.
 
-### Use from spark-shell
-1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
-2. Starting spark-shell:
 ```bash
-$SPARK_HOME/bin/spark-shell --driver-memory 5g --jars ~/rapids-4-spark-tools_2.12-<version>.jar
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+       com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
+       <eventlogs | eventlog directories ...>
 ```
 
-For multiple event logs:
+Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
 ```bash
-com.nvidia.spark.rapids.tool.qualification.QualificationMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
-```
-
-### Use from spark-submit
-```bash
-$SPARK_HOME/bin/spark-submit --driver-memory 5g --class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
-rapids-4-spark-tools_2.12-<version>.jar \
-/path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
+java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+ com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
 ```
 
 ### Options (`--help` output)
 
   Note: `--help` should be before the trailing event logs.
 ```bash
-$SPARK_HOME/bin/spark-submit \
---class com.nvidia.spark.rapids.tool.qualification.QualificationMain \
-rapids-4-spark-tools_2.12-<version>.jar \
---help
+RAPIDS Accelerator for Apache Spark qualification tool
 
-For usage see below:
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+       com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
+       <eventlogs | eventlog directories ...>
 
-  -f, --filter-criteria  <arg>     Filter newest or oldest N event logs for processing.
-                                   Supported formats are:
-                                   To process 10 recent event logs: --filter-criteria "10-newest"
-                                   To process 10 oldest event logs: --filter-criteria "10-oldest"
-  -m, --match-event-logs  <arg>    Filter event logs filenames which contains the input string.
-       
-      --no-exec-cpu-percent        Do not include the executor CPU time percent.
-  -n, --num-output-rows  <arg>     Number of output rows for each Application.
-                                   Default is 1000.
-  -o, --output-directory  <arg>    Base output directory. Default is current
-                                   directory for the default filesystem. The
-                                   final output will go into a subdirectory
-                                   called rapids_4_spark_qualification_output.
-                                   It will overwrite any existing directory with
-                                   the same name.
-      --output-format  <arg>       Output format, supports csv and text. Default
-                                   is csv. text output format creates a file
-                                   named rapids_4_spark_qualification.log while
-                                   csv will create a file using the standard
-                                   Spark naming convention.
-  -h, --help                       Show help message
+  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
+                                  processing.eg: 100-newest (for processing
+                                  newest 100 event logs). eg: 100-oldest (for
+                                  processing oldest 100 event logs)
+  -m, --match-event-logs  <arg>   Filter event logs whose filenames contain the
+                                  input string
+  -n, --num-output-rows  <arg>    Number of output rows. Default is 1000.
+  -o, --output-directory  <arg>   Base output directory. Default is current
+                                  directory for the default filesystem. The
+                                  final output will go into a subdirectory
+                                  called rapids_4_spark_qualification_output. It
+                                  will overwrite any existing directory with the
+                                  same name.
+  -h, --help                      Show help message
 
  trailing arguments:
   eventlog (required)   Event log filenames(space separated) or directories
@@ -207,19 +198,14 @@ For usage see below:
 ```
 
 ### Output
-By default this outputs a csv file under sub-directory `./rapids_4_spark_qualification_output/` that contains 
+By default this outputs a 2 files under sub-directory `./rapids_4_spark_qualification_output/` that contains 
 the processed applications. The output will go into your default filesystem, it supports local filesystem
-or HDFS. The csv output can be used later to read back into Spark and do further processing or combined with other reports
-as needed.
+or HDFS. 
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
 
-The output format can be changed using the `--output-format` option. Default is csv. The other option is text.
-  
-Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
-  
-Run `--help` for more information.
-
+It will output a text file with the name `rapids_4_spark_qualification_output.log` that is a summary report and
+it will output a CSV file named `rapids_4_spark_qualification_output.csv` that has more data in it.
 
 ## Profiling Tool
 

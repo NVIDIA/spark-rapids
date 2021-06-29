@@ -25,7 +25,8 @@ import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
-import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -44,43 +45,44 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
+  val schema = new StructType()
+    .add("appName", StringType, true)
+    .add("appID", StringType, true)
+    .add("dfRankTotal", DoubleType, true)
+    .add("potentialProblems", StringType, true)
+    .add("dfDurationFinal", LongType, true)
+    .add("appDuration", LongType, true)
+    .add("executorCPURatio", DoubleType, true)
+    .add("appEndDurationEstimated", BooleanType, true)
+    .add("sqlDurationForProblematic", LongType, true)
+    .add("failedSQLIds", StringType, true)
+
+  def readExpectedFile(expected: File): DataFrame = {
+    ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
+      Some(schema))
+  }
+
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
       shouldReturnEmpty: Boolean = false) = {
-    Seq(true, false).foreach { hasExecCpu =>
-      TrampolineUtil.withTempDir { outpath =>
-        val resultExpectation = new File(expRoot, expectFileName)
-        val outputArgs = Array(
-          "--output-directory",
-          outpath.getAbsolutePath())
-        val allArgs = hasExecCpu match  {
-          case true => outputArgs
-          case false => outputArgs ++ Array("--no-exec-cpu-percent")
-        }
-        val appArgs = new QualificationArgs(allArgs ++ eventLogs)
+    TrampolineUtil.withTempDir { outpath =>
+      val resultExpectation = new File(expRoot, expectFileName)
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath())
 
-        val (exit, dfQualOpt) =
-          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
-            dropTempViews=true)
-        assert(exit == 0)
-        if (shouldReturnEmpty) {
-          assert(dfQualOpt.isEmpty)
-        } else {
-          val schema = new StructType()
-            .add("appName",StringType,true)
-            .add("appID",StringType,true)
-            .add("dfRankTotal",DoubleType,true)
-            .add("potentialProblems",StringType,true)
-            .add("dfDurationFinal",LongType,true)
-            .add("appDuration",LongType,true)
-            .add("executorCPURatio",DoubleType,true)
-            .add("appEndDurationEstimated",BooleanType,true)
-          val dfExpectOrig =
-            ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(),
-              Some(schema))
-          val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
-          assert(dfQualOpt.isDefined)
-          ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)
-        }
+      val appArgs = new QualificationArgs(allArgs ++ eventLogs)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val spark2 = sparkSession
+      import spark2.implicits._
+      val dfTmp = appSum.toDF
+      val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
+      if (shouldReturnEmpty) {
+        assert(appSum.head.sqlDataFrameDuration == 0.0)
+      } else {
+        val dfExpect = readExpectedFile(resultExpectation)
+        assert(!dfQual.isEmpty)
+        ToolTestUtils.compareDataFrames(dfQual, dfExpect)
       }
     }
   }
@@ -162,41 +164,24 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
-
-        // create new session for tool to use
-        val spark2 = SparkSession
-          .builder()
-          .master("local[*]")
-          .appName("Rapids Spark Profiling Tool Unit Tests")
-          .getOrCreate()
-
         val appArgs = new QualificationArgs(Array(
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))
 
-        val (exit, _) =
-          QualificationMain.mainInternal(spark2, appArgs, writeOutput = false,
-            dropTempViews = false)
+        val (exit, sumInfo) =
+          QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
-
-        val df = spark2.table("sqlAggMetricsDF")
-
-        def fieldIndex(name: String) = df.schema.fieldIndex(name)
-
-        val rows = df.collect()
-        assert(rows.length === 1)
-        val collect = rows.head
-        assert(collect.getString(fieldIndex("description")).startsWith("collect"))
 
         // parse results from listener
         val executorCpuTime = listener.executorCpuTime
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
 
+        val listenerCpuTimePercent = ToolUtils.calculatePercent(executorCpuTime, executorRunTime)
+
         // compare metrics from event log with metrics from listener
-        assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
-        assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
+        assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
       }
     }
   }
