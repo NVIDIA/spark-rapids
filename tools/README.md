@@ -70,15 +70,16 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
 more options about integrating hadoop-aws module with S3.
 
-## Download Spark 3.x jars for Qualification tool
+## Download Spark 3.x distribution for the Qualification tool
 The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
-Spark 3.x installed, you can download the Spark distribution to any machine and just include them
+Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
 in the classpath.
 
-1. [Download Spark 3.x Jars](http://spark.apache.org/downloads.html) - 3.1+ for Apache Hadoop is recommended
+1. [Download Apache Spark 3.x Jars](http://spark.apache.org/downloads.html) - Spark 3.1+ for Apache Hadoop is recommended
 2. Extract the Spark distribution into a local directory.
 3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
-   `java -cp toolsJar:pathToSpark:...` when you run the qualification tool.
+   `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool. See the
+   [How to use this tool](#how-to-use-this-tool) section below.
 
 ## Filter input event logs
 Both of the qualification tool and profiling tool have this function which is to filter event logs.
