@@ -227,14 +227,20 @@ def setup_orc_file_no_column_names(spark, table_name):
     spark.sql(create_query).collect
     spark.sql(insert_query).collect
 
-def test_missing_column_names(spark_tmp_table_factory):
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_missing_column_names(spark_tmp_table_factory, reader_confs):
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
+    all_confs = reader_confs.copy()
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)))
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)),
+        all_confs)
 
-def test_missing_column_names_filter(spark_tmp_table_factory):
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_missing_column_names_filter(spark_tmp_table_factory, reader_confs):
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
+    all_confs = reader_confs.copy()
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql("SELECT _col3,_col2 FROM {} WHERE _col2 = '155'".format(table_name)))
+        lambda spark : spark.sql("SELECT _col3,_col2 FROM {} WHERE _col2 = '155'".format(table_name)),
+        all_confs)

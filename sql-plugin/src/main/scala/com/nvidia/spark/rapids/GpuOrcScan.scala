@@ -368,7 +368,7 @@ private case class OrcPartitionReaderContext(
     dataReader: DataReader,
     orcReader: Reader,
     blockIterator: BufferedIterator[OrcOutputStripe],
-    requestedMapping: Option[Array[Int]] = None)
+    requestedMapping: Option[Array[Int]])
 
 /**
  * A base ORC partition reader which compose of some common methods
@@ -853,7 +853,7 @@ private case class GpuOrcFileFilterHandler(
           sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
           orcReader.getWriterVersion)
         OrcPartitionReaderContext(updatedReadSchema, evolution, dataReader, orcReader,
-          stripes.iterator.buffered)
+          stripes.iterator.buffered, requestedMapping)
       }
     }
 
