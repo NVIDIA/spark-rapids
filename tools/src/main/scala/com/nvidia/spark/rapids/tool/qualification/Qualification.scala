@@ -35,7 +35,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
-  private val waitTimeInSec = timeout.getOrElse(36000L)
+  // default is 24 hours
+  private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
   private val threadFactory = new ThreadFactoryBuilder()
     .setDaemon(true).setNameFormat("qualTool" + "-%d").build()
@@ -43,15 +44,13 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
   private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
     .asInstanceOf[ThreadPoolExecutor]
 
-  class QualifyThread(path: EventLogInfo) extends Runnable {
+  private class QualifyThread(path: EventLogInfo) extends Runnable {
     def run: Unit = qualifyApp(path, numRows, hadoopConf)
   }
 
   def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
     try {
-      allPaths.foreach { path =>
-        threadPool.submit(new QualifyThread(path))
-      }
+      allPaths.foreach(path => threadPool.submit(new QualifyThread(path)))
     } catch {
       case e: Exception =>
         logError("Exception processing event logs", e)
@@ -80,17 +79,22 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       path: EventLogInfo,
       numRows: Int,
       hadoopConf: Configuration): Unit = {
-    val app = QualAppInfo.createApp(path, numRows, hadoopConf)
-    if (!app.isDefined) {
-      logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
-      None
-    } else {
-      val qualSumInfo = app.get.aggregateStats()
-      if (qualSumInfo.isDefined) {
-        allApps.add(qualSumInfo.get)
+    try {
+      val app = QualAppInfo.createApp(path, numRows, hadoopConf)
+      if (!app.isDefined) {
+        logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
+        None
       } else {
-        logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
+        val qualSumInfo = app.get.aggregateStats()
+        if (qualSumInfo.isDefined) {
+          allApps.add(qualSumInfo.get)
+        } else {
+          logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
+        }
       }
+    } catch {
+      case e: Exception =>
+        logError(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
     }
   }
 }
