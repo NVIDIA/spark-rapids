@@ -1187,10 +1187,13 @@ object GpuOverrides {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL).nested() +
+          TypeSig.ARRAY + TypeSig.STRUCT,
+        TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
-          TypeSig.all))),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL).nested() +
+            TypeSig.ARRAY + TypeSig.STRUCT,
+        TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
       }),
@@ -1739,13 +1742,18 @@ object GpuOverrides {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectNotLambda(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+      ExprChecks.projectNotLambda(
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL).nested() +
+          TypeSig.ARRAY + TypeSig.STRUCT,
         TypeSig.all,
-        Seq(ParamCheck("predicate", TypeSig.psNote(TypeEnum.BOOLEAN,
-          "literal values are not supported"), TypeSig.BOOLEAN),
-          ParamCheck("trueValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+          ParamCheck("trueValue",
+            (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL).nested() +
+              TypeSig.ARRAY + TypeSig.STRUCT,
             TypeSig.all),
-          ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          ParamCheck("falseValue",
+            (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL).nested() +
+              TypeSig.ARRAY + TypeSig.STRUCT,
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
