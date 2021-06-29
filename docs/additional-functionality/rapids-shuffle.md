@@ -5,12 +5,6 @@ parent: Additional Functionality
 nav_order: 5
 ---
 # RAPIDS Shuffle Manager
----
-**NOTE**
-
-The _RAPIDS Shuffle Manager_ is a beta feature!
-
----
 
 The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interface in Apache Spark
 that allows custom mechanisms to exchange shuffle data. It has two components: a spillable cache, 
@@ -38,8 +32,11 @@ in these scenarios:
 ### System Setup
 
 In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its dependencies must 
-be installed on the host and within Docker containers. A host has additional requirements, like the 
-MLNX_OFED driver and `nv_peer_mem` kernel module.
+be installed on the host and inside Docker containers (if not baremetal). A host has additional 
+requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module. 
+
+The minimum UCX requirement for the RAPIDS Shuffle Manager is 
+[UCX 1.10.1](https://github.com/openucx/ucx/releases/tag/v1.10.1)
 
 #### Baremetal
 
@@ -53,29 +50,81 @@ MLNX_OFED driver and `nv_peer_mem` kernel module.
    in machines that don't connect their GPUs and NICs to PCIe switches (i.e. directly to the 
    root-complex). 
    
+   Other considerations:
+
+   - Please refer to [Mellanox documentation](
+   https://community.mellanox.com/s/article/recommended-network-configuration-examples-for-roce-deployment)
+   on how to configure RoCE networks (lossless/lossy, QoS, and more)
+
+   - We recommend that the `--without-ucx` option is passed when installing MLNX_OFED
+   (`mlnxofedinstall`). This is because the UCX included in MLNX_OFED does not have CUDA support,
+   and is likely older than what is available in the UCX repo (see Step 2 below).
+
    If you encounter issues or poor performance, GPUDirectRDMA can be controlled via the 
    UCX environment variable `UCX_IB_GPU_DIRECT_RDMA=no`, but please 
    [file a GitHub issue](https://github.com/NVIDIA/spark-rapids/issues) so we can investigate 
    further.
     
-2. (skip if you followed Step 1) For setups without RoCE/Infiniband, UCX 1.9.0 packaging 
-   requires RDMA packages for installation. UCX 1.10.0+ will relax these requirements for these
-   types of environments, so this step should not be needed in the future.
+2. Fetch and install the UCX package for your OS and CUDA version 
+   [UCX 1.10.1](https://github.com/openucx/ucx/releases/tag/v1.10.1).
    
-   If you still want to install UCX 1.9.0 in a machine without RoCE/Infiniband hardware, please 
-   build and install `rdma-core`. You can use the [Docker sample below](#ucx-minimal-dockerfile) 
-   as reference.
-    
-3. Fetch and install the UCX package for your OS and CUDA version 
-   [UCX 1.9.0](https://github.com/openucx/ucx/releases/tag/v1.9.0).
+   RDMA packages have extra requirements that should be satisfied by MLNX_OFED.
+  
+   ---
+   **NOTE:**
    
-   UCX versions 1.9 and below require the user to install the cuda-compat package
-   matching the cuda version of the UCX package (i.e. `cuda-compat-11-1`), in addition to: 
-   `ibverbs-providers`, `libgomp1`, `libibverbs1`, `libnuma1`, `librdmacm1`. 
+   Please note that the RAPIDS Shuffle Manager is built against 
+   [JUCX 1.11.0](https://search.maven.org/artifact/org.openucx/jucx/1.11.0/jar). This is the JNI
+   component of UCX and was published ahead of the native library (UCX 1.11.0). Please disregard the 
+   startup [compatibility warning](https://github.com/openucx/ucx/issues/6694), 
+   as the JUCX usage within the RAPIDS Shuffle Manager is compatible with UCX 1.10.x.
    
-   For UCX versions 1.10.0+, UCX will drop the `cuda-compat` requirement, and remove explicit 
-   RDMA dependencies greatly simplifying installation in some cases. Note that these dependencies 
-   have been met if you followed Steps 1 or 2 above.
+   ---
+   
+##### CentOS UCX RPM
+The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.10.1 
+available at
+https://github.com/openucx/ucx/releases/download/v1.10.1/ucx-v1.10.1-centos7-mofed5.x-cuda11.0.tar.bz2
+contains:
+
+```
+ucx-devel-1.10.1-1.el7.x86_64.rpm   
+ucx-debuginfo-1.10.1-1.el7.x86_64.rpm
+ucx-1.10.1-1.el7.x86_64.rpm         
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.10.1-1.el7.x86_64.rpm  
+ucx-cma-1.10.1-1.el7.x86_64.rpm
+ucx-ib-1.10.1-1.el7.x86_64.rpm
+```
+
+For a setup without RoCE or Infiniband networking, the only packages required are: 
+
+```
+ucx-1.10.1-1.el7.x86_64.rpm
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+```
+
+If accelerated networking is available, the package list is: 
+
+```
+ucx-1.10.1-1.el7.x86_64.rpm
+ucx-cuda-1.10.1-1.el7.x86_64.rpm
+ucx-rdmacm-1.10.1-1.el7.x86_64.rpm
+ucx-ib-1.10.1-1.el7.x86_64.rpm
+```
+
+---
+**NOTE:**
+
+The CentOS RPM requires CUDA installed via RPMs to satisfy its dependencies. The CUDA runtime can be
+downloaded from [https://developer.nvidia.com/cuda-downloads](https://developer.nvidia.com/cuda-downloads) 
+(note the [Archive of Previous CUDA releases](https://developer.nvidia.com/cuda-toolkit-archive) 
+link to download prior versions of the runtime). 
+
+For example, in order to download the CUDA RPM for CentOS 7 running on x86: 
+`Linux` > `x86_64` > `CentOS` > `7` or `8` > `rpm (local)` or `rpm (network)`.
+
+---
    
 #### Docker containers
 
@@ -94,39 +143,21 @@ essentially turns off all isolation. We are also assuming `--network=host` is sp
 the container to share the host's network. We will revise this document to include any new 
 configurations as we are able to test different scenarios.
 
-1. A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the 
-   host system.
+NOTE: A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the host 
+system if you have RDMA capable hardware.
 
-2. Within the Docker container we need to install UCX and its requirements. The following is an 
-   example of a Docker container that shows how to install `rdma-core` and UCX 1.9.0 with 
-   `cuda-10.1` support. You can use this as a base layer for containers that your executors 
-   will use.
-   
-   <a name="ucx-minimal-dockerfile"></a>
-   
-   ```
-   ARG CUDA_VER=10.1
-   
-   # Throw away image to build rdma_core
-   FROM ubuntu:18.04 as rdma_core
-   
-   RUN apt update
-   RUN apt-get install -y dh-make git build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
-   
-   RUN git clone --depth 1 --branch v33.0 https://github.com/linux-rdma/rdma-core
-   RUN cd rdma-core && debian/rules binary
-   
-   # Now start the main container
-   FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu18.04
-   
-   COPY --from=rdma_core /*.deb /tmp/
-   
-   RUN apt update
-   RUN apt-get install -y cuda-compat-10-1 wget udev dh-make libnuma1 libudev-dev libnl-3-dev libnl-route-3-dev python3-dev cython3
-   RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v1.9.0/ucx-v1.9.0-ubuntu18.04-mofed5.0-1.0.0.0-cuda10.1.deb
-   RUN dpkg -i /tmp/*.deb && rm -rf /tmp/*.deb
-   ```
-  
+Within the Docker container we need to install UCX and its requirements. These are Dockerfile
+examples for Ubuntu 18.04:
+
+The following are examples of Docker containers with UCX 1.10.1 and cuda-11.0 support.
+
+| OS Type | RDMA | Dockerfile |
+| ------- | ---- | ---------- |
+| Ubuntu  | Yes  | [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma) |
+| Ubuntu  | No   | [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma) |
+| CentOS  | Yes  | [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma) |
+| CentOS  | No   | [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma) |
+
 ### Validating UCX Environment
 
 After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate the installation.
@@ -134,7 +165,8 @@ After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate t
 In this section, we are using a docker container built using the sample dockerfile above. 
 
 1. Start the docker container with `--privileged` mode. In this example, we are also adding 
-   `--device /dev/infiniband` to make Mellanox devices available for our test:
+   `--device /dev/infiniband` to make Mellanox devices available for our test, but this is only 
+   required if you are using RDMA:
     ```
     nvidia-docker run \
      --network=host \
@@ -148,7 +180,7 @@ In this section, we are using a docker container built using the sample dockerfi
    
 2. Test to check whether UCX can link against CUDA:
     ```
-    root@test-machin:/# ucx_info -d|grep cuda     
+    root@test-machine:/# ucx_info -d|grep cuda     
     # Memory domain: cuda_cpy
     #     Component: cuda_cpy
     #      Transport: cuda_copy
@@ -252,20 +284,19 @@ In this section, we are using a docker container built using the sample dockerfi
 
     | Spark Shim | spark.shuffle.manager value                              |
     | -----------| -------------------------------------------------------- |
-    | 3.0.0      | com.nvidia.spark.rapids.spark300.RapidsShuffleManager    |
-    | 3.0.0 EMR  | com.nvidia.spark.rapids.spark300emr.RapidsShuffleManager |
     | 3.0.1      | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
     | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
     | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
     | 3.0.3      | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
     | 3.1.1      | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
     | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
+    | 3.1.3      | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
     | 3.2.0      | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
 
-2. Recommended settings for UCX 1.9.0+
+2. Recommended settings for UCX 1.10.1+
 ```shell
 ...
---conf spark.shuffle.manager=com.nvidia.spark.rapids.spark300.RapidsShuffleManager \
+--conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
 --conf spark.shuffle.service.enabled=false \
 --conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
 --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
