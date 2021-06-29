@@ -49,15 +49,13 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
   }
 
   def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
-    try {
-      allPaths.foreach(path => threadPool.submit(new QualifyThread(path)))
-    } catch {
-      case e: Exception =>
-        logError("Exception processing event logs", e)
-        threadPool.shutdown()
-        if (!threadPool.awaitTermination(5, TimeUnit.SECONDS)) {
-          threadPool.shutdownNow()
-        }
+    allPaths.foreach { path =>
+      try {
+        threadPool.submit(new QualifyThread(path))
+      } catch {
+        case e: Exception =>
+          logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
+      }
     }
     // wait for the threads to finish processing the files
     threadPool.shutdown()
