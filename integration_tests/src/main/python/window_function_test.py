@@ -125,7 +125,12 @@ running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[
         string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
+        boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
+        StructGen(children=[
+            ['child_int', IntegerGen()],
+            ['child_time', DateGen()],
+            ['child_string', StringGen()]
+        ])]
 
 
 all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen, 

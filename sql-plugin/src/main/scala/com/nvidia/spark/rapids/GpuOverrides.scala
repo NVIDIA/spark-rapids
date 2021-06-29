@@ -844,14 +844,12 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
-            TypeSig.ARRAY),
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT ).nested(),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
-              TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -904,27 +902,44 @@ object GpuOverrides {
       }),
     expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
-              TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
-            TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }),
     expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN + TypeSig.DATE +
-            TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(), TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
