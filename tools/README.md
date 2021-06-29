@@ -10,7 +10,8 @@ GPU generated event logs.
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## Prerequisites
-- Spark 3.0.1 or newer installed
+- Spark 3.0.1 or newer installed, Qualification tool just needs the Spark jars, not the runtime, the
+  Profiling tool runs a Spark application.
 - Java 8 or above
 - Complete Spark event log(s) from Spark 3.0 or above version.
   Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
@@ -27,7 +28,7 @@ Optional:
 - hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar 
   (only if any input event log is from S3)
   
-## Download the jar or compile it
+## Download the tools jar or compile it
 You do not need to compile the jar yourself because you can download it from maven repository directly.
 
 Here are 2 options:
@@ -69,6 +70,15 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
 more options about integrating hadoop-aws module with S3.
 
+## Download Spark 3.x jars for Qualification tool
+The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
+Spark 3.x installed, you can download the Spark distribution to any machine and just include them
+in the classpath.
+
+1. [Download Spark 3.x Jars](http://spark.apache.org/downloads.html) - 3.1+ for Apache Hadoop is recommended
+2. Extract the Spark distribution into a local directory.
+3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
+   `java -cp toolsJar:pathToSpark:...` when you run the qualification tool.
 
 ## Filter input event logs
 Both of the qualification tool and profiling tool have this function which is to filter event logs.
@@ -183,12 +193,20 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   -m, --match-event-logs  <arg>   Filter event logs whose filenames contain the
                                   input string
   -n, --num-output-rows  <arg>    Number of output rows. Default is 1000.
+      --num-threads  <arg>        Number of thread to use for parallel
+                                  processing. The default is the number of cores
+                                  on host divided by 4.
   -o, --output-directory  <arg>   Base output directory. Default is current
                                   directory for the default filesystem. The
                                   final output will go into a subdirectory
                                   called rapids_4_spark_qualification_output. It
                                   will overwrite any existing directory with the
                                   same name.
+  -t, --timeout  <arg>            Maximum time in seconds to wait for the event
+                                  logs to be processed. Default is 24 hours
+                                  (86400 seconds) and must be greater than 3
+                                  seconds. If it times out, it will report what
+                                  it was able to process up until the timeout.
   -h, --help                      Show help message
 
  trailing arguments:
