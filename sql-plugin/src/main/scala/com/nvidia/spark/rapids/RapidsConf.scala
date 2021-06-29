@@ -330,7 +330,7 @@ object RapidsConf {
       s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.9)
+    .createWithDefault(1)
 
   val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
