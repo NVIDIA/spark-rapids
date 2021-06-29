@@ -118,6 +118,82 @@ object GpuOrcScanBase {
   }
 }
 
+/**
+ * The multi-file partition reader factory for creating cloud reading for ORC file format.
+ *
+ * @param sqlConf             the SQLConf
+ * @param broadcastedConf     the Hadoop configuration
+ * @param dataSchema          schema of the data
+ * @param readDataSchema      the Spark schema describing what will be read
+ * @param partitionSchema     schema of partitions.
+ * @param filters             filters on non-partition columns
+ * @param rapidsConf          the Rapids configuration
+ * @param metrics             the metrics
+ * @param queryUsesInputFile  This is a parameter to easily allow turning it
+ *                            off in GpuTransitionOverrides if InputFileName,
+ *                            InputFileBlockStart, or InputFileBlockLength are used
+ */
+case class GpuOrcMultiFilePartitionReaderFactory(
+    @transient sqlConf: SQLConf,
+    broadcastedConf: Broadcast[SerializableConfiguration],
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    partitionSchema: StructType,
+    filters: Array[Filter],
+    @transient rapidsConf: RapidsConf,
+    metrics: Map[String, GpuMetric],
+    queryUsesInputFile: Boolean)
+  extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
+
+  private val fileHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
+  /**
+   * An abstract method to indicate if coalescing reading can be used
+   */
+  override def canUseCoalesceFilesReader: Boolean = false
+
+  /**
+   * An abstract method to indicate if cloud reading can be used
+   */
+  override def canUseMultiThreadReader: Boolean = true
+
+  /**
+   * Build the PartitionReader for cloud reading
+   *
+   * @param files files to be read
+   * @param conf  configuration
+   * @return cloud reading PartitionReader
+   */
+  override def buildBaseColumnarReaderForCloud(files: Array[PartitionedFile], conf: Configuration):
+      PartitionReader[ColumnarBatch] = {
+    new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
+      maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
+      debugDumpPrefix, filters, fileHandler, metrics)
+  }
+
+  /**
+   * Build the PartitionReader for coalescing reading
+   *
+   * @param files files to be read
+   * @param conf  the configuration
+   * @return coalescing reading PartitionReader
+   */
+  override def buildBaseColumnarReaderForCoalescing(files: Array[PartitionedFile],
+      conf: Configuration): PartitionReader[ColumnarBatch] = {
+    logWarning("The coalescing reading for ORC is on the way. fallback to multi-threaded")
+    new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
+      maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
+      debugDumpPrefix, filters, fileHandler, metrics)
+  }
+
+  /**
+   * File format short name used for logging and other things to uniquely identity
+   * which file format is being used.
+   *
+   * @return the file format short name
+   */
+  override def getFileFormatShortName: String = "ORC"
+}
+
 case class GpuOrcPartitionReaderFactory(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
@@ -132,7 +208,6 @@ case class GpuOrcPartitionReaderFactory(
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
   private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, pushedFilters)
-
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -1018,7 +1093,7 @@ class MultiFileCloudOrcPartitionReader(
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
       try {
         val ctx = fileHandler.filterStripes(partFile, dataSchema, readDataSchema, partitionSchema)
-        if (ctx.blockIterator.size == 0) {
+        if (ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
           return HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), bytesRead,
