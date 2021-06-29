@@ -430,9 +430,6 @@ Failed jobs:
 +-----+------+--------+---------------------------------------------------------------------------------------------------+
 ```
 
-### Metrics Definitions
-All the metrics definition can be found in [executor task metrics doc](https://spark.apache.org/docs/latest/monitoring.html#executor-task-metrics) / [executor metrics doc](https://spark.apache.org/docs/latest/monitoring.html#executor-metrics) or [SPARK webUI doc](https://spark.apache.org/docs/latest/web-ui.html#content).
-
 ### How to use this tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
