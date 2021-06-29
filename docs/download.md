@@ -73,6 +73,10 @@ New functionality for this release includes:
   * Range windows supporting non-timestamp order by expressions
 * Enabling large joins that can spill out of memory
 * Support for the `concat_ws` operator
+* Spark Qualification and Profiling Tools
+  * A qualification tool to look at a set of applications to determine if the RAPIDS Accelerator for
+    Apache Spark is a good fit
+  * A profilng tool to generate information used for debugging and profiling applications
 
 Performance improvements for this release include: 
 * Moving RAPIDS Shuffle out of beta
