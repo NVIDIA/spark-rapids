@@ -92,9 +92,45 @@ returned.
 ### Generating Columnar Output
 
 The `evaluateColumnar` method must return a `ColumnVector` of an appropriate
-cudf type to match the result type of the original UDF. For example, if the
-CPU UDF returns a `double` then `evaluateColumnar` must return a column of
-type `FLOAT64`.
+cudf type to match the result type of the original UDF. The following table
+shows the mapping of Spark types to equivalent cudf columnar types.
+
+Spark Type      | RAPIDS cudf Type
+--------------- | ----------------
+`BooleanType`   | `BOOL8`
+`ByteType`      | `INT8`
+`ShortType`     | `INT16`
+`IntegerType`   | `INT32`
+`LongType`      | `INT64`
+`FloatType`     | `FLOAT32`
+`DoubleType`    | `FLOAT64`
+`DecimalType`   | [See the decimal types section](#returning-decimal-types)
+`DateType`      | `TIMESTAMP_DAYS`
+`TimestampType` | `TIMESTAMP_MICROSECONDS`
+`StringType`    | `STRING`
+`NullType`      | `INT8`
+`ArrayType`     | `LIST` of the underlying element type
+`MapType`       | `LIST` of `STRUCT` of the key and value types
+`StructType`    | `STRUCT` of all the field types
+
+For example, if the CPU UDF returns the Spark type
+`ArrayType(MapType(StringType, StringType))` then `evaluateColumnar` must
+return a column of type `LIST(LIST(STRUCT(STRING,STRING)))`.
+
+#### Returning Decimal Types
+
+The RAPIDS cudf equivalent type for a Spark `DecimalType` depends on the precision
+of the decimal.
+
+`DecimalType` Precision           | RAPIDS cudf Type
+--------------------------------- | ----------------
+precision <= 9 digits             | `DECIMAL32`
+9 digits < precision <= 18 digits | `DECIMAL64`
+18 digits < precision             | Unsupported
+
+Note that RAPIDS cudf decimals use a negative scale relative to Spark `DecimalType`.
+For example, Spark `DecimalType(precision=11, scale=2)` would translate to RAPIDS cudf
+type `DECIMAL64(scale=-2)`.
 
 ## RAPIDS Accelerated UDF Examples
 
@@ -103,35 +139,38 @@ in the [udf-examples](../../udf-examples) project.
 
 ### Spark Scala UDF Examples
 
-- [URLDecode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLDecode.scala)
+- [URLDecode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLDecode.scala)
 decodes URL-encoded strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-- [URLEncode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
+- [URLEncode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
 URL-encodes strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 
 ### Spark Java UDF Examples
 
-- [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLDecode.java)
+- [URLDecode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLDecode.java)
 decodes URL-encoded strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-- [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLEncode.java)
+- [URLEncode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLEncode.java)
 URL-encodes strings using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+- [CosineSimilarity](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/CosineSimilarity.java)
+computes the [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity)
+between two float vectors using [native code](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/cpp/src)
 
 ### Hive UDF Examples
 
-- [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLDecode.java)
+- [URLDecode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLDecode.java)
 implements a Hive simple UDF using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 to decode URL-encoded strings
-- [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLEncode.java)
+- [URLEncode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLEncode.java)
 implements a Hive generic UDF using the
 [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 to URL-encode strings
-- [StringWordCount](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
+- [StringWordCount](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
 implements a Hive simple UDF using
-[native code](../../udf-examples/src/main/cpp/src) to count words in strings
+[native code](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/cpp/src) to count words in strings
 
 
 ## GPU Support for Pandas UDF

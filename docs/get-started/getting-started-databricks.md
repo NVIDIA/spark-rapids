@@ -6,18 +6,18 @@ parent: Getting-Started
 ---
 
 # Getting started with RAPIDS Accelerator on Databricks
-This guide will run through how to set up the RAPIDS Accelerator for Apache Spark 3.0 on Databricks.
+This guide will run through how to set up the RAPIDS Accelerator for Apache Spark 3.x on Databricks.
 At the end of this guide, the reader will be able to run a sample Apache Spark application that runs
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.0 running in DataBricks Runtime 7.3 ML with GPU
-    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
-    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1)
+    * Apache Spark 3.x running in Databricks Runtime 7.3 ML or 8.2 ML with GPU
+    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
+    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
 
-[Databricks 7.3 LTS
-ML](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environment) runs CUDA 10.1
-Update 2, and the initialization scripts will install the appropriate cudf version to match.
+Databricks may do [maintenance
+releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
+runtimes which may impact the behavior of the plugin. 
 
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
@@ -31,7 +31,7 @@ cluster meets the prerequisites above by configuring it as follows:
 4. Select a worker type.  On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
    p2 nodes do not meet the architecture requirements (Pascal or higher) for the Spark worker
    (although they can be used for the driver node).  For Azure, choose GPU nodes such as
-   Standard_NC6s_v3.
+   Standard_NC6s_v3.  For GCP, choose N1 or A2 instance types with GPUs. 
 5. Select the driver type. Generally this can be set to be the same as the worker.
 6. Start the cluster.
 
@@ -40,11 +40,23 @@ cluster meets the prerequisites above by configuring it as follows:
 We will need to create an initialization script for the cluster that installs the RAPIDS jars to the
 cluster.
 
-1. To create the initialization script, import the initialization script notebook from the repo
-   [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) to your
-   workspace. See [Managing
-   Notebooks](https://docs.databricks.com/notebooks/notebooks-manage.html#id2) on how to import a
-   notebook, then open the notebook.
+1. To create the initialization script, import the initialization script notebook from the repo to
+   your workspace.  See [Managing
+   Notebooks](https://docs.databricks.com/notebooks/notebooks-manage.html#id2) for instructions on
+   how to import a notebook.  
+   Select the initialization script based on the Databricks runtime
+   version:
+    - [Databricks 7.3 LTS
+ML](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environment) runs CUDA 10.1
+Update 2. Users wishing to try 21.06 on Databricks 7.3 LTS ML will need to install the CUDA
+11.0 toolkit on the cluster.  This can be done with the [generate-init-script-cuda11.ipynb
+](../demo/Databricks/generate-init-script-cuda11.ipynb) init script, which installs both the RAPIDS
+Spark plugin and the CUDA 11 toolkit. 
+    - [Databricks 8.2
+    ML](https://docs.databricks.com/release-notes/runtime/8.2ml.html#system-environment) has CUDA 11
+    installed.  In this case use
+    [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) which will install
+    the RAPIDS Spark plugin.
 2. Once you are in the notebook, click the “Run All” button.
 3. Ensure that the newly created init.sh script is present in the output from cell 2 and that the
    contents of the script are correct.
@@ -93,12 +105,12 @@ cluster.
     [`spark.rapids.sql.python.gpu.enabled`](../configs.md#sql.python.gpu.enabled) to `true` to
     enable GPU support for python. Add the path of the plugin jar (supposing it is placed under
     `/databricks/jars/`) to the `spark.executorEnv.PYTHONPATH` option. For more details please go to
-    [**GPU Scheduling For Pandas UDF**](../additional-functionality/rapids-udfs.md#gpu-scheduling-for-pandas-udf)
+    [GPU Scheduling For Pandas UDF](../additional-functionality/rapids-udfs.md#gpu-scheduling-for-pandas-udf)
 
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-0.4.1.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-21.06.0.jar:/databricks/spark/python
     ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.

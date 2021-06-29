@@ -54,6 +54,8 @@ On a client machine which has access to the Kubernetes cluster:
    along with the RAPIDS Accelerator jars and `getGpusResources.sh` into `/opt/sparkRapidsPlugin`
    inside the Docker image.
    
+   You can modify the Dockerfile to copy your application into the docker image, i.e. `test.py`.
+   
    Examine the Dockerfile.cuda file to ensure the file names are correct and modify if needed.
    
    Currently the directory in the local machine should look as below:
@@ -263,5 +265,121 @@ sqlContext.sql("SELECT * FROM df WHERE value<>1").show()
 sc.stop()
 ```
 
+## Running Spark Applications using Spark Operator
+
+Using Spark Operator is another way to submit Spark Applications into a Kubernetes Cluster.
+
+1. Locate the Spark Application jars/files in the docker image when preparing docker image.
+
+For example, assume `/opt/sparkRapidsPlugin/test.py` is inside the docker image.
+
+This is because currently only `cluster` deployment mode is supported by Spark Operator.
+
+2. Create spark operator using `helm`.
+
+Follow [Spark Operator quick start guide](https://github.com/GoogleCloudPlatform/spark-on-k8s-operator/blob/master/docs/quick-start-guide.md)
+
+3. Create a Spark Application YAML file
+
+For example, create a file named `testpython-rapids.yaml` with the following contents:
+
+```
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: testpython-rapids
+  namespace: default
+spec:
+  sparkConf:
+    "spark.ui.port": "4045"
+    "spark.rapids.sql.concurrentGpuTasks": "1"
+    "spark.executor.resource.gpu.amount": "1"
+    "spark.task.resource.gpu.amount": "1"
+    "spark.executor.memory": "1g"
+    "spark.rapids.memory.pinnedPool.size": "2g"
+    "spark.executor.memoryOverhead": "3g"
+    "spark.locality.wait": "0s"
+    "spark.sql.files.maxPartitionBytes": "512m"
+    "spark.sql.shuffle.partitions": "10"
+    "spark.plugins": "com.nvidia.spark.SQLPlugin"
+    "spark.executor.resource.gpu.discoveryScript": "/opt/sparkRapidsPlugin/getGpusResources.sh"
+    "spark.executor.resource.gpu.vendor": "nvidia.com"
+    "spark.executor.extraClassPath": "/opt/sparkRapidsPlugin/rapids-4-spark.jar:/opt/sparkRapidsPlugin/cudf.jar"
+    "spark.driver.extraClassPath": "/opt/sparkRapidsPlugin/rapids-4-spark.jar:/opt/sparkRapidsPlugin/cudf.jar"
+  type: Python
+  pythonVersion: 3
+  mode: cluster
+  image: "<IMAGE_NAME>"
+  imagePullPolicy: Always
+  mainApplicationFile: "local:///opt/sparkRapidsPlugin/test.py"
+  sparkVersion: "3.1.1"
+  restartPolicy:
+    type: Never
+  volumes:
+    - name: "test-volume"
+      hostPath:
+        path: "/tmp"
+        type: Directory
+  driver:
+    cores: 1
+    coreLimit: "1200m"
+    memory: "1024m"
+    labels:
+      version: 3.1.1
+    serviceAccount: spark
+    volumeMounts:
+      - name: "test-volume"
+        mountPath: "/tmp"
+  executor:
+    cores: 1
+    instances: 1
+    memory: "5000m"
+    gpu:
+      name: "nvidia.com/gpu"
+      quantity: 1
+    labels:
+      version: 3.1.1
+    volumeMounts:
+      - name: "test-volume"
+        mountPath: "/tmp"
+```
+
+4. Submit the Spark Application
+
+```
+sparkctl create testpython-rapids.yaml
+```
+
+Note: `sparkctl` can be built from the Spark Operator repo after [installing golang](https://golang.org/doc/install):
+```
+cd sparkctl
+go build -o sparkctl
+```
+
+5. Check the driver log
+
+```
+sparkctl log testpython-rapids
+```
+
+6. Check the status of this Spark Application
+
+```
+sparkctl status testpython-rapids
+```
+
+7. Port forwarding when Spark driver is running
+
+```
+sparkctl forward testpython-rapids --local-port 1234 --remote-port 4045
+```
+
+Then open browser with `http://localhost:1234/` to check Spark UI.
+
+8. Delete the Spark Application
+
+```
+sparkctl delete testpython-rapids
+```
 
 Please refer to [Running Spark on Kubernetes](https://spark.apache.org/docs/latest/running-on-kubernetes.html) for more information.
