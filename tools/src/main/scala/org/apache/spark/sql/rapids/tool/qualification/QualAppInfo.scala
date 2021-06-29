@@ -21,7 +21,6 @@ import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
-+import org.apache.hadoop.security.AccessControlException
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.SparkListenerEvent
@@ -206,10 +205,6 @@ object QualAppInfo extends Logging {
           None
         case il: IllegalArgumentException =>
           logWarning(s"Error parsing file: ${path.eventLog.toString}", il)
-          None
-        case e: AccessControlException =>
-          // We don't have read permissions on the log file
-          logWarning(s"Unable to read log ${path.eventLog.toString}", e)
           None
         case e: Exception =>
           // catch all exceptions and skip that file
