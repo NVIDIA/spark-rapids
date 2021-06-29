@@ -317,6 +317,8 @@ def test_length():
 def test_initcap():
     # Because we don't use the same unicode version we need to limit
     # the charicter set to something more reasonable
+    # upper and lower should cover the corner cases, this is mostly to
+    # see if there are issues with spaces
     gen = mk_str_gen('([aAbB]{0,5}[ \r\n\t]{1,2}){1,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
