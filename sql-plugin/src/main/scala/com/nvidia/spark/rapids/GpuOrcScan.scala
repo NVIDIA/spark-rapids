@@ -68,8 +68,9 @@ abstract class GpuOrcScanBase(
     readDataSchema: StructType,
     readPartitionSchema: StructType,
     pushedFilters: Array[Filter],
-    rapidsConf: RapidsConf)
-  extends ScanWithMetrics {
+    rapidsConf: RapidsConf,
+    queryUsesInputFile: Boolean = false)
+  extends ScanWithMetrics with Logging {
 
   def isSplitableBase(path: Path): Boolean = true
 
@@ -82,6 +83,16 @@ abstract class GpuOrcScanBase(
       new SerializableConfiguration(hadoopConf))
     GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+
+    if (rapidsConf.isOrcPerFileReadEnabled) {
+      logInfo("Using the original per file orc reader")
+      GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
+    } else {
+      GpuOrcMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+        dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
+        queryUsesInputFile)
+    }
   }
 }
 
@@ -129,7 +140,7 @@ object GpuOrcScanBase {
  * @param filters             filters on non-partition columns
  * @param rapidsConf          the Rapids configuration
  * @param metrics             the metrics
- * @param queryUsesInputFile  This is a parameter to easily allow turning it
+ * @param queryUsesInputFile  this is a parameter to easily allow turning it
  *                            off in GpuTransitionOverrides if InputFileName,
  *                            InputFileBlockStart, or InputFileBlockLength are used
  */
@@ -154,7 +165,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   /**
    * An abstract method to indicate if cloud reading can be used
    */
-  override def canUseMultiThreadReader: Boolean = true
+  override def canUseMultiThreadReader: Boolean = rapidsConf.isOrcMultiThreadReadEnabled
 
   /**
    * Build the PartitionReader for cloud reading
@@ -359,8 +370,12 @@ private case class OrcPartitionReaderContext(
     blockIterator: BufferedIterator[OrcOutputStripe],
     requestedMapping: Option[Array[Int]] = None)
 
+/**
+ * A base ORC partition reader which compose of some common methods
+ */
 trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
 
+  // The Spark schema describing what will be read
   def readDataSchema: StructType
 
   def populateCurrentBlockChunk(
@@ -403,6 +418,13 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
     currentChunk
   }
 
+  /**
+   * Read the stripes into HostMemoryBuffer.
+   *
+   * @param ctx     the context to provide some necessary information
+   * @param stripes a sequence of Stripe to be read into HostMemeoryBuffer
+   * @return HostMemeoryBuffer and its data size
+   */
   protected def readPartFile(ctx: OrcPartitionReaderContext, stripes: Seq[OrcOutputStripe]):
       (HostMemoryBuffer, Long) = {
     withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
@@ -414,19 +436,22 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
       val hostBufferSize = estimateOutputSize(ctx, stripes)
       var succeeded = false
       val hmb = HostMemoryBuffer.allocate(hostBufferSize)
-      try {
-        val out = new HostMemoryOutputStream(hmb)
-        writeOrcOutputFile(ctx, out, stripes)
-        succeeded = true
-        (hmb, out.getPos)
-      } finally {
-        if (!succeeded) {
-          hmb.close()
+
+      closeOnExcept(HostMemoryBuffer.allocate(hostBufferSize)) { hmb =>
+        withResource(new HostMemoryOutputStream(hmb)) { out =>
+          writeOrcOutputFile(ctx, out, stripes)
+          (hmb, out.getPos)
         }
       }
     }
   }
 
+  /**
+   * Estimate how many bytes when writing the Stripes including HEADDER + STRIPES + FOOTER
+   * @param ctx     the context to provide some necessary information
+   * @param stripes a sequence of Stripe to be estimated
+   * @return the estimated size
+   */
   private def estimateOutputSize(ctx: OrcPartitionReaderContext, stripes: Seq[OrcOutputStripe]):
       Long = {
     // start with header magic
@@ -452,6 +477,14 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
     size + 128 * 1024
   }
 
+  /**
+   * Read the Stripes to the HostMemoryBuffer with a new full ORC-format including
+   * HEADER + STRIPES + FOOTER
+   *
+   * @param ctx     the context to provide some necessary information
+   * @param rawOut  the out stream for HostMemoryBuffer
+   * @param stripes a sequence of Stripe to be read
+   */
   private def writeOrcOutputFile(
       ctx: OrcPartitionReaderContext,
       rawOut: HostMemoryOutputStream,
@@ -694,6 +727,13 @@ object OrcMultiFileThreadPoolFactory {
   }
 }
 
+/**
+ * A tool to filter stripes
+ *
+ * @param sqlConf           SQLConf
+ * @param broadcastedConf   the Hadoop configuration
+ * @param pushedFilters     the PushDown filters
+ */
 private case class GpuOrcFileFilterHandler(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
@@ -787,14 +827,7 @@ private case class GpuOrcFileFilterHandler(
   }
 
   /**
-   * An utility to get OrcPartitionReaderContext
-   * @param conf
-   * @param partFile
-   * @param orcFileReaderOpts
-   * @param orcReader
-   * @param readerOpts
-   * @param dataReader
-   * @param requestedMapping
+   * An utility to get OrcPartitionReaderContext which contains some necessary information
    */
   private class GpuOrcPartitionReaderUtils(
       conf: Configuration,
@@ -1056,6 +1089,29 @@ private case class GpuOrcFileFilterHandler(
 
 }
 
+/**
+ * A PartitionReader that can read multiple ORC files in parallel. This is most efficient
+ * running in a cloud environment where the I/O of reading is slow.
+ *
+ * Efficiently reading a ORC split on the GPU requires re-constructing the ORC file
+ * in memory that contains just the Stripes that are needed. This avoids sending
+ * unnecessary data to the GPU and saves GPU memory.
+ *
+ * @param conf the Hadoop configuration
+ * @param files the partitioned files to read
+ * @param dataSchema schema of the data
+ * @param readDataSchema the Spark schema describing what will be read
+ * @param partitionSchema Schema of partitions.
+ * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
+ * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
+ * @param numThreads the size of the threadpool
+ * @param maxNumFileProcessed threshold to control the maximum file number to be
+ *                            submitted to threadpool
+ * @param debugDumpPrefix a path prefix to use for dumping the fabricated ORC data or null
+ * @param filters filters passed into the filterHandler
+ * @param fileHandler used to filter the ORC stripes
+ * @param execMetrics the metrics
+ */
 class MultiFileCloudOrcPartitionReader(
     conf: Configuration,
     files: Array[PartitionedFile],
@@ -1199,6 +1255,7 @@ class MultiFileCloudOrcPartitionReader(
     }
   }
 
+  // Send the buffer to GPU to decode
   private def readBufferToTable(
       hostBuffer: HostMemoryBuffer,
       dataSize: Long,

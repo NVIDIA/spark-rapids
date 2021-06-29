@@ -114,7 +114,7 @@ object MultiFileThreadPoolUtil {
 }
 
 /**
- * The base multi-file partition reader factory to be used to create the cloud reading or
+ * The base multi-file partition reader factory to create the cloud reading or
  * coalescing reading respectively.
  *
  * @param sqlConf         the SQLConf
