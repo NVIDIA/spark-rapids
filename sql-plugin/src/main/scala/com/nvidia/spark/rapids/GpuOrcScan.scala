@@ -434,9 +434,6 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
       }
 
       val hostBufferSize = estimateOutputSize(ctx, stripes)
-      var succeeded = false
-      val hmb = HostMemoryBuffer.allocate(hostBufferSize)
-
       closeOnExcept(HostMemoryBuffer.allocate(hostBufferSize)) { hmb =>
         withResource(new HostMemoryOutputStream(hmb)) { out =>
           writeOrcOutputFile(ctx, out, stripes)
