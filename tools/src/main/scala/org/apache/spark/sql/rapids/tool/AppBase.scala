@@ -95,7 +95,7 @@ abstract class AppBase(
     } else {
       logError(s"Error getting reader for ${eventlog.getName}")
     }
-    logInfo("Total number of events parsed: " + totalNumEvents)
+    logInfo(s"Total number of events parsed: $totalNumEvents for ${eventlog.toString}")
   }
 
   protected def isDataSetPlan(desc: String): Boolean = {
