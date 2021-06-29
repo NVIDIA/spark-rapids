@@ -78,6 +78,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       numRows: Int,
       hadoopConf: Configuration): Unit = {
     try {
+      val startTime = System.currentTimeMillis()
       val app = QualAppInfo.createApp(path, numRows, hadoopConf)
       if (!app.isDefined) {
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
@@ -86,6 +87,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         val qualSumInfo = app.get.aggregateStats()
         if (qualSumInfo.isDefined) {
           allApps.add(qualSumInfo.get)
+          val endTime = System.currentTimeMillis()
+          logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
         } else {
           logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
         }
