@@ -49,6 +49,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows. Default is 1000.")
+  val order: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Specify the sort order in the report, either highest or lowest. " +
+        "highest is the default. eg: highest would show the applications most likely to " +
+        "be accelerated at the top and lowest would show the least likely " +
+        "to be accelerated at the top.")
   val numThreads: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of thread to use for parallel processing. The default is the " +
@@ -58,6 +64,11 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +
         "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
         "times out, it will report what it was able to process up until the timeout.")
+
+  validate(order) {
+    case o if (o.toLowerCase.equals("highest") || o.toLowerCase.equals("lowest")) => Right(Unit)
+    case _ => Left("Error, the order must either be highest or lowest")
+  }
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)
