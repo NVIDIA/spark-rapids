@@ -10,8 +10,8 @@ GPU generated event logs.
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## Prerequisites
-- Spark 3.0.1 or newer installed, Qualification tool just needs the Spark jars, not the runtime, the
-  Profiling tool runs a Spark application.
+- Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
+  runs a Spark application.
 - Java 8 or above
 - Complete Spark event log(s) from Spark 3.0 or above version.
   Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
@@ -75,7 +75,7 @@ The Qualification tool requires the Spark 3.x jars to be able to run. If you do 
 Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
 in the classpath.
 
-1. [Download Apache Spark 3.x Jars](http://spark.apache.org/downloads.html) - Spark 3.1+ for Apache Hadoop is recommended
+1. [Download Apache Spark 3.x Jars](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 2. Extract the Spark distribution into a local directory.
 3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
    `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool. See the
