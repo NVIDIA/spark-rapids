@@ -11,7 +11,7 @@ GPU generated event logs.
 
 ## Prerequisites
 - Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
-  runs a Spark application.
+  runs a Spark application so needs the Spark runtime.
 - Java 8 or above
 - Complete Spark event log(s) from Spark 3.0 or above version.
   Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
@@ -69,17 +69,6 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 ```
 Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
 more options about integrating hadoop-aws module with S3.
-
-## Download Spark 3.x distribution for the Qualification tool
-The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
-Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
-in the classpath.
-
-1. [Download Apache Spark 3.x Jars](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
-2. Extract the Spark distribution into a local directory.
-3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
-   `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool. See the
-   [How to use this tool](#how-to-use-this-tool) section below.
 
 ## Filter input event logs
 Both of the qualification tool and profiling tool have this function which is to filter event logs.
@@ -159,6 +148,16 @@ Sample output in text:
 |app-20210507180116-2539|                      923419|                      903845|                           0|
 |app-20210319151533-1704|                      756039|                      737826|                           0|
 ```
+## Download the Spark 3.x distribution
+The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
+Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
+in the classpath.
+
+1. [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
+2. Extract the Spark distribution into a local directory.
+3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
+   `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool. See the
+   [How to use this tool](#how-to-use-this-tool) section below.
 
 ### How to use this tool
 This tool parses the Spark CPU event log(s) and creates an output report.
@@ -229,6 +228,9 @@ it will output a CSV file named `rapids_4_spark_qualification_output.csv` that h
 ## Profiling Tool
 
 The profiling tool generates information which can be used for debugging and profiling applications.
+It will run a Spark application so requires Spark to be installed and setup. If you have a cluster already setup
+you can run it on that, or you can simply run it in local mode as well. See the Apache Spark documentation
+for [Downloading Apache Spark 3.x](http://spark.apache.org/downloads.html)
 
 ### Functions
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
