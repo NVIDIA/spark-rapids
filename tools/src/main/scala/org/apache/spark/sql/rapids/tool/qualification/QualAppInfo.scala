@@ -74,7 +74,7 @@ class QualAppInfo(
           if (lastSQLEndTime.isEmpty && lastJobEndTime.isEmpty) {
             None
           } else {
-            logWarning("Application End Time is unknown, estimating based on" +
+            logWarning(s"Application End Time is unknown for $appId, estimating based on" +
               " job and sql end times!")
             // estimate the app end with job or sql end times
             val sqlEndTime = if (this.lastSQLEndTime.isEmpty) 0L else this.lastSQLEndTime.get
@@ -197,18 +197,18 @@ object QualAppInfo extends Logging {
       hadoopConf: Configuration): Option[QualAppInfo] = {
     val app = try {
         val app = new QualAppInfo(numRows, path, hadoopConf)
-        logInfo(s"==============  ${app.appId} ============== ")
+        logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {
         case json: com.fasterxml.jackson.core.JsonParseException =>
-          logWarning(s"Error parsing JSON: $path")
+          logWarning(s"Error parsing JSON: ${path.eventLog.toString}")
           None
         case il: IllegalArgumentException =>
-          logWarning(s"Error parsing file: $path", il)
+          logWarning(s"Error parsing file: ${path.eventLog.toString}", il)
           None
         case e: Exception =>
           // catch all exceptions and skip that file
-          logWarning(s"Got unexpected exception processing file: $path", e)
+          logWarning(s"Got unexpected exception processing file: ${path.eventLog.toString}", e)
           None
       }
     app

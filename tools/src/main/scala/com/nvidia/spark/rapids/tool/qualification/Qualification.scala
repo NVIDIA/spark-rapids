@@ -16,8 +16,11 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.ArrayBuffer
+import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecutor, TimeUnit}
 
+import scala.collection.JavaConverters._
+
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import org.apache.hadoop.conf.Configuration
 
@@ -28,31 +31,71 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * Scores the applications for GPU acceleration and outputs the
  * reports.
  */
-object Qualification extends Logging {
+class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
+    timeout: Option[Long], nThreads: Int) extends Logging {
 
-  def qualifyApps(
-      allPaths: Seq[EventLogInfo],
-      numRows: Int,
-      outputDir: String,
-      hadoopConf: Configuration): ArrayBuffer[QualificationSummaryInfo] = {
-    val allAppsSum: ArrayBuffer[QualificationSummaryInfo] = ArrayBuffer[QualificationSummaryInfo]()
+  private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
+  // default is 24 hours
+  private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
+
+  private val threadFactory = new ThreadFactoryBuilder()
+    .setDaemon(true).setNameFormat("qualTool" + "-%d").build()
+  logInfo(s"Threadpool size is $nThreads")
+  private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
+    .asInstanceOf[ThreadPoolExecutor]
+
+  private class QualifyThread(path: EventLogInfo) extends Runnable {
+    def run: Unit = qualifyApp(path, numRows, hadoopConf)
+  }
+
+  def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
     allPaths.foreach { path =>
-      val app = QualAppInfo.createApp(path, numRows, hadoopConf)
-      if (!app.isDefined) {
-        logWarning("No Applications found that contain SQL!")
-      } else {
-        val qualSumInfo = app.get.aggregateStats()
-        if (qualSumInfo.isDefined) {
-          allAppsSum += qualSumInfo.get
-        } else {
-          logWarning(s"No aggregated stats for event log at: $path")
-        }
+      try {
+        threadPool.submit(new QualifyThread(path))
+      } catch {
+        case e: Exception =>
+          logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
       }
     }
+    // wait for the threads to finish processing the files
+    threadPool.shutdown()
+    if (!threadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
+      logError(s"Processing log files took longer then $waitTimeInSec seconds," +
+        " stopping processing any more event logs")
+      threadPool.shutdownNow()
+    }
+
+    val allAppsSum = allApps.asScala.toSeq
     val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration))
     val qWriter = new QualOutputWriter(outputDir, numRows)
     qWriter.writeCSV(sorted)
     qWriter.writeReport(sorted)
     sorted
+  }
+
+  private def qualifyApp(
+      path: EventLogInfo,
+      numRows: Int,
+      hadoopConf: Configuration): Unit = {
+    try {
+      val startTime = System.currentTimeMillis()
+      val app = QualAppInfo.createApp(path, numRows, hadoopConf)
+      if (!app.isDefined) {
+        logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
+        None
+      } else {
+        val qualSumInfo = app.get.aggregateStats()
+        if (qualSumInfo.isDefined) {
+          allApps.add(qualSumInfo.get)
+          val endTime = System.currentTimeMillis()
+          logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
+        } else {
+          logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
+        }
+      }
+    } catch {
+      case e: Exception =>
+        logError(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
+    }
   }
 }

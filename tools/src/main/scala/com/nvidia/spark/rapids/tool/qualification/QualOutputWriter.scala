@@ -43,7 +43,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
   private def getTextSpacing(sums: Seq[QualificationSummaryInfo]): (Int, Int)= {
     val sizePadLongs = problemDurStr.size
     val sizes = sums.map(_.appId.size)
-    val appIdMaxSize = if (sizes.size > 0) sizes.max else 0
+    val appIdMaxSize = if (sizes.size > 0) sizes.max else appIdStr.size
     (appIdMaxSize, sizePadLongs)
   }
 
