@@ -432,10 +432,6 @@ object GpuOverrides {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
-  val CASE_MODIFICATION_INCOMPAT =
-    "in some cases unicode characters change byte width when changing the case. The GPU string " +
-    "conversion does not support these characters. For a full list of unsupported characters " +
-    "see https://github.com/rapidsai/cudf/issues/3132"
   val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
   private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r",
@@ -1250,7 +1246,7 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
-      }).incompat(CASE_MODIFICATION_INCOMPAT),
+      }),
     expr[Log](
       "Natural log",
       ExprChecks.mathUnary,
@@ -2198,15 +2194,13 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUpper(child)
-      })
-      .incompat(CASE_MODIFICATION_INCOMPAT),
+      }),
     expr[Lower](
       "String lowercase operator",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[Lower](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLower(child)
-      })
-      .incompat(CASE_MODIFICATION_INCOMPAT),
+      }),
     expr[StringLPad](
       "Pad a string on the left",
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
