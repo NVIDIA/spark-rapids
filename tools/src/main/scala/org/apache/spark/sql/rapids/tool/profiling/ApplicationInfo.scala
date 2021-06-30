@@ -370,9 +370,6 @@ class ApplicationInfo(
   // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
-  // The data source information
-  var dataSourceInfo: ArrayBuffer[DataSourceCase] = ArrayBuffer[DataSourceCase]()
-
   // From all other events
   var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
 
@@ -461,125 +458,17 @@ class ApplicationInfo(
     }
   }
 
-  def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
-    val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
-    val keep = if (planInfo.metadata.contains("ReadSchema")) {
-      childRes :+ planInfo
-    } else {
-      childRes
-    }
-    keep
-  }
-
-  private def formatSchemaStr(schema: String): String = {
-    schema.stripPrefix("struct<").stripSuffix(">")
-  }
-
-  // The ReadSchema metadata is only in the eventlog for DataSource V1 readers
-  def checkMetadataForReadSchema(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
-    // check if planInfo has ReadSchema
-    val allMetaWithSchema = getPlanMetaWithSchema(planInfo)
-    allMetaWithSchema.foreach { node =>
-      val meta = node.metadata
-      val readSchema = formatSchemaStr(meta.getOrElse("ReadSchema", ""))
-      val schemaStr = if (forQualification) {
-        // for qualification just store the raw types not the key names
-        val allTypes = ApplicationInfo.parseSchemaString(Some(readSchema)).values.toSet
-        allTypes.mkString(",")
-      } else {
-        readSchema
-      }
-      dataSourceInfo += DataSourceCase(sqlID,
-        meta.getOrElse("Format", "unknown"),
-        meta.getOrElse("Location", "unknown"),
-        meta.getOrElse("PushedFilters", "unknown"),
-        schemaStr,
-        false
-      )
-    }
-  }
-
-  // This will find scans for DataSource V2
-  def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode): Unit = {
-    if (node.name.equals("BatchScan")) {
-      val schemaTag = "ReadSchema: "
-      val schema = if (node.desc.contains(schemaTag)) {
-        val index = node.desc.indexOf(schemaTag)
-        if (index != -1) {
-          val subStr = node.desc.substring(index + schemaTag.size)
-          val endIndex = subStr.indexOf(", ")
-          if (endIndex != -1) {
-            val schemaOnly = subStr.substring(0, endIndex)
-            formatSchemaStr(schemaOnly)
-          } else {
-            ""
-          }
-        } else {
-          ""
-        }
-      } else {
-        ""
-      }
-      val locationTag = "Location:"
-      val location = if (node.desc.contains(locationTag)) {
-        val index = node.desc.indexOf(locationTag)
-        val subStr = node.desc.substring(index)
-        val endIndex = subStr.indexOf(", ")
-        val location = subStr.substring(0, endIndex)
-        location
-      } else {
-        "unknown"
-      }
-      val pushedFilterTag = "PushedFilters:"
-      val pushedFilters = if (node.desc.contains(pushedFilterTag)) {
-        val index = node.desc.indexOf(pushedFilterTag)
-        val subStr = node.desc.substring(index)
-        val endIndex = subStr.indexOf("]")
-        val filters = subStr.substring(0, endIndex + 1)
-        filters
-      } else {
-        "unknown"
-      }
-      val formatTag = "Format: "
-      val fileFormat = if (node.desc.contains(formatTag)) {
-        val index = node.desc.indexOf(formatTag)
-        val subStr = node.desc.substring(index + formatTag.size)
-        val endIndex = subStr.indexOf(", ")
-        val format = subStr.substring(0, endIndex)
-        format
-      } else {
-        "unknown"
-      }
-      // for qualification just store the raw types not the key names
-      val schemaStr = if (forQualification) {
-        val allTypes = ApplicationInfo.parseSchemaString(Some(schema)).values.toSet
-        allTypes.mkString(",")
-      } else {
-        schema
-      }
-
-      dataSourceInfo += DataSourceCase(sqlID,
-        fileFormat,
-        location,
-        pushedFilters,
-        schemaStr,
-        ApplicationInfo.schemaIncomplete(schema)
-      )
-    }
-  }
 
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
-  def processSQLPlanMetrics(): Unit ={
+  def processSQLPlanMetrics(): Unit = {
     for ((sqlID, planInfo) <- sqlPlan){
-      checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
-        checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {
@@ -601,27 +490,6 @@ class ApplicationInfo(
     if (this.sqlPlanMetricsAdaptive.nonEmpty){
       logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive) for appID=$appId")
       sqlPlanMetrics = sqlPlanMetrics.union(sqlPlanMetricsAdaptive).distinct
-    }
-  }
-
-  def processSQLPlanForQualification(): Unit ={
-    for ((sqlID, planInfo) <- sqlPlan) {
-      checkMetadataForReadSchema(sqlID, planInfo)
-      val planGraph = SparkPlanGraph(planInfo)
-      // SQLPlanMetric is a case Class of
-      // (name: String,accumulatorId: Long,metricType: String)
-      val allnodes = planGraph.allNodes
-      for (node <- allnodes){
-        checkGraphNodeForBatchScan(sqlID, node)
-        // Firstly identify problematic SQLs if there is any
-        if (isDataSetPlan(node.desc)) {
-          datasetSQL += DatasetSQLCase(sqlID)
-        }
-        val issues = findPotentialIssues(node.desc)
-        if (issues.nonEmpty) {
-          problematicSQL += ProblematicSQLCase(sqlID, issues)
-        }
-      }
     }
   }
 
@@ -1147,35 +1015,6 @@ class ApplicationInfo(
 }
 
 object ApplicationInfo extends Logging {
-
-  private def splitKeyValueSchema(schemaArr: Array[String]): Map[String, String] = {
-    schemaArr.map { entry =>
-      val keyValue = entry.split(":")
-      if (keyValue.size == 2) {
-        (keyValue(0) -> keyValue(1))
-      } else {
-        logWarning(s"Splitting key and value didn't result in key and value $entry")
-        (entry -> "unknown")
-      }
-    }.toMap
-  }
-
-  def schemaIncomplete(schema: String): Boolean = {
-    schema.endsWith("...")
-  }
-
-  def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
-    schemaOpt.map { schema =>
-      val keyValues = schema.split(",")
-      val validSchema = if (schemaIncomplete(keyValues.last)) {
-        // the last schema element will be cutoff because it has the ...
-        keyValues.dropRight(1)
-      } else {
-        keyValues
-      }
-      splitKeyValueSchema(validSchema)
-    }.getOrElse(Map.empty[String, String])
-  }
 
   def createApps(
       allPaths: Seq[EventLogInfo],

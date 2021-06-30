@@ -38,14 +38,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
   // default is 24 hours
   private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
-<<<<<<< HEAD
-    val (apps, _) = ApplicationInfo.createApps(allPaths, numRows, sparkSession,
-      forQualification = true)
-    if (apps.isEmpty) {
-      logWarning("No Applications found that contain SQL!")
-      return None
-    }
-
+/*
     // Add tables for the data source information
     apps.foreach { app =>
       import sparkSession.implicits._
@@ -75,13 +68,14 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       // materialize table to cache
       sqlAggMetricsDF.count()
     }
-=======
+
+*/
+
   private val threadFactory = new ThreadFactoryBuilder()
     .setDaemon(true).setNameFormat("qualTool" + "-%d").build()
   logInfo(s"Threadpool size is $nThreads")
   private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
     .asInstanceOf[ThreadPoolExecutor]
->>>>>>> origin/branch-21.08
 
   private class QualifyThread(path: EventLogInfo) extends Runnable {
     def run: Unit = qualifyApp(path, numRows, hadoopConf)
