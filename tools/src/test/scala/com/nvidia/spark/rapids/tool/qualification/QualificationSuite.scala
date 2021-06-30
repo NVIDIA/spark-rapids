@@ -130,19 +130,18 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         s"rapids_4_spark_qualification_output.log"
       val inputSource = Source.fromFile(filename)
       try {
-        val lines = inputSource.getLines
+        val lines = inputSource.getLines.toArray
         // 4 lines of header and footer
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
-        lines.drop(3)
-        val firstRow = lines.take(1).toArray.head
+        val firstRow = lines(4)
         assert(firstRow.contains("local-1621955976602"))
       } finally {
         inputSource.close()
       }
     }
   }
-  
+
   test("test order desc") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
@@ -167,12 +166,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         s"rapids_4_spark_qualification_output.log"
       val inputSource = Source.fromFile(filename)
       try {
-        val lines = inputSource.getLines
+        val lines = inputSource.getLines.toArray
         // 4 lines of header and footer
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
-        lines.drop(3)
-        val firstRow = lines.take(1).toArray.head
+        val firstRow = lines(4)
         assert(firstRow.contains("local-1622043423018"))
       } finally {
         inputSource.close()
