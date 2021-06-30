@@ -20,9 +20,15 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
-// This class handles the output files for qualification.
-// It can write both a raw csv file and then a text summary report.
-class QualOutputWriter(outputDir: String, numRows: Int) {
+/**
+ * This class handles the output files for qualification.
+ * It can write both a raw csv file and then a text summary report.
+ *
+ * @param outputDir The directory to output the files to
+ * @param numOutputRows The number of rows to put into the report, does not affect
+ *                      the number in the CSV file.
+ */
+class QualOutputWriter(outputDir: String, numOutputRows: Int) {
 
   private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
   // a file extension will be added to this later
@@ -66,12 +72,11 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds"
   }
 
-  def writeCSV(summaries: Seq[QualificationSummaryInfo]): Unit = {
+  def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
     val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
     try {
       writeCSVHeader(csvFileWriter)
-      val finalSums = summaries.take(numRows)
-      finalSums.foreach { appSum =>
+      sums.foreach { appSum =>
         csvFileWriter.write(toCSV(appSum) + "\n")
       }
     } finally {
@@ -104,7 +109,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
 
-    val finalSums = sums.take(numRows)
+    val finalSums = sums.take(numOutputRows)
     finalSums.foreach { sumInfo =>
       val appId = sumInfo.appId
       val appIdStr = s"%${appIdMaxSize}s".format(appId)

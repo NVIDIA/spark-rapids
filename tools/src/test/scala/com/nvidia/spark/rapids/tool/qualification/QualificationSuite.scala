@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.tool.qualification
 import java.io.File
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.io.Source
+
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import scala.collection.mutable.ListBuffer
@@ -88,8 +90,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-
-  private def runQualificationOrderLimitTest(eventLogs: Array[String],
+  private def runQualificationOrderTest(eventLogs: Array[String],
       additionalArgs:Array[String]): Seq[QualificationSummaryInfo] = {
     var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
@@ -98,7 +99,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         outpath.getAbsolutePath()) ++ additionalArgs
 
       val appArgs = new QualificationArgs(allArgs ++ eventLogs)
-      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      appSum = sum
       assert(exit == 0)
     }
     appSum
@@ -112,7 +114,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_func_eventlog"
     )
     val options = Array("--order", "asc")
-    val appSum = runQualificationOrderLimitTest(logFiles, options)
+    val appSum = runQualificationOrderTest(logFiles, options)
 
     assert(appSum.size == 4)
     assert(appSum.head.appId.equals("local-1621955976602"))
@@ -126,24 +128,38 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_func_eventlog"
     )
     val options = Array("--order", "desc")
-    val appSum = runQualificationOrderLimitTest(logFiles, options)
+    val appSum = runQualificationOrderTest(logFiles, options)
 
     assert(appSum.size == 4)
     assert(appSum.head.appId.equals("local-1622043423018"))
   }
 
-  test("test order desc with limit") {
+  test("test limit desc") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
       s"$logDir/dsAndDf_eventlog.zstd",
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "desc",
+        "-n",
+        "2")
 
-    val options = Array("--order", "desc", "-n", "2")
-    val appSum = runQualificationOrderLimitTest(logFiles, options)
-    assert(appSum.size == 2)
-    assert(appSum.head.appId.equals("local-1621955976602"))
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output.log"
+      val lines = Source.fromFile(filename).getLines
+      // 4 lines of header and footer, limit is 2
+      assert(lines.size == (4 + 2))
+    }
   }
 
   test("skip malformed json eventlog") {
