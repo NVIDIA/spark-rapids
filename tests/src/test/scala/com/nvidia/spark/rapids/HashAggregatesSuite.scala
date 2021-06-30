@@ -271,7 +271,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals dbl_max",
       longsFromCSVDf,
       maxFloatDiff = 0.0001,
-      conf = floatAggConf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+      conf = floatAggConf.clone.set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
     frame => frame.agg(avg(lit(1.4718094e+19)),avg(lit(1.4718094e+19)))
   }
 
@@ -316,7 +316,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "avg literals strings dbl",
       longsFromCSVDf,
       maxFloatDiff = 0.0001,
-      conf = floatAggConf.set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
+      conf = floatAggConf.clone.set(RapidsConf.INCOMPATIBLE_OPS.key, "true")) {
     frame => frame.agg(avg(lit("1.4718094e+19")),avg(lit("1.4718094e+19")))
   }
 
@@ -361,7 +361,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual(
       "group by string include nulls in count aggregate small batches",
       nullableStringsIntsDf,
-      conf = floatAggConf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "10")) {
+      conf = floatAggConf.clone.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "10")) {
     frame => frame.groupBy("strings").agg(
       max("ints"),
       min("ints"),
