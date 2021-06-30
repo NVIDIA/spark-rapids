@@ -66,7 +66,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)
-    case _ => Left("Error, the order must either be highest or lowest")
+    case _ => Left("Error, the order must either be desc or asc")
   }
 
   validate(filterCriteria) {

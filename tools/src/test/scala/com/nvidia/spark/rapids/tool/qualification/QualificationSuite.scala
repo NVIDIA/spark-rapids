@@ -27,6 +27,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.ToolUtils
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -85,6 +86,64 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         ToolTestUtils.compareDataFrames(dfQual, dfExpect)
       }
     }
+  }
+
+
+  private def runQualificationOrderLimitTest(eventLogs: Array[String],
+      additionalArgs:Array[String]): Seq[QualificationSummaryInfo] = {
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath()) ++ additionalArgs
+
+      val appArgs = new QualificationArgs(allArgs ++ eventLogs)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+    }
+    appSum
+  }
+
+  test("test order asc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    val options = Array("--order", "asc")
+    val appSum = runQualificationOrderLimitTest(logFiles, options)
+
+    assert(appSum.size == 4)
+    assert(appSum.head.appId.equals("local-1621955976602"))
+  }
+
+  test("test order desc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    val options = Array("--order", "desc")
+    val appSum = runQualificationOrderLimitTest(logFiles, options)
+
+    assert(appSum.size == 4)
+    assert(appSum.head.appId.equals("local-1622043423018"))
+  }
+
+  test("test order desc with limit") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+
+    val options = Array("--order", "desc", "-n", "2")
+    val appSum = runQualificationOrderLimitTest(logFiles, options)
+    assert(appSum.size == 2)
+    assert(appSum.head.appId.equals("local-1621955976602"))
   }
 
   test("skip malformed json eventlog") {
