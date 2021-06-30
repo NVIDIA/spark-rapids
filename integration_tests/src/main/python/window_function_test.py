@@ -344,23 +344,34 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
 
     # Ordering needs to include c because with nulls and especially on booleans
     # it is possible to get a different ordering when it is ambiguous.
-    baseWindowSpec = Window.partitionBy('a').orderBy('b', 'c')
-    inclusiveWindowSpec = baseWindowSpec.rowsBetween(-10, 100)
-
-    defaultVal = gen_scalar_value(c_gen, force_no_nulls=False)
+    base_window_spec = Window.partitionBy('a').orderBy('b', 'c')
+    inclusive_window_spec = base_window_spec.rowsBetween(-10, 100)
 
     def do_it(spark):
-        return gen_df(spark, data_gen, length=2048) \
-                .withColumn('inc_count_1', f.count('*').over(inclusiveWindowSpec)) \
-                .withColumn('inc_count_c', f.count('c').over(inclusiveWindowSpec)) \
-                .withColumn('inc_max_c', f.max('c').over(inclusiveWindowSpec)) \
-                .withColumn('inc_min_c', f.min('c').over(inclusiveWindowSpec)) \
-                .withColumn('lead_5_c', f.lead('c', 5).over(baseWindowSpec)) \
-                .withColumn('lead_def_c', f.lead('c', 2, defaultVal).over(baseWindowSpec)) \
-                .withColumn('lag_1_c', f.lag('c', 1).over(baseWindowSpec)) \
-                .withColumn('lag_def_c', f.lag('c', 4, defaultVal).over(baseWindowSpec)) \
-                .withColumn('row_num', f.row_number().over(baseWindowSpec))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = conf)
+        df = gen_df(spark, data_gen, length=2048) \
+            .withColumn('inc_count_1', f.count('*').over(inclusive_window_spec)) \
+            .withColumn('inc_count_c', f.count('c').over(inclusive_window_spec)) \
+            .withColumn('lead_5_c', f.lead('c', 5).over(base_window_spec)) \
+            .withColumn('lag_1_c', f.lag('c', 1).over(base_window_spec)) \
+            .withColumn('row_num', f.row_number().over(base_window_spec))
+
+        if isinstance(c_gen, StructGen):
+            """
+            The MIN()/MAX() aggregations amount to a RANGE query. These are not
+            currently supported on STRUCT columns.
+            Also, LEAD()/LAG() defaults cannot currently be specified for STRUCT
+            columns. `[ 10, 3.14159, "foobar" ]` isn't recognized as a valid STRUCT scalar.
+            """
+            return df.withColumn('lead_def_c', f.lead('c', 2, None).over(base_window_spec)) \
+                     .withColumn('lag_def_c', f.lag('c', 4, None).over(base_window_spec))
+        else:
+            default_val = gen_scalar_value(c_gen, force_no_nulls=False)
+            return df.withColumn('inc_max_c', f.max('c').over(inclusive_window_spec)) \
+                     .withColumn('inc_min_c', f.min('c').over(inclusive_window_spec)) \
+                     .withColumn('lead_def_c', f.lead('c', 2, default_val).over(base_window_spec)) \
+                     .withColumn('lag_def_c', f.lag('c', 4, default_val).over(base_window_spec))
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
 lead_lag_array_data_gens =\
