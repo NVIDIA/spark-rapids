@@ -76,7 +76,7 @@ New functionality for this release includes:
 * Spark Qualification and Profiling Tools
   * A qualification tool to look at a set of applications to determine if the RAPIDS Accelerator for
     Apache Spark is a good fit
-  * A profilng tool to generate information used for debugging and profiling applications
+  * A profiling tool to generate information used for debugging and profiling applications
 
 Performance improvements for this release include: 
 * Moving RAPIDS Shuffle out of beta
