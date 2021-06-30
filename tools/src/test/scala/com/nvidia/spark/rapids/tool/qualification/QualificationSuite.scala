@@ -134,7 +134,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         // 4 lines of header and footer
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
-        val firstRow = lines(4)
+        val firstRow = lines(3)
         assert(firstRow.contains("local-1621955976602"))
       } finally {
         inputSource.close()
@@ -170,7 +170,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         // 4 lines of header and footer
         assert(lines.size == (4 + 4))
         // skip the 3 header lines
-        val firstRow = lines(4)
+        val firstRow = lines(3)
         assert(firstRow.contains("local-1622043423018"))
       } finally {
         inputSource.close()

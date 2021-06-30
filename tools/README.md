@@ -182,7 +182,17 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   processing oldest 100 event logs)
   -m, --match-event-logs  <arg>   Filter event logs whose filenames contain the
                                   input string
-  -n, --num-output-rows  <arg>    Number of output rows. Default is 1000.
+  -n, --num-output-rows  <arg>    Number of output rows in the summary report.
+                                  Default is 1000.
+      --num-threads  <arg>        Number of thread to use for parallel
+                                  processing. The default is the number of cores
+                                  on host divided by 4.
+      --order  <arg>              Specify the sort order of the report. desc or
+                                  asc, desc is the default. desc (descending)
+                                  would report applications most likely to be
+                                  accelerated at the top and asc (ascending)
+                                  would show the least likely to be accelerated
+                                  at the top.
   -o, --output-directory  <arg>   Base output directory. Default is current
                                   directory for the default filesystem. The
                                   final output will go into a subdirectory
