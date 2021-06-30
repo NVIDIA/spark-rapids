@@ -16,42 +16,187 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.io.{BufferedInputStream, InputStream}
 import java.util.concurrent.ConcurrentHashMap
-import java.util.zip.GZIPInputStream
 
-import scala.collection.Map
-import scala.collection.mutable.{ArrayBuffer, HashMap}
+import scala.collection.{immutable, mutable, Map}
+import scala.collection.mutable.ArrayBuffer
 import scala.io.{Codec, Source}
 
-import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.json4s.jackson.JsonMethods.parse
 
-import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
+import org.apache.spark.sql.execution.metric.SQLMetricInfo
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
+import org.apache.spark.sql.rapids.tool.AppBase
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.ui.UIUtils
-import org.apache.spark.util._
+
+class SparkPlanInfoWithStage(
+    nodeName: String,
+    simpleString: String,
+    override val children: Seq[SparkPlanInfoWithStage],
+    metadata: scala.Predef.Map[String, String],
+    metrics: Seq[SQLMetricInfo],
+    val stageId: Option[Int]) extends SparkPlanInfo(nodeName, simpleString, children,
+  metadata, metrics) {
+
+  import SparkPlanInfoWithStage._
+
+  def debugEquals(other: Any, depth: Int = 0): Boolean = {
+    System.err.println(s"${" " * depth}DOES $this == $other?")
+    other match {
+      case o: SparkPlanInfo =>
+        if (nodeName != o.nodeName) {
+          System.err.println(s"${" " * depth}" +
+              s"$this != $o (names different) ${this.nodeName} != ${o.nodeName}")
+          return false
+        }
+        if (simpleString != o.simpleString) {
+          System.err.println(s"${" " * depth}$this != $o (simpleString different) " +
+              s"${this.simpleString} != ${o.simpleString}")
+          return false
+        }
+        if (children.length != o.children.length) {
+          System.err.println(s"${" " * depth}$this != $o (different num children) " +
+              s"${this.children.length} ${o.children.length}")
+          return false
+        }
+        children.zip(o.children).zipWithIndex.forall {
+          case ((t, o), index) =>
+            System.err.println(s"${" " * depth}COMPARING CHILD $index")
+            t.debugEquals(o, depth = depth + 1)
+        }
+      case _ =>
+        System.err.println(s"${" " * depth}NOT EQUAL WRONG TYPE")
+        false
+    }
+  }
+
+  override def toString: String = {
+    s"PLAN NODE: '$nodeName' '$simpleString' $stageId"
+  }
+
+  /**
+   * Create a new SparkPlanInfoWithStage that is normalized in a way so that CPU and GPU
+   * plans look the same. This should really only be used when matching stages/jobs between
+   * different plans.
+   */
+  def normalizeForStageComparison: SparkPlanInfoWithStage = {
+    nodeName match {
+      case "GpuColumnarToRow" | "GpuRowToColumnar" | "ColumnarToRow" | "RowToColumnar" |
+           "AdaptiveSparkPlan" | "AvoidAdaptiveTransitionToRow" |
+           "HostColumnarToGpu" | "GpuBringBackToHost" |
+           "GpuCoalesceBatches" | "GpuShuffleCoalesce" |
+           "InputAdapter" | "Subquery" | "ReusedSubquery" |
+           "CustomShuffleReader" | "GpuCustomShuffleReader" | "ShuffleQueryStage" |
+           "BroadcastQueryStage" |
+           "Sort" | "GpuSort" =>
+        // Remove data format, grouping changes because they don't impact the computation
+        // Remove CodeGen stages (not important to actual query execution)
+        // Remove AQE fix-up parts.
+        // Remove sort because in a lot of cases (like sort merge join) it is not part of the
+        // actual computation and it is hard to tell which sort is important to the query result
+        // and which is not
+        children.head.normalizeForStageComparison
+      case name if name.startsWith("WholeStageCodegen") =>
+        // Remove whole stage codegen (It includes an ID afterwards that we should ignore too)
+        children.head.normalizeForStageComparison
+      case name if name.contains("Exchange") =>
+        // Drop all exchanges, a broadcast could become a shuffle/etc
+        children.head.normalizeForStageComparison
+      case "GpuTopN" if isShuffledTopN(this) =>
+        val coalesce = this.children.head
+        val shuffle = coalesce.children.head
+        val firstTopN = shuffle.children.head
+        firstTopN.normalizeForStageComparison
+      case name =>
+        val newName = normalizedNameRemapping.getOrElse(name,
+          if (name.startsWith("Gpu")) {
+            name.substring(3)
+          } else {
+            name
+          })
+
+        val normalizedChildren = children.map(_.normalizeForStageComparison)
+        // We are going to ignore the simple string because it can contain things in it that
+        // are specific to a given run
+        new SparkPlanInfoWithStage(newName, newName, normalizedChildren, metadata,
+          metrics, stageId)
+    }
+  }
+
+  /**
+   * Walk the tree depth first and get all of the stages for each node in the tree
+   */
+  def depthFirstStages: Seq[Option[Int]] =
+    Seq(stageId) ++ children.flatMap(_.depthFirstStages)
+}
+
+object SparkPlanInfoWithStage {
+  def apply(plan: SparkPlanInfo, accumIdToStageId: Map[Long, Int]): SparkPlanInfoWithStage = {
+    // In some cases Spark will do a shuffle in the middle of an operation,
+    // like TakeOrderedAndProject. In those cases the node is associated with the
+    // min stage ID, just to remove ambiguity
+
+    val newChildren = plan.children.map(SparkPlanInfoWithStage(_, accumIdToStageId))
+
+    val stageId = plan.metrics.flatMap { m =>
+      accumIdToStageId.get(m.accumulatorId)
+    }.reduceOption((l, r) => Math.min(l, r))
+
+    new SparkPlanInfoWithStage(plan.nodeName, plan.simpleString, newChildren, plan.metadata,
+      plan.metrics, stageId)
+  }
+
+  private val normalizedNameRemapping: Map[String, String] = Map(
+    "Execute GpuInsertIntoHadoopFsRelationCommand" -> "Execute InsertIntoHadoopFsRelationCommand",
+    "GpuTopN" -> "TakeOrderedAndProject",
+    "SortMergeJoin" -> "Join",
+    "ShuffledHashJoin" -> "Join",
+    "GpuShuffledHashJoin" -> "Join",
+    "BroadcastHashJoin" -> "Join",
+    "GpuBroadcastHashJoin" -> "Join",
+    "HashAggregate" -> "Aggregate",
+    "SortAggregate" -> "Aggregate",
+    "GpuHashAggregate" -> "Aggregate",
+    "RunningWindow" -> "Window", //GpuWindow and Window are already covered
+    "GpuRunningWindow" -> "Window")
+
+  private def isShuffledTopN(info: SparkPlanInfoWithStage): Boolean = {
+    if (info.children.length == 1 && // shuffle coalesce
+        info.children.head.children.length == 1 && // shuffle
+        info.children.head.children.head.children.length == 1) { // first top n
+      val coalesce = info.children.head
+      val shuffle = coalesce.children.head
+      val firstTopN = shuffle.children.head
+      info.nodeName == "GpuTopN" &&
+          (coalesce.nodeName == "GpuShuffleCoalesce" ||
+              coalesce.nodeName == "GpuCoalesceBatches") &&
+          shuffle.nodeName == "GpuColumnarExchange" && firstTopN.nodeName == "GpuTopN"
+    } else {
+      false
+    }
+  }
+}
 
 /**
  * ApplicationInfo class saves all parsed events for future use.
+ * Used only for Profiling.
  */
-
 class ApplicationInfo(
-    val numOutputRows: Int,
+    numRows: Int,
     val sparkSession: SparkSession,
-    val eventLogInfo: EventLogInfo,
-    val index: Int,
-    val forQualification: Boolean = false) extends Logging {
-
-  // From SparkListenerLogStart
-  var sparkVersion: String = ""
+    eLogInfo: EventLogInfo,
+    val index: Int)
+  extends AppBase(numRows, eLogInfo, sparkSession.sparkContext.hadoopConfiguration) with Logging {
 
   // allDataFrames is to store all the DataFrames
   // after event log parsing has completed.
@@ -66,7 +211,7 @@ class ApplicationInfo(
   // 8. jobDF (Must exist, otherwise fail!)
   // 9. stageDF (Must exist, otherwise fail!)
   // 10. taskDF (Must exist, otherwise fail!)
-  val allDataFrames: HashMap[String, DataFrame] = HashMap.empty[String, DataFrame]
+  val allDataFrames: mutable.HashMap[String, DataFrame] = mutable.HashMap.empty[String, DataFrame]
 
   // From SparkListenerResourceProfileAdded
   var resourceProfiles: ArrayBuffer[ResourceProfileCase] = ArrayBuffer[ResourceProfileCase]()
@@ -88,7 +233,6 @@ class ApplicationInfo(
 
   // From SparkListenerApplicationStart and SparkListenerApplicationEnd
   var appStart: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
-  var appEndTime: Option[Long] = None
   var appId: String = ""
 
   // From SparkListenerExecutorAdded and SparkListenerExecutorRemoved
@@ -97,13 +241,14 @@ class ApplicationInfo(
 
   // From SparkListenerSQLExecutionStart and SparkListenerSQLExecutionEnd
   var sqlStart: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
-  val sqlEndTime: HashMap[Long, Long] = HashMap.empty[Long, Long]
+  val sqlEndTime: mutable.HashMap[Long, Long] = mutable.HashMap.empty[Long, Long]
 
   // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
   // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
-  var sqlPlan: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
+  var sqlPlan: mutable.HashMap[Long, SparkPlanInfo] = mutable.HashMap.empty[Long, SparkPlanInfo]
+
   // physicalPlanDescription stores HashMap (sqlID <-> physicalPlanDescription)
-  var physicalPlanDescription: HashMap[Long, String] = HashMap.empty[Long, String]
+  var physicalPlanDescription: mutable.HashMap[Long, String] = mutable.HashMap.empty[Long, String]
 
   // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
   var sqlPlanMetrics: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
@@ -116,18 +261,23 @@ class ApplicationInfo(
   // From SparkListenerTaskEnd and SparkListenerTaskEnd
   var taskStageAccum: ArrayBuffer[TaskStageAccumCase] = ArrayBuffer[TaskStageAccumCase]()
 
+  lazy val accumIdToStageId: immutable.Map[Long, Int] =
+    taskStageAccum.map(accum => (accum.accumulatorId, accum.stageId)).toMap
+
   // From SparkListenerJobStart and SparkListenerJobEnd
   // JobStart contains mapping relationship for JobID -> StageID(s)
   var jobStart: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
-  val jobEndTime: HashMap[Int, Long] = HashMap.empty[Int, Long]
-  val jobEndResult: HashMap[Int, String] = HashMap.empty[Int, String]
-  val jobFailedReason: HashMap[Int, String] = HashMap.empty[Int, String]
+  val jobEndTime: mutable.HashMap[Int, Long] = mutable.HashMap.empty[Int, Long]
+  val jobEndResult: mutable.HashMap[Int, String] = mutable.HashMap.empty[Int, String]
+  val jobFailedReason: mutable.HashMap[Int, String] = mutable.HashMap.empty[Int, String]
 
   // From SparkListenerStageSubmitted and SparkListenerStageCompleted
   // stageSubmitted contains mapping relationship for Stage -> RDD(s)
   var stageSubmitted: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-  val stageCompletionTime: HashMap[Int, Option[Long]] = HashMap.empty[Int, Option[Long]]
-  val stageFailureReason: HashMap[Int, Option[String]] = HashMap.empty[Int, Option[String]]
+  val stageCompletionTime: mutable.HashMap[Int, Option[Long]] =
+    mutable.HashMap.empty[Int, Option[Long]]
+  val stageFailureReason: mutable.HashMap[Int, Option[String]] =
+    mutable.HashMap.empty[Int, Option[String]]
 
   // A cleaned up version of stageSubmitted
   lazy val enhancedStage: ArrayBuffer[StageCase] = {
@@ -143,19 +293,10 @@ class ApplicationInfo(
         case None => ""
       }
 
-      // only for qualification set the runtime and cputime
-      // could expand later for profiling
-      val stageAndAttempt = s"${res.stageId}:${res.attemptId}"
-      val stageTaskExecSum = stageTaskQualificationEnd.get(stageAndAttempt)
-      val runTime = stageTaskExecSum.map(_.executorRunTime).getOrElse(0L)
-      val cpuTime = stageTaskExecSum.map(_.executorCPUTime).getOrElse(0L)
-
       val stageNew = res.copy(completionTime = thisEndTime,
         failureReason = thisFailureReason,
         duration = durationResult,
-        durationStr = durationString,
-        executorRunTimeSum = runTime,
-        executorCPUTimeSum = cpuTime)
+        durationStr = durationString)
       ret += stageNew
     }
     ret
@@ -222,11 +363,6 @@ class ApplicationInfo(
   // taskEnd contains task level metrics - only used for profiling
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
 
-  // this is used to aggregate metrics for qualification to speed up processing and
-  // minimize memory usage
-  var stageTaskQualificationEnd: HashMap[String, StageTaskQualificationSummary] =
-    HashMap.empty[String, StageTaskQualificationSummary]
-
   // From SparkListenerTaskGettingResult
   var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
     ArrayBuffer[SparkListenerTaskGettingResult]()
@@ -282,78 +418,21 @@ class ApplicationInfo(
   // SQL containing any Dataset operation
   var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
 
+  private lazy val eventProcessor =  new EventsProcessor()
+
   // Process all events
   processEvents()
-  if (forQualification) {
-    // Process the plan for qualification
-    processSQLPlanForQualification
-  } else {
-    // Process all properties after all events are processed
-    processAllProperties()
-    // Process SQL Plan Metrics after all events are processed
-    processSQLPlanMetrics()
-  }
+  // Process all properties after all events are processed
+  processAllProperties()
+  // Process SQL Plan Metrics after all events are processed
+  processSQLPlanMetrics()
   // Create Spark DataFrame(s) based on ArrayBuffer(s)
   arraybufferToDF()
 
   private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
 
-  def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
-    EventLogFileWriter.codecName(log) match {
-      case c if (c.isDefined && c.get.equals("gz")) =>
-        val in = fs.open(log)
-        try {
-          new GZIPInputStream(in)
-        } catch {
-          case e: Throwable =>
-            in.close()
-            throw e
-        }
-      case _ => EventLogFileReader.openEventLog(log, fs)
-    }
-  }
-
-  /**
-   * Functions to process all the events
-   */
-  def processEvents(): Unit = {
-    val eventlog = eventLogInfo.eventLog
-
-    logInfo("Parsing Event Log: " + eventlog.toString)
-
-    // at this point all paths should be valid event logs or event log dirs
-    val fs = eventlog.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
-    var totalNumEvents = 0
-    val eventsProcessor = new EventsProcessor(forQualification)
-    val readerOpt = eventLogInfo match {
-      case dblog: DatabricksEventLog =>
-        Some(new DatabricksRollingEventLogFilesFileReader(fs, eventlog))
-      case apachelog => EventLogFileReader(fs, eventlog)
-    }
-
-    if (readerOpt.isDefined) {
-      val reader = readerOpt.get
-      val logFiles = reader.listEventLogFiles
-      logFiles.foreach { file =>
-        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
-          val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-          totalNumEvents += lines.size
-          lines.foreach { line =>
-            try {
-              val event = JsonProtocol.sparkEventFromJson(parse(line))
-              eventsProcessor.processAnyEvent(this, event)
-            }
-            catch {
-              case e: ClassNotFoundException =>
-                logWarning(s"ClassNotFoundException: ${e.getMessage}")
-            }
-          }
-        }
-      }
-    } else {
-      logError(s"Error getting reader for ${eventlog.getName}")
-    }
-    logInfo("Total number of events parsed: " + totalNumEvents)
+  override def processEvent(event: SparkListenerEvent) = {
+    eventProcessor.processAnyEvent(this, event)
   }
 
   /**
@@ -607,90 +686,88 @@ class ApplicationInfo(
     }
 
     // For taskDF
-    if (!forQualification) {
-      if (taskEnd.nonEmpty) {
-        allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-      }
+    if (taskEnd.nonEmpty) {
+      allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
+    }
 
-      // For sqlMetricsDF
-      if (sqlPlanMetrics.nonEmpty) {
-        logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
-        allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
-      } else {
-        logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
-      }
+    // For sqlMetricsDF
+    if (sqlPlanMetrics.nonEmpty) {
+      logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
+      allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
+    } else {
+      logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
+    }
 
-      // For resourceProfilesDF
-      if (this.resourceProfiles.nonEmpty) {
-        this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
-      } else {
-        logWarning("resourceProfiles is empty!")
-      }
+    // For resourceProfilesDF
+    if (this.resourceProfiles.nonEmpty) {
+      this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
+    } else {
+      logWarning("resourceProfiles is empty!")
+    }
 
-      // For blockManagersDF
-      if (this.blockManagers.nonEmpty) {
-        this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
-      } else {
-        logWarning("blockManagers is empty!")
-      }
+    // For blockManagersDF
+    if (this.blockManagers.nonEmpty) {
+      this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
+    } else {
+      logWarning("blockManagers is empty!")
+    }
 
-      // For blockManagersRemovedDF
-      if (this.blockManagersRemoved.nonEmpty) {
-        this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
-        this.blockManagersRemoved.clear()
-      } else {
-        logDebug("blockManagersRemoved is empty!")
-      }
+    // For blockManagersRemovedDF
+    if (this.blockManagersRemoved.nonEmpty) {
+      this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
+      this.blockManagersRemoved.clear()
+    } else {
+      logDebug("blockManagersRemoved is empty!")
+    }
 
-      // For propertiesDF
-      if (this.allProperties.nonEmpty) {
-        this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-      }
+    // For propertiesDF
+    if (this.allProperties.nonEmpty) {
+      this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
+    }
 
-      // For executorsDF
-      if (this.executors.nonEmpty) {
-        this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
-      }
+    // For executorsDF
+    if (this.executors.nonEmpty) {
+      this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
+    }
 
-      // For executorsRemovedDF
-      if (this.executorsRemoved.nonEmpty) {
-        this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
-      } else {
-        logDebug("executorsRemoved is empty!")
-      }
+    // For executorsRemovedDF
+    if (this.executorsRemoved.nonEmpty) {
+      this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
+    } else {
+      logDebug("executorsRemoved is empty!")
+    }
 
-      // For driverAccumDF
-      allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
-      if (driverAccum.nonEmpty) {
-        logInfo(s"Total ${driverAccum.size} driver accums for appID=$appId")
-      } else {
-        logInfo("No Driver accum Found. Create an empty driver accum DataFrame.")
-      }
+    // For driverAccumDF
+    allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
+    if (driverAccum.nonEmpty) {
+      logInfo(s"Total ${driverAccum.size} driver accums for appID=$appId")
+    } else {
+      logInfo("No Driver accum Found. Create an empty driver accum DataFrame.")
+    }
 
-      // For taskStageAccumDF
-      allDataFrames += (s"taskStageAccumDF_$index" -> taskStageAccum.toDF)
-      if (taskStageAccum.nonEmpty) {
-        logInfo(s"Total ${taskStageAccum.size} task&stage accums for appID=$appId")
-      } else {
-        logInfo("No task&stage accums Found.Create an empty task&stage accum DataFrame.")
-      }
+    // For taskStageAccumDF
+    allDataFrames += (s"taskStageAccumDF_$index" -> taskStageAccum.toDF)
+    if (taskStageAccum.nonEmpty) {
+      logInfo(s"Total ${taskStageAccum.size} task&stage accums for appID=$appId")
+    } else {
+      logInfo("No task&stage accums Found.Create an empty task&stage accum DataFrame.")
+    }
 
-      // For planNodeAccumDF
-      allDataFrames += (s"planNodeAccumDF_$index" -> planNodeAccum.toDF)
-      if (planNodeAccum.nonEmpty) {
-        logInfo(s"Total ${planNodeAccum.size} Plan node accums for appID=$appId")
-      } else {
-        logInfo("No Plan node accums Found. Create an empty Plan node accums DataFrame.")
-      }
+    // For planNodeAccumDF
+    allDataFrames += (s"planNodeAccumDF_$index" -> planNodeAccum.toDF)
+    if (planNodeAccum.nonEmpty) {
+      logInfo(s"Total ${planNodeAccum.size} Plan node accums for appID=$appId")
+    } else {
+      logInfo("No Plan node accums Found. Create an empty Plan node accums DataFrame.")
+    }
 
-      // For unsupportedSQLPlanDF
-      allDataFrames += (s"unsupportedSQLplan_$index" -> unsupportedSQLplan.toDF)
-      if (unsupportedSQLplan.nonEmpty) {
-        logInfo(s"Total ${unsupportedSQLplan.size} Unsupported ops for appID=$appId")
-      } else {
-        logInfo("No unSupportedSQLPlan node accums Found. " +
-            "Create an empty node accums DataFrame.")
-      }
+    // For unsupportedSQLPlanDF
+    allDataFrames += (s"unsupportedSQLplan_$index" -> unsupportedSQLplan.toDF)
+    if (unsupportedSQLplan.nonEmpty) {
+      logInfo(s"Total ${unsupportedSQLplan.size} Unsupported ops for appID=$appId")
+    } else {
+      logInfo("No unSupportedSQLPlan node accums Found. " +
+        "Create an empty node accums DataFrame.")
     }
 
     for ((name, df) <- this.allDataFrames) {
@@ -713,11 +790,27 @@ class ApplicationInfo(
       messageHeader: String = ""): DataFrame = {
     logDebug("Running:" + query)
     val df = sparkSession.sql(query)
-    fileWriter.foreach { writer =>
+    writeDF(df, messageHeader, fileWriter, vertical=vertical)
+    df
+  }
+
+  def writeDF(df: DataFrame,
+      messageHeader: String,
+      writer: Option[ToolTextFileWriter],
+      vertical: Boolean = false): Unit = {
+    writer.foreach { writer =>
       writer.write(messageHeader)
       writer.write(df.showString(numOutputRows, 0, vertical))
     }
-    df
+  }
+
+  def writeAsDF(data: java.util.List[Row],
+      schema: StructType,
+      messageHeader: String,
+      writer: Option[ToolTextFileWriter],
+      vertical: Boolean = false): Unit = {
+    val df = sparkSession.createDataFrame(data, schema)
+    writeDF(df, messageHeader, writer, vertical = vertical)
   }
 
   // Function to return a DataFrame based on query text
@@ -799,12 +892,14 @@ class ApplicationInfo(
     }
   }
 
-  // Function to generate a query for printing Rapids related Spark properties
-  def generateRapidsProperties: String = {
+  // Function to generate a query for printing Rapids/UCX/GDS related Spark properties
+  def generateNvidiaProperties: String = {
     s"""select key as propertyName,value as appIndex_$index
        |from propertiesDF_$index
        |where source ='spark'
        |and key like 'spark.rapids%'
+       |or key like 'spark.executorEnv.UCX%'
+       |or key in ('spark.shuffle.manager','spark.shuffle.service.enabled')
        |""".stripMargin
   }
 
@@ -1049,21 +1144,6 @@ class ApplicationInfo(
        |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }
-
-  def isDataSetPlan(desc: String): Boolean = {
-    desc match {
-      case l if l.matches(".*\\$Lambda\\$.*") => true
-      case a if a.endsWith(".apply") => true
-      case _ => false
-    }
-  }
-
-  def findPotentialIssues(desc: String): String =  {
-    desc match {
-      case u if u.matches(".*UDF.*") => "UDF"
-      case _ => ""
-    }
-  }
 }
 
 object ApplicationInfo extends Logging {
@@ -1101,14 +1181,13 @@ object ApplicationInfo extends Logging {
       allPaths: Seq[EventLogInfo],
       numRows: Int,
       sparkSession: SparkSession,
-      startIndex: Int = 1,
-      forQualification: Boolean = false): (Seq[ApplicationInfo], Int) = {
+      startIndex: Int = 1): (Seq[ApplicationInfo], Int) = {
     var index: Int = startIndex
     var errorCode = 0
     val apps = allPaths.flatMap { path =>
       try {
         // This apps only contains 1 app in each loop.
-        val app = new ApplicationInfo(numRows, sparkSession, path, index, forQualification)
+        val app = new ApplicationInfo(numRows, sparkSession, path, index)
         EventLogPathProcessor.logApplicationInfo(app)
         index += 1
         Some(app)

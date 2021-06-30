@@ -215,7 +215,7 @@ object GenerateTimeline {
     var colorIndex = 0
     var minStartTime = Long.MaxValue
     var maxEndTime = 0L
-    // Sort the data so
+
     app.taskEnd.foreach { tc =>
       val host = tc.host
       val execId = tc.executorId
@@ -272,14 +272,19 @@ object GenerateTimeline {
       new TimelineJobInfo(jobId, startTime, endTime, duration)
     }
 
-    val sqlInfo = app.enhancedSql.map { sc =>
-      val sqlId = sc.sqlID
-      val startTime = sc.startTime
-      val endTime = sc.endTime.get
-      val duration = sc.duration.get
-      minStartTime = Math.min(minStartTime, startTime)
-      maxEndTime = Math.max(maxEndTime, endTime)
-      new TimelineSqlInfo(sqlId, startTime, endTime, duration)
+    val sqlInfo = app.enhancedSql.flatMap { sc =>
+      // If a SQL op fails, it may not have an end-time with it (So remove it from the graph)
+      if (sc.endTime.isDefined) {
+        val sqlId = sc.sqlID
+        val startTime = sc.startTime
+        val endTime = sc.endTime.get
+        val duration = sc.duration.get
+        minStartTime = Math.min(minStartTime, startTime)
+        maxEndTime = Math.max(maxEndTime, endTime)
+        Some(new TimelineSqlInfo(sqlId, startTime, endTime, duration))
+      } else {
+        None
+      }
     }
 
     // Add 1 second for padding at the end...

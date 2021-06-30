@@ -115,15 +115,7 @@ case class StageCase(
     failureReason: Option[String],
     duration: Option[Long],
     durationStr: String,
-    gpuMode: Boolean,
-    executorRunTimeSum: Long,
-    executorCPUTimeSum: Long)
-
-class StageTaskQualificationSummary(
-    val stageId: Int,
-    val stageAttemptId: Int,
-    var executorRunTime: Long,
-    var executorCPUTime: Long)
+    gpuMode: Boolean)
 
 // Note: sr = Shuffle Read; sw = Shuffle Write
 // Totally 39 columns

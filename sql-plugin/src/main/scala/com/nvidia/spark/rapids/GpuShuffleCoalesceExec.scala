@@ -78,7 +78,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
  * is transferred to the GPU.
  */
 class GpuShuffleCoalesceIterator(
-    batchIter: Iterator[ColumnarBatch],
+    iter: Iterator[ColumnarBatch],
     targetBatchByteSize: Long,
     sparkSchema: Array[DataType],
     metricsMap: Map[String, GpuMetric])
@@ -88,12 +88,15 @@ class GpuShuffleCoalesceIterator(
   private[this] val inputRowsMetric = metricsMap(GpuMetric.NUM_INPUT_ROWS)
   private[this] val outputBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
   private[this] val outputRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
-  private[this] val collectTimeMetric = metricsMap("collectTime")
-  private[this] val concatTimeMetric = metricsMap("concatTime")
+  private[this] val collectTimeMetric = metricsMap(GpuMetric.COLLECT_TIME)
+  private[this] val concatTimeMetric = metricsMap(GpuMetric.CONCAT_TIME)
   private[this] val serializedTables = new util.ArrayDeque[SerializedTableColumn]
   private[this] var numTablesInBatch: Int = 0
   private[this] var numRowsInBatch: Int = 0
   private[this] var batchByteSize: Long = 0L
+  
+  private val batchIter = new CollectTimeIterator(
+    "ShuffleCoalesce: collect", iter, collectTimeMetric)
 
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
@@ -118,23 +121,11 @@ class GpuShuffleCoalesceIterator(
     serializedTables.clear()
   }
 
-  private def batchIterHasNext: Boolean = {
-    withResource(new MetricRange(collectTimeMetric)) { _ =>
-      batchIter.hasNext
-    }
-  }
-
-  private def batchIterNext(): ColumnarBatch = {
-    withResource(new MetricRange(collectTimeMetric)) { _ =>
-      batchIter.next()
-    }
-  }
-
   private def bufferNextBatch(): Unit = {
     if (numTablesInBatch == serializedTables.size()) {
       var batchCanGrow = batchByteSize < targetBatchByteSize
-      while (batchCanGrow && batchIterHasNext) {
-        closeOnExcept(batchIterNext()) { batch =>
+      while (batchCanGrow && batchIter.hasNext) {
+        closeOnExcept(batchIter.next()) { batch =>
           inputBatchesMetric += 1
           // don't bother tracking empty tables
           if (batch.numRows > 0) {

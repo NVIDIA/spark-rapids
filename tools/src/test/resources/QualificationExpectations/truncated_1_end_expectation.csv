@@ -1,2 +1,2 @@
-appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio,appEndDurationEstimated
-Rapids Spark Profiling Tool Unit Tests,local-1622043423018,0.0,"",0,4872,30.46,true
+appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio,appEndDurationEstimated,SQL Duration with Potential Problems,SQL Ids with Failures
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,0.0,"",0,4872,0.0,true,0,""

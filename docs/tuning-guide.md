@@ -295,3 +295,40 @@ performance.
 - [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans)
 - [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled)
 - [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled)
+
+## Metrics
+
+Custom Spark SQL Metrics are available which can help identify performance bottlenecks in a query.
+
+| Key              | Name                     | Description                                       |
+|------------------|--------------------------|---------------------------------------------------|
+| bufferTime       | buffer time              | Time spent buffering input from file data sources. |
+| buildDataSize    | build side size          | Size in bytes of the build-side of a join.        |
+| buildTime        | build time               | Time to load the build-side of a join.            |
+| collectTime      | collect time             | Time spent collecting data from child operator(s).|
+| computeAggTime   | aggregation time         | Time performing aggregation.                      |
+| concatTime       | concat batch time        | Time to concatenate batches.                      |
+| filterTime       | filter time              | Time spent applying filters within other operators, such as joins. |
+| gpuDecodeTime    | GPU decode time          | Time spent on GPU decoding encrypted or compressed data. |
+| gpuOpTime        | GPU op time              | Time that an operator spends performing computation on the GPU. |
+| joinOutputRows   | join output rows         | The number of rows produced by a join before any filter expression is applied. |
+| joinTime         | join time                | Total time for performing a join.                 |
+| numInputBatches  | input columnar batches   | Number of columnar batches that the operator received from its child operator(s). |
+| numInputRows     | input rows               | Number of rows that the operator received from its child operator(s). |
+| numOutputBatches | output columnar batches  | Number of columnar batches that the operator outputs. |
+| numOutputRows    | output rows              | Number of rows that the operator outputs.         |
+| numPartitions    | partitions               | Number of output partitions from a file scan or shuffle exchange. |
+| opTime           | op time                  | Time that an operator takes, exclusive of the time for executing or fetching results from child operators. |
+| partitionSize    | partition data size      | Total size in bytes of output partitions.         |
+| peakDevMemory    | peak device memory       | Peak GPU memory used during execution of an operator. |
+| semaphoreWaitTime| GPU semaphore wait time  | Time spent waiting for the GPU semaphore. |
+| sortTime         | sort time                | Time spent in sort operations in GpuSortExec and GpuTopN. |
+| spillData        | bytes spilled from GPU   | Total bytes spilled from GPU.                     |
+| spillDisk        | bytes spilled to disk    | Total bytes spilled from GPU to disk.             |
+| spillHost        | bytes spilled to host    | Total bytes spilled from GPU to host memory.      |
+| streamTime       | stream time              | Time spent processing stream-side of a hash join. |
+| totalTime        | total time               | Total execution time for the operator, including the time spent executing and fetching data from child operator(s). |
+
+Not all metrics are enabled by default. The configuration setting `spark.rapids.sql.metrics.level` can be set
+to `DEBUG`, `MODERATE`, or `ESSENTIAL`, with `MODERATE` being the default value. More information about this
+configuration option is available in the <a href="configs.md#sql.metrics.level">configuration</a> documentation.
