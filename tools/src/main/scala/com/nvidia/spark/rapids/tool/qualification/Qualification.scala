@@ -66,17 +66,21 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     }
 
     val allAppsSum = allApps.asScala.toSeq
-    val sorted = allAppsSum.sortBy(sum => {
-      if (QualificationArgs.isOrderDesc(order)) {
+    val sortedDesc = allAppsSum.sortBy(sum => {
         (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration)
-      } else {
-        (sum.score, sum.sqlDataFrameDuration, sum.appDuration)
-      }
     })
-    val qWriter = new QualOutputWriter(outputDir, numRows)
-    qWriter.writeCSV(sorted)
-    qWriter.writeReport(sorted)
-    sorted
+    val qWriter = new QualOutputWriter(outputDir)
+    qWriter.writeCSV(sortedDesc)
+
+    val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
+      allAppsSum.sortBy(sum => {
+        (sum.score, sum.sqlDataFrameDuration, sum.appDuration)
+      })
+    } else {
+      sortedDesc
+    }
+    qWriter.writeReport(sortedForReport, numRows)
+    sortedDesc
   }
 
   private def qualifyApp(

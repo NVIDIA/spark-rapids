@@ -25,10 +25,8 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
  * It can write both a raw csv file and then a text summary report.
  *
  * @param outputDir The directory to output the files to
- * @param numOutputRows The number of rows to put into the report, does not affect
- *                      the number in the CSV file.
  */
-class QualOutputWriter(outputDir: String, numOutputRows: Int) {
+class QualOutputWriter(outputDir: String) {
 
   private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
   // a file extension will be added to this later
@@ -85,17 +83,17 @@ class QualOutputWriter(outputDir: String, numOutputRows: Int) {
   }
 
   // write the text summary report
-  def writeReport(summaries: Seq[QualificationSummaryInfo]) : Unit = {
+  def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int) : Unit = {
     val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
     try {
-      writeTextSummary(textFileWriter, summaries)
+      writeTextSummary(textFileWriter, summaries, numOutputRows)
     } finally {
       textFileWriter.close()
     }
   }
 
   private def writeTextSummary(writer: ToolTextFileWriter,
-      sums: Seq[QualificationSummaryInfo]): Unit = {
+      sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
     val (appIdMaxSize, sizePadLongs) = getTextSpacing(sums)
     val entireHeader = new StringBuffer
 
