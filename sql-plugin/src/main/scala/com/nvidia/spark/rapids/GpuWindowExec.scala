@@ -240,12 +240,8 @@ object GpuWindowExec extends Arm {
     }
   }
 
-  private def hasGpuWindowFunction(expr: Expression): Boolean = {
-    expr.find {
-      case _: GpuWindowExpression => true
-      case _ => false
-    }.isDefined
-  }
+  private def hasGpuWindowFunction(expr: Expression): Boolean =
+    expr.find(_.isInstanceOf[GpuWindowExpression]).isDefined
 
   private def extractAndSave(expr: Expression,
       saved: ArrayBuffer[NamedExpression],
@@ -253,8 +249,7 @@ object GpuWindowExec extends Arm {
     expr match {
       // Don't rename an already named expression
       case ne: NamedExpression =>
-        val missingExprId = Set(ne.exprId) -- saved.map(_.exprId)
-        if (missingExprId.nonEmpty) {
+        if (!saved.exists(_.exprId == ne.exprId)) {
           saved += ne
         }
         ne.toAttribute
@@ -319,7 +314,7 @@ object GpuWindowExec extends Arm {
         val firstPass = expr.transformDown {
           case wf: GpuWindowFunction =>
             // All window functions, including those that are also aggregation functions, are
-            // wrapped in a GPuWindowExpression, so dedup and save their children into the pre
+            // wrapped in a GpuWindowExpression, so dedup and save their children into the pre
             // stage, replacing them with aliases.
             val newChildren = wf.children.map(extractAndSave(_, preProject, preDedupe))
             wf.withNewChildren(newChildren)
