@@ -22,26 +22,9 @@ class QualificationArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
   banner("""
 RAPIDS Accelerator for Apache Spark qualification tool
 
-Example:
-
-# Input 1 or more event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
-
-# Specify a directory of event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
-
-# If any event log is from S3:
-# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly.
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
-
-# Change output directory to /tmp
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.qualification.QualificationMain
-rapids-4-spark-tools_2.12-<version>.jar -o /tmp /path/to/eventlog1
-
-For usage see below:
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+       com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
+       <eventlogs | eventlog directories ...>
     """)
 
   val outputDirectory: ScallopOption[String] =
@@ -51,12 +34,6 @@ For usage see below:
         " rapids_4_spark_qualification_output. It will overwrite any existing directory" +
         " with the same name.",
       default = Some("."))
-  val outputFormat: ScallopOption[String] =
-    opt[String](required = false,
-      descr = "Output format, supports csv and text. Default is csv." +
-        " text output format creates a file named rapids_4_spark_qualification.log" +
-        " while csv will create a file using the standard Spark naming convention.",
-      default = Some("csv"))
   val eventlog: ScallopOption[List[String]] =
     trailArg[List[String]](required = true,
       descr = "Event log filenames(space separated) or directories containing event logs." +
@@ -71,16 +48,25 @@ For usage see below:
       descr = "Filter event logs whose filenames contain the input string")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
-      descr = "Number of output rows for each Application. Default is 1000.")
-  val noExecCpuPercent: ScallopOption[Boolean] =
-    opt[Boolean](
-      required = false,
-      default = Some(false),
-      descr = "Do not include the executor CPU time percent.")
+      descr = "Number of output rows. Default is 1000.")
+  val numThreads: ScallopOption[Int] =
+    opt[Int](required = false,
+      descr = "Number of thread to use for parallel processing. The default is the " +
+        "number of cores on host divided by 4.")
+  val timeout: ScallopOption[Long] =
+    opt[Long](required = false,
+      descr = "Maximum time in seconds to wait for the event logs to be processed. " +
+        "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
+        "times out, it will report what it was able to process up until the timeout.")
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)
     case _ => Left("Error, the filter criteria must end with either -newest or -oldest")
+  }
+
+  validate(timeout) {
+    case timeout if (timeout > 3) => Right(Unit)
+    case _ => Left("Error, timeout must be greater than 3 seconds.")
   }
 
   verify()

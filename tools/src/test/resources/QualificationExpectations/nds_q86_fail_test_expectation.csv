@@ -1,2 +1,2 @@
-appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio,appEndDurationEstimated
-TPC-DS Like Bench q86,app-20210319163812-1778,0.02,"",4,26171,"-",false
+appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio,appEndDurationEstimated,SQL Duration with Potential Problems,SQL Ids with Failures
+TPC-DS Like Bench q86,app-20210319163812-1778,0.02,"",4,26171,0.0,false,0,"24"

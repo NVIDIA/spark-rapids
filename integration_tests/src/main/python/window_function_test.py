@@ -301,6 +301,7 @@ def test_window_running_no_part(b_gen, batch_size):
         'select ' +
         ', '.join(query_parts) +
         ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
 # This is for aggregations that work with a running window optimization. They don't need to be batched
@@ -324,6 +325,7 @@ def test_window_running(b_gen, c_gen, batch_size):
         'select ' +
         ', '.join(query_parts) +
         ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
 @ignore_order
@@ -543,6 +545,8 @@ def test_window_aggs_for_rows_collect_list():
 
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
+# This test is more directed at Databricks and their running window optimization instead of ours
+# this is why we do not validate that we inserted in a GpuRunningWindowExec, yet.
 def test_running_window_function_exec_for_all_aggs():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, _gen_data_for_collect_list),
@@ -569,7 +573,6 @@ def test_running_window_function_exec_for_all_aggs():
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_struct
         from window_collect_table
         ''')
-
 
 # Generates some repeated values to test the deduplication of GpuCollectSet.
 # And GpuCollectSet does not yet support struct type.

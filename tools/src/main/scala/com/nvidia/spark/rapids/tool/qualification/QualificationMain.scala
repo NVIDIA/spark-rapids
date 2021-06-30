@@ -17,22 +17,19 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.EventLogPathProcessor
-import com.nvidia.spark.rapids.tool.profiling._
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
 /**
  * A tool to analyze Spark event logs and determine if 
  * they might be a good fit for running on the GPU.
  */
 object QualificationMain extends Logging {
-  /**
-   * Entry point from spark-submit running this as the driver.
-   */
+
   def main(args: Array[String]) {
-    val sparkSession = ProfileUtils.createSparkSession
-    val (exitCode, _) = mainInternal(sparkSession, new QualificationArgs(args))
+    val (exitCode, _) = mainInternal(new QualificationArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -41,36 +38,30 @@ object QualificationMain extends Logging {
   /**
    * Entry point for tests
    */
-  def mainInternal(sparkSession: SparkSession, appArgs: QualificationArgs,
-      writeOutput: Boolean = true, dropTempViews: Boolean = false): (Int, Option[DataFrame]) = {
+  def mainInternal(appArgs: QualificationArgs,
+      writeOutput: Boolean = true,
+      dropTempViews: Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
-    // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
-    val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
+    val nThreads = appArgs.numThreads.getOrElse(
+      Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
+    val timeout = appArgs.timeout.toOption
+
+    val hadoopConf = new Configuration()
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths, sparkSession)
+      matchEventLogs.toOption, eventlogPaths, hadoopConf)
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
-      return (0, None)
+      return (0, Seq[QualificationSummaryInfo]())
     }
 
-    val dfOpt = Qualification.qualifyApps(eventLogInfos, numOutputRows, sparkSession,
-      includeCpuPercent, dropTempViews)
-    if (dfOpt.isEmpty) {
-      logWarning("No Applications with SQL found in events logs: " +
-        s"${eventLogInfos.map(_.eventLog.getName).mkString(",")}")
-    }
-
-    if (writeOutput && dfOpt.isDefined) {
-      Qualification.writeQualification(dfOpt.get, outputDirectory,
-        appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)
-    }
-    (0, dfOpt)
+    val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout, nThreads)
+    val res = qual.qualifyApps(eventLogInfos)
+    (0, res)
   }
-
 }

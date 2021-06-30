@@ -22,6 +22,7 @@ import java.util.zip.ZipOutputStream
 
 import scala.collection.mutable.LinkedHashMap
 
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
@@ -84,15 +85,15 @@ object EventLogPathProcessor extends Logging {
     (dbLogFiles.size > 1)
   }
 
-  def getEventLogInfo(pathString: String, sparkSession: SparkSession): Map[EventLogInfo, Long] = {
+  def getEventLogInfo(pathString: String, hadoopConf: Configuration): Map[EventLogInfo, Long] = {
     val inputPath = new Path(pathString)
-    val fs = inputPath.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+    val fs = inputPath.getFileSystem(hadoopConf)
     try {
       val fileStatus = fs.getFileStatus(inputPath)
       val filePath = fileStatus.getPath()
       val fileName = filePath.getName()
 
-      if (!eventLogNameFilter(filePath)) {
+      if (fileStatus.isFile() && !eventLogNameFilter(filePath)) {
         logWarning(s"File: $fileName it not a supported file type. " +
           "Supported compression types are: " +
           s"${SPARK_SHORT_COMPRESSION_CODEC_NAMES_FOR_FILTER.mkString(", ")}. " +
@@ -103,7 +104,7 @@ object EventLogPathProcessor extends Logging {
         val info = ApacheSparkEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
         Map(info -> fileStatus.getModificationTime)
       } else if (fileStatus.isDirectory &&
-          isDatabricksEventLogDir(fileStatus, fs)) {
+        isDatabricksEventLogDir(fileStatus, fs)) {
         val dbinfo = DatabricksEventLog(fileStatus.getPath).asInstanceOf[EventLogInfo]
         Map(dbinfo -> fileStatus.getModificationTime)
       } else {
@@ -112,14 +113,15 @@ object EventLogPathProcessor extends Logging {
         val (validLogs, invalidLogs) = fs.listStatus(inputPath).partition(s => {
             val name = s.getPath().getName()
             (s.isFile ||
-              (s.isDirectory &&
-                (isEventLogDir(name) || isDatabricksEventLogDir(s, fs))))
+              (s.isDirectory && (isEventLogDir(name) || isDatabricksEventLogDir(s, fs))))
           })
         if (invalidLogs.nonEmpty) {
           logWarning("Skipping the following directories: " +
             s"${invalidLogs.map(_.getPath().getName()).mkString(", ")}")
         }
-        val (logsSupported, unsupport) = validLogs.partition(l => eventLogNameFilter(l.getPath()))
+        val (logsSupported, unsupport) = validLogs.partition { l =>
+          (l.isFile && eventLogNameFilter(l.getPath())) || l.isDirectory
+        }
         if (unsupport.nonEmpty) {
           logWarning(s"Files: ${unsupport.map(_.getPath.getName).mkString(", ")} " +
             s"have unsupported file types. Supported compression types are: " +
@@ -148,17 +150,16 @@ object EventLogPathProcessor extends Logging {
    * @param filterNLogs    number of event logs to be selected
    * @param matchlogs      keyword to match file names in the directory
    * @param eventLogsPaths Array of event log paths
-   * @param databricksLogs boolean indicating if the event log being processed is from Databricks
-   * @param sparkSession   SparkSession
+   * @param hadoopConf     Hadoop Configuration
    * @return EventLogInfo indicating type and location of event log
    */
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
       eventLogsPaths: List[String],
-      sparkSession: SparkSession): Seq[EventLogInfo] = {
+      hadoopConf: Configuration): Seq[EventLogInfo] = {
 
-    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, sparkSession)).toMap
+    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, hadoopConf)).toMap
 
     logDebug("Paths after stringToPath: " + logsWithTimestamp)
     // Filter the event logs to be processed based on the criteria. If it is not provided in the
