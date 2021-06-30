@@ -113,13 +113,36 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
-    val options = Array("--order", "asc")
-    val appSum = runQualificationOrderTest(logFiles, options)
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "asc")
 
-    assert(appSum.size == 4)
-    assert(appSum.head.appId.equals("local-1621955976602"))
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 4)
+      assert(appSum.head.appId.equals("local-1622043423018"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 4))
+        // skip the 3 header lines
+        lines.drop(3)
+        val firstRow = lines.take(1).toArray.head
+        assert(firstRow.contains("local-1621955976602"))
+      } finally {
+        inputSource.close()
+      }
+    }
   }
-
+  
   test("test order desc") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
@@ -127,11 +150,34 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
-    val options = Array("--order", "desc")
-    val appSum = runQualificationOrderTest(logFiles, options)
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "desc")
 
-    assert(appSum.size == 4)
-    assert(appSum.head.appId.equals("local-1622043423018"))
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 4)
+      assert(appSum.head.appId.equals("local-1622043423018"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 4))
+        // skip the 3 header lines
+        lines.drop(3)
+        val firstRow = lines.take(1).toArray.head
+        assert(firstRow.contains("local-1622043423018"))
+      } finally {
+        inputSource.close()
+      }
+    }
   }
 
   test("test limit desc") {
