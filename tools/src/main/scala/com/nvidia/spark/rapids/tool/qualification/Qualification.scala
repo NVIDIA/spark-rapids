@@ -67,7 +67,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
 
     val allAppsSum = allApps.asScala.toSeq
     val sorted = allAppsSum.sortBy(sum => {
-      if (order.equals("highest")) {
+      if (QualificationArgs.isOrderHighest(order)) {
         (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration)
       } else {
         (sum.score, sum.sqlDataFrameDuration, sum.appDuration)

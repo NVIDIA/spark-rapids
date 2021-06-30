@@ -51,7 +51,7 @@ object QualificationMain extends Logging {
     val nThreads = appArgs.numThreads.getOrElse(
       Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
     val timeout = appArgs.timeout.toOption
-    val order = appArgs.order.getOrElse("highest").toLowerCase()
+    val order = appArgs.order.getOrElse("highest")
 
     val hadoopConf = new Configuration()
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
