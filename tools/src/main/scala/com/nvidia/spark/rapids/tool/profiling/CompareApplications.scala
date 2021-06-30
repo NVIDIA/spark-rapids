@@ -218,14 +218,14 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
         if (i < apps.size) {
           withClauseAllKeys += "select distinct propertyName from (" +
-              app.generateRapidsProperties + ") union "
-          query += "(" + app.generateRapidsProperties + s") tmp_$i"
+              app.generateNvidiaProperties + ") union "
+          query += "(" + app.generateNvidiaProperties + s") tmp_$i"
           query += s" on allKeys.propertyName=tmp_$i.propertyName"
           query += "\n LEFT OUTER JOIN \n"
         } else { // For the last app
           withClauseAllKeys += "select distinct propertyName from (" +
-              app.generateRapidsProperties + "))\n"
-          query += "(" + app.generateRapidsProperties + s") tmp_$i"
+              app.generateNvidiaProperties + "))\n"
+          query += "(" + app.generateNvidiaProperties + s") tmp_$i"
           query += s" on allKeys.propertyName=tmp_$i.propertyName"
         }
         selectValuePart += s",appIndex_${app.index}"

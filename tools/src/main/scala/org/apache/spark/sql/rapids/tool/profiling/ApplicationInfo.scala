@@ -756,12 +756,14 @@ class ApplicationInfo(
     }
   }
 
-  // Function to generate a query for printing Rapids related Spark properties
-  def generateRapidsProperties: String = {
+  // Function to generate a query for printing Rapids/UCX/GDS related Spark properties
+  def generateNvidiaProperties: String = {
     s"""select key as propertyName,value as appIndex_$index
        |from propertiesDF_$index
        |where source ='spark'
        |and key like 'spark.rapids%'
+       |or key like 'spark.executorEnv.UCX%'
+       |or key in ('spark.shuffle.manager','spark.shuffle.service.enabled')
        |""".stripMargin
   }
 
