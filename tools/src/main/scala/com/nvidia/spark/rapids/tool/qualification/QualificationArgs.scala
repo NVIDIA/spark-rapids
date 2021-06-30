@@ -51,10 +51,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Number of output rows. Default is 1000.")
   val order: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Specify the sort order of the report, either highest or lowest. " +
-        "highest is the default. eg: highest would show the applications most likely to " +
-        "be accelerated at the top and lowest would show the least likely " +
-        "to be accelerated at the top.")
+      descr = "Specify the sort order of the report. desc or asc, desc is the default. " +
+        "desc (descending) would report applications most likely to be accelerated at the top " +
+        "and asc (ascending) would show the least likely to be accelerated at the top.")
   val numThreads: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of thread to use for parallel processing. The default is the " +
@@ -66,8 +65,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         "times out, it will report what it was able to process up until the timeout.")
 
   validate(order) {
-    case o if (QualificationArgs.isOrderLowest(o) || QualificationArgs.isOrderHighest(o)) =>
-      Right(Unit)
+    case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)
     case _ => Left("Error, the order must either be highest or lowest")
   }
 
@@ -85,11 +83,11 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 }
 
 object QualificationArgs {
-  def isOrderLowest(order: String): Boolean = {
-    order.toLowerCase.equals("lowest")
+  def isOrderAsc(order: String): Boolean = {
+    order.toLowerCase.startsWith("asc")
   }
 
-  def isOrderHighest(order: String): Boolean = {
-    order.toLowerCase.equals("highest")
+  def isOrderDesc(order: String): Boolean = {
+    order.toLowerCase.startsWith("desc")
   }
 }
