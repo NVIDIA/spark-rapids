@@ -19,11 +19,11 @@ package com.nvidia.spark.rapids.tool.qualification
 import java.io.File
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.mutable.ListBuffer
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
-import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
@@ -155,10 +155,16 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val (exit, sum) = QualificationMain.mainInternal(appArgs)
       assert(exit == 0)
 
-      val filename = s"$outpath/rapids_4_spark_qualification_output.log"
-      val lines = Source.fromFile(filename).getLines
-      // 4 lines of header and footer, limit is 2
-      assert(lines.size == (4 + 2))
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines
+        // 4 lines of header and footer, limit is 2
+        assert(lines.size == (4 + 2))
+      } finally {
+        inputSource.close()
+      }
     }
   }
 
