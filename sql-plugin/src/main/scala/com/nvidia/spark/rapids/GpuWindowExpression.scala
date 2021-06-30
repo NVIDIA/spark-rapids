@@ -834,6 +834,10 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
   }
 }
 
+// This is here for now just to tag an expression as being a GpuWindowFunction and match
+// Spark. This may expand in the future if other types of window functions show up.
+trait GpuWindowFunction extends GpuUnevaluable
+
 /**
  * GPU Counterpart of `AggregateWindowFunction`.
  * On the CPU this would extend `DeclarativeAggregate` and use the provided methods
@@ -842,7 +846,7 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
  * expressions.
  */
 trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
-    extends GpuUnevaluable {
+    extends GpuWindowFunction {
   /**
    * Using child references, define the shape of the vectors sent to the window operations
    */
