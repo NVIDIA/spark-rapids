@@ -78,11 +78,8 @@ abstract class GpuOrcScanBase(
     // Unset any serialized search argument setup by Spark's OrcScanBuilder as
     // it will be incompatible due to shading and potential ORC classifier mismatch.
     hadoopConf.unset(OrcConf.KRYO_SARG.getAttribute)
-
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
-    GpuOrcPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
-      dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics)
 
     if (rapidsConf.isOrcPerFileReadEnabled) {
       logInfo("Using the original per file orc reader")
@@ -156,6 +153,9 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     queryUsesInputFile: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
 
+  private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
+  private val numThreads = rapidsConf.orcMultiThreadReadNumThreads
+  private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
   private val fileHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
   /**
    * An abstract method to indicate if coalescing reading can be used
@@ -202,7 +202,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
    *
    * @return the file format short name
    */
-  override def getFileFormatShortName: String = "ORC"
+  override final def getFileFormatShortName: String = "ORC"
 }
 
 case class GpuOrcPartitionReaderFactory(
@@ -240,7 +240,6 @@ case class GpuOrcPartitionReaderFactory(
       ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
     }
   }
-
 }
 
 // Collection of methods primarily from OrcUtils copied here to avoid shims

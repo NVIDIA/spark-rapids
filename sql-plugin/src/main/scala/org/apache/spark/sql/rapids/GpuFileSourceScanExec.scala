@@ -71,7 +71,7 @@ case class GpuFileSourceScanExec(
   import GpuMetric._
 
   // CSV should be always using PERFILE read type
-  val isPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled ||
+  private val isPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled ||
     rapidsConf.isOrcPerFileReadEnabled || relation.fileFormat.isInstanceOf[CSVFileFormat]
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)

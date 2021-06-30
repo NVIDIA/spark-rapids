@@ -126,13 +126,8 @@ abstract class MultiFilePartitionReaderFactoryBase(
     broadcastedConf: Broadcast[SerializableConfiguration],
     @transient rapidsConf: RapidsConf) extends PartitionReaderFactory with Arm with Logging {
 
-  protected val isCaseSensitive = sqlConf.caseSensitiveAnalysis
-  protected val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   protected val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
-  protected val numThreads = rapidsConf.parquetMultiThreadReadNumThreads
-  protected val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
-
   private val configCloudSchemes = rapidsConf.getCloudSchemes
   private val CLOUD_SCHEMES = HashSet("dbfs", "s3", "s3a", "s3n", "wasbs", "gs")
   private val allCloudSchemes = CLOUD_SCHEMES ++ configCloudSchemes.getOrElse(Seq.empty)
