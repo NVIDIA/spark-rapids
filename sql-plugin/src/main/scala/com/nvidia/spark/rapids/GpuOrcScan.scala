@@ -589,6 +589,12 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
     }
   }
 
+  def cleanUpOrc(ctx: OrcPartitionReaderContext) = {
+    if (ctx != null) {
+      if (ctx.orcReader != null) ctx.orcReader.close()
+      if (ctx.dataReader != null) ctx.dataReader.close()
+    }
+  }
 }
 
 /**
@@ -638,8 +644,7 @@ class GpuOrcPartitionReader(
 
   override def close(): Unit = {
     super.close()
-    ctx.orcReader.close()
-    ctx.dataReader.close()
+    cleanUpOrc(ctx)
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
@@ -701,7 +706,6 @@ class GpuOrcPartitionReader(
       }
     }
   }
-
 }
 
 // Singleton threadpool that is used across all the tasks.
@@ -1143,9 +1147,9 @@ class MultiFileCloudOrcPartitionReader(
       val startingBytesRead = fileSystemBytesRead()
 
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
+      val ctx = fileHandler.filterStripes(partFile, dataSchema, readDataSchema, partitionSchema)
       try {
-        val ctx = fileHandler.filterStripes(partFile, dataSchema, readDataSchema, partitionSchema)
-        if (ctx.blockIterator.isEmpty) {
+        if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
           return HostMemoryBuffersWithMetaData(partFile, Array((null, 0)), bytesRead,
@@ -1186,6 +1190,8 @@ class MultiFileCloudOrcPartitionReader(
         case e: Throwable =>
           hostBuffers.foreach(_._1.safeClose())
           throw e
+      } finally {
+        cleanUpOrc(ctx)
       }
     }
   }
