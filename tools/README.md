@@ -10,7 +10,8 @@ GPU generated event logs.
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
 ## Prerequisites
-- Spark 3.0.1 or newer installed
+- Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
+  runs a Spark application so needs the Spark runtime.
 - Java 8 or above
 - Complete Spark event log(s) from Spark 3.0 or above version.
   Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
@@ -27,7 +28,7 @@ Optional:
 - hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar 
   (only if any input event log is from S3)
   
-## Download the jar or compile it
+## Download the tools jar or compile it
 You do not need to compile the jar yourself because you can download it from maven repository directly.
 
 Here are 2 options:
@@ -68,7 +69,6 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 ```
 Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
 more options about integrating hadoop-aws module with S3.
-
 
 ## Filter input event logs
 Both of the qualification tool and profiling tool have this function which is to filter event logs.
@@ -148,6 +148,16 @@ Sample output in text:
 |app-20210507180116-2539|                      923419|                      903845|                           0|
 |app-20210319151533-1704|                      756039|                      737826|                           0|
 ```
+## Download the Spark 3.x distribution
+The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
+Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
+in the classpath.
+
+1. [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
+2. Extract the Spark distribution into a local directory.
+3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
+   `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool. See the
+   [How to use this tool](#how-to-use-this-tool) section below.
 
 ### How to use this tool
 This tool parses the Spark CPU event log(s) and creates an output report.
@@ -199,6 +209,11 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   called rapids_4_spark_qualification_output. It
                                   will overwrite any existing directory with the
                                   same name.
+  -t, --timeout  <arg>            Maximum time in seconds to wait for the event
+                                  logs to be processed. Default is 24 hours
+                                  (86400 seconds) and must be greater than 3
+                                  seconds. If it times out, it will report what
+                                  it was able to process up until the timeout.
   -h, --help                      Show help message
 
  trailing arguments:
@@ -220,6 +235,9 @@ it will output a CSV file named `rapids_4_spark_qualification_output.csv` that h
 ## Profiling Tool
 
 The profiling tool generates information which can be used for debugging and profiling applications.
+It will run a Spark application so requires Spark to be installed and setup. If you have a cluster already setup
+you can run it on that, or you can simply run it in local mode as well. See the Apache Spark documentation
+for [Downloading Apache Spark 3.x](http://spark.apache.org/downloads.html)
 
 ### Functions
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
@@ -515,6 +533,9 @@ Failed jobs:
 +--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
 ```
 
+### Metrics Definitions
+All the metrics definitions can be found in the [executor task metrics doc](https://spark.apache.org/docs/latest/monitoring.html#executor-task-metrics) / [executor metrics doc](https://spark.apache.org/docs/latest/monitoring.html#executor-metrics) or the [SPARK webUI doc](https://spark.apache.org/docs/latest/web-ui.html#content).
+
 ### How to use this tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
@@ -595,4 +616,3 @@ A ResourceProfile allows the user to specify executor and task requirements for 
 Note: We suggest you also save the output of the `spark-submit` or `spark-shell` to a log file for troubleshooting.
 
 Run `--help` for more information.
-

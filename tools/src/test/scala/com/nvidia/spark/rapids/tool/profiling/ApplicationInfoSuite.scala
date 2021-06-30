@@ -354,4 +354,29 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile4.delete()
     }
   }
+
+  test("test gds-ucx-parameters") {
+    val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/gds_ucx_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    for (app <- apps) {
+      val rows = app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
+        fileWriter = None).collect()
+      assert(rows.length == 5) // 5 properties captured.
+      // verify  ucx parameters are captured.
+      assert(rows(0)(0).equals("spark.executorEnv.UCX_RNDV_SCHEME"))
+
+      //verify gds parameters are captured.
+      assert(rows(1)(0).equals("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
+    }
+  }
 }
