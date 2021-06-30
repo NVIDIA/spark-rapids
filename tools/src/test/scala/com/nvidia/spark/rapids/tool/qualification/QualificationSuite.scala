@@ -90,22 +90,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  private def runQualificationOrderTest(eventLogs: Array[String],
-      additionalArgs:Array[String]): Seq[QualificationSummaryInfo] = {
-    var appSum: Seq[QualificationSummaryInfo] = Seq()
-    TrampolineUtil.withTempDir { outpath =>
-      val allArgs = Array(
-        "--output-directory",
-        outpath.getAbsolutePath()) ++ additionalArgs
-
-      val appArgs = new QualificationArgs(allArgs ++ eventLogs)
-      val (exit, sum) = QualificationMain.mainInternal(appArgs)
-      appSum = sum
-      assert(exit == 0)
-    }
-    appSum
-  }
-
   test("test order asc") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
