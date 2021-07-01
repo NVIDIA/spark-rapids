@@ -332,10 +332,10 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
   // and we don't know which file is associated with each row.
-  override def canUseCoalesceFilesReader: Boolean =
+  override val canUseCoalesceFilesReader: Boolean =
     rapidsConf.isParquetCoalesceFileReadEnabled && !queryUsesInputFile
 
-  override def canUseMultiThreadReader: Boolean = rapidsConf.isParquetMultiThreadReadEnabled
+  override val canUseMultiThreadReader: Boolean = rapidsConf.isParquetMultiThreadReadEnabled
 
   /**
    * Build the PartitionReader for cloud reading

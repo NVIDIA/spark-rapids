@@ -160,12 +160,12 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   /**
    * An abstract method to indicate if coalescing reading can be used
    */
-  override def canUseCoalesceFilesReader: Boolean = false
+  override val canUseCoalesceFilesReader: Boolean = false
 
   /**
    * An abstract method to indicate if cloud reading can be used
    */
-  override def canUseMultiThreadReader: Boolean = rapidsConf.isOrcMultiThreadReadEnabled
+  override val canUseMultiThreadReader: Boolean = rapidsConf.isOrcMultiThreadReadEnabled
 
   /**
    * Build the PartitionReader for cloud reading
