@@ -336,7 +336,7 @@ Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes
 
 `data_gen.py` provides `DataGen` classes that help generate test data in integration tests.
 
-### 2. Nested Data types
+### 2. Nested data types
 Complex data types (`ArrayType`, `StructType`, `MapType`) warrant extensive testing for various combinations of nesting.
 E.g.
    * `Array<primitive_type>`
@@ -364,8 +364,15 @@ Null values in input columns are a frequent source of bugs in `rapids-plugin-4-s
 and semantics, between RAPIDS `libcudf` (on which `rapids-plugin-4-spark` relies heavily), and Apache Spark. 
 
 Apart from null rows in columns of primitive types, the following conditions must be covered for nested types:
+
    * Null rows at the "top" level for `Array`/`Struct` columns.   E.g. `[ [1,2], [3], ∅, [4,5,6] ]`.
    * Non-null rows containing null elements in the child column. E.g. `[ [1,2], [3,∅], ∅, [4,∅,6] ]`.
+   * All null rows at a nested level. E.g. 
+     * All null list rows: `[ ∅, ∅, ∅, ∅ ]`
+     * All null elements within list rows: `[ [∅,∅], [∅,∅], [∅,∅], [∅,∅] ]`
+
+The `DataGen` classes in `integration_tests/src/main/python/data_gen.py` can be configured to generate null values
+for the cases mentioned above.
 
 ### 5. Empty rows in `Array` columns
 Operations on `ArrayType` columns must be tested with input columns containing non-null *empty* rows.
@@ -378,6 +385,8 @@ E.g.
     ...
 ]
 ```
+Using the `ArrayGen` data generator in `integration_tests/src/main/python/data_gen.py` will generate
+empty rows as mentioned above.
 
 ### 6. Degenerate cases with "empty" inputs
 Ensure that operations are tested with "empty" input columns (i.e. containing zero rows.)
@@ -389,6 +398,13 @@ Apart from `null` values, `FloatType` and `DoubleType` input columns must also i
    * +/- Zero
    * +/- Infinity
    * +/- NaN
+
+Note that the special values for floating point numbers might have different bit representations for the same
+equivalent values. The [Java documentation for longBitsToDouble()](https://docs.oracle.com/javase/8/docs/api/java/lang/Double.html#longBitsToDouble-long-)
+describes this with examples. Operations should be tested with multiple bit-representations for these special values.
+
+The `FloatGen` and `DoubleGen` data generators in `integration_tests/src/main/python/data_gen.py` can be configured
+to generate the special float/double values mentioned above.
 
 ### 8. Special values in timestamp columns
 Ensure date/timestamp columns include dates before the [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
