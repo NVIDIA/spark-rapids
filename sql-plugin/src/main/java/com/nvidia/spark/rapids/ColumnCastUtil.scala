@@ -56,7 +56,7 @@ object ColumnCastUtil extends Arm {
         predicate: (DataType, ColumnView) => Boolean,
         toClose: ArrayBuffer[ColumnView]): ColumnView = {
       dataType match {
-        case a:ArrayType =>
+        case a: ArrayType =>
           val child = cv.getChildColumnView(0)
           toClose += child
           val newChild = convertTypeAToTypeB(child, a.elementType, predicate, toClose)
@@ -67,7 +67,7 @@ object ColumnCastUtil extends Arm {
             toClose += newView
             newView
           }
-        case s:StructType =>
+        case s: StructType =>
           val newColumns = ArrayBuilder.make[ColumnView]()
           newColumns.sizeHint(cv.getNumChildren)
           val newColIndices = ArrayBuilder.make[Int]()

@@ -833,7 +833,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                           } else {
                             newRow.setInterval(index, interval)
                           }
-                        case d:DecimalType =>
+                        case d: DecimalType =>
                           if (row.isNullAt(index)) {
                             newRow.setDecimal(index, null, d.precision)
                           } else {
