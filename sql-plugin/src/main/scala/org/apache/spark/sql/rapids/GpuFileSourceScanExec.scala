@@ -70,7 +70,7 @@ case class GpuFileSourceScanExec(
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
-  private val isPerFileReadEnabled = relation match {
+  private val isPerFileReadEnabled = relation.fileFormat match {
     case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
     case _: OrcFileFormat => rapidsConf.isOrcPerFileReadEnabled
     case _ => true // For others, default to PERFILE reader
