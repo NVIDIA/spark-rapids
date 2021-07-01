@@ -433,7 +433,7 @@ object GpuOverrides {
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
   val CASE_MODIFICATION_INCOMPAT =
-    "it will not be always 100% compatible with CPU because the unicode standards used by" +
+    "it will not be always 100% compatible with Spark because the unicode standards used by" +
     " cuDF and JVM may differ."
   val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
