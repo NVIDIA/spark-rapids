@@ -291,9 +291,10 @@ class GpuHashAggregateIterator(
   private def concatenateAndMerge(
       batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
     withResource(batches) { _ =>
-      val concatVectors = concatenateBatches(batches)
-      withResource(computeAggregate(concatVectors, merge = true)) { mergedBatch =>
-        LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
+      withResource(concatenateBatches(batches)) { concatVectors =>
+        withResource(computeAggregate(concatVectors, merge = true)) { mergedBatch =>
+          LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
+        }
       }
     }
   }
