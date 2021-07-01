@@ -306,8 +306,8 @@ it through `asserts.py`.
 
 ## Guidelines for Testing
 
-When support for a new operator is added to `rapids-plugin-4-spark`, it is recommended that
-the following conditions be covered in its corresponding integration tests:
+When support for a new operator is added to the Rapids Accelerator for Spark, or when an existing operator is extended
+ to support more data types, it is recommended that the following conditions be covered in its corresponding integration tests:
 
 ### 1. Cover all supported data types
 Ensure that tests cover all data types supported by the added operation. An exhaustive list of data types supported in 
@@ -348,20 +348,37 @@ E.g.
 
 The `ArrayGen` and `StructGen` classes in `data_gen.py` can be configured to support arbitrary nesting.
 
-### 3. Scalar values
-Operators and expressions that support scalar operands need to be tested with scalar inputs, of all 
+### 3. Literal (i.e. Scalar) values
+Operators and expressions that support literal operands need to be tested with literal inputs, of all 
 supported types from 1 and 2, above. 
 For instance, `SUM()` supports numeric columns (e.g. `SUM(a + b)`), or scalars (e.g. `SUM(20)`).
 Similarly, `COUNT()` supports the following:
    * Columns: E.g. `COUNT(a)` to count non-null rows for column `a`
    * Scalars: E.g. `COUNT(1)` to count all rows (including nulls)
    * `*`: E.g. `COUNT(*)`, functionally equivalent to `COUNT(1)`
-It is advised that tests be added for all applicable scalar types, for an operator.
+It is advised that tests be added for all applicable literal types, for an operator.
+     
+Note that for most operations, if all inputs are literal values, the Spark Catalyst optimizer will evaluate
+the expression during the logical planning phase of query compilation, via 
+[Constant Folding](https://jaceklaskowski.gitbooks.io/mastering-spark-sql/content/spark-sql-Optimizer-ConstantFolding.html)
+E.g. Consider this query:
+```sql
+SELECT SUM(1+2+3) FROM ...
+```
+The expression `1+2+3` will not be visible to the Rapids Accelerator for Apache Spark, because it will be evaluated
+at query compile time, before the Rapids Accelerator is invoked. Thus, adding multiple combinations of literal inputs
+need not necessarily add more test coverage.
 
-### 4. Null rows
-Ensure that the test data accommodates null values for input columns.
-Null values in input columns are a frequent source of bugs in `rapids-plugin-4-spark`, because of mismatches in null-handling
-and semantics, between RAPIDS `libcudf` (on which `rapids-plugin-4-spark` relies heavily), and Apache Spark. 
+### 4. Null values
+Ensure that the test data accommodates null values for input columns. This includes null values in columns
+and in literal inputs.
+
+Null values in input columns are a frequent source of bugs in the Rapids Accelerator for Spark, 
+because of mismatches in null-handling and semantics, between RAPIDS `libcudf` (on which 
+the Rapids Accelerator relies heavily), and Apache Spark. 
+
+Tests for aggregations (including group-by, reductions, and window aggregations) should cover cases where 
+some rows are null, and where *all* input rows are null.
 
 Apart from null rows in columns of primitive types, the following conditions must be covered for nested types:
 
@@ -405,6 +422,10 @@ describes this with examples. Operations should be tested with multiple bit-repr
 
 The `FloatGen` and `DoubleGen` data generators in `integration_tests/src/main/python/data_gen.py` can be configured
 to generate the special float/double values mentioned above.
+
+Note that floating point values generated on the GPU might not match those from the CPU exactly. Any differences will
+likely manifest in the least significant digits of the mantissa. The `@approximate_float` test annotation may be 
+used to mark tests to use "approximate" comparisons for floating point values.
 
 ### 8. Special values in timestamp columns
 Ensure date/timestamp columns include dates before the [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
