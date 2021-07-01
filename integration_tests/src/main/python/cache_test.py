@@ -214,23 +214,21 @@ def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
 
     assert_gpu_and_cpu_are_equal_collect(read_parquet_cached(data_path_gpu), conf)
 
-
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
                                       decimal_struct_gen]+ all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
     def func(spark):
-        df = binary_op_df(spark, data_gen)
+        df = unary_op_df(spark, data_gen)
         df.cache().count()
         enabled = spark.conf.get("spark.rapids.sql.enabled")
         spark.conf.set("spark.rapids.sql.enabled", not enabled)
 
-        return df.selectExpr("a", "b")
+        return df.selectExpr("a")
 
     conf = enable_vectorized_conf.copy()
     conf.update(allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(func, conf)
-
 
 @pytest.mark.parametrize('enable_vectorized', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
