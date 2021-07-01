@@ -156,7 +156,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.orcDebugDumpPrefix
   private val numThreads = rapidsConf.orcMultiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
-  private val fileHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
+  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
   /**
    * An abstract method to indicate if coalescing reading can be used
    */
@@ -178,7 +178,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       PartitionReader[ColumnarBatch] = {
     new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
-      debugDumpPrefix, filters, fileHandler, metrics)
+      debugDumpPrefix, filters, filterHandler, metrics)
   }
 
   /**
@@ -193,7 +193,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     logWarning("The coalescing reading for ORC is on the way. fallback to multi-threaded")
     new MultiFileCloudOrcPartitionReader(conf, files, dataSchema, readDataSchema, partitionSchema,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, maxNumFileProcessed,
-      debugDumpPrefix, filters, fileHandler, metrics)
+      debugDumpPrefix, filters, filterHandler, metrics)
   }
 
   /**
@@ -1109,7 +1109,7 @@ private case class GpuOrcFileFilterHandler(
  *                            submitted to threadpool
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated ORC data or null
  * @param filters filters passed into the filterHandler
- * @param fileHandler used to filter the ORC stripes
+ * @param filterHandler used to filter the ORC stripes
  * @param execMetrics the metrics
  */
 class MultiFileCloudOrcPartitionReader(
@@ -1124,7 +1124,7 @@ class MultiFileCloudOrcPartitionReader(
     maxNumFileProcessed: Int,
     debugDumpPrefix: String,
     filters: Array[Filter],
-    fileHandler: GpuOrcFileFilterHandler,
+    filterHandler: GpuOrcFileFilterHandler,
     execMetrics: Map[String, GpuMetric])
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics) with MultiFileReaderFunctions with OrcPartitionReaderBase {
@@ -1147,7 +1147,7 @@ class MultiFileCloudOrcPartitionReader(
       val startingBytesRead = fileSystemBytesRead()
 
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
-      val ctx = fileHandler.filterStripes(partFile, dataSchema, readDataSchema, partitionSchema)
+      val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema, partitionSchema)
       try {
         if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead

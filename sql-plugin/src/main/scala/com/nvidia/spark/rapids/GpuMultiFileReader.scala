@@ -155,8 +155,9 @@ abstract class MultiFilePartitionReaderFactoryBase(
    * @param conf configuration
    * @return cloud reading PartitionReader
    */
-  def buildBaseColumnarReaderForCloud(files: Array[PartitionedFile], conf: Configuration):
-    PartitionReader[ColumnarBatch]
+  def buildBaseColumnarReaderForCloud(
+      files: Array[PartitionedFile],
+      conf: Configuration): PartitionReader[ColumnarBatch]
 
   /**
    * Build the PartitionReader for coalescing reading
@@ -165,8 +166,9 @@ abstract class MultiFilePartitionReaderFactoryBase(
    * @param conf  the configuration
    * @return coalescing reading PartitionReader
    */
-  def buildBaseColumnarReaderForCoalescing(files: Array[PartitionedFile], conf: Configuration):
-    PartitionReader[ColumnarBatch]
+  def buildBaseColumnarReaderForCoalescing(
+      files: Array[PartitionedFile],
+      conf: Configuration): PartitionReader[ColumnarBatch]
 
   /**
    * File format short name used for logging and other things to uniquely identity
