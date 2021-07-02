@@ -26,7 +26,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
@@ -632,4 +632,34 @@ abstract class SparkBaseShims extends SparkShims {
   override def hasAliasQuoteFix: Boolean = false
 
   override def hasCastFloatTimestampUpcast: Boolean = false
+
+  override def injectRules(extensions: SparkSessionExtensions): Unit = {
+    extensions.injectColumnar(_ => ColumnarOverrideRules())
+    extensions.injectQueryStagePrepRule(_ => GpuQueryStagePrepOverrides())
+  }
+
+  override def createGpuRowToColumnarTransition(
+      optimizedChild: SparkPlan,
+      r2c: RowToColumnarExec,
+      goal: CoalesceSizeGoal): SparkPlan = {
+    val transition = optimizedChild match {
+      case GpuColumnarToRowExec(child, _) =>
+        // avoid a redundant GpuRowToColumnarExec(GpuColumnarToRowExec((_))
+        GpuRowToColumnarExec(child, goal)
+      case _ =>
+        GpuRowToColumnarExec(optimizedChild, goal)
+    }
+    r2c.child match {
+      case _: AdaptiveSparkPlanExec =>
+        // When the input is an adaptive plan we do not get to see the GPU version until
+        // the plan is executed and sometimes the plan will have a GpuColumnarToRowExec as the
+        // final operator and we can bypass this to keep the data columnar by inserting
+        // the [[AvoidAdaptiveTransitionToRow]] operator here
+        AvoidAdaptiveTransitionToRow(transition)
+      case _ =>
+        transition
+    }
+  }
+
+  override def isAdaptiveFinalPlanColumnar(plan: AdaptiveSparkPlanExec): Boolean = false
 }

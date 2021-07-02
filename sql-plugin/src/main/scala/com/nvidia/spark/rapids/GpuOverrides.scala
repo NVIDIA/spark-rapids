@@ -3094,14 +3094,31 @@ object GpuOverrides {
   }
 
 }
-/** Tag the initial plan when AQE is enabled */
+/**
+ * This optimizer rule is specific to AQE and is applied once against the initial query plan
+ * and then once again per query stage. This rule does not return a new plan but instead tags the
+ * plan with information that can be referenced later on.
+ */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(plan: SparkPlan): SparkPlan = {
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
     GpuOverrides().apply(plan)
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
+  }
+}
+
+/**
+ * This optimizer rule is specific to AQE and is applied to the final query stage after
+ * the [[GpuQueryStagePrepOverrides]] rules have been applied. This rule will remove the
+ * root [[GpuColumnarToRowExec]] transition if it exists, leaving the final stage with
+ * columnar output.
+ */
+case class GpuFinalStagePrepOverrides() extends Rule[SparkPlan] with Logging {
+  override def apply(plan: SparkPlan): SparkPlan = plan match {
+    case GpuColumnarToRowExec(child, _) => child
+    case _ => plan
   }
 }
 

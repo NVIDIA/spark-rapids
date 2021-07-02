@@ -28,6 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, Speciali
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -833,26 +834,33 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
-    val rowBased = child.execute()
 
-    // cache in a local to avoid serializing the plan
-    val localSchema = schema
+    child match {
+      case a: AdaptiveSparkPlanExec
+          if ShimLoader.getSparkShims.isAdaptiveFinalPlanColumnar(a) =>
+        a.executeColumnar()
+      case _ =>
+        val rowBased = child.execute()
 
-    // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
-    // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
-    // So, we are going to be cautious and start with that until we have tested it more.
-    if ((1 until 100).contains(output.length) &&
-        CudfRowTransitions.areAllSupported(output)) {
-      val localOutput = output
-      rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
-        rowIter.asInstanceOf[Iterator[UnsafeRow]],
-        localOutput.toArray, localGoal, semaphoreWaitTime, gpuOpTime, totalTime,
-        numInputRows, numOutputRows, numOutputBatches))
-    } else {
-      val converters = new GpuRowToColumnConverter(localSchema)
-      rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, converters,
-        totalTime, numInputRows, numOutputRows, numOutputBatches, semaphoreWaitTime, gpuOpTime))
+        // cache in a local to avoid serializing the plan
+        val localSchema = schema
+
+        // The cudf kernel only supports up to 1.5 KB per row which means at most 184 double/long
+        // values. Spark by default limits codegen to 100 fields "spark.sql.codegen.maxFields".
+        // So, we are going to be cautious and start with that until we have tested it more.
+        if ((1 until 100).contains(output.length) &&
+          CudfRowTransitions.areAllSupported(output)) {
+          val localOutput = output
+          rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
+            rowIter.asInstanceOf[Iterator[UnsafeRow]],
+            localOutput.toArray, localGoal, semaphoreWaitTime, gpuOpTime, totalTime,
+            numInputRows, numOutputRows, numOutputBatches))
+        } else {
+          val converters = new GpuRowToColumnConverter(localSchema)
+          rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
+            localSchema, localGoal, converters,
+            totalTime, numInputRows, numOutputRows, numOutputBatches, semaphoreWaitTime, gpuOpTime))
+        }
     }
   }
 }

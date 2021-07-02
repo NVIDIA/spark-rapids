@@ -64,8 +64,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
     val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
       s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
-    extensions.injectColumnar(_ => ColumnarOverrideRules())
-    extensions.injectQueryStagePrepRule(_ => GpuQueryStagePrepOverrides())
+    ShimLoader.getSparkShims.injectRules(extensions)
   }
 }
 
