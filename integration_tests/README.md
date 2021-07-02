@@ -311,7 +311,7 @@ When support for a new operator is added to the Rapids Accelerator for Spark, or
 
 ### 1. Cover all supported data types
 Ensure that tests cover all data types supported by the added operation. An exhaustive list of data types supported in 
-Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes.html). These include:
+Apache Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes.html). These include:
    * Numeric Types 
      * `ByteType` 
      * `ShortType` 
@@ -335,6 +335,13 @@ Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes
      * `MapType`
 
 `data_gen.py` provides `DataGen` classes that help generate test data in integration tests.
+
+The `assert_gpu_and_cpu_are_equal_collect()` function from `asserts.py` may be used to compare that an operator in 
+the Rapids Accelerator produces the same results as Apache Spark, for a test query.
+
+For data types that are not currently supported for an operator in the Rapids Accelerator,
+the `assert_gpu_fallback_collect()` function from `asserts.py` can be used to verify that the query falls back
+on the CPU operator from Apache Spark, and produces the right results.
 
 ### 2. Nested data types
 Complex data types (`ArrayType`, `StructType`, `MapType`) warrant extensive testing for various combinations of nesting.
@@ -423,11 +430,22 @@ describes this with examples. Operations should be tested with multiple bit-repr
 The `FloatGen` and `DoubleGen` data generators in `integration_tests/src/main/python/data_gen.py` can be configured
 to generate the special float/double values mentioned above.
 
-Note that floating point values generated on the GPU might not match those from the CPU exactly. Any differences will
-likely manifest in the least significant digits of the mantissa. The `@approximate_float` test annotation may be 
-used to mark tests to use "approximate" comparisons for floating point values.
+For most basic floating-point operations like addition, subtraction, multiplication, and division the plugin will 
+produce a bit for bit identical result as Spark does. For some other functions (like `sin`, `cos`, etc.), the output may
+differ slightly, but remain within the rounding error inherent in floating-point calculations. Certain aggregations
+might compound those differences. In those cases, the `@approximate_float` test annotation may be used to mark tests 
+to use "approximate" comparisons for floating-point values.
+
+Refer to the "Floating Point" section of [compatibility.md](../docs/compatibility.md) for details.
 
 ### 8. Special values in timestamp columns
 Ensure date/timestamp columns include dates before the [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
-It is advised that `DateGen` class from `data_gen.py` be used to generate valid (proleptic Gregorian calendar)
-dates when testing operators that work on dates.
+
+Apache Spark supports dates/timetamps between `0001-01-01 00:00:00.000000` and `9999-12-31 23:59:59.999999`, but at 
+values close to the minimum value, the format used in Apache Spark causes rounding errors. To avoid such problems,
+it is recommended that the minimum value used in a test not actually equal `0001-01-01`. For instance, `0001-01-03` is
+acceptable.
+
+It is advised that `DateGen` and `TimestampGen` classes from `data_gen.py` be used to generate valid 
+(proleptic Gregorian calendar) dates when testing operators that work on dates. This data generator respects 
+the valid boundaries for dates and timestamps.
