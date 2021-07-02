@@ -1249,7 +1249,9 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
-      }).incompat(CASE_MODIFICATION_INCOMPAT),
+      }).incompat("in some cases Unicode characters change byte width when changing the case." +
+      " The GPU string conversion does not support these characters for capitalize now. For a full" +
+      " list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132."),
     expr[Log](
       "Natural log",
       ExprChecks.mathUnary,
