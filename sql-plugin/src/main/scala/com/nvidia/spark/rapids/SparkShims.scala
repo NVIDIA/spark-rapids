@@ -225,6 +225,8 @@ trait SparkShims {
 
   def injectRules(extensions: SparkSessionExtensions)
 
+  def adaptivePlanToRow(p: AdaptiveSparkPlanExec): SparkPlan
+
   def createGpuRowToColumnarTransition(
     child: SparkPlan,
     r2c: RowToColumnarExec,

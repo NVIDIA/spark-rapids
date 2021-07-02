@@ -145,7 +145,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // will see GpuRowToColumnar(GpuColumnarToRow(adaptivePlan)) and the
     // redundant transition will be optimized out
     case p: AdaptiveSparkPlanExec =>
-      GpuColumnarToRowExec(p)
+      ShimLoader.getSparkShims.adaptivePlanToRow(p)
 
     case p =>
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))

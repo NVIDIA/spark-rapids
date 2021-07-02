@@ -638,6 +638,12 @@ abstract class SparkBaseShims extends SparkShims {
     extensions.injectQueryStagePrepRule(_ => GpuQueryStagePrepOverrides())
   }
 
+  override def adaptivePlanToRow(plan: AdaptiveSparkPlanExec): SparkPlan = {
+    // no action require here since we have a GpuColumnarToRowExec inside
+    // the adaptive plan
+    plan
+  }
+
   override def createGpuRowToColumnarTransition(
       optimizedChild: SparkPlan,
       r2c: RowToColumnarExec,

@@ -41,6 +41,9 @@ class Spark313Shims extends Spark312Shims {
     extensions.injectFinalStagePrepRule(_ => GpuFinalStagePrepOverrides())
   }
 
+  override def adaptivePlanToRow(plan: AdaptiveSparkPlanExec): SparkPlan =
+    GpuColumnarToRowExec(plan)
+
   override def createGpuRowToColumnarTransition(
       optimizedChild: SparkPlan,
       r2c: RowToColumnarExec,
