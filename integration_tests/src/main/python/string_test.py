@@ -325,6 +325,14 @@ def test_initcap():
             lambda spark: unary_op_df(spark, gen).select(
                 f.initcap(f.col('a'))))
 
+@incompat
+@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/8644')
+def test_initcap_width_change():
+    gen = mk_str_gen('ŉ([aAbB13ŉȺéŉŸ]{0,5}){1,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).select(
+                f.initcap(f.col('a'))))
+
 @pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/119')
 def test_like_null_xfail():
     gen = mk_str_gen('.{0,3}a[|b*.$\r\n]{0,2}c.{0,3}')\
