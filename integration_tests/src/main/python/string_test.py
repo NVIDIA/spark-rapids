@@ -320,15 +320,15 @@ def test_initcap():
     # the charicter set to something more reasonable
     # upper and lower should cover the corner cases, this is mostly to
     # see if there are issues with spaces
-    gen = mk_str_gen('([aAbB1357_@%-]{0,12}[ \r\n\t]{1,2}){1,5}')
+    gen = mk_str_gen('([aAbB1357ȺéŸ_@%-]{0,15}[ \r\n\t]{1,2}){1,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.initcap(f.col('a'))))
 
 @incompat
-@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/8644')
-def test_initcap_width_change():
-    gen = mk_str_gen('ŉ([aAbB13ŉȺéŉŸ]{0,5}){1,5}')
+@pytest.mark.xfail(reason='Spark initcap will not convert ŉ to ʼN')
+def test_initcap_special_chars():
+    gen = mk_str_gen('ŉ([aAbB13ȺéŸ]{0,5}){1,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.initcap(f.col('a'))))
