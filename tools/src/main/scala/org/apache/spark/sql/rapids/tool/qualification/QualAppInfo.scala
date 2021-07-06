@@ -132,15 +132,26 @@ class QualAppInfo(
       mapSup: String, nullSup: String, shortSup: String,
       stringSup: String, structSup: String, timestampSup: String, udtSup:String)
 
+  private def getAllFileFormats: String = {
+    dataSourceInfo.map(_.format).toSet.mkString(",")
+  }
+
+  private def getAllFileFormatsTypes: String = {
+    dataSourceInfo.flatMap(_.schema.split(",")).toSet.mkString(",")
+  }
+
   private def checkDataTypesSupported: Boolean = {
     logWarning("checking datatypes supported!")
+    // get the types the Rapids Plugin supports
     val file = "supportedDataSource.csv"
-    // val supportedSources = new File(getClass.getClassLoader.getResource(file).getFile)
     val source = Source.fromResource(file)
-    val dotFileStr = source.getLines().toSeq
+    val dotFileStr = try {
+      source.getLines().toSeq
+    } finally {
+      source.close()
+    }
+
     val allSupportedsources = HashMap.empty[String, Map[String, String]]
-    // Format,Direction,ARRAY,BINARY,BOOLEAN,BYTE,CALENDAR,DATE,DECIMAL,DOUBLE,FLOAT,
-    // INT,LONG,MAP,NULL,SHORT,STRING,STRUCT,TIMESTAMP,UDT
     val headers = dotFileStr.head.split(",").map(_.toLowerCase)
 
     dotFileStr.tail.foreach { line =>
@@ -154,9 +165,6 @@ class QualAppInfo(
       allSupportedsources(supportedType) = res
     }
 
-
-
-    source.close()
     if (dataSourceInfo.nonEmpty) {
       dataSourceInfo.foreach { ds =>
         logWarning("data source is: " + ds.format + " rest: "  + ds)
@@ -177,16 +185,38 @@ class QualAppInfo(
             }
             if (allSupportedsources(ds.format.toLowerCase).contains(realType)) {
               val supString = allSupportedsources(ds.format.toLowerCase).getOrElse(realType, "")
-              // S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
               logWarning(s"type is : $typeRead supported is: $supString")
               supString match {
-                case "S" => logWarning("supported")
-                case "S*" => logWarning("s*")
-                case "PS" => logWarning("s*")
-                case "PS*" => logWarning("s*")
-                case "NS" => logWarning("ns")
-                case "NA" => logWarning("na")
-                case unknown => logWarning(s"unknown type $unknown for type: $typeRead")
+                case "S" =>
+                  logWarning("supported")
+                  // score = 1
+                case "S*" =>
+                  logWarning("s*")
+                  // decimals or timestamps
+                  // since don't know be conservative and
+                  if (typeRead.equals("decimal")) {
+                    // score = 0
+                  } else {
+                    // timestamps
+                    // score = 0.5
+                  }
+                case "PS" =>
+                  logWarning("ps")
+                  // score = 0.5
+                case "PS*" =>
+                  logWarning("ps*")
+                  // parquet - PS* (missing nested BINARY, ARRAY, MAP, UDT)
+                  // score = 0.5
+                case "NS" =>
+                  logWarning("ns")
+                  // score = 0
+                case "NA" =>
+                  logWarning("na")
+                // score = 0
+                case unknown =>
+                  logWarning(s"unknown type $unknown for type: $typeRead")
+                // score = 0
+
               }
             } else {
               logWarning(s"type $realType not supported")
@@ -215,7 +245,7 @@ class QualAppInfo(
       }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
         sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated,
-        sqlDurProblem, failedIds)
+        sqlDurProblem, failedIds, getAllFileFormats, getAllFileFormatsTypes)
     }
   }
 
@@ -270,7 +300,9 @@ case class QualificationSummaryInfo(
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long,
-    failedSQLIds: String)
+    failedSQLIds: String,
+    fileFormats: String,
+    fileFormatTypes: String)
 
 object QualAppInfo extends Logging {
   def createApp(
