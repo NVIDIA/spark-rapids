@@ -30,8 +30,12 @@ object ToolUtils extends Logging {
     df.showString(numRows, 0)
   }
 
-  // get percent to 2 decimal places
   def calculatePercent(first: Long, total: Long): Double = {
+    calculatePercent(first.toDouble, total)
+  }
+
+  // get percent to 2 decimal places
+  def calculatePercent(first: Double, total: Long): Double = {
     val firstDec = BigDecimal.decimal(first)
     val totalDec = BigDecimal.decimal(total)
     if (firstDec == 0 || totalDec == 0) {

@@ -156,16 +156,17 @@ class QualAppInfo(
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
-      val readFormatScore = dataSourceInfo.map { ds =>
+      val readFormatSum = dataSourceInfo.map { ds =>
         pluginTypeChecker.checkReadDataTypesSupported(ds.format, ds.schema)
-      }
+      }.sum
+      val readFormatScore = ToolUtils.calculatePercent(readFormatSum, dataSourceInfo.size)
       logWarning("read formats scores: " + readFormatScore)
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
         sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated,
-        sqlDurProblem, failedIds, readFormatScore.sum, getAllReadFileFormats)
+        sqlDurProblem, failedIds, readFormatScore, getAllReadFileFormats)
     }
   }
 
