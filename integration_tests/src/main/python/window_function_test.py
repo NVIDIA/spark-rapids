@@ -328,6 +328,7 @@ def test_window_running(b_gen, c_gen, batch_size):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
+
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
@@ -376,11 +377,50 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
+struct_with_arrays = StructGen(children=[
+                       ['child_int', int_gen],
+                       ['child_time', date_gen],
+                       ['child_string', string_gen],
+                       ['child_array', ArrayGen(int_gen, max_length=10)]])
+
+lead_lag_struct_with_arrays_gen = [struct_with_arrays,
+                                   ArrayGen(struct_with_arrays, max_length=10)]
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('struct_gen', lead_lag_struct_with_arrays_gen, ids=idfn)
+@pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
+def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.hasNans': False}
+    data_gen = [
+        ('a', RepeatSeqGen(a_b_gen, length=20)),
+        ('b', IntegerGen(nullable=False, special_cases=[])),
+        ('c', struct_gen)]
+    # By default for many operations a range of unbounded to unbounded is used
+    # This will not work until https://github.com/NVIDIA/spark-rapids/issues/216
+    # is fixed.
+
+    # Ordering needs to include c because with nulls and especially on booleans
+    # it is possible to get a different ordering when it is ambiguous.
+    base_window_spec = Window.partitionBy('a').orderBy('b')
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=2048) \
+            .withColumn('lead_5_c', f.lead('c', 5).over(base_window_spec)) \
+            .withColumn('lag_1_c', f.lag('c', 1).over(base_window_spec))
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+
+
 lead_lag_array_data_gens =\
     [ArrayGen(sub_gen, max_length=10) for sub_gen in lead_lag_data_gens] + \
     [ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in lead_lag_data_gens] + \
     [ArrayGen(ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10), max_length=10) \
         for sub_gen in lead_lag_data_gens]
+
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
