@@ -145,24 +145,22 @@ class QualAppInfo(
     // get the types the Rapids Plugin supports
     val file = "supportedDataSource.csv"
     val source = Source.fromResource(file)
-    val dotFileStr = try {
-      source.getLines().toSeq
+    val allSupportedsources = HashMap.empty[String, Map[String, String]]
+    try {
+      val dotFileStr = source.getLines().toSeq
+      val headers = dotFileStr.head.split(",").map(_.toLowerCase)
+      dotFileStr.tail.foreach { line =>
+        val cols = line.split(",")
+        if (headers.size != cols.size) {
+          logError("somethign went wrong, header is not same size as cols")
+        }
+        val supportedType = cols(0).toLowerCase
+        val direction = cols(1)
+        val res = headers.drop(2).zip(cols.drop(2)).toMap
+        allSupportedsources(supportedType) = res
+      }
     } finally {
       source.close()
-    }
-
-    val allSupportedsources = HashMap.empty[String, Map[String, String]]
-    val headers = dotFileStr.head.split(",").map(_.toLowerCase)
-
-    dotFileStr.tail.foreach { line =>
-      val cols = line.split(",")
-      if (headers.size != cols.size) {
-        logError("somethign went wrong, header is not same size as cols")
-      }
-      val supportedType = cols(0).toLowerCase
-      val direction = cols(1)
-      val res = headers.drop(2).zip(cols.drop(2)).toMap
-      allSupportedsources(supportedType) = res
     }
 
     if (dataSourceInfo.nonEmpty) {
