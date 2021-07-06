@@ -319,80 +319,32 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
-    queryUsesInputFile: Boolean) extends PartitionReaderFactory with Arm with Logging {
+    queryUsesInputFile: Boolean)
+  extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf) {
+
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
-  private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
-  private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
   private val numThreads = rapidsConf.parquetMultiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
-  private val canUseMultiThreadReader = rapidsConf.isParquetMultiThreadReadEnabled
+
+  private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
+
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
   // and we don't know which file is associated with each row.
-  private val canUseCoalesceFilesReader =
+  override val canUseCoalesceFilesReader: Boolean =
     rapidsConf.isParquetCoalesceFileReadEnabled && !queryUsesInputFile
 
-  private val configCloudSchemes = rapidsConf.getCloudSchemes
-  private val CLOUD_SCHEMES = HashSet("dbfs", "s3", "s3a", "s3n", "wasbs", "gs")
-  private val allCloudSchemes = CLOUD_SCHEMES ++ configCloudSchemes.getOrElse(Seq.empty)
+  override val canUseMultiThreadReader: Boolean = rapidsConf.isParquetMultiThreadReadEnabled
 
-  private val filterHandler = new GpuParquetFileFilterHandler(sqlConf)
-
-  override def supportColumnarReads(partition: InputPartition): Boolean = true
-
-  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
-    throw new IllegalStateException("GPU column parser called to read rows")
-  }
-
-  private def resolveURI(path: String): URI = {
-    try {
-      val uri = new URI(path)
-      if (uri.getScheme() != null) {
-        return uri
-      }
-    } catch {
-      case _: URISyntaxException =>
-    }
-    new File(path).getAbsoluteFile().toURI()
-  }
-
-  // We expect the filePath here to always have a scheme on it,
-  // if it doesn't we try using the local filesystem. If that
-  // doesn't work for some reason user would need to configure
-  // it directly.
-  private def isCloudFileSystem(filePath: String): Boolean = {
-    val uri = resolveURI(filePath)
-    val scheme = uri.getScheme
-    if (allCloudSchemes.contains(scheme)) {
-      true
-    } else {
-      false
-    }
-  }
-
-  private def arePathsInCloud(filePaths: Array[String]): Boolean = {
-    filePaths.exists(isCloudFileSystem)
-  }
-
-  override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
-    assert(partition.isInstanceOf[FilePartition])
-    val filePartition = partition.asInstanceOf[FilePartition]
-    val files = filePartition.files
-    val filePaths = files.map(_.filePath)
-    val conf = broadcastedConf.value.value
-    if (!canUseCoalesceFilesReader || (canUseMultiThreadReader && arePathsInCloud(filePaths))) {
-      logInfo("Using the multi-threaded multi-file parquet reader, files: " +
-        s"${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
-      buildBaseColumnarParquetReaderForCloud(files, conf)
-    } else {
-      logInfo("Using the coalesce multi-file parquet reader, files: " +
-        s"${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
-      buildBaseColumnarParquetReader(files)
-    }
-  }
-
-  private def buildBaseColumnarParquetReaderForCloud(
+  /**
+   * Build the PartitionReader for cloud reading
+   *
+   * @param files files to be read
+   * @param conf  configuration
+   * @return cloud reading PartitionReader
+   */
+  override def buildBaseColumnarReaderForCloud(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     new MultiFileCloudParquetPartitionReader(conf, files,
@@ -401,9 +353,16 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       numThreads, maxNumFileProcessed, filterHandler, filters)
   }
 
-  private def buildBaseColumnarParquetReader(
-      files: Array[PartitionedFile]): PartitionReader[ColumnarBatch] = {
-    val conf = broadcastedConf.value.value
+  /**
+   * Build the PartitionReader for coalescing reading
+   *
+   * @param files files to be read
+   * @param conf  the configuration
+   * @return coalescing reading PartitionReader
+   */
+  override def buildBaseColumnarReaderForCoalescing(
+      files: Array[PartitionedFile],
+      conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     files.map { file =>
       val singleFileInfo = filterHandler.filterBlocks(file, conf, filters, readDataSchema)
@@ -420,6 +379,15 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
       partitionSchema, numThreads)
   }
+
+  /**
+   * File format short name used for logging and other things to uniquely identity
+   * which file format is being used.
+   *
+   * @return the file format short name
+   */
+  override final def getFileFormatShortName: String = "Parquet"
+
 }
 
 case class GpuParquetPartitionReaderFactory(
