@@ -129,6 +129,7 @@ object ProfileMain extends Logging {
         compare.findMatchingStages()
         compare.compareJobInfo()
         compare.compareRapidsProperties()
+        // TODO - add in datasource info
       } else {
         val collect = new CollectInformation(apps, Some(textFileWriter))
         textFileWriter.write("### A. Information Collected ###")
