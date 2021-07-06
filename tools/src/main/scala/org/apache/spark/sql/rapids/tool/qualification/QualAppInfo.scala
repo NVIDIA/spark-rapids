@@ -153,6 +153,9 @@ class QualAppInfo(
       val res = headers.drop(2).zip(cols.drop(2)).toMap
       allSupportedsources(supportedType) = res
     }
+
+
+
     source.close()
     if (dataSourceInfo.nonEmpty) {
       dataSourceInfo.foreach { ds =>
@@ -161,17 +164,32 @@ class QualAppInfo(
           logWarning(s"data source format ${ds.format} is supported by plugin")
           val readSchema = ds.schema.split(",").map(_.toLowerCase)
           readSchema.foreach { typeRead =>
-            val supString = allSupportedsources(ds.format.toLowerCase).getOrElse(typeRead, "")
-            // S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
-            logWarning(s"type is : $typeRead supported is: $supString")
-            supString match {
-              case "S" => logWarning("supported")
-              case "S*" => logWarning("s*")
-              case "PS" => logWarning("s*")
-              case "PS*" => logWarning("s*")
-              case "NS" => logWarning("NS")
-              case "NA" => logWarning("NA")
-              case unknown => logWarning(s"unknown supported $unknown for type: $typeRead" )
+            // TODO - need to add array/map/etc
+            val realType = typeRead match {
+              case "bigint" => "long"
+              case "smallint" => "short"
+              case "integer" => "int"
+              case "tinyint" => "byte"
+              case "real" => "float"
+              case "dec" | "numeric" => "decimal"
+              case "interval" => "calendar"
+              case other => other
+            }
+            if (allSupportedsources(ds.format.toLowerCase).contains(realType)) {
+              val supString = allSupportedsources(ds.format.toLowerCase).getOrElse(realType, "")
+              // S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
+              logWarning(s"type is : $typeRead supported is: $supString")
+              supString match {
+                case "S" => logWarning("supported")
+                case "S*" => logWarning("s*")
+                case "PS" => logWarning("s*")
+                case "PS*" => logWarning("s*")
+                case "NS" => logWarning("ns")
+                case "NA" => logWarning("na")
+                case unknown => logWarning(s"unknown type $unknown for type: $typeRead")
+              }
+            } else {
+              logWarning(s"type $realType not supported")
             }
           }
         } else {

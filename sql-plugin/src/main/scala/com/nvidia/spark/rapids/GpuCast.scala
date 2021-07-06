@@ -399,7 +399,7 @@ case class GpuCast(
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
-            case ByteType | ShortType | IntegerType | LongType =>
+            case ByteType | ShortType  | IntegerType | LongType =>
               castStringToInts(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
