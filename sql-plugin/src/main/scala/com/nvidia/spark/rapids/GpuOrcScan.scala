@@ -388,6 +388,7 @@ class GpuOrcPartitionReader(
     with ScanWithMetrics with Arm {
   private var batch: Option[ColumnarBatch] = None
   private var maxDeviceMemory: Long = 0
+  private var isFirstBatch = true
 
   metrics = execMetrics
 
@@ -413,9 +414,14 @@ class GpuOrcPartitionReader(
     } else {
       metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
     batch.isDefined
   }
 
