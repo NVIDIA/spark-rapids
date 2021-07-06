@@ -137,16 +137,22 @@ class QualAppInfo(
     val file = "supportedDataSource.csv"
     // val supportedSources = new File(getClass.getClassLoader.getResource(file).getFile)
     val source = Source.fromResource(file)
-    val dotFileStr = source.getLines()
-    val allSupportedsources = HashMap.empty[String, HashMap[String, String]]
+    val dotFileStr = source.getLines().toSeq
+    val allSupportedsources = HashMap.empty[String, Map[String, String]]
     // Format,Direction,ARRAY,BINARY,BOOLEAN,BYTE,CALENDAR,DATE,DECIMAL,DOUBLE,FLOAT,
     // INT,LONG,MAP,NULL,SHORT,STRING,STRUCT,TIMESTAMP,UDT
-    dotFileStr.foreach { line =>
+    val headers = dotFileStr.head.split(",")
+
+    dotFileStr.tail.foreach { line =>
       val cols = line.split(",")
+      if (headers.size != cols.size) {
+        logError("somethign went wrong, header is not same size as cols")
+      }
       val supportedType = cols(0).toLowerCase
       val direction = cols(1)
+      val res = headers.drop(2).zip(cols.drop(2)).toMap
       val st = HashMap[String, String]()
-      st("array") = cols(2)
+      st(headers(2)) = cols(2)
       st("binary") = cols(3)
       st("boolean") = cols(4)
       st("byte") = cols(5)
@@ -165,7 +171,7 @@ class QualAppInfo(
       st("timestamp") = cols(18)
       st("udt") = cols(19)
 
-      allSupportedsources(supportedType) = st
+      allSupportedsources(supportedType) = res
     }
     source.close()
     if (dataSourceInfo.nonEmpty) {
