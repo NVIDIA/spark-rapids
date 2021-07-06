@@ -16,8 +16,10 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
-import scala.collection.Map
+import java.io.File
+
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
+import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling._
@@ -26,7 +28,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualAppInfo(
@@ -122,11 +124,70 @@ class QualAppInfo(
     ToolUtils.calculatePercent(totalCpuTime, totalRunTime)
   }
 
+  case class SupportedTypesDS(format: String, direction: String,
+      arraySup: String, binarySup: String,
+      booleanSup: String, byteSup: String, calSup: String, dateSup: String,
+      decimalSup: String, doubleSup: String,
+      floatSup: String, intSup: String, longSup: String,
+      mapSup: String, nullSup: String, shortSup: String,
+      stringSup: String, structSup: String, timestampSup: String, udtSup:String)
+
   private def checkDataTypesSupported: Boolean = {
-    logWarning("chekcing datatypes supported!")
+    logWarning("checking datatypes supported!")
+    val file = "supportedDataSource.csv"
+    val supportedSources = new File(getClass.getClassLoader.getResource(file).getFile)
+    val source = Source.fromFile(supportedSources)
+    val dotFileStr = source.getLines()
+    val allSupportedsources = HashMap.empty[String, HashMap[String, String]]
+    // Format,Direction,ARRAY,BINARY,BOOLEAN,BYTE,CALENDAR,DATE,DECIMAL,DOUBLE,FLOAT,
+    // INT,LONG,MAP,NULL,SHORT,STRING,STRUCT,TIMESTAMP,UDT
+    dotFileStr.foreach { line =>
+      val cols = line.split(",")
+      val supportedType = cols(0)
+      val direction = cols(1)
+      val st = HashMap[String, String]()
+      st.put("array") = cols(2)
+      st.put("binary") = cols(3)
+      st.put("boolean") = cols(4)
+      st.put("byte") = cols(5)
+      st.put("calendar") = cols(6)
+      st.put("date") = cols(7)
+      st.put("decimal") = cols(8)
+      st.put("double") = cols(9)
+      st.put("float") = cols(10)
+      st.put("int") = cols(11)
+      st.put("long") = cols(12)
+      st.put("map") = cols(13)
+      st.put("null") = cols(14)
+      st.put("short") = cols(15)
+      st.put("string") = cols(16)
+      st.put("struct") = cols(17)
+      st.put("timestamp") = cols(18)
+      st.put("udt") = cols(19)
+
+      allSupportedsources.put(supportedType) = st
+    }
+    source.close()
     if (dataSourceInfo.nonEmpty) {
       dataSourceInfo.foreach { ds =>
         logWarning("data source is: " + ds.format + " rest: "  + ds )
+        if (allSupportedsources.contains(ds.format)) {
+          logWarning(s"data source format ${ds.format} is supported by plugin")
+          val readSchema = ds.schema.split(",")
+          readSchema.foreach { typeRead =>
+            val supString = allSupportedsources(ds.format).getOrElse(typeRead.toLowerCase, "")
+            // S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
+            supString match {
+              case "S" => logWarning("supported")
+              case "S*" => logWarning("s*")
+              case "PS" => logWarning("s*")
+              case "PS*" => logWarning("s*")
+              case "NS" => logWarning("NS")
+              case "NA" => logWarning("NA")
+
+            }
+          }
+        }
       }
     }
     true

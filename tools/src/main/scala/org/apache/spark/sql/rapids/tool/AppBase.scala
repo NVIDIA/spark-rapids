@@ -144,6 +144,7 @@ abstract class AppBase(
       val allTypes = AppBase.parseSchemaString(Some(readSchema)).values.toSet
       val schemaStr = allTypes.mkString(",")
 
+      // TODO - qualification may just check right here instead of recording!
       dataSourceInfo += DataSourceCase(sqlID,
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
@@ -208,6 +209,7 @@ abstract class AppBase(
       val allTypes = AppBase.parseSchemaString(Some(schema)).values.toSet
       val schemaStr = allTypes.mkString(",")
 
+      // TODO - qualification may just check right here instead of recording!
       dataSourceInfo += DataSourceCase(sqlID,
         fileFormat,
         location,
