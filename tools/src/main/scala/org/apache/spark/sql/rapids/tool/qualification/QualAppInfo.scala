@@ -133,11 +133,17 @@ class QualAppInfo(
       stringSup: String, structSup: String, timestampSup: String, udtSup:String)
 
   private def getAllFileFormats: String = {
-    dataSourceInfo.map(_.format).toSet.mkString(",")
+    dataSourceInfo.map(_.format).toSet.mkString(":")
   }
 
   private def getAllFileFormatsTypes: String = {
-    dataSourceInfo.flatMap(_.schema.split(",")).toSet.mkString(",")
+    val retTypes = dataSourceInfo.flatMap(_.schema.split(",")).toSet.mkString(":")
+    val incomplete = dataSourceInfo.exists(_.schemaIncomplete == true)
+    if (incomplete) {
+      s"$retTypes:INCOMPLETE"
+    } else {
+      retTypes
+    }
   }
 
   private def checkDataTypesSupported: Boolean = {
