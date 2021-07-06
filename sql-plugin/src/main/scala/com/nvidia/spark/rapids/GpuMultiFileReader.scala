@@ -16,10 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.net.{URI, URISyntaxException}
 import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
+import scala.collection.immutable.HashSet
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.math.max
 
@@ -31,16 +34,19 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.TaskContext
+import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.connector.read.PartitionReader
+import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.util.SerializableConfiguration
 
 /**
  * The base HostMemoryBuffer information read from a single file.
@@ -104,6 +110,120 @@ object MultiFileThreadPoolUtil {
       threadFactory)
     threadPoolExecutor.allowCoreThreadTimeOut(true)
     threadPoolExecutor
+  }
+}
+
+/**
+ * The base multi-file partition reader factory to create the cloud reading or
+ * coalescing reading respectively.
+ *
+ * @param sqlConf         the SQLConf
+ * @param broadcastedConf the Hadoop configuration
+ * @param rapidsConf      the Rapids configuration
+ */
+abstract class MultiFilePartitionReaderFactoryBase(
+    @transient sqlConf: SQLConf,
+    broadcastedConf: Broadcast[SerializableConfiguration],
+    @transient rapidsConf: RapidsConf) extends PartitionReaderFactory with Arm with Logging {
+
+  protected val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
+  protected val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
+  private val configCloudSchemes = rapidsConf.getCloudSchemes
+  private val CLOUD_SCHEMES = HashSet("dbfs", "s3", "s3a", "s3n", "wasbs", "gs")
+  private val allCloudSchemes = CLOUD_SCHEMES ++ configCloudSchemes.getOrElse(Seq.empty)
+
+  override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
+    throw new IllegalStateException("GPU column parser called to read rows")
+  }
+
+  override def supportColumnarReads(partition: InputPartition): Boolean = true
+
+  /**
+   * An abstract method to indicate if coalescing reading can be used
+   */
+  def canUseCoalesceFilesReader: Boolean
+
+  /**
+   * An abstract method to indicate if cloud reading can be used
+   */
+  def canUseMultiThreadReader: Boolean
+
+  /**
+   * Build the PartitionReader for cloud reading
+   *
+   * @param files files to be read
+   * @param conf configuration
+   * @return cloud reading PartitionReader
+   */
+  def buildBaseColumnarReaderForCloud(
+      files: Array[PartitionedFile],
+      conf: Configuration): PartitionReader[ColumnarBatch]
+
+  /**
+   * Build the PartitionReader for coalescing reading
+   *
+   * @param files files to be read
+   * @param conf  the configuration
+   * @return coalescing reading PartitionReader
+   */
+  def buildBaseColumnarReaderForCoalescing(
+      files: Array[PartitionedFile],
+      conf: Configuration): PartitionReader[ColumnarBatch]
+
+  /**
+   * File format short name used for logging and other things to uniquely identity
+   * which file format is being used.
+   *
+   * @return the file format short name
+   */
+  def getFileFormatShortName: String
+
+  override def createColumnarReader(partition: InputPartition): PartitionReader[ColumnarBatch] = {
+    assert(partition.isInstanceOf[FilePartition])
+    val filePartition = partition.asInstanceOf[FilePartition]
+    val files = filePartition.files
+    val filePaths = files.map(_.filePath)
+    val conf = broadcastedConf.value.value
+
+    if (!canUseCoalesceFilesReader || (canUseMultiThreadReader && arePathsInCloud(filePaths))) {
+      logInfo("Using the multi-threaded multi-file " + getFileFormatShortName + " reader, " +
+        s"files: ${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
+      buildBaseColumnarReaderForCloud(files, conf)
+    } else {
+      logInfo("Using the coalesce multi-file " + getFileFormatShortName + " reader, files: " +
+        s"${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
+      buildBaseColumnarReaderForCoalescing(files, conf)
+    }
+  }
+
+  private def resolveURI(path: String): URI = {
+    try {
+      val uri = new URI(path)
+      if (uri.getScheme() != null) {
+        return uri
+      }
+    } catch {
+      case _: URISyntaxException =>
+    }
+    new File(path).getAbsoluteFile().toURI()
+  }
+
+  // We expect the filePath here to always have a scheme on it,
+  // if it doesn't we try using the local filesystem. If that
+  // doesn't work for some reason user would need to configure
+  // it directly.
+  private def isCloudFileSystem(filePath: String): Boolean = {
+    val uri = resolveURI(filePath)
+    val scheme = uri.getScheme
+    if (allCloudSchemes.contains(scheme)) {
+      true
+    } else {
+      false
+    }
+  }
+
+  private def arePathsInCloud(filePaths: Array[String]): Boolean = {
+    filePaths.exists(isCloudFileSystem)
   }
 }
 
