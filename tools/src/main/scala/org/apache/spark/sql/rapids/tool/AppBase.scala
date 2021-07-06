@@ -36,7 +36,6 @@ import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.util.{JsonProtocol, Utils}
 
-
 abstract class AppBase(
     val numOutputRows: Int,
     val eventLogInfo: EventLogInfo,
@@ -45,8 +44,7 @@ abstract class AppBase(
   var sparkVersion: String = ""
   var appEndTime: Option[Long] = None
   // The data source information
-  var dataSourceInfo: ArrayBuffer[DataSourceCase] = ArrayBuffer[DataSourceCase]()
-
+  val dataSourceInfo: ArrayBuffer[DataSourceCase] = ArrayBuffer[DataSourceCase]()
 
   def processEvent(event: SparkListenerEvent): Unit
 
@@ -121,7 +119,6 @@ abstract class AppBase(
       case _ => None
     }
   }
-
 
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
