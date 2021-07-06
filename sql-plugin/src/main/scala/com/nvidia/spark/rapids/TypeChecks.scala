@@ -21,6 +21,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
@@ -1632,18 +1633,20 @@ object SupportedOpsDocs {
   }
 }
 
-object SupportOpsForTools {
+object SupportOpsForTools extends Logging {
   private def outputSupportIO() {
     // write header
-    val types = TypeEnum.values.map(_.toString()).toSeq
+    val types = TypeEnum.values.toSeq
     val header = Seq("Format", "Direction") ++ types
     println(header.mkString(","))
     GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
       case (format, ioMap) =>
         val read = ioMap(ReadFileOp)
         val write = ioMap(WriteFileOp)
-        val readOps = TypeEnum.values.toSeq.map { t =>
-          read.support(t).text
+        val readOps = types.map { t =>
+          val res = read.support(t).text
+          logWarning(s"checking support for $t res is: $res")
+          res
         }
         // only support reads for now
         println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")

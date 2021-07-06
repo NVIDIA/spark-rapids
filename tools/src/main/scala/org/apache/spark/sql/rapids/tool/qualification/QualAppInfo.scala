@@ -135,15 +135,15 @@ class QualAppInfo(
   private def checkDataTypesSupported: Boolean = {
     logWarning("checking datatypes supported!")
     val file = "supportedDataSource.csv"
-    val supportedSources = new File(getClass.getClassLoader.getResource(file).getFile)
-    val source = Source.fromFile(supportedSources)
+    // val supportedSources = new File(getClass.getClassLoader.getResource(file).getFile)
+    val source = Source.fromResource(file)
     val dotFileStr = source.getLines()
     val allSupportedsources = HashMap.empty[String, HashMap[String, String]]
     // Format,Direction,ARRAY,BINARY,BOOLEAN,BYTE,CALENDAR,DATE,DECIMAL,DOUBLE,FLOAT,
     // INT,LONG,MAP,NULL,SHORT,STRING,STRUCT,TIMESTAMP,UDT
     dotFileStr.foreach { line =>
       val cols = line.split(",")
-      val supportedType = cols(0)
+      val supportedType = cols(0).toLowerCase
       val direction = cols(1)
       val st = HashMap[String, String]()
       st("array") = cols(2)
@@ -165,18 +165,19 @@ class QualAppInfo(
       st("timestamp") = cols(18)
       st("udt") = cols(19)
 
-      allSupportedsources.put(supportedType) = st
+      allSupportedsources(supportedType) = st
     }
     source.close()
     if (dataSourceInfo.nonEmpty) {
       dataSourceInfo.foreach { ds =>
         logWarning("data source is: " + ds.format + " rest: "  + ds )
-        if (allSupportedsources.contains(ds.format)) {
+        if (allSupportedsources.contains(ds.format.toLowerCase)) {
           logWarning(s"data source format ${ds.format} is supported by plugin")
           val readSchema = ds.schema.split(",")
           readSchema.foreach { typeRead =>
             val supString = allSupportedsources(ds.format).getOrElse(typeRead.toLowerCase, "")
             // S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
+            logWarning(s"type is : $typeRead supported is: $supString")
             supString match {
               case "S" => logWarning("supported")
               case "S*" => logWarning("s*")
@@ -184,9 +185,11 @@ class QualAppInfo(
               case "PS*" => logWarning("s*")
               case "NS" => logWarning("NS")
               case "NA" => logWarning("NA")
-
+              case _ => logWarning("other: " )
             }
           }
+        } else {
+          logWarning(s"data source ${ds.format} is not supported!")
         }
       }
     }
