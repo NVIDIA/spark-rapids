@@ -53,6 +53,14 @@ object QualificationMain extends Logging {
     val timeout = appArgs.timeout.toOption
 
     val hadoopConf = new Configuration()
+
+    val pluginTypeChecker = try {
+      new PluginTypeChecker()
+    } catch {
+      case ie: IllegalStateException =>
+        return (1, Seq[QualificationSummaryInfo]())
+    }
+
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
       matchEventLogs.toOption, eventlogPaths, hadoopConf)
     if (eventLogInfos.isEmpty) {
@@ -60,7 +68,8 @@ object QualificationMain extends Logging {
       return (0, Seq[QualificationSummaryInfo]())
     }
 
-    val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout, nThreads)
+    val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
+      nThreads, pluginTypeChecker)
     val res = qual.qualifyApps(eventLogInfos)
     (0, res)
   }

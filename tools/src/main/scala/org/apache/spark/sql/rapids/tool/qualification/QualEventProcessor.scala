@@ -135,8 +135,6 @@ class QualEventProcessor() extends EventProcessorBase {
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.lastJobEndTime = Some(event.time)
-    // TODO - verify job failures show up in sql failures
-    // do we want to track separately for any failures?
     if (event.jobResult != JobSucceeded) {
       val sqlID = app.jobIdToSqlID(event.jobId)
       logWarning(s"job failed: ${event.jobId}")

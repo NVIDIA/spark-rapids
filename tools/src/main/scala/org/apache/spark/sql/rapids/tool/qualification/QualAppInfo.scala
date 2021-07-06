@@ -16,13 +16,11 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
-import java.io.File
-
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
-import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling._
+import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
@@ -34,7 +32,8 @@ import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 class QualAppInfo(
     numOutputRows: Int,
     eventLogInfo: EventLogInfo,
-    hadoopConf: Configuration)
+    hadoopConf: Configuration,
+    pluginTypeChecker: PluginTypeChecker)
   extends AppBase(numOutputRows, eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
@@ -132,106 +131,21 @@ class QualAppInfo(
       mapSup: String, nullSup: String, shortSup: String,
       stringSup: String, structSup: String, timestampSup: String, udtSup:String)
 
-  private def getAllFileFormats: String = {
-    dataSourceInfo.map(_.format).toSet.mkString(":")
+  private def getAllReadFileFormats: String = {
+    dataSourceInfo.map { ds =>
+      val typesStr = getReadFileFormatTypes(ds)
+      s"${ds.format.toLowerCase()}[$typesStr]"
+    }.mkString(":")
   }
 
-  private def getAllFileFormatsTypes: String = {
-    val retTypes = dataSourceInfo.flatMap(_.schema.split(",")).toSet.mkString(":")
+  private def getReadFileFormatTypes(ds: DataSourceCase): String = {
+    val retTypes = ds.schema.toLowerCase.split(",").toSet.mkString(":")
     val incomplete = dataSourceInfo.exists(_.schemaIncomplete == true)
     if (incomplete) {
       s"$retTypes:INCOMPLETE"
     } else {
       retTypes
     }
-  }
-
-  private def checkDataTypesSupported: Boolean = {
-    logWarning("checking datatypes supported!")
-    // get the types the Rapids Plugin supports
-    val file = "supportedDataSource.csv"
-    val source = Source.fromResource(file)
-    val allSupportedsources = HashMap.empty[String, Map[String, String]]
-    try {
-      val dotFileStr = source.getLines().toSeq
-      val headers = dotFileStr.head.split(",").map(_.toLowerCase)
-      dotFileStr.tail.foreach { line =>
-        val cols = line.split(",")
-        if (headers.size != cols.size) {
-          logError("somethign went wrong, header is not same size as cols")
-        }
-        val supportedType = cols(0).toLowerCase
-        val direction = cols(1)
-        val res = headers.drop(2).zip(cols.drop(2)).toMap
-        allSupportedsources(supportedType) = res
-      }
-    } finally {
-      source.close()
-    }
-
-    if (dataSourceInfo.nonEmpty) {
-      dataSourceInfo.foreach { ds =>
-        logWarning("data source is: " + ds.format + " rest: "  + ds)
-        if (allSupportedsources.contains(ds.format.toLowerCase)) {
-          logWarning(s"data source format ${ds.format} is supported by plugin")
-          val readSchema = ds.schema.split(",").map(_.toLowerCase)
-          readSchema.foreach { typeRead =>
-            // TODO - need to add array/map/etc
-            val realType = typeRead match {
-              case "bigint" => "long"
-              case "smallint" => "short"
-              case "integer" => "int"
-              case "tinyint" => "byte"
-              case "real" => "float"
-              case "dec" | "numeric" => "decimal"
-              case "interval" => "calendar"
-              case other => other
-            }
-            if (allSupportedsources(ds.format.toLowerCase).contains(realType)) {
-              val supString = allSupportedsources(ds.format.toLowerCase).getOrElse(realType, "")
-              logWarning(s"type is : $typeRead supported is: $supString")
-              supString match {
-                case "S" =>
-                  logWarning("supported")
-                  // score = 1
-                case "S*" =>
-                  logWarning("s*")
-                  // decimals or timestamps
-                  // since don't know be conservative and
-                  if (typeRead.equals("decimal")) {
-                    // score = 0
-                  } else {
-                    // timestamps
-                    // score = 0.5
-                  }
-                case "PS" =>
-                  logWarning("ps")
-                  // score = 0.5
-                case "PS*" =>
-                  logWarning("ps*")
-                  // parquet - PS* (missing nested BINARY, ARRAY, MAP, UDT)
-                  // score = 0.5
-                case "NS" =>
-                  logWarning("ns")
-                  // score = 0
-                case "NA" =>
-                  logWarning("na")
-                // score = 0
-                case unknown =>
-                  logWarning(s"unknown type $unknown for type: $typeRead")
-                // score = 0
-
-              }
-            } else {
-              logWarning(s"type $realType not supported")
-            }
-          }
-        } else {
-          logWarning(s"data source ${ds.format} is not supported!")
-        }
-      }
-    }
-    true
   }
 
   def aggregateStats(): Option[QualificationSummaryInfo] = {
@@ -243,13 +157,15 @@ class QualAppInfo(
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
-      val dataTypesSupported = checkDataTypesSupported
+      val readFormatScore = dataSourceInfo.map { ds =>
+        pluginTypeChecker.checkReadDataTypesSupported(ds.format, ds.schema)
+      }.sum
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
         sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated,
-        sqlDurProblem, failedIds, getAllFileFormats, getAllFileFormatsTypes)
+        sqlDurProblem, failedIds, readFormatScore, getAllReadFileFormats)
     }
   }
 
@@ -305,8 +221,8 @@ case class QualificationSummaryInfo(
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long,
     failedSQLIds: String,
-    fileFormats: String,
-    fileFormatTypes: String)
+    readFileFormatScore: Double,
+    readFileFormats: String)
 
 object QualAppInfo extends Logging {
   def createApp(
