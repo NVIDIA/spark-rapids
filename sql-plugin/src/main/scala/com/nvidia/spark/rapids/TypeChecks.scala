@@ -1644,6 +1644,7 @@ object SupportedOpsForTools extends Logging {
         val read = ioMap(ReadFileOp)
         val write = ioMap(WriteFileOp)
         val readOps = types.map { t =>
+          // TODO - need to check if configs are on????
           val res = read.support(t).text
           logWarning(s"checking support for $t res is: $res")
           res

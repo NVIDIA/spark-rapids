@@ -140,8 +140,7 @@ class QualAppInfo(
 
   private def getReadFileFormatTypes(ds: DataSourceCase): String = {
     val retTypes = ds.schema.toLowerCase.split(",").toSet.mkString(":")
-    val incomplete = dataSourceInfo.exists(_.schemaIncomplete == true)
-    if (incomplete) {
+    if (ds.schemaIncomplete) {
       s"$retTypes:INCOMPLETE"
     } else {
       retTypes
@@ -159,13 +158,14 @@ class QualAppInfo(
       val sqlDurProblem = getSQLDurationProblematic
       val readFormatScore = dataSourceInfo.map { ds =>
         pluginTypeChecker.checkReadDataTypesSupported(ds.format, ds.schema)
-      }.sum
+      }
+      logWarning("read formats scores: " + readFormatScore)
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
         sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated,
-        sqlDurProblem, failedIds, readFormatScore, getAllReadFileFormats)
+        sqlDurProblem, failedIds, readFormatScore.sum, getAllReadFileFormats)
     }
   }
 

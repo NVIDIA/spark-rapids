@@ -118,6 +118,7 @@ class PluginTypeChecker extends Logging {
       if (scores.contains(0.0)) {
         0.0
       } else {
+        logWarning("scores is : " + scores)
         scores.sum / scores.size
       }
     } else {
