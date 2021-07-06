@@ -384,7 +384,8 @@ struct_with_arrays = StructGen(children=[
                        ['child_array', ArrayGen(int_gen, max_length=10)]])
 
 lead_lag_struct_with_arrays_gen = [struct_with_arrays,
-                                   ArrayGen(struct_with_arrays, max_length=10)]
+                                   ArrayGen(struct_with_arrays, max_length=10),
+                                   StructGen(children=[['child_struct', struct_with_arrays]])]
 
 
 @ignore_order(local=True)
