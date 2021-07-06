@@ -239,7 +239,9 @@ class GpuHashAggregateIterator(
       } else {
         // this will be the last batch
         hasReductionOnlyBatch = false
-        aggregatedBatches.pop().getBatch
+        withResource(aggregatedBatches.pop()) { lazyBatch =>
+          GpuColumnVector.incRefCounts(lazyBatch.getBatch)
+        }
       }
     }
 
