@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryE
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, LongType, MapType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
@@ -73,6 +73,80 @@ object AggregateUtils {
       }
     }
   }
+
+  /**
+   * Computes a target input batch size based on the assumption that computation can consume up to
+   * 4X the configured batch size.
+   * @param confTargetSize user-configured maximum desired batch size
+   * @param inputTypes input batch schema
+   * @param outputTypes output batch schema
+   * @param isReductionOnly true if this is a reduction-only aggregation without grouping
+   * @return maximum target batch size to keep computation under the 4X configured batch limit
+   */
+  def computeTargetBatchSize(
+      confTargetSize: Long,
+      inputTypes: Seq[DataType],
+      outputTypes: Seq[DataType],
+      isReductionOnly: Boolean): Long = {
+    def typesToSize(types: Seq[DataType]): Long =
+      types.map(GpuBatchUtils.estimateGpuMemory(_, nullable = false, rowCount = 1)).sum
+    val inputRowSize = typesToSize(inputTypes)
+    val outputRowSize = typesToSize(outputTypes)
+    // The cudf hash table implementation allocates four 32-bit integers per input row.
+    val hashTableRowSize = 4 * 4
+
+    // Using the memory management for joins as a reference, target 4X batch size as a budget.
+    var totalBudget = 4 * confTargetSize
+
+    // Compute the amount of memory being consumed per-row in the computation
+    var computationBytesPerRow = inputRowSize + hashTableRowSize
+    if (isReductionOnly) {
+      // Remove the lone output row size from the budget rather than track per-row in computation
+      totalBudget -= outputRowSize
+    } else {
+      // The worst-case memory consumption during a grouping aggregation is the case where the
+      // grouping does not combine any input rows, so just as many rows appear in the output.
+      computationBytesPerRow += outputRowSize
+    }
+
+    // Calculate the max rows that can be processed during computation within the budget
+    val maxRows = totalBudget / computationBytesPerRow
+
+    // Finally compute the input target batching size taking into account the cudf row limits
+    Math.min(inputRowSize * maxRows, Int.MaxValue)
+  }
+
+  /**
+   * Compute the aggregation modes and aggregate expressions for all aggregation expressions
+   * @param aggExpressions the aggregate expressions
+   * @param aggBufferAttributes attributes to be bound to the aggregate expressions
+   */
+  def computeAggModeCudfAggregates(
+      aggExpressions: Seq[GpuAggregateExpression],
+      aggBufferAttributes: Seq[Attribute]): Seq[(AggregateMode, Seq[CudfAggregate])] = {
+    //
+    // update expressions are those performed on the raw input data
+    // e.g. for count it's count, and for average it's sum and count.
+    //
+    val updateExpressionsSeq = aggExpressions.map(_.aggregateFunction.updateExpressions)
+
+    //
+    // merge expressions are used while merging multiple batches, or while on final mode
+    // e.g. for count it's sum, and for average it's sum and sum.
+    //
+    val mergeExpressionsSeq = aggExpressions.map(_.aggregateFunction.mergeExpressions)
+
+    aggExpressions.zipWithIndex.map { case (expr, modeIndex) =>
+      val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
+        GpuBindReferences.bindGpuReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
+            .asInstanceOf[Seq[CudfAggregate]]
+      } else {
+        GpuBindReferences.bindGpuReferences(mergeExpressionsSeq(modeIndex), aggBufferAttributes)
+            .asInstanceOf[Seq[CudfAggregate]]
+      }
+      (expr.mode, cudfAggregates)
+    }
+  }
 }
 
 /** Utility class to hold all of the metrics related to hash aggregation */
@@ -101,7 +175,7 @@ class GpuHashAggregateIterator(
     childOutput: Seq[Attribute],
     modeInfo: AggregateModeInfo,
     metrics: GpuHashAggregateMetrics,
-    targetBatchSize: Long)
+    configuredTargetBatchSize: Long)
     extends Iterator[ColumnarBatch] with Arm with AutoCloseable with Logging {
   // Partial mode:
   //  1. boundInputReferences: picks column from raw input
@@ -117,14 +191,15 @@ class GpuHashAggregateIterator(
   //  4. boundResultReferences: project the result expressions Spark expects in the output.
   private case class BoundExpressionsModeAggregates(
       boundInputReferences: Seq[GpuExpression],
-      boundFinalProjections: Option[scala.Seq[GpuExpression]],
-      boundResultReferences: scala.Seq[Expression],
-      aggModeCudfAggregates: scala.Seq[(AggregateMode, scala.Seq[CudfAggregate])])
+      boundFinalProjections: Option[Seq[GpuExpression]],
+      boundResultReferences: Seq[Expression],
+      aggModeCudfAggregates: Seq[(AggregateMode, Seq[CudfAggregate])])
 
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val boundExpressions = setupReferences(childOutput)
+  private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
   private[this] val aggregatedBatches = new util.ArrayDeque[LazySpillableColumnarBatch]
   private[this] var outOfCoreIter: Option[GpuOutOfCoreSortIterator] = None
 
@@ -180,6 +255,12 @@ class GpuHashAggregateIterator(
     hasReductionOnlyBatch = false
   }
 
+  private def computeTargetMergeBatchSize(confTargetSize: Long): Long = {
+    val aggregates = boundExpressions.aggModeCudfAggregates.flatMap(_._2)
+    val mergedTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
+    AggregateUtils.computeTargetBatchSize(confTargetSize, mergedTypes, mergedTypes,isReductionOnly)
+  }
+
   /** Aggregate all input batches and place the results in the aggregatedBatches queue. */
   private def aggregateInputBatches(): Unit = {
     while (cbIter.hasNext) {
@@ -219,7 +300,7 @@ class GpuHashAggregateIterator(
             // but at this point it is either risk an OOM/cudf error and potentially work or
             // not work at all.
             logWarning(s"Unable to merge reduction-only aggregated batches within " +
-                s"target batch limit of ${targetBatchSize}, attempting to merge remaining " +
+                s"target batch limit of $targetMergeBatchSize, attempting to merge remaining " +
                 s"${aggregatedBatches.size()} batches beyond limit")
             withResource(mutable.ArrayBuffer[LazySpillableColumnarBatch]()) { batchesToConcat =>
               aggregatedBatches.forEach(b => batchesToConcat += b)
@@ -254,7 +335,7 @@ class GpuHashAggregateIterator(
         while (batchesLeftInPass > 0 && !isConcatSearchFinished) {
           val candidate = aggregatedBatches.getFirst
           val potentialSize = concatSize + candidate.deviceMemorySize
-          isConcatSearchFinished = concatSize > 0 && potentialSize > targetBatchSize
+          isConcatSearchFinished = concatSize > 0 && potentialSize > targetMergeBatchSize
           if (!isConcatSearchFinished) {
             batchesLeftInPass -= 1
             batchesToConcat += aggregatedBatches.removeFirst()
@@ -334,7 +415,7 @@ class GpuHashAggregateIterator(
       aggregatedBatchIter,
       sorter,
       LazilyGeneratedOrdering.forSchema(TrampolineUtil.fromAttributes(groupingAttributes)),
-      targetBatchSize,
+      configuredTargetBatchSize,
       totalTime = NoopMetric,
       sortTime = metrics.sortTime,
       outputBatches = NoopMetric,
@@ -350,7 +431,7 @@ class GpuHashAggregateIterator(
       outOfCoreIter.get,
       sorter,
       aggBatchTypes.toArray,
-      targetBatchSize,
+      configuredTargetBatchSize,
       numInputRows = NoopMetric,
       numInputBatches = NoopMetric,
       numOutputRows = NoopMetric,
@@ -483,31 +564,8 @@ class GpuHashAggregateIterator(
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
 
-    //
-    // update expressions are those performed on the raw input data
-    // e.g. for count it's count, and for average it's sum and count.
-    //
-    val updateExpressionsSeq =
-    aggregateExpressions.map(
-      _.aggregateFunction.updateExpressions)
-    //
-    // merge expressions are used while merging multiple batches, or while on final mode
-    // e.g. for count it's sum, and for average it's sum and sum.
-    //
-    val mergeExpressionsSeq =
-    aggregateExpressions.map(
-      _.aggregateFunction.mergeExpressions)
-
-    val aggModeCudfAggregates = aggregateExpressions.zipWithIndex.map { case (expr, modeIndex) =>
-      val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
-        GpuBindReferences.bindGpuReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
-            .asInstanceOf[Seq[CudfAggregate]]
-      } else {
-        GpuBindReferences.bindGpuReferences(mergeExpressionsSeq(modeIndex), aggBufferAttributes)
-            .asInstanceOf[Seq[CudfAggregate]]
-      }
-      (expr.mode, cudfAggregates)
-    }
+    val aggModeCudfAggregates =
+      AggregateUtils.computeAggModeCudfAggregates(aggregateExpressions, aggBufferAttributes)
 
     //
     // expressions to pick input to the aggregate, and finalize the output to the result projection.
@@ -806,10 +864,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   }
 
   override def convertToGpu(): GpuExec = {
-    // Joins currently require up to 4X the configured target size in memory, so aggregates can use
-    // up to 2X that size (one input batch and one output batch). Keep the target batch size under
-    // the 2GB limit to avoid exploding the cudf row count limit of a column.
-    val targetBatchSize = Math.min(conf.gpuTargetBatchSizeBytes * 2, Int.MaxValue)
     GpuHashAggregateExec(
       requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
       groupingExpressions.map(_.convertToGpu()),
@@ -817,7 +871,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       childPlans.head.convertIfNeeded(),
-      targetBatchSize)
+      conf.gpuTargetBatchSizeBytes)
   }
 }
 
@@ -878,7 +932,7 @@ class GpuSortAggregateMeta(
  * @param resultExpressions the expected output expression of this hash aggregate (which this
  *                          node should project)
  * @param child incoming plan (where we get input columns from)
- * @param targetBatchSize maximum device memory size of a batch to produce during processing
+ * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -887,11 +941,13 @@ case class GpuHashAggregateExec(
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan,
-    targetBatchSize: Long) extends UnaryExecNode with GpuExec with Arm {
+    configuredTargetBatchSize: Long) extends UnaryExecNode with GpuExec with Arm {
   private lazy val uniqueModes: Seq[AggregateMode] = aggregateExpressions.map(_.mode).distinct
   private lazy val partialMode = uniqueModes.contains(Partial) || uniqueModes.contains(PartialMerge)
   private lazy val finalMode = uniqueModes.contains(Final)
   private lazy val completeMode = uniqueModes.contains(Complete)
+
+  private lazy val targetInputBatchSize = computeTargetInputBatchSize()
 
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -902,7 +958,7 @@ case class GpuHashAggregateExec(
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
   ) ++ spillMetrics
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(TargetSize(targetBatchSize))
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(TargetSize(targetInputBatchSize))
 
   override def verboseStringWithOperatorId(): String = {
     s"""
@@ -949,11 +1005,25 @@ case class GpuHashAggregateExec(
         childOutput,
         modeInfo,
         aggMetrics,
-        targetBatchSize)
+        configuredTargetBatchSize)
     }
   }
 
   protected def outputExpressions: Seq[NamedExpression] = resultExpressions
+
+  private def computeTargetInputBatchSize(): Long = {
+    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val aggBufferAttributes = groupingAttributes ++
+        aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+    val aggModeCudfAggregates =
+      AggregateUtils.computeAggModeCudfAggregates(aggregateExpressions, aggBufferAttributes)
+
+    val inputTypes = child.output.map(_.dataType)
+    val aggregates = aggModeCudfAggregates.flatMap(_._2)
+    val mergedTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
+    AggregateUtils.computeTargetBatchSize(configuredTargetBatchSize, inputTypes, mergedTypes,
+      groupingExpressions.isEmpty)
+  }
 
   //
   // This section is derived (copied in most cases) from HashAggregateExec
