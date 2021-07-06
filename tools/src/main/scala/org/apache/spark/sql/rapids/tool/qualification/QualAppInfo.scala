@@ -161,7 +161,7 @@ class QualAppInfo(
           logWarning(s"data source format ${ds.format} is supported by plugin")
           val readSchema = ds.schema.split(",").map(_.toLowerCase)
           readSchema.foreach { typeRead =>
-            val supString = allSupportedsources(ds.format).getOrElse(typeRead, "")
+            val supString = allSupportedsources(ds.format.toLowerCase).getOrElse(typeRead, "")
             // S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
             logWarning(s"type is : $typeRead supported is: $supString")
             supString match {
@@ -171,7 +171,7 @@ class QualAppInfo(
               case "PS*" => logWarning("s*")
               case "NS" => logWarning("NS")
               case "NA" => logWarning("NA")
-              case _ => logWarning("other: " )
+              case unknown => logWarning(s"unknown supported $unknown for type: $typeRead" )
             }
           }
         } else {
