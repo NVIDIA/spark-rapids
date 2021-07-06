@@ -141,7 +141,7 @@ class QualAppInfo(
     val allSupportedsources = HashMap.empty[String, Map[String, String]]
     // Format,Direction,ARRAY,BINARY,BOOLEAN,BYTE,CALENDAR,DATE,DECIMAL,DOUBLE,FLOAT,
     // INT,LONG,MAP,NULL,SHORT,STRING,STRUCT,TIMESTAMP,UDT
-    val headers = dotFileStr.head.split(",")
+    val headers = dotFileStr.head.split(",").map(_.toLowerCase)
 
     dotFileStr.tail.foreach { line =>
       val cols = line.split(",")
@@ -151,37 +151,17 @@ class QualAppInfo(
       val supportedType = cols(0).toLowerCase
       val direction = cols(1)
       val res = headers.drop(2).zip(cols.drop(2)).toMap
-      val st = HashMap[String, String]()
-      st(headers(2)) = cols(2)
-      st("binary") = cols(3)
-      st("boolean") = cols(4)
-      st("byte") = cols(5)
-      st("calendar") = cols(6)
-      st("date") = cols(7)
-      st("decimal") = cols(8)
-      st("double") = cols(9)
-      st("float") = cols(10)
-      st("int") = cols(11)
-      st("long") = cols(12)
-      st("map") = cols(13)
-      st("null") = cols(14)
-      st("short") = cols(15)
-      st("string") = cols(16)
-      st("struct") = cols(17)
-      st("timestamp") = cols(18)
-      st("udt") = cols(19)
-
       allSupportedsources(supportedType) = res
     }
     source.close()
     if (dataSourceInfo.nonEmpty) {
       dataSourceInfo.foreach { ds =>
-        logWarning("data source is: " + ds.format + " rest: "  + ds )
+        logWarning("data source is: " + ds.format + " rest: "  + ds)
         if (allSupportedsources.contains(ds.format.toLowerCase)) {
           logWarning(s"data source format ${ds.format} is supported by plugin")
-          val readSchema = ds.schema.split(",")
+          val readSchema = ds.schema.split(",").map(_.toLowerCase)
           readSchema.foreach { typeRead =>
-            val supString = allSupportedsources(ds.format).getOrElse(typeRead.toLowerCase, "")
+            val supString = allSupportedsources(ds.format).getOrElse(typeRead, "")
             // S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
             logWarning(s"type is : $typeRead supported is: $supString")
             supString match {
