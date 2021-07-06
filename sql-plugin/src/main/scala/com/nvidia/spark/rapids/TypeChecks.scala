@@ -1633,7 +1633,7 @@ object SupportedOpsDocs {
   }
 }
 
-object SupportOpsForTools extends Logging {
+object SupportedOpsForTools extends Logging {
   private def outputSupportIO() {
     // write header
     val types = TypeEnum.values.toSeq
@@ -1661,7 +1661,7 @@ object SupportOpsForTools extends Logging {
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {
       Console.withErr(out) {
-        SupportOpsForTools.help()
+        SupportedOpsForTools.help()
       }
     }
   }
