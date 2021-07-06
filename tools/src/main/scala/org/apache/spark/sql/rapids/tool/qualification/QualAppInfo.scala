@@ -228,9 +228,10 @@ object QualAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
       numRows: Int,
-      hadoopConf: Configuration): Option[QualAppInfo] = {
+      hadoopConf: Configuration,
+      pluginTypeChecker: PluginTypeChecker): Option[QualAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(numRows, path, hadoopConf)
+        val app = new QualAppInfo(numRows, path, hadoopConf, pluginTypeChecker)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {

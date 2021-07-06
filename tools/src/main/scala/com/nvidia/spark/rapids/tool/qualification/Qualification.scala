@@ -79,7 +79,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       hadoopConf: Configuration): Unit = {
     try {
       val startTime = System.currentTimeMillis()
-      val app = QualAppInfo.createApp(path, numRows, hadoopConf)
+      val app = QualAppInfo.createApp(path, numRows, hadoopConf, pluginTypeChecker)
       if (!app.isDefined) {
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
         None

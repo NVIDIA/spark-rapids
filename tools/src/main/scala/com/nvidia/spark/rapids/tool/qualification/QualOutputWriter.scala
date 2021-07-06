@@ -37,7 +37,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr," +
       s"$appDurStr,Executor CPU Time Percent,App Duration Estimated," +
       "SQL Duration with Potential Problems,SQL Ids with Failures,ReadFileFormat Score," +
-      "ReadFileFormat,ReadFileFormatTypes\n"
+      "ReadFileFormat\n"
 
   // find sizes of largest appId and long fields, assume the long is not bigger then
   // the problemDurStr header
@@ -62,12 +62,11 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     val appNameStr = stringIfempty(appSum.appName)
     val failedIds = stringIfempty(appSum.failedSQLIds)
     val readFileFormats = stringIfempty(appSum.readFileFormats)
-    val readFileFormatTypes = stringIfempty(appSum.readFileFormatTypes)
 
     s"$appNameStr,$appIdStr,${appSum.score},$probStr,${appSum.sqlDataFrameDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readFileFormatScore},$readFileFormats,$readFileFormatTypes"
+      s"${appSum.readFileFormatScore},$readFileFormats"
   }
 
   def writeCSV(summaries: Seq[QualificationSummaryInfo]): Unit = {
