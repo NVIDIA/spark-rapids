@@ -149,7 +149,6 @@ Next you can start to run the tests.
 
 ```scala
 durations.run(new com.nvidia.spark.rapids.JoinsSuite)
-// ...
 ```
 
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
