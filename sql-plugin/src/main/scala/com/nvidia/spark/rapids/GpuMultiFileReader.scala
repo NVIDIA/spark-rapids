@@ -382,11 +382,11 @@ abstract class MultiFileCloudPartitionReaderBase(
       // if we have batch left from the last file read return it
       if (currentFileHostBuffers.isDefined) {
         if (getSizeOfHostBuffers(currentFileHostBuffers.get) == 0) {
+          closeCurrentFileHostBuffers()
           next()
         }
         batch = readBatch(currentFileHostBuffers.get)
       } else {
-        currentFileHostBuffers = None
         if (filesToRead > 0 && !isDone) {
           val fileBufsAndMeta = tasks.poll.get()
           filesToRead -= 1
@@ -436,10 +436,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     }
   }
 
-  override def close(): Unit = {
-    // this is more complicated because threads might still be processing files
-    // in cases close got called early for like limit() calls
-    isDone = true
+  private def closeCurrentFileHostBuffers(): Unit = {
     currentFileHostBuffers.foreach { current =>
       current.memBuffersAndSizes.foreach { case (buf, _) =>
         if (buf != null) {
@@ -448,6 +445,13 @@ abstract class MultiFileCloudPartitionReaderBase(
       }
     }
     currentFileHostBuffers = None
+  }
+
+  override def close(): Unit = {
+    // this is more complicated because threads might still be processing files
+    // in cases close got called early for like limit() calls
+    isDone = true
+    closeCurrentFileHostBuffers()
     batch.foreach(_.close())
     batch = None
     tasks.asScala.foreach { task =>
