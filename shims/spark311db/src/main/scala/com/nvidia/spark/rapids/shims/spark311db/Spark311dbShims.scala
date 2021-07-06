@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.sql.rapids.shims.spark311.GpuInMemoryTableScanExec
 import org.apache.spark.sql.rapids.shims.spark311db._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
@@ -30,6 +31,7 @@ import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.datasources.{FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
@@ -164,6 +166,24 @@ class Spark311dbShims extends Spark311Shims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier)(conf)
+          }
+        }),
+      GpuOverrides.exec[InMemoryTableScanExec](
+        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+          TypeSig.all),
+        (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
+          override def tagPlanForGpu(): Unit = {
+            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
+              willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+            }
+          }
+
+          /**
+           * Convert InMemoryTableScanExec to a GPU enabled version.
+           */
+          override def convertToGpu(): GpuExec = {
+            GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
           }
         }),
       GpuOverrides.exec[SortMergeJoinExec](
