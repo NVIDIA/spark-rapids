@@ -74,6 +74,8 @@ trait Arm {
     } finally {
       r match {
         case c: AutoCloseable => c.close()
+        case scala.util.Left(c: AutoCloseable) => c.close()
+        case scala.util.Right(c: AutoCloseable) => c.close()
         case _ => //NOOP
       }
     }
