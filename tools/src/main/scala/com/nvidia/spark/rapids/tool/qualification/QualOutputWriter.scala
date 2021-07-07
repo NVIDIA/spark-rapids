@@ -35,7 +35,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
   private val taskDurStr = "Task Dataframe Duration"
 
   private val headerCSV =
-    s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr" +
+    s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr," +
       s"$appDurStr,Executor CPU Time Percent,App Duration Estimated," +
       "SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent," +
       "ReadFileFormat Score,ReadFileFormat\n"
@@ -64,8 +64,8 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     val failedIds = stringIfempty(appSum.failedSQLIds)
     val readFileFormats = stringIfempty(appSum.readFileFormats)
 
-    s"$appNameStr,$appIdStr,${appSum.score},$probStr,${appSum.sqlDataframeTaskDuration}," +
-      s"${appSum.sqlDataFrameDuration}," +
+    s"$appNameStr,$appIdStr,${appSum.score},$probStr,${appSum.sqlDataFrameDuration}," +
+      s"${appSum.sqlDataframeTaskDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
       s"${appSum.readScorePercent},${appSum.readFileFormatScore},$readFileFormats"
@@ -105,7 +105,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     entireHeader.append(s"%${sizePadLongs}s|".format(taskDurStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(problemDurStr))
     entireHeader.append("\n")
-    val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
+    val sep = "=" * (appIdMaxSize + (sizePadLongs * 4) + 5)
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
